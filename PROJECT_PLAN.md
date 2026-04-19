@@ -113,10 +113,13 @@ Dự án này nhằm xây dựng một hệ thống quản lý tập trung các 
 - **Trưởng phòng Kinh Doanh**: 
     - Xem, Thêm, Sửa, Xóa Người dùng trong phòng/ban được phân công.
     - Xem, Thêm, Sửa, Xóa Bất động sản trong phạm vi phòng/ban mình phụ trách.
+    - Xem, Thêm, Sửa, Xóa Nhu cầu khách hàng của cá nhân mình và nhân viên trong phòng.
 - **Đầu chủ (Listing Agent)**: 
     - Xem, Thêm, Sửa, Xóa nguồn hàng do chính mình tạo ra.
+    - Xem, Thêm, Sửa, Xóa Nhu cầu khách hàng của riêng mình.
 - **Đầu khách (Sales Agent)**: 
     - Chỉ có quyền Xem toàn bộ hoặc một phần nguồn hàng để tư vấn cho khách.
+    - Xem, Thêm, Sửa, Xóa Nhu cầu khách hàng của riêng mình.
 
 ### G. Quản lý Chủ nhà & Liên hệ
 - **Hồ sơ Chủ nhà**: Lưu trữ thông tin định danh (Tên, SĐT, Địa chỉ, Ghi chú đặc điểm cá nhân).
