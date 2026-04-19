@@ -147,8 +147,14 @@ Dự án này nhằm xây dựng một hệ thống quản lý tập trung các 
 
 ### K. Quản lý Nhu cầu Khách hàng (Customer Demand Management)
 - **Lưu trữ Nhu cầu**: 
-    - Thông tin khách hàng: Tên, Số điện thoại, Tuổi.
-    - Tiêu chí tìm kiếm: Khu vực quan tâm, Phân khúc tài chính, Mục đích (Mua để ở / Đầu tư), Loại hình bất động sản.
+    - **Thông tin khách hàng**: 
+        - Tên, Số điện thoại, Tuổi.
+        - **Thông tin định danh (CCCD)**: 
+            - **Số CCCD/CMND**: Mã số định danh cá nhân của khách hàng.
+            - **Ảnh chụp CCCD**: Cho phép tải lên và lưu trữ ảnh mặt trước, mặt sau để đối chiếu pháp lý.
+            - **Thông tin chi tiết**: Ngày sinh, Giới tính, Quốc tịch, Quê quán, Nơi thường trú.
+            - **Ngày cấp & Nơi cấp**: Ghi nhận thời gian và đơn vị cấp thẻ.
+    - **Tiêu chí tìm kiếm**: Khu vực quan tâm, Phân khúc tài chính, Mục đích (Mua để ở / Đầu tư), Loại hình bất động sản.
 - **Khớp hàng & Thông báo (Auto-Matching & Notification)**:
     - Hệ thống tự động kiểm tra khi có nguồn hàng mới được đăng lên hoặc cập nhật trạng thái "Đang bán".
     - Gửi thông báo ngay lập tức cho người dùng nếu nguồn hàng phù hợp với các tiêu chí nhu cầu đã lưu.
@@ -174,7 +180,7 @@ Dự án này nhằm xây dựng một hệ thống quản lý tập trung các 
 | **Mobile App** | **React Native (Expo)** | Đa nền tảng (iOS/Android), hiệu năng mượt mà, phát triển nhanh. |
 | **Backend API** | **Node.js (NestJS)** | Framework mạnh mẽ, dễ mở rộng, quản lý phân quyền và logic AI tốt. |
 | **Database** | **PostgreSQL** | Lưu trữ dữ liệu quan hệ (User, Department, Property) chặt chẽ và ổn định. |
-| **Lưu trữ Ảnh** | **Cloudinary** | Tự động tối ưu dung lượng ảnh, chèn Watermark bản quyền, CDN tốc độ cao. |
+| **Lưu trữ Ảnh** | **Cloudinary + Local** | Hỗ trợ lưu trữ Hybrid: Cấu hình linh hoạt giữa Cloud và Server vật lý. |
 | **AI / NLP** | **OpenAI Whisper** | Nhận diện giọng nói chính xác cao cho tính năng nhập liệu Voice-to-Data. |
 | **Vision / OCR** | **Gemini Pro Vision** | Trích xuất dữ liệu từ ảnh chụp Sổ đỏ và phân tích nội dung hình ảnh. |
 | **Thiết kế** | **Modern UI/UX** | Giao diện tối giản (Minimalism), hỗ trợ Dark mode, Micro-animations. |
