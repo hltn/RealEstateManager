@@ -1,3 +1,9 @@
+# [ PROJECT_PLAN ] | [ DATABASE_PLAN ] | [ DATABASE_MONGO_PLAN ] | [ UI_DESIGN_PLAN ]
+
+> [!IMPORTANT]
+> **QUY TẮC ĐỒNG BỘ DỮ LIỆU:**
+> Khi 1 trong 4 file kế hoạch (Project, Database, Database Mongo, UI Design) thay đổi hoặc update tính năng, **bắt buộc** phải cập nhật cấu trúc dữ liệu (các trường dữ liệu) vào các file còn lại để đảm bảo tính nhất quán.
+
 # Thiết kế Cơ sở Dữ liệu NoSQL (MongoDB Plan) - Real Estate Manager
 
 Tài liệu này mô tả cấu trúc dữ liệu dưới dạng Document-oriented (JSON-like) dành cho MongoDB, tập trung vào việc tối ưu hóa hiệu năng truy vấn bằng cách nhúng (embedding) dữ liệu liên quan.
@@ -240,6 +246,16 @@ Lưu vết các cuộc gọi, gặp mặt với chủ nhà hoặc khách hàng.
   "selected_images": [
     { "cloud_url": "...", "local_path": "...", "sort_order": 1 }
   ],
+  "created_at": "ISODate"
+}
+```
+
+### 2.11. Collection `real_estate_interests` (Theo dõi/Quan tâm)
+```json
+{
+  "_id": "ObjectId",
+  "user_id": "ObjectId",
+  "real_estate_id": "ObjectId",
   "created_at": "ISODate"
 }
 ```

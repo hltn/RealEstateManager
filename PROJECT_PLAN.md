@@ -1,3 +1,9 @@
+# [ PROJECT_PLAN ] | [ DATABASE_PLAN ] | [ DATABASE_MONGO_PLAN ] | [ UI_DESIGN_PLAN ]
+
+> [!IMPORTANT]
+> **QUY TẮC ĐỒNG BỘ DỮ LIỆU:**
+> Khi 1 trong 4 file kế hoạch (Project, Database, Database Mongo, UI Design) thay đổi hoặc update tính năng, **bắt buộc** phải cập nhật cấu trúc dữ liệu (các trường dữ liệu) vào các file còn lại để đảm bảo tính nhất quán.
+
 # Kế hoạch Tổng quan: Ứng dụng Quản lý Nguồn hàng Bất động sản
 
 Dự án này nhằm xây dựng một hệ thống quản lý tập trung các nguồn hàng bất động sản (nhà phố, căn hộ, đất nền...) dành cho môi giới hoặc sàn giao dịch, giúp tối ưu hóa quy trình theo dõi và khớp khách.
@@ -50,7 +56,8 @@ Dự án này nhằm xây dựng một hệ thống quản lý tập trung các 
     - Nhà mặt phố.
     - Tòa nhà văn phòng.
     - Nhà ngõ.
-- **Trạng thái**: Đang bán, Đang cọc, Đã bán, Ngừng giao dịch.
+- **Quản lý Trạng thái**: Đang bán, Đã cọc, Đã bán, Tạm dừng.
+- **Theo dõi biến động giá**: Người dùng có thể bấm "Quan tâm". Hệ thống tự động gửi thông báo khi giá bất động sản thay đổi.
 - **Quản lý Hình ảnh (Phân loại chi tiết)**: 
     - Cho phép tải lên tối đa 10 ảnh cho mỗi danh mục sau:
         - **Ảnh mặt tiền / Tổng thể**.
@@ -183,7 +190,7 @@ Dự án này nhằm xây dựng một hệ thống quản lý tập trung các 
 | **Lưu trữ Ảnh** | **Cloudinary + Local** | Hỗ trợ lưu trữ Hybrid: Cấu hình linh hoạt giữa Cloud và Server vật lý. |
 | **AI / NLP** | **OpenAI Whisper** | Nhận diện giọng nói chính xác cao cho tính năng nhập liệu Voice-to-Data. |
 | **Vision / OCR** | **Gemini Pro Vision** | Trích xuất dữ liệu từ ảnh chụp Sổ đỏ và phân tích nội dung hình ảnh. |
-| **Thiết kế** | **Modern UI/UX** | Giao diện tối giản (Minimalism), hỗ trợ Dark mode, Micro-animations. |
+| **Thiết kế** | **Flat Design** | Tailwind CSS, Material Icons, Font Roboto, Minimalist UI. |
 
 ---
 

@@ -1,3 +1,9 @@
+# [ PROJECT_PLAN ] | [ DATABASE_PLAN ] | [ DATABASE_MONGO_PLAN ] | [ UI_DESIGN_PLAN ]
+
+> [!IMPORTANT]
+> **QUY TẮC ĐỒNG BỘ DỮ LIỆU:**
+> Khi 1 trong 4 file kế hoạch (Project, Database, Database Mongo, UI Design) thay đổi hoặc update tính năng, **bắt buộc** phải cập nhật cấu trúc dữ liệu (các trường dữ liệu) vào các file còn lại để đảm bảo tính nhất quán.
+
 # Thiết kế Cơ sở Dữ liệu (Database Plan) - Real Estate Manager
 
 Tài liệu này mô tả cấu trúc cơ sở dữ liệu quan hệ cho ứng dụng Quản lý Nguồn hàng Bất động sản, dựa trên các yêu cầu từ `PROJECT_PLAN.md`.
@@ -159,6 +165,14 @@ Hệ thống sử dụng **PostgreSQL** với các bảng chính và mối quan 
 | `images` | JSONB | Danh sách URL/Path ảnh được chọn và thứ tự hiển thị. |
 | `platform` | VARCHAR(50) | Loại nền tảng (ZALO, FACEBOOK, TIKTOK...). |
 | `created_at` | TIMESTAMP | Thời gian tạo. |
+
+#### Bảng `real_estate_interests` (Theo dõi/Quan tâm)
+| Trường | Kiểu dữ liệu | Mô tả |
+| :--- | :--- | :--- |
+| `id` | UUID (PK) | Định danh duy nhất. |
+| `user_id` | UUID (FK) | Người dùng quan tâm. |
+| `real_estate_id` | UUID (FK) | Bất động sản được quan tâm. |
+| `created_at` | TIMESTAMP | Thời gian bắt đầu quan tâm. |
 
 ---
 
