@@ -10,17 +10,17 @@ Tài liệu này định nghĩa phong cách thiết kế và cấu trúc các m�
 
 ## 1. Phong cách Thiết kế Chủ đạo (Design System)
 
-- **Ngôn ngữ thiết kế**: **Flat Design** (Thiết kế phẳng). Tối giản hóa mọi yếu tố, loại bỏ đổ bóng sâu, độ mờ và các hiệu ứng 3D để tối ưu tốc độ xử lý thị giác.
+- **Ngôn ngữ thiết kế**: **Minimalism & Bold Typography** (Tối giản & Kiểu chữ đậm). Tối đa hóa khoảng không gian trắng (negative space), loại bỏ các chi tiết trang trí thừa, hạn chế sử dụng card có nền màu hoặc đổ bóng nếu không thực sự cần thiết. Nội dung được phân tách chủ yếu bằng khoảng trắng và sự phân cấp của chữ.
+- **Typography**: 
+    - Font **Inter**, **Poppins** hoặc **SF Pro Display** làm chủ đạo. 
+    - **Bold Typography**: Sử dụng font chữ to, cực đậm (Heavy/Black/Bold) cho các tiêu đề chính (Headings) và các con số quan trọng (Giá tiền, Diện tích) để tạo sự chú ý và ấn tượng thị giác ngay lập tức.
 - **Màu sắc chủ đạo (Color Palette)**: 
-    - **Primary - Deep Blue (#1A237E)**: Màu sắc vững chãi cho điều hướng và các nút hành động.
-    - **Accent - Gold (#C5A059)**: Tạo điểm nhấn cho giá cả và trạng thái.
-    - **Background - Pure White (#FFFFFF)**: Nền trắng tuyệt đối.
-    - **Surface - Off-White (#F2F4F7)**: Các khối nội dung được phân tách bằng màu nền khác biệt thay vì đổ bóng.
-- **Chế độ hiển thị**: Light Mode với độ tương phản cao.
-- **Typography**: Font **Roboto** toàn cục, trọng tâm vào phân cấp chữ (font weight) để chỉ dẫn người dùng.
-- **Iconography**: Sử dụng bộ **Material Symbols / Icons** của Google (dạng Rounded hoặc Sharp) để đảm bảo tính đồng bộ và chuyên nghiệp.
-- **Framework CSS**: Ưu tiên sử dụng **Tailwind CSS** để xây dựng giao diện nhanh, tối ưu hiệu năng và dễ dàng duy trì. Chỉ sử dụng CSS thuần cho các animation hoặc logic phức tạp mà Tailwind không hỗ trợ.
-- **Micro-animations**: Hiệu ứng chuyển cảnh mượt mà, các nút bấm có độ nảy (haptic feedback) và hiệu ứng hover nhẹ nhàng.
+    - **Monochrome Foundation**: Sử dụng nền Trắng tuyệt đối (Pure White #FFFFFF), chữ Đen (Pitch Black #000000) và các sắc độ xám (Grays) để làm nền tảng tĩnh lặng.
+    - **Vibrant Accent**: Dùng một màu nhấn duy nhất và nổi bật (ví dụ: Electric Blue #2563EB) chỉ dành riêng cho các nút call-to-action (CTA), đường link hoặc các trạng thái đặc biệt quan trọng.
+- **Chế độ hiển thị**: Light Mode với độ tương phản tuyệt đối giữa nền trắng và chữ đen/xám đậm.
+- **Iconography**: Sử dụng bộ icon dạng nét thanh mảnh (Line icons hoặc Material Symbols Outlined), kích thước nhỏ gọn để không tranh giành sự chú ý với Typography lớn.
+- **Framework CSS**: Ưu tiên sử dụng **Tailwind CSS** để dễ dàng thiết lập các font size lớn, font weight đa dạng và margin/padding rộng (ví dụ: `text-4xl font-black tracking-tight`, `p-8`).
+- **Micro-animations**: Ít nhưng tinh tế. Chuyển cảnh tức thì (snappy), hiệu ứng hover làm nổi bật chữ hoặc icon mà không làm xao nhãng.
 
 ---
 
@@ -305,7 +305,8 @@ Danh sách các mục dưới dạng List Item phẳng (Flat List):
 
 ## 6. Ghi chú về UX (UX Notes)
 
-- **Flat Style**: Các khối nội dung được phân tách bằng màu nền `Off-White` thay vì đổ bóng.
-- **Active State**: Tab hoặc Icon đang chọn sẽ chuyển sang màu `Deep Blue`.
-- **Search First**: Thanh tìm kiếm luôn phải ở vị trí dễ tiếp cận nhất.
-- **Loading State**: Sử dụng Skeleton Screen thay vì Spinner truyền thống.
+- **Minimalist Layout**: Hạn chế tối đa các đường viền (borders) cứng và hộp (cards) kín. Ưu tiên phân cách nội dung bằng khoảng trắng (spacing) rộng rãi và kích thước chữ (Typography).
+- **Typography as UI**: Chữ không chỉ để đọc mà còn để định hướng. Các khối thông tin quan trọng nhất (như Giá, Tiêu đề) cần được phóng to và làm siêu đậm (Black/ExtraBold) để dẫn dắt mắt người dùng.
+- **Active State**: Tab hoặc Icon đang chọn sẽ có chữ đậm hơn hẳn, màu đen tuyền hoặc đi kèm một dấu chấm màu nhấn (dot indicator) đơn giản, thay vì tô cả một mảng màu nền lớn.
+- **Search First**: Thanh tìm kiếm luôn ở vị trí dễ tiếp cận, thiết kế dưới dạng thanh input không viền (borderless) với chữ placeholder lớn hoặc chỉ là một icon kính lúp to bản.
+- **Loading State**: Sử dụng Text Skeleton (chỉ làm mờ/nhấp nháy các khối chữ) thay vì các khối hộp Skeleton xám lớn làm phá vỡ không gian trắng.
