@@ -6,7 +6,7 @@ Tài liệu này mô tả chi tiết kiến trúc, công nghệ, cấu trúc th�
 
 ## 1. Công nghệ & Kiến trúc (Tech Stack)
 
-*   **Core Framework**: **NestJS** (Framework toàn diện dành cho Node.js, cung cấp kiến trúc module hóa rõ ràng, Dependency Injection, cực kỳ phù hợp cho dự án quy mô vừa và lớn).
+*   **Core Framework**: **NestJS** kết hợp với **Fastify** (Sử dụng Fastify làm HTTP engine thay cho Express để đạt hiệu năng tối đa, xử lý request nhanh hơn gấp 2-3 lần).
 *   **Ngôn ngữ**: **TypeScript** (NestJS hỗ trợ TypeScript native 100%).
 *   **Cơ sở dữ liệu**: **MongoDB** (NoSQL, linh hoạt với dữ liệu BĐS).
 *   **ODM**: **Mongoose** (Được tích hợp thông qua `@nestjs/mongoose`).
