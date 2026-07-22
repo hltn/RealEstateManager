@@ -69,14 +69,11 @@ export const NewsArticleSchema = SchemaFactory.createForClass(NewsArticle);
 
 Module cần expose các API RESTful để Admin UI (Frontend) kết nối.
 
-### 2.1 API Màn hình 1 (Gộp Job 1, 2, 3)
+### 2.1 API Màn hình 1 (Kích hoạt thủ công & Duyệt tin)
 - **Kích hoạt thu thập tin tức thủ công**
   - `POST /api/news-manager/trigger`
   - *Mô tả:* Kích hoạt luồng Firecrawl (Job 1) -> AI Processing (Job 2). Quá trình này sẽ sinh ra file JSON chứa 5 bài viết xuất sắc nhất.
   - *Response:* Mảng JSON 5 bản tin (chứa 10 trường).
-- **Quản lý Cronjob**
-  - `GET /api/news-manager/cron/status` -> Trả về cấu hình/tình trạng cronjob (đang bật hay tắt).
-  - `POST /api/news-manager/cron/toggle` -> Bật/Tắt cronjob.
 - **Lưu tin tức đã chọn vào Database (Job 3)**
   - `POST /api/news-manager/articles/save`
   - *Body:* Array các object bản tin (kèm url).
@@ -90,6 +87,11 @@ Module cần expose các API RESTful để Admin UI (Frontend) kết nối.
   - `POST /api/news-manager/articles/publish`
   - *Body:* `articleIds` (danh sách ID trong Mongo).
   - *Logic:* Fetch từ Mongo -> POST sang WP REST API -> Cập nhật `wpPostId` và `status`.
+
+### 2.3 API Màn hình 3 (Quản lý Cronjob)
+- **Quản lý Cronjob**
+  - `GET /api/news-manager/cron/status` -> Trả về cấu hình/tình trạng cronjob (đang bật hay tắt).
+  - `POST /api/news-manager/cron/toggle` -> Bật/Tắt cronjob.
 
 ## 3. Component & Service Architecture
 

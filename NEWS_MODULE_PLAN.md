@@ -84,15 +84,17 @@ Bổ sung các bảng (hoặc collections) sau:
 - **Tầng 3 (WordPress):** Khi gửi bài lên WP, đính kèm custom field (Meta Data) chứa giá trị `urlHash`. Trong trường hợp DB lỗi/mất đồng bộ, code có thể truy vấn `GET WP kèm meta_key=urlHash` trước khi đăng để kiểm tra bài này đã tồn tại trên WP chưa, giúp ngăn đăng đúp tuyệt đối.
 
 ## 5. Giao Diện Quản Trị (Admin UI)
-Để tiện lợi cho việc vận hành, module này sẽ thiết kế 2 màn hình chính:
+Để tiện lợi cho việc vận hành, module này sẽ thiết kế 3 màn hình chính (truy cập qua Sidebar / Vertical Tab):
 1. **Màn hình Thu Thập (Job 1, 2, 3):** 
-   - Quản lý Cronjob (Bật/Tắt) & Nút bấm "Thu Thập Tin Tức Ngay".
+   - Có nút bấm "Thu Thập Tin Tức Ngay" (kích hoạt luồng thủ công).
    - Sau khi thực thi Crawl và AI, màn hình hiển thị trực tiếp danh sách Top 5 bản tin chi tiết (10 trường thông tin).
    - Có Checkbox để người dùng chọn tin cần duyệt & Nút "Lưu vào Database".
 2. **Màn hình Quản Lý Tin Tức (Job 4):**
-   - Truy cập thông qua một tab dọc (Sidebar / Vertical Tab).
    - Hiển thị danh sách các bài viết đã duyệt (đã lưu Database) dưới dạng Bảng (Data Table).
    - Cho phép chọn bài và bấm nút "Đăng lên WordPress".
+3. **Màn hình Quản Lý Cronjob:**
+   - Dành riêng cho việc cấu hình tự động (Bật/Tắt Cronjob).
+   - Hiển thị trạng thái hoạt động của hệ thống ngầm.
 
 ## User Review Required
 > [!IMPORTANT]
