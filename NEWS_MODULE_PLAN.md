@@ -84,20 +84,32 @@ Bổ sung các bảng (hoặc collections) sau:
 - **Tầng 3 (WordPress):** Khi gửi bài lên WP, đính kèm custom field (Meta Data) chứa giá trị `urlHash`. Trong trường hợp DB lỗi/mất đồng bộ, code có thể truy vấn `GET WP kèm meta_key=urlHash` trước khi đăng để kiểm tra bài này đã tồn tại trên WP chưa, giúp ngăn đăng đúp tuyệt đối.
 
 ## 5. Giao Diện Quản Trị (Admin UI)
-Để tiện lợi cho việc vận hành, module này sẽ thiết kế 3 màn hình chính (truy cập qua Sidebar / Vertical Tab):
-1. **Màn hình Thu Thập (Job 1, 2, 3):** 
-   - Có nút bấm "Thu Thập Tin Tức Ngay" (kích hoạt luồng thủ công).
+Để tiện lợi cho việc vận hành, module này sẽ thiết kế 4 màn hình chính (truy cập qua Sidebar / Vertical Tab). Yêu cầu đối với Màn hình Quản Lý Nguồn Tin (Phase 5) được quy định chi tiết như sau:
+
+1. **Màn hình Quản Lý Nguồn Tin (News Source):**
+   - **Mục đích:** Quản lý danh sách các website/link cần crawl.
+   - **Tính năng (CRUD Full Features):**
+     - **Create (Thêm mới):** Cho phép nhập `name` (Tên nguồn), `url` (Link cào), `isActive` (Trạng thái), `crawlConfig` (JSON/Form cấu hình cho Firecrawl).
+     - **Read (Xem danh sách):** Hiển thị Data Table danh sách các nguồn tin đã lưu. Cột hiển thị: Tên nguồn, URL gốc, Trạng thái hoạt động (Badge Xanh/Đỏ), Ngày tạo, Thao tác.
+     - **Update (Sửa):** Form cập nhật lại thông tin của một nguồn tin đã có.
+     - **Delete (Xóa):** Xóa hoàn toàn khỏi Database (có popup xác nhận) hoặc hỗ trợ Soft Delete.
+     - **Toggle Status:** Nút bật/tắt (Switch toggle) nhanh trạng thái `isActive`.
+   - **Yêu cầu UI:** Thiết kế tối giản (Minimalism), form nhập liệu sử dụng thẻ trắng (floating card), nút CTA màu Electric Blue, hiển thị thông báo toast ngay sau khi thao tác thành công.
+
+2. **Màn hình Thu Thập (Job 1, 2, 3):** 
+   - Có nút bấm "Thu Thập Tin Tức Ngay" (kích hoạt luồng thủ công - lấy danh sách từ NewsSource có isActive: true).
    - Sau khi thực thi Crawl và AI, màn hình hiển thị trực tiếp danh sách Top 5 bản tin chi tiết (10 trường thông tin).
    - Có Checkbox để người dùng chọn tin cần duyệt & Nút "Lưu vào Database".
-2. **Màn hình Quản Lý Tin Tức (Job 4):**
+
+3. **Màn hình Quản Lý Tin Tức (Job 4):**
    - Hiển thị danh sách các bài viết đã duyệt (đã lưu Database) dưới dạng Bảng (Data Table).
    - Cho phép chọn bài và bấm nút "Đăng lên WordPress".
-3. **Màn hình Quản Lý Cronjob:**
+
+4. **Màn hình Quản Lý Cronjob:**
    - Dành riêng cho việc cấu hình tự động (Bật/Tắt Cronjob).
    - Hiển thị trạng thái hoạt động của hệ thống ngầm.
 
-## User Review Required
-> [!IMPORTANT]
-> Em đã cập nhật lại kế hoạch: (1) Cào chi tiết và lấy đủ data ở Job 1; (2) AI xếp hạng Top 5 tin có chấm điểm và lý do ở Job 2; (3) Tách thành Job 3 và Job 4 là các bước thao tác thủ công (Người dùng tự chọn tin để lưu DB, và chọn tin để đăng WordPress). Anh xem lại nhé, nếu OK thì bấm **Proceed** để em cập nhật lại Task List và cho Coder triển khai!
->
-> Ngoài ra, hệ thống chống trùng lặp 3 tầng đã đảm bảo tuyệt đối không đăng lặp bài, anh có muốn bổ sung thêm điều kiện lọc bài viết nào khác (chẳng hạn lọc bài theo từ khóa cấm) không?
+## 6. PM Sign-off & Task Delegation
+**Product Manager Sign-off:** Kế hoạch này đã được rà soát và xác nhận (Approved). Việc quản lý nguồn tin được mô tả cụ thể thành Phase 5 với chuẩn CRUD đầy đủ. Các thiết kế UI Admin và luồng crawl dữ liệu đều chặt chẽ và khả thi.
+
+**Tiếp theo:** Uỷ quyền cho `architect_agent` tiến hành thiết kế hệ thống (cập nhật cấu trúc Database/API/UI cho màn hình Quản Lý Nguồn Tin) và bắt đầu quá trình triển khai theo `task.md`.

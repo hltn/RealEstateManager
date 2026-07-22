@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { HealthController } from './health.controller';
 import { AppService } from './app.service';
@@ -10,6 +11,7 @@ import { join } from 'path';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -22,7 +24,7 @@ import { join } from 'path';
       inject: [ConfigService],
     }),
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'client', 'dist'),
+      rootPath: join(__dirname, '..', '..', 'RealEstateAdminApp', 'dist'),
       exclude: ['/api/(.*)'],
     }),
     NewsFireCrawlManagerModule,
