@@ -14,6 +14,9 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
+  // Set global prefix
+  app.setGlobalPrefix('api');
+
   // Enable CORS
   app.enableCors();
 
