@@ -21,7 +21,7 @@ export class AIFilterService {
 
     // Check OpenRouter first, fallback to Gemini
     const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
-    const model = this.configService.get<string>('AI_MODEL') || process.env.AI_MODEL || 'google/gemini-2.5-flash';
+    const model = this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash';
     
     const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY');
     

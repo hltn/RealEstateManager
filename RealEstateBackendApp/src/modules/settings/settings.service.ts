@@ -12,25 +12,39 @@ export class SettingsService {
 
   getAiConfig() {
     const apiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
+    const must1cApiKey = this.configService.get<string>('MUST1C_API_KEY') || process.env.MUST1C_API_KEY;
     return {
-      provider: this.configService.get<string>('AI_PROVIDER') || process.env.AI_PROVIDER || 'OpenRouter',
-      model: this.configService.get<string>('AI_MODEL') || process.env.AI_MODEL || 'google/gemini-2.5-flash',
+      provider: this.configService.get<string>('OPENROUTER_AI_PROVIDER') || process.env.OPENROUTER_AI_PROVIDER || 'OpenRouter',
+      model: this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash',
       apiKey: apiKey ? '***' : '',
+      must1cApiKey: must1cApiKey ? '***' : '',
+      must1cModel: this.configService.get<string>('MUST1C_MODEL') || process.env.MUST1C_MODEL || '',
+      activePlatform: this.configService.get<string>('ACTIVE_AI_PLATFORM') || process.env.ACTIVE_AI_PLATFORM || 'OpenRouter',
     };
   }
 
-  updateAiConfig(config: { provider?: string; model?: string; apiKey?: string }) {
+  updateAiConfig(config: { provider?: string; model?: string; apiKey?: string; must1cApiKey?: string; must1cModel?: string; activePlatform?: string }) {
     let envContent = '';
     if (fs.existsSync(this.envPath)) {
       envContent = fs.readFileSync(this.envPath, 'utf8');
     }
 
     const updates: Record<string, string> = {};
-    if (config.provider) updates['AI_PROVIDER'] = config.provider;
-    if (config.model) updates['AI_MODEL'] = config.model;
+    if (config.provider) updates['OPENROUTER_AI_PROVIDER'] = config.provider;
+    if (config.model) updates['OPENROUTER_AI_MODEL'] = config.model;
     
     if (config.apiKey && config.apiKey !== '***') {
       updates['OPENROUTER_API_KEY'] = config.apiKey;
+    }
+
+    if (config.must1cApiKey && config.must1cApiKey !== '***') {
+      updates['MUST1C_API_KEY'] = config.must1cApiKey;
+    }
+    if (config.must1cModel) {
+      updates['MUST1C_MODEL'] = config.must1cModel;
+    }
+    if (config.activePlatform) {
+      updates['ACTIVE_AI_PLATFORM'] = config.activePlatform;
     }
 
     for (const [key, value] of Object.entries(updates)) {
