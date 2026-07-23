@@ -8,57 +8,52 @@ export default function AiConfigScreen() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState({ text: '', type: '' });
-
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: string }>({ text: '', type: '' });
+
   const [allModels, setAllModels] = useState<any[]>([]);
-  const [providersList, setProvidersList] = useState<string[]>([]);
   const [modelsList, setModelsList] = useState<any[]>([]);
+  const [providersList, setProvidersList] = useState<string[]>([]);
 
   useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/settings/ai-config');
-      if (response.ok) {
-        const data = await response.json();
-        setApiKey(data.apiKey || '');
-        
-        if (data.apiKey) {
-          setHasApiKey(true);
-          await fetchModels(data.provider, data.model);
+    const loadConfig = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch('/api/settings/ai-config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.apiKey) {
+            setApiKey('***');
+            setHasApiKey(true);
+            setProvider(data.provider || '');
+            setModel(data.model || '');
+            await fetchModels(data.provider, data.model);
+          }
         }
-      } else {
-        throw new Error('Failed to fetch config');
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
+    loadConfig();
+  }, []);
 
   const fetchModels = async (initialProvider?: string, initialModel?: string) => {
     try {
-      const response = await fetch('/api/settings/openrouter-models');
-      if (response.ok) {
-        const data = await response.json();
-        const models = data.data || [];
+      const res = await fetch('/api/settings/ai-models');
+      if (res.ok) {
+        const data = await res.json();
+        const models = data.models || [];
         setAllModels(models);
-
-        const providers = Array.from(new Set(models.map((m: any) => m.id.split('/')[0]))) as string[];
+        
+        const providers = [...new Set(models.map((m: any) => m.id.split('/')[0]))] as string[];
         setProvidersList(providers);
 
-        let currentProvider = initialProvider;
-        if (!currentProvider || !providers.includes(currentProvider)) {
-          currentProvider = providers.length > 0 ? providers[0] : '';
-        }
-        setProvider(currentProvider);
+        const activeProvider = initialProvider || providers[0] || '';
+        setProvider(activeProvider);
 
-        const filteredModels = models.filter((m: any) => m.id.startsWith(currentProvider + '/'));
+        const filteredModels = models.filter((m: any) => m.id.startsWith(activeProvider + '/'));
         setModelsList(filteredModels);
 
         if (initialModel && filteredModels.find((m: any) => m.id === initialModel)) {
@@ -140,34 +135,34 @@ export default function AiConfigScreen() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold text-white flex items-center gap-3">
-          <Bot className="text-purple-500" size={32} />
+        <h2 className="text-title-sm font-semibold text-gray-800 dark:text-white/90 flex items-center gap-3">
+          <Bot className="text-brand-500" size={32} />
           Cấu hình AI
         </h2>
-        <p className="text-slate-400">
+        <p className="text-theme-sm text-gray-500 dark:text-gray-400">
           Cài đặt kết nối với các mô hình AI (thông qua OpenRouter) để phân tích, tóm tắt và đánh giá tin tức bất động sản.
         </p>
       </div>
 
-      <div className="glass-panel p-6 rounded-2xl border border-white/10 max-w-2xl">
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] p-6 max-w-2xl">
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
-            <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+            <div className="animate-spin w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full"></div>
           </div>
         ) : (
           <div className="space-y-6">
             {message.text && (
-              <div className={`p-4 rounded-xl flex items-start gap-3 ${
-                message.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              <div className={`p-4 rounded-lg flex items-start gap-3 ${
+                message.type === 'error' ? 'bg-error-50 dark:bg-error-500/15 text-error-500 border border-error-100 dark:border-error-500/25' : 'bg-success-50 dark:bg-success-500/15 text-success-500 border border-success-100 dark:border-success-500/25'
               }`}>
                 <AlertCircle size={20} className="shrink-0 mt-0.5" />
-                <p className="text-sm">{message.text}</p>
+                <p className="text-theme-sm">{message.text}</p>
               </div>
             )}
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label className="text-theme-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
                   OpenRouter API Key
                 </label>
                 <input
@@ -175,19 +170,19 @@ export default function AiConfigScreen() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="sk-or-v1-..."
-                  className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all"
+                  className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2.5 text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300 focus:ring-1 focus:ring-brand-500 transition-all"
                 />
-                <p className="text-xs text-slate-500 mt-2">
-                  Lấy API Key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">openrouter.ai/keys</a>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  Lấy API Key tại <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">openrouter.ai/keys</a>
                 </p>
               </div>
 
               {!hasApiKey ? (
-                <div className="pt-4 border-t border-white/10 flex justify-end">
+                <div className="pt-4 border-t border-gray-200 dark:border-white/[0.05] flex justify-end">
                   <button
                     onClick={handleConnect}
                     disabled={isSaving || !apiKey}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-all disabled:opacity-50"
                   >
                     {isSaving ? (
                       <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
@@ -200,43 +195,43 @@ export default function AiConfigScreen() {
               ) : (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                    <label className="text-theme-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
                       Nhà cung cấp (Vendor)
                     </label>
                     <select
                       value={provider}
                       onChange={(e) => handleProviderChange(e.target.value)}
-                      className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all appearance-none"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2.5 text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300 focus:ring-1 focus:ring-brand-500 transition-all appearance-none"
                     >
                       {providersList.map(p => (
-                        <option key={p} value={p} className="bg-slate-900">{p}</option>
+                        <option key={p} value={p} className="bg-white dark:bg-gray-900">{p}</option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                    <label className="text-theme-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
                       Mô hình (Model)
                     </label>
                     <select
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
-                      className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all appearance-none"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2.5 text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300 focus:ring-1 focus:ring-brand-500 transition-all appearance-none"
                     >
                       {modelsList.map(m => (
-                        <option key={m.id} value={m.id} className="bg-slate-900">{m.name || m.id}</option>
+                        <option key={m.id} value={m.id} className="bg-white dark:bg-gray-900">{m.name || m.id}</option>
                       ))}
                     </select>
-                    <p className="text-xs text-slate-500 mt-2">
-                      ID mô hình: <span className="text-blue-400">{model}</span>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      ID mô hình: <span className="text-brand-500">{model}</span>
                     </p>
                   </div>
                   
-                  <div className="pt-4 border-t border-white/10 flex justify-end">
+                  <div className="pt-4 border-t border-gray-200 dark:border-white/[0.05] flex justify-end">
                     <button
                       onClick={handleSaveModel}
                       disabled={isSaving}
-                      className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] disabled:opacity-50"
+                      className="flex items-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-all disabled:opacity-50"
                     >
                       {isSaving ? (
                         <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>

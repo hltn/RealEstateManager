@@ -85,12 +85,12 @@ export default function ManualCrawlScreen() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      <header className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 pb-6 border-b border-white/10">
+      <header className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 pb-6 border-b border-gray-200 dark:border-white/[0.05]">
         <div>
-          <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400 mb-2">
+          <h2 className="text-title-sm font-semibold text-gray-800 dark:text-white/90 mb-2">
             Thu thập tin tức thủ công
           </h2>
-          <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">
+          <p className="text-theme-sm text-gray-500 dark:text-gray-400 max-w-2xl leading-relaxed">
             Kích hoạt luồng Firecrawl cào tin và dùng AI phân tích chuyên sâu tự
             động.
           </p>
@@ -99,14 +99,13 @@ export default function ManualCrawlScreen() {
           <button
             onClick={handleCrawl}
             disabled={loading || analyzing}
-            className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:from-blue-500 hover:to-indigo-500 hover:shadow-[0_0_30px_rgba(79,70,229,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden"
+            className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-brand-500 hover:bg-brand-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
             <Play
               size={20}
-              className={`relative z-10 ${loading ? "animate-pulse" : ""}`}
+              className={loading ? "animate-pulse" : ""}
             />
-            <span className="relative z-10">
+            <span>
               {loading ? "Đang thu thập..." : "Chạy quy trình thu thập"}
             </span>
           </button>
@@ -115,14 +114,13 @@ export default function ManualCrawlScreen() {
             <button
               onClick={handleAnalyze}
               disabled={analyzing || loading}
-              className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl hover:from-purple-500 hover:to-pink-500 hover:shadow-[0_0_30px_rgba(236,72,153,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden animate-[fadeIn_0.3s_ease-out]"
+              className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-brand-500 hover:bg-brand-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
             >
-              <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
               <Search
                 size={20}
-                className={`relative z-10 ${analyzing ? "animate-pulse" : ""}`}
+                className={analyzing ? "animate-pulse" : ""}
               />
-              <span className="relative z-10">
+              <span>
                 {analyzing ? "Đang phân tích..." : "Phân tích AI"}
               </span>
             </button>
@@ -131,84 +129,93 @@ export default function ManualCrawlScreen() {
       </header>
 
       {message && (
-        <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center gap-3 text-blue-200 animate-[fadeIn_0.3s_ease-out]">
-          <Check className="text-blue-400 shrink-0" size={20} />
-          <span className="text-sm font-medium">{message}</span>
+        <div className="p-4 rounded-lg bg-success-50 dark:bg-success-500/15 border border-success-100 dark:border-success-500/25 flex items-center gap-3 text-success-500">
+          <Check className="shrink-0" size={20} />
+          <span className="text-theme-sm font-medium">{message}</span>
         </div>
       )}
 
       {rawData.length > 0 && results.length === 0 && (
-        <div className="space-y-4 animate-[fadeInUp_0.5s_ease-out_both]">
-          <div className="flex items-center gap-2 bg-slate-900/50 p-4 rounded-2xl border border-white/5">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <span className="bg-purple-600 w-2 h-6 rounded-full inline-block"></span>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-4 rounded-2xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 flex items-center gap-2">
+              <span className="bg-brand-500 w-2 h-6 rounded-full inline-block"></span>
               Dữ liệu thô đã thu thập ({rawData.length} bài)
             </h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {rawData.map((item, idx) => (
-              <div
-                key={idx}
-                className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col group hover:border-white/20 transition-colors"
-              >
-                {item.thumbnailUrl && (
-                  <img
-                    src={item.thumbnailUrl}
-                    alt={item.title}
-                    className="w-full h-48 object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                )}
-                <div className="p-4 flex flex-col flex-grow">
-                  <h4 className="font-medium text-white mb-2 line-clamp-2">
-                    {item.title}
-                  </h4>
-                  {item.description && (
-                    <p className="text-sm text-slate-400 mb-4 line-clamp-3 flex-grow">
-                      {item.description}
-                    </p>
-                  )}
-                  <div className="flex justify-between items-center text-xs text-slate-400 mt-auto pt-3 border-t border-white/10">
-                    <span className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1">
-                        <AlertCircle size={12} /> {item.source}
-                      </span>
-                      {item.publishedAt && (
-                        <span>
-                          {new Date(item.publishedAt).toLocaleDateString(
-                            "vi-VN",
-                          )}
-                        </span>
-                      )}
-                    </span>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-400 hover:underline bg-blue-500/10 px-3 py-1.5 rounded-lg"
-                    >
-                      Link gốc
-                    </a>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]">
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="border-b border-gray-100 dark:border-white/[0.05]">
+                  <tr className="bg-gray-50 dark:bg-gray-900">
+                    <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Thumbnail</th>
+                    <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Tiêu đề</th>
+                    <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Mô tả</th>
+                    <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Nguồn</th>
+                    <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Ngày</th>
+                    <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Link</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                  {rawData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
+                      <td className="px-5 py-4">
+                        {item.thumbnailUrl ? (
+                          <img
+                            src={item.thumbnailUrl}
+                            alt={item.title}
+                            className="w-[60px] h-[40px] object-cover rounded"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="w-[60px] h-[40px] rounded bg-gray-100 dark:bg-gray-800" />
+                        )}
+                      </td>
+                      <td className="px-5 py-4 text-theme-sm text-gray-800 dark:text-white/90 font-medium max-w-xs">
+                        <span className="line-clamp-2">{item.title}</span>
+                      </td>
+                      <td className="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400 max-w-sm">
+                        <span className="line-clamp-2">{item.description}</span>
+                      </td>
+                      <td className="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        {item.source}
+                      </td>
+                      <td className="px-5 py-4 text-theme-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        {item.publishedAt
+                          ? new Date(item.publishedAt).toLocaleDateString("vi-VN")
+                          : "—"}
+                      </td>
+                      <td className="px-5 py-4">
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-brand-500 hover:underline text-theme-sm"
+                        >
+                          Link gốc
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {results.length > 0 ? (
-        <div className="space-y-6 animate-[fadeInUp_0.5s_ease-out_both]">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900/50 p-4 rounded-2xl border border-white/5">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <span className="bg-blue-600 w-2 h-6 rounded-full inline-block"></span>
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 rounded-2xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 flex items-center gap-2">
+              <span className="bg-brand-500 w-2 h-6 rounded-full inline-block"></span>
               Kết quả phân tích từ AI ({results.length})
             </h3>
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-6 py-2.5 rounded-xl transition-all font-medium hover:shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+              className="flex items-center gap-2 bg-success-500 hover:bg-success-600 text-white px-5 py-3 rounded-lg transition-all font-medium"
             >
               <Save size={18} />
               Duyệt & Lưu Database
@@ -219,59 +226,59 @@ export default function ManualCrawlScreen() {
             {results.map((item, idx) => (
               <div
                 key={idx}
-                className="glass-panel p-7 rounded-2xl hover:border-blue-500/40 transition-all duration-300 group hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]"
+                className="rounded-2xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03] p-7 hover:border-brand-300 dark:hover:border-brand-500/40 transition-all duration-300 group"
               >
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
-                  <h4 className="text-xl font-semibold text-white leading-tight group-hover:text-blue-200 transition-colors">
+                  <h4 className="text-xl font-semibold text-gray-800 dark:text-white/90 leading-tight group-hover:text-brand-500 transition-colors">
                     {item.title}
                   </h4>
                   <span
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shrink-0 shadow-inner ${
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shrink-0 ${
                       item.impactLevel === "Rất cao"
-                        ? "bg-red-500/10 text-red-400 border border-red-500/30"
-                        : "bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                        ? "bg-error-50 dark:bg-error-500/15 text-error-500 border border-error-100 dark:border-error-500/25"
+                        : "bg-warning-50 dark:bg-warning-500/15 text-warning-500 border border-warning-100 dark:border-warning-500/25"
                     }`}
                   >
                     {item.impactLevel}
                   </span>
                 </div>
-                <p className="text-slate-300 text-sm mb-6 leading-relaxed bg-black/20 p-4 rounded-xl border border-white/5">
+                <p className="text-gray-500 dark:text-gray-400 text-theme-sm mb-6 leading-relaxed bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-100 dark:border-white/[0.05]">
                   {item.summary}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm mb-6">
                   <div className="space-y-2">
-                    <span className="text-indigo-400 font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>{" "}
+                    <span className="text-brand-500 font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-500"></span>{" "}
                       Lý do quan trọng
                     </span>
-                    <p className="text-slate-300 leading-relaxed pl-3.5 border-l border-indigo-500/20">
+                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed pl-3.5 border-l-2 border-brand-200 dark:border-brand-500/20">
                       {item.importanceReason}
                     </p>
                   </div>
                   <div className="space-y-2">
-                    <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>{" "}
+                    <span className="text-success-500 font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-success-500"></span>{" "}
                       Nhận định chuyên gia
                     </span>
-                    <p className="text-slate-300 leading-relaxed pl-3.5 border-l border-emerald-500/20">
+                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed pl-3.5 border-l-2 border-success-200 dark:border-success-500/20">
                       {item.expertOpinion}
                     </p>
                   </div>
                 </div>
-                <div className="pt-4 border-t border-white/10 flex flex-wrap gap-x-6 gap-y-3 text-xs text-slate-400">
+                <div className="pt-4 border-t border-gray-200 dark:border-white/[0.05] flex flex-wrap gap-x-6 gap-y-3 text-xs text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1.5 font-medium">
-                    <AlertCircle size={14} className="text-slate-500" />{" "}
+                    <AlertCircle size={14} className="text-gray-400 dark:text-gray-500" />{" "}
                     {item.source}
                   </span>
-                  <span className="flex items-center gap-1.5 font-medium text-slate-300">
-                    <span className="text-slate-500">Đối tượng:</span>{" "}
+                  <span className="flex items-center gap-1.5 font-medium text-gray-600 dark:text-gray-300">
+                    <span className="text-gray-400 dark:text-gray-500">Đối tượng:</span>{" "}
                     {item.targetAudience?.join(", ")}
                   </span>
                   <a
                     href={item.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1 font-medium text-blue-400 hover:text-blue-300 hover:underline ml-auto"
+                    className="flex items-center gap-1 font-medium text-brand-500 hover:text-brand-600 hover:underline ml-auto"
                   >
                     Xem bài viết gốc{" "}
                     <span className="text-lg leading-none">↗</span>
@@ -282,19 +289,17 @@ export default function ManualCrawlScreen() {
           </div>
         </div>
       ) : rawData.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 px-4 rounded-3xl border border-dashed border-white/20 bg-white/5 backdrop-blur-sm mt-8 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-          <div className="relative z-10 flex flex-col items-center text-center">
-            <div className="w-20 h-20 rounded-full bg-slate-800/80 shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-white/10 flex items-center justify-center mb-6 relative">
-              <div className="absolute inset-0 rounded-full border border-blue-500/30 animate-[spin_4s_linear_infinite]"></div>
-              <Search size={36} className="text-blue-400" />
+        <div className="flex flex-col items-center justify-center py-20 px-4 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-white/[0.02] mt-8">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center mb-6">
+              <Search size={36} className="text-brand-500" />
             </div>
-            <h3 className="text-2xl font-semibold text-white mb-3">
+            <h3 className="text-2xl font-semibold text-gray-800 dark:text-white/90 mb-3">
               Chưa có dữ liệu phân tích
             </h3>
-            <p className="text-slate-400 max-w-md text-sm leading-relaxed">
+            <p className="text-gray-500 dark:text-gray-400 max-w-md text-theme-sm leading-relaxed">
               Hệ thống đã sẵn sàng. Hãy bấm nút{" "}
-              <span className="text-blue-400 font-medium">
+              <span className="text-brand-500 font-medium">
                 Chạy quy trình thu thập
               </span>{" "}
               ở góc trên để bắt đầu quét các trang báo và sử dụng AI để lọc tin
