@@ -10,12 +10,14 @@ import { CronjobService } from './services/cronjob.service';
 import { NewsSourceService } from './services/news-source.service';
 import { NewsArticle, NewsArticleSchema } from './schemas/news-article.schema';
 import { NewsSource, NewsSourceSchema } from './schemas/news-source.schema';
+import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: NewsArticle.name, schema: NewsArticleSchema },
       { name: NewsSource.name, schema: NewsSourceSchema },
+      { name: RawArticle.name, schema: RawArticleSchema },
     ]),
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],

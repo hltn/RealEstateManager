@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 import { NewsFireCrawlManagerModule } from './modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { join } from 'path';
       exclude: ['/api/(.*)'],
     }),
     NewsFireCrawlManagerModule,
+    SettingsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

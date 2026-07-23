@@ -1,11 +1,13 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Newspaper, Settings, Search, Database } from 'lucide-react';
+import { LayoutDashboard, Newspaper, Settings, Search, Database, FileText, Bot } from 'lucide-react';
 
 export default function AdminLayout() {
   const navItems = [
     { to: '/', icon: <Search size={20} />, label: 'Thu thập thủ công' },
-    { to: '/manage-wp', icon: <Newspaper size={20} />, label: 'Quản lý Đăng tin' },
+    { to: '/raw-articles', icon: <FileText size={20} />, label: 'Tin tức thô' },
+    { to: '/manage-wp', icon: <Newspaper size={20} />, label: 'Quản lý đăng tin' },
     { to: '/sources', icon: <Database size={20} />, label: 'Quản lý Nguồn tin' },
+    { to: '/ai-config', icon: <Bot size={20} />, label: 'Cấu hình AI' },
     { to: '/cronjob', icon: <Settings size={20} />, label: 'Cấu hình Cronjob' },
   ];
 

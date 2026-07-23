@@ -38,6 +38,20 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @Get('raw-articles')
+  async getRawArticles() {
+    try {
+      const articles = await this.firecrawlService.getRawArticles();
+      return {
+        message: 'Raw articles fetched successfully',
+        data: articles,
+      };
+    } catch (error: any) {
+      this.logger.error('Error fetching raw articles', error.stack);
+      throw new InternalServerErrorException('Failed to fetch raw articles');
+    }
+  }
+
   @Post('crawl')
   async triggerManualCrawl() {
     try {

@@ -1,36 +1,42 @@
-import { useState } from 'react';
-import { Play, Check, AlertCircle, Save, Search } from 'lucide-react';
+import { useState } from "react";
+import { Play, Check, AlertCircle, Save, Search } from "lucide-react";
 
 export default function ManualCrawlScreen() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [rawData, setRawData] = useState<any[]>([]);
-  const [filePath, setFilePath] = useState('');
-  const [message, setMessage] = useState('');
+  const [filePath, setFilePath] = useState("");
+  const [message, setMessage] = useState("");
 
   const handleCrawl = async () => {
     setLoading(true);
-    setMessage('');
+    setMessage("");
     setRawData([]);
     setResults([]);
-    setFilePath('');
+    setFilePath("");
     try {
-      const response = await fetch('/api/news-manager/crawl', { method: 'POST' });
+      const response = await fetch("/api/news-manager/crawl", {
+        method: "POST",
+      });
       const resData = await response.json();
       if (!response.ok) {
-        throw new Error(resData.message || 'Lỗi từ máy chủ');
+        throw new Error(resData.message || "Lỗi từ máy chủ");
       }
       const data = resData.data || [];
       setRawData(data);
-      setFilePath(resData.filePath || '');
+      setFilePath(resData.filePath || "");
       if (data.length > 0) {
-        setMessage('Thu thập thành công ' + data.length + ' bài viết! Vui lòng tiếp tục phân tích AI.');
+        setMessage(
+          "Thu thập thành công " +
+            data.length +
+            " bài viết! Vui lòng tiếp tục phân tích AI.",
+        );
       } else {
-        setMessage('Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.');
+        setMessage("Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.");
       }
     } catch (error: any) {
-      setMessage(error.message || 'Có lỗi xảy ra khi thu thập dữ liệu.');
+      setMessage(error.message || "Có lỗi xảy ra khi thu thập dữ liệu.");
     } finally {
       setLoading(false);
     }
@@ -39,21 +45,21 @@ export default function ManualCrawlScreen() {
   const handleAnalyze = async () => {
     if (!filePath) return;
     setAnalyzing(true);
-    setMessage('');
+    setMessage("");
     try {
-      const response = await fetch('/api/news-manager/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/news-manager/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filePath }),
       });
       const resData = await response.json();
       if (!response.ok) {
-        throw new Error(resData.message || 'Lỗi từ máy chủ');
+        throw new Error(resData.message || "Lỗi từ máy chủ");
       }
       setResults(resData.data || []);
-      setMessage('Phân tích AI thành công!');
+      setMessage("Phân tích AI thành công!");
     } catch (error: any) {
-      setMessage(error.message || 'Có lỗi xảy ra khi phân tích AI.');
+      setMessage(error.message || "Có lỗi xảy ra khi phân tích AI.");
     } finally {
       setAnalyzing(false);
     }
@@ -62,16 +68,18 @@ export default function ManualCrawlScreen() {
   const handleSave = async () => {
     if (results.length === 0) return;
     try {
-      const response = await fetch('/api/news-manager/articles/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/news-manager/articles/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(results),
       });
       const data = await response.json();
-      setMessage(`Đã lưu ${data.savedCount} bài. Bỏ qua ${data.duplicates} bài trùng.`);
+      setMessage(
+        `Đã lưu ${data.savedCount} bài. Bỏ qua ${data.duplicates} bài trùng.`,
+      );
       setResults([]);
     } catch (error) {
-      setMessage('Lỗi khi lưu bài viết.');
+      setMessage("Lỗi khi lưu bài viết.");
     }
   };
 
@@ -79,8 +87,13 @@ export default function ManualCrawlScreen() {
     <div className="w-full flex flex-col gap-6">
       <header className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 pb-6 border-b border-white/10">
         <div>
-          <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400 mb-2">Thu thập tin tức thủ công</h2>
-          <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">Kích hoạt luồng Firecrawl cào tin và dùng AI phân tích chuyên sâu tự động.</p>
+          <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400 mb-2">
+            Thu thập tin tức thủ công
+          </h2>
+          <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">
+            Kích hoạt luồng Firecrawl cào tin và dùng AI phân tích chuyên sâu tự
+            động.
+          </p>
         </div>
         <div className="flex gap-4">
           <button
@@ -89,8 +102,13 @@ export default function ManualCrawlScreen() {
             className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:from-blue-500 hover:to-indigo-500 hover:shadow-[0_0_30px_rgba(79,70,229,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden"
           >
             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-            <Play size={20} className={`relative z-10 ${loading ? 'animate-pulse' : ''}`} />
-            <span className="relative z-10">{loading ? 'Đang thu thập...' : 'Chạy quy trình thu thập'}</span>
+            <Play
+              size={20}
+              className={`relative z-10 ${loading ? "animate-pulse" : ""}`}
+            />
+            <span className="relative z-10">
+              {loading ? "Đang thu thập..." : "Chạy quy trình thu thập"}
+            </span>
           </button>
 
           {rawData.length > 0 && results.length === 0 && (
@@ -100,8 +118,13 @@ export default function ManualCrawlScreen() {
               className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl hover:from-purple-500 hover:to-pink-500 hover:shadow-[0_0_30px_rgba(236,72,153,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden animate-[fadeIn_0.3s_ease-out]"
             >
               <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-              <Search size={20} className={`relative z-10 ${analyzing ? 'animate-pulse' : ''}`} />
-              <span className="relative z-10">{analyzing ? 'Đang phân tích...' : 'Phân tích AI'}</span>
+              <Search
+                size={20}
+                className={`relative z-10 ${analyzing ? "animate-pulse" : ""}`}
+              />
+              <span className="relative z-10">
+                {analyzing ? "Đang phân tích..." : "Phân tích AI"}
+              </span>
             </button>
           )}
         </div>
@@ -124,11 +147,51 @@ export default function ManualCrawlScreen() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {rawData.map((item, idx) => (
-              <div key={idx} className="bg-white/5 p-4 rounded-xl border border-white/10">
-                <h4 className="font-medium text-white mb-2 line-clamp-2">{item.title}</h4>
-                <div className="flex justify-between items-center text-xs text-slate-400">
-                  <span className="flex items-center gap-1"><AlertCircle size={12}/> {item.source}</span>
-                  <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Link gốc</a>
+              <div
+                key={idx}
+                className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col group hover:border-white/20 transition-colors"
+              >
+                {item.thumbnailUrl && (
+                  <img
+                    src={item.thumbnailUrl}
+                    alt={item.title}
+                    className="w-full h-48 object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                )}
+                <div className="p-4 flex flex-col flex-grow">
+                  <h4 className="font-medium text-white mb-2 line-clamp-2">
+                    {item.title}
+                  </h4>
+                  {item.description && (
+                    <p className="text-sm text-slate-400 mb-4 line-clamp-3 flex-grow">
+                      {item.description}
+                    </p>
+                  )}
+                  <div className="flex justify-between items-center text-xs text-slate-400 mt-auto pt-3 border-t border-white/10">
+                    <span className="flex flex-col gap-1">
+                      <span className="flex items-center gap-1">
+                        <AlertCircle size={12} /> {item.source}
+                      </span>
+                      {item.publishedAt && (
+                        <span>
+                          {new Date(item.publishedAt).toLocaleDateString(
+                            "vi-VN",
+                          )}
+                        </span>
+                      )}
+                    </span>
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-400 hover:underline bg-blue-500/10 px-3 py-1.5 rounded-lg"
+                    >
+                      Link gốc
+                    </a>
+                  </div>
                 </div>
               </div>
             ))}
@@ -151,40 +214,67 @@ export default function ManualCrawlScreen() {
               Duyệt & Lưu Database
             </button>
           </div>
-          
+
           <div className="grid grid-cols-1 gap-6">
             {results.map((item, idx) => (
-              <div key={idx} className="glass-panel p-7 rounded-2xl hover:border-blue-500/40 transition-all duration-300 group hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]">
+              <div
+                key={idx}
+                className="glass-panel p-7 rounded-2xl hover:border-blue-500/40 transition-all duration-300 group hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]"
+              >
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
-                  <h4 className="text-xl font-semibold text-white leading-tight group-hover:text-blue-200 transition-colors">{item.title}</h4>
-                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shrink-0 shadow-inner ${
-                    item.impactLevel === 'Rất cao' 
-                      ? 'bg-red-500/10 text-red-400 border border-red-500/30' 
-                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                  }`}>
+                  <h4 className="text-xl font-semibold text-white leading-tight group-hover:text-blue-200 transition-colors">
+                    {item.title}
+                  </h4>
+                  <span
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shrink-0 shadow-inner ${
+                      item.impactLevel === "Rất cao"
+                        ? "bg-red-500/10 text-red-400 border border-red-500/30"
+                        : "bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                    }`}
+                  >
                     {item.impactLevel}
                   </span>
                 </div>
-                <p className="text-slate-300 text-sm mb-6 leading-relaxed bg-black/20 p-4 rounded-xl border border-white/5">{item.summary}</p>
+                <p className="text-slate-300 text-sm mb-6 leading-relaxed bg-black/20 p-4 rounded-xl border border-white/5">
+                  {item.summary}
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm mb-6">
                   <div className="space-y-2">
                     <span className="text-indigo-400 font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> Lý do quan trọng
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>{" "}
+                      Lý do quan trọng
                     </span>
-                    <p className="text-slate-300 leading-relaxed pl-3.5 border-l border-indigo-500/20">{item.importanceReason}</p>
+                    <p className="text-slate-300 leading-relaxed pl-3.5 border-l border-indigo-500/20">
+                      {item.importanceReason}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <span className="text-emerald-400 font-semibold text-xs uppercase tracking-wider flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Nhận định chuyên gia
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>{" "}
+                      Nhận định chuyên gia
                     </span>
-                    <p className="text-slate-300 leading-relaxed pl-3.5 border-l border-emerald-500/20">{item.expertOpinion}</p>
+                    <p className="text-slate-300 leading-relaxed pl-3.5 border-l border-emerald-500/20">
+                      {item.expertOpinion}
+                    </p>
                   </div>
                 </div>
                 <div className="pt-4 border-t border-white/10 flex flex-wrap gap-x-6 gap-y-3 text-xs text-slate-400">
-                  <span className="flex items-center gap-1.5 font-medium"><AlertCircle size={14} className="text-slate-500"/> {item.source}</span>
-                  <span className="flex items-center gap-1.5 font-medium text-slate-300"><span className="text-slate-500">Đối tượng:</span> {item.targetAudience?.join(', ')}</span>
-                  <a href={item.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 font-medium text-blue-400 hover:text-blue-300 hover:underline ml-auto">
-                    Xem bài viết gốc <span className="text-lg leading-none">↗</span>
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <AlertCircle size={14} className="text-slate-500" />{" "}
+                    {item.source}
+                  </span>
+                  <span className="flex items-center gap-1.5 font-medium text-slate-300">
+                    <span className="text-slate-500">Đối tượng:</span>{" "}
+                    {item.targetAudience?.join(", ")}
+                  </span>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 font-medium text-blue-400 hover:text-blue-300 hover:underline ml-auto"
+                  >
+                    Xem bài viết gốc{" "}
+                    <span className="text-lg leading-none">↗</span>
                   </a>
                 </div>
               </div>
@@ -199,9 +289,16 @@ export default function ManualCrawlScreen() {
               <div className="absolute inset-0 rounded-full border border-blue-500/30 animate-[spin_4s_linear_infinite]"></div>
               <Search size={36} className="text-blue-400" />
             </div>
-            <h3 className="text-2xl font-semibold text-white mb-3">Chưa có dữ liệu phân tích</h3>
+            <h3 className="text-2xl font-semibold text-white mb-3">
+              Chưa có dữ liệu phân tích
+            </h3>
             <p className="text-slate-400 max-w-md text-sm leading-relaxed">
-              Hệ thống đã sẵn sàng. Hãy bấm nút <span className="text-blue-400 font-medium">Chạy quy trình thu thập</span> ở góc trên để bắt đầu quét các trang báo và sử dụng AI để lọc tin tức.
+              Hệ thống đã sẵn sàng. Hãy bấm nút{" "}
+              <span className="text-blue-400 font-medium">
+                Chạy quy trình thu thập
+              </span>{" "}
+              ở góc trên để bắt đầu quét các trang báo và sử dụng AI để lọc tin
+              tức.
             </p>
           </div>
         </div>

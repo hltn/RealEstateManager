@@ -1,9 +1,13 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { NewsSourceService } from './news-source.service';
+import { RawArticle } from '../schemas/raw-article.schema';
 
 @Injectable()
 export class FirecrawlService {
@@ -13,6 +17,7 @@ export class FirecrawlService {
   constructor(
     private configService: ConfigService,
     private newsSourceService: NewsSourceService,
+    @InjectModel(RawArticle.name) private rawArticleModel: Model<RawArticle>,
   ) {
     const apiKey =
       this.configService.get<string>('FIRECRAWL_API_KEY') || 'dummy';
@@ -25,9 +30,11 @@ export class FirecrawlService {
     let crawledData: Array<{
       url: string;
       title: string;
+      description?: string;
       content: string;
       source: string;
       publishedAt: string;
+      thumbnailUrl?: string;
     }> = [];
 
     // Dynamically fetch active sources from Database
@@ -42,45 +49,123 @@ export class FirecrawlService {
     }
 
     try {
-        for (const source of activeSources) {
+      for (const source of activeSources) {
+        this.logger.log(
+          `Extracting list of articles from source: ${source.name} (${source.url})`,
+        );
+
+        try {
+          // 1. Extract the list of articles from the category/listing page
+          const extractResult = (await this.firecrawlApp.extract({
+            urls: [source.url],
+            prompt: 'Extract a list of news articles from this listing page',
+            schema: {
+              type: 'object',
+              properties: {
+                articles: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string' },
+                      url: { type: 'string' },
+                      description: { type: 'string' },
+                      publishedAt: { type: 'string' },
+                      thumbnailUrl: { type: 'string' },
+                    },
+                    required: ['title', 'url'],
+                  },
+                },
+              },
+              required: ['articles'],
+            },
+          } as any)) as any;
+
+          if (!extractResult.success || !extractResult.data?.articles) {
+            this.logger.error(
+              `Failed to extract articles from ${source.url}. Error or no articles found.`,
+            );
+            continue; // Skip this source and try next
+          }
+
+          const articles = extractResult.data.articles;
           this.logger.log(
-            `Scraping real data from source: ${source.name} (${source.url})`,
+            `Found ${articles.length} articles from ${source.name}. Scraping detail pages...`,
           );
 
-          try {
-            const scrapeResult = (await this.firecrawlApp.scrapeUrl(
-              source.url,
-              { formats: ['markdown'] },
-            )) as any;
+          // 2. Scrape each article's detail page sequentially to get the full content
+          /* 
+          for (const article of articles) {
+            this.logger.log(`Scraping detail page: ${article.url}`);
+            
+            try {
+              const detailScrapeResult = (await this.firecrawlApp.scrapeUrl(
+                article.url,
+                { formats: ['markdown'] },
+              )) as any;
 
-            if (scrapeResult.success === false) {
+              if (detailScrapeResult.success === false) {
+                this.logger.warn(
+                  `Failed to scrape detail page ${article.url}: ${detailScrapeResult.error || 'Unknown error'}`,
+                );
+                continue;
+              }
+
+              const resultData = detailScrapeResult.data || detailScrapeResult;
+
+              crawledData.push({
+                url: article.url,
+                title: article.title || resultData.metadata?.title || source.name,
+                description: article.description || resultData.metadata?.description || '',
+                content: resultData.markdown || '',
+                source: source.name,
+                publishedAt: article.publishedAt || new Date().toISOString(),
+                thumbnailUrl: article.thumbnailUrl || resultData.metadata?.ogImage || '',
+              });
+            } catch (detailErr: any) {
               this.logger.error(
-                `Failed to scrape ${source.url}: ${scrapeResult.error || 'Unknown error'}`,
+                `Error scraping detail page ${article.url}: ${detailErr.message}`,
               );
-              continue; // Skip this source and try next
             }
-
-            const resultData = scrapeResult.data || scrapeResult;
-
-            crawledData.push({
-              url: source.url,
-              title: resultData.metadata?.title || source.name,
-              content: resultData.markdown || '',
-              source: source.name,
-              publishedAt: new Date().toISOString(),
-            });
-          } catch (e: any) {
-            this.logger.error(
-              `Error scraping source ${source.name}: ${e.message}`,
-            );
           }
+          */
+
+          // 2. Temp alternative: Skip detail scraping, just use data extracted from Step 1 directly
+          for (const article of articles) {
+            const articleData = {
+              url: article.url,
+              title: article.title || source.name,
+              description: article.description || '',
+              content: article.description || '',
+              source: source.name,
+              publishedAt: article.publishedAt || new Date().toISOString(),
+              thumbnailUrl: article.thumbnailUrl || '',
+            };
+
+            const urlHash = crypto.createHash('md5').update(articleData.url).digest('hex');
+
+            await this.rawArticleModel.updateOne(
+              { urlHash },
+              { $set: { ...articleData, urlHash } },
+              { upsert: true }
+            );
+
+            crawledData.push(articleData);
+          }
+        } catch (e: any) {
+          this.logger.error(
+            `Error processing source ${source.name}: ${e.message}`,
+          );
         }
-      } catch (error: any) {
+      }
+    } catch (error: any) {
       this.logger.error(
         `Error in Firecrawl scrape: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(`Error in Firecrawl scrape: ${error.message}`);
+      throw new BadRequestException(
+        `Error in Firecrawl scrape: ${error.message}`,
+      );
     }
 
     const tmpDir = path.join(process.cwd(), 'tmp');
@@ -93,5 +178,9 @@ export class FirecrawlService {
 
     this.logger.log(`Job 1 completed. Saved temporary file to ${filePath}`);
     return filePath;
+  }
+
+  async getRawArticles(): Promise<RawArticle[]> {
+    return this.rawArticleModel.find().sort({ publishedAt: -1 }).exec();
   }
 }

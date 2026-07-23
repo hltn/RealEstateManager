@@ -19,16 +19,19 @@ export class AIFilterService {
 
     const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    const isApiKeyValid = apiKey && apiKey !== 'your_gemini_api_key_here';
-
-    if (!isApiKeyValid) {
-      this.logger.error('GEMINI_API_KEY is not set or invalid.');
-      throw new BadRequestException('GEMINI_API_KEY is not set or invalid.');
+    // Check OpenRouter first, fallback to Gemini
+    const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
+    const model = this.configService.get<string>('AI_MODEL') || process.env.AI_MODEL || 'google/gemini-2.5-flash';
+    
+    const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY');
+    
+    if (!openRouterApiKey && (!geminiApiKey || geminiApiKey === 'your_gemini_api_key_here')) {
+      this.logger.error('No valid AI API Key found (neither OpenRouter nor Gemini).');
+      throw new BadRequestException('AI API Key is not set or invalid.');
     }
 
     try {
-        this.logger.log('Sending data to Gemini API for filtering and ranking');
+        this.logger.log(`Sending data to AI API for filtering and ranking (Model: ${model})`);
 
         // Take the first article's content for demonstration to avoid context limits
         // In a real scenario, you'd chunk this or use Gemini's large context window for multiple articles
@@ -64,12 +67,38 @@ export class AIFilterService {
           ${contentToAnalyze}
         `;
 
-        const response = await this.ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-        });
+        let resultText = '[]';
 
-        let resultText = response.text || '[]';
+        if (openRouterApiKey) {
+          this.logger.log('Using OpenRouter API');
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openRouterApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: 'user', content: prompt }]
+            })
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
+          }
+          
+          const data = await res.json();
+          resultText = data.choices?.[0]?.message?.content || '[]';
+        } else {
+          this.logger.log('Using Gemini Native API');
+          const response = await this.ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+          });
+          resultText = response.text || '[]';
+        }
+
         // Cleanup potential markdown wrappers
         resultText = resultText
           .replace(/```json/g, '')
@@ -78,15 +107,15 @@ export class AIFilterService {
 
         const finalTop5 = JSON.parse(resultText);
         this.logger.log(
-          `Job 2 completed. Extracted ${finalTop5.length} articles via Gemini.`,
+          `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
         );
         return finalTop5;
       } catch (error: any) {
       this.logger.error(
-        `Error in Gemini AI filtering: ${error.message}`,
+        `Error in AI filtering: ${error.message}`,
         error.stack,
       );
-      throw new BadRequestException(`Error in Gemini AI filtering: ${error.message}`);
+      throw new BadRequestException(`Error in AI filtering: ${error.message}`);
     }
   }
 }
