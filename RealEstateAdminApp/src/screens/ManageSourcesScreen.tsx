@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Power, Edit2, Trash2, Plus, X, Server, Database } from 'lucide-react';
+import { Edit2, Trash2, Plus, X, Server, Database } from 'lucide-react';
 
 export default function ManageSourcesScreen() {
   const [sources, setSources] = useState<any[]>([]);

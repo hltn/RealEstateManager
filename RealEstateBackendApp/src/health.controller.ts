@@ -9,7 +9,7 @@ export class HealthController {
   @Get()
   checkHealth() {
     const dbStatus =
-      this.connection.readyState === 1 ? 'Connected' : 'Disconnected';
+      Number(this.connection.readyState) === 1 ? 'Connected' : 'Disconnected';
     return {
       status: 'OK',
       database: dbStatus,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
@@ -9,7 +9,9 @@ export class AIFilterService {
   private ai: GoogleGenAI;
 
   constructor(private configService: ConfigService) {
-    this.ai = new GoogleGenAI({ apiKey: this.configService.get<string>('GEMINI_API_KEY') || 'dummy' });
+    this.ai = new GoogleGenAI({
+      apiKey: this.configService.get<string>('GEMINI_API_KEY') || 'dummy',
+    });
   }
 
   async filterAndRank(filePath: string): Promise<any[]> {
@@ -17,13 +19,26 @@ export class AIFilterService {
 
     const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    const isApiKeyValid = apiKey && apiKey !== 'your_gemini_api_key_here';
+
+    if (!isApiKeyValid) {
+      this.logger.error('GEMINI_API_KEY is not set or invalid.');
+      throw new BadRequestException('GEMINI_API_KEY is not set or invalid.');
+    }
+
     try {
-      if (this.configService.get<string>('GEMINI_API_KEY')) {
         this.logger.log('Sending data to Gemini API for filtering and ranking');
-        
+
         // Take the first article's content for demonstration to avoid context limits
         // In a real scenario, you'd chunk this or use Gemini's large context window for multiple articles
-        const contentToAnalyze = rawData.map((d: any) => `URL: ${d.url}\nTitle: ${d.title}\nContent: ${d.content}`).join('\n\n---\n\n').substring(0, 30000);
+        const contentToAnalyze = rawData
+          .map(
+            (d: any) =>
+              `URL: ${d.url}\nTitle: ${d.title}\nContent: ${d.content}`,
+          )
+          .join('\n\n---\n\n')
+          .substring(0, 30000);
 
         const prompt = `
           Analyze the following real estate news articles.
@@ -56,44 +71,22 @@ export class AIFilterService {
 
         let resultText = response.text || '[]';
         // Cleanup potential markdown wrappers
-        resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
-        
+        resultText = resultText
+          .replace(/```json/g, '')
+          .replace(/```/g, '')
+          .trim();
+
         const finalTop5 = JSON.parse(resultText);
-        this.logger.log(`Job 2 completed. Extracted ${finalTop5.length} articles via Gemini.`);
+        this.logger.log(
+          `Job 2 completed. Extracted ${finalTop5.length} articles via Gemini.`,
+        );
         return finalTop5;
-
-      } else {
-        this.logger.warn('GEMINI_API_KEY is not set. Using mock data.');
-        const mockAiFilteredResults = rawData.map((item: any, index: number) => ({
-          title: item.title,
-          summary: `Tóm tắt bởi AI cho tin: ${item.title}`,
-          importanceReason:
-            'Tin tức này ảnh hưởng trực tiếp đến lãi suất và dòng tiền đầu tư.',
-          impactLevel: index % 2 === 0 ? 'Rất cao' : 'Cao',
-          targetAudience: ['Nhà đầu tư', 'Người mua ở thực'],
-          expertOpinion:
-            'Chuyên gia nhận định đây là thời điểm tốt để xem xét giải ngân.',
-          publishDate: item.publishedAt || new Date().toISOString(),
-          source: item.source,
-          url: item.url,
-          keywords: ['Bất động sản', 'Lãi suất', 'Đầu tư'],
-        }));
-
-        while (mockAiFilteredResults.length < 5) {
-          mockAiFilteredResults.push({
-            ...mockAiFilteredResults[0],
-            title: `Tin tức bổ sung ${mockAiFilteredResults.length + 1}`,
-            url: `https://example.com/news/extra-${mockAiFilteredResults.length + 1}`,
-          });
-        }
-
-        const finalTop5 = mockAiFilteredResults.slice(0, 5);
-        this.logger.log('Job 2 completed. AI filtering and ranking finished (Mock).');
-        return finalTop5;
-      }
-    } catch (error: any) {
-      this.logger.error(`Error in Gemini AI filtering: ${error.message}`, error.stack);
-      throw error;
+      } catch (error: any) {
+      this.logger.error(
+        `Error in Gemini AI filtering: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(`Error in Gemini AI filtering: ${error.message}`);
     }
   }
 }

@@ -18,3 +18,4 @@ This file defines the overarching rules and workflow coordination for the subage
 ## Orchestrator Rules (CRITICAL)
 1. **Strict Delegation**: When the user explicitly requests to call a specific subagent (e.g., `@coder_agent`, `@pm_agent`), the Orchestrator (Antigravity) MUST invoke that subagent and wait for them to perform the task.
 2. **No Acting on Behalf**: The Orchestrator MUST NOT write code, update plans, or execute commands on behalf of the requested subagent. You must let the subagent use their own tools to modify files and return the result.
+3. **Coding Guidelines (Soul)**: All agents (Orchestrator and subagents) MUST adhere to the `/karpathy-guidelines` skill when writing, reviewing, or refactoring code. Prioritize surgical changes, avoid overcomplication, and define verifiable success criteria before acting.

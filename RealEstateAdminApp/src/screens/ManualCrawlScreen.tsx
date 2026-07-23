@@ -3,21 +3,59 @@ import { Play, Check, AlertCircle, Save, Search } from 'lucide-react';
 
 export default function ManualCrawlScreen() {
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [rawData, setRawData] = useState<any[]>([]);
+  const [filePath, setFilePath] = useState('');
   const [message, setMessage] = useState('');
 
-  const handleTrigger = async () => {
+  const handleCrawl = async () => {
     setLoading(true);
     setMessage('');
+    setRawData([]);
+    setResults([]);
+    setFilePath('');
     try {
-      const response = await fetch('/api/news-manager/trigger', { method: 'POST' });
+      const response = await fetch('/api/news-manager/crawl', { method: 'POST' });
       const resData = await response.json();
-      setResults(resData.data || []);
-      setMessage('Lấy tin và phân tích thành công!');
-    } catch (error) {
-      setMessage('Có lỗi xảy ra khi gọi API.');
+      if (!response.ok) {
+        throw new Error(resData.message || 'Lỗi từ máy chủ');
+      }
+      const data = resData.data || [];
+      setRawData(data);
+      setFilePath(resData.filePath || '');
+      if (data.length > 0) {
+        setMessage('Thu thập thành công ' + data.length + ' bài viết! Vui lòng tiếp tục phân tích AI.');
+      } else {
+        setMessage('Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.');
+      }
+    } catch (error: any) {
+      setMessage(error.message || 'Có lỗi xảy ra khi thu thập dữ liệu.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!filePath) return;
+    setAnalyzing(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/news-manager/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || 'Lỗi từ máy chủ');
+      }
+      setResults(resData.data || []);
+      setMessage('Phân tích AI thành công!');
+    } catch (error: any) {
+      setMessage(error.message || 'Có lỗi xảy ra khi phân tích AI.');
+    } finally {
+      setAnalyzing(false);
     }
   };
 
@@ -44,21 +82,57 @@ export default function ManualCrawlScreen() {
           <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400 mb-2">Thu thập tin tức thủ công</h2>
           <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">Kích hoạt luồng Firecrawl cào tin và dùng AI phân tích chuyên sâu tự động.</p>
         </div>
-        <button
-          onClick={handleTrigger}
-          disabled={loading}
-          className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:from-blue-500 hover:to-indigo-500 hover:shadow-[0_0_30px_rgba(79,70,229,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-          <Play size={20} className={`relative z-10 ${loading ? 'animate-pulse' : ''}`} />
-          <span className="relative z-10">{loading ? 'Đang xử lý...' : 'Chạy quy trình thu thập'}</span>
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={handleCrawl}
+            disabled={loading || analyzing}
+            className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:from-blue-500 hover:to-indigo-500 hover:shadow-[0_0_30px_rgba(79,70,229,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+            <Play size={20} className={`relative z-10 ${loading ? 'animate-pulse' : ''}`} />
+            <span className="relative z-10">{loading ? 'Đang thu thập...' : 'Chạy quy trình thu thập'}</span>
+          </button>
+
+          {rawData.length > 0 && results.length === 0 && (
+            <button
+              onClick={handleAnalyze}
+              disabled={analyzing || loading}
+              className="group relative inline-flex items-center justify-center gap-3 px-8 py-3.5 font-medium text-white transition-all duration-300 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl hover:from-purple-500 hover:to-pink-500 hover:shadow-[0_0_30px_rgba(236,72,153,0.4)] active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100 disabled:hover:shadow-none overflow-hidden animate-[fadeIn_0.3s_ease-out]"
+            >
+              <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+              <Search size={20} className={`relative z-10 ${analyzing ? 'animate-pulse' : ''}`} />
+              <span className="relative z-10">{analyzing ? 'Đang phân tích...' : 'Phân tích AI'}</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {message && (
         <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center gap-3 text-blue-200 animate-[fadeIn_0.3s_ease-out]">
           <Check className="text-blue-400 shrink-0" size={20} />
           <span className="text-sm font-medium">{message}</span>
+        </div>
+      )}
+
+      {rawData.length > 0 && results.length === 0 && (
+        <div className="space-y-4 animate-[fadeInUp_0.5s_ease-out_both]">
+          <div className="flex items-center gap-2 bg-slate-900/50 p-4 rounded-2xl border border-white/5">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <span className="bg-purple-600 w-2 h-6 rounded-full inline-block"></span>
+              Dữ liệu thô đã thu thập ({rawData.length} bài)
+            </h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {rawData.map((item, idx) => (
+              <div key={idx} className="bg-white/5 p-4 rounded-xl border border-white/10">
+                <h4 className="font-medium text-white mb-2 line-clamp-2">{item.title}</h4>
+                <div className="flex justify-between items-center text-xs text-slate-400">
+                  <span className="flex items-center gap-1"><AlertCircle size={12}/> {item.source}</span>
+                  <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Link gốc</a>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -117,7 +191,7 @@ export default function ManualCrawlScreen() {
             ))}
           </div>
         </div>
-      ) : (
+      ) : rawData.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 px-4 rounded-3xl border border-dashed border-white/20 bg-white/5 backdrop-blur-sm mt-8 relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
           <div className="relative z-10 flex flex-col items-center text-center">
@@ -131,7 +205,7 @@ export default function ManualCrawlScreen() {
             </p>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

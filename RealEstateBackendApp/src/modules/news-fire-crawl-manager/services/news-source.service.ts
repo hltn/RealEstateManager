@@ -22,7 +22,10 @@ export class NewsSourceService {
     return newSource.save();
   }
 
-  async update(id: string, updateDto: Partial<NewsSource>): Promise<NewsSource> {
+  async update(
+    id: string,
+    updateDto: Partial<NewsSource>,
+  ): Promise<NewsSource> {
     const updatedSource = await this.newsSourceModel
       .findByIdAndUpdate(id, updateDto, { new: true })
       .exec();
@@ -33,7 +36,9 @@ export class NewsSourceService {
   }
 
   async remove(id: string): Promise<NewsSource> {
-    const deletedSource = await this.newsSourceModel.findByIdAndDelete(id).exec();
+    const deletedSource = await this.newsSourceModel
+      .findByIdAndDelete(id)
+      .exec();
     if (!deletedSource) {
       throw new NotFoundException(`NewsSource #${id} not found`);
     }

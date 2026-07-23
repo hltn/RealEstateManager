@@ -38,29 +38,57 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @Post('trigger')
+  @Post('crawl')
   async triggerManualCrawl() {
-    let filePath: string | null = null;
     try {
-      this.logger.log('Manual trigger called');
-      filePath = await this.firecrawlService.crawlData();
+      this.logger.log('Manual crawl called');
+      const filePath = await this.firecrawlService.crawlData();
+      
+      const fs = require('fs');
+      const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+      return {
+        message: 'Crawl completed successfully',
+        filePath,
+        data: rawData,
+      };
+    } catch (error: any) {
+      this.logger.error('Error in manual crawl', error.stack);
+      throw new InternalServerErrorException(
+        'Failed to process crawl',
+      );
+    }
+  }
+
+  @Post('analyze')
+  async triggerManualAnalyze(@Body('filePath') filePath: string) {
+    if (!filePath) {
+      return { message: 'filePath is required', data: [] };
+    }
+    try {
+      this.logger.log('Manual analyze called');
       const top5Articles = await this.aiFilterService.filterAndRank(filePath);
 
       return {
-        message: 'Crawl and AI filtering completed successfully',
+        message: 'AI filtering completed successfully',
         data: top5Articles,
       };
     } catch (error: any) {
-      this.logger.error('Error in manual trigger', error.stack);
+      this.logger.error('Error in manual analyze', error.stack);
       throw new InternalServerErrorException(
-        'Failed to process crawl and filter',
+        'Failed to process filter',
       );
     } finally {
       if (filePath) {
-        import('fs').then(fs => {
-          fs.promises.unlink(filePath!).catch(err => 
-            this.logger.error(`Failed to delete temp file ${filePath}`, err.stack)
-          );
+        import('fs').then((fs) => {
+          fs.promises
+            .unlink(filePath)
+            .catch((err) =>
+              this.logger.error(
+                `Failed to delete temp file ${filePath}`,
+                err.stack,
+              ),
+            );
         });
       }
     }
@@ -103,11 +131,11 @@ export class NewsFireCrawlManagerController {
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to publish' };
       }
-      
+
       const results = await Promise.all(
-        ids.map(id => this.newsArticleService.publishToWordPress(id))
+        ids.map((id) => this.newsArticleService.publishToWordPress(id)),
       );
-      
+
       return {
         message: 'Articles published to WordPress successfully',
         data: results,

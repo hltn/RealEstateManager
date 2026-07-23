@@ -18,10 +18,7 @@ import { NewsSource, NewsSourceSchema } from './schemas/news-source.schema';
       { name: NewsSource.name, schema: NewsSourceSchema },
     ]),
   ],
-  controllers: [
-    NewsFireCrawlManagerController,
-    NewsSourceController,
-  ],
+  controllers: [NewsFireCrawlManagerController, NewsSourceController],
   providers: [
     FirecrawlService,
     AIFilterService,
