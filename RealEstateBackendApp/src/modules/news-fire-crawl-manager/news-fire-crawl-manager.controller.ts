@@ -6,6 +6,7 @@ import {
   Param,
   Logger,
   InternalServerErrorException,
+  HttpException,
 } from '@nestjs/common';
 import { FirecrawlService } from './services/firecrawl.service';
 import { AIFilterService } from './services/ai-filter.service';
@@ -89,6 +90,9 @@ export class NewsFireCrawlManagerController {
       };
     } catch (error: any) {
       this.logger.error('Error in manual analyze', error.stack);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new InternalServerErrorException(
         'Failed to process filter',
       );
@@ -105,6 +109,40 @@ export class NewsFireCrawlManagerController {
             );
         });
       }
+    }
+  }
+
+  @Post('analyze-raw')
+  async analyzeRawArticles(@Body('articles') articles: any[]) {
+    try {
+      this.logger.log('Analyze Raw Articles called');
+      if (!articles || articles.length === 0) {
+        return { message: 'No articles to analyze', data: [] };
+      }
+      const filteredArticles = await this.aiFilterService.filterRawArticles(articles);
+      
+      if (filteredArticles && filteredArticles.length > 0) {
+        const keepUrls = filteredArticles.map((a: any) => a.urlHash);
+        await this.firecrawlService.deleteRawArticlesNotIn(keepUrls);
+      } else {
+        // If AI returned empty, maybe we should delete all or keep all?
+        // Prompt says "delete all records... that are NOT present in the AI's returned list".
+        // If empty list returned, it deletes everything. This is correct as per instructions.
+        await this.firecrawlService.deleteRawArticlesNotIn([]);
+      }
+      
+      return {
+        message: 'Raw articles filtered successfully',
+        data: filteredArticles,
+      };
+    } catch (error: any) {
+      this.logger.error('Error in analyze raw articles', error.stack);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Failed to analyze raw articles',
+      );
     }
   }
 

@@ -3,12 +3,15 @@ import { AlertCircle, Database } from "lucide-react";
 
 export default function RawArticlesScreen() {
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [rawData, setRawData] = useState<any[]>([]);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const fetchRawArticles = async () => {
+  const fetchRawArticles = async (keepSuccess = false) => {
     setLoading(true);
     setError("");
+    if (!keepSuccess) setSuccess("");
     try {
       const response = await fetch("/api/news-manager/raw-articles");
       const resData = await response.json();
@@ -27,6 +30,40 @@ export default function RawArticlesScreen() {
     fetchRawArticles();
   }, []);
 
+  const handleAnalyze = async () => {
+    if (rawData.length === 0) return;
+    
+    setAnalyzing(true);
+    setError("");
+    setSuccess("");
+    
+    try {
+      const articlesToSend = rawData.map(item => ({
+        urlHash: item.urlHash,
+        title: item.title,
+        description: item.description
+      }));
+      
+      const response = await fetch("/api/news-manager/analyze-raw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articles: articlesToSend })
+      });
+      
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || "Lỗi khi phân tích tin tức");
+      }
+      
+      setSuccess("Phân tích AI thành công, đã lọc các tin không liên quan!");
+      await fetchRawArticles(true);
+    } catch (err: any) {
+      setError(err.message || "Đã xảy ra lỗi khi phân tích AI");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   return (
     <div className="w-full flex flex-col gap-6">
       <header className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 pb-6 border-b border-gray-200 dark:border-white/[0.05]">
@@ -40,14 +77,27 @@ export default function RawArticlesScreen() {
         </div>
         <div className="flex gap-4">
           <button
-            onClick={fetchRawArticles}
-            disabled={loading}
+            onClick={handleAnalyze}
+            disabled={loading || analyzing || rawData.length === 0}
+            className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-brand-500 bg-brand-50 dark:bg-brand-500/15 border border-brand-100 dark:border-brand-500/25 transition-all duration-300 hover:bg-brand-100 dark:hover:bg-brand-500/25 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
+          >
+            {analyzing ? "Đang phân tích..." : "Phân tích tin tức"}
+          </button>
+          <button
+            onClick={() => fetchRawArticles()}
+            disabled={loading || analyzing}
             className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-brand-500 hover:bg-brand-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
             {loading ? "Đang tải..." : "Làm mới"}
           </button>
         </div>
       </header>
+
+      {success && (
+        <div className="p-4 rounded-lg bg-success-50 dark:bg-success-500/15 border border-success-100 dark:border-success-500/25 flex items-center gap-3 text-success-500">
+          <span className="text-theme-sm font-medium">{success}</span>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-lg bg-error-50 dark:bg-error-500/15 border border-error-100 dark:border-error-500/25 flex items-center gap-3 text-error-500">

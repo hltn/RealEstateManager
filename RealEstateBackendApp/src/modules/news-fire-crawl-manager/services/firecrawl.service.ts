@@ -183,4 +183,8 @@ export class FirecrawlService {
   async getRawArticles(): Promise<RawArticle[]> {
     return this.rawArticleModel.find().sort({ publishedAt: -1 }).exec();
   }
+
+  async deleteRawArticlesNotIn(urlHashes: string[]): Promise<void> {
+    await this.rawArticleModel.deleteMany({ urlHash: { $nin: urlHashes } }).exec();
+  }
 }
