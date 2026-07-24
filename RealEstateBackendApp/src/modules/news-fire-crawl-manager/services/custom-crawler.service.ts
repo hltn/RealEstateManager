@@ -33,7 +33,7 @@ export class CustomCrawlerService {
     let cutoffDate: Date | null = null;
     if (days && days > 0) {
       cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - days);
+      cutoffDate.setDate(cutoffDate.getDate() - (days - 1));
       // Reset to start of day
       cutoffDate.setHours(0, 0, 0, 0);
     }

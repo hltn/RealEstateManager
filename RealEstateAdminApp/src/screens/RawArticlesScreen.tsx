@@ -244,7 +244,7 @@ export default function RawArticlesScreen() {
             className="px-3 py-3 border border-gray-200 dark:border-white/[0.1] rounded-lg bg-white dark:bg-gray-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-70"
           >
             <option value={0}>Tất cả thời gian</option>
-            <option value={1}>1 ngày qua</option>
+            <option value={1}>Hôm nay</option>
             <option value={3}>3 ngày qua</option>
             <option value={7}>7 ngày qua</option>
             <option value={30}>30 ngày qua</option>
