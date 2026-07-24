@@ -281,4 +281,115 @@ export class AIFilterService {
       throw new BadRequestException(`Error in AI filter: ${error.message}`);
     }
   }
+
+  async cleanMarkdownContentWithAI(markdown: string): Promise<string> {
+    this.logger.log(`Starting AI Markdown Cleaning`);
+    if (!markdown || markdown.trim() === '') return '';
+
+    const activePlatform = this.configService.get<string>('ACTIVE_AI_PLATFORM') || process.env.ACTIVE_AI_PLATFORM || 'OpenRouter';
+
+    const prompt = `You are a specialized markdown cleaner. I will provide you with a raw markdown text extracted from a real estate news article.
+Your task is to extract ONLY the main article content.
+You MUST REMOVE all:
+- Menus and navigation links
+- Advertisements
+- Related articles lists
+- Boilerplate text (e.g., copyright, "read more", tags)
+- Footer and headers
+
+Output ONLY the clean markdown of the main article content. Do not include any explanations, introductory text, or markdown code block backticks like \`\`\`markdown.
+
+Raw Markdown:
+${markdown}`;
+
+    let resultText = '';
+    
+    const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
+    const openRouterModel = this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash';
+    
+    const must1cApiKey = this.configService.get<string>('MUST1C_API_KEY') || process.env.MUST1C_API_KEY;
+    const must1cModel = this.configService.get<string>('MUST1C_MODEL') || process.env.MUST1C_MODEL;
+    const must1cApiUrl = this.configService.get<string>('MUST1C_API_URL') || process.env.MUST1C_API_URL || 'https://htmustc.id.vn/v1/chat/completions';
+    const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY') || process.env.GEMINI_API_KEY;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+      try {
+        if (activePlatform === 'Must1c' && must1cApiKey) {
+          this.logger.log('Using Must1c API for cleaning');
+          const res = await fetch(must1cApiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${must1cApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal as any,
+            body: JSON.stringify({
+              model: must1cModel || 'gemini-3.6-flash',
+              messages: [{ role: 'user', content: prompt }]
+            })
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`Must1c API error: ${res.status} - ${errBody}`);
+          }
+          
+          const data = await res.json();
+          resultText = data.choices?.[0]?.message?.content || '';
+        } else if (openRouterApiKey) {
+          this.logger.log('Using OpenRouter API for cleaning');
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openRouterApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal as any,
+            body: JSON.stringify({
+              model: openRouterModel,
+              messages: [{ role: 'user', content: prompt }]
+            })
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
+          }
+          
+          const data = await res.json();
+          resultText = data.choices?.[0]?.message?.content || '';
+        } else if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+          this.logger.log('Using Gemini Native API for cleaning');
+          const response = await this.ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+          });
+          resultText = response.text || '';
+        } else {
+           throw new BadRequestException('No AI platform configured');
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          throw new Error('AI API request timed out after 60 seconds');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Cleanup potential markdown wrappers
+      resultText = resultText
+        .replace(/^```[a-z]*\n/i, '')
+        .replace(/\n```$/i, '')
+        .trim();
+        
+      return resultText;
+    } catch (error: any) {
+      this.logger.error(`Error in cleanMarkdownContentWithAI: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error in AI markdown cleaning: ${error.message}`);
+    }
+  }
 }

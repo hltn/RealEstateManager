@@ -1,6 +1,86 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Search, Send, FileText, Eye, Wand2 } from 'lucide-react';
+import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
+
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+export interface ToastProps {
+  title: string;
+  description: string;
+  type?: ToastType;
+  onClose: () => void;
+}
+
+const ToastNotification = ({ title, description, type = 'success', onClose }: ToastProps) => {
+  const [progress, setProgress] = useState(100);
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    // start progress shrink immediately
+    const t1 = setTimeout(() => setProgress(0), 50);
+    
+    const timer = setTimeout(() => {
+      setIsClosing(true);
+      setTimeout(onClose, 300); // Wait for slide out animation
+    }, 5000);
+    
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(timer);
+    };
+  }, [title, description, onClose]);
+
+  const config = {
+    success: {
+      icon: CheckCircle,
+      color: 'text-emerald-500 dark:text-emerald-400',
+      bgIcon: 'bg-emerald-50 dark:bg-emerald-500/10',
+      progress: 'bg-emerald-500'
+    },
+    error: {
+      icon: XCircle,
+      color: 'text-red-500 dark:text-red-400',
+      bgIcon: 'bg-red-50 dark:bg-red-500/10',
+      progress: 'bg-red-500'
+    },
+    warning: {
+      icon: AlertTriangle,
+      color: 'text-amber-500 dark:text-amber-400',
+      bgIcon: 'bg-amber-50 dark:bg-amber-500/10',
+      progress: 'bg-amber-500'
+    },
+    info: {
+      icon: InfoIcon,
+      color: 'text-blue-500 dark:text-blue-400',
+      bgIcon: 'bg-blue-50 dark:bg-blue-500/10',
+      progress: 'bg-blue-500'
+    }
+  }[type];
+
+  const IconComponent = config.icon;
+
+  return (
+    <div className={`fixed top-4 right-4 z-[9999] transition-all duration-300 transform ${isClosing ? 'translate-x-full opacity-0' : 'translate-x-0 opacity-100'}`}>
+      <div className="bg-white dark:bg-gray-800 shadow-2xl rounded-xl p-4 w-[340px] relative overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="flex items-start gap-3 mb-2">
+          <div className={`w-8 h-8 rounded-full ${config.bgIcon} ${config.color} flex items-center justify-center shrink-0 mt-0.5`}>
+            <IconComponent className="w-5 h-5" />
+          </div>
+          <div className="flex-1 flex flex-col min-w-0">
+             <div className="flex items-start justify-between gap-2">
+               <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">{title}</h3>
+               <button onClick={() => { setIsClosing(true); setTimeout(onClose, 300); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0 -mt-0.5 -mr-1 p-1">
+                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+               </button>
+             </div>
+             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 pr-2 line-clamp-2">{description}</p>
+          </div>
+        </div>
+        <div className={`absolute bottom-0 left-0 h-1.5 ${config.progress} transition-all duration-[5000ms] ease-linear`} style={{ width: `${progress}%` }} />
+      </div>
+    </div>
+  );
+};
 
 export default function ManageWpScreen() {
   const [articles, setArticles] = useState<any[]>([]);
@@ -9,6 +89,9 @@ export default function ManageWpScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
   const [bulkAction, setBulkAction] = useState('publish');
+  const [cleaningId, setCleaningId] = useState<string | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
+  const [notification, setNotification] = useState<{title: string, description: string, type?: ToastType} | null>(null);
 
   const fetchArticles = async () => {
     try {
@@ -47,14 +130,25 @@ export default function ManageWpScreen() {
     }
   };
 
-  const handleClean = async (id: string) => {
+  const handleClean = async (article: any) => {
     try {
-      await fetch(`/api/news-manager/articles/${id}/clean`, {
+      setCleaningId(article._id);
+      const res = await fetch(`/api/news-manager/articles/${article._id}/clean`, {
         method: 'POST'
       });
-      fetchArticles();
+      const responseData = await res.json();
+      if (responseData.data) {
+        setArticles(prev => prev.map(a => a._id === article._id ? responseData.data : a));
+      }
+      setNotification({
+        title: 'Thành công',
+        description: `Đã làm sạch dữ liệu "${article.title}"`,
+        type: 'success'
+      });
     } catch (error) {
       console.error('Error cleaning', error);
+    } finally {
+      setCleaningId(null);
     }
   };
 
@@ -99,6 +193,8 @@ export default function ManageWpScreen() {
 
   const handleBulkAction = async () => {
     if (selectedIds.size === 0) return;
+    setIsApplying(true);
+    setNotification(null);
     
     if (bulkAction === 'publish') {
       try {
@@ -109,23 +205,50 @@ export default function ManageWpScreen() {
         });
         setSelectedIds(new Set());
         fetchArticles();
+        setNotification({
+          title: 'Thành công',
+          description: 'Đã đăng bài hàng loạt thành công',
+          type: 'success'
+        });
       } catch (error) {
         console.error('Error bulk publishing', error);
+      } finally {
+        setIsApplying(false);
       }
     } else if (bulkAction === 'analyze') {
       try {
-        await fetch('/api/news-manager/articles/market-analysis-bulk', {
+        const res = await fetch('/api/news-manager/articles/market-analysis-bulk', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: Array.from(selectedIds) })
         });
+        const responseData = await res.json();
+        
+        if (responseData.data && responseData.data.processedArticles) {
+          const processedArticles = responseData.data.processedArticles;
+          const updatedArticlesMap = new Map(processedArticles.map((a: any) => [a._id, a]));
+          
+          setArticles(prev => prev.map(a => updatedArticlesMap.has(a._id) ? updatedArticlesMap.get(a._id) : a));
+        } else {
+          fetchArticles();
+        }
+        
         setSelectedIds(new Set());
-        fetchArticles();
+        setNotification({
+          title: 'Thành công',
+          description: 'Đã crawl xong tin tức',
+          type: 'success'
+        });
       } catch (error) {
         console.error('Error bulk analyzing', error);
+      } finally {
+        setIsApplying(false);
       }
     } else if (bulkAction === 'delete') {
-      if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} bài viết đã chọn?`)) return;
+      if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} bài viết đã chọn?`)) {
+        setIsApplying(false);
+        return;
+      }
       try {
         await fetch('/api/news-manager/articles/delete-bulk', {
           method: 'POST',
@@ -134,9 +257,18 @@ export default function ManageWpScreen() {
         });
         setSelectedIds(new Set());
         fetchArticles();
+        setNotification({
+          title: 'Thành công',
+          description: 'Đã xóa thành công',
+          type: 'success'
+        });
       } catch (error) {
         console.error('Error bulk deleting', error);
+      } finally {
+        setIsApplying(false);
       }
+    } else {
+      setIsApplying(false);
     }
   };
 
@@ -144,8 +276,17 @@ export default function ManageWpScreen() {
 
   return (
     <div className="w-full flex flex-col gap-6">
+      {notification && (
+        <ToastNotification 
+          key={notification.description} 
+          title={notification.title} 
+          description={notification.description} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
       <header className="flex flex-col gap-2 pb-6 border-b border-gray-200 dark:border-white/[0.05]">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-title-sm font-semibold text-gray-800 dark:text-white/90">Quản lý Đăng tin WordPress</h2>
             <p className="text-theme-sm text-gray-500 dark:text-gray-400 max-w-2xl leading-relaxed mt-2">Danh sách các tin tức đã duyệt trong Database và trạng thái đồng bộ lên WordPress.</p>
@@ -187,8 +328,12 @@ export default function ManageWpScreen() {
             </select>
             <button
               onClick={handleBulkAction}
-              className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0"
+              disabled={isApplying}
+              className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              {isApplying ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : null}
               Áp dụng ({selectedIds.size})
             </button>
           </div>
@@ -315,41 +460,46 @@ export default function ManageWpScreen() {
                         )}
                       </div>
                     </td>
-                  <td className="px-5 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => handleClean(article._id)}
-                        className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition-all active:scale-95"
-                      >
-                        <Wand2 size={14} />
-                        Làm sạch
-                      </button>
-                      {!(Array.isArray(article.status) ? article.status : [article.status]).includes('POSTED_WP') && (
+                    <td className="px-5 py-4 text-right">
+                      <div className="grid grid-cols-2 gap-1.5 w-[180px] ml-auto">
                         <button 
-                          onClick={() => handlePublish(article._id)}
-                          className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg transition-all active:scale-95"
+                          onClick={() => handleClean(article)}
+                          disabled={cleaningId === article._id}
+                          className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                         >
-                          <Send size={14} />
-                          Đăng bài
+                          {cleaningId === article._id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Wand2 size={14} />
+                          )}
+                          Làm sạch
                         </button>
-                      )}
-                      <Link 
-                        to={`/news-detail/${article._id}`}
-                        className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg transition-all active:scale-95"
-                      >
-                        <Eye size={14} />
-                        Xem
-                      </Link>
-                      <a 
-                        href={article.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-lg transition-all active:scale-95"
-                      >
-                        Xem nguồn
-                      </a>
-                    </div>
-                  </td>
+                        {!(Array.isArray(article.status) ? article.status : [article.status]).includes('POSTED_WP') && (
+                          <button 
+                            onClick={() => handlePublish(article._id)}
+                            className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                          >
+                            <Send size={14} />
+                            Đăng bài
+                          </button>
+                        )}
+                        <Link 
+                          to={`/news-detail/${article._id}`}
+                          className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                        >
+                          <Eye size={14} />
+                          Xem
+                        </Link>
+                        <a 
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                        >
+                          Xem nguồn
+                        </a>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

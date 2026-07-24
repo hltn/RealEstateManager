@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import { WordPressService } from './wordpress.service';
 import { FirecrawlService } from './firecrawl.service';
 import { cleanMarkdownContent } from '../../../utils/content-cleaner';
+import { AIFilterService } from './ai-filter.service';
 
 @Injectable()
 export class NewsArticleService {
@@ -16,6 +17,7 @@ export class NewsArticleService {
     private readonly newsArticleModel: Model<NewsArticle>,
     private readonly wordpressService: WordPressService,
     private readonly firecrawlService: FirecrawlService,
+    private readonly aiFilterService: AIFilterService,
   ) {}
 
   async saveArticles(
@@ -145,6 +147,7 @@ export class NewsArticleService {
     this.logger.log(`Starting bulk market analysis for ${ids.length} articles`);
     let processed = 0;
     let failed = 0;
+    const processedArticles: any[] = [];
 
     for (const id of ids) {
       try {
@@ -166,7 +169,14 @@ export class NewsArticleService {
         
         article.publishDate = resultData.metadata?.date || resultData.metadata?.publishedAt || new Date().toISOString();
         const rawMarkdown = resultData.markdown || '';
-        article.content = cleanMarkdownContent(rawMarkdown);
+        
+        try {
+          article.content = await this.aiFilterService.cleanMarkdownContentWithAI(rawMarkdown);
+        } catch (aiError: any) {
+          this.logger.warn(`AI cleanup failed for article ${id}, fallback to basic string: ${aiError.message}`);
+          // Fallback to raw markdown if AI fails
+          article.content = rawMarkdown;
+        }
 
         if (!article.thumbnailUrl && resultData.metadata?.ogImage) {
           article.thumbnailUrl = resultData.metadata.ogImage;
@@ -195,13 +205,14 @@ export class NewsArticleService {
 
         await article.save();
         processed++;
+        processedArticles.push(article);
       } catch (error: any) {
         this.logger.error(`Failed to analyze market for article ID ${id}: ${error.message}`, error.stack);
         failed++;
       }
     }
 
-    return { processed, failed };
+    return { processed, failed, processedArticles };
   }
 
   async cleanArticle(id: string): Promise<NewsArticle> {
@@ -213,7 +224,7 @@ export class NewsArticleService {
     if (article.content) {
       this.logger.log(`Raw input content for article ${id}:\n${article.content}`);
       
-      article.content = cleanMarkdownContent(article.content);
+      article.content = await this.aiFilterService.cleanMarkdownContentWithAI(article.content);
       
       this.logger.log(`Cleaned content for article ${id}:\n${article.content}`);
       

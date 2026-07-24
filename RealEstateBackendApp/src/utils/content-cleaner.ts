@@ -248,12 +248,13 @@ function isNhadatListingParagraph(node: any): boolean {
   visit(node, 'link', (lNode: any) => {
     if (
       lNode.url &&
-      /nhadat\.cafeland\.vn\/(ban-|cho-thue-|member\/dang-tin)/.test(lNode.url)
+      /nhadat\.cafeland\.vn/.test(lNode.url)
     ) {
       hasNhadatLink = true;
     }
   });
-  return hasNhadatLink;
+  const nodeText = toString(node).trim();
+  return hasNhadatLink && nodeText.length < 400;
 }
 
 /**
@@ -415,9 +416,49 @@ export function cleanMarkdownContent(markdown: string): string {
           return;
         }
 
-        // ── 5e. Nhadat listing paragraphs ──
+        // 🗑️ 5e. Nhadat listing paragraphs 🗑️
         if (isNhadatListingParagraph(node)) {
           nodesToRemove.add(node);
+
+          // Cascade delete short text sibling paragraphs that follow
+          if (index !== undefined && parent && parent.children) {
+            let i = index + 1;
+            while (i < parent.children.length) {
+              const nextNode = parent.children[i];
+              if (nextNode.type !== 'paragraph') break;
+              if (nodesToRemove.has(nextNode)) {
+                i++;
+                continue;
+              }
+
+              // Check if it's another nhadat link or short text
+              let hasLinks = false;
+              let hasNhadatLink = false;
+              visit(nextNode, 'link', (lNode: any) => {
+                hasLinks = true;
+                if (lNode.url && /nhadat\.cafeland\.vn/.test(lNode.url)) {
+                  hasNhadatLink = true;
+                }
+              });
+
+              const nextText = toString(nextNode).trim();
+              
+              if (hasNhadatLink && nextText.length < 400) {
+                nodesToRemove.add(nextNode);
+                i++;
+                continue;
+              }
+
+              if (!hasLinks && nextText.length < 80) {
+                // Short plain text like "Gia Bình, Bắc Ninh"
+                nodesToRemove.add(nextNode);
+                i++;
+                continue;
+              }
+
+              break;
+            }
+          }
           return;
         }
 
@@ -557,7 +598,7 @@ export function cleanMarkdownContent(markdown: string): string {
           if (children.length === 1 && children[0].type === 'link') {
             const linkUrl = children[0].url || '';
             if (
-              /cafeland\.vn\/(tin-tuc|phan-tich|du-an)/.test(linkUrl) &&
+              /cafeland\.vn\/(tin-tuc|phan-tich|du-an|quy-hoach)/.test(linkUrl) &&
               nodeText.length < 300
             ) {
               nodesToRemove.add(node);
