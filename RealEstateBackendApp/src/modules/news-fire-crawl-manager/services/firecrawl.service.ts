@@ -140,7 +140,7 @@ export class FirecrawlService {
               url: article.url,
               title: article.title || source.name,
               description: article.description || '',
-              content: article.description || '',
+              content: '',
               source: source.name,
               publishedAt: article.publishedAt || new Date().toISOString(),
               thumbnailUrl: article.thumbnailUrl || '',
