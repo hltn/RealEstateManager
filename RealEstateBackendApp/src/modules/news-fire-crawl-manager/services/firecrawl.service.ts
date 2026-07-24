@@ -180,8 +180,35 @@ export class FirecrawlService {
     return filePath;
   }
 
-  async getRawArticles(): Promise<RawArticle[]> {
-    return this.rawArticleModel.find().sort({ publishedAt: -1 }).exec();
+  async getRawArticles(search?: string, sort?: 'newest' | 'oldest'): Promise<RawArticle[]> {
+    const query: any = {};
+    if (search) {
+      const escapeRegex = (text: string) => text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      const safeSearch = escapeRegex(search);
+      query.$or = [
+        { title: { $regex: safeSearch, $options: 'i' } },
+        { description: { $regex: safeSearch, $options: 'i' } }
+      ];
+    }
+    
+    let sortObj: any = { publishedAt: -1 };
+    if (sort === 'oldest') {
+      sortObj = { publishedAt: 1 };
+    }
+
+    return this.rawArticleModel.find(query).sort(sortObj).exec();
+  }
+
+  async getRawArticlesByIds(ids: string[]): Promise<any[]> {
+    return this.rawArticleModel.find({ _id: { $in: ids } }).lean().exec();
+  }
+
+  async deleteRawArticle(id: string): Promise<void> {
+    await this.rawArticleModel.findByIdAndDelete(id).exec();
+  }
+
+  async deleteRawArticlesBulk(ids: string[]): Promise<void> {
+    await this.rawArticleModel.deleteMany({ _id: { $in: ids } }).exec();
   }
 
   async deleteRawArticlesNotIn(urlHashes: string[]): Promise<void> {

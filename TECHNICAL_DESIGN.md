@@ -30,9 +30,47 @@ export class NewsSource extends Document {
 export const NewsSourceSchema = SchemaFactory.createForClass(NewsSource);
 ```
 
+### Collection: `raw_articles` (Schema: `RawArticleSchema`)
+
+Dùng để lưu trữ dữ liệu thô crawl về từ các nguồn trước khi đưa qua AI hoặc duyệt.
+
+```typescript
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class RawArticle extends Document {
+  @Prop({ required: true })
+  title: string;
+
+  @Prop()
+  description?: string;
+
+  @Prop()
+  content?: string;
+
+  @Prop({ required: true })
+  url: string;
+
+  @Prop({ required: true, unique: true, index: true })
+  urlHash: string;
+
+  @Prop()
+  publishedAt?: string;
+
+  @Prop()
+  thumbnailUrl?: string;
+
+  @Prop({ required: true })
+  source: string;
+}
+
+export const RawArticleSchema = SchemaFactory.createForClass(RawArticle);
+```
+
 ### Collection: `news_articles` (Schema: `NewsArticleSchema`)
 
-Lưu ý: Job 1 và Job 2 chỉ xử lý dữ liệu trung gian qua file JSON. Dữ liệu chỉ được lưu vào Database ở Job 3 (khi người dùng bấm lưu từ Admin UI). Do đó, ta chỉ cần một Collection chính để lưu trữ các bài viết đã được duyệt.
+Lưu ý: Dữ liệu sau khi xử lý hoặc duyệt sẽ được lưu vào Collection này. Các trường liên quan đến AI đều có thể tùy chọn (optional) và schema có thêm `thumbnailUrl`.
 
 ```typescript
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
@@ -49,31 +87,34 @@ export class NewsArticle extends Document {
   @Prop({ required: true })
   title: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   summary: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   importanceReason: string;
 
-  @Prop({ required: true, enum: ['Rất cao', 'Cao', 'Trung bình'] })
+  @Prop({ required: false, enum: ['Rất cao', 'Cao', 'Trung bình'] })
   impactLevel: string;
 
-  @Prop({ type: [String], required: true })
+  @Prop({ type: [String], required: false })
   targetAudience: string[]; // Nhà đầu tư, Người mua ở thực, Chủ đầu tư...
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   expertOpinion: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   publishDate: string; // ISO date string
 
-  @Prop({ required: true })
+  @Prop({ required: false })
+  thumbnailUrl: string;
+
+  @Prop({ required: false })
   source: string; // Tên nguồn hoặc ID tham chiếu tới NewsSource
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   url: string;
 
-  @Prop({ type: [String], required: true })
+  @Prop({ type: [String], required: false })
   keywords: string[];
 
   // Trường chống trùng lặp: băm SHA-256 từ `url` (sau khi chuẩn hóa)
@@ -132,6 +173,15 @@ Module cần expose các API RESTful để Admin UI (Frontend) kết nối.
 - **Xóa Nguồn tin**
   - `DELETE /api/news-manager/sources/:id`
 
+### 2.5 API Quản lý Bulk Operations (Xóa/Di chuyển hàng loạt)
+- **Xóa hàng loạt Raw Articles**
+  - `DELETE /api/news-manager/raw-articles/delete-bulk`
+- **Di chuyển hàng loạt từ Raw sang WP (NewsArticle)**
+  - `POST /api/news-manager/raw-articles/move-bulk`
+  - *Logic (Bulk Data Transfer):* Logic di chuyển hàng loạt từ `RawArticle` sang `NewsArticle` được đảm bảo giữ nguyên giá trị `urlHash` và `thumbnailUrl` ban đầu.
+- **Xóa hàng loạt bài viết đã lưu/WP (NewsArticles)**
+  - `DELETE /api/news-manager/articles/delete-bulk`
+
 ## 3. Component & Service Architecture
 
 Module `NewsFireCrawlManagerModule` sẽ bao gồm các Services (Providers) độc lập nhằm tuân thủ nguyên lý Single Responsibility.
@@ -159,3 +209,13 @@ Module `NewsFireCrawlManagerModule` sẽ bao gồm các Services (Providers) đ�
    - Đính kèm meta field `urlHash` khi gửi đi (để tầng WP kiểm tra trùng lặp).
 7. **`CronjobService`:**
    - Dùng `@nestjs/schedule` để hẹn giờ gọi luồng `Job1 -> Job2 -> Tự động lưu DB (nếu có cấu hình cho phép tự động)` hoặc chỉ dừng ở sinh file.
+
+## 4. Frontend & Screens
+
+### 4.1 RawArticlesScreen & ManageWpScreen
+- **Giao diện bảng:** Bổ sung cột Số thứ tự (STT) và Checkboxes cho thao tác hàng loạt.
+- **Tính năng mở rộng:** Tích hợp cột Action và Dropdown Bulk Actions (hỗ trợ Delete, Publish, Move).
+- **Tìm kiếm:** Bổ sung Client-side Search, có chức năng highlight từ khóa tìm kiếm.
+- **Sắp xếp:** Bổ sung tính năng Sort.
+- **Hiển thị Thumbnail:** Gộp hiển thị ảnh đại diện (Thumbnail) vào trong cột Title để tiết kiệm không gian và trực quan hơn.
+- **Định dạng dữ liệu:** Cập nhật định dạng hiển thị thời gian (publishDate/createdAt) theo chuẩn `DD/MM/YYYY`.

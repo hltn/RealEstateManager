@@ -28,14 +28,24 @@ Bổ sung các bảng (hoặc collections) sau:
 - `title`: Tiêu đề
 - `titleHash`: Chuỗi Hash (SHA-256) của tiêu đề (Chống trùng bài báo xuất hiện ở nhiều URL)
 - `content`: Nội dung HTML/Markdown
-- `aiSummary`: Nội dung tóm tắt do AI sinh ra
-- `isRealEstate`: Boolean (Xác định bởi AI)
+- `thumbnailUrl`: String (Optional) - Link ảnh đại diện
+- `aiSummary`: Nội dung tóm tắt do AI sinh ra (Optional)
+- `isRealEstate`: Boolean (Xác định bởi AI, Optional)
 - `status`: Enum (`CRAWLED`, `AI_PROCESSED`, `REJECTED`, `POSTED_WP`, `ERROR`)
 - `wpPostId`: String/Number (ID của bài viết trên WordPress)
 - `wpPostUrl`: String
 - `createdAt` & `updatedAt`: Timestamp
 
-## 3. Luồng Xử Lý (Cronjobs)
+## 3. Kiến Trúc Hệ Thống (Architecture)
+- **Bulk Data Transfer:** Logic cho phép di chuyển dữ liệu từ `RawArticle` sang `NewsArticle` được thiết kế chặt chẽ, bảo toàn nguyên vẹn `urlHash` và `thumbnailUrl`. Việc này giúp giữ vững tính nhất quán của Unique Index, chống trùng lặp dữ liệu trước và sau khi lưu chính thức.
+
+## 4. Danh Sách API Hỗ Trợ (REST APIs)
+Hệ thống cung cấp thêm các API xử lý hàng loạt (Bulk Operations):
+- **Delete Bulk Articles:** `DELETE /api/news-manager/articles/delete-bulk`
+- **Delete Bulk Raw Articles:** `DELETE /api/news-manager/raw-articles/delete-bulk`
+- **Move Bulk Raw Articles:** `POST /api/news-manager/raw-articles/move-bulk`
+
+## 5. Luồng Xử Lý (Cronjobs)
 Để tránh rate limit và dễ kiểm soát lỗi, chia thành 3 Job tuần tự:
 
 ### Job 1: Crawl & Deduplicate (Chạy tự động)
@@ -66,50 +76,54 @@ Bổ sung các bảng (hoặc collections) sau:
    - 10. Từ khóa chính
 4. Kết quả 5 tin này sẽ được lưu ra file JSON để Job 3 lấy dữ liệu hiển thị.
 
-### Job 3: Lưu Tin (Thao tác Thủ công trên Giao diện)
+### Job 3: Lưu Tin (Thao tác Thủ công trên Giao diện - RawArticlesScreen)
 1. Đây là màn hình gom chung hiển thị kết quả của Job 1 & Job 2.
-2. Trên giao diện Admin, người dùng xem danh sách 5 tin quan trọng nhất (với 10 trường dữ liệu chi tiết ở trên) do AI phân tích.
+2. Trên giao diện Admin, người dùng xem danh sách các tin thô. Có thể thao tác hàng loạt (Bulk Actions: Move/Delete) bằng Checkboxes.
 3. Người dùng tích chọn những tin muốn lưu.
-4. Khi bấm lưu, hệ thống sẽ tạo `urlHash` và lưu các tin này vào Database. Lúc này dữ liệu mới chính thức được lưu vào DB.
+4. Khi bấm "Move", hệ thống sẽ chuyển đổi thành `NewsArticle` (bảo toàn `urlHash`, `thumbnailUrl`) và lưu các tin này vào Database chính.
 
-### Job 4: Đăng bài lên WordPress (Thao tác Thủ công trên Giao diện)
-1. Một màn hình riêng biệt (với Sidebar/Vertical Tab) để quản lý danh sách các tin tức đã lưu trong Database (dạng Data Table).
+### Job 4: Đăng bài lên WordPress (Thao tác Thủ công trên Giao diện - ManageWpScreen)
+1. Một màn hình riêng biệt để quản lý danh sách các tin tức đã lưu trong Database. Có thể thao tác hàng loạt (Bulk Actions: Publish/Delete).
 2. Người dùng tích chọn các bài muốn đăng lên web.
 3. Bấm nút Đăng: Hệ thống sẽ lấy dữ liệu từ Database và POST tới WordPress REST API (`/wp-json/wp/v2/posts`).
 4. Nếu thành công -> Cập nhật trạng thái trong DB (`status = POSTED_WP`) và lưu `wpPostId`. Lỗi -> Cập nhật `ERROR`.
 
-## 4. Giải Pháp Chống Trùng Lặp Trọn Vẹn (Duplication Checking)
-- **Tầng 1 (Database - Quan trọng nhất):** Sử dụng thuật toán băm SHA-256 trên URL (sau chuẩn hóa) làm Unique Index trong DB. Mọi luồng xử lý trùng lặp sẽ bị DB báo lỗi "Duplicate Key" ngay lập tức. Băm thêm Tiêu đề để phát hiện trùng lặp giữa các nguồn.
+## 6. Giải Pháp Chống Trùng Lặp Trọn Vẹn (Duplication Checking)
+- **Tầng 1 (Database - Quan trọng nhất):** Sử dụng thuật toán băm SHA-256 trên URL (sau chuẩn hóa) làm Unique Index trong DB. Mọi luồng xử lý trùng lặp sẽ bị DB báo lỗi "Duplicate Key" ngay lập tức. Băm thêm Tiêu đề để phát hiện trùng lặp giữa các nguồn. Cơ chế Move Bulk cũng bảo toàn nguyên vẹn `urlHash`.
 - **Tầng 2 (Cronjob Concurrency):** Dùng cơ chế Distributed Lock (VD: Redis Lock) để đảm bảo không có 2 tiến trình crawl chạy cùng lúc đè lên nhau.
 - **Tầng 3 (WordPress):** Khi gửi bài lên WP, đính kèm custom field (Meta Data) chứa giá trị `urlHash`. Trong trường hợp DB lỗi/mất đồng bộ, code có thể truy vấn `GET WP kèm meta_key=urlHash` trước khi đăng để kiểm tra bài này đã tồn tại trên WP chưa, giúp ngăn đăng đúp tuyệt đối.
 
-## 5. Giao Diện Quản Trị (Admin UI)
-Để tiện lợi cho việc vận hành, module này sẽ thiết kế 4 màn hình chính (truy cập qua Sidebar / Vertical Tab). Yêu cầu đối với Màn hình Quản Lý Nguồn Tin (Phase 5) được quy định chi tiết như sau:
+## 7. Giao Diện Quản Trị (Admin UI)
+Để tiện lợi cho việc vận hành, module này sẽ thiết kế 4 màn hình chính (truy cập qua Sidebar / Vertical Tab). Mọi màn hình cần áp dụng thiết kế tối giản (Minimalism), toast notifications sau khi thao tác.
 
 1. **Màn hình Quản Lý Nguồn Tin (News Source):**
-   - **Mục đích:** Quản lý danh sách các website/link cần crawl.
-   - **Tính năng (CRUD Full Features):**
-     - **Create (Thêm mới):** Cho phép nhập `name` (Tên nguồn), `url` (Link cào), `isActive` (Trạng thái), `crawlConfig` (JSON/Form cấu hình cho Firecrawl).
-     - **Read (Xem danh sách):** Hiển thị Data Table danh sách các nguồn tin đã lưu. Cột hiển thị: Tên nguồn, URL gốc, Trạng thái hoạt động (Badge Xanh/Đỏ), Ngày tạo, Thao tác.
-     - **Update (Sửa):** Form cập nhật lại thông tin của một nguồn tin đã có.
-     - **Delete (Xóa):** Xóa hoàn toàn khỏi Database (có popup xác nhận) hoặc hỗ trợ Soft Delete.
-     - **Toggle Status:** Nút bật/tắt (Switch toggle) nhanh trạng thái `isActive`.
-   - **Yêu cầu UI:** Thiết kế tối giản (Minimalism), form nhập liệu sử dụng thẻ trắng (floating card), nút CTA màu Electric Blue, hiển thị thông báo toast ngay sau khi thao tác thành công.
+   - **Tính năng (CRUD Full Features):** Quản lý Name, URL, isActive, crawlConfig.
+   - Hiển thị: Bảng danh sách nguồn tin với tính năng Toggle Status nhanh.
 
-2. **Màn hình Thu Thập (Job 1, 2, 3):** 
-   - Có nút bấm "Thu Thập Tin Tức Ngay" (kích hoạt luồng thủ công - lấy danh sách từ NewsSource có isActive: true).
-   - Sau khi thực thi Crawl và AI, màn hình hiển thị trực tiếp danh sách Top 5 bản tin chi tiết (10 trường thông tin).
-   - Có Checkbox để người dùng chọn tin cần duyệt & Nút "Lưu vào Database".
+2. **Màn hình Thu Thập (RawArticlesScreen):** 
+   - Quản lý và duyệt nguồn tin thô.
+   - **Giao diện nâng cao:** Có STT, cột Checkboxes (chọn nhiều), Action (thao tác đơn lẻ).
+   - **Tính năng:**
+     - Client-side Search với highlight từ khóa.
+     - Tính năng Sắp xếp (Sort).
+     - Ngày tháng format `DD/MM/YYYY`.
+     - Cột Title tích hợp Thumbnail nằm lồng gọn bên trong.
+     - Bulk Actions Dropdown (Delete/Move).
 
-3. **Màn hình Quản Lý Tin Tức (Job 4):**
-   - Hiển thị danh sách các bài viết đã duyệt (đã lưu Database) dưới dạng Bảng (Data Table).
-   - Cho phép chọn bài và bấm nút "Đăng lên WordPress".
+3. **Màn hình Quản Lý Tin Tức (ManageWpScreen):**
+   - Quản lý tin bài đã duyệt và đăng WordPress.
+   - **Giao diện nâng cao:** Có STT, cột Checkboxes, Action.
+   - **Tính năng:**
+     - Client-side Search với highlight, Sort.
+     - Ngày tháng format `DD/MM/YYYY`.
+     - Title có chứa Thumbnail.
+     - Bulk Actions Dropdown (Delete/Publish).
 
 4. **Màn hình Quản Lý Cronjob:**
    - Dành riêng cho việc cấu hình tự động (Bật/Tắt Cronjob).
    - Hiển thị trạng thái hoạt động của hệ thống ngầm.
 
-## 6. PM Sign-off & Task Delegation
-**Product Manager Sign-off:** Kế hoạch này đã được rà soát và xác nhận (Approved). Việc quản lý nguồn tin được mô tả cụ thể thành Phase 5 với chuẩn CRUD đầy đủ. Các thiết kế UI Admin và luồng crawl dữ liệu đều chặt chẽ và khả thi.
+## 8. PM Sign-off & Task Delegation
+**Product Manager Sign-off:** Kế hoạch đã được rà soát cập nhật để phản ánh đầy đủ các tính năng hiện tại: Database (thumbnailUrl, optional AI fields), Bulk Architecture, Bulk API endpoints, và hoàn thiện UI trên màn hình `RawArticlesScreen` & `ManageWpScreen`.
 
-**Tiếp theo:** Uỷ quyền cho `architect_agent` tiến hành thiết kế hệ thống (cập nhật cấu trúc Database/API/UI cho màn hình Quản Lý Nguồn Tin) và bắt đầu quá trình triển khai theo `task.md`.
+**Tiếp theo:** Các kỹ sư và `architect_agent` tiếp tục phát triển/bảo trì dựa trên kế hoạch này.

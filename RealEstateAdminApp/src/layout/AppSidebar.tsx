@@ -12,6 +12,10 @@ import {
   TableIcon,
   UserCircleIcon,
 } from "../icons";
+
+const ChevronDownIconAny = ChevronDownIcon as any;
+const HorizontaLDotsAny = HorizontaLDots as any;
+
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
 
@@ -155,7 +159,7 @@ const AppSidebar: React.FC = () => {
                 <span className="menu-item-text">{nav.name}</span>
               )}
               {(isExpanded || isHovered || isMobileOpen) && (
-                <ChevronDownIcon
+                <ChevronDownIconAny
                   className={`ml-auto w-5 h-5 transition-transform duration-200 ${
                     openSubmenu?.type === menuType &&
                     openSubmenu?.index === index
@@ -310,7 +314,7 @@ const AppSidebar: React.FC = () => {
                 {isExpanded || isHovered || isMobileOpen ? (
                   "Menu"
                 ) : (
-                  <HorizontaLDots className="size-6" />
+                  <HorizontaLDotsAny className="size-6" />
                 )}
               </h2>
               {renderMenuItems(navItems, "main")}

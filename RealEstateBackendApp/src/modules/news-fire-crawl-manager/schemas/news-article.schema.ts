@@ -12,31 +12,34 @@ export class NewsArticle extends Document {
   @Prop({ required: true })
   title: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   summary: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   importanceReason: string;
 
-  @Prop({ required: true, enum: ['Rất cao', 'Cao', 'Trung bình'] })
+  @Prop({ required: false, enum: ['Rất cao', 'Cao', 'Trung bình'] })
   impactLevel: string;
 
-  @Prop({ type: [String], required: true })
+  @Prop({ type: [String], required: false })
   targetAudience: string[];
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   expertOpinion: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   publishDate: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
+  thumbnailUrl: string;
+
+  @Prop({ required: false })
   source: string;
 
-  @Prop({ required: true })
+  @Prop({ required: false })
   url: string;
 
-  @Prop({ type: [String], required: true })
+  @Prop({ type: [String], required: false })
   keywords: string[];
 
   @Prop({ required: true, unique: true, index: true })

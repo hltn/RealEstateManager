@@ -4,6 +4,8 @@ import {
   Get,
   Body,
   Param,
+  Query,
+  Delete,
   Logger,
   InternalServerErrorException,
   HttpException,
@@ -40,9 +42,9 @@ export class NewsFireCrawlManagerController {
   }
 
   @Get('raw-articles')
-  async getRawArticles() {
+  async getRawArticles(@Query('search') search?: string, @Query('sort') sort?: 'newest' | 'oldest') {
     try {
-      const articles = await this.firecrawlService.getRawArticles();
+      const articles = await this.firecrawlService.getRawArticles(search, sort);
       return {
         message: 'Raw articles fetched successfully',
         data: articles,
@@ -50,6 +52,56 @@ export class NewsFireCrawlManagerController {
     } catch (error: any) {
       this.logger.error('Error fetching raw articles', error.stack);
       throw new InternalServerErrorException('Failed to fetch raw articles');
+    }
+  }
+
+  @Delete('raw-articles/:id')
+  async deleteRawArticle(@Param('id') id: string) {
+    try {
+      await this.firecrawlService.deleteRawArticle(id);
+      return { message: 'Raw article deleted successfully' };
+    } catch (error: any) {
+      this.logger.error(`Error deleting raw article ${id}`, error.stack);
+      throw new InternalServerErrorException('Failed to delete raw article');
+    }
+  }
+
+  @Post('raw-articles/delete-bulk')
+  async deleteRawArticlesBulk(@Body('ids') ids: string[]) {
+    try {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return { message: 'No articles to delete' };
+      }
+      await this.firecrawlService.deleteRawArticlesBulk(ids);
+      return { message: 'Raw articles deleted successfully' };
+    } catch (error: any) {
+      this.logger.error('Error bulk deleting raw articles', error.stack);
+      throw new InternalServerErrorException('Failed to bulk delete raw articles');
+    }
+  }
+
+  @Post('raw-articles/move-bulk')
+  async moveRawArticlesBulk(@Body('ids') ids: string[]) {
+    try {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return { message: 'No articles to move' };
+      }
+      const rawArticles = await this.firecrawlService.getRawArticlesByIds(ids);
+      if (rawArticles.length > 0) {
+        const { processedUrlHashes } = await this.newsArticleService.saveArticles(rawArticles);
+        
+        const successfulIds = rawArticles
+          .filter(raw => raw.urlHash && processedUrlHashes.includes(raw.urlHash))
+          .map(raw => raw._id.toString());
+          
+        if (successfulIds.length > 0) {
+          await this.firecrawlService.deleteRawArticlesBulk(successfulIds);
+        }
+      }
+      return { message: 'Raw articles moved successfully' };
+    } catch (error: any) {
+      this.logger.error('Error bulk moving raw articles', error.stack);
+      throw new InternalServerErrorException('Failed to bulk move raw articles');
     }
   }
 
@@ -174,6 +226,24 @@ export class NewsFireCrawlManagerController {
     } catch (error: any) {
       this.logger.error('Error fetching articles', error.stack);
       throw new InternalServerErrorException('Failed to fetch articles');
+    }
+  }
+
+
+  @Post('articles/delete-bulk')
+  async deleteBulkArticles(@Body('ids') ids: string[]) {
+    try {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return { message: 'No articles to delete' };
+      }
+      const result = await this.newsArticleService.deleteBulkArticles(ids);
+      return {
+        message: 'Articles deleted successfully',
+        data: result,
+      };
+    } catch (error: any) {
+      this.logger.error('Error bulk deleting articles', error.stack);
+      throw new InternalServerErrorException('Failed to bulk delete articles');
     }
   }
 
