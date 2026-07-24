@@ -18,5 +18,10 @@
     "api_ai_name": "CLEAN_ARTICLE_PROMPT",
     "api_ai_path": "/api/news-manager/articles/clean-content",
     "prompt": "You are a specialized markdown cleaner. I will provide you with a raw markdown text extracted from a real estate news article.\nYour task is to extract ONLY the main article content.\nYou MUST REMOVE all:\n- Menus and navigation links\n- Advertisements\n- Related articles lists\n- Boilerplate text (e.g., copyright, \"read more\", tags)\n- Footer and headers\n\nOutput ONLY the clean markdown of the main article content. Do not include any explanations, introductory text, or markdown code block backticks like \\`\\`\\`markdown.\n\nRaw Markdown:\n"
+  },
+  {
+    "api_ai_name": "EXTRACT_LISTING_PROMPT",
+    "api_ai_path": "/api/news-manager/articles/extract-listing",
+    "prompt": "You are a data extraction assistant. Extract a list of news articles or real estate listings from the given HTML snippet or text. Return ONLY a JSON array of objects with 'url', 'title', 'description', and 'publishedAt' (if available). Do not include any extra text."
   }
 ]

@@ -5,7 +5,7 @@ export default function ManageSourcesScreen() {
   const [sources, setSources] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: '', url: '', crawlConfig: '{}' });
+  const [formData, setFormData] = useState({ name: '', url: '', rssUrl: '', crawlConfig: '{}' });
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchSources = async () => {
@@ -28,11 +28,12 @@ export default function ManageSourcesScreen() {
       setFormData({ 
         name: source.name, 
         url: source.url, 
+        rssUrl: source.rssUrl || '',
         crawlConfig: JSON.stringify(source.crawlConfig || {}, null, 2) 
       });
     } else {
       setEditingId(null);
-      setFormData({ name: '', url: '', crawlConfig: '{}' });
+      setFormData({ name: '', url: '', rssUrl: '', crawlConfig: '{}' });
     }
     setIsModalOpen(true);
   };
@@ -40,7 +41,7 @@ export default function ManageSourcesScreen() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setFormData({ name: '', url: '', crawlConfig: '{}' });
+    setFormData({ name: '', url: '', rssUrl: '', crawlConfig: '{}' });
   };
 
   const handleSave = async () => {
@@ -57,7 +58,7 @@ export default function ManageSourcesScreen() {
       await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: formData.name, url: formData.url, crawlConfig: crawlConfigParsed })
+        body: JSON.stringify({ name: formData.name, url: formData.url, rssUrl: formData.rssUrl, crawlConfig: crawlConfigParsed })
       });
       handleCloseModal();
       fetchSources();
@@ -208,6 +209,17 @@ export default function ManageSourcesScreen() {
                   onChange={(e) => setFormData({...formData, url: e.target.value})}
                   className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2.5 text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300 focus:ring-1 focus:ring-brand-500 transition-all"
                   placeholder="https://"
+                />
+              </div>
+
+              <div>
+                <label className="text-theme-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">URL RSS Feed</label>
+                <input 
+                  type="text" 
+                  value={formData.rssUrl}
+                  onChange={(e) => setFormData({...formData, rssUrl: e.target.value})}
+                  className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2.5 text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300 focus:ring-1 focus:ring-brand-500 transition-all"
+                  placeholder="https://.../rss"
                 />
               </div>
 

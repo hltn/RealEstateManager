@@ -11,7 +11,7 @@ import {
   HttpException,
   BadRequestException,
 } from '@nestjs/common';
-import { FirecrawlService } from './services/firecrawl.service';
+import { CustomCrawlerService } from './services/custom-crawler.service';
 import { AIFilterService } from './services/ai-filter.service';
 import { NewsArticleService } from './services/news-article.service';
 import { CronjobService } from './services/cronjob.service';
@@ -23,7 +23,7 @@ export class NewsFireCrawlManagerController {
   private readonly logger = new Logger(NewsFireCrawlManagerController.name);
 
   constructor(
-    private readonly firecrawlService: FirecrawlService,
+    private readonly customCrawlerService: CustomCrawlerService,
     private readonly aiFilterService: AIFilterService,
     private readonly newsArticleService: NewsArticleService,
     private readonly cronjobService: CronjobService,
@@ -62,7 +62,7 @@ export class NewsFireCrawlManagerController {
   @Get('raw-articles')
   async getRawArticles(@Query('search') search?: string, @Query('sort') sort?: 'newest' | 'oldest') {
     try {
-      const articles = await this.firecrawlService.getRawArticles(search, sort);
+      const articles = await this.customCrawlerService.getRawArticles(search, sort);
       return {
         message: 'Raw articles fetched successfully',
         data: articles,
@@ -76,7 +76,7 @@ export class NewsFireCrawlManagerController {
   @Delete('raw-articles/:id')
   async deleteRawArticle(@Param('id') id: string) {
     try {
-      await this.firecrawlService.deleteRawArticle(id);
+      await this.customCrawlerService.deleteRawArticle(id);
       return { message: 'Raw article deleted successfully' };
     } catch (error: any) {
       this.logger.error(`Error deleting raw article ${id}`, error.stack);
@@ -90,7 +90,7 @@ export class NewsFireCrawlManagerController {
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to delete' };
       }
-      await this.firecrawlService.deleteRawArticlesBulk(ids);
+      await this.customCrawlerService.deleteRawArticlesBulk(ids);
       return { message: 'Raw articles deleted successfully' };
     } catch (error: any) {
       this.logger.error('Error bulk deleting raw articles', error.stack);
@@ -104,7 +104,7 @@ export class NewsFireCrawlManagerController {
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to move' };
       }
-      const rawArticles = await this.firecrawlService.getRawArticlesByIds(ids);
+      const rawArticles = await this.customCrawlerService.getRawArticlesByIds(ids);
       if (rawArticles.length > 0) {
         const { processedUrlHashes } = await this.newsArticleService.saveArticles(rawArticles);
         
@@ -113,7 +113,7 @@ export class NewsFireCrawlManagerController {
           .map(raw => raw._id.toString());
           
         if (successfulIds.length > 0) {
-          await this.firecrawlService.deleteRawArticlesBulk(successfulIds);
+          await this.customCrawlerService.deleteRawArticlesBulk(successfulIds);
         }
       }
       return { message: 'Raw articles moved successfully' };
@@ -127,7 +127,7 @@ export class NewsFireCrawlManagerController {
   async triggerManualCrawl() {
     try {
       this.logger.log('Manual crawl called');
-      const filePath = await this.firecrawlService.crawlData();
+      const filePath = await this.customCrawlerService.crawlData();
       
       const fs = require('fs');
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -193,12 +193,12 @@ export class NewsFireCrawlManagerController {
       
       if (filteredArticles && filteredArticles.length > 0) {
         const keepUrls = filteredArticles.map((a: any) => a.urlHash);
-        await this.firecrawlService.deleteRawArticlesNotIn(keepUrls);
+        await this.customCrawlerService.deleteRawArticlesNotIn(keepUrls);
       } else {
         // If AI returned empty, maybe we should delete all or keep all?
         // Prompt says "delete all records... that are NOT present in the AI's returned list".
         // If empty list returned, it deletes everything. This is correct as per instructions.
-        await this.firecrawlService.deleteRawArticlesNotIn([]);
+        await this.customCrawlerService.deleteRawArticlesNotIn([]);
       }
       
       return {

@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { NewsFireCrawlManagerController } from './news-fire-crawl-manager.controller';
 import { NewsSourceController } from './controllers/news-source.controller';
-import { FirecrawlService } from './services/firecrawl.service';
+import { CustomCrawlerService } from './services/custom-crawler.service';
 import { AIFilterService } from './services/ai-filter.service';
 import { NewsArticleService } from './services/news-article.service';
 import { WordPressService } from './services/wordpress.service';
@@ -23,7 +23,7 @@ import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],
   providers: [
-    FirecrawlService,
+    CustomCrawlerService,
     AIFilterService,
     NewsArticleService,
     WordPressService,

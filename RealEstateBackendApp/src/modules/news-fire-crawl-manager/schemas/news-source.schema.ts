@@ -12,6 +12,9 @@ export class NewsSource extends Document {
   @Prop({ default: true })
   isActive: boolean;
 
+  @Prop()
+  rssUrl?: string;
+
   @Prop({ type: Object, default: {} })
   crawlConfig: Record<string, any>;
 }

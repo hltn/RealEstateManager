@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
 import * as crypto from 'crypto';
 import { WordPressService } from './wordpress.service';
-import { FirecrawlService } from './firecrawl.service';
+import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 
@@ -16,8 +16,7 @@ export class NewsArticleService {
     @InjectModel(NewsArticle.name)
     private readonly newsArticleModel: Model<NewsArticle>,
     private readonly wordpressService: WordPressService,
-    private readonly firecrawlService: FirecrawlService,
-    private readonly aiFilterService: AIFilterService,
+        private readonly aiFilterService: AIFilterService,
     private readonly aiPromptConfigService: AiPromptConfigService,
   ) { }
 
@@ -158,18 +157,18 @@ export class NewsArticleService {
           continue;
         }
 
-        const scrapeResult = await this.firecrawlService.scrapeUrl(article.url, { formats: ['markdown'] });
-
-        if (!scrapeResult || scrapeResult.success === false) {
-          this.logger.warn(`Failed to scrape article ${article.url}: ${scrapeResult?.error || 'Unknown error'}. Raw response: ${JSON.stringify(scrapeResult)}`);
+        let rawMarkdown = '';
+        try {
+          rawMarkdown = await ArticleExtractorUtil.extractArticle(article.url);
+        } catch (error: any) {
+          this.logger.warn(`Failed to scrape article ${article.url}: ${error.message}`);
           failed++;
           continue;
         }
 
-        const resultData = scrapeResult.data || scrapeResult;
-
-        article.publishDate = resultData.metadata?.date || resultData.metadata?.publishedAt || new Date().toISOString();
-        const rawMarkdown = resultData.markdown || '';
+        if (!article.publishDate) {
+          article.publishDate = new Date().toISOString();
+        }
 
         try {
           article.content = await this.aiFilterService.cleanMarkdownContentWithAI(rawMarkdown);
@@ -177,14 +176,6 @@ export class NewsArticleService {
           this.logger.warn(`AI cleanup failed for article ${id}, fallback to basic string: ${aiError.message}`);
           // Fallback to raw markdown if AI fails
           article.content = rawMarkdown;
-        }
-
-        if (!article.thumbnailUrl && resultData.metadata?.ogImage) {
-          article.thumbnailUrl = resultData.metadata.ogImage;
-        }
-
-        if (!article.summary && resultData.metadata?.description) {
-          article.summary = resultData.metadata.description;
         }
 
         // Migration and cleanup of invalid statuses (like 'SAVED', '', etc)
@@ -268,3 +259,4 @@ Content: ${article.content || article.summary || 'N/A'}
     return article;
   }
 }
+

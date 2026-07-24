@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { FirecrawlService } from './firecrawl.service';
+import { CustomCrawlerService } from './custom-crawler.service';
 import { AIFilterService } from './ai-filter.service';
 import { NewsArticleService } from './news-article.service';
 
@@ -14,7 +14,7 @@ export class CronjobService {
 
   constructor(
     private schedulerRegistry: SchedulerRegistry,
-    private firecrawlService: FirecrawlService,
+    private customCrawlerService: CustomCrawlerService,
     private aiFilterService: AIFilterService,
     private newsArticleService: NewsArticleService,
   ) {}
@@ -62,8 +62,8 @@ export class CronjobService {
   private async executeCrawlFlow() {
     let filePath: string | null = null;
     try {
-      filePath = await this.firecrawlService.crawlData();
-      const top5Articles = await this.aiFilterService.filterAndRank(filePath);
+      filePath = await this.customCrawlerService.crawlData();
+      const top5Articles = filePath ? await this.aiFilterService.filterAndRank(filePath) : [];
 
       if (top5Articles && top5Articles.length > 0) {
         // Automatically save it
@@ -90,3 +90,5 @@ export class CronjobService {
     }
   }
 }
+
+
