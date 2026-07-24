@@ -27,8 +27,16 @@ export class CustomCrawlerService {
     this.rssParser = new Parser();
   }
 
-  async crawlData(): Promise<string> {
-    this.logger.log('Starting Job 1: Crawl data via CustomCrawlerService');
+  async crawlData(days?: number): Promise<string> {
+    this.logger.log(`Starting Job 1: Crawl data via CustomCrawlerService. Filter: ${days ? `last ${days} days` : 'All time'}`);
+
+    let cutoffDate: Date | null = null;
+    if (days && days > 0) {
+      cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      // Reset to start of day
+      cutoffDate.setHours(0, 0, 0, 0);
+    }
 
     let crawledData: Array<{
       url: string;
@@ -106,6 +114,11 @@ export class CustomCrawlerService {
             if (!isNaN(tempDate.getTime())) {
               parsedDate = tempDate;
             }
+          }
+
+          // Filter by date if cutoffDate is set
+          if (cutoffDate && parsedDate < cutoffDate) {
+            continue; // Bỏ qua bài viết cũ hơn số ngày chỉ định
           }
 
           const articleData = {

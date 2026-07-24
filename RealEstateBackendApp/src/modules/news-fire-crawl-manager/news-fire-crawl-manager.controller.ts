@@ -124,10 +124,10 @@ export class NewsFireCrawlManagerController {
   }
 
   @Post('crawl')
-  async triggerManualCrawl() {
+  async triggerManualCrawl(@Body('days') days?: number) {
     try {
-      this.logger.log('Manual crawl called');
-      const filePath = await this.customCrawlerService.crawlData();
+      this.logger.log(`Manual crawl called with days filter: ${days || 'none'}`);
+      const filePath = await this.customCrawlerService.crawlData(days);
       
       const fs = require('fs');
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));

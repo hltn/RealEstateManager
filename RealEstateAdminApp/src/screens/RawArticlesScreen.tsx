@@ -36,6 +36,7 @@ export default function RawArticlesScreen() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [bulkAction, setBulkAction] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [crawlDays, setCrawlDays] = useState<number>(3); // Mặc định 3 ngày
 
   const fetchRawArticles = async (keepSuccess = false) => {
     setLoading(true);
@@ -91,6 +92,8 @@ export default function RawArticlesScreen() {
     try {
       const response = await fetch("/api/news-manager/crawl", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: crawlDays > 0 ? crawlDays : undefined })
       });
       const resData = await response.json();
       if (!response.ok) {
@@ -233,7 +236,19 @@ export default function RawArticlesScreen() {
             Danh sách tất cả các bài viết đã thu thập nhưng chưa qua phân tích AI hoặc đã lưu vào bảng tạm (RawArticle).
           </p>
         </div>
-        <div className="flex gap-4 flex-wrap justify-end">
+        <div className="flex gap-4 flex-wrap justify-end items-center">
+          <select
+            value={crawlDays}
+            onChange={(e) => setCrawlDays(Number(e.target.value))}
+            disabled={loading || analyzing || crawling}
+            className="px-3 py-3 border border-gray-200 dark:border-white/[0.1] rounded-lg bg-white dark:bg-gray-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-70"
+          >
+            <option value={0}>Tất cả thời gian</option>
+            <option value={1}>1 ngày qua</option>
+            <option value={3}>3 ngày qua</option>
+            <option value={7}>7 ngày qua</option>
+            <option value={30}>30 ngày qua</option>
+          </select>
           <button
             onClick={handleCrawl}
             disabled={loading || analyzing || crawling}
