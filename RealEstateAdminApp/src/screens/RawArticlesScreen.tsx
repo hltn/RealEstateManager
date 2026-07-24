@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { AlertCircle, Database, Trash2, Eye, Search } from "lucide-react";
+import { AlertCircle, Database, Trash2, Eye, Search, Play } from "lucide-react";
 
 const renderHighlightedText = (text: string, query: string) => {
   if (!text) return "";
@@ -26,6 +26,7 @@ const renderHighlightedText = (text: string, query: string) => {
 export default function RawArticlesScreen() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [crawling, setCrawling] = useState(false);
   const [rawData, setRawData] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -83,6 +84,36 @@ export default function RawArticlesScreen() {
     });
   }, [rawData, searchQuery, sortOrder]);
 
+  const handleCrawl = async () => {
+    setCrawling(true);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch("/api/news-manager/crawl", {
+        method: "POST",
+      });
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || "Lỗi từ máy chủ");
+      }
+      const data = resData.data || [];
+      if (data.length > 0) {
+        setSuccess(
+          "Thu thập thành công " +
+            data.length +
+            " bài viết! Đã tải lại danh sách."
+        );
+        await fetchRawArticles(true);
+      } else {
+        setSuccess("Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Có lỗi xảy ra khi thu thập dữ liệu.");
+    } finally {
+      setCrawling(false);
+    }
+  };
+
   const handleAnalyze = async () => {
     if (rawData.length === 0) return;
     
@@ -123,7 +154,7 @@ export default function RawArticlesScreen() {
       const res = await fetch(`/api/news-manager/raw-articles/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Xóa thất bại");
       setSuccess("Đã xóa bài viết thành công!");
-      fetchRawArticles(true);
+      await fetchRawArticles(true);
     } catch (e: any) {
       setError(e.message || "Lỗi khi xóa bài viết");
     }
@@ -140,7 +171,7 @@ export default function RawArticlesScreen() {
         });
         if (!res.ok) throw new Error("Xóa hàng loạt thất bại");
         setSuccess(`Đã xóa ${selectedIds.length} bài viết thành công!`);
-        fetchRawArticles(true);
+        await fetchRawArticles(true);
         setBulkAction("");
       } catch (e: any) {
         setError(e.message || "Lỗi khi xóa hàng loạt");
@@ -155,7 +186,7 @@ export default function RawArticlesScreen() {
         });
         if (!res.ok) throw new Error("Di chuyển dữ liệu thất bại");
         setSuccess(`Đã di chuyển ${selectedIds.length} bài viết thành công!`);
-        fetchRawArticles(true);
+        await fetchRawArticles(true);
         setBulkAction("");
       } catch (e: any) {
         setError(e.message || "Lỗi khi di chuyển dữ liệu");
@@ -202,18 +233,31 @@ export default function RawArticlesScreen() {
             Danh sách tất cả các bài viết đã thu thập nhưng chưa qua phân tích AI hoặc đã lưu vào bảng tạm (RawArticle).
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap justify-end">
+          <button
+            onClick={handleCrawl}
+            disabled={loading || analyzing || crawling}
+            className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-brand-500 hover:bg-brand-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
+          >
+            <Play
+              size={20}
+              className={crawling ? "animate-pulse" : ""}
+            />
+            <span>
+              {crawling ? "Đang thu thập..." : "Chạy quy trình thu thập"}
+            </span>
+          </button>
           <button
             onClick={handleAnalyze}
-            disabled={loading || analyzing || rawData.length === 0}
+            disabled={loading || analyzing || crawling || rawData.length === 0}
             className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-brand-500 bg-brand-50 dark:bg-brand-500/15 border border-brand-100 dark:border-brand-500/25 transition-all duration-300 hover:bg-brand-100 dark:hover:bg-brand-500/25 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
             {analyzing ? "Đang phân tích..." : "Phân tích tin tức"}
           </button>
           <button
             onClick={() => fetchRawArticles()}
-            disabled={loading || analyzing}
-            className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-brand-500 hover:bg-brand-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
+            disabled={loading || analyzing || crawling}
+            className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-gray-500 hover:bg-gray-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
             {loading ? "Đang tải..." : "Làm mới"}
           </button>

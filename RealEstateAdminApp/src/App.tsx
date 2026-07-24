@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AppLayout from './layout/AppLayout';
-import ManualCrawlScreen from './screens/ManualCrawlScreen';
 import ManageWpScreen from './screens/ManageWpScreen';
 import CronjobScreen from './screens/CronjobScreen';
 import ManageSourcesScreen from './screens/ManageSourcesScreen';
@@ -14,8 +13,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<AppLayout />}>
-          <Route index element={<ManualCrawlScreen />} />
-          <Route path="raw-articles" element={<RawArticlesScreen />} />
+          <Route index element={<RawArticlesScreen />} />
           <Route path="manage-wp" element={<ManageWpScreen />} />
           <Route path="news-detail/:id" element={<NewsDetailScreen />} />
           <Route path="sources" element={<ManageSourcesScreen />} />

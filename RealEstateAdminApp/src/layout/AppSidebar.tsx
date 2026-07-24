@@ -5,7 +5,6 @@ import { Link, useLocation } from "react-router-dom";
 import {
   CalenderIcon,
   ChevronDownIcon,
-  GridIcon,
   HorizontaLDots,
   ListIcon,
   PlugInIcon,
@@ -29,14 +28,9 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
-    icon: <GridIcon />,
-    name: "Manual Crawl",
-    path: "/",
-  },
-  {
     icon: <ListIcon />,
     name: "Raw Articles",
-    path: "/raw-articles",
+    path: "/",
   },
   {
     icon: <TableIcon />,
