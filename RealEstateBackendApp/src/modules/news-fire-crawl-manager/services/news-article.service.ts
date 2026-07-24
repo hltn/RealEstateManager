@@ -1,12 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
 import * as crypto from 'crypto';
 import { WordPressService } from './wordpress.service';
 import { FirecrawlService } from './firecrawl.service';
-import { cleanMarkdownContent } from '../../../utils/content-cleaner';
 import { AIFilterService } from './ai-filter.service';
+import { AiPromptConfigService } from './ai-prompt-config.service';
 
 @Injectable()
 export class NewsArticleService {
@@ -18,7 +18,8 @@ export class NewsArticleService {
     private readonly wordpressService: WordPressService,
     private readonly firecrawlService: FirecrawlService,
     private readonly aiFilterService: AIFilterService,
-  ) {}
+    private readonly aiPromptConfigService: AiPromptConfigService,
+  ) { }
 
   async saveArticles(
     articles: any[],
@@ -104,7 +105,7 @@ export class NewsArticleService {
     } else if (article.status) {
       statusArray = [article.status];
     }
-    
+
     article.status = statusArray.filter((s: string) => Object.values(NewsStatus).includes(s as any)) as NewsStatus[];
 
     if (article.status.includes(NewsStatus.POSTED_WP)) {
@@ -158,7 +159,7 @@ export class NewsArticleService {
         }
 
         const scrapeResult = await this.firecrawlService.scrapeUrl(article.url, { formats: ['markdown'] });
-        
+
         if (!scrapeResult || scrapeResult.success === false) {
           this.logger.warn(`Failed to scrape article ${article.url}: ${scrapeResult?.error || 'Unknown error'}. Raw response: ${JSON.stringify(scrapeResult)}`);
           failed++;
@@ -166,10 +167,10 @@ export class NewsArticleService {
         }
 
         const resultData = scrapeResult.data || scrapeResult;
-        
+
         article.publishDate = resultData.metadata?.date || resultData.metadata?.publishedAt || new Date().toISOString();
         const rawMarkdown = resultData.markdown || '';
-        
+
         try {
           article.content = await this.aiFilterService.cleanMarkdownContentWithAI(rawMarkdown);
         } catch (aiError: any) {
@@ -193,7 +194,7 @@ export class NewsArticleService {
         } else if (article.status) {
           statusArray = [article.status];
         }
-        
+
         article.status = statusArray.filter((s: string) => Object.values(NewsStatus).includes(s as any)) as NewsStatus[];
 
         const contentStr = article.content || '';
@@ -215,6 +216,37 @@ export class NewsArticleService {
     return { processed, failed, processedArticles };
   }
 
+  async analyzeMarketTrendsByAI(ids: string[]): Promise<string> {
+    this.logger.log(`Starting AI market analysis for ${ids.length} articles`);
+
+    if (!ids || ids.length === 0) {
+      throw new BadRequestException('No articles selected');
+    }
+
+    const articles = await this.newsArticleModel.find({ _id: { $in: ids } });
+    if (!articles || articles.length === 0) {
+      throw new BadRequestException('Articles not found');
+    }
+
+    // Prepare combined data
+    const combinedData = articles.map(article => {
+      return `
+Title: ${article.title || 'N/A'}
+Date: ${article.publishDate ? new Date(article.publishDate).toISOString() : 'N/A'}
+Original URL: ${article.url || 'N/A'}
+Content: ${article.content || article.summary || 'N/A'}
+      `.trim();
+    }).join('\n\n---\n\n');
+
+    // Call AIFilterService
+    const markdownResponse = await this.aiFilterService.analyzeMarketTrends(
+      this.aiPromptConfigService.getPromptByName('MARKET_ANALYSIS_PROMPT'),
+      combinedData,
+    );
+
+    return markdownResponse;
+  }
+
   async cleanArticle(id: string): Promise<NewsArticle> {
     const article = await this.newsArticleModel.findById(id);
     if (!article) {
@@ -222,15 +254,15 @@ export class NewsArticleService {
     }
 
     if (article.content) {
-      this.logger.log(`Raw input content for article ${id}:\n${article.content}`);
-      
+
+
       article.content = await this.aiFilterService.cleanMarkdownContentWithAI(article.content);
-      
-      this.logger.log(`Cleaned content for article ${id}:\n${article.content}`);
-      
+
+
+
       await article.save();
-      
-      this.logger.log(`Successfully updated and saved cleaned content for article ${id} to DB`);
+
+
     }
 
     return article;

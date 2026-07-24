@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -92,6 +94,7 @@ export default function ManageWpScreen() {
   const [cleaningId, setCleaningId] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [notification, setNotification] = useState<{title: string, description: string, type?: ToastType} | null>(null);
+  const [marketAnalysisResult, setMarketAnalysisResult] = useState<string | null>(null);
 
   const fetchArticles = async () => {
     try {
@@ -244,6 +247,38 @@ export default function ManageWpScreen() {
       } finally {
         setIsApplying(false);
       }
+    } else if (bulkAction === 'analyze_market_trends') {
+        try {
+          const res = await fetch('/api/news-manager/articles/analyze-market-trends', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              ids: Array.from(selectedIds)
+            })
+          });
+          const responseData = await res.json();
+          
+          if (res.ok && responseData.data) {
+            setMarketAnalysisResult(responseData.data);
+            setSelectedIds(new Set());
+            setNotification({
+              title: 'Thành công',
+              description: 'Đã phân tích thị trường thành công',
+              type: 'success'
+            });
+          } else {
+            throw new Error(responseData.message || 'Error from server');
+          }
+        } catch (error: any) {
+          console.error('Error market trends analysis', error);
+          setNotification({
+            title: 'Lỗi',
+            description: error.message || 'Lỗi phân tích thị trường',
+            type: 'error'
+          });
+        } finally {
+          setIsApplying(false);
+        }
     } else if (bulkAction === 'delete') {
       if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} bài viết đã chọn?`)) {
         setIsApplying(false);
@@ -324,6 +359,7 @@ export default function ManageWpScreen() {
             >
               <option value="publish">Đăng bài</option>
               <option value="analyze">Crawl tin tức</option>
+              <option value="analyze_market_trends">Phân tích thị trường</option>
               <option value="delete">Xóa</option>
             </select>
             <button
@@ -339,6 +375,22 @@ export default function ManageWpScreen() {
           </div>
         )}
       </header>
+
+        {marketAnalysisResult && (
+          <div className="mb-6 p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm relative">
+            <button 
+              onClick={() => setMarketAnalysisResult(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              title="Đóng"
+            >
+              <XCircle className="w-5 h-5" />
+            </button>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Kết quả Phân tích Thị trường</h2>
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-a:text-brand-500 hover:prose-a:text-brand-600 prose-img:rounded-xl">
+              <ReactMarkdown>{marketAnalysisResult}</ReactMarkdown>
+            </div>
+          </div>
+        )}
 
       <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]">
         <div className="overflow-x-auto">

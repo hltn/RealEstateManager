@@ -9,11 +9,14 @@ import {
   Logger,
   InternalServerErrorException,
   HttpException,
+  BadRequestException,
 } from '@nestjs/common';
 import { FirecrawlService } from './services/firecrawl.service';
 import { AIFilterService } from './services/ai-filter.service';
 import { NewsArticleService } from './services/news-article.service';
 import { CronjobService } from './services/cronjob.service';
+import { AiPromptConfigService, AiPrompt } from './services/ai-prompt-config.service';
+import { Put } from '@nestjs/common';
 
 @Controller('news-manager')
 export class NewsFireCrawlManagerController {
@@ -24,7 +27,22 @@ export class NewsFireCrawlManagerController {
     private readonly aiFilterService: AIFilterService,
     private readonly newsArticleService: NewsArticleService,
     private readonly cronjobService: CronjobService,
+    private readonly aiPromptConfigService: AiPromptConfigService,
   ) {}
+
+  @Get('prompts')
+  getPrompts() {
+    return {
+      success: true,
+      data: this.aiPromptConfigService.getPrompts(),
+    };
+  }
+
+  @Put('prompts')
+  async updatePrompts(@Body() newPrompts: AiPrompt[]) {
+    await this.aiPromptConfigService.updatePrompts(newPrompts);
+    return { success: true, message: 'Prompts updated successfully' };
+  }
 
   @Get('cron')
   getCronConfig() {
@@ -243,6 +261,28 @@ export class NewsFireCrawlManagerController {
         throw error;
       }
       throw new InternalServerErrorException('Failed to fetch article');
+    }
+  }
+
+  @Post('articles/analyze-market-trends')
+  async analyzeMarketTrends(@Body() body: { ids: string[] }) {
+    try {
+      const { ids } = body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return { message: 'No articles to analyze' };
+      }
+
+      const result = await this.newsArticleService.analyzeMarketTrendsByAI(ids);
+      return {
+        message: 'Market trends analysis completed',
+        data: result,
+      };
+    } catch (error: any) {
+      this.logger.error('Error in AI market trends analysis', error.stack);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to analyze market trends');
     }
   }
 

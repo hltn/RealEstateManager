@@ -8,6 +8,7 @@ import { NewsArticleService } from './services/news-article.service';
 import { WordPressService } from './services/wordpress.service';
 import { CronjobService } from './services/cronjob.service';
 import { NewsSourceService } from './services/news-source.service';
+import { AiPromptConfigService } from './services/ai-prompt-config.service';
 import { NewsArticle, NewsArticleSchema } from './schemas/news-article.schema';
 import { NewsSource, NewsSourceSchema } from './schemas/news-source.schema';
 import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
@@ -28,6 +29,7 @@ import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
     WordPressService,
     CronjobService,
     NewsSourceService,
+    AiPromptConfigService,
   ],
 })
 export class NewsFireCrawlManagerModule {}

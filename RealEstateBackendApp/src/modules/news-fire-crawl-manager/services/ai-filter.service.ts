@@ -2,44 +2,17 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
-
-const RAW_ARTICLES_PROMPT = `Từ bây giờ, hãy đóng vai một Chief Real Estate Intelligence Analyst với hơn 20 năm kinh nghiệm trong lĩnh vực:
-- Bất động sản Việt Nam.
-- Bất động sản Hà Nội.
-- Phân tích kinh tế vĩ mô.
-- Chính sách tiền tệ.
-- Quy hoạch đô thị.
-- Quy hoạch giao thông.
-- Hạ tầng.
-- Đầu tư.
-- Luật Đất đai.
-- Luật Nhà ở.
-- Luật Kinh doanh bất động sản.
-- Quy hoạch vùng Thủ đô.
-- Phân tích dữ liệu.
-- Báo chí.
-
-Dựa trên tiêu đề, mô tả (nếu có) hãy lọc ra các tin tức có liên quan tới các chủ đề sau:
-Nhóm 1 – Bất động sản (Chính sách mới, Dự án lớn, Giá nhà, Giá đất, Chung cư, Biệt thự, Nhà phố, Văn phòng, Khách sạn, Bất động sản công nghiệp, Đấu giá đất, Đấu thầu dự án, Thanh tra, Nguồn cung, Giao dịch, Tín dụng bất động sản).
-Nhóm 2 – Kinh tế vĩ mô (Lãi suất, Tăng trưởng GDP, CPI, Tỷ giá, Tín dụng, Trái phiếu, Đầu tư công, FDI, Thuế, Ngân hàng).
-Nhóm 3 – Chính trị (Nghị quyết, Quyết định, Chỉ thị, Chủ trương, Phiên họp Chính phủ, Quốc hội, UBND Hà Nội).
-Nhóm 4 – Quy hoạch (Quy hoạch Hà Nội, Quy hoạch phân khu, Quy hoạch chi tiết, Quy hoạch đô thị, Điều chỉnh quy hoạch, Thành phố mới, Vành đai, Cầu, Metro, Cao tốc, Đường sắt, Sân bay).
-Nhóm 5 – Pháp luật (Luật Đất đai, Luật Nhà ở, Luật Kinh doanh bất động sản, Thuế bất động sản, Quy định cấp sổ, Chuyển mục đích sử dụng đất, Bồi thường, Giải phóng mặt bằng, Đấu giá, Định giá đất).
-
-Các tin mang chủ đề vi mô cần tập trung vào hà nội, các địa danh liên quan tới hà nội, tránh lan man ra các tỉnh thành khác. 
-
-Sau khi xác định xong các tin với yêu cầu trên hãy trả về dữ liệu json dạng mảng chứa các object:
-{
-"urlHash": "",
-"title":""
-}`;
+import { AiPromptConfigService } from './ai-prompt-config.service';
 
 @Injectable()
 export class AIFilterService {
   private readonly logger = new Logger(AIFilterService.name);
   private ai: GoogleGenAI;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private aiPromptConfigService: AiPromptConfigService,
+  ) {
     this.ai = new GoogleGenAI({
       apiKey: this.configService.get<string>('GEMINI_API_KEY') || 'dummy',
     });
@@ -53,108 +26,86 @@ export class AIFilterService {
     // Check OpenRouter first, fallback to Gemini
     const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
     const model = this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash';
-    
+
     const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY');
-    
+
     if (!openRouterApiKey && (!geminiApiKey || geminiApiKey === 'your_gemini_api_key_here')) {
       this.logger.error('No valid AI API Key found (neither OpenRouter nor Gemini).');
       throw new BadRequestException('AI API Key is not set or invalid.');
     }
 
     try {
-        this.logger.log(`Sending data to AI API for filtering and ranking (Model: ${model})`);
+      this.logger.log(`Sending data to AI API for filtering and ranking (Model: ${model})`);
 
-        // Take the first article's content for demonstration to avoid context limits
-        // In a real scenario, you'd chunk this or use Gemini's large context window for multiple articles
-        const contentToAnalyze = rawData
-          .map(
-            (d: any) =>
-              `URL: ${d.url}\nTitle: ${d.title}\nContent: ${d.content}`,
-          )
-          .join('\n\n---\n\n')
-          .substring(0, 30000);
+      // Take the first article's content for demonstration to avoid context limits
+      // In a real scenario, you'd chunk this or use Gemini's large context window for multiple articles
+      const contentToAnalyze = rawData
+        .map(
+          (d: any) =>
+            `URL: ${d.url}\nTitle: ${d.title}\nContent: ${d.content}`,
+        )
+        .join('\n\n---\n\n')
+        .substring(0, 30000);
 
-        const prompt = `
-          Analyze the following real estate news articles.
-          For each significant news item found in the content, extract the following information and return a JSON array of objects.
-          
-          Required JSON schema for each object:
-          {
-            "title": "Clear, concise title",
-            "summary": "2-3 sentence summary",
-            "importanceReason": "Why is this important for real estate?",
-            "impactLevel": "Rất cao" or "Cao" or "Trung bình",
-            "targetAudience": ["Nhà đầu tư", "Người mua ở thực", etc],
-            "expertOpinion": "Summarized expert opinion if any",
-            "publishDate": "ISO date string",
-            "source": "Source name",
-            "url": "Source URL",
-            "keywords": ["Keyword1", "Keyword2"]
+      const prompt = `${this.aiPromptConfigService.getPromptByName('FILTER_AND_RANK_PROMPT')}${contentToAnalyze}`;
+
+      let resultText = '[]';
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+      try {
+        if (openRouterApiKey) {
+          this.logger.log('Using OpenRouter API');
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openRouterApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal as any,
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: 'user', content: prompt }]
+            })
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
           }
 
-          Return ONLY the raw JSON array containing up to 5 most important articles. Do not include markdown formatting or \`\`\`json wrappers.
-          
-          Data to analyze:
-          ${contentToAnalyze}
-        `;
-
-        let resultText = '[]';
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-        try {
-          if (openRouterApiKey) {
-            this.logger.log('Using OpenRouter API');
-            const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${openRouterApiKey}`,
-                'Content-Type': 'application/json'
-              },
-              signal: controller.signal as any,
-              body: JSON.stringify({
-                model: model,
-                messages: [{ role: 'user', content: prompt }]
-              })
-            });
-
-            if (!res.ok) {
-              const errBody = await res.text();
-              throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
-            }
-            
-            const data = await res.json();
-            resultText = data.choices?.[0]?.message?.content || '[]';
-          } else {
-            this.logger.log('Using Gemini Native API');
-            const response = await this.ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: prompt,
-            });
-            resultText = response.text || '[]';
-          }
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            throw new Error('AI API request timed out after 60 seconds');
-          }
-          throw err;
-        } finally {
-          clearTimeout(timeoutId);
+          const data = await res.json();
+          resultText = data.choices?.[0]?.message?.content || '[]';
+        } else {
+          this.logger.log('Using Gemini Native API');
+          const response = await this.ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+          });
+          resultText = response.text || '[]';
         }
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          throw new Error('AI API request timed out after 60 seconds');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-        // Cleanup potential markdown wrappers
-        resultText = resultText
-          .replace(/```json/g, '')
-          .replace(/```/g, '')
-          .trim();
+      // Cleanup potential markdown wrappers
+      resultText = resultText
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
 
-        const finalTop5 = JSON.parse(resultText);
-        this.logger.log(
-          `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
-        );
-        return finalTop5;
-      } catch (error: any) {
+      const finalTop5 = JSON.parse(resultText);
+      this.logger.log(
+        `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
+      );
+      return finalTop5;
+    } catch (error: any) {
       this.logger.error(
         `Error in AI filtering: ${error.message}`,
         error.stack,
@@ -177,13 +128,15 @@ export class AIFilterService {
       .join('\n\n---\n\n')
       .substring(0, 60000); // chunk if needed
 
-    const fullPrompt = `${RAW_ARTICLES_PROMPT}\n\nData to analyze:\n${contentToAnalyze}`;
+      this.logger.log(`Sending raw articles to AI for filtering`);
+
+      const prompt = `${this.aiPromptConfigService.getPromptByName('RAW_ARTICLES_PROMPT')}\n\nHere are the raw articles to analyze:\n${contentToAnalyze}`;
 
     let resultText = '[]';
-    
+
     const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
     const openRouterModel = this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash';
-    
+
     const must1cApiKey = this.configService.get<string>('MUST1C_API_KEY') || process.env.MUST1C_API_KEY;
     const must1cModel = this.configService.get<string>('MUST1C_MODEL') || process.env.MUST1C_MODEL;
     const must1cApiUrl = this.configService.get<string>('MUST1C_API_URL') || process.env.MUST1C_API_URL || 'https://htmustc.id.vn/v1/chat/completions';
@@ -204,7 +157,7 @@ export class AIFilterService {
             signal: controller.signal as any,
             body: JSON.stringify({
               model: must1cModel || 'gemini-3.6-flash',
-              messages: [{ role: 'user', content: fullPrompt }]
+              messages: [{ role: 'user', content: prompt }]
             })
           });
 
@@ -214,7 +167,7 @@ export class AIFilterService {
             try {
               const parsed = JSON.parse(errBody);
               errorMessage = parsed.error?.message || errBody;
-            } catch (e) {}
+            } catch (e) { }
 
             let errorDesc = 'Unknown error';
             switch (res.status) {
@@ -228,7 +181,7 @@ export class AIFilterService {
             }
             throw new Error(`Must1c API error: ${res.status} - ${errorDesc}. Details: ${errorMessage}`);
           }
-          
+
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '[]';
         } else if (openRouterApiKey) {
@@ -242,7 +195,7 @@ export class AIFilterService {
             signal: controller.signal as any,
             body: JSON.stringify({
               model: openRouterModel,
-              messages: [{ role: 'user', content: fullPrompt }]
+              messages: [{ role: 'user', content: prompt }]
             })
           });
 
@@ -250,11 +203,11 @@ export class AIFilterService {
             const errBody = await res.text();
             throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
           }
-          
+
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '[]';
         } else {
-           throw new BadRequestException('No AI platform configured');
+          throw new BadRequestException('No AI platform configured');
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
@@ -269,7 +222,7 @@ export class AIFilterService {
         .replace(/```json/g, '')
         .replace(/```/g, '')
         .trim();
-        
+
       try {
         const parsed = JSON.parse(resultText);
         return parsed;
@@ -288,25 +241,15 @@ export class AIFilterService {
 
     const activePlatform = this.configService.get<string>('ACTIVE_AI_PLATFORM') || process.env.ACTIVE_AI_PLATFORM || 'OpenRouter';
 
-    const prompt = `You are a specialized markdown cleaner. I will provide you with a raw markdown text extracted from a real estate news article.
-Your task is to extract ONLY the main article content.
-You MUST REMOVE all:
-- Menus and navigation links
-- Advertisements
-- Related articles lists
-- Boilerplate text (e.g., copyright, "read more", tags)
-- Footer and headers
+      this.logger.log(`Cleaning markdown content via AI`);
 
-Output ONLY the clean markdown of the main article content. Do not include any explanations, introductory text, or markdown code block backticks like \`\`\`markdown.
-
-Raw Markdown:
-${markdown}`;
+      const prompt = `${this.aiPromptConfigService.getPromptByName('CLEAN_ARTICLE_PROMPT')}\n${markdown}`;
 
     let resultText = '';
-    
+
     const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
     const openRouterModel = this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash';
-    
+
     const must1cApiKey = this.configService.get<string>('MUST1C_API_KEY') || process.env.MUST1C_API_KEY;
     const must1cModel = this.configService.get<string>('MUST1C_MODEL') || process.env.MUST1C_MODEL;
     const must1cApiUrl = this.configService.get<string>('MUST1C_API_URL') || process.env.MUST1C_API_URL || 'https://htmustc.id.vn/v1/chat/completions';
@@ -336,7 +279,7 @@ ${markdown}`;
             const errBody = await res.text();
             throw new Error(`Must1c API error: ${res.status} - ${errBody}`);
           }
-          
+
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
         } else if (openRouterApiKey) {
@@ -358,7 +301,7 @@ ${markdown}`;
             const errBody = await res.text();
             throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
           }
-          
+
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
         } else if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
@@ -369,7 +312,7 @@ ${markdown}`;
           });
           resultText = response.text || '';
         } else {
-           throw new BadRequestException('No AI platform configured');
+          throw new BadRequestException('No AI platform configured');
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
@@ -385,11 +328,119 @@ ${markdown}`;
         .replace(/^```[a-z]*\n/i, '')
         .replace(/\n```$/i, '')
         .trim();
-        
+
       return resultText;
     } catch (error: any) {
       this.logger.error(`Error in cleanMarkdownContentWithAI: ${error.message}`, error.stack);
       throw new BadRequestException(`Error in AI markdown cleaning: ${error.message}`);
+    }
+  }
+
+  async analyzeMarketTrends(systemPrompt: string, contentData: string): Promise<string> {
+    this.logger.log(`Starting Market Trends Analysis with AI`);
+    if (!contentData || contentData.trim() === '') return '';
+
+    const activePlatform = this.configService.get<string>('ACTIVE_AI_PLATFORM') || process.env.ACTIVE_AI_PLATFORM || 'OpenRouter';
+
+    // const fullPrompt = `${systemPrompt}\n\nHere is the data:\n${contentData}`;
+
+    let resultText = '';
+
+    const openRouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
+    const openRouterModel = this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash';
+
+    const must1cApiKey = this.configService.get<string>('MUST1C_API_KEY') || process.env.MUST1C_API_KEY;
+    const must1cModel = this.configService.get<string>('MUST1C_MODEL') || process.env.MUST1C_MODEL;
+    const must1cApiUrl = this.configService.get<string>('MUST1C_API_URL') || process.env.MUST1C_API_URL || 'https://htmustc.id.vn/v1/chat/completions';
+    const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY') || process.env.GEMINI_API_KEY;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes for large data
+
+      try {
+        if (activePlatform === 'Must1c' && must1cApiKey) {
+          this.logger.log('Using Must1c API for analysis');
+          const res = await fetch(must1cApiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${must1cApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal as any,
+            body: JSON.stringify({
+              model: must1cModel || 'gemini-3.6-flash',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: contentData }
+              ]
+            })
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`Must1c API error: ${res.status} - ${errBody}`);
+          }
+
+          const data = await res.json();
+          resultText = data.choices?.[0]?.message?.content || '';
+        } else if (openRouterApiKey) {
+          this.logger.log('Using OpenRouter API for analysis');
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openRouterApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            signal: controller.signal as any,
+            body: JSON.stringify({
+              model: openRouterModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: contentData }
+              ]
+            })
+          });
+
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
+          }
+
+          const data = await res.json();
+          resultText = data.choices?.[0]?.message?.content || '';
+        } else if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+          this.logger.log('Using Gemini Native API for analysis');
+          const response = await this.ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: contentData,
+            config: {
+              systemInstruction: systemPrompt
+            }
+          });
+          resultText = response.text || '';
+        } else {
+          throw new BadRequestException('No AI platform configured');
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          throw new Error('AI API request timed out after 180 seconds');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Cleanup potential markdown wrappers just in case it wraps everything in markdown block
+      resultText = resultText
+        .replace(/^```[a-z]*\n/i, '')
+        .replace(/\n```$/i, '')
+        .trim();
+
+      return resultText;
+    } catch (error: any) {
+      this.logger.error(`Error in analyzeMarketTrends: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error in AI analysis: ${error.message}`);
     }
   }
 }

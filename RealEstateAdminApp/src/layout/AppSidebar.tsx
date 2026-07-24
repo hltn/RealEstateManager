@@ -11,6 +11,7 @@ import {
   PlugInIcon,
   TableIcon,
   UserCircleIcon,
+  DocsIcon,
 } from "../icons";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
@@ -51,6 +52,11 @@ const navItems: NavItem[] = [
     icon: <PlugInIcon />,
     name: "AI Config",
     path: "/ai-config",
+  },
+  {
+    icon: <DocsIcon />,
+    name: "AI Prompt Config",
+    path: "/ai-prompt-config",
   },
   {
     icon: <CalenderIcon />,
