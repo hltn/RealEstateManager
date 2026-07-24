@@ -24,6 +24,10 @@ export class FirecrawlService {
     this.firecrawlApp = new FirecrawlApp({ apiKey });
   }
 
+  async scrapeUrl(url: string, options?: any): Promise<any> {
+    return this.firecrawlApp.scrapeUrl(url, options);
+  }
+
   async crawlData(): Promise<string> {
     this.logger.log('Starting Job 1: Crawl data via Firecrawl');
 
@@ -81,9 +85,9 @@ export class FirecrawlService {
             },
           } as any)) as any;
 
-          if (!extractResult.success || !extractResult.data?.articles) {
+          if (extractResult.success === false || !extractResult.data?.articles) {
             this.logger.error(
-              `Failed to extract articles from ${source.url}. Error or no articles found.`,
+              `Failed to extract articles from ${source.url}. Error or no articles found. Raw response: ${JSON.stringify(extractResult)}`,
             );
             continue; // Skip this source and try next
           }

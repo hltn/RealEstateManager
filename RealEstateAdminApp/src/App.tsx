@@ -6,6 +6,7 @@ import CronjobScreen from './screens/CronjobScreen';
 import ManageSourcesScreen from './screens/ManageSourcesScreen';
 import RawArticlesScreen from './screens/RawArticlesScreen';
 import AiConfigScreen from './screens/AiConfigScreen';
+import NewsDetailScreen from './screens/NewsDetailScreen';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route index element={<ManualCrawlScreen />} />
           <Route path="raw-articles" element={<RawArticlesScreen />} />
           <Route path="manage-wp" element={<ManageWpScreen />} />
+          <Route path="news-detail/:id" element={<NewsDetailScreen />} />
           <Route path="sources" element={<ManageSourcesScreen />} />
           <Route path="ai-config" element={<AiConfigScreen />} />
           <Route path="cronjob" element={<CronjobScreen />} />

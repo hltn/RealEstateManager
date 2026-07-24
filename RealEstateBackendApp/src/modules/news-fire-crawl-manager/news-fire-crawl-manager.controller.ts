@@ -229,6 +229,41 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @Get('articles/:id')
+  async getArticleById(@Param('id') id: string) {
+    try {
+      const article = await this.newsArticleService.getArticleById(id);
+      return {
+        message: 'Article fetched successfully',
+        data: article,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching article ${id}`, error.stack);
+      if (error.status === 404) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to fetch article');
+    }
+  }
+
+  @Post('articles/market-analysis-bulk')
+  async analyzeMarketBulk(@Body('ids') ids: string[]) {
+    try {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return { message: 'No articles to analyze' };
+      }
+
+      const result = await this.newsArticleService.analyzeMarketBulk(ids);
+      return {
+        message: 'Bulk market analysis completed',
+        data: result,
+      };
+    } catch (error: any) {
+      this.logger.error('Error in bulk market analysis', error.stack);
+      throw new InternalServerErrorException('Failed to analyze market for articles');
+    }
+  }
+
 
   @Post('articles/delete-bulk')
   async deleteBulkArticles(@Body('ids') ids: string[]) {
@@ -279,6 +314,23 @@ export class NewsFireCrawlManagerController {
     } catch (error: any) {
       this.logger.error(`Error publishing article ${id}`, error.stack);
       throw new InternalServerErrorException('Failed to publish article');
+    }
+  }
+
+  @Post('articles/:id/clean')
+  async cleanArticle(@Param('id') id: string) {
+    try {
+      const result = await this.newsArticleService.cleanArticle(id);
+      return {
+        message: 'Article cleaned successfully',
+        data: result,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error cleaning article ${id}`, error.stack);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Failed to clean article');
     }
   }
 }

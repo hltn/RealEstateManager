@@ -2,9 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 export enum NewsStatus {
-  SAVED = 'SAVED',
   POSTED_WP = 'POSTED_WP',
   ERROR = 'ERROR',
+  CRAWLED = 'CRAWLED',
 }
 
 @Schema({ timestamps: true })
@@ -48,8 +48,11 @@ export class NewsArticle extends Document {
   @Prop({ default: null })
   wpPostId: number;
 
-  @Prop({ type: String, enum: NewsStatus, default: NewsStatus.SAVED })
-  status: NewsStatus;
+  @Prop({ required: false })
+  content: string;
+
+  @Prop({ type: [String], enum: NewsStatus, default: [] })
+  status: NewsStatus[];
 }
 
 export const NewsArticleSchema = SchemaFactory.createForClass(NewsArticle);

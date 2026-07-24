@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Search } from 'lucide-react';
-import { Send, FileText } from 'lucide-react';
+import { Search, Send, FileText, Eye, Wand2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function ManageWpScreen() {
   const [articles, setArticles] = useState<any[]>([]);
@@ -47,6 +47,17 @@ export default function ManageWpScreen() {
     }
   };
 
+  const handleClean = async (id: string) => {
+    try {
+      await fetch(`/api/news-manager/articles/${id}/clean`, {
+        method: 'POST'
+      });
+      fetchArticles();
+    } catch (error) {
+      console.error('Error cleaning', error);
+    }
+  };
+
 
   const displayData = useMemo(() => {
     let result = [...articles];
@@ -66,14 +77,14 @@ export default function ManageWpScreen() {
     return result;
   }, [articles, searchTerm, sortOrder]);
 
-  const highlightText = (text, query) => {
+  const highlightText = (text: string, query: string) => {
     if (!text) return '';
     if (!query || query.length < 2) return text;
     const escapedQuery = query.replace(/[.*+?^\$\{\}()|[\]\\]/g, '\\$&');
     const parts = text.split(new RegExp(`(${escapedQuery})`, 'gi'));
     return (
       <>
-        {parts.map((part, idx) =>
+        {parts.map((part: string, idx: number) =>
           part.toLowerCase() === query.toLowerCase() ? (
             <span key={idx} className="bg-brand-500/20 text-brand-700 dark:text-brand-400 px-0.5 rounded">
               {part}
@@ -100,6 +111,18 @@ export default function ManageWpScreen() {
         fetchArticles();
       } catch (error) {
         console.error('Error bulk publishing', error);
+      }
+    } else if (bulkAction === 'analyze') {
+      try {
+        await fetch('/api/news-manager/articles/market-analysis-bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: Array.from(selectedIds) })
+        });
+        setSelectedIds(new Set());
+        fetchArticles();
+      } catch (error) {
+        console.error('Error bulk analyzing', error);
       }
     } else if (bulkAction === 'delete') {
       if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} bài viết đã chọn?`)) return;
@@ -159,6 +182,7 @@ export default function ManageWpScreen() {
               className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
             >
               <option value="publish">Đăng bài</option>
+              <option value="analyze">Crawl tin tức</option>
               <option value="delete">Xóa</option>
             </select>
             <button
@@ -187,8 +211,7 @@ export default function ManageWpScreen() {
                 </th>
                 <th className="px-2 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">STT</th>
                 <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Tiêu đề bài viết</th>
-                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase w-40">Độ ảnh hưởng</th>
-                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase w-48">Nguồn / Ngày</th>
+                                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase w-48">Nguồn / Ngày</th>
                 <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase w-36">Trạng thái</th>
                 <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-right uppercase w-36">Thao tác</th>
               </tr>
@@ -196,7 +219,7 @@ export default function ManageWpScreen() {
             <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center">
+                  <td colSpan={6} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center justify-center gap-3 text-gray-500 dark:text-gray-400">
                       <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-500 rounded-full animate-spin"></div>
                       <span className="text-theme-sm font-medium">Đang tải dữ liệu...</span>
@@ -205,7 +228,7 @@ export default function ManageWpScreen() {
                 </tr>
               ) : articles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-20 text-center">
+                  <td colSpan={6} className="px-5 py-20 text-center">
                     <div className="flex flex-col items-center justify-center gap-4 text-gray-500 dark:text-gray-400">
                       <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-2">
                         <FileText size={32} className="text-gray-400 dark:text-gray-500" />
@@ -243,17 +266,10 @@ export default function ManageWpScreen() {
                             <FileText size={16} className="text-gray-400" />
                           </div>
                         )}
-                        <span className="font-medium text-gray-800 dark:text-white/90 line-clamp-2 leading-relaxed group-hover:text-brand-500 transition-colors">{highlightText(article.title || '', searchTerm)}</span>
+                        <Link to={`/news-detail/${article._id}`} className="font-medium text-gray-800 dark:text-white/90 line-clamp-2 leading-relaxed group-hover:text-brand-500 transition-colors hover:underline">
+                          {highlightText(article.title || '', searchTerm)}
+                        </Link>
                       </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold inline-block ${
-                        article.impactLevel === 'Rất cao' 
-                          ? 'bg-error-50 dark:bg-error-500/15 text-error-500 border border-error-100 dark:border-error-500/25' 
-                          : 'bg-warning-50 dark:bg-warning-500/15 text-warning-500 border border-warning-100 dark:border-warning-500/25'
-                      }`}>
-                        {article.impactLevel}
-                      </span>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex flex-col gap-1">
@@ -262,23 +278,53 @@ export default function ManageWpScreen() {
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      {article.status === 'POSTED_WP' ? (
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex h-2.5 w-2.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success-500"></span>
+                      <div className="flex flex-wrap gap-2">
+                        {(!article.status || (Array.isArray(article.status) && article.status.length === 0)) ? (
+                          <div className="flex items-center gap-1.5 bg-warning-50 dark:bg-warning-500/10 px-2.5 py-1 rounded-full border border-warning-200 dark:border-warning-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-warning-400"></span>
+                            <span className="text-warning-600 dark:text-warning-400 font-medium text-xs">Chờ đăng</span>
                           </div>
-                          <span className="text-success-500 font-medium text-xs">Đã đăng lên WP</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-warning-300 border border-warning-500"></span>
-                          <span className="text-warning-500 font-medium text-xs">Chờ đăng</span>
-                        </div>
-                      )}
+                        ) : (
+                          (Array.isArray(article.status) ? article.status : [article.status]).filter(Boolean).map((st: string) => {
+                            if (st === 'POSTED_WP') {
+                              return (
+                                <div key={st} className="flex items-center gap-1.5 bg-success-50 dark:bg-success-500/10 px-2.5 py-1 rounded-full border border-success-200 dark:border-success-500/20">
+                                  <div className="relative flex h-1.5 w-1.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success-500"></span>
+                                  </div>
+                                  <span className="text-success-600 dark:text-success-400 font-medium text-xs">Đã đăng WP</span>
+                                </div>
+                              );
+                            }
+                            if (st === 'CRAWLED') {
+                              return (
+                                <div key={st} className="flex items-center gap-1.5 bg-info-50 dark:bg-info-500/10 px-2.5 py-1 rounded-full border border-info-200 dark:border-info-500/20">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-info-400"></span>
+                                  <span className="text-info-600 dark:text-info-400 font-medium text-xs">Đã crawl</span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div key={st} className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-full border border-gray-200 dark:border-gray-700">
+                                <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                <span className="text-gray-600 dark:text-gray-400 font-medium text-xs">{st}</span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
                     </td>
-                    <td className="px-5 py-4 text-right">
-                      {article.status !== 'POSTED_WP' && (
+                  <td className="px-5 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => handleClean(article._id)}
+                        className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition-all active:scale-95"
+                      >
+                        <Wand2 size={14} />
+                        Làm sạch
+                      </button>
+                      {!(Array.isArray(article.status) ? article.status : [article.status]).includes('POSTED_WP') && (
                         <button 
                           onClick={() => handlePublish(article._id)}
                           className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg transition-all active:scale-95"
@@ -287,7 +333,23 @@ export default function ManageWpScreen() {
                           Đăng bài
                         </button>
                       )}
-                    </td>
+                      <Link 
+                        to={`/news-detail/${article._id}`}
+                        className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg transition-all active:scale-95"
+                      >
+                        <Eye size={14} />
+                        Xem
+                      </Link>
+                      <a 
+                        href={article.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-4 py-2 rounded-lg transition-all active:scale-95"
+                      >
+                        Xem nguồn
+                      </a>
+                    </div>
+                  </td>
                   </tr>
                 ))
               )}
