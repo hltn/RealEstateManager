@@ -51,6 +51,18 @@ export class NewsArticleService {
           initialStatus = initialStatus.filter((s: string) => s !== NewsStatus.CRAWLED);
         }
 
+        let finalPublishDate = article.publishDate || article.publishedAt;
+        if (finalPublishDate) {
+           const tempDate = new Date(finalPublishDate);
+           if (!isNaN(tempDate.getTime())) {
+              finalPublishDate = tempDate.toISOString();
+           } else {
+              finalPublishDate = new Date().toISOString();
+           }
+        } else {
+           finalPublishDate = new Date().toISOString();
+        }
+
         const mappedArticle = {
           title: article.title,
           summary: article.summary || article.description || article.content?.substring(0, 200),
@@ -58,7 +70,7 @@ export class NewsArticleService {
           impactLevel: article.impactLevel,
           targetAudience: article.targetAudience,
           expertOpinion: article.expertOpinion,
-          publishDate: article.publishDate || article.publishedAt,
+          publishDate: finalPublishDate,
           thumbnailUrl: article.thumbnailUrl,
           source: article.source,
           url: article.url,
@@ -159,14 +171,24 @@ export class NewsArticleService {
 
         let rawMarkdown = '';
         try {
-          rawMarkdown = await ArticleExtractorUtil.extractArticle(article.url);
+          const extracted = await ArticleExtractorUtil.extractArticle(article.url);
+          rawMarkdown = extracted.markdown;
+          if (!article.thumbnailUrl && extracted.thumbnailUrl) {
+            article.thumbnailUrl = extracted.thumbnailUrl;
+          }
+          if ((!article.publishDate || article.publishDate === 'Invalid Date') && extracted.publishDate) {
+            const tempDate = new Date(extracted.publishDate);
+            if (!isNaN(tempDate.getTime())) {
+              article.publishDate = tempDate.toISOString();
+            }
+          }
         } catch (error: any) {
           this.logger.warn(`Failed to scrape article ${article.url}: ${error.message}`);
           failed++;
           continue;
         }
 
-        if (!article.publishDate) {
+        if (!article.publishDate || article.publishDate === 'Invalid Date') {
           article.publishDate = new Date().toISOString();
         }
 

@@ -22,6 +22,6 @@
   {
     "api_ai_name": "EXTRACT_LISTING_PROMPT",
     "api_ai_path": "/api/news-manager/articles/extract-listing",
-    "prompt": "You are a data extraction assistant. Extract a list of news articles or real estate listings from the given HTML snippet or text. Return ONLY a JSON array of objects with 'url', 'title', 'description', and 'publishedAt' (if available). Do not include any extra text."
+    "prompt": "You are a data extraction assistant. Extract a list of news articles or real estate listings from the given HTML snippet or text. Return ONLY a JSON array of objects with 'url', 'title', 'description', 'thumbnailUrl' (if available, preferably absolute URL), and 'publishedAt' (must be a valid ISO 8601 date string, if available). Do not include any extra text, markdown formatting, or ```json wrappers."
   }
 ]

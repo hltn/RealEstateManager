@@ -80,7 +80,13 @@ export class CustomCrawlerService {
           const aiResult = await this.aiFilterService.analyzeMarketTrends(prompt, cleanHtml.substring(0, 30000));
 
           try {
-            const parsed = JSON.parse(aiResult);
+            let cleanAiResult = aiResult.trim();
+            if (cleanAiResult.startsWith('```json')) {
+              cleanAiResult = cleanAiResult.replace(/^```json/, '').replace(/```$/, '').trim();
+            } else if (cleanAiResult.startsWith('```')) {
+              cleanAiResult = cleanAiResult.replace(/^```/, '').replace(/```$/, '').trim();
+            }
+            const parsed = JSON.parse(cleanAiResult);
             if (Array.isArray(parsed)) {
               articles = parsed;
             } else if (parsed.articles && Array.isArray(parsed.articles)) {
@@ -94,13 +100,21 @@ export class CustomCrawlerService {
         for (const article of articles) {
           if (!article.url || !article.title) continue;
 
+          let parsedDate = new Date();
+          if (article.publishedAt) {
+            const tempDate = new Date(article.publishedAt);
+            if (!isNaN(tempDate.getTime())) {
+              parsedDate = tempDate;
+            }
+          }
+
           const articleData = {
             url: article.url,
             title: article.title || source.name,
             description: article.description || '',
             content: '', // Phase 1: Content is empty
             source: source.name,
-            publishedAt: article.publishedAt || new Date().toISOString(),
+            publishedAt: parsedDate.toISOString(),
             thumbnailUrl: article.thumbnailUrl || '',
           };
 
