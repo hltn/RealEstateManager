@@ -8,7 +8,9 @@ describe('cleanMarkdownContent', () => {
 
   it('correctly deletes boilerplate like "Xem thêm", "Quảng cáo"', () => {
     const input = `Some text.\n\nQuảng cáo\n\nMore text.\n\n*Xem thêm*\n\nEnd text.`;
-    expect(cleanMarkdownContent(input)).toBe(`Some text.\n\nMore text.\n\nEnd text.`);
+    expect(cleanMarkdownContent(input)).toBe(
+      `Some text.\n\nMore text.\n\nEnd text.`,
+    );
   });
 
   it('correctly deletes boilerplate with Vietnamese letter "đ"', () => {
@@ -28,12 +30,16 @@ describe('cleanMarkdownContent', () => {
 
   it('removes clusters of consecutive links (link-only lists)', () => {
     const input = `Here are some links:\n\n* [Link 1](https://link1.com)\n* [Link 2](https://link2.com)\n* [Link 3](https://link3.com)\n\nBack to normal text.`;
-    expect(cleanMarkdownContent(input)).toBe(`Here are some links:\n\nBack to normal text.`);
+    expect(cleanMarkdownContent(input)).toBe(
+      `Here are some links:\n\nBack to normal text.`,
+    );
   });
 
   it('removes links inside inRelatedBlock', () => {
     const input = `Normal text.\n\nTin liên quan\n\n* [Related 1](https://rel1.com)\n* [Related 2](https://rel2.com)\n\nNormal text continues here with more than 50 characters to reset the block.`;
-    expect(cleanMarkdownContent(input)).toBe(`Normal text.\n\nNormal text continues here with more than 50 characters to reset the block.`);
+    expect(cleanMarkdownContent(input)).toBe(
+      `Normal text.\n\nNormal text continues here with more than 50 characters to reset the block.`,
+    );
   });
 
   // ─── New tests for real-world crawled content ───
@@ -125,7 +131,9 @@ describe('cleanMarkdownContent', () => {
   it('preserves article images with meaningful alt text', () => {
     const input = `Article text.\n\n![Dự án khu đô thị mới](https://example.com/project.jpg)\n\nMore text.`;
     const result = cleanMarkdownContent(input);
-    expect(result).toContain('![Dự án khu đô thị mới](https://example.com/project.jpg)');
+    expect(result).toContain(
+      '![Dự án khu đô thị mới](https://example.com/project.jpg)',
+    );
   });
 
   it('removes video player UI text when present', () => {

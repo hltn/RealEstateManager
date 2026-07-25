@@ -11,7 +11,17 @@ export class SettingsController {
   }
 
   @Post('ai-config')
-  updateAiConfig(@Body() body: { provider?: string; model?: string; apiKey?: string; must1cApiKey?: string; must1cModel?: string; activePlatform?: string }) {
+  updateAiConfig(
+    @Body()
+    body: {
+      provider?: string;
+      model?: string;
+      apiKey?: string;
+      must1cApiKey?: string;
+      must1cModel?: string;
+      activePlatform?: string;
+    },
+  ) {
     return this.settingsService.updateAiConfig(body);
   }
 

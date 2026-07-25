@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
@@ -16,13 +21,15 @@ export class NewsArticleService {
     @InjectModel(NewsArticle.name)
     private readonly newsArticleModel: Model<NewsArticle>,
     private readonly wordpressService: WordPressService,
-        private readonly aiFilterService: AIFilterService,
+    private readonly aiFilterService: AIFilterService,
     private readonly aiPromptConfigService: AiPromptConfigService,
-  ) { }
+  ) {}
 
-  async saveArticles(
-    articles: any[],
-  ): Promise<{ savedCount: number; duplicates: number; processedUrlHashes: string[] }> {
+  async saveArticles(articles: any[]): Promise<{
+    savedCount: number;
+    duplicates: number;
+    processedUrlHashes: string[];
+  }> {
     this.logger.log('Starting Job 3: Save to Database');
     let savedCount = 0;
     let duplicates = 0;
@@ -30,10 +37,9 @@ export class NewsArticleService {
 
     for (const article of articles) {
       try {
-        const urlHash = article.urlHash || crypto
-          .createHash('sha256')
-          .update(article.url)
-          .digest('hex');
+        const urlHash =
+          article.urlHash ||
+          crypto.createHash('sha256').update(article.url).digest('hex');
 
         const existing = await this.newsArticleModel.findOne({ urlHash });
         if (existing) {
@@ -42,30 +48,44 @@ export class NewsArticleService {
           continue;
         }
 
-        let initialStatus = Array.isArray(article.status) ? article.status : (article.status ? [article.status] : []);
-        initialStatus = initialStatus.filter((s: string) => Object.values(NewsStatus).includes(s as any));
+        let initialStatus = Array.isArray(article.status)
+          ? article.status
+          : article.status
+            ? [article.status]
+            : [];
+        initialStatus = initialStatus.filter((s: string) =>
+          Object.values(NewsStatus).includes(s as any),
+        );
         const contentStr = article.content || '';
-        if (contentStr.trim().length > 0 && !initialStatus.includes(NewsStatus.CRAWLED)) {
+        if (
+          contentStr.trim().length > 0 &&
+          !initialStatus.includes(NewsStatus.CRAWLED)
+        ) {
           initialStatus.push(NewsStatus.CRAWLED);
         } else if (contentStr.trim().length === 0) {
-          initialStatus = initialStatus.filter((s: string) => s !== NewsStatus.CRAWLED);
+          initialStatus = initialStatus.filter(
+            (s: string) => s !== (NewsStatus.CRAWLED as string),
+          );
         }
 
         let finalPublishDate = article.publishDate || article.publishedAt;
         if (finalPublishDate) {
-           const tempDate = new Date(finalPublishDate);
-           if (!isNaN(tempDate.getTime())) {
-              finalPublishDate = tempDate.toISOString();
-           } else {
-              finalPublishDate = new Date().toISOString();
-           }
+          const tempDate = new Date(finalPublishDate);
+          if (!isNaN(tempDate.getTime())) {
+            finalPublishDate = tempDate.toISOString();
+          } else {
+            finalPublishDate = new Date().toISOString();
+          }
         } else {
-           finalPublishDate = new Date().toISOString();
+          finalPublishDate = new Date().toISOString();
         }
 
         const mappedArticle = {
           title: article.title,
-          summary: article.summary || article.description || article.content?.substring(0, 200),
+          summary:
+            article.summary ||
+            article.description ||
+            article.content?.substring(0, 200),
           importanceReason: article.importanceReason,
           impactLevel: article.impactLevel,
           targetAudience: article.targetAudience,
@@ -89,7 +109,10 @@ export class NewsArticleService {
         savedCount++;
         processedUrlHashes.push(urlHash);
       } catch (error: any) {
-        this.logger.error(`Failed to save article ${article.url}: ${error.message}`, error.stack);
+        this.logger.error(
+          `Failed to save article ${article.url}: ${error.message}`,
+          error.stack,
+        );
       }
     }
 
@@ -117,7 +140,9 @@ export class NewsArticleService {
       statusArray = [article.status];
     }
 
-    article.status = statusArray.filter((s: string) => Object.values(NewsStatus).includes(s as any)) as NewsStatus[];
+    article.status = statusArray.filter((s: string) =>
+      Object.values(NewsStatus).includes(s as any),
+    ) as NewsStatus[];
 
     if (article.status.includes(NewsStatus.POSTED_WP)) {
       return article; // Already published
@@ -143,7 +168,9 @@ export class NewsArticleService {
     if (!ids || ids.length === 0) {
       return { deletedCount: 0 };
     }
-    const result = await this.newsArticleModel.deleteMany({ _id: { $in: ids } });
+    const result = await this.newsArticleModel.deleteMany({
+      _id: { $in: ids },
+    });
     return result;
   }
 
@@ -171,19 +198,26 @@ export class NewsArticleService {
 
         let rawMarkdown = '';
         try {
-          const extracted = await ArticleExtractorUtil.extractArticle(article.url);
+          const extracted = await ArticleExtractorUtil.extractArticle(
+            article.url,
+          );
           rawMarkdown = extracted.markdown;
           if (!article.thumbnailUrl && extracted.thumbnailUrl) {
             article.thumbnailUrl = extracted.thumbnailUrl;
           }
-          if ((!article.publishDate || article.publishDate === 'Invalid Date') && extracted.publishDate) {
+          if (
+            (!article.publishDate || article.publishDate === 'Invalid Date') &&
+            extracted.publishDate
+          ) {
             const tempDate = new Date(extracted.publishDate);
             if (!isNaN(tempDate.getTime())) {
               article.publishDate = tempDate.toISOString();
             }
           }
         } catch (error: any) {
-          this.logger.warn(`Failed to scrape article ${article.url}: ${error.message}`);
+          this.logger.warn(
+            `Failed to scrape article ${article.url}: ${error.message}`,
+          );
           failed++;
           continue;
         }
@@ -193,9 +227,12 @@ export class NewsArticleService {
         }
 
         try {
-          article.content = await this.aiFilterService.cleanMarkdownContentWithAI(rawMarkdown);
+          article.content =
+            await this.aiFilterService.cleanMarkdownContentWithAI(rawMarkdown);
         } catch (aiError: any) {
-          this.logger.warn(`AI cleanup failed for article ${id}, fallback to basic string: ${aiError.message}`);
+          this.logger.warn(
+            `AI cleanup failed for article ${id}, fallback to basic string: ${aiError.message}`,
+          );
           // Fallback to raw markdown if AI fails
           article.content = rawMarkdown;
         }
@@ -208,20 +245,30 @@ export class NewsArticleService {
           statusArray = [article.status];
         }
 
-        article.status = statusArray.filter((s: string) => Object.values(NewsStatus).includes(s as any)) as NewsStatus[];
+        article.status = statusArray.filter((s: string) =>
+          Object.values(NewsStatus).includes(s as any),
+        ) as NewsStatus[];
 
         const contentStr = article.content || '';
-        if (contentStr.trim().length > 0 && !article.status.includes(NewsStatus.CRAWLED)) {
+        if (
+          contentStr.trim().length > 0 &&
+          !article.status.includes(NewsStatus.CRAWLED)
+        ) {
           article.status.push(NewsStatus.CRAWLED);
         } else if (contentStr.trim().length === 0) {
-          article.status = article.status.filter((s: string) => s !== NewsStatus.CRAWLED) as NewsStatus[];
+          article.status = article.status.filter(
+            (s: string) => s !== (NewsStatus.CRAWLED as string),
+          );
         }
 
         await article.save();
         processed++;
         processedArticles.push(article);
       } catch (error: any) {
-        this.logger.error(`Failed to analyze market for article ID ${id}: ${error.message}`, error.stack);
+        this.logger.error(
+          `Failed to analyze market for article ID ${id}: ${error.message}`,
+          error.stack,
+        );
         failed++;
       }
     }
@@ -242,14 +289,16 @@ export class NewsArticleService {
     }
 
     // Prepare combined data
-    const combinedData = articles.map(article => {
-      return `
+    const combinedData = articles
+      .map((article) => {
+        return `
 Title: ${article.title || 'N/A'}
 Date: ${article.publishDate ? new Date(article.publishDate).toISOString() : 'N/A'}
 Original URL: ${article.url || 'N/A'}
 Content: ${article.content || article.summary || 'N/A'}
       `.trim();
-    }).join('\n\n---\n\n');
+      })
+      .join('\n\n---\n\n');
 
     // Call AIFilterService
     const markdownResponse = await this.aiFilterService.analyzeMarketTrends(
@@ -267,18 +316,13 @@ Content: ${article.content || article.summary || 'N/A'}
     }
 
     if (article.content) {
-
-
-      article.content = await this.aiFilterService.cleanMarkdownContentWithAI(article.content);
-
-
+      article.content = await this.aiFilterService.cleanMarkdownContentWithAI(
+        article.content,
+      );
 
       await article.save();
-
-
     }
 
     return article;
   }
 }
-

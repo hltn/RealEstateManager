@@ -9,14 +9,17 @@ import {
   Logger,
   InternalServerErrorException,
   HttpException,
-  BadRequestException,
+  Put,
 } from '@nestjs/common';
+import * as fs from 'fs';
 import { CustomCrawlerService } from './services/custom-crawler.service';
 import { AIFilterService } from './services/ai-filter.service';
 import { NewsArticleService } from './services/news-article.service';
 import { CronjobService } from './services/cronjob.service';
-import { AiPromptConfigService, AiPrompt } from './services/ai-prompt-config.service';
-import { Put } from '@nestjs/common';
+import {
+  AiPromptConfigService,
+  AiPrompt,
+} from './services/ai-prompt-config.service';
 
 @Controller('news-manager')
 export class NewsFireCrawlManagerController {
@@ -60,9 +63,15 @@ export class NewsFireCrawlManagerController {
   }
 
   @Get('raw-articles')
-  async getRawArticles(@Query('search') search?: string, @Query('sort') sort?: 'newest' | 'oldest') {
+  async getRawArticles(
+    @Query('search') search?: string,
+    @Query('sort') sort?: 'newest' | 'oldest',
+  ) {
     try {
-      const articles = await this.customCrawlerService.getRawArticles(search, sort);
+      const articles = await this.customCrawlerService.getRawArticles(
+        search,
+        sort,
+      );
       return {
         message: 'Raw articles fetched successfully',
         data: articles,
@@ -94,7 +103,9 @@ export class NewsFireCrawlManagerController {
       return { message: 'Raw articles deleted successfully' };
     } catch (error: any) {
       this.logger.error('Error bulk deleting raw articles', error.stack);
-      throw new InternalServerErrorException('Failed to bulk delete raw articles');
+      throw new InternalServerErrorException(
+        'Failed to bulk delete raw articles',
+      );
     }
   }
 
@@ -104,14 +115,18 @@ export class NewsFireCrawlManagerController {
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to move' };
       }
-      const rawArticles = await this.customCrawlerService.getRawArticlesByIds(ids);
+      const rawArticles =
+        await this.customCrawlerService.getRawArticlesByIds(ids);
       if (rawArticles.length > 0) {
-        const { processedUrlHashes } = await this.newsArticleService.saveArticles(rawArticles);
-        
+        const { processedUrlHashes } =
+          await this.newsArticleService.saveArticles(rawArticles);
+
         const successfulIds = rawArticles
-          .filter(raw => raw.urlHash && processedUrlHashes.includes(raw.urlHash))
-          .map(raw => raw._id.toString());
-          
+          .filter(
+            (raw) => raw.urlHash && processedUrlHashes.includes(raw.urlHash),
+          )
+          .map((raw) => raw._id.toString());
+
         if (successfulIds.length > 0) {
           await this.customCrawlerService.deleteRawArticlesBulk(successfulIds);
         }
@@ -119,17 +134,20 @@ export class NewsFireCrawlManagerController {
       return { message: 'Raw articles moved successfully' };
     } catch (error: any) {
       this.logger.error('Error bulk moving raw articles', error.stack);
-      throw new InternalServerErrorException('Failed to bulk move raw articles');
+      throw new InternalServerErrorException(
+        'Failed to bulk move raw articles',
+      );
     }
   }
 
   @Post('crawl')
   async triggerManualCrawl(@Body('days') days?: number) {
     try {
-      this.logger.log(`Manual crawl called with days filter: ${days || 'none'}`);
+      this.logger.log(
+        `Manual crawl called with days filter: ${days || 'none'}`,
+      );
       const filePath = await this.customCrawlerService.crawlData(days);
-      
-      const fs = require('fs');
+
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
       return {
@@ -139,9 +157,7 @@ export class NewsFireCrawlManagerController {
       };
     } catch (error: any) {
       this.logger.error('Error in manual crawl', error.stack);
-      throw new InternalServerErrorException(
-        'Failed to process crawl',
-      );
+      throw new InternalServerErrorException('Failed to process crawl');
     }
   }
 
@@ -163,9 +179,7 @@ export class NewsFireCrawlManagerController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new InternalServerErrorException(
-        'Failed to process filter',
-      );
+      throw new InternalServerErrorException('Failed to process filter');
     } finally {
       if (filePath) {
         import('fs').then((fs) => {
@@ -189,8 +203,9 @@ export class NewsFireCrawlManagerController {
       if (!articles || articles.length === 0) {
         return { message: 'No articles to analyze', data: [] };
       }
-      const filteredArticles = await this.aiFilterService.filterRawArticles(articles);
-      
+      const filteredArticles =
+        await this.aiFilterService.filterRawArticles(articles);
+
       if (filteredArticles && filteredArticles.length > 0) {
         const keepUrls = filteredArticles.map((a: any) => a.urlHash);
         await this.customCrawlerService.deleteRawArticlesNotIn(keepUrls);
@@ -200,7 +215,7 @@ export class NewsFireCrawlManagerController {
         // If empty list returned, it deletes everything. This is correct as per instructions.
         await this.customCrawlerService.deleteRawArticlesNotIn([]);
       }
-      
+
       return {
         message: 'Raw articles filtered successfully',
         data: filteredArticles,
@@ -210,9 +225,7 @@ export class NewsFireCrawlManagerController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new InternalServerErrorException(
-        'Failed to analyze raw articles',
-      );
+      throw new InternalServerErrorException('Failed to analyze raw articles');
     }
   }
 
@@ -300,10 +313,11 @@ export class NewsFireCrawlManagerController {
       };
     } catch (error: any) {
       this.logger.error('Error in bulk market analysis', error.stack);
-      throw new InternalServerErrorException('Failed to analyze market for articles');
+      throw new InternalServerErrorException(
+        'Failed to analyze market for articles',
+      );
     }
   }
-
 
   @Post('articles/delete-bulk')
   async deleteBulkArticles(@Body('ids') ids: string[]) {

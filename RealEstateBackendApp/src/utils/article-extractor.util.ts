@@ -11,7 +11,11 @@ export class ArticleExtractorUtil {
    * @param url The URL of the article to extract.
    * @returns An object containing markdown content, and optional thumbnailUrl and publishDate.
    */
-  static async extractArticle(url: string): Promise<{ markdown: string, thumbnailUrl?: string, publishDate?: string }> {
+  static async extractArticle(url: string): Promise<{
+    markdown: string;
+    thumbnailUrl?: string;
+    publishDate?: string;
+  }> {
     try {
       const response = await axios.get(url, {
         headers: {
@@ -22,17 +26,21 @@ export class ArticleExtractorUtil {
 
       const html = response.data;
       const doc = new JSDOM(html, { url });
-      
+
       let thumbnailUrl: string | undefined;
-      const ogImage = doc.window.document.querySelector('meta[property="og:image"]');
+      const ogImage = doc.window.document.querySelector(
+        'meta[property="og:image"]',
+      );
       if (ogImage) {
-         thumbnailUrl = ogImage.getAttribute('content') || undefined;
+        thumbnailUrl = ogImage.getAttribute('content') || undefined;
       }
 
       let publishDate: string | undefined;
-      const articlePublishedTime = doc.window.document.querySelector('meta[property="article:published_time"]');
+      const articlePublishedTime = doc.window.document.querySelector(
+        'meta[property="article:published_time"]',
+      );
       if (articlePublishedTime) {
-         publishDate = articlePublishedTime.getAttribute('content') || undefined;
+        publishDate = articlePublishedTime.getAttribute('content') || undefined;
       }
 
       const reader = new Readability(doc.window.document);
@@ -51,7 +59,10 @@ export class ArticleExtractorUtil {
 
       return { markdown, thumbnailUrl, publishDate };
     } catch (error) {
-      console.error(`[ArticleExtractorUtil] Error extracting from ${url}:`, error);
+      console.error(
+        `[ArticleExtractorUtil] Error extracting from ${url}:`,
+        error,
+      );
       throw error;
     }
   }

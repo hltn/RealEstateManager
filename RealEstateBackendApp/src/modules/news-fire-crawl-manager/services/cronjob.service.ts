@@ -63,7 +63,9 @@ export class CronjobService {
     let filePath: string | null = null;
     try {
       filePath = await this.customCrawlerService.crawlData();
-      const top5Articles = filePath ? await this.aiFilterService.filterAndRank(filePath) : [];
+      const top5Articles = filePath
+        ? await this.aiFilterService.filterAndRank(filePath)
+        : [];
 
       if (top5Articles && top5Articles.length > 0) {
         // Automatically save it
@@ -90,5 +92,3 @@ export class CronjobService {
     }
   }
 }
-
-

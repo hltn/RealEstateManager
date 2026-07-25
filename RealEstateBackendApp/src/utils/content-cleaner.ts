@@ -116,7 +116,7 @@ const uiNoisePatterns = [
   /^1x$/,
   /^\d+x$/,
   /^loaded:\s*\d/i,
-  /^[\-:]\-?$/,
+  /^[-:]-?$/,
 ];
 
 // ─── Form CTA blocks ───
@@ -165,7 +165,7 @@ function isNoiseParagraph(text: string): boolean {
   const t = text.trim();
   if (t.length === 0) return true;
   // Single chars or tiny noise
-  if (/^[?!x<>·•✕✖×*/A\-]{1,4}$/.test(t)) return true;
+  if (/^[-?!x<>A*/\u00A0]{1,4}$/.test(t)) return true;
   if (/^\?{2,3}$/.test(t)) return true;
   if (/^<!--.*-->$/.test(t)) return true;
   // Lines that are just asterisks/bullets separated by newlines
@@ -246,10 +246,7 @@ function isNhadatListingParagraph(node: any): boolean {
   if (node.type !== 'paragraph') return false;
   let hasNhadatLink = false;
   visit(node, 'link', (lNode: any) => {
-    if (
-      lNode.url &&
-      /nhadat\.cafeland\.vn/.test(lNode.url)
-    ) {
+    if (lNode.url && /nhadat\.cafeland\.vn/.test(lNode.url)) {
       hasNhadatLink = true;
     }
   });
@@ -442,7 +439,7 @@ export function cleanMarkdownContent(markdown: string): string {
               });
 
               const nextText = toString(nextNode).trim();
-              
+
               if (hasNhadatLink && nextText.length < 400) {
                 nodesToRemove.add(nextNode);
                 i++;
@@ -598,7 +595,9 @@ export function cleanMarkdownContent(markdown: string): string {
           if (children.length === 1 && children[0].type === 'link') {
             const linkUrl = children[0].url || '';
             if (
-              /cafeland\.vn\/(tin-tuc|phan-tich|du-an|quy-hoach)/.test(linkUrl) &&
+              /cafeland\.vn\/(tin-tuc|phan-tich|du-an|quy-hoach)/.test(
+                linkUrl,
+              ) &&
               nodeText.length < 300
             ) {
               nodesToRemove.add(node);
@@ -725,11 +724,14 @@ export function cleanMarkdownContent(markdown: string): string {
   // Remove HTML comments that remark preserved
   result = result.replace(/<!--[\s\S]*?-->/g, '');
   // Remove lines that are just *, /, A, Â, or other single-char noise (ASCII + Unicode lookalikes)
-  result = result.replace(/^[*/A\u00C2\-]{1,2}$/gm, '');
+  result = result.replace(/^[-*/A\u00C2]{1,2}$/gm, '');
   // Remove <> and ‹› (Unicode single angle quotation marks U+2039 U+203A) on own line
   result = result.replace(/^\s*[<\u2039][>\u203A]\s*$/gm, '');
-  // Remove ?? ??? and emoji equivalents (📌 U+1F4CC, 🗺️ U+1F5FA) on own line
-  result = result.replace(/^\s*[\?\u{1F4CC}\u{1F5FA}\u{FE0F}]{1,3}\s*$/gmu, '');
+  // Remove ?? ??? and emoji equivalents (U+1F4CC, U+1F5FA) on own line
+  result = result.replace(
+    /^\s*(?:[?\u{1F4CC}\u{1F5FA}]\uFE0F?){1,3}\s*$/gmu,
+    '',
+  );
   // Remove stray author/source attribution like "*theo Congnghiepnongthon*"
   result = result.replace(/^\*theo\s+\w+\*$/gm, '');
   // Remove "Đồng bộ lỡ" and similar Vietnamese boilerplate that survived

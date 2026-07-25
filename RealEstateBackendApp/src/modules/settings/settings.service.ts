@@ -11,19 +11,42 @@ export class SettingsService {
   constructor(private configService: ConfigService) {}
 
   getAiConfig() {
-    const apiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
-    const must1cApiKey = this.configService.get<string>('MUST1C_API_KEY') || process.env.MUST1C_API_KEY;
+    const apiKey =
+      this.configService.get<string>('OPENROUTER_API_KEY') ||
+      process.env.OPENROUTER_API_KEY;
+    const must1cApiKey =
+      this.configService.get<string>('MUST1C_API_KEY') ||
+      process.env.MUST1C_API_KEY;
     return {
-      provider: this.configService.get<string>('OPENROUTER_AI_PROVIDER') || process.env.OPENROUTER_AI_PROVIDER || 'OpenRouter',
-      model: this.configService.get<string>('OPENROUTER_AI_MODEL') || process.env.OPENROUTER_AI_MODEL || 'google/gemini-2.5-flash',
+      provider:
+        this.configService.get<string>('OPENROUTER_AI_PROVIDER') ||
+        process.env.OPENROUTER_AI_PROVIDER ||
+        'OpenRouter',
+      model:
+        this.configService.get<string>('OPENROUTER_AI_MODEL') ||
+        process.env.OPENROUTER_AI_MODEL ||
+        'google/gemini-2.5-flash',
       apiKey: apiKey ? '***' : '',
       must1cApiKey: must1cApiKey ? '***' : '',
-      must1cModel: this.configService.get<string>('MUST1C_MODEL') || process.env.MUST1C_MODEL || '',
-      activePlatform: this.configService.get<string>('ACTIVE_AI_PLATFORM') || process.env.ACTIVE_AI_PLATFORM || 'OpenRouter',
+      must1cModel:
+        this.configService.get<string>('MUST1C_MODEL') ||
+        process.env.MUST1C_MODEL ||
+        '',
+      activePlatform:
+        this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
+        process.env.ACTIVE_AI_PLATFORM ||
+        'OpenRouter',
     };
   }
 
-  updateAiConfig(config: { provider?: string; model?: string; apiKey?: string; must1cApiKey?: string; must1cModel?: string; activePlatform?: string }) {
+  updateAiConfig(config: {
+    provider?: string;
+    model?: string;
+    apiKey?: string;
+    must1cApiKey?: string;
+    must1cModel?: string;
+    activePlatform?: string;
+  }) {
     let envContent = '';
     if (fs.existsSync(this.envPath)) {
       envContent = fs.readFileSync(this.envPath, 'utf8');
@@ -32,7 +55,7 @@ export class SettingsService {
     const updates: Record<string, string> = {};
     if (config.provider) updates['OPENROUTER_AI_PROVIDER'] = config.provider;
     if (config.model) updates['OPENROUTER_AI_MODEL'] = config.model;
-    
+
     if (config.apiKey && config.apiKey !== '***') {
       updates['OPENROUTER_API_KEY'] = config.apiKey;
     }
@@ -68,7 +91,9 @@ export class SettingsService {
   }
 
   async getOpenRouterModels() {
-    const apiKey = this.configService.get<string>('OPENROUTER_API_KEY') || process.env.OPENROUTER_API_KEY;
+    const apiKey =
+      this.configService.get<string>('OPENROUTER_API_KEY') ||
+      process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       throw new Error('OpenRouter API key is not configured');
     }
@@ -76,7 +101,7 @@ export class SettingsService {
     try {
       const response = await fetch('https://openrouter.ai/api/v1/models', {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'HTTP-Referer': 'http://localhost:3000',
           'X-Title': 'RealEstateManager',
         },
