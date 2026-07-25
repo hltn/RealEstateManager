@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -14,7 +15,7 @@ import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 
 @Injectable()
-export class NewsArticleService {
+export class NewsArticleService implements OnModuleInit {
   private readonly logger = new Logger(NewsArticleService.name);
 
   constructor(
@@ -24,6 +25,42 @@ export class NewsArticleService {
     private readonly aiFilterService: AIFilterService,
     private readonly aiPromptConfigService: AiPromptConfigService,
   ) {}
+
+  async onModuleInit() {
+    await this.cleanupUncontentCrawledStatus();
+  }
+
+  async cleanupUncontentCrawledStatus(): Promise<{ modifiedCount: number }> {
+    try {
+      this.logger.log(
+        'Running startup cleanup: Removing CRAWLED status from articles without valid content...',
+      );
+
+      const filter = {
+        $or: [
+          { content: { $exists: false } },
+          { content: null },
+          { content: { $regex: /^\s*$/ } },
+        ],
+        status: NewsStatus.CRAWLED,
+      };
+
+      const result = await this.newsArticleModel.updateMany(filter, {
+        $pull: { status: NewsStatus.CRAWLED },
+      });
+
+      this.logger.log(
+        `Cleanup completed. Articles updated: ${result.modifiedCount}`,
+      );
+      return { modifiedCount: result.modifiedCount };
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to clean up CRAWLED status for empty content articles: ${error.message}`,
+        error.stack,
+      );
+      return { modifiedCount: 0 };
+    }
+  }
 
   async saveArticles(articles: any[]): Promise<{
     savedCount: number;
