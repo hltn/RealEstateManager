@@ -100,7 +100,7 @@ export default function AiPromptConfigScreen() {
   const fetchPrompts = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/news-manager/prompts');
+      const response = await fetch('/api/v1/news-manager/prompts');
       const data = await response.json();
       if (data.success && Array.isArray(data.data)) {
         setPrompts(data.data);
@@ -126,7 +126,7 @@ export default function AiPromptConfigScreen() {
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      const response = await fetch('/api/news-manager/prompts', {
+      const response = await fetch('/api/v1/news-manager/prompts', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

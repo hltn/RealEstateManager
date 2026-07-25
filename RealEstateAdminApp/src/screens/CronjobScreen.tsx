@@ -9,7 +9,7 @@ export default function CronjobScreen() {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const res = await fetch('/api/news-manager/cron');
+        const res = await fetch('/api/v1/news-manager/cron');
         const data = await res.json();
         setIsActive(data.isActive);
         setFrequency(data.frequency);
@@ -23,7 +23,7 @@ export default function CronjobScreen() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await fetch('/api/news-manager/cron', {
+      await fetch('/api/v1/news-manager/cron', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

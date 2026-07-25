@@ -1,19 +1,29 @@
 import { Controller, Get } from '@nestjs/common';
-import { InjectConnection } from '@nestjs/mongoose';
-import { Connection } from 'mongoose';
+import { HealthCheckService, MongooseHealthIndicator, HealthCheck } from '@nestjs/terminus';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Health')
 @Controller('health')
 export class HealthController {
-  constructor(@InjectConnection() private readonly connection: Connection) {}
+  constructor(
+    private health: HealthCheckService,
+    private mongoose: MongooseHealthIndicator,
+  ) {}
 
-  @Get()
-  checkHealth() {
-    const dbStatus =
-      Number(this.connection.readyState) === 1 ? 'Connected' : 'Disconnected';
-    return {
-      status: 'OK',
-      database: dbStatus,
-      timestamp: new Date().toISOString(),
-    };
+  @Get('liveness')
+  @HealthCheck()
+  @ApiOperation({ summary: 'Check application liveness', description: 'Check application liveness' })
+  checkLiveness() {
+    return this.health.check([]);
+  }
+
+  @Get('readiness')
+  @HealthCheck()
+  @ApiOperation({ summary: 'Check application readiness including database', description: 'Check application readiness including database' })
+  checkReadiness() {
+    return this.health.check([
+      () => this.mongoose.pingCheck('database'),
+    ]);
   }
 }
+

@@ -25,7 +25,7 @@ export default function AiConfigScreen() {
     const loadConfig = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch('/api/settings/ai-config');
+        const res = await fetch('/api/v1/settings/ai-config');
         if (res.ok) {
           const data = await res.json();
           if (data.apiKey) {
@@ -56,7 +56,7 @@ export default function AiConfigScreen() {
 
   const fetchModels = async (initialProvider?: string, initialModel?: string) => {
     try {
-      const res = await fetch('/api/settings/openrouter-models');
+      const res = await fetch('/api/v1/settings/openrouter-models');
       if (res.ok) {
         const data = await res.json();
         const models = data.models || data.data || [];
@@ -103,7 +103,7 @@ export default function AiConfigScreen() {
     setIsSaving(true);
     setMessage({ text: '', type: '' });
     try {
-      const response = await fetch('/api/settings/ai-config', {
+      const response = await fetch('/api/v1/settings/ai-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey }),
@@ -126,7 +126,7 @@ export default function AiConfigScreen() {
     setIsSaving(true);
     setMessage({ text: '', type: '' });
     try {
-      const response = await fetch('/api/settings/ai-config', {
+      const response = await fetch('/api/v1/settings/ai-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, model, apiKey }),
@@ -154,7 +154,7 @@ export default function AiConfigScreen() {
     setActivePlatform(platform);
     
     try {
-      const response = await fetch('/api/settings/ai-config', {
+      const response = await fetch('/api/v1/settings/ai-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ activePlatform: platform }),
@@ -175,7 +175,7 @@ const handleSaveMust1c = async () => {
     setIsSavingMust1c(true);
     setMust1cMessage({ text: '', type: '' });
     try {
-      const response = await fetch('/api/settings/ai-config', {
+      const response = await fetch('/api/v1/settings/ai-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ must1cApiKey, must1cModel }),

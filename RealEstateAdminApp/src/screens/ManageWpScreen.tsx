@@ -148,7 +148,7 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   const fetchHistory = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/news-manager/articles/market-analysis-history');
+      const res = await fetch('/api/v1/news-manager/articles/market-analysis-history');
       const data = await res.json();
       setHistory(data.data || []);
     } catch (error) {
@@ -230,7 +230,7 @@ export default function ManageWpScreen() {
   const fetchArticles = async (dateStr?: string) => {
     try {
       setLoading(true);
-      let url = '/api/news-manager/articles';
+      let url = '/api/v1/news-manager/articles';
       if (dateStr) {
         url += `?date=${dateStr}`;
       }
@@ -260,7 +260,7 @@ export default function ManageWpScreen() {
   const handlePublish = async (id: string) => {
     try {
       setPublishingIds(prev => new Set(prev).add(id));
-      await fetch(`/api/news-manager/articles/${id}/publish`, {
+      await fetch(`/api/v1/news-manager/articles/${id}/publish`, {
         method: 'POST'
       });
       fetchArticles(filterDate);
@@ -278,7 +278,7 @@ export default function ManageWpScreen() {
   const handleClean = async (article: any) => {
     try {
       setCleaningIds(prev => new Set(prev).add(article._id));
-      const res = await fetch(`/api/news-manager/articles/${article._id}/clean`, {
+      const res = await fetch(`/api/v1/news-manager/articles/${article._id}/clean`, {
         method: 'POST'
       });
       const responseData = await res.json();
@@ -347,7 +347,7 @@ export default function ManageWpScreen() {
     
     if (bulkAction === 'publish') {
       try {
-        await fetch('/api/news-manager/articles/publish-bulk', {
+        await fetch('/api/v1/news-manager/articles/publish-bulk', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: Array.from(selectedIds) })
@@ -366,7 +366,7 @@ export default function ManageWpScreen() {
       }
     } else if (bulkAction === 'analyze') {
       try {
-        const res = await fetch('/api/news-manager/articles/market-analysis-bulk', {
+        const res = await fetch('/api/v1/news-manager/articles/market-analysis-bulk', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: Array.from(selectedIds) })
@@ -395,7 +395,7 @@ export default function ManageWpScreen() {
       }
     } else if (bulkAction === 'analyze_market_trends') {
         try {
-          const res = await fetch('/api/news-manager/articles/analyze-market-trends', {
+          const res = await fetch('/api/v1/news-manager/articles/analyze-market-trends', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -431,7 +431,7 @@ export default function ManageWpScreen() {
         return;
       }
       try {
-        await fetch('/api/news-manager/articles/delete-bulk', {
+        await fetch('/api/v1/news-manager/articles/delete-bulk', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: Array.from(selectedIds) })

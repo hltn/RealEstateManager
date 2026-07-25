@@ -11,6 +11,8 @@ import {
   HttpException,
   Put,
 } from '@nestjs/common';
+import { ApiOperation, ApiTags, ApiQuery, ApiParam, ApiBody } from '@nestjs/swagger';
+import { UpdateCronConfigDto, BulkIdsDto, AnalyzeRawArticlesDto, SaveArticlesDto, TriggerManualCrawlDto, AiPromptDto, TriggerManualAnalyzeDto } from './dtos/news-manager.dto';
 import * as fs from 'fs';
 import { CustomCrawlerService } from './services/custom-crawler.service';
 import { AIFilterService } from './services/ai-filter.service';
@@ -21,6 +23,7 @@ import {
   AiPrompt,
 } from './services/ai-prompt-config.service';
 
+@ApiTags('News Manager')
 @Controller('news-manager')
 export class NewsFireCrawlManagerController {
   private readonly logger = new Logger(NewsFireCrawlManagerController.name);
@@ -33,6 +36,7 @@ export class NewsFireCrawlManagerController {
     private readonly aiPromptConfigService: AiPromptConfigService,
   ) {}
 
+  @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
   @Get('prompts')
   getPrompts() {
     return {
@@ -41,19 +45,22 @@ export class NewsFireCrawlManagerController {
     };
   }
 
+  @ApiOperation({ summary: 'Update prompts', description: 'Update prompts' })
   @Put('prompts')
-  async updatePrompts(@Body() newPrompts: AiPrompt[]) {
+  async updatePrompts(@Body() newPrompts: AiPromptDto[]) {
     await this.aiPromptConfigService.updatePrompts(newPrompts);
     return { success: true, message: 'Prompts updated successfully' };
   }
 
+  @ApiOperation({ summary: 'Get cron config', description: 'Get cron config' })
   @Get('cron')
   getCronConfig() {
     return this.cronjobService.getConfig();
   }
 
+  @ApiOperation({ summary: 'Update cron config', description: 'Update cron config' })
   @Post('cron')
-  updateCronConfig(@Body() body: { isActive: boolean; frequency: string }) {
+  updateCronConfig(@Body() body: UpdateCronConfigDto) {
     try {
       return this.cronjobService.updateConfig(body.isActive, body.frequency);
     } catch (error: any) {
@@ -62,6 +69,7 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Get raw articles', description: 'Get raw articles' })
   @Get('raw-articles')
   async getRawArticles(
     @Query('search') search?: string,
@@ -86,6 +94,8 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Delete raw article', description: 'Delete raw article' })
+  @ApiParam({ name: 'id', required: true })
   @Delete('raw-articles/:id')
   async deleteRawArticle(@Param('id') id: string) {
     try {
@@ -97,9 +107,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Delete raw articles bulk', description: 'Delete raw articles bulk' })
   @Post('raw-articles/delete-bulk')
-  async deleteRawArticlesBulk(@Body('ids') ids: string[]) {
+  async deleteRawArticlesBulk(@Body() body: BulkIdsDto) {
     try {
+    const { ids } = body;
+
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to delete' };
       }
@@ -113,9 +126,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Move raw articles bulk', description: 'Move raw articles bulk' })
   @Post('raw-articles/move-bulk')
-  async moveRawArticlesBulk(@Body('ids') ids: string[]) {
+  async moveRawArticlesBulk(@Body() body: BulkIdsDto) {
     try {
+    const { ids } = body;
+
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to move' };
       }
@@ -144,13 +160,13 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Trigger manual crawl', description: 'Trigger manual crawl' })
   @Post('crawl')
   async triggerManualCrawl(
-    @Body('days') days?: number,
-    @Body('startDate') startDate?: string,
-    @Body('endDate') endDate?: string
+    @Body() body: TriggerManualCrawlDto,
   ) {
     try {
+      const { days, startDate, endDate } = body;
       this.logger.log(
         `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
       );
@@ -171,8 +187,10 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Trigger manual analyze', description: 'Trigger manual analyze' })
   @Post('analyze')
-  async triggerManualAnalyze(@Body('filePath') filePath: string) {
+  async triggerManualAnalyze(@Body() body: TriggerManualAnalyzeDto) {
+    const { filePath } = body;
     if (!filePath) {
       return { message: 'filePath is required', data: [] };
     }
@@ -206,9 +224,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Analyze raw articles', description: 'Analyze raw articles' })
   @Post('analyze-raw')
-  async analyzeRawArticles(@Body('articles') articles: any[]) {
+  async analyzeRawArticles(@Body() body: AnalyzeRawArticlesDto) {
     try {
+    const { articles } = body;
+
       this.logger.log('Analyze Raw Articles called');
       if (!articles || articles.length === 0) {
         return { message: 'No articles to analyze', data: [] };
@@ -239,9 +260,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Save articles', description: 'Save articles' })
   @Post('articles/save')
-  async saveArticles(@Body() articles: any[]) {
+  async saveArticles(@Body() body: SaveArticlesDto) {
     try {
+    const { articles } = body;
+
       if (!Array.isArray(articles) || articles.length === 0) {
         return { message: 'No articles to save' };
       }
@@ -256,6 +280,8 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Get articles', description: 'Get articles' })
+  @ApiQuery({ name: 'date', required: false })
   @Get('articles')
   async getArticles(@Query('date') date?: string) {
     try {
@@ -270,6 +296,7 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Get market analysis history', description: 'Get market analysis history' })
   @Get('articles/market-analysis-history')
   async getMarketAnalysisHistory() {
     try {
@@ -286,6 +313,8 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Get market analysis history by id', description: 'Get market analysis history by id' })
+  @ApiParam({ name: 'id', required: true })
   @Get('articles/market-analysis-history/:id')
   async getMarketAnalysisHistoryById(@Param('id') id: string) {
     try {
@@ -308,6 +337,8 @@ export class NewsFireCrawlManagerController {
       );
     }
   }
+  @ApiOperation({ summary: 'Get article by id', description: 'Get article by id' })
+  @ApiParam({ name: 'id', required: true })
   @Get('articles/:id')
   async getArticleById(@Param('id') id: string) {
     try {
@@ -325,8 +356,9 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Analyze market trends', description: 'Analyze market trends' })
   @Post('articles/analyze-market-trends')
-  async analyzeMarketTrends(@Body() body: { ids: string[] }) {
+  async analyzeMarketTrends(@Body() body: BulkIdsDto) {
     try {
       const { ids } = body;
       if (!Array.isArray(ids) || ids.length === 0) {
@@ -347,9 +379,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Analyze market bulk', description: 'Analyze market bulk' })
   @Post('articles/market-analysis-bulk')
-  async analyzeMarketBulk(@Body('ids') ids: string[]) {
+  async analyzeMarketBulk(@Body() body: BulkIdsDto) {
     try {
+    const { ids } = body;
+
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to analyze' };
       }
@@ -367,9 +402,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Delete bulk articles', description: 'Delete bulk articles' })
   @Post('articles/delete-bulk')
-  async deleteBulkArticles(@Body('ids') ids: string[]) {
+  async deleteBulkArticles(@Body() body: BulkIdsDto) {
     try {
+    const { ids } = body;
+
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to delete' };
       }
@@ -384,9 +422,12 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Publish bulk articles', description: 'Publish bulk articles' })
   @Post('articles/publish-bulk')
-  async publishBulkArticles(@Body('ids') ids: string[]) {
+  async publishBulkArticles(@Body() body: BulkIdsDto) {
     try {
+    const { ids } = body;
+
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to publish' };
       }
@@ -405,6 +446,8 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Publish article', description: 'Publish article' })
+  @ApiParam({ name: 'id', required: true })
   @Post('articles/:id/publish')
   async publishArticle(@Param('id') id: string) {
     try {
@@ -419,6 +462,8 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @ApiOperation({ summary: 'Clean article', description: 'Clean article' })
+  @ApiParam({ name: 'id', required: true })
   @Post('articles/:id/clean')
   async cleanArticle(@Param('id') id: string) {
     try {

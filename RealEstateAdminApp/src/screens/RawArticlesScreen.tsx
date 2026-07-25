@@ -51,7 +51,7 @@ export default function RawArticlesScreen() {
     setError("");
     if (!keepSuccess) setSuccess("");
     try {
-      const url = new URL("/api/news-manager/raw-articles", window.location.origin);
+      const url = new URL("/api/v1/news-manager/raw-articles", window.location.origin);
       if (dateRange) {
         if (typeof dateRange === 'string' && dateRange.includes(" to ")) {
           const [start, end] = dateRange.split(" to ");
@@ -123,7 +123,7 @@ export default function RawArticlesScreen() {
         }
       }
 
-      const response = await fetch("/api/news-manager/crawl", {
+      const response = await fetch("/api/v1/news-manager/crawl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -168,7 +168,7 @@ export default function RawArticlesScreen() {
         description: item.description
       }));
       
-      const response = await fetch("/api/news-manager/analyze-raw", {
+      const response = await fetch("/api/v1/news-manager/analyze-raw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ articles: articlesToSend })
@@ -191,7 +191,7 @@ export default function RawArticlesScreen() {
   const handleDeleteSingle = async (id: string) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa bài viết này?")) return;
     try {
-      const res = await fetch(`/api/news-manager/raw-articles/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/news-manager/raw-articles/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Xóa thất bại");
       setSuccess("Đã xóa bài viết thành công!");
       await fetchRawArticles(true);
@@ -204,7 +204,7 @@ export default function RawArticlesScreen() {
     if (bulkAction === "delete" && selectedIds.length > 0) {
       if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.length} bài viết đã chọn?`)) return;
       try {
-        const res = await fetch(`/api/news-manager/raw-articles/delete-bulk`, {
+        const res = await fetch(`/api/v1/news-manager/raw-articles/delete-bulk`, {
           method: 'POST',
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids: selectedIds })
@@ -219,7 +219,7 @@ export default function RawArticlesScreen() {
     } else if (bulkAction === "move_to_main" && selectedIds.length > 0) {
       if (!window.confirm(`Bạn có chắc chắn muốn di chuyển ${selectedIds.length} bài viết đã chọn sang danh sách chính?`)) return;
       try {
-        const res = await fetch(`/api/news-manager/raw-articles/move-bulk`, {
+        const res = await fetch(`/api/v1/news-manager/raw-articles/move-bulk`, {
           method: 'POST',
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids: selectedIds })

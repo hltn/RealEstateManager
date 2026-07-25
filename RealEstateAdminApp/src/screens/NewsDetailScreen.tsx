@@ -12,7 +12,7 @@ export default function NewsDetailScreen() {
   useEffect(() => {
     const fetchArticle = async () => {
       try {
-        const res = await fetch(`/api/news-manager/articles/${id}`);
+        const res = await fetch(`/api/v1/news-manager/articles/${id}`);
         const data = await res.json();
         if (data.data) {
           setArticle(data.data);

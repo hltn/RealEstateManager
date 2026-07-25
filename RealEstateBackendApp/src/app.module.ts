@@ -3,12 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
-import { HealthController } from './health.controller';
 import { AppService } from './app.service';
 import { NewsFireCrawlManagerModule } from './modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { SettingsModule } from './modules/settings/settings.module';
+import { HealthModule } from './health.module';
 
 @Module({
   imports: [
@@ -30,8 +30,9 @@ import { SettingsModule } from './modules/settings/settings.module';
     }),
     NewsFireCrawlManagerModule,
     SettingsModule,
+    HealthModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}

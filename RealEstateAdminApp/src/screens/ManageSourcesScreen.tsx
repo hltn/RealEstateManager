@@ -1,28 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Edit2, Trash2, Plus, X, Server, Database } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+export interface NewsSource {
+  _id: string;
+  name: string;
+  url: string;
+  rssUrl?: string;
+  crawlConfig?: Record<string, any>;
+  isActive?: boolean;
+}
 
 export default function ManageSourcesScreen() {
-  const [sources, setSources] = useState<any[]>([]);
+  const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', url: '', rssUrl: '', crawlConfig: '{}' });
-  const [isLoading, setIsLoading] = useState(false);
 
-  const fetchSources = async () => {
-    try {
-      const res = await fetch('/api/news-manager/sources');
-      const data = await res.json();
-      setSources(data.data || []);
-    } catch (err) {
-      console.error('Error fetching sources', err);
+  const { data, isLoading: isSourcesLoading } = useQuery<{ data: NewsSource[] }>({
+    queryKey: ['news-sources'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/news-sources');
+      if (!res.ok) throw new Error('Failed to fetch sources');
+      return res.json();
     }
-  };
+  });
 
-  useEffect(() => {
-    fetchSources();
-  }, []);
+  const sources = data?.data || [];
 
-  const handleOpenModal = (source?: any) => {
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const url = editingId ? `/api/v1/news-sources/${editingId}` : '/api/v1/news-sources';
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Failed to save source');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['news-sources'] });
+      handleCloseModal();
+    }
+  });
+
+  const handleOpenModal = (source?: NewsSource) => {
     if (source) {
       setEditingId(source._id);
       setFormData({ 
@@ -44,52 +68,47 @@ export default function ManageSourcesScreen() {
     setFormData({ name: '', url: '', rssUrl: '', crawlConfig: '{}' });
   };
 
-  const handleSave = async () => {
-    setIsLoading(true);
+  const handleSave = () => {
+    let crawlConfigParsed = {};
     try {
-      let crawlConfigParsed = {};
-      try {
-        crawlConfigParsed = JSON.parse(formData.crawlConfig);
-      } catch {}
+      crawlConfigParsed = JSON.parse(formData.crawlConfig);
+    } catch {}
 
-      const url = editingId ? `/api/news-manager/sources/${editingId}` : '/api/news-manager/sources';
-      const method = editingId ? 'PUT' : 'POST';
-      
-      await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: formData.name, url: formData.url, rssUrl: formData.rssUrl, crawlConfig: crawlConfigParsed })
-      });
-      handleCloseModal();
-      fetchSources();
-    } catch (err) {
-      console.error('Error saving source', err);
-    } finally {
-      setIsLoading(false);
-    }
+    saveMutation.mutate({ 
+      name: formData.name, 
+      url: formData.url, 
+      rssUrl: formData.rssUrl, 
+      crawlConfig: crawlConfigParsed 
+    });
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Bạn có chắc muốn xóa nguồn tin này?')) return;
-    try {
-      await fetch(`/api/news-manager/sources/${id}`, { method: 'DELETE' });
-      fetchSources();
-    } catch (err) {
-      console.error('Error deleting source', err);
-    }
-  };
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/v1/news-sources/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete source');
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['news-sources'] })
+  });
 
-  const handleToggleActive = async (id: string, currentActive: boolean) => {
-    try {
-      await fetch(`/api/news-manager/sources/${id}`, {
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, currentActive }: { id: string, currentActive: boolean }) => {
+      const res = await fetch(`/api/v1/news-sources/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !currentActive })
       });
-      fetchSources();
-    } catch (err) {
-      console.error('Error toggling source', err);
-    }
+      if (!res.ok) throw new Error('Failed to toggle source');
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['news-sources'] })
+  });
+
+  const handleDelete = (id: string) => {
+    if (!confirm('Bạn có chắc muốn xóa nguồn tin này?')) return;
+    deleteMutation.mutate(id);
+  };
+
+  const handleToggleActive = (id: string, currentActive: boolean) => {
+    toggleMutation.mutate({ id, currentActive: currentActive ?? false });
   };
 
   return (
@@ -102,27 +121,36 @@ export default function ManageSourcesScreen() {
           </div>
           <button 
             onClick={() => handleOpenModal()}
-            className="bg-brand-500 hover:bg-brand-600 text-white font-medium px-5 py-3 rounded-lg transition-all duration-300 flex items-center gap-2 active:scale-95"
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-all font-medium shadow-theme-xs hover:shadow-theme-sm"
           >
             <Plus size={20} />
-            Thêm Mới
+            Thêm Nguồn tin
           </button>
         </div>
       </header>
 
-      <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]">
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-2xl shadow-theme-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead className="border-b border-gray-100 dark:border-white/[0.05]">
-              <tr className="bg-gray-50 dark:bg-gray-900">
-                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Tên Nguồn</th>
-                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">URL</th>
-                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Trạng thái</th>
-                <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-center uppercase">Thao tác</th>
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-300 text-theme-xs font-semibold uppercase tracking-wider border-b border-gray-200 dark:border-white/[0.05]">
+              <tr>
+                <th className="px-5 py-4 w-1/4">Tên Nguồn</th>
+                <th className="px-5 py-4 w-1/3">URL</th>
+                <th className="px-5 py-4 w-32">Trạng thái</th>
+                <th className="px-5 py-4 w-32 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-              {sources.length === 0 ? (
+              {isSourcesLoading ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-8 text-center text-gray-500 dark:text-gray-400 text-theme-sm">
+                    <div className="flex justify-center items-center gap-2">
+                      <div className="w-4 h-4 rounded-full border-2 border-brand-500 border-t-transparent animate-spin"></div>
+                      Đang tải danh sách...
+                    </div>
+                  </td>
+                </tr>
+              ) : sources.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-8 text-center text-gray-500 dark:text-gray-400 italic text-theme-sm">Chưa có dữ liệu nguồn tin.</td>
                 </tr>
@@ -139,7 +167,7 @@ export default function ManageSourcesScreen() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => handleToggleActive(source._id, source.isActive)}
+                          onClick={() => handleToggleActive(source._id, source.isActive ?? false)}
                           className={`w-12 h-6 rounded-full p-1 transition-colors duration-300 relative ${source.isActive ? 'bg-success-500' : 'bg-gray-300 dark:bg-gray-600'}`}
                         >
                           <div className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-300 ease-out ${source.isActive ? 'translate-x-6' : 'translate-x-0'}`}></div>
@@ -243,10 +271,10 @@ export default function ManageSourcesScreen() {
               </button>
               <button 
                 onClick={handleSave}
-                disabled={isLoading}
+                disabled={saveMutation.isPending}
                 className="bg-brand-500 hover:bg-brand-600 text-white font-medium px-5 py-2.5 rounded-lg transition-all disabled:opacity-50 flex items-center gap-2"
               >
-                {isLoading && <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></span>}
+                {saveMutation.isPending && <span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full"></span>}
                 {editingId ? 'Cập nhật' : 'Thêm mới'}
               </button>
             </div>
