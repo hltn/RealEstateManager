@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { AlertCircle, Database, Trash2, Eye, Search, Play } from "lucide-react";
+import { DatePicker } from "../components/ui/DatePicker";
 
 const renderHighlightedText = (text: string, query: string) => {
   if (!text) return "";
@@ -36,7 +37,7 @@ export default function RawArticlesScreen() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [bulkAction, setBulkAction] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [crawlDays, setCrawlDays] = useState<number>(1); // Mặc định 1 ngày (Hôm nay)
+  const [dateRange, setDateRange] = useState<string>("");
   const [crawlStats, setCrawlStats] = useState<{
     successfulSources: number;
     failedSources: number;
@@ -51,6 +52,17 @@ export default function RawArticlesScreen() {
     if (!keepSuccess) setSuccess("");
     try {
       const url = new URL("/api/news-manager/raw-articles", window.location.origin);
+      if (dateRange) {
+        if (typeof dateRange === 'string' && dateRange.includes(" to ")) {
+          const [start, end] = dateRange.split(" to ");
+          url.searchParams.append("startDate", start);
+          url.searchParams.append("endDate", end);
+        } else {
+          const dateStr = Array.isArray(dateRange) ? dateRange[0] : dateRange;
+          url.searchParams.append("startDate", dateStr);
+          url.searchParams.append("endDate", dateStr);
+        }
+      }
 
       const response = await fetch(url.toString());
       const resData = await response.json();
@@ -68,7 +80,7 @@ export default function RawArticlesScreen() {
 
   useEffect(() => {
     fetchRawArticles();
-  }, []);
+  }, [dateRange]);
 
   const displayData = useMemo(() => {
     let result = [...rawData];
@@ -98,10 +110,23 @@ export default function RawArticlesScreen() {
     setSuccess("");
     setCrawlStats(null);
     try {
+      let payload: any = {};
+      if (dateRange) {
+        if (typeof dateRange === 'string' && dateRange.includes(" to ")) {
+          const [start, end] = dateRange.split(" to ");
+          payload.startDate = start;
+          payload.endDate = end;
+        } else {
+          const dateStr = Array.isArray(dateRange) ? dateRange[0] : dateRange;
+          payload.startDate = dateStr;
+          payload.endDate = dateStr;
+        }
+      }
+
       const response = await fetch("/api/news-manager/crawl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: crawlDays > 0 ? crawlDays : undefined })
+        body: JSON.stringify(payload)
       });
       const resData = await response.json();
       if (!response.ok) {
@@ -249,18 +274,29 @@ export default function RawArticlesScreen() {
           </p>
         </div>
         <div className="flex gap-4 flex-wrap justify-end items-center">
-          <select
-            value={crawlDays}
-            onChange={(e) => setCrawlDays(Number(e.target.value))}
-            disabled={loading || analyzing || crawling}
-            className="px-3 py-3 border border-gray-200 dark:border-white/[0.1] rounded-lg bg-white dark:bg-gray-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-70"
-          >
-            <option value={0}>Tất cả thời gian</option>
-            <option value={1}>Hôm nay</option>
-            <option value={3}>3 ngày qua</option>
-            <option value={7}>7 ngày qua</option>
-            <option value={30}>30 ngày qua</option>
-          </select>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <button
+              onClick={() => {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                setDateRange(`${year}-${month}-${day}`);
+              }}
+              className="px-3 py-2 text-sm font-medium text-brand-600 bg-brand-50 hover:bg-brand-100 rounded-lg dark:text-brand-400 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 transition-colors whitespace-nowrap"
+            >
+              Hôm nay
+            </button>
+            <div className="w-full md:w-64">
+              <DatePicker
+                mode="range"
+                value={dateRange}
+                onChange={(val: any) => setDateRange(val)}
+                placeholder="Chọn ngày (Từ - Đến)"
+                className="w-full"
+              />
+            </div>
+          </div>
           <button
             onClick={handleCrawl}
             disabled={loading || analyzing || crawling}

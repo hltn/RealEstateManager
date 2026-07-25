@@ -17,3 +17,5 @@ RealEstateBackendApp/tmp/
 .claude/
 
 .agents/
+
+graphify-out/

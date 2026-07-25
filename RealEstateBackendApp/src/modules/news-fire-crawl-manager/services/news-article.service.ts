@@ -162,8 +162,18 @@ export class NewsArticleService implements OnModuleInit {
     return { savedCount, duplicates, processedUrlHashes };
   }
 
-  async getSavedArticles(): Promise<NewsArticle[]> {
-    return this.newsArticleModel.find().sort({ createdAt: -1 }).exec();
+  async getSavedArticles(date?: string): Promise<NewsArticle[]> {
+    const query: any = {};
+    if (date) {
+      // date is in YYYY-MM-DD format
+      const startDate = new Date(`${date}T00:00:00.000Z`);
+      const endDate = new Date(`${date}T23:59:59.999Z`);
+      query.$or = [
+        { publishDate: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } },
+        { createdAt: { $gte: startDate, $lte: endDate } }
+      ];
+    }
+    return this.newsArticleModel.find(query).sort({ createdAt: -1 }).exec();
   }
 
   async publishToWordPress(id: string): Promise<NewsArticle> {

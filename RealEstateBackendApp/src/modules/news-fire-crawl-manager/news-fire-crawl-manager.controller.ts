@@ -66,11 +66,15 @@ export class NewsFireCrawlManagerController {
   async getRawArticles(
     @Query('search') search?: string,
     @Query('sort') sort?: 'newest' | 'oldest',
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
     try {
       const articles = await this.customCrawlerService.getRawArticles(
         search,
         sort,
+        startDate,
+        endDate,
       );
       return {
         message: 'Raw articles fetched successfully',
@@ -141,13 +145,17 @@ export class NewsFireCrawlManagerController {
   }
 
   @Post('crawl')
-  async triggerManualCrawl(@Body('days') days?: number) {
+  async triggerManualCrawl(
+    @Body('days') days?: number,
+    @Body('startDate') startDate?: string,
+    @Body('endDate') endDate?: string
+  ) {
     try {
       this.logger.log(
-        `Manual crawl called with days filter: ${days || 'none'}`,
+        `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
       );
       const { filePath, stats } =
-        await this.customCrawlerService.crawlData(days);
+        await this.customCrawlerService.crawlData(days, startDate, endDate);
 
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
@@ -249,9 +257,9 @@ export class NewsFireCrawlManagerController {
   }
 
   @Get('articles')
-  async getArticles() {
+  async getArticles(@Query('date') date?: string) {
     try {
-      const articles = await this.newsArticleService.getSavedArticles();
+      const articles = await this.newsArticleService.getSavedArticles(date);
       return {
         message: 'Articles fetched successfully',
         data: articles,

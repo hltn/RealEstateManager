@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, History, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import { DatePicker } from '../components/ui/DatePicker';
 
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -216,6 +217,7 @@ export default function ManageWpScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
   const [bulkAction, setBulkAction] = useState('publish');
   const [cleaningIds, setCleaningIds] = useState<Set<string>>(new Set());
@@ -225,10 +227,14 @@ export default function ManageWpScreen() {
   const [marketAnalysisResult, setMarketAnalysisResult] = useState<string | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  const fetchArticles = async () => {
+  const fetchArticles = async (dateStr?: string) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/news-manager/articles');
+      let url = '/api/news-manager/articles';
+      if (dateStr) {
+        url += `?date=${dateStr}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       setArticles(data.data || []);
     } catch (error) {
@@ -239,8 +245,8 @@ export default function ManageWpScreen() {
   };
 
   useEffect(() => {
-    fetchArticles();
-  }, []);
+    fetchArticles(filterDate);
+  }, [filterDate]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -257,7 +263,7 @@ export default function ManageWpScreen() {
       await fetch(`/api/news-manager/articles/${id}/publish`, {
         method: 'POST'
       });
-      fetchArticles();
+      fetchArticles(filterDate);
     } catch (error) {
       console.error('Error publishing', error);
     } finally {
@@ -347,7 +353,7 @@ export default function ManageWpScreen() {
           body: JSON.stringify({ ids: Array.from(selectedIds) })
         });
         setSelectedIds(new Set());
-        fetchArticles();
+        fetchArticles(filterDate);
         setNotification({
           title: 'Thành công',
           description: 'Đã đăng bài hàng loạt thành công',
@@ -373,7 +379,7 @@ export default function ManageWpScreen() {
           
           setArticles(prev => prev.map(a => updatedArticlesMap.has(a._id) ? updatedArticlesMap.get(a._id) : a));
         } else {
-          fetchArticles();
+          fetchArticles(filterDate);
         }
         
         setSelectedIds(new Set());
@@ -431,7 +437,7 @@ export default function ManageWpScreen() {
           body: JSON.stringify({ ids: Array.from(selectedIds) })
         });
         setSelectedIds(new Set());
-        fetchArticles();
+        fetchArticles(filterDate);
         setNotification({
           title: 'Thành công',
           description: 'Đã xóa thành công',
@@ -482,7 +488,7 @@ export default function ManageWpScreen() {
           </div>
         </div>
 
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mt-4 pt-4 border-t border-gray-100 dark:border-white/[0.05]">
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/[0.05]">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Hành động hàng loạt:</span>
             <select
@@ -509,33 +515,48 @@ export default function ManageWpScreen() {
 
             <div className="hidden xl:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Tìm kiếm..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
-              />
+            <div className="flex items-center gap-2 w-full sm:w-[250px] lg:w-[300px]">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+                />
+              </div>
             </div>
+
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
-              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-gray-700 dark:text-gray-300"
             >
               <option value="newest">Mới nhất</option>
               <option value="oldest">Cũ nhất</option>
             </select>
+
+            <div className="relative w-[130px] sm:!w-[300px] flex-shrink-0">
+              <DatePicker
+                value={filterDate}
+                onChange={setFilterDate}
+                placeholder="Chọn ngày"
+                className="w-full"
+                inputClassName="py-1.5 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-white/[0.05]"
+              />
+            </div>
+            
+            <div className="hidden sm:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+
+            <button
+              onClick={() => setShowHistoryModal(true)}
+              className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 whitespace-nowrap"
+            >
+              <History size={16} />
+              Xem lịch sử phân tích
+            </button>
           </div>
-          
-          <button
-            onClick={() => setShowHistoryModal(true)}
-            className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 whitespace-nowrap"
-          >
-            <History size={16} />
-            Xem lịch sử phân tích
-          </button>
         </div>
       </header>
 

@@ -38,6 +38,8 @@ export class CustomCrawlerService {
 
   async crawlData(
     days?: number,
+    startDate?: string,
+    endDate?: string,
   ): Promise<{
     filePath: string;
     stats: {
@@ -49,15 +51,27 @@ export class CustomCrawlerService {
     };
   }> {
     this.logger.log(
-      `Starting Job 1: Crawl data via CustomCrawlerService. Filter: ${days ? `last ${days} days` : 'All time'}`,
+      `Starting Job 1: Crawl data via CustomCrawlerService. Filter: days=${days || 'none'}, start=${startDate || 'none'}, end=${endDate || 'none'}`,
     );
 
     let cutoffDate: Date | null = null;
+    let startDateObj: Date | null = null;
+    let endDateObj: Date | null = null;
+
     if (days && days > 0) {
       cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - (days - 1));
       // Reset to start of day
-      cutoffDate.setHours(0, 0, 0, 0);
+      cutoffDate.setUTCHours(0, 0, 0, 0);
+    }
+
+    if (startDate) {
+      startDateObj = new Date(startDate);
+      startDateObj.setUTCHours(0, 0, 0, 0);
+    }
+    if (endDate) {
+      endDateObj = new Date(endDate);
+      endDateObj.setUTCHours(23, 59, 59, 999);
     }
 
     const crawledData: Array<{
@@ -199,6 +213,12 @@ export class CustomCrawlerService {
         for (const article of articles) {
           if (!article.url || !article.title) continue;
 
+          try {
+            article.url = new URL(article.url, source.url).href;
+          } catch (e) {
+            this.logger.warn(`Failed to resolve URL: ${article.url} against base: ${source.url}`);
+          }
+
           let parsedDate = new Date();
           if (article.publishedAt) {
             const tempDate = new Date(article.publishedAt);
@@ -210,6 +230,13 @@ export class CustomCrawlerService {
           // Filter by date if cutoffDate is set
           if (cutoffDate && parsedDate < cutoffDate) {
             continue; // Bỏ qua bài viết cũ hơn số ngày chỉ định
+          }
+
+          if (startDateObj && parsedDate < startDateObj) {
+            continue;
+          }
+          if (endDateObj && parsedDate > endDateObj) {
+            continue;
           }
 
           const articleData = {
@@ -272,6 +299,8 @@ export class CustomCrawlerService {
   async getRawArticles(
     search?: string,
     sort?: 'newest' | 'oldest',
+    startDate?: string,
+    endDate?: string,
   ): Promise<RawArticle[]> {
     const query: any = {};
     if (search) {
@@ -282,6 +311,19 @@ export class CustomCrawlerService {
         { title: { $regex: safeSearch, $options: 'i' } },
         { description: { $regex: safeSearch, $options: 'i' } },
       ];
+    }
+    if (startDate || endDate) {
+      query.publishedAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setUTCHours(0, 0, 0, 0);
+        query.publishedAt.$gte = start.toISOString();
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setUTCHours(23, 59, 59, 999);
+        query.publishedAt.$lte = end.toISOString();
+      }
     }
 
     let sortObj: any = { publishedAt: -1 };
