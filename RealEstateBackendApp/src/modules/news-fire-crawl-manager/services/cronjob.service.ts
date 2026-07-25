@@ -62,7 +62,8 @@ export class CronjobService {
   private async executeCrawlFlow() {
     let filePath: string | null = null;
     try {
-      filePath = await this.customCrawlerService.crawlData();
+      const crawlResult = await this.customCrawlerService.crawlData();
+      filePath = crawlResult.filePath;
       const top5Articles = filePath
         ? await this.aiFilterService.filterAndRank(filePath)
         : [];

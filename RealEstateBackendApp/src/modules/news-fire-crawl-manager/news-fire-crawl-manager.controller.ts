@@ -146,13 +146,15 @@ export class NewsFireCrawlManagerController {
       this.logger.log(
         `Manual crawl called with days filter: ${days || 'none'}`,
       );
-      const filePath = await this.customCrawlerService.crawlData(days);
+      const { filePath, stats } =
+        await this.customCrawlerService.crawlData(days);
 
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
       return {
         message: 'Crawl completed successfully',
         filePath,
+        stats,
         data: rawData,
       };
     } catch (error: any) {
@@ -260,6 +262,44 @@ export class NewsFireCrawlManagerController {
     }
   }
 
+  @Get('articles/market-analysis-history')
+  async getMarketAnalysisHistory() {
+    try {
+      const history = await this.newsArticleService.getMarketAnalysisHistory();
+      return {
+        message: 'Market analysis history fetched successfully',
+        data: history,
+      };
+    } catch (error: any) {
+      this.logger.error('Error fetching market analysis history', error.stack);
+      throw new InternalServerErrorException(
+        'Failed to fetch market analysis history',
+      );
+    }
+  }
+
+  @Get('articles/market-analysis-history/:id')
+  async getMarketAnalysisHistoryById(@Param('id') id: string) {
+    try {
+      const record =
+        await this.newsArticleService.getMarketAnalysisHistoryById(id);
+      return {
+        message: 'Market analysis history record fetched successfully',
+        data: record,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `Error fetching market analysis history record ${id}`,
+        error.stack,
+      );
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Failed to fetch market analysis history record',
+      );
+    }
+  }
   @Get('articles/:id')
   async getArticleById(@Param('id') id: string) {
     try {

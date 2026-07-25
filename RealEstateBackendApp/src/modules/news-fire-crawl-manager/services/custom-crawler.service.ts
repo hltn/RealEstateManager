@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
+import * as https from 'https';
 import * as cheerio from 'cheerio';
 import Parser from 'rss-parser';
 
@@ -24,10 +25,29 @@ export class CustomCrawlerService {
     private aiPromptConfigService: AiPromptConfigService,
     @InjectModel(RawArticle.name) private rawArticleModel: Model<RawArticle>,
   ) {
-    this.rssParser = new Parser();
+    this.rssParser = new Parser({
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      requestOptions: {
+        rejectUnauthorized: false,
+      },
+    });
   }
 
-  async crawlData(days?: number): Promise<string> {
+  async crawlData(
+    days?: number,
+  ): Promise<{
+    filePath: string;
+    stats: {
+      successfulSources: number;
+      failedSources: number;
+      totalArticles: number;
+      successfulDetails: { url: string; count: number }[];
+      failedDetails: { url: string }[];
+    };
+  }> {
     this.logger.log(
       `Starting Job 1: Crawl data via CustomCrawlerService. Filter: ${days ? `last ${days} days` : 'All time'}`,
     );
@@ -52,6 +72,11 @@ export class CustomCrawlerService {
 
     const activeSources = await this.newsSourceService.findActive();
 
+    let successfulSources = 0;
+    let failedSources = 0;
+    const successfulDetails: { url: string; count: number }[] = [];
+    const failedDetails: { url: string }[] = [];
+
     for (const source of activeSources) {
       this.logger.log(
         `Extracting list of articles from source: ${source.name} (${source.url})`,
@@ -59,19 +84,51 @@ export class CustomCrawlerService {
 
       try {
         let articles: any[] = [];
+        let validArticlesCount = 0;
 
         if (source.rssUrl) {
           this.logger.log(
             `Using RSS Feed for ${source.name}: ${source.rssUrl}`,
           );
           const rssResponse = await axios.get(source.rssUrl, {
-            responseType: 'text',
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             },
+            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            timeout: 30000,
+            responseType: 'text',
           });
-          const feed = await this.rssParser.parseString(rssResponse.data);
+          // Remove BOM, control characters (except tab, newline, carriage return), and trim
+          const cleanXml = rssResponse.data
+            .replace(/^\uFEFF/g, '')
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+            .trim();
+
+          let xmlStartIndex = cleanXml.indexOf('<?xml');
+          if (xmlStartIndex === -1) {
+            xmlStartIndex = cleanXml.indexOf('<rss');
+          }
+          if (xmlStartIndex === -1) {
+            xmlStartIndex = cleanXml.indexOf('<feed');
+          }
+
+          const finalXml =
+            xmlStartIndex >= 0 ? cleanXml.substring(xmlStartIndex) : cleanXml;
+          let feed;
+          try {
+            feed = await this.rssParser.parseString(finalXml);
+          } catch (err: any) {
+            this.logger.error(
+              `Failed to parse RSS for ${source.name}. URL: ${source.rssUrl}`,
+            );
+            this.logger.error(`Parser error: ${err.message}`);
+            this.logger.error(
+              `Raw XML snippet: ${finalXml.substring(0, 500)}...`,
+            );
+            throw err;
+          }
+
           articles = feed.items.map((item) => ({
             title: item.title || '',
             url: item.link || '',
@@ -88,6 +145,8 @@ export class CustomCrawlerService {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             },
+            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            timeout: 30000,
           });
           const html = response.data;
 
@@ -175,8 +234,13 @@ export class CustomCrawlerService {
           );
 
           crawledData.push(articleData);
+          validArticlesCount++;
         }
+        successfulSources++;
+        successfulDetails.push({ url: source.url, count: validArticlesCount });
       } catch (e: any) {
+        failedSources++;
+        failedDetails.push({ url: source.url });
         this.logger.error(
           `Error processing source ${source.name}: ${e.message}`,
           e.stack,
@@ -193,7 +257,16 @@ export class CustomCrawlerService {
     fs.writeFileSync(filePath, JSON.stringify(crawledData, null, 2), 'utf8');
 
     this.logger.log(`Job 1 completed. Saved temporary file to ${filePath}`);
-    return filePath;
+    return {
+      filePath,
+      stats: {
+        successfulSources,
+        failedSources,
+        totalArticles: crawledData.length,
+        successfulDetails,
+        failedDetails,
+      },
+    };
   }
 
   async getRawArticles(

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon } from 'lucide-react';
+import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, History, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 
@@ -84,6 +84,133 @@ const ToastNotification = ({ title, description, type = 'success', onClose }: To
   );
 };
 
+const AnalysisDetailModal = ({ content, title, onClose }: { content: string, title: string, onClose: () => void }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-100 dark:border-gray-800 shrink-0">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCopy}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+            >
+              {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+              {copied ? 'Đã copy' : 'Copy'}
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors p-1">
+              <XCircle size={24} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50 dark:bg-gray-900/50">
+          <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-a:text-brand-500 hover:prose-a:text-brand-600 prose-img:rounded-xl bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm">
+            <ReactMarkdown>{content}</ReactMarkdown>
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 flex justify-end shrink-0">
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors shadow-sm"
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+            {copied ? 'Đã copy' : 'Copy toàn bộ nội dung'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchHistory();
+    }
+  }, [isOpen]);
+
+  const fetchHistory = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/news-manager/articles/market-analysis-history');
+      const data = await res.json();
+      setHistory(data.data || []);
+    } catch (error) {
+      console.error('Error fetching history', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-800 shrink-0">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Lịch sử phân tích thị trường</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors p-1">
+            <XCircle size={24} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+             <div className="flex justify-center items-center h-32">
+               <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
+             </div>
+          ) : history.length === 0 ? (
+             <div className="flex flex-col items-center justify-center h-48 gap-3">
+               <History className="w-12 h-12 text-gray-300 dark:text-gray-600" />
+               <p className="text-center text-gray-500 dark:text-gray-400 font-medium">Chưa có lịch sử phân tích.</p>
+             </div>
+          ) : (
+            <div className="space-y-4">
+              {history.map((item, index) => (
+                <div key={item._id || index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <div className="font-semibold text-gray-900 dark:text-white mb-1">
+                        Phân tích lúc {new Date(item.createdAt).toLocaleString('vi-VN')}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                        Từ {item.articleIds?.length || 0} bài viết
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        onShowDetail(item.content);
+                      }}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shrink-0 shadow-sm"
+                    >
+                      <Eye size={16} />
+                      Xem chi tiết
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function ManageWpScreen() {
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,10 +218,12 @@ export default function ManageWpScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
   const [bulkAction, setBulkAction] = useState('publish');
-  const [cleaningId, setCleaningId] = useState<string | null>(null);
+  const [cleaningIds, setCleaningIds] = useState<Set<string>>(new Set());
+  const [publishingIds, setPublishingIds] = useState<Set<string>>(new Set());
   const [isApplying, setIsApplying] = useState(false);
   const [notification, setNotification] = useState<{title: string, description: string, type?: ToastType} | null>(null);
   const [marketAnalysisResult, setMarketAnalysisResult] = useState<string | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const fetchArticles = async () => {
     try {
@@ -124,18 +253,25 @@ export default function ManageWpScreen() {
 
   const handlePublish = async (id: string) => {
     try {
+      setPublishingIds(prev => new Set(prev).add(id));
       await fetch(`/api/news-manager/articles/${id}/publish`, {
         method: 'POST'
       });
       fetchArticles();
     } catch (error) {
       console.error('Error publishing', error);
+    } finally {
+      setPublishingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
   const handleClean = async (article: any) => {
     try {
-      setCleaningId(article._id);
+      setCleaningIds(prev => new Set(prev).add(article._id));
       const res = await fetch(`/api/news-manager/articles/${article._id}/clean`, {
         method: 'POST'
       });
@@ -151,7 +287,11 @@ export default function ManageWpScreen() {
     } catch (error) {
       console.error('Error cleaning', error);
     } finally {
-      setCleaningId(null);
+      setCleaningIds(prev => {
+        const next = new Set(prev);
+        next.delete(article._id);
+        return next;
+      });
     }
   };
 
@@ -320,42 +460,36 @@ export default function ManageWpScreen() {
           onClose={() => setNotification(null)} 
         />
       )}
+      {marketAnalysisResult && (
+        <AnalysisDetailModal
+          title="Kết quả Phân tích Thị trường"
+          content={marketAnalysisResult}
+          onClose={() => setMarketAnalysisResult(null)}
+        />
+      )}
+      <AnalysisHistoryModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        onShowDetail={(content) => {
+          setMarketAnalysisResult(content);
+        }}
+      />
       <header className="flex flex-col gap-2 pb-6 border-b border-gray-200 dark:border-white/[0.05]">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-title-sm font-semibold text-gray-800 dark:text-white/90">Quản lý Đăng tin WordPress</h2>
             <p className="text-theme-sm text-gray-500 dark:text-gray-400 max-w-2xl leading-relaxed mt-2">Danh sách các tin tức đã duyệt trong Database và trạng thái đồng bộ lên WordPress.</p>
           </div>
-          
-          <div className="flex items-center gap-4 flex-1 justify-end">
-            <div className="relative max-w-md w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Tìm kiếm..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
-              />
-            </div>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
-            >
-              <option value="newest">Mới nhất</option>
-              <option value="oldest">Cũ nhất</option>
-            </select>
-          </div>
         </div>
 
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-100 dark:border-white/[0.05]">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mt-4 pt-4 border-t border-gray-100 dark:border-white/[0.05]">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Hành động hàng loạt:</span>
             <select
               value={bulkAction}
               onChange={(e) => setBulkAction(e.target.value)}
-              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+              disabled={selectedIds.size === 0}
+              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="publish">Đăng bài</option>
               <option value="analyze">Crawl tin tức</option>
@@ -364,33 +498,46 @@ export default function ManageWpScreen() {
             </select>
             <button
               onClick={handleBulkAction}
-              disabled={isApplying}
+              disabled={isApplying || selectedIds.size === 0}
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isApplying ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : null}
-              Áp dụng ({selectedIds.size})
+              Áp dụng {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
             </button>
-          </div>
-        )}
-      </header>
 
-        {marketAnalysisResult && (
-          <div className="mb-6 p-6 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm relative">
-            <button 
-              onClick={() => setMarketAnalysisResult(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-              title="Đóng"
-            >
-              <XCircle className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Kết quả Phân tích Thị trường</h2>
-            <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-a:text-brand-500 hover:prose-a:text-brand-600 prose-img:rounded-xl">
-              <ReactMarkdown>{marketAnalysisResult}</ReactMarkdown>
+            <div className="hidden xl:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                placeholder="Tìm kiếm..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+              />
             </div>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+            >
+              <option value="newest">Mới nhất</option>
+              <option value="oldest">Cũ nhất</option>
+            </select>
           </div>
-        )}
+          
+          <button
+            onClick={() => setShowHistoryModal(true)}
+            className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 whitespace-nowrap"
+          >
+            <History size={16} />
+            Xem lịch sử phân tích
+          </button>
+        </div>
+      </header>
 
       <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]">
         <div className="overflow-x-auto">
@@ -516,10 +663,10 @@ export default function ManageWpScreen() {
                       <div className="grid grid-cols-2 gap-1.5 w-[180px] ml-auto">
                         <button 
                           onClick={() => handleClean(article)}
-                          disabled={cleaningId === article._id}
+                          disabled={cleaningIds.has(article._id)}
                           className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                         >
-                          {cleaningId === article._id ? (
+                          {cleaningIds.has(article._id) ? (
                             <Loader2 size={14} className="animate-spin" />
                           ) : (
                             <Wand2 size={14} />
@@ -529,9 +676,14 @@ export default function ManageWpScreen() {
                         {!(Array.isArray(article.status) ? article.status : [article.status]).includes('POSTED_WP') && (
                           <button 
                             onClick={() => handlePublish(article._id)}
-                            className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-brand-500 hover:bg-brand-600 text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                            disabled={publishingIds.has(article._id)}
+                            className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                           >
-                            <Send size={14} />
+                            {publishingIds.has(article._id) ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Send size={14} />
+                            )}
                             Đăng bài
                           </button>
                         )}

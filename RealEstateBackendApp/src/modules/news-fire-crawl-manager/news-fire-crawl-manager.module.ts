@@ -12,6 +12,10 @@ import { AiPromptConfigService } from './services/ai-prompt-config.service';
 import { NewsArticle, NewsArticleSchema } from './schemas/news-article.schema';
 import { NewsSource, NewsSourceSchema } from './schemas/news-source.schema';
 import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
+import {
+  MarketAnalysisHistory,
+  MarketAnalysisHistorySchema,
+} from './schemas/market-analysis-history.schema';
 
 @Module({
   imports: [
@@ -19,6 +23,7 @@ import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
       { name: NewsArticle.name, schema: NewsArticleSchema },
       { name: NewsSource.name, schema: NewsSourceSchema },
       { name: RawArticle.name, schema: RawArticleSchema },
+      { name: MarketAnalysisHistory.name, schema: MarketAnalysisHistorySchema },
     ]),
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],

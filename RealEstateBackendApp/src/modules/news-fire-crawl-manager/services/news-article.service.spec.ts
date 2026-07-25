@@ -80,7 +80,9 @@ describe('NewsArticleService', () => {
 
   describe('onModuleInit', () => {
     it('should call cleanupUncontentCrawledStatus on module init', async () => {
-      jest.spyOn(service, 'cleanupUncontentCrawledStatus').mockResolvedValue({ modifiedCount: 5 });
+      jest
+        .spyOn(service, 'cleanupUncontentCrawledStatus')
+        .mockResolvedValue({ modifiedCount: 5 });
 
       await service.onModuleInit();
 
@@ -207,11 +209,16 @@ describe('NewsArticleService', () => {
         }),
       };
       mockNewsArticleModel.findById.mockResolvedValue(mockArticle);
-      mockAiFilterService.cleanMarkdownContentWithAI.mockResolvedValue('Cleaned content');
+      mockAiFilterService.cleanMarkdownContentWithAI.mockResolvedValue(
+        'Cleaned content',
+      );
 
       await service.cleanArticle('123');
 
-      expect(mockArticle.status).toEqual([NewsStatus.POSTED_WP, NewsStatus.CRAWLED]);
+      expect(mockArticle.status).toEqual([
+        NewsStatus.POSTED_WP,
+        NewsStatus.CRAWLED,
+      ]);
     });
 
     it('should filter out invalid status strings when normalizing status', async () => {
@@ -225,7 +232,9 @@ describe('NewsArticleService', () => {
         }),
       };
       mockNewsArticleModel.findById.mockResolvedValue(mockArticle);
-      mockAiFilterService.cleanMarkdownContentWithAI.mockResolvedValue('Cleaned content');
+      mockAiFilterService.cleanMarkdownContentWithAI.mockResolvedValue(
+        'Cleaned content',
+      );
 
       await service.cleanArticle('123');
 
@@ -251,10 +260,14 @@ describe('NewsArticleService', () => {
           markdown: 'Content',
           publishDate: '2026-06-15T10:00:00Z',
         });
-      mockAiFilterService.cleanMarkdownContentWithAI.mockResolvedValue('Content');
+      mockAiFilterService.cleanMarkdownContentWithAI.mockResolvedValue(
+        'Content',
+      );
 
       await service.cleanArticle('123');
-      expect(mockArticleValid.publishDate).toBe(new Date('2026-06-15T10:00:00Z').toISOString());
+      expect(mockArticleValid.publishDate).toBe(
+        new Date('2026-06-15T10:00:00Z').toISOString(),
+      );
       extractSpyValid.mockRestore();
 
       // Test with invalid extracted date
@@ -279,7 +292,9 @@ describe('NewsArticleService', () => {
 
       await service.cleanArticle('456');
       expect(mockArticleInvalid.publishDate).toBeDefined();
-      expect(isNaN(new Date(mockArticleInvalid.publishDate).getTime())).toBe(false);
+      expect(isNaN(new Date(mockArticleInvalid.publishDate).getTime())).toBe(
+        false,
+      );
       extractSpyInvalid.mockRestore();
     });
 

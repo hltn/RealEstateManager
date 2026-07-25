@@ -36,7 +36,14 @@ export default function RawArticlesScreen() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [bulkAction, setBulkAction] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [crawlDays, setCrawlDays] = useState<number>(3); // Mặc định 3 ngày
+  const [crawlDays, setCrawlDays] = useState<number>(1); // Mặc định 1 ngày (Hôm nay)
+  const [crawlStats, setCrawlStats] = useState<{
+    successfulSources: number;
+    failedSources: number;
+    totalArticles: number;
+    successfulDetails?: { url: string; count: number }[];
+    failedDetails?: { url: string }[];
+  } | null>(null);
 
   const fetchRawArticles = async (keepSuccess = false) => {
     setLoading(true);
@@ -89,6 +96,7 @@ export default function RawArticlesScreen() {
     setCrawling(true);
     setError("");
     setSuccess("");
+    setCrawlStats(null);
     try {
       const response = await fetch("/api/news-manager/crawl", {
         method: "POST",
@@ -100,6 +108,10 @@ export default function RawArticlesScreen() {
         throw new Error(resData.message || "Lỗi từ máy chủ");
       }
       const data = resData.data || [];
+      if (resData.stats) {
+        setCrawlStats(resData.stats);
+      }
+      
       if (data.length > 0) {
         setSuccess(
           "Thu thập thành công " +
@@ -289,6 +301,45 @@ export default function RawArticlesScreen() {
         <div className="p-4 rounded-lg bg-error-50 dark:bg-error-500/15 border border-error-100 dark:border-error-500/25 flex items-center gap-3 text-error-500">
           <AlertCircle className="shrink-0" size={20} />
           <span className="text-theme-sm font-medium">{error}</span>
+        </div>
+      )}
+
+      {crawlStats && (
+        <div className="mb-4 p-4 rounded-xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]">
+          <div className="text-theme-sm font-medium text-success-500 dark:text-success-400 mb-2">
+            Tất cả: {crawlStats.successfulSources} link thành công / {crawlStats.totalArticles} số lượng bài. {crawlStats.failedSources} link thất bại.
+          </div>
+          
+          {(crawlStats.successfulDetails?.length || crawlStats.failedDetails?.length) ? (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-theme-xs">
+              {crawlStats.successfulDetails && crawlStats.successfulDetails.length > 0 && (
+                <div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh sách link thành công:</div>
+                  <ul className="space-y-2 text-gray-600 dark:text-gray-400 max-h-[300px] overflow-y-auto pr-2">
+                    {crawlStats.successfulDetails.map((item, idx) => (
+                      <li key={idx} className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-1">
+                        <span className="truncate pr-2 block w-full" title={item.url}>{item.url}</span>
+                        <span className="font-medium text-success-600 dark:text-success-500 whitespace-nowrap bg-success-50 dark:bg-success-500/10 px-2 py-0.5 rounded text-[10px]">{item.count} bài</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {crawlStats.failedDetails && crawlStats.failedDetails.length > 0 && (
+                <div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh sách link thất bại:</div>
+                  <ul className="space-y-2 text-error-600 dark:text-error-500 max-h-[300px] overflow-y-auto pr-2">
+                    {crawlStats.failedDetails.map((item, idx) => (
+                      <li key={idx} className="truncate border-b border-gray-100 dark:border-gray-800 pb-1" title={item.url}>
+                        {item.url}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
 

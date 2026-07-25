@@ -13,6 +13,7 @@ import { WordPressService } from './wordpress.service';
 import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
+import { MarketAnalysisHistory } from '../schemas/market-analysis-history.schema';
 
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
@@ -21,6 +22,8 @@ export class NewsArticleService implements OnModuleInit {
   constructor(
     @InjectModel(NewsArticle.name)
     private readonly newsArticleModel: Model<NewsArticle>,
+    @InjectModel(MarketAnalysisHistory.name)
+    private readonly marketAnalysisHistoryModel: Model<MarketAnalysisHistory>,
     private readonly wordpressService: WordPressService,
     private readonly aiFilterService: AIFilterService,
     private readonly aiPromptConfigService: AiPromptConfigService,
@@ -343,7 +346,33 @@ Content: ${article.content || article.summary || 'N/A'}
       combinedData,
     );
 
+    // Save to MarketAnalysisHistory
+    const historyEntry = new this.marketAnalysisHistoryModel({
+      content: markdownResponse,
+      articleIds: ids,
+    });
+    await historyEntry.save();
+
     return markdownResponse;
+  }
+
+  async getMarketAnalysisHistory(): Promise<MarketAnalysisHistory[]> {
+    return this.marketAnalysisHistoryModel
+      .find()
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  async getMarketAnalysisHistoryById(
+    id: string,
+  ): Promise<MarketAnalysisHistory> {
+    const record = await this.marketAnalysisHistoryModel.findById(id).exec();
+    if (!record) {
+      throw new NotFoundException(
+        `Market Analysis History with ID ${id} not found`,
+      );
+    }
+    return record;
   }
 
   async cleanArticle(id: string): Promise<NewsArticle> {
@@ -354,7 +383,9 @@ Content: ${article.content || article.summary || 'N/A'}
 
     if (!article.content || article.content.trim().length === 0) {
       try {
-        const extracted = await ArticleExtractorUtil.extractArticle(article.url);
+        const extracted = await ArticleExtractorUtil.extractArticle(
+          article.url,
+        );
         if (!article.thumbnailUrl && extracted.thumbnailUrl) {
           article.thumbnailUrl = extracted.thumbnailUrl;
         }

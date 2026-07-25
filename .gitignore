@@ -13,3 +13,7 @@ yarn-error.log*
 .vscode/
 
 RealEstateBackendApp/tmp/
+
+.claude/
+
+.agents/
