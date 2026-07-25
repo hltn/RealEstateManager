@@ -2,10 +2,15 @@
 
 1. Mục tiêu dự án & Tính năng cốt lõi
 
-Module này có nhiệm vụ tự động hóa việc thu thập tin tức bất động sản, lọc nội dung bằng AI và đăng tự động lên hệ thống WordPress.
+**Mục tiêu dự án:**
+Module NewsFireCrawlManager được xây dựng nhằm tự động hóa quy trình thu thập tin tức bất động sản, sử dụng AI để phân tích/lọc nội dung, và đăng tải tự động lên hệ thống WordPress. Hệ thống được thiết kế theo chuẩn Enterprise, đảm bảo tính ổn định, bảo mật và khả năng chịu tải cao (High Traffic).
 
-
-Tính năng chính: Quản lý danh sách, bộ lọc nâng cao, phân quyền Admin sâu, và hệ thống chịu tải cao (High Traffic).
+**Các tính năng cốt lõi:**
+1. **Thu thập tin tức tự động (Web Crawling):** Quản lý danh sách cấu hình nguồn tin (`news_sources`). Thu thập và lưu trữ dữ liệu thô (`raw_articles`) tự động (tích hợp Firecrawl), kèm cơ chế hash URL để chống trùng lặp dữ liệu.
+2. **Xử lý và Lọc bằng AI:** Ứng dụng AI để phân tích nội dung, tóm tắt bài viết và đánh giá lý do quan trọng (`summary`, `importanceReason`) trước khi xuất bản.
+3. **Đăng tải tự động lên WordPress:** Quản lý vòng đời trạng thái của tin tức (SAVED, POSTED_WP, ERROR) và đồng bộ, tự động đăng bài lên hệ thống WordPress.
+4. **Quản trị và Phân quyền Admin:** Giao diện quản lý danh sách tin tức với các bộ lọc nâng cao, hỗ trợ phân quyền Admin chuyên sâu.
+5. **Hệ thống hiệu năng cao & An toàn dữ liệu:** Áp dụng Soft Delete để bảo vệ dữ liệu, chống N+1 query, tích hợp Background Jobs/Message Queue cho các tác vụ nặng, đáp ứng các tiêu chuẩn Enterprise khắt khe.
 
 2. Tech Stack (Công nghệ sử dụng)
 
