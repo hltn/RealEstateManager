@@ -352,14 +352,69 @@ Content: ${article.content || article.summary || 'N/A'}
       throw new NotFoundException(`Article with ID ${id} not found`);
     }
 
-    if (article.content) {
-      article.content = await this.aiFilterService.cleanMarkdownContentWithAI(
-        article.content,
-      );
-
-      await article.save();
+    if (!article.content || article.content.trim().length === 0) {
+      try {
+        const extracted = await ArticleExtractorUtil.extractArticle(article.url);
+        if (!article.thumbnailUrl && extracted.thumbnailUrl) {
+          article.thumbnailUrl = extracted.thumbnailUrl;
+        }
+        if (
+          (!article.publishDate || article.publishDate === 'Invalid Date') &&
+          extracted.publishDate
+        ) {
+          const tempDate = new Date(extracted.publishDate);
+          if (!isNaN(tempDate.getTime())) {
+            article.publishDate = tempDate.toISOString();
+          }
+        }
+        if (extracted.markdown) {
+          article.content = extracted.markdown;
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `Failed to extract article ${article.url}: ${error.message}`,
+        );
+      }
     }
 
+    if (!article.publishDate || article.publishDate === 'Invalid Date') {
+      article.publishDate = new Date().toISOString();
+    }
+
+    if (article.content && article.content.trim().length > 0) {
+      try {
+        article.content = await this.aiFilterService.cleanMarkdownContentWithAI(
+          article.content,
+        );
+      } catch (error: any) {
+        this.logger.warn(
+          `AI cleanup failed for article ${id}, retaining raw content fallback: ${error.message}`,
+        );
+      }
+    }
+
+    let statusArray: any[] = [];
+    if (Array.isArray(article.status)) {
+      statusArray = article.status;
+    } else if (article.status) {
+      statusArray = [article.status];
+    }
+    article.status = statusArray.filter((s: string) =>
+      Object.values(NewsStatus).includes(s as any),
+    ) as NewsStatus[];
+
+    const contentStr = article.content || '';
+    if (contentStr.trim().length > 0) {
+      if (!article.status.includes(NewsStatus.CRAWLED)) {
+        article.status.push(NewsStatus.CRAWLED);
+      }
+    } else {
+      article.status = article.status.filter(
+        (s: string) => s !== (NewsStatus.CRAWLED as string),
+      );
+    }
+
+    await article.save();
     return article;
   }
 }
