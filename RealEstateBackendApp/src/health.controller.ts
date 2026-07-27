@@ -1,5 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
-import { HealthCheckService, MongooseHealthIndicator, HealthCheck } from '@nestjs/terminus';
+import {
+  HealthCheckService,
+  MongooseHealthIndicator,
+  HealthCheck,
+} from '@nestjs/terminus';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Health')
@@ -12,18 +16,21 @@ export class HealthController {
 
   @Get('liveness')
   @HealthCheck()
-  @ApiOperation({ summary: 'Check application liveness', description: 'Check application liveness' })
+  @ApiOperation({
+    summary: 'Check application liveness',
+    description: 'Check application liveness',
+  })
   checkLiveness() {
     return this.health.check([]);
   }
 
   @Get('readiness')
   @HealthCheck()
-  @ApiOperation({ summary: 'Check application readiness including database', description: 'Check application readiness including database' })
+  @ApiOperation({
+    summary: 'Check application readiness including database',
+    description: 'Check application readiness including database',
+  })
   checkReadiness() {
-    return this.health.check([
-      () => this.mongoose.pingCheck('database'),
-    ]);
+    return this.health.check([() => this.mongoose.pingCheck('database')]);
   }
 }
-

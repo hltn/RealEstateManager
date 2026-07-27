@@ -9,21 +9,28 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get('ai-config')
-  @ApiOperation({ summary: 'Get current AI configuration', description: 'Get current AI configuration' })
+  @ApiOperation({
+    summary: 'Get current AI configuration',
+    description: 'Get current AI configuration',
+  })
   getAiConfig() {
     return this.settingsService.getAiConfig();
   }
 
   @Post('ai-config')
-  @ApiOperation({ summary: 'Update AI configuration', description: 'Update AI configuration' })
-  updateAiConfig(
-    @Body() body: UpdateAiConfigDto,
-  ) {
+  @ApiOperation({
+    summary: 'Update AI configuration',
+    description: 'Update AI configuration',
+  })
+  updateAiConfig(@Body() body: UpdateAiConfigDto) {
     return this.settingsService.updateAiConfig(body);
   }
 
   @Get('openrouter-models')
-  @ApiOperation({ summary: 'Get list of available OpenRouter models', description: 'Get list of available OpenRouter models' })
+  @ApiOperation({
+    summary: 'Get list of available OpenRouter models',
+    description: 'Get list of available OpenRouter models',
+  })
   getOpenRouterModels() {
     return this.settingsService.getOpenRouterModels();
   }

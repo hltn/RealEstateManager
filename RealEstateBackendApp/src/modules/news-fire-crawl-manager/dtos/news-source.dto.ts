@@ -1,4 +1,10 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsObject,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateNewsSourceDto {
@@ -12,7 +18,10 @@ export class CreateNewsSourceDto {
   @IsNotEmpty()
   url: string;
 
-  @ApiProperty({ description: 'The RSS Feed URL of the news source', required: false })
+  @ApiProperty({
+    description: 'The RSS Feed URL of the news source',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   rssUrl?: string;
@@ -34,12 +43,18 @@ export class UpdateNewsSourceDto {
   @IsOptional()
   name?: string;
 
-  @ApiProperty({ description: 'The base URL of the news source', required: false })
+  @ApiProperty({
+    description: 'The base URL of the news source',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   url?: string;
 
-  @ApiProperty({ description: 'The RSS Feed URL of the news source', required: false })
+  @ApiProperty({
+    description: 'The RSS Feed URL of the news source',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   rssUrl?: string;

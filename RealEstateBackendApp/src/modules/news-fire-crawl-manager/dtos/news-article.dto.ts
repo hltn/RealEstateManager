@@ -2,7 +2,10 @@ import { IsArray, IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AnalyzeRawArticlesDto {
-  @ApiProperty({ description: 'List of raw articles to analyze', type: [Object] })
+  @ApiProperty({
+    description: 'List of raw articles to analyze',
+    type: [Object],
+  })
   @IsArray()
   articles: any[];
 }

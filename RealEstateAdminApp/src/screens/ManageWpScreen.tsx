@@ -1,8 +1,15 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, History, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DatePicker } from '../components/ui/DatePicker';
+import { Pagination } from '../components/common/Pagination';
+import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { buildListQuery, fetchPaginated } from '../utils/fetchPaginated';
+import { DEFAULT_PAGE_SIZE } from '../types/pagination';
+import type { PaginatedResponse } from '../types/pagination';
 
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -212,41 +219,136 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   );
 };
 
+const ARTICLES_ENDPOINT = '/api/v1/news-manager/articles';
+
+type SortOrder = 'newest' | 'oldest';
+
+/** Bài viết đã duyệt trong Database, dùng cho bảng quản lý đăng WordPress. */
+interface WpArticle {
+  _id: string;
+  title?: string;
+  source?: string;
+  url?: string;
+  thumbnailUrl?: string;
+  publishDate?: string;
+  createdAt?: string;
+  status?: string | string[];
+}
+
+/** Hiển thị ngày theo định dạng DD/MM/YYYY (vi-VN), trả về "—" nếu không có ngày hợp lệ. */
+const formatDisplayDate = (article: WpArticle): string => {
+  const rawDate = article.publishDate || article.createdAt;
+  if (!rawDate) return '—';
+  const parsed = new Date(rawDate);
+  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('vi-VN');
+};
+
 export default function ManageWpScreen() {
-  const [articles, setArticles] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
-  const [sortOrder, setSortOrder] = useState('newest');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [bulkAction, setBulkAction] = useState('publish');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [cleaningIds, setCleaningIds] = useState<Set<string>>(new Set());
   const [publishingIds, setPublishingIds] = useState<Set<string>>(new Set());
-  const [isApplying, setIsApplying] = useState(false);
   const [notification, setNotification] = useState<{title: string, description: string, type?: ToastType} | null>(null);
   const [marketAnalysisResult, setMarketAnalysisResult] = useState<string | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  const fetchArticles = async (dateStr?: string) => {
-    try {
-      setLoading(true);
-      let url = '/api/v1/news-manager/articles';
-      if (dateStr) {
-        url += `?date=${dateStr}`;
-      }
-      const res = await fetch(url);
-      const data = await res.json();
-      setArticles(data.data || []);
-    } catch (error) {
-      console.error('Error fetching articles', error);
-    } finally {
-      setLoading(false);
+  // Debounce ô tìm kiếm để không lọc lại liên tục khi user đang gõ.
+  const searchQuery = useDebouncedValue(searchTerm, 400);
+
+  // GET /articles hiện chỉ nhận page/limit/date (DTO backend whitelist đúng 3 field này).
+  // Vì vậy chỉ `date` là filter server-side và mới cần reset trang.
+  // Điều chỉnh ngay trong render (không dùng useEffect) để không phát sinh thêm
+  // một request với cặp "filter mới + page cũ".
+  const filterSignature = `${filterDate}|${limit}`;
+  const [prevFilterSignature, setPrevFilterSignature] = useState(filterSignature);
+  if (prevFilterSignature !== filterSignature) {
+    setPrevFilterSignature(filterSignature);
+    setPage(1);
+    setSelectedIds(new Set());
+  }
+
+  const queryString = buildListQuery({
+    page,
+    limit,
+    date: filterDate,
+  });
+
+  const {
+    data: articlesPage,
+    isLoading,
+    isFetching,
+    isPlaceholderData,
+    error: queryError,
+  } = useQuery<PaginatedResponse<WpArticle>, Error>({
+    queryKey: ['wp-articles', { page, limit, date: filterDate }],
+    queryFn: ({ signal }) =>
+      fetchPaginated<WpArticle>(`${ARTICLES_ENDPOINT}?${queryString}`, page, limit, signal),
+    // Giữ dữ liệu trang trước trong lúc tải trang mới để bảng không nháy trắng.
+    placeholderData: (previousData) => previousData,
+  });
+
+  /**
+   * Search + sort ở màn này chỉ áp dụng TRONG TRANG hiện tại, vì backend
+   * GET /articles chưa hỗ trợ query param search/sort.
+   * TODO: chuyển sang server-side khi backend bổ sung search/sort cho endpoint này.
+   */
+  const articles = useMemo(() => {
+    const pageArticles = articlesPage?.data ?? [];
+    const filtered =
+      searchQuery.length >= 2
+        ? pageArticles.filter((article) => {
+            const keyword = searchQuery.toLowerCase();
+            return (
+              article.title?.toLowerCase().includes(keyword) ||
+              article.source?.toLowerCase().includes(keyword)
+            );
+          })
+        : [...pageArticles];
+
+    // Đồng bộ với BE: sort theo createdAt (BE cũng sort theo createdAt) để STT global offset khớp đúng.
+    return filtered.sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  }, [articlesPage, searchQuery, sortOrder]);
+  const meta = articlesPage?.meta ?? { total: 0, page, limit, totalPages: 0 };
+
+  // Nếu trang hiện tại vượt quá totalPages (VD: vừa xóa hết bài ở trang cuối), lùi về trang cuối còn dữ liệu.
+  useEffect(() => {
+    if (meta.totalPages > 0 && page > meta.totalPages) {
+      setPage(meta.totalPages);
     }
-  };
+  }, [meta.totalPages, page]);
 
   useEffect(() => {
-    fetchArticles(filterDate);
-  }, [filterDate]);
+    if (!queryError) return;
+    setNotification({
+      title: 'Lỗi',
+      description: queryError.message || 'Không tải được danh sách bài viết',
+      type: 'error',
+    });
+  }, [queryError]);
+
+  /** Làm mới danh sách và bỏ selection sau các thao tác ghi. */
+  const invalidateArticles = async () => {
+    setSelectedIds(new Set());
+    await queryClient.invalidateQueries({ queryKey: ['wp-articles'] });
+  };
+
+  const changePage = (nextPage: number) => {
+    // Clear selection khi đổi trang: giữ lại các id không còn hiển thị rất dễ
+    // dẫn tới đăng/xóa nhầm bài mà user không nhìn thấy.
+    setSelectedIds(new Set());
+    setPage(nextPage);
+  };
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -257,15 +359,37 @@ export default function ManageWpScreen() {
     });
   };
 
+  const isAllOnPageSelected =
+    articles.length > 0 && articles.every(article => selectedIds.has(article._id));
+
+  // Có filter đang áp dụng thì thông báo rỗng phải khác với "database chưa có bài nào".
+  const hasActiveFilter = Boolean(filterDate) || searchQuery.length >= 2;
+
+  // Khi search/sort trong trang làm đổi thứ tự hoặc lược bớt dòng, STT tính theo
+  // vị trí toàn cục không còn đúng, nên đánh số lại từ 1 trong phạm vi kết quả.
+  const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest';
+
+  /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại. */
+  const toggleSelectAllOnPage = () => {
+    setSelectedIds(prev => {
+      const isAllSelected = articles.length > 0 && articles.every(article => prev.has(article._id));
+      return isAllSelected ? new Set<string>() : new Set(articles.map(article => article._id));
+    });
+  };
+
+  /** Đăng một bài lên WordPress. */
   const handlePublish = async (id: string) => {
     try {
       setPublishingIds(prev => new Set(prev).add(id));
-      await fetch(`/api/v1/news-manager/articles/${id}/publish`, {
-        method: 'POST'
-      });
-      fetchArticles(filterDate);
+      const res = await fetch(`${ARTICLES_ENDPOINT}/${id}/publish`, { method: 'POST' });
+      if (!res.ok) throw new Error('Đăng bài thất bại');
+      await queryClient.invalidateQueries({ queryKey: ['wp-articles'] });
     } catch (error) {
-      console.error('Error publishing', error);
+      setNotification({
+        title: 'Lỗi',
+        description: error instanceof Error ? error.message : 'Lỗi khi đăng bài',
+        type: 'error'
+      });
     } finally {
       setPublishingIds(prev => {
         const next = new Set(prev);
@@ -275,23 +399,40 @@ export default function ManageWpScreen() {
     }
   };
 
-  const handleClean = async (article: any) => {
+  /** Làm sạch nội dung 1 bài viết; cập nhật trực tiếp vào cache trang hiện tại. */
+  const handleClean = async (article: WpArticle) => {
     try {
       setCleaningIds(prev => new Set(prev).add(article._id));
-      const res = await fetch(`/api/v1/news-manager/articles/${article._id}/clean`, {
-        method: 'POST'
-      });
-      const responseData = await res.json();
-      if (responseData.data) {
-        setArticles(prev => prev.map(a => a._id === article._id ? responseData.data : a));
+      const res = await fetch(`${ARTICLES_ENDPOINT}/${article._id}/clean`, { method: 'POST' });
+      const responseData = (await res.json().catch(() => null)) as { data?: WpArticle } | null;
+      if (!res.ok) throw new Error('Làm sạch dữ liệu thất bại');
+
+      if (responseData?.data) {
+        const cleanedArticle = responseData.data;
+        queryClient.setQueryData<PaginatedResponse<WpArticle>>(
+          ['wp-articles', { page, limit, date: filterDate }],
+          (previous) =>
+            previous
+              ? {
+                  ...previous,
+                  data: previous.data.map(item =>
+                    item._id === cleanedArticle._id ? cleanedArticle : item
+                  )
+                }
+              : previous
+        );
       }
       setNotification({
         title: 'Thành công',
-        description: `Đã làm sạch dữ liệu "${article.title}"`,
+        description: `Đã làm sạch dữ liệu "${article.title ?? ''}"`,
         type: 'success'
       });
     } catch (error) {
-      console.error('Error cleaning', error);
+      setNotification({
+        title: 'Lỗi',
+        description: error instanceof Error ? error.message : 'Lỗi khi làm sạch dữ liệu',
+        type: 'error'
+      });
     } finally {
       setCleaningIds(prev => {
         const next = new Set(prev);
@@ -301,29 +442,10 @@ export default function ManageWpScreen() {
     }
   };
 
-
-  const displayData = useMemo(() => {
-    let result = [...articles];
-    if (searchTerm.length >= 2) {
-      const lowerSearch = searchTerm.toLowerCase();
-      result = result.filter(
-        (article) =>
-          article.title?.toLowerCase().includes(lowerSearch) ||
-          article.source?.toLowerCase().includes(lowerSearch)
-      );
-    }
-    result.sort((a, b) => {
-      const dateA = new Date(a.publishDate || a.createdAt).getTime();
-      const dateB = new Date(b.publishDate || b.createdAt).getTime();
-      return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
-    });
-    return result;
-  }, [articles, searchTerm, sortOrder]);
-
   const highlightText = (text: string, query: string) => {
     if (!text) return '';
     if (!query || query.length < 2) return text;
-    const escapedQuery = query.replace(/[.*+?^\$\{\}()|[\]\\]/g, '\\$&');
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const parts = text.split(new RegExp(`(${escapedQuery})`, 'gi'));
     return (
       <>
@@ -340,118 +462,93 @@ export default function ManageWpScreen() {
     );
   };
 
-  const handleBulkAction = async () => {
+  /**
+   * Thực thi hành động hàng loạt trên các bài ĐANG CHỌN Ở TRANG HIỆN TẠI.
+   * Với server-side pagination, selection chỉ có phạm vi 1 trang nên đây luôn là
+   * tập con của trang đang xem — tránh tác động lên bài user không nhìn thấy.
+   */
+  const bulkMutation = useMutation<
+    { message: string; analysisContent?: string },
+    Error,
+    { action: string; ids: string[] }
+  >({
+    mutationFn: async ({ action, ids }) => {
+      if (action === 'publish') {
+        const res = await fetch(`${ARTICLES_ENDPOINT}/publish-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        });
+        if (!res.ok) throw new Error('Đăng bài hàng loạt thất bại');
+        return { message: 'Đã đăng bài hàng loạt thành công' };
+      }
+
+      if (action === 'analyze') {
+        const res = await fetch(`${ARTICLES_ENDPOINT}/market-analysis-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        });
+        if (!res.ok) throw new Error('Crawl tin tức thất bại');
+        return { message: 'Đã crawl xong tin tức' };
+      }
+
+      if (action === 'analyze_market_trends') {
+        const res = await fetch(`${ARTICLES_ENDPOINT}/analyze-market-trends`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        });
+        const responseData = (await res.json().catch(() => null)) as
+          | { data?: string; message?: string }
+          | null;
+        if (!res.ok || !responseData?.data) {
+          throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
+        }
+        return {
+          message: 'Đã phân tích thị trường thành công',
+          analysisContent: responseData.data
+        };
+      }
+
+      if (action === 'delete') {
+        const res = await fetch(`${ARTICLES_ENDPOINT}/delete-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        });
+        if (!res.ok) throw new Error('Xóa hàng loạt thất bại');
+        return { message: 'Đã xóa thành công' };
+      }
+
+      throw new Error('Hành động không hợp lệ');
+    },
+    onSuccess: async ({ message, analysisContent }) => {
+      if (analysisContent) setMarketAnalysisResult(analysisContent);
+      await invalidateArticles();
+      setNotification({ title: 'Thành công', description: message, type: 'success' });
+    },
+    onError: (error) => {
+      setNotification({
+        title: 'Lỗi',
+        description: error.message || 'Có lỗi xảy ra khi xử lý hàng loạt',
+        type: 'error'
+      });
+    }
+  });
+
+  const handleBulkAction = () => {
     if (selectedIds.size === 0) return;
-    setIsApplying(true);
-    setNotification(null);
-    
-    if (bulkAction === 'publish') {
-      try {
-        await fetch('/api/v1/news-manager/articles/publish-bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: Array.from(selectedIds) })
-        });
-        setSelectedIds(new Set());
-        fetchArticles(filterDate);
-        setNotification({
-          title: 'Thành công',
-          description: 'Đã đăng bài hàng loạt thành công',
-          type: 'success'
-        });
-      } catch (error) {
-        console.error('Error bulk publishing', error);
-      } finally {
-        setIsApplying(false);
-      }
-    } else if (bulkAction === 'analyze') {
-      try {
-        const res = await fetch('/api/v1/news-manager/articles/market-analysis-bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: Array.from(selectedIds) })
-        });
-        const responseData = await res.json();
-        
-        if (responseData.data && responseData.data.processedArticles) {
-          const processedArticles = responseData.data.processedArticles;
-          const updatedArticlesMap = new Map(processedArticles.map((a: any) => [a._id, a]));
-          
-          setArticles(prev => prev.map(a => updatedArticlesMap.has(a._id) ? updatedArticlesMap.get(a._id) : a));
-        } else {
-          fetchArticles(filterDate);
-        }
-        
-        setSelectedIds(new Set());
-        setNotification({
-          title: 'Thành công',
-          description: 'Đã crawl xong tin tức',
-          type: 'success'
-        });
-      } catch (error) {
-        console.error('Error bulk analyzing', error);
-      } finally {
-        setIsApplying(false);
-      }
-    } else if (bulkAction === 'analyze_market_trends') {
-        try {
-          const res = await fetch('/api/v1/news-manager/articles/analyze-market-trends', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              ids: Array.from(selectedIds)
-            })
-          });
-          const responseData = await res.json();
-          
-          if (res.ok && responseData.data) {
-            setMarketAnalysisResult(responseData.data);
-            setSelectedIds(new Set());
-            setNotification({
-              title: 'Thành công',
-              description: 'Đã phân tích thị trường thành công',
-              type: 'success'
-            });
-          } else {
-            throw new Error(responseData.message || 'Error from server');
-          }
-        } catch (error: any) {
-          console.error('Error market trends analysis', error);
-          setNotification({
-            title: 'Lỗi',
-            description: error.message || 'Lỗi phân tích thị trường',
-            type: 'error'
-          });
-        } finally {
-          setIsApplying(false);
-        }
-    } else if (bulkAction === 'delete') {
-      if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} bài viết đã chọn?`)) {
-        setIsApplying(false);
+    if (bulkAction === 'delete') {
+      if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} bài viết đã chọn (trên trang này)?`)) {
         return;
       }
-      try {
-        await fetch('/api/v1/news-manager/articles/delete-bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: Array.from(selectedIds) })
-        });
-        setSelectedIds(new Set());
-        fetchArticles(filterDate);
-        setNotification({
-          title: 'Thành công',
-          description: 'Đã xóa thành công',
-          type: 'success'
-        });
-      } catch (error) {
-        console.error('Error bulk deleting', error);
-      } finally {
-        setIsApplying(false);
-      }
-    } else {
-      setIsApplying(false);
     }
+    setNotification(null);
+    bulkMutation.mutate({ action: bulkAction, ids: Array.from(selectedIds) });
   };
+
+  const isApplying = bulkMutation.isPending;
 
 
 
@@ -520,7 +617,9 @@ export default function ManageWpScreen() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
                   type="text"
-                  placeholder="Tìm kiếm..."
+                  placeholder="Tìm trong trang này..."
+                  aria-label="Tìm kiếm trong trang hiện tại"
+                  title="Backend chưa hỗ trợ tìm kiếm toàn bộ, hiện chỉ lọc trong trang đang xem"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
@@ -530,7 +629,8 @@ export default function ManageWpScreen() {
 
             <select
               value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
+              onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+              aria-label="Sắp xếp theo ngày"
               className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-gray-700 dark:text-gray-300"
             >
               <option value="newest">Mới nhất</option>
@@ -566,13 +666,15 @@ export default function ManageWpScreen() {
             <thead className="border-b border-gray-100 dark:border-white/[0.05]">
               <tr className="bg-gray-50 dark:bg-gray-900">
                 <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase w-12">
-                  <input type="checkbox" onChange={() => {
-                    if (selectedIds.size === displayData.length && displayData.length > 0) {
-                      setSelectedIds(new Set());
-                    } else {
-                      setSelectedIds(new Set(displayData.map(a => a._id)));
-                    }
-                  }} checked={displayData.length > 0 && selectedIds.size === displayData.length} className="rounded border-gray-300 dark:border-gray-600 w-4 h-4 accent-brand-500 transition-all cursor-pointer" />
+                  <input
+                    type="checkbox"
+                    onChange={toggleSelectAllOnPage}
+                    checked={isAllOnPageSelected}
+                    disabled={articles.length === 0}
+                    title="Chọn tất cả trên trang này"
+                    aria-label="Chọn tất cả trên trang này"
+                    className="rounded border-gray-300 dark:border-gray-600 w-4 h-4 accent-brand-500 transition-all cursor-pointer disabled:cursor-not-allowed"
+                  />
                 </th>
                 <th className="px-2 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">STT</th>
                 <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Tiêu đề bài viết</th>
@@ -582,15 +684,8 @@ export default function ManageWpScreen() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-5 py-16 text-center">
-                    <div className="flex flex-col items-center justify-center gap-3 text-gray-500 dark:text-gray-400">
-                      <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-500 rounded-full animate-spin"></div>
-                      <span className="text-theme-sm font-medium">Đang tải dữ liệu...</span>
-                    </div>
-                  </td>
-                </tr>
+              {isLoading ? (
+                <TableSkeletonRows columnCount={6} rowCount={5} />
               ) : articles.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-20 text-center">
@@ -598,29 +693,46 @@ export default function ManageWpScreen() {
                       <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-2">
                         <FileText size={32} className="text-gray-400 dark:text-gray-500" />
                       </div>
-                      <p className="text-base font-medium text-gray-700 dark:text-gray-300">Chưa có bài viết nào trong Database.</p>
-                      <p className="text-theme-sm">Hãy quay lại tab Thu thập thủ công để quét và lưu bài viết.</p>
+                      {hasActiveFilter ? (
+                        <>
+                          <p className="text-base font-medium text-gray-700 dark:text-gray-300">Không tìm thấy bài viết nào khớp bộ lọc.</p>
+                          <p className="text-theme-sm">Thử xóa từ khóa tìm kiếm hoặc chọn ngày khác.</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-base font-medium text-gray-700 dark:text-gray-300">Chưa có bài viết nào trong Database.</p>
+                          <p className="text-theme-sm">Hãy quay lại tab Thu thập thủ công để quét và lưu bài viết.</p>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
               ) : (
-                displayData.map((article, idx) => (
-                  <tr key={article._id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors duration-200 group">
+                articles.map((article, idx) => (
+                  <tr
+                    key={article._id}
+                    className={`hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors duration-200 group ${
+                      isPlaceholderData ? 'opacity-60' : ''
+                    }`}
+                  >
                     <td className="px-5 py-4">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={selectedIds.has(article._id)}
                         onChange={() => toggleSelect(article._id)}
-                        className="rounded border-gray-300 dark:border-gray-600 w-4 h-4 accent-brand-500 cursor-pointer" 
+                        aria-label={`Chọn bài viết ${article.title ?? article._id}`}
+                        className="rounded border-gray-300 dark:border-gray-600 w-4 h-4 accent-brand-500 cursor-pointer"
                       />
                     </td>
-                    <td className="px-2 py-4 text-theme-sm text-gray-500 dark:text-gray-400">{idx + 1}</td>
+                    <td className="px-2 py-4 text-theme-sm text-gray-500 dark:text-gray-400">
+                      {isInPageAdjusted ? idx + 1 : (meta.page - 1) * meta.limit + idx + 1}
+                    </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         {article.thumbnailUrl ? (
                           <img
                             src={article.thumbnailUrl}
-                            alt={article.title}
+                            alt={article.title ?? ''}
                             className="w-[60px] h-[40px] object-cover rounded flex-shrink-0"
                             onError={(e) => {
                               e.currentTarget.style.display = 'none';
@@ -639,7 +751,7 @@ export default function ManageWpScreen() {
                     <td className="px-5 py-4">
                       <div className="flex flex-col gap-1">
                         <span className="font-medium text-gray-700 dark:text-gray-300 text-theme-sm">{article.source}</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{new Date(article.publishDate || article.createdAt).toLocaleDateString('vi-VN')}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatDisplayDate(article)}</span>
                       </div>
                     </td>
                     <td className="px-5 py-4">
@@ -732,6 +844,14 @@ export default function ManageWpScreen() {
           </table>
         </div>
       </div>
+
+      <Pagination
+        meta={meta}
+        onPageChange={changePage}
+        onLimitChange={setLimit}
+        isDisabled={isFetching}
+        itemLabel="bài viết"
+      />
     </div>
   );
 }

@@ -14,6 +14,12 @@ import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { MarketAnalysisHistory } from '../schemas/market-analysis-history.schema';
+import { PaginatedResult } from '../../../common/dto/paginated-response.dto';
+import {
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+} from '../../../common/dto/pagination-query.dto';
+import { normalizePagination } from '../../../common/utils/pagination.util';
 
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
@@ -162,18 +168,44 @@ export class NewsArticleService implements OnModuleInit {
     return { savedCount, duplicates, processedUrlHashes };
   }
 
-  async getSavedArticles(date?: string): Promise<NewsArticle[]> {
+  /**
+   * Lấy danh sách bài đã lưu theo ngày (nếu có) + phân trang.
+   * Trả về { data, total }: total đếm bằng countDocuments với CÙNG query filter,
+   * chạy song song với find qua Promise.all để không cộng dồn latency.
+   */
+  async getSavedArticles(
+    date?: string,
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT,
+  ): Promise<PaginatedResult<NewsArticle>> {
     const query: any = {};
     if (date) {
       // date is in YYYY-MM-DD format
       const startDate = new Date(`${date}T00:00:00.000Z`);
       const endDate = new Date(`${date}T23:59:59.999Z`);
       query.$or = [
-        { publishDate: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } },
-        { createdAt: { $gte: startDate, $lte: endDate } }
+        {
+          publishDate: {
+            $gte: startDate.toISOString(),
+            $lte: endDate.toISOString(),
+          },
+        },
+        { createdAt: { $gte: startDate, $lte: endDate } },
       ];
     }
-    return this.newsArticleModel.find(query).sort({ createdAt: -1 }).exec();
+    const { skip, limit: pageSize } = normalizePagination(page, limit);
+
+    const [data, total] = await Promise.all([
+      this.newsArticleModel
+        .find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .exec(),
+      this.newsArticleModel.countDocuments(query).exec(),
+    ]);
+
+    return { data, total };
   }
 
   async publishToWordPress(id: string): Promise<NewsArticle> {

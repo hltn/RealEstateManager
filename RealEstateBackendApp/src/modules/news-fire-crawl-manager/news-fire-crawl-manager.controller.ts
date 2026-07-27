@@ -11,8 +11,25 @@ import {
   HttpException,
   Put,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiQuery, ApiParam, ApiBody } from '@nestjs/swagger';
-import { UpdateCronConfigDto, BulkIdsDto, AnalyzeRawArticlesDto, SaveArticlesDto, TriggerManualCrawlDto, AiPromptDto, TriggerManualAnalyzeDto } from './dtos/news-manager.dto';
+import { ApiOperation, ApiTags, ApiParam } from '@nestjs/swagger';
+import {
+  UpdateCronConfigDto,
+  BulkIdsDto,
+  AnalyzeRawArticlesDto,
+  SaveArticlesDto,
+  TriggerManualCrawlDto,
+  AiPromptDto,
+  TriggerManualAnalyzeDto,
+  GetRawArticlesQueryDto,
+  GetArticlesQueryDto,
+} from './dtos/news-manager.dto';
+import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
+import {
+  buildPaginationMeta,
+  normalizePagination,
+} from '../../common/utils/pagination.util';
+import { RawArticle } from './schemas/raw-article.schema';
+import { NewsArticle } from './schemas/news-article.schema';
 import * as fs from 'fs';
 import { CustomCrawlerService } from './services/custom-crawler.service';
 import { AIFilterService } from './services/ai-filter.service';
@@ -58,7 +75,10 @@ export class NewsFireCrawlManagerController {
     return this.cronjobService.getConfig();
   }
 
-  @ApiOperation({ summary: 'Update cron config', description: 'Update cron config' })
+  @ApiOperation({
+    summary: 'Update cron config',
+    description: 'Update cron config',
+  })
   @Post('cron')
   updateCronConfig(@Body() body: UpdateCronConfigDto) {
     try {
@@ -69,24 +89,33 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Get raw articles', description: 'Get raw articles' })
+  @ApiOperation({
+    summary: 'Get raw articles',
+    description:
+      'Danh sách raw article có phân trang. Response: { data, meta: { total, page, limit, totalPages } }',
+  })
   @Get('raw-articles')
   async getRawArticles(
-    @Query('search') search?: string,
-    @Query('sort') sort?: 'newest' | 'oldest',
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
+    @Query() query: GetRawArticlesQueryDto,
+  ): Promise<PaginatedResponseDto<RawArticle>> {
     try {
-      const articles = await this.customCrawlerService.getRawArticles(
+      const { search, sort, startDate, endDate } = query;
+      // Chuẩn hóa page/limit trước khi xuống service để meta trả về luôn khớp
+      // với tham số thực sự dùng cho skip/limit.
+      const { page, limit } = normalizePagination(query.page, query.limit);
+
+      const { data, total } = await this.customCrawlerService.getRawArticles(
         search,
         sort,
         startDate,
         endDate,
+        page,
+        limit,
       );
+
       return {
-        message: 'Raw articles fetched successfully',
-        data: articles,
+        data,
+        meta: buildPaginationMeta(total, page, limit),
       };
     } catch (error: any) {
       this.logger.error('Error fetching raw articles', error.stack);
@@ -94,7 +123,10 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Delete raw article', description: 'Delete raw article' })
+  @ApiOperation({
+    summary: 'Delete raw article',
+    description: 'Delete raw article',
+  })
   @ApiParam({ name: 'id', required: true })
   @Delete('raw-articles/:id')
   async deleteRawArticle(@Param('id') id: string) {
@@ -107,11 +139,14 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Delete raw articles bulk', description: 'Delete raw articles bulk' })
+  @ApiOperation({
+    summary: 'Delete raw articles bulk',
+    description: 'Delete raw articles bulk',
+  })
   @Post('raw-articles/delete-bulk')
   async deleteRawArticlesBulk(@Body() body: BulkIdsDto) {
     try {
-    const { ids } = body;
+      const { ids } = body;
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to delete' };
@@ -126,11 +161,14 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Move raw articles bulk', description: 'Move raw articles bulk' })
+  @ApiOperation({
+    summary: 'Move raw articles bulk',
+    description: 'Move raw articles bulk',
+  })
   @Post('raw-articles/move-bulk')
   async moveRawArticlesBulk(@Body() body: BulkIdsDto) {
     try {
-    const { ids } = body;
+      const { ids } = body;
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to move' };
@@ -160,18 +198,22 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Trigger manual crawl', description: 'Trigger manual crawl' })
+  @ApiOperation({
+    summary: 'Trigger manual crawl',
+    description: 'Trigger manual crawl',
+  })
   @Post('crawl')
-  async triggerManualCrawl(
-    @Body() body: TriggerManualCrawlDto,
-  ) {
+  async triggerManualCrawl(@Body() body: TriggerManualCrawlDto) {
     try {
       const { days, startDate, endDate } = body;
       this.logger.log(
         `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
       );
-      const { filePath, stats } =
-        await this.customCrawlerService.crawlData(days, startDate, endDate);
+      const { filePath, stats } = await this.customCrawlerService.crawlData(
+        days,
+        startDate,
+        endDate,
+      );
 
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
@@ -187,7 +229,10 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Trigger manual analyze', description: 'Trigger manual analyze' })
+  @ApiOperation({
+    summary: 'Trigger manual analyze',
+    description: 'Trigger manual analyze',
+  })
   @Post('analyze')
   async triggerManualAnalyze(@Body() body: TriggerManualAnalyzeDto) {
     const { filePath } = body;
@@ -224,28 +269,37 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Analyze raw articles', description: 'Analyze raw articles' })
+  @ApiOperation({
+    summary: 'Analyze raw articles',
+    description: 'Analyze raw articles',
+  })
   @Post('analyze-raw')
   async analyzeRawArticles(@Body() body: AnalyzeRawArticlesDto) {
     try {
-    const { articles } = body;
+      const { articles } = body;
 
       this.logger.log('Analyze Raw Articles called');
       if (!articles || articles.length === 0) {
         return { message: 'No articles to analyze', data: [] };
       }
+      // Tập urlHash FE gửi lên — phạm vi an toàn để xóa (chỉ trong trang hiện tại, không phải toàn collection)
+      const submittedHashes = articles
+        .map((a: any) => a.urlHash)
+        .filter(Boolean) as string[];
+
       const filteredArticles =
         await this.aiFilterService.filterRawArticles(articles);
 
-      if (filteredArticles && filteredArticles.length > 0) {
-        const keepUrls = filteredArticles.map((a: any) => a.urlHash);
-        await this.customCrawlerService.deleteRawArticlesNotIn(keepUrls);
-      } else {
-        // If AI returned empty, maybe we should delete all or keep all?
-        // Prompt says "delete all records... that are NOT present in the AI's returned list".
-        // If empty list returned, it deletes everything. This is correct as per instructions.
-        await this.customCrawlerService.deleteRawArticlesNotIn([]);
-      }
+      // Chỉ xóa bài nằm trong tập FE gửi lên mà AI không giữ lại.
+      // Nếu AI trả về rỗng → toàn bộ bài trong trang bị xóa (đúng hành vi mong muốn).
+      // Những bài ngoài trang này KHÔNG bị ảnh hưởng.
+      const keepHashes: string[] = filteredArticles
+        ? filteredArticles.map((a: any) => a.urlHash)
+        : [];
+      await this.customCrawlerService.deleteRawArticlesInSetNotIn(
+        submittedHashes,
+        keepHashes,
+      );
 
       return {
         message: 'Raw articles filtered successfully',
@@ -264,7 +318,7 @@ export class NewsFireCrawlManagerController {
   @Post('articles/save')
   async saveArticles(@Body() body: SaveArticlesDto) {
     try {
-    const { articles } = body;
+      const { articles } = body;
 
       if (!Array.isArray(articles) || articles.length === 0) {
         return { message: 'No articles to save' };
@@ -280,15 +334,29 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Get articles', description: 'Get articles' })
-  @ApiQuery({ name: 'date', required: false })
+  @ApiOperation({
+    summary: 'Get articles',
+    description:
+      'Danh sách bài đã lưu có phân trang. Response: { data, meta: { total, page, limit, totalPages } }',
+  })
   @Get('articles')
-  async getArticles(@Query('date') date?: string) {
+  async getArticles(
+    @Query() query: GetArticlesQueryDto,
+  ): Promise<PaginatedResponseDto<NewsArticle>> {
     try {
-      const articles = await this.newsArticleService.getSavedArticles(date);
+      // Chuẩn hóa page/limit trước khi xuống service để meta trả về luôn khớp
+      // với tham số thực sự dùng cho skip/limit.
+      const { page, limit } = normalizePagination(query.page, query.limit);
+
+      const { data, total } = await this.newsArticleService.getSavedArticles(
+        query.date,
+        page,
+        limit,
+      );
+
       return {
-        message: 'Articles fetched successfully',
-        data: articles,
+        data,
+        meta: buildPaginationMeta(total, page, limit),
       };
     } catch (error: any) {
       this.logger.error('Error fetching articles', error.stack);
@@ -296,7 +364,10 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Get market analysis history', description: 'Get market analysis history' })
+  @ApiOperation({
+    summary: 'Get market analysis history',
+    description: 'Get market analysis history',
+  })
   @Get('articles/market-analysis-history')
   async getMarketAnalysisHistory() {
     try {
@@ -313,7 +384,10 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Get market analysis history by id', description: 'Get market analysis history by id' })
+  @ApiOperation({
+    summary: 'Get market analysis history by id',
+    description: 'Get market analysis history by id',
+  })
   @ApiParam({ name: 'id', required: true })
   @Get('articles/market-analysis-history/:id')
   async getMarketAnalysisHistoryById(@Param('id') id: string) {
@@ -337,7 +411,10 @@ export class NewsFireCrawlManagerController {
       );
     }
   }
-  @ApiOperation({ summary: 'Get article by id', description: 'Get article by id' })
+  @ApiOperation({
+    summary: 'Get article by id',
+    description: 'Get article by id',
+  })
   @ApiParam({ name: 'id', required: true })
   @Get('articles/:id')
   async getArticleById(@Param('id') id: string) {
@@ -356,7 +433,10 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Analyze market trends', description: 'Analyze market trends' })
+  @ApiOperation({
+    summary: 'Analyze market trends',
+    description: 'Analyze market trends',
+  })
   @Post('articles/analyze-market-trends')
   async analyzeMarketTrends(@Body() body: BulkIdsDto) {
     try {
@@ -379,11 +459,14 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Analyze market bulk', description: 'Analyze market bulk' })
+  @ApiOperation({
+    summary: 'Analyze market bulk',
+    description: 'Analyze market bulk',
+  })
   @Post('articles/market-analysis-bulk')
   async analyzeMarketBulk(@Body() body: BulkIdsDto) {
     try {
-    const { ids } = body;
+      const { ids } = body;
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to analyze' };
@@ -402,11 +485,14 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Delete bulk articles', description: 'Delete bulk articles' })
+  @ApiOperation({
+    summary: 'Delete bulk articles',
+    description: 'Delete bulk articles',
+  })
   @Post('articles/delete-bulk')
   async deleteBulkArticles(@Body() body: BulkIdsDto) {
     try {
-    const { ids } = body;
+      const { ids } = body;
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to delete' };
@@ -422,11 +508,14 @@ export class NewsFireCrawlManagerController {
     }
   }
 
-  @ApiOperation({ summary: 'Publish bulk articles', description: 'Publish bulk articles' })
+  @ApiOperation({
+    summary: 'Publish bulk articles',
+    description: 'Publish bulk articles',
+  })
   @Post('articles/publish-bulk')
   async publishBulkArticles(@Body() body: BulkIdsDto) {
     try {
-    const { ids } = body;
+      const { ids } = body;
 
       if (!Array.isArray(ids) || ids.length === 0) {
         return { message: 'No articles to publish' };

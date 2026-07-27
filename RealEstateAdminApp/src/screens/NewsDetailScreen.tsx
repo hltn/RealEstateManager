@@ -1,32 +1,45 @@
-import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Calendar, MapPin } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
+import { useQuery } from '@tanstack/react-query';
+
+/** Chi tiết một bài viết đã duyệt trong Database. */
+interface ArticleDetail {
+  _id: string;
+  title?: string;
+  summary?: string;
+  content?: string;
+  source?: string;
+  url?: string;
+  thumbnailUrl?: string;
+  publishDate?: string;
+  createdAt?: string;
+}
+
+/** Response chi tiết vẫn giữ shape { message, data } — chỉ endpoint danh sách đổi sang { data, meta }. */
+interface ArticleDetailResponse {
+  data?: ArticleDetail;
+  message?: string;
+}
 
 export default function NewsDetailScreen() {
   const { id } = useParams<{ id: string }>();
-  const [article, setArticle] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchArticle = async () => {
-      try {
-        const res = await fetch(`/api/v1/news-manager/articles/${id}`);
-        const data = await res.json();
-        if (data.data) {
-          setArticle(data.data);
-        }
-      } catch (error) {
-        console.error('Error fetching article', error);
-      } finally {
-        setLoading(false);
+  const { data: article, isLoading } = useQuery<ArticleDetail | null, Error>({
+    queryKey: ['article-detail', id],
+    enabled: Boolean(id),
+    queryFn: async ({ signal }) => {
+      const res = await fetch(`/api/v1/news-manager/articles/${id}`, { signal });
+      const body = (await res.json().catch(() => null)) as ArticleDetailResponse | null;
+      if (!res.ok) {
+        throw new Error(body?.message || 'Không tải được bài viết');
       }
-    };
-    fetchArticle();
-  }, [id]);
+      return body?.data ?? null;
+    },
+  });
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex h-[80vh] items-center justify-center p-8">
         <div className="w-8 h-8 border-4 border-brand-300 border-t-brand-500 rounded-full animate-spin"></div>
@@ -45,6 +58,8 @@ export default function NewsDetailScreen() {
     );
   }
 
+  const displayDate = article.publishDate || article.createdAt;
+
   return (
     <div className="p-6 max-w-4xl mx-auto w-full">
       <Link to="/manage-wp" className="inline-flex items-center gap-2 text-gray-500 hover:text-brand-500 mb-6 transition-colors font-medium">
@@ -55,10 +70,10 @@ export default function NewsDetailScreen() {
       <article className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-white/[0.05] overflow-hidden">
         {article.thumbnailUrl && (
           <div className="w-full h-[400px] overflow-hidden bg-gray-100 dark:bg-gray-800">
-            <img src={article.thumbnailUrl} alt={article.title} className="w-full h-full object-cover" />
+            <img src={article.thumbnailUrl} alt={article.title ?? ''} className="w-full h-full object-cover" />
           </div>
         )}
-        
+
         <div className="p-8 md:p-12">
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white leading-tight mb-6">
             {article.title}
@@ -67,7 +82,7 @@ export default function NewsDetailScreen() {
           <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mb-8 pb-8 border-b border-gray-100 dark:border-white/[0.05]">
             <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 px-3 py-1.5 rounded-full">
               <Calendar size={16} />
-              <span>{new Date(article.publishDate || article.createdAt).toLocaleDateString('vi-VN')}</span>
+              <span>{displayDate ? new Date(displayDate).toLocaleDateString('vi-VN') : '—'}</span>
             </div>
             {article.source && (
               <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 px-3 py-1.5 rounded-full">
@@ -76,9 +91,9 @@ export default function NewsDetailScreen() {
               </div>
             )}
             {article.url && (
-              <a 
-                href={article.url} 
-                target="_blank" 
+              <a
+                href={article.url}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-brand-500 hover:text-brand-600 bg-brand-50 dark:bg-brand-500/10 px-3 py-1.5 rounded-full transition-colors font-medium"
               >

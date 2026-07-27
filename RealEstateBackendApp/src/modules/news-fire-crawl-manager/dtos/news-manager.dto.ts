@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { AiPrompt } from '../services/ai-prompt-config.service';
+import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
 export class UpdateCronConfigDto {
   @ApiProperty({ description: 'Whether the cron job is active' })
@@ -20,7 +28,10 @@ export class BulkIdsDto {
 }
 
 export class AnalyzeRawArticlesDto {
-  @ApiProperty({ description: 'Array of raw articles to analyze', type: [Object] })
+  @ApiProperty({
+    description: 'Array of raw articles to analyze',
+    type: [Object],
+  })
   @IsArray()
   articles: Record<string, any>[];
 }
@@ -52,6 +63,44 @@ export class TriggerManualCrawlDto {
   @IsOptional()
   @IsString()
   endDate?: string;
+}
+
+/**
+ * Query cho GET raw-articles: phân trang dùng chung + các filter sẵn có
+ * (search theo title/description, sort theo publishedAt, khoảng ngày).
+ */
+export class GetRawArticlesQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: 'Từ khóa tìm trong title/description' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Thứ tự theo publishedAt',
+    enum: ['newest', 'oldest'],
+    default: 'newest',
+  })
+  @IsOptional()
+  @IsIn(['newest', 'oldest'], { message: 'sort chỉ nhận newest hoặc oldest' })
+  sort?: 'newest' | 'oldest';
+
+  @ApiPropertyOptional({ description: 'Ngày bắt đầu, định dạng YYYY-MM-DD' })
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ description: 'Ngày kết thúc, định dạng YYYY-MM-DD' })
+  @IsOptional()
+  @IsString()
+  endDate?: string;
+}
+
+/** Query cho GET articles: phân trang dùng chung + filter theo 1 ngày cụ thể */
+export class GetArticlesQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: 'Lọc theo ngày, định dạng YYYY-MM-DD' })
+  @IsOptional()
+  @IsString()
+  date?: string;
 }
 
 export class AiPromptDto implements AiPrompt {

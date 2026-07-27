@@ -13,6 +13,12 @@ import { NewsSourceService } from './news-source.service';
 import { RawArticle } from '../schemas/raw-article.schema';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
+import { PaginatedResult } from '../../../common/dto/paginated-response.dto';
+import {
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+} from '../../../common/dto/pagination-query.dto';
+import { normalizePagination } from '../../../common/utils/pagination.util';
 
 @Injectable()
 export class CustomCrawlerService {
@@ -216,7 +222,9 @@ export class CustomCrawlerService {
           try {
             article.url = new URL(article.url, source.url).href;
           } catch (e) {
-            this.logger.warn(`Failed to resolve URL: ${article.url} against base: ${source.url}`);
+            this.logger.warn(
+              `Failed to resolve URL: ${article.url} against base: ${source.url}`,
+            );
           }
 
           let parsedDate = new Date();
@@ -296,12 +304,20 @@ export class CustomCrawlerService {
     };
   }
 
+  /**
+   * Lấy danh sách raw article theo filter + phân trang.
+   * Trả về { data, total }: total được đếm bằng countDocuments với CÙNG query filter
+   * để controller tính totalPages. find và countDocuments chạy song song bằng
+   * Promise.all nên latency không bị cộng dồn.
+   */
   async getRawArticles(
     search?: string,
     sort?: 'newest' | 'oldest',
     startDate?: string,
     endDate?: string,
-  ): Promise<RawArticle[]> {
+    page: number = DEFAULT_PAGE,
+    limit: number = DEFAULT_LIMIT,
+  ): Promise<PaginatedResult<RawArticle>> {
     const query: any = {};
     if (search) {
       const escapeRegex = (text: string) =>
@@ -331,7 +347,19 @@ export class CustomCrawlerService {
       sortObj = { publishedAt: 1 };
     }
 
-    return this.rawArticleModel.find(query).sort(sortObj).exec();
+    const { skip, limit: pageSize } = normalizePagination(page, limit);
+
+    const [data, total] = await Promise.all([
+      this.rawArticleModel
+        .find(query)
+        .sort(sortObj)
+        .skip(skip)
+        .limit(pageSize)
+        .exec(),
+      this.rawArticleModel.countDocuments(query).exec(),
+    ]);
+
+    return { data, total };
   }
 
   async getRawArticlesByIds(ids: string[]): Promise<any[]> {
@@ -349,9 +377,32 @@ export class CustomCrawlerService {
     await this.rawArticleModel.deleteMany({ _id: { $in: ids } }).exec();
   }
 
+  /**
+   * [DEPRECATED - nguy hiểm] Xóa mọi bài KHÔNG nằm trong urlHashes trên toàn collection.
+   * Chỉ giữ lại để tránh break nếu còn chỗ nào đó gọi — KHÔNG dùng cho analyze-raw nữa.
+   */
   async deleteRawArticlesNotIn(urlHashes: string[]): Promise<void> {
     await this.rawArticleModel
       .deleteMany({ urlHash: { $nin: urlHashes } })
+      .exec();
+  }
+
+  /**
+   * Xóa cứng những bài nằm trong submittedHashes nhưng KHÔNG có trong keepHashes.
+   * Phạm vi xóa bị giới hạn đúng trong tập submittedHashes — tránh xóa lan ra toàn collection
+   * khi FE chỉ gửi lên một trang (phân trang).
+   *
+   * @param submittedHashes - Tập urlHash FE gửi lên để AI phân tích (phạm vi trang hiện tại)
+   * @param keepHashes      - Tập urlHash AI quyết định giữ lại
+   */
+  async deleteRawArticlesInSetNotIn(
+    submittedHashes: string[],
+    keepHashes: string[],
+  ): Promise<void> {
+    // Không có bài nào được submit → bỏ qua, tránh xóa nhầm
+    if (submittedHashes.length === 0) return;
+    await this.rawArticleModel
+      .deleteMany({ urlHash: { $in: submittedHashes, $nin: keepHashes } })
       .exec();
   }
 }
