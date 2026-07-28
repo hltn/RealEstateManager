@@ -63,7 +63,7 @@ export class AIFilterService {
       let resultText = '[]';
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       try {
         if (openRouterApiKey) {
@@ -101,7 +101,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 60 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
@@ -169,7 +169,7 @@ export class AIFilterService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes for raw article filtering
 
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
@@ -257,7 +257,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 60 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
@@ -325,7 +325,7 @@ export class AIFilterService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
@@ -390,7 +390,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 60 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
@@ -455,7 +455,7 @@ export class AIFilterService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes for large data
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes for large data
 
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
@@ -529,7 +529,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 180 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
