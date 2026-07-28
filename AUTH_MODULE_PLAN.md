@@ -238,9 +238,9 @@ Lý do: củng cố độ bền bảo mật (chống brute-force, token rotation
 
    session/device management ở MVP.
 
-5. **Phạm vi Editor**: giả định vai trò Editor áp dụng trước cho module News/Crawler; thứ tự mở
+5. **Phạm vi Editor**: Editor được thực hiện view/write/delete/publish trên news/raw-articles, bao gồm: `POST /crawl`, `POST /articles/:id/publish`, `DELETE /articles` (bulk), `POST /raw-articles/move-bulk`, `GET /articles`, `GET /raw-articles`. Editor **không được xem, sửa, hay gọi** AI Config (GET/POST /settings/ai-config, GET /settings/openrouter-models), AI Prompt Config (GET /news-manager/prompts, PUT /news-manager/prompts), và Cronjob (GET/POST /news-manager/cron) — toàn bộ 3 chức năng này chỉ dành cho Admin. Quyết định này đã được xác nhận bởi người dùng (2026-07-28).
 
-   rộng sang các module BĐS khác (nếu có) chưa được xác nhận.
+
 
 6. **Không có "quên mật khẩu" qua email ở MVP** — nếu người dùng cần chức năng này ngay, đây là
 

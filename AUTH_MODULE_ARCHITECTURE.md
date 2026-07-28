@@ -860,16 +860,23 @@ app.enableCors({
 | `PATCH /users/:id/status`      |   ❌    |   ❌    |   ✅   |
 | `PATCH /users/:id/role`        |   ❌    |   ❌    |   ✅   |
 | `GET /articles` (News)         |   ❌    |   ✅    |   ✅   |
-| `POST /crawl`                  |   ❌    |   ❌    |   ✅   |
-| `POST /articles/:id/publish`   |   ❌    |   ❌    |   ✅   |
-| `DELETE /articles` (bulk)      |   ❌    |   ❌    |   ✅   |
-| `POST /raw-articles/move-bulk` |   ❌    |   ❌    |   ✅   |
+| `POST /crawl`                  |   ❌    |   ✅    |   ✅   |
+| `POST /articles/:id/publish`   |   ❌    |   ✅    |   ✅   |
+| `DELETE /articles` (bulk)      |   ❌    |   ✅    |   ✅   |
+| `POST /raw-articles/move-bulk` |   ❌    |   ✅    |   ✅   |
 | `GET /raw-articles`            |   ❌    |   ✅    |   ✅   |
+| `GET /settings/ai-config`      |   ❌    |   ❌    |   ✅   |
+| `POST /settings/ai-config`     |   ❌    |   ❌    |   ✅   |
+| `GET /settings/openrouter-models` |   ❌ |   ❌    |   ✅   |
+| `GET /news-manager/prompts`    |   ❌    |   ❌    |   ✅   |
+| `PUT /news-manager/prompts`    |   ❌    |   ❌    |   ✅   |
+| `GET /news-manager/cron`       |   ❌    |   ❌    |   ✅   |
+| `POST /news-manager/cron`      |   ❌    |   ❌    |   ✅   |
 | `GET /health/*`                |   ✅    |   ✅    |   ✅   |
 | `GET /api/v1/docs` (Swagger)   |   ✅    |   ✅    |   ✅   |
 
 
-> **Nguyên tắc:** EDITOR chỉ đọc dữ liệu, không được thực hiện write/delete/publish. Mọi action ghi dữ liệu thuộc ADMIN. Có thể mở rộng quyền EDITOR ở Milestone sau nếu nghiệp vụ yêu cầu.
+> **Nguyên tắc:** EDITOR được thực hiện view/write/delete/publish trên news/raw-articles (bao gồm crawl, publish, bulk delete articles, move-bulk raw-articles). Toàn bộ cấu hình hệ thống (AI Config, AI Prompt Config, Cronjob) và quản lý tài khoản chỉ dành cho ADMIN.
 
 
 ---
@@ -934,9 +941,21 @@ interface AuthState {
       <Route path="manage-wp" element={<ManageWpScreen />} />
       <Route path="news-detail/:id" element={<NewsDetailScreen />} />
       <Route path="sources" element={<ManageSourcesScreen />} />
-      <Route path="ai-config" element={<AiConfigScreen />} />
-      <Route path="ai-prompt-config" element={<AiPromptConfigScreen />} />
-      <Route path="cronjob" element={<CronjobScreen />} />
+      <Route path="ai-config" element={
+        <RoleGuard allowedRoles={[UserRole.ADMIN]}>
+          <AiConfigScreen />
+        </RoleGuard>
+      } />
+      <Route path="ai-prompt-config" element={
+        <RoleGuard allowedRoles={[UserRole.ADMIN]}>
+          <AiPromptConfigScreen />
+        </RoleGuard>
+      } />
+      <Route path="cronjob" element={
+        <RoleGuard allowedRoles={[UserRole.ADMIN]}>
+          <CronjobScreen />
+        </RoleGuard>
+      } />
       <Route path="users" element={
         <RoleGuard allowedRoles={[UserRole.ADMIN]}>
           <UserManagementScreen />
