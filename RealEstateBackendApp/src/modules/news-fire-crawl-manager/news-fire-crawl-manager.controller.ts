@@ -8,8 +8,10 @@ import {
   Delete,
   Logger,
   Put,
+  Headers,
+  ConflictException,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiParam } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiParam, ApiHeader } from '@nestjs/swagger';
 import {
   UpdateCronConfigDto,
   BulkIdsDto,
@@ -34,6 +36,9 @@ import { AIFilterService } from './services/ai-filter.service';
 import { NewsArticleService } from './services/news-article.service';
 import { CronjobService } from './services/cronjob.service';
 import { AiPromptConfigService } from './services/ai-prompt-config.service';
+import { IdempotencyService } from '../../common/services/idempotency.service';
+import { AuditAction } from './schemas/audit-log.schema';
+import { AuditLogService } from './services/audit-log.service';
 
 @ApiTags('News Manager')
 @Controller('news-manager')
@@ -46,6 +51,8 @@ export class NewsFireCrawlManagerController {
     private readonly newsArticleService: NewsArticleService,
     private readonly cronjobService: CronjobService,
     private readonly aiPromptConfigService: AiPromptConfigService,
+    private readonly idempotencyService: IdempotencyService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
@@ -116,6 +123,13 @@ export class NewsFireCrawlManagerController {
   @Delete('raw-articles/:id')
   async deleteRawArticle(@Param('id') id: string) {
     await this.customCrawlerService.deleteRawArticle(id);
+    // Ghi audit log sau khi xóa thành công (fire-and-forget)
+    void this.auditLogService.log(
+      AuditAction.DELETE,
+      'raw_articles',
+      [id],
+      'system',
+    );
     return { message: 'Raw article deleted successfully' };
   }
 
@@ -131,6 +145,14 @@ export class NewsFireCrawlManagerController {
       return { message: 'No articles to delete' };
     }
     await this.customCrawlerService.deleteRawArticlesBulk(ids);
+    // Ghi audit log sau khi xóa bulk thành công (fire-and-forget)
+    void this.auditLogService.log(
+      AuditAction.BULK_DELETE,
+      'raw_articles',
+      ids,
+      'system',
+      { count: ids.length },
+    );
     return { message: 'Raw articles deleted successfully' };
   }
 
@@ -148,17 +170,65 @@ export class NewsFireCrawlManagerController {
     const rawArticles =
       await this.customCrawlerService.getRawArticlesByIds(ids);
     if (rawArticles.length > 0) {
-      const { processedUrlHashes } =
+      const { processedUrlHashes, newlySavedUrlHashes } =
         await this.newsArticleService.saveArticles(rawArticles);
 
-      const successfulIds = rawArticles
+      // successfulIds: tất cả bài đã được xử lý (saved mới + duplicate đã tồn tại)
+      // → an toàn để xóa khỏi raw_articles vì đã có trong news_articles
+      const typedRawArticles = rawArticles as Array<{
+        _id: { toString: () => string };
+        urlHash?: string | null;
+      }>;
+
+      const successfulIds = typedRawArticles
         .filter(
-          (raw) => raw.urlHash && processedUrlHashes.includes(raw.urlHash),
+          (
+            raw,
+          ): raw is {
+            _id: { toString: () => string };
+            urlHash: string;
+          } => Boolean(raw.urlHash && processedUrlHashes.includes(raw.urlHash)),
         )
         .map((raw) => raw._id.toString());
 
       if (successfulIds.length > 0) {
-        await this.customCrawlerService.deleteRawArticlesBulk(successfulIds);
+        try {
+          await this.customCrawlerService.deleteRawArticlesBulk(successfulIds);
+          void this.auditLogService.log(
+            AuditAction.BULK_MOVE,
+            'raw_articles',
+            successfulIds,
+            'system',
+            {
+              count: successfulIds.length,
+              movedTo: 'news_articles',
+            },
+          );
+        } catch (deleteError: any) {
+          // Compensating transaction: rollback các bài được insert MỚI (không rollback duplicate)
+          // vì duplicate đã tồn tại từ trước — xóa đi sẽ gây mất dữ liệu cũ
+          this.logger.error(
+            `deleteRawArticlesBulk thất bại sau saveArticles — bắt đầu rollback ${newlySavedUrlHashes.length} bài mới đã lưu`,
+            deleteError.stack,
+          );
+          if (newlySavedUrlHashes.length > 0) {
+            try {
+              await this.newsArticleService.deleteArticlesByUrlHashes(
+                newlySavedUrlHashes,
+              );
+              this.logger.log(
+                `Rollback thành công: đã xóa ${newlySavedUrlHashes.length} bài khỏi news_articles`,
+              );
+            } catch (rollbackError: any) {
+              // Rollback thất bại → log rõ để operator xử lý thủ công
+              this.logger.error(
+                `Rollback THẤT BẠI — dữ liệu không nhất quán. Nguyên nhân gốc (deleteRaw): ${deleteError.message}. ${newlySavedUrlHashes.length} bài tồn tại ở cả 2 collection. urlHashes cần xóa thủ công: [${newlySavedUrlHashes.join(', ')}]`,
+                rollbackError.stack,
+              );
+            }
+          }
+          throw deleteError;
+        }
       }
     }
     return { message: 'Raw articles moved successfully' };
@@ -210,7 +280,7 @@ export class NewsFireCrawlManagerController {
       };
     } finally {
       // Dọn file tạm sau mỗi lần analyze, bất kể thành công hay lỗi
-      import('fs').then((fs) => {
+      void import('fs').then((fs) => {
         fs.promises
           .unlink(filePath)
           .catch((err) =>
@@ -391,6 +461,14 @@ export class NewsFireCrawlManagerController {
       return { message: 'No articles to delete' };
     }
     const result = await this.newsArticleService.deleteBulkArticles(ids);
+    // Ghi audit log sau khi xóa bulk thành công (fire-and-forget)
+    void this.auditLogService.log(
+      AuditAction.BULK_DELETE,
+      'news_articles',
+      ids,
+      'system',
+      { count: ids.length },
+    );
     return {
       message: 'Articles deleted successfully',
       data: result,
@@ -401,33 +479,103 @@ export class NewsFireCrawlManagerController {
     summary: 'Publish bulk articles',
     description: 'Publish bulk articles',
   })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    required: false,
+    description: 'Chống đăng đúp khi double-click/retry',
+  })
   @Post('articles/publish-bulk')
-  async publishBulkArticles(@Body() body: BulkIdsDto) {
+  async publishBulkArticles(
+    @Body() body: BulkIdsDto,
+    @Headers('x-idempotency-key') idempotencyKey?: string,
+  ) {
     const { ids } = body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return { message: 'No articles to publish' };
     }
 
-    const results = await Promise.all(
-      ids.map((id) => this.newsArticleService.publishToWordPress(id)),
-    );
+    const iKey = idempotencyKey ? `bulk:${idempotencyKey}` : undefined;
+    if (iKey) {
+      const cached = this.idempotencyService.get(iKey);
+      if (cached) return cached;
+      if (this.idempotencyService.isInFlight(iKey)) {
+        throw new ConflictException(
+          'Request đang được xử lý, vui lòng thử lại sau',
+        );
+      }
+      this.idempotencyService.markInFlight(iKey);
+    }
 
-    return {
-      message: 'Articles published to WordPress successfully',
-      data: results,
-    };
+    try {
+      const results = await Promise.all(
+        ids.map((id) => this.newsArticleService.publishToWordPress(id)),
+      );
+
+      // Ghi audit log sau khi publish bulk thành công (fire-and-forget)
+      void this.auditLogService.log(
+        AuditAction.BULK_PUBLISH,
+        'news_articles',
+        ids,
+        'system',
+        { count: ids.length },
+      );
+
+      const response = {
+        message: 'Articles published to WordPress successfully',
+        data: results,
+      };
+
+      if (iKey) this.idempotencyService.set(iKey, response);
+      return response;
+    } finally {
+      if (iKey) this.idempotencyService.clearInFlight(iKey);
+    }
   }
 
   @ApiOperation({ summary: 'Publish article', description: 'Publish article' })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    required: false,
+    description: 'Chống đăng đúp khi double-click/retry',
+  })
   @ApiParam({ name: 'id', required: true })
   @Post('articles/:id/publish')
-  async publishArticle(@Param('id') id: string) {
-    const result = await this.newsArticleService.publishToWordPress(id);
-    return {
-      message: 'Article published to WordPress successfully',
-      data: result,
-    };
+  async publishArticle(
+    @Param('id') id: string,
+    @Headers('x-idempotency-key') idempotencyKey?: string,
+  ) {
+    const iKey = idempotencyKey ? `single:${idempotencyKey}` : undefined;
+    if (iKey) {
+      const cached = this.idempotencyService.get(iKey);
+      if (cached) return cached;
+      if (this.idempotencyService.isInFlight(iKey)) {
+        throw new ConflictException(
+          'Request đang được xử lý, vui lòng thử lại sau',
+        );
+      }
+      this.idempotencyService.markInFlight(iKey);
+    }
+
+    try {
+      const result = await this.newsArticleService.publishToWordPress(id);
+      // Ghi audit log sau khi publish thành công (fire-and-forget)
+      void this.auditLogService.log(
+        AuditAction.PUBLISH,
+        'news_articles',
+        [id],
+        'system',
+        { wpPostId: result.wpPostId },
+      );
+      const response = {
+        message: 'Article published to WordPress successfully',
+        data: result,
+      };
+      if (iKey) this.idempotencyService.set(iKey, response);
+      return response;
+    } finally {
+      if (iKey) this.idempotencyService.clearInFlight(iKey);
+    }
   }
 
   @ApiOperation({ summary: 'Clean article', description: 'Clean article' })

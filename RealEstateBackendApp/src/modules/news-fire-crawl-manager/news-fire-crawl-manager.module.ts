@@ -9,6 +9,9 @@ import { WordPressService } from './services/wordpress.service';
 import { CronjobService } from './services/cronjob.service';
 import { NewsSourceService } from './services/news-source.service';
 import { AiPromptConfigService } from './services/ai-prompt-config.service';
+import { IdempotencyService } from '../../common/services/idempotency.service';
+import { RequestContextService } from '../../common/services/request-context.service';
+import { AuditLogService } from './services/audit-log.service';
 import { NewsArticle, NewsArticleSchema } from './schemas/news-article.schema';
 import { NewsSource, NewsSourceSchema } from './schemas/news-source.schema';
 import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
@@ -16,6 +19,7 @@ import {
   MarketAnalysisHistory,
   MarketAnalysisHistorySchema,
 } from './schemas/market-analysis-history.schema';
+import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
 
 @Module({
   imports: [
@@ -24,6 +28,7 @@ import {
       { name: NewsSource.name, schema: NewsSourceSchema },
       { name: RawArticle.name, schema: RawArticleSchema },
       { name: MarketAnalysisHistory.name, schema: MarketAnalysisHistorySchema },
+      { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],
@@ -35,6 +40,9 @@ import {
     CronjobService,
     NewsSourceService,
     AiPromptConfigService,
+    IdempotencyService,
+    RequestContextService,
+    AuditLogService,
   ],
 })
 export class NewsFireCrawlManagerModule {}
