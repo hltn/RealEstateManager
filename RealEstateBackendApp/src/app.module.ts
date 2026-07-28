@@ -10,6 +10,8 @@ import { join } from 'path';
 import { SettingsModule } from './modules/settings/settings.module';
 import { HealthModule } from './health.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -32,6 +34,9 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
     NewsFireCrawlManagerModule,
     SettingsModule,
     HealthModule,
+    // Auth + Users: bật global JwtAuthGuard/RolesGuard/ThrottlerGuard.
+    AuthModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

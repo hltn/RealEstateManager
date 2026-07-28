@@ -9,6 +9,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import fastifyCookie from '@fastify/cookie';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -17,12 +18,21 @@ async function bootstrap() {
     { logger: new CustomLogger() },
   );
   const logger = new CustomLogger('Bootstrap');
+  const configService = app.get(ConfigService);
 
   // Set global prefix
   app.setGlobalPrefix('api/v1');
 
-  // Enable CORS
-  app.enableCors();
+  // Đăng ký @fastify/cookie để parse httpOnly refresh cookie.
+  await app.register(fastifyCookie, {
+    secret: configService.get<string>('COOKIE_SECRET'),
+  });
+
+  // CORS: credentials=true cho httpOnly cookie cross-origin (dev).
+  app.enableCors({
+    origin: configService.get<string>('FRONTEND_URL') || 'http://localhost:5173',
+    credentials: true,
+  });
 
   // Setup Global Validation Pipe
   app.useGlobalPipes(
@@ -49,9 +59,7 @@ async function bootstrap() {
   // Graceful Shutdown Hooks
   app.enableShutdownHooks();
 
-  const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
-
   await app.listen(port, '0.0.0.0'); // Listen on all interfaces
   logger.log(`Application is running on: http://localhost:${port}`);
   logger.log(`Swagger docs available at: http://localhost:${port}/api/v1/docs`);
