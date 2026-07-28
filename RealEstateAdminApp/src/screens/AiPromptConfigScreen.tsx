@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, Save, FileText } from 'lucide-react';
-import apiAxios from '../api/axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchPrompts, savePrompts } from '../api/news-manager.api';
 import { getApiErrorMessage } from '../utils/fetchPaginated';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -83,42 +84,26 @@ const ToastNotification = ({ title, description, type = 'success', onClose }: To
   );
 };
 
-interface PromptConfig {
-  api_ai_name: string;
-  api_ai_path: string;
-  prompt: string;
-}
+import type { PromptConfig } from '../api/news-manager.api';
 
 export default function AiPromptConfigScreen() {
+  const queryClient = useQueryClient();
   const [prompts, setPrompts] = useState<PromptConfig[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<Omit<ToastProps, 'onClose'> | null>(null);
 
-  useEffect(() => {
-    fetchPrompts();
-  }, []);
+  const { data, isLoading } = useQuery({
+    queryKey: ['ai', 'prompts'],
+    queryFn: ({ signal }) => fetchPrompts(signal),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 
-  const fetchPrompts = async () => {
-    try {
-      setIsLoading(true);
-      const { data } = await apiAxios.get<{ success?: boolean; data?: PromptConfig[] }>(
-        '/news-manager/prompts',
-      );
-      if (data.success && Array.isArray(data.data)) {
-        setPrompts(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch prompts:', error);
-      setToast({
-        type: 'error',
-        title: 'Lỗi tải dữ liệu',
-        description: getApiErrorMessage(error, 'Không thể tải cấu hình AI Prompts'),
-      });
-    } finally {
-      setIsLoading(false);
+  // Sync danh sách prompt từ server vào state local để chỉnh sửa form (state-sync, không gọi API).
+  useEffect(() => {
+    if (data) {
+      setPrompts(data);
     }
-  };
+  }, [data]);
 
   const handlePromptChange = (index: number, field: keyof PromptConfig, value: string) => {
     const newPrompts = [...prompts];
@@ -126,33 +111,26 @@ export default function AiPromptConfigScreen() {
     setPrompts(newPrompts);
   };
 
-  const handleSave = async () => {
-    try {
-      setIsSaving(true);
-      const { data } = await apiAxios.put<{ success?: boolean; message?: string }>(
-        '/news-manager/prompts',
-        prompts,
-      );
-      if (data.success) {
-        setToast({
-          type: 'success',
-          title: 'Lưu thành công',
-          description: 'Cấu hình AI Prompts đã được cập nhật',
-        });
-      } else {
-        throw new Error(data.message || 'Lỗi lưu dữ liệu');
-      }
-    } catch (error) {
-      console.error('Failed to save prompts:', error);
+  const saveMutation = useMutation({
+    mutationFn: () => savePrompts(prompts),
+    onSuccess: () => {
+      setToast({
+        type: 'success',
+        title: 'Lưu thành công',
+        description: 'Cấu hình AI Prompts đã được cập nhật',
+      });
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'prompts'] });
+    },
+    onError: (err) => {
       setToast({
         type: 'error',
         title: 'Lỗi',
-        description: getApiErrorMessage(error, 'Đã có lỗi xảy ra khi lưu cấu hình AI Prompts'),
+        description: getApiErrorMessage(err, 'Đã có lỗi xảy ra khi lưu cấu hình AI Prompts'),
       });
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    },
+  });
+
+  const isSaving = saveMutation.isPending;
 
   return (
     <div className="space-y-6 relative">
@@ -222,7 +200,7 @@ export default function AiPromptConfigScreen() {
 
           <div className="pt-4 flex justify-end">
             <button
-              onClick={handleSave}
+              onClick={() => saveMutation.mutate()}
               disabled={isSaving}
               className="flex items-center gap-2 px-6 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-medium transition-all disabled:opacity-50"
             >
