@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Database, Trash2, Eye, Search, Play } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAnalyzeJob } from "../context/AnalyzeJobContext";
 import { DatePicker } from "../components/ui/DatePicker";
 import { Pagination } from "../components/common/Pagination";
 import { TableSkeletonRows } from "../components/common/TableSkeletonRows";
@@ -71,6 +72,7 @@ const renderHighlightedText = (text: string, query: string) => {
 
 export default function RawArticlesScreen() {
   const queryClient = useQueryClient();
+  const { status: analyzeJobStatus, startJob: startAnalyzeJob } = useAnalyzeJob();
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -184,7 +186,9 @@ export default function RawArticlesScreen() {
     onError: (err) => setError(err.message || "Có lỗi xảy ra khi thu thập dữ liệu."),
   });
 
-  const analyzeMutation = useMutation<void, Error>({
+  // Chạy nền: submit job rồi trả về ngay, AnalyzeJobProvider (ở AppLayout) sẽ tự poll
+  // trạng thái và invalidate danh sách khi xong, kể cả khi user đã rời khỏi màn hình này.
+  const analyzeMutation = useMutation<string | null, Error>({
     mutationFn: async () => {
       // Chỉ phân tích các bài đang hiển thị trên trang hiện tại (server-side pagination).
       const articlesToSend = articles.map((item) => ({
@@ -202,14 +206,19 @@ export default function RawArticlesScreen() {
       if (!response.ok) {
         throw new Error(resData?.message || "Lỗi khi phân tích tin tức");
       }
+      return resData?.jobId ?? null;
     },
     onMutate: () => {
       setError("");
       setSuccess("");
     },
-    onSuccess: async () => {
-      setSuccess("Phân tích AI thành công, đã lọc các tin không liên quan!");
-      await invalidateList();
+    onSuccess: (jobId) => {
+      if (jobId) {
+        startAnalyzeJob(jobId);
+        setSuccess("Đã gửi yêu cầu phân tích, kết quả sẽ hiển thị ở góc trên bên phải.");
+      } else {
+        setSuccess("Không có bài viết nào để phân tích.");
+      }
     },
     onError: (err) => setError(err.message || "Đã xảy ra lỗi khi phân tích AI"),
   });
@@ -253,8 +262,13 @@ export default function RawArticlesScreen() {
     onError: (err) => setError(err.message || "Lỗi khi xử lý hàng loạt"),
   });
 
+  const isAnalyzeJobRunning = analyzeJobStatus === "pending";
   const isBusy =
-    isFetching || crawlMutation.isPending || analyzeMutation.isPending || bulkMutation.isPending;
+    isFetching ||
+    crawlMutation.isPending ||
+    analyzeMutation.isPending ||
+    isAnalyzeJobRunning ||
+    bulkMutation.isPending;
 
   const handleDeleteSingle = (id: string) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa bài viết này?")) return;
@@ -341,7 +355,7 @@ export default function RawArticlesScreen() {
             disabled={isBusy || articles.length === 0}
             className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-brand-500 bg-brand-50 dark:bg-brand-500/15 border border-brand-100 dark:border-brand-500/25 transition-all duration-300 hover:bg-brand-100 dark:hover:bg-brand-500/25 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
-            {analyzeMutation.isPending ? "Đang phân tích..." : "Phân tích tin tức"}
+            {analyzeMutation.isPending || isAnalyzeJobRunning ? "Đang phân tích..." : "Phân tích tin tức"}
           </button>
           <button
             onClick={() => refetch()}

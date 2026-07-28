@@ -9,6 +9,7 @@ import { WordPressService } from './services/wordpress.service';
 import { CronjobService } from './services/cronjob.service';
 import { NewsSourceService } from './services/news-source.service';
 import { AiPromptConfigService } from './services/ai-prompt-config.service';
+import { AnalyzeJobService } from './services/analyze-job.service';
 import { IdempotencyService } from '../../common/services/idempotency.service';
 import { RequestContextService } from '../../common/services/request-context.service';
 import { AuditLogService } from './services/audit-log.service';
@@ -40,6 +41,7 @@ import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
     CronjobService,
     NewsSourceService,
     AiPromptConfigService,
+    AnalyzeJobService,
     IdempotencyService,
     RequestContextService,
     AuditLogService,

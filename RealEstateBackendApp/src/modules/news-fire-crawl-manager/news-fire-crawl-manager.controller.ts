@@ -39,6 +39,7 @@ import { AiPromptConfigService } from './services/ai-prompt-config.service';
 import { IdempotencyService } from '../../common/services/idempotency.service';
 import { AuditAction } from './schemas/audit-log.schema';
 import { AuditLogService } from './services/audit-log.service';
+import { AnalyzeJobService } from './services/analyze-job.service';
 
 @ApiTags('News Manager')
 @Controller('news-manager')
@@ -53,6 +54,7 @@ export class NewsFireCrawlManagerController {
     private readonly aiPromptConfigService: AiPromptConfigService,
     private readonly idempotencyService: IdempotencyService,
     private readonly auditLogService: AuditLogService,
+    private readonly analyzeJobService: AnalyzeJobService,
   ) {}
 
   @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
@@ -294,40 +296,76 @@ export class NewsFireCrawlManagerController {
   }
 
   @ApiOperation({
-    summary: 'Analyze raw articles',
-    description: 'Analyze raw articles',
+    summary: 'Analyze raw articles (async)',
+    description:
+      'Trả về jobId ngay lập tức, việc gọi AI + xóa bài chạy nền. ' +
+      'Dùng GET /analyze-raw/:jobId để lấy kết quả khi hoàn tất.',
   })
   @Post('analyze-raw')
-  async analyzeRawArticles(@Body() body: AnalyzeRawArticlesDto) {
+  analyzeRawArticles(@Body() body: AnalyzeRawArticlesDto) {
     const { articles } = body;
 
     this.logger.log('Analyze Raw Articles called');
     if (!articles || articles.length === 0) {
-      return { message: 'No articles to analyze', data: [] };
+      return { jobId: null, message: 'No articles to analyze' };
     }
-    // Tập urlHash FE gửi lên — phạm vi an toàn để xóa (chỉ trong trang hiện tại, không phải toàn collection)
-    const submittedHashes = articles
-      .map((a: any) => a.urlHash)
-      .filter(Boolean) as string[];
 
-    const filteredArticles =
-      await this.aiFilterService.filterRawArticles(articles);
+    const jobId = this.analyzeJobService.createJob();
 
-    // Chỉ xóa bài nằm trong tập FE gửi lên mà AI không giữ lại.
-    // Nếu AI trả về rỗng → toàn bộ bài trong trang bị xóa (đúng hành vi mong muốn).
-    // Những bài ngoài trang này KHÔNG bị ảnh hưởng.
-    const keepHashes: string[] = filteredArticles
-      ? filteredArticles.map((a: any) => a.urlHash)
-      : [];
-    await this.customCrawlerService.deleteRawArticlesInSetNotIn(
-      submittedHashes,
-      keepHashes,
-    );
+    // Fire-and-forget: không await trong request handler để HTTP response
+    // trả về ngay, tránh phụ thuộc vào thời gian xử lý thực tế của AI upstream.
+    void this.runAnalyzeRawArticlesJob(jobId, articles);
 
-    return {
-      message: 'Raw articles filtered successfully',
-      data: filteredArticles,
-    };
+    return { jobId, message: 'Đã nhận yêu cầu, đang xử lý trong nền' };
+  }
+
+  /** Thực thi job phân tích AI + xóa bài trong nền, cập nhật trạng thái vào AnalyzeJobService. */
+  private async runAnalyzeRawArticlesJob(
+    jobId: string,
+    articles: Record<string, any>[],
+  ): Promise<void> {
+    try {
+      // Tập urlHash FE gửi lên — phạm vi an toàn để xóa (chỉ trong trang hiện tại, không phải toàn collection)
+      const submittedHashes = articles
+        .map((a: any) => a.urlHash)
+        .filter(Boolean) as string[];
+
+      const filteredArticles =
+        await this.aiFilterService.filterRawArticles(articles);
+
+      // Chỉ xóa bài nằm trong tập FE gửi lên mà AI không giữ lại.
+      // Nếu AI trả về rỗng → toàn bộ bài trong trang bị xóa (đúng hành vi mong muốn).
+      // Những bài ngoài trang này KHÔNG bị ảnh hưởng.
+      const keepHashes: string[] = filteredArticles
+        ? filteredArticles.map((a: any) => a.urlHash)
+        : [];
+      await this.customCrawlerService.deleteRawArticlesInSetNotIn(
+        submittedHashes,
+        keepHashes,
+      );
+
+      this.analyzeJobService.markDone(jobId, filteredArticles);
+    } catch (error: any) {
+      this.logger.error(
+        `Analyze job ${jobId} failed: ${error.message}`,
+        error.stack,
+      );
+      this.analyzeJobService.markError(jobId, error.message || 'Lỗi không xác định');
+    }
+  }
+
+  @ApiOperation({
+    summary: 'Get analyze-raw job status',
+    description: 'Poll trạng thái job phân tích AI chạy nền theo jobId.',
+  })
+  @ApiParam({ name: 'jobId', description: 'ID job trả về từ POST /analyze-raw' })
+  @Get('analyze-raw/:jobId')
+  getAnalyzeRawJob(@Param('jobId') jobId: string) {
+    const job = this.analyzeJobService.getJob(jobId);
+    if (!job) {
+      return { status: 'not_found' };
+    }
+    return job;
   }
 
   @ApiOperation({ summary: 'Save articles', description: 'Save articles' })
