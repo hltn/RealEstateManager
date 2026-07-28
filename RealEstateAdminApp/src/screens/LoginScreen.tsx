@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import Logo from '../images/logo/logo.png';
 import { AxiosError } from 'axios';
 import { login } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
@@ -100,18 +101,16 @@ const LoginScreen: React.FC = () => {
       <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-8 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark">
         <div className="mb-8 text-center">
           <img
-            src="/images/logo/logo.svg"
+            src={Logo}
             alt="Logo"
             className="mx-auto mb-4 dark:hidden"
-            width={150}
-            height={40}
+            width={60}
           />
           <img
-            src="/images/logo/logo-dark.svg"
+            src={Logo}
             alt="Logo"
             className="mx-auto mb-4 hidden dark:block"
-            width={150}
-            height={40}
+            width={60}
           />
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
             Đăng nhập

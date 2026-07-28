@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import Logo from "../images/logo/logo.png";
 
 // Assume these icons are imported from an icon library
 import {
@@ -281,35 +282,28 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div
-        className={`py-8 flex ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
-        }`}
-      >
+      <div className="py-8 flex justify-center">
         <Link to="/">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <img
                 className="dark:hidden"
-                src="/images/logo/logo.svg"
+                src={Logo}
                 alt="Logo"
-                width={150}
-                height={40}
+                width={60}
               />
               <img
                 className="hidden dark:block"
-                src="/images/logo/logo-dark.svg"
+                src={Logo}
                 alt="Logo"
-                width={150}
-                height={40}
+                width={60}
               />
             </>
           ) : (
             <img
-              src="/images/logo/logo-icon.svg"
+              src={Logo}
               alt="Logo"
               width={32}
-              height={32}
             />
           )}
         </Link>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Link } from "react-router-dom";
+import Logo from "../images/logo/logo.png";
 import { useSidebar } from "../context/SidebarContext";
 import { useAnalyzeJob } from "../context/AnalyzeJobContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
@@ -124,12 +125,12 @@ const AppHeader: React.FC = () => {
           <Link to="/" className="lg:hidden">
             <img
               className="dark:hidden"
-              src="./images/logo/logo.svg"
+              src={Logo}
               alt="Logo"
             />
             <img
               className="hidden dark:block"
-              src="./images/logo/logo-dark.svg"
+              src={Logo}
               alt="Logo"
             />
           </Link>
