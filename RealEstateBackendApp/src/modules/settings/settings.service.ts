@@ -99,13 +99,29 @@ export class SettingsService {
     }
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'HTTP-Referer': 'http://localhost:3000',
-          'X-Title': 'RealEstateManager',
-        },
-      });
+      // Bọc timeout 5s chống treo khi OpenRouter chậm/không phản hồi
+      // (chuẩn Enterprise: mọi request 3rd party phải có timeout).
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      let response: Response;
+      try {
+        response = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'RealEstateManager',
+          },
+          signal: controller.signal,
+        });
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          throw new Error('OpenRouter models request timed out after 5s');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to fetch models: ${response.statusText}`);

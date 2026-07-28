@@ -8,7 +8,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
-import * as crypto from 'crypto';
 import { WordPressService } from './wordpress.service';
 import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
@@ -20,6 +19,7 @@ import {
   DEFAULT_PAGE,
 } from '../../../common/dto/pagination-query.dto';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import { generateUrlHash } from '../../../common/utils/url-hash.util';
 
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
@@ -75,17 +75,18 @@ export class NewsArticleService implements OnModuleInit {
     savedCount: number;
     duplicates: number;
     processedUrlHashes: string[];
+    newlySavedUrlHashes: string[];
   }> {
     this.logger.log('Starting Job 3: Save to Database');
     let savedCount = 0;
     let duplicates = 0;
     const processedUrlHashes: string[] = [];
+    // Chỉ chứa hash của bài được insert mới — dùng cho rollback compensating transaction
+    const newlySavedUrlHashes: string[] = [];
 
     for (const article of articles) {
       try {
-        const urlHash =
-          article.urlHash ||
-          crypto.createHash('sha256').update(article.url).digest('hex');
+        const urlHash = article.urlHash || generateUrlHash(article.url);
 
         const existing = await this.newsArticleModel.findOne({ urlHash });
         if (existing) {
@@ -154,6 +155,7 @@ export class NewsArticleService implements OnModuleInit {
         await newArticle.save();
         savedCount++;
         processedUrlHashes.push(urlHash);
+        newlySavedUrlHashes.push(urlHash);
       } catch (error: any) {
         this.logger.error(
           `Failed to save article ${article.url}: ${error.message}`,
@@ -165,7 +167,7 @@ export class NewsArticleService implements OnModuleInit {
     this.logger.log(
       `Job 3 completed. Saved: ${savedCount}, Duplicates ignored: ${duplicates}`,
     );
-    return { savedCount, duplicates, processedUrlHashes };
+    return { savedCount, duplicates, processedUrlHashes, newlySavedUrlHashes };
   }
 
   /**
@@ -489,5 +491,17 @@ Content: ${article.content || article.summary || 'N/A'}
 
     await article.save();
     return article;
+  }
+
+  /**
+   * Xóa các bài trong news_articles theo urlHash — dùng để rollback compensating transaction
+   * khi deleteRawArticlesBulk thất bại sau khi saveArticles đã thành công.
+   * Chỉ xóa đúng các hash được truyền vào, không ảnh hưởng bài khác.
+   */
+  async deleteArticlesByUrlHashes(urlHashes: string[]): Promise<void> {
+    if (urlHashes.length === 0) return;
+    await this.newsArticleModel
+      .deleteMany({ urlHash: { $in: urlHashes } })
+      .exec();
   }
 }

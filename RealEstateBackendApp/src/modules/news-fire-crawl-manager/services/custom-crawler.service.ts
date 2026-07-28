@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
@@ -19,6 +18,7 @@ import {
   DEFAULT_PAGE,
 } from '../../../common/dto/pagination-query.dto';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import { generateUrlHash } from '../../../common/utils/url-hash.util';
 
 @Injectable()
 export class CustomCrawlerService {
@@ -257,19 +257,27 @@ export class CustomCrawlerService {
             thumbnailUrl: article.thumbnailUrl || '',
           };
 
-          const urlHash = crypto
-            .createHash('md5')
-            .update(articleData.url)
-            .digest('hex');
+          // urlHash SHA-256 — đồng bộ với NewsArticle (trước đây dùng MD5).
+          // Bọc per-article trong try/catch: 1 URL hỏng (rỗng/whitespace) làm
+          // generateUrlHash throw → chỉ skip bài đó, KHÔNG gãy cả source
+          // (m3). generateUrlHash giữ contract throw khi url rỗng là đúng — chỉ
+          // thay cách caller xử lý.
+          try {
+            const urlHash = generateUrlHash(articleData.url);
+            await this.rawArticleModel.updateOne(
+              { urlHash },
+              { $set: { ...articleData, urlHash } },
+              { upsert: true },
+            );
 
-          await this.rawArticleModel.updateOne(
-            { urlHash },
-            { $set: { ...articleData, urlHash } },
-            { upsert: true },
-          );
-
-          crawledData.push(articleData);
-          validArticlesCount++;
+            crawledData.push(articleData);
+            validArticlesCount++;
+          } catch (hashErr: any) {
+            this.logger.warn(
+              `Skip article bad URL/hash '${article.url}': ${hashErr.message}`,
+            );
+            continue;
+          }
         }
         successfulSources++;
         successfulDetails.push({ url: source.url, count: validArticlesCount });

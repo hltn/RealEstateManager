@@ -3,6 +3,8 @@ import { ArrowLeft, ExternalLink, Calendar, MapPin } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import { useQuery } from '@tanstack/react-query';
+import apiAxios from '../api/axios';
+import { getApiErrorMessage } from '../utils/fetchPaginated';
 
 /** Chi tiết một bài viết đã duyệt trong Database. */
 interface ArticleDetail {
@@ -30,12 +32,15 @@ export default function NewsDetailScreen() {
     queryKey: ['article-detail', id],
     enabled: Boolean(id),
     queryFn: async ({ signal }) => {
-      const res = await fetch(`/api/v1/news-manager/articles/${id}`, { signal });
-      const body = (await res.json().catch(() => null)) as ArticleDetailResponse | null;
-      if (!res.ok) {
-        throw new Error(body?.message || 'Không tải được bài viết');
+      try {
+        const { data: body } = await apiAxios.get<ArticleDetailResponse>(
+          `/news-manager/articles/${id}`,
+          { signal },
+        );
+        return body?.data ?? null;
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, 'Không tải được bài viết'));
       }
-      return body?.data ?? null;
     },
   });
 

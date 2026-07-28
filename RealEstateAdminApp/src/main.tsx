@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Toaster } from 'react-hot-toast'
 import App from './App.tsx'
 import './index.css'
 import { AppWrapper } from './components/common/PageMeta.tsx'
@@ -14,6 +15,8 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <AppWrapper>
           <App />
+          {/* Toast toàn cục cho UX lỗi 401/403 (WI-16) */}
+          <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
         </AppWrapper>
       </ThemeProvider>
     </QueryClientProvider>

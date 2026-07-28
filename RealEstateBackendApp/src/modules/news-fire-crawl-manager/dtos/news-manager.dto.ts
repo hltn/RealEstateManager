@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -106,13 +107,16 @@ export class GetArticlesQueryDto extends PaginationQueryDto {
 export class AiPromptDto implements AiPrompt {
   @ApiProperty({ description: 'AI API Name' })
   @IsString()
+  @IsNotEmpty()
   api_ai_name: string;
 
   @ApiProperty({ description: 'AI API Path' })
   @IsString()
+  @IsNotEmpty()
   api_ai_path: string;
 
   @ApiProperty({ description: 'The prompt text' })
   @IsString()
+  @IsNotEmpty()
   prompt: string;
 }

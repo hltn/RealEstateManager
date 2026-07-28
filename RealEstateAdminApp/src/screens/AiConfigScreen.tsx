@@ -1,196 +1,207 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bot, Save, AlertCircle, Link } from 'lucide-react';
+import {
+  getAiConfig,
+  getOpenRouterModels,
+  saveAiConfig,
+  type AiConfigResponse,
+  type SaveAiConfigPayload,
+} from '../api/settings.api';
+import { getApiErrorMessage } from '../utils/fetchPaginated';
 
+interface InlineMessage {
+  text: string;
+  type: string;
+}
+
+/**
+ * Screen cấu hình AI (OpenRouter + Must1c).
+ *
+ * Data fetching dùng React Query (KHÔNG dùng useEffect gọi API theo chuẩn project):
+ * - `useQuery(['ai','config'])` load cấu hình AI hiện tại.
+ * - `useQuery(['ai','models'])` load danh sách model OpenRouter (chỉ bật khi đã có apiKey).
+ * - Các thao tác lưu đều qua `useMutation` → `POST /settings/ai-config` với payload tương ứng,
+ *   `onSuccess` invalidate query liên quan + toast/inline message, `onError` hiển thị lỗi.
+ *
+ * Form state (apiKey, provider, model, must1c...) là local, sync từ query data qua effect
+ * (state-sync, không gọi API — giống pattern AuthInitializer). Config chỉ sync lần đầu để
+ * không ghi đè input đang chỉnh; các mutation tự cập nhật local state để UI phản hồi ngay.
+ */
 export default function AiConfigScreen() {
+  const queryClient = useQueryClient();
+
   const [apiKey, setApiKey] = useState('');
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
-  
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+
   const [hasApiKey, setHasApiKey] = useState(false);
-  const [message, setMessage] = useState<{ text: string; type: string }>({ text: '', type: '' });
+  const [message, setMessage] = useState<InlineMessage>({ text: '', type: '' });
   const [activePlatform, setActivePlatform] = useState<string>('OpenRouter');
 
   const [must1cApiKey, setMust1cApiKey] = useState('');
   const [must1cModel, setMust1cModel] = useState('');
-  const [isSavingMust1c, setIsSavingMust1c] = useState(false);
-  const [must1cMessage, setMust1cMessage] = useState<{ text: string; type: string }>({ text: '', type: '' });
+  const [must1cMessage, setMust1cMessage] = useState<InlineMessage>({ text: '', type: '' });
 
-  const [allModels, setAllModels] = useState<any[]>([]);
-  const [modelsList, setModelsList] = useState<any[]>([]);
-  const [providersList, setProvidersList] = useState<string[]>([]);
+  // --- Query: cấu hình AI hiện tại ---
+  const configQuery = useQuery({
+    queryKey: ['ai', 'config'],
+    queryFn: ({ signal }) => getAiConfig(signal),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 
+  // --- Query: danh sách model OpenRouter (chỉ bật khi đã có API key) ---
+  const modelsQuery = useQuery({
+    queryKey: ['ai', 'models'],
+    queryFn: ({ signal }) => getOpenRouterModels(signal),
+    enabled: hasApiKey,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data]);
+  const providersList = useMemo(
+    () => [...new Set(models.map((m) => m.id.split('/')[0]))] as string[],
+    [models],
+  );
+  const modelsList = useMemo(
+    () => models.filter((m) => m.id.startsWith(`${provider}/`)),
+    [models, provider],
+  );
+
+  // Sync config từ server vào form — CHỈ lần đầu data về (không ghi đè input đang chỉnh).
+  const configInitializedRef = useRef(false);
   useEffect(() => {
-    const loadConfig = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch('/api/v1/settings/ai-config');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.apiKey) {
-            setApiKey('***');
-            setHasApiKey(true);
-            setProvider(data.provider || '');
-            setModel(data.model || '');
-            await fetchModels(data.provider, data.model);
-          }
-          if (data.must1cApiKey) {
-            setMust1cApiKey('***');
-          }
-          if (data.must1cModel) {
-            setMust1cModel(data.must1cModel);
-          }
-          if (data.activePlatform) {
-            setActivePlatform(data.activePlatform);
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadConfig();
-  }, []);
+    if (configInitializedRef.current || !configQuery.data) return;
+    configInitializedRef.current = true;
 
-  const fetchModels = async (initialProvider?: string, initialModel?: string) => {
-    try {
-      const res = await fetch('/api/v1/settings/openrouter-models');
-      if (res.ok) {
-        const data = await res.json();
-        const models = data.models || data.data || [];
-        setAllModels(models);
-        
-        const providers = [...new Set(models.map((m: any) => m.id.split('/')[0]))] as string[];
-        setProvidersList(providers);
-
-        const activeProvider = initialProvider || providers[0] || '';
-        setProvider(activeProvider);
-
-        const filteredModels = models.filter((m: any) => m.id.startsWith(activeProvider + '/'));
-        setModelsList(filteredModels);
-
-        if (initialModel && filteredModels.find((m: any) => m.id === initialModel)) {
-          setModel(initialModel);
-        } else if (filteredModels.length > 0) {
-          setModel(filteredModels[0].id);
-        }
-      } else {
-        throw new Error('Failed to fetch models from OpenRouter');
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
+    const data: AiConfigResponse = configQuery.data;
+    if (data.apiKey) {
+      setApiKey('***');
+      setHasApiKey(true);
+      setProvider(data.provider || '');
+      setModel(data.model || '');
     }
-  };
+    if (data.must1cApiKey) {
+      setMust1cApiKey('***');
+    }
+    if (data.must1cModel) {
+      setMust1cModel(data.must1cModel);
+    }
+    if (data.activePlatform) {
+      setActivePlatform(data.activePlatform);
+    }
+  }, [configQuery.data]);
+
+  // Khi danh sách model về: chuẩn hoá provider/model cho khớp với danh sách
+  // (giữ provider/model hiện tại nếu còn hợp lệ, ngược lại lấy cái đầu). Giống fetchModels gốc.
+  const modelsInitializedRef = useRef(false);
+  useEffect(() => {
+    if (models.length === 0) return;
+    if (!modelsInitializedRef.current) {
+      modelsInitializedRef.current = true;
+      // Lần đầu: giữ provider/model từ config nếu hợp lệ, không thì lấy đầu.
+      if (!providersList.includes(provider)) {
+        setProvider(providersList[0] || '');
+      }
+      const currentFiltered = models.filter((m) =>
+        m.id.startsWith(`${providersList.includes(provider) ? provider : providersList[0]}/`),
+      );
+      if (!model || !currentFiltered.find((m) => m.id === model)) {
+        setModel(currentFiltered[0]?.id ?? '');
+      }
+    }
+  }, [models, providersList, provider, model]);
 
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider);
-    const filteredModels = allModels.filter((m: any) => m.id.startsWith(newProvider + '/'));
-    setModelsList(filteredModels);
-    if (filteredModels.length > 0) {
-      setModel(filteredModels[0].id);
+    const filtered = models.filter((m) => m.id.startsWith(`${newProvider}/`));
+    if (filtered.length > 0) {
+      setModel(filtered[0].id);
     } else {
       setModel('');
     }
   };
 
-  const handleConnect = async () => {
+  // --- Mutation: connect API key (lưu + tải lại models) ---
+  const connectMutation = useMutation({
+    mutationFn: (payload: SaveAiConfigPayload) => saveAiConfig(payload),
+    onSuccess: () => {
+      setMessage({ text: 'Lưu API Key thành công! Đang tải danh sách model...', type: 'success' });
+      setHasApiKey(true);
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'config'] });
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'models'] });
+    },
+    onError: (err) => {
+      setMessage({ text: getApiErrorMessage(err, 'Lỗi khi lưu API Key'), type: 'error' });
+    },
+  });
+
+  const handleConnect = () => {
     if (!apiKey) {
       setMessage({ text: 'Vui lòng nhập API Key', type: 'error' });
       return;
     }
-    setIsSaving(true);
     setMessage({ text: '', type: '' });
-    try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey }),
-      });
-      if (response.ok) {
-        setMessage({ text: 'Lưu API Key thành công! Đang tải danh sách model...', type: 'success' });
-        setHasApiKey(true);
-        await fetchModels();
-      } else {
-        throw new Error('Lỗi khi lưu API Key');
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
-    } finally {
-      setIsSaving(false);
-    }
+    connectMutation.mutate({ apiKey });
   };
 
-  const handleSaveModel = async () => {
-    setIsSaving(true);
+  // --- Mutation: lưu provider + model (+ apiKey nếu đổi) ---
+  const saveModelMutation = useMutation({
+    mutationFn: (payload: SaveAiConfigPayload) => saveAiConfig(payload),
+    onSuccess: () => {
+      setMessage({ text: 'Lưu cấu hình AI thành công!', type: 'success' });
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'config'] });
+    },
+    onError: (err) => {
+      setMessage({ text: getApiErrorMessage(err, 'Lỗi khi lưu cấu hình'), type: 'error' });
+    },
+  });
+
+  const handleSaveModel = () => {
     setMessage({ text: '', type: '' });
-    try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, model, apiKey }),
-      });
-      if (response.ok) {
-        setMessage({ text: 'Lưu cấu hình AI thành công!', type: 'success' });
-        if (apiKey && apiKey !== '***') {
-          // If they updated the API key along with the model
-          await fetchModels(provider, model);
-        }
-      } else {
-        throw new Error('Lỗi khi lưu cấu hình');
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
-    } finally {
-      setIsSaving(false);
-    }
+    saveModelMutation.mutate({ provider, model, apiKey });
   };
 
-  
-  const handleTogglePlatform = async (platform: string) => {
+  // --- Mutation: đổi platform active (optimistic local) ---
+  const togglePlatformMutation = useMutation({
+    mutationFn: (platform: string) => saveAiConfig({ activePlatform: platform }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'config'] });
+    },
+  });
+
+  const handleTogglePlatform = (platform: string) => {
     if (activePlatform === platform) return;
-    
     setActivePlatform(platform);
-    
-    try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activePlatform: platform }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to save active platform');
-      }
-    } catch (err: any) {
-      console.error(err);
-    }
+    togglePlatformMutation.mutate(platform);
   };
 
-const handleSaveMust1c = async () => {
+  // --- Mutation: lưu cấu hình Must1c ---
+  const saveMust1cMutation = useMutation({
+    mutationFn: (payload: SaveAiConfigPayload) => saveAiConfig(payload),
+    onSuccess: () => {
+      setMust1cMessage({ text: 'Lưu cấu hình Must1c thành công!', type: 'success' });
+      void queryClient.invalidateQueries({ queryKey: ['ai', 'config'] });
+    },
+    onError: (err) => {
+      setMust1cMessage({ text: getApiErrorMessage(err, 'Lỗi khi lưu cấu hình Must1c'), type: 'error' });
+    },
+  });
+
+  const handleSaveMust1c = () => {
     if (!must1cApiKey || !must1cModel) {
       setMust1cMessage({ text: 'Vui lòng nhập đầy đủ API Key và Model', type: 'error' });
       return;
     }
-    setIsSavingMust1c(true);
     setMust1cMessage({ text: '', type: '' });
-    try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ must1cApiKey, must1cModel }),
-      });
-      if (response.ok) {
-        setMust1cMessage({ text: 'Lưu cấu hình Must1c thành công!', type: 'success' });
-      } else {
-        throw new Error('Lỗi khi lưu cấu hình Must1c');
-      }
-    } catch (err: any) {
-      setMust1cMessage({ text: err.message, type: 'error' });
-    } finally {
-      setIsSavingMust1c(false);
-    }
+    saveMust1cMutation.mutate({ must1cApiKey, must1cModel });
   };
+
+  const isLoading = configQuery.isLoading;
+  const isSaving = connectMutation.isPending || saveModelMutation.isPending;
+  const isSavingMust1c = saveMust1cMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -302,7 +313,7 @@ const handleSaveMust1c = async () => {
                       ID mô hình: <span className="text-brand-500">{model}</span>
                     </p>
                   </div>
-                  
+
                   <div className="pt-4 border-t border-gray-200 dark:border-white/[0.05] flex justify-end">
                     <button
                       onClick={handleSaveModel}
@@ -342,7 +353,7 @@ const handleSaveMust1c = async () => {
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${activePlatform === 'Must1c' ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
         </div>
-        
+
         <div className="space-y-6">
           {must1cMessage.text && (
             <div className={`p-4 rounded-lg flex items-start gap-3 ${
@@ -379,7 +390,7 @@ const handleSaveMust1c = async () => {
                 className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2.5 text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300 focus:ring-1 focus:ring-brand-500 transition-all"
               />
             </div>
-            
+
             <div className="pt-4 border-t border-gray-200 dark:border-white/[0.05] flex justify-end">
               <button
                 onClick={handleSaveMust1c}

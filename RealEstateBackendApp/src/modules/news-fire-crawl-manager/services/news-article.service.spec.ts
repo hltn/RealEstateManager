@@ -4,6 +4,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { NotFoundException } from '@nestjs/common';
 import { NewsArticleService } from './news-article.service';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
+import { MarketAnalysisHistory } from '../schemas/market-analysis-history.schema';
 import { WordPressService } from './wordpress.service';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
@@ -32,6 +33,12 @@ describe('NewsArticleService', () => {
         {
           provide: getModelToken(NewsArticle.name),
           useValue: mockNewsArticleModel,
+        },
+        {
+          // Mock cho MarketAnalysisHistoryModel — dependency của NewsArticleService
+          // (pre-existing: spec trước đây thiếu provider này nên DI fail ngay lúc compile).
+          provide: getModelToken(MarketAnalysisHistory.name),
+          useValue: {},
         },
         {
           provide: WordPressService,

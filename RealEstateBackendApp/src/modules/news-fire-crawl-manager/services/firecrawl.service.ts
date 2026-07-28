@@ -147,8 +147,6 @@
 //               thumbnailUrl: article.thumbnailUrl || '',
 //             };
 //
-//             const urlHash = crypto.createHash('md5').update(articleData.url).digest('hex');
-//
 //             await this.rawArticleModel.updateOne(
 //               { urlHash },
 //               { $set: { ...articleData, urlHash } },

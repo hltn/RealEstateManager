@@ -7,7 +7,8 @@ import { DatePicker } from '../components/ui/DatePicker';
 import { Pagination } from '../components/common/Pagination';
 import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { buildListQuery, fetchPaginated } from '../utils/fetchPaginated';
+import { buildListQuery, fetchPaginated, getApiErrorMessage } from '../utils/fetchPaginated';
+import apiAxios from '../api/axios';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -155,8 +156,7 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   const fetchHistory = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/news-manager/articles/market-analysis-history');
-      const data = await res.json();
+      const { data } = await apiAxios.get<{ data?: unknown[] }>('/news-manager/articles/market-analysis-history');
       setHistory(data.data || []);
     } catch (error) {
       console.error('Error fetching history', error);
@@ -219,9 +219,10 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   );
 };
 
-const ARTICLES_ENDPOINT = '/api/v1/news-manager/articles';
+const ARTICLES_ENDPOINT = '/news-manager/articles';
 
 type SortOrder = 'newest' | 'oldest';
+type StatusFilter = 'all' | 'pending' | 'CRAWLED' | 'POSTED_WP' | 'ERROR';
 
 /** Bài viết đã duyệt trong Database, dùng cho bảng quản lý đăng WordPress. */
 interface WpArticle {
@@ -250,6 +251,7 @@ export default function ManageWpScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [bulkAction, setBulkAction] = useState('publish');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
@@ -301,7 +303,7 @@ export default function ManageWpScreen() {
    */
   const articles = useMemo(() => {
     const pageArticles = articlesPage?.data ?? [];
-    const filtered =
+    const bySearch =
       searchQuery.length >= 2
         ? pageArticles.filter((article) => {
             const keyword = searchQuery.toLowerCase();
@@ -312,13 +314,25 @@ export default function ManageWpScreen() {
           })
         : [...pageArticles];
 
+    const filtered =
+      statusFilter === 'all'
+        ? bySearch
+        : bySearch.filter((article) => {
+            const statuses = Array.isArray(article.status)
+              ? article.status
+              : article.status
+                ? [article.status]
+                : [];
+            return statusFilter === 'pending' ? statuses.length === 0 : statuses.includes(statusFilter);
+          });
+
     // Đồng bộ với BE: sort theo createdAt (BE cũng sort theo createdAt) để STT global offset khớp đúng.
     return filtered.sort((a, b) => {
       const timeA = new Date(a.createdAt || 0).getTime();
       const timeB = new Date(b.createdAt || 0).getTime();
       return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
     });
-  }, [articlesPage, searchQuery, sortOrder]);
+  }, [articlesPage, searchQuery, sortOrder, statusFilter]);
   const meta = articlesPage?.meta ?? { total: 0, page, limit, totalPages: 0 };
 
   // Nếu trang hiện tại vượt quá totalPages (VD: vừa xóa hết bài ở trang cuối), lùi về trang cuối còn dữ liệu.
@@ -363,11 +377,11 @@ export default function ManageWpScreen() {
     articles.length > 0 && articles.every(article => selectedIds.has(article._id));
 
   // Có filter đang áp dụng thì thông báo rỗng phải khác với "database chưa có bài nào".
-  const hasActiveFilter = Boolean(filterDate) || searchQuery.length >= 2;
+  const hasActiveFilter = Boolean(filterDate) || searchQuery.length >= 2 || statusFilter !== 'all';
 
-  // Khi search/sort trong trang làm đổi thứ tự hoặc lược bớt dòng, STT tính theo
+  // Khi search/sort/status trong trang làm đổi thứ tự hoặc lược bớt dòng, STT tính theo
   // vị trí toàn cục không còn đúng, nên đánh số lại từ 1 trong phạm vi kết quả.
-  const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest';
+  const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest' || statusFilter !== 'all';
 
   /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại. */
   const toggleSelectAllOnPage = () => {
@@ -381,13 +395,12 @@ export default function ManageWpScreen() {
   const handlePublish = async (id: string) => {
     try {
       setPublishingIds(prev => new Set(prev).add(id));
-      const res = await fetch(`${ARTICLES_ENDPOINT}/${id}/publish`, { method: 'POST' });
-      if (!res.ok) throw new Error('Đăng bài thất bại');
+      await apiAxios.post(`${ARTICLES_ENDPOINT}/${id}/publish`);
       await queryClient.invalidateQueries({ queryKey: ['wp-articles'] });
     } catch (error) {
       setNotification({
         title: 'Lỗi',
-        description: error instanceof Error ? error.message : 'Lỗi khi đăng bài',
+        description: getApiErrorMessage(error, 'Lỗi khi đăng bài'),
         type: 'error'
       });
     } finally {
@@ -403,12 +416,12 @@ export default function ManageWpScreen() {
   const handleClean = async (article: WpArticle) => {
     try {
       setCleaningIds(prev => new Set(prev).add(article._id));
-      const res = await fetch(`${ARTICLES_ENDPOINT}/${article._id}/clean`, { method: 'POST' });
-      const responseData = (await res.json().catch(() => null)) as { data?: WpArticle } | null;
-      if (!res.ok) throw new Error('Làm sạch dữ liệu thất bại');
+      const { data: responseData } = await apiAxios.post<{ data?: WpArticle }>(
+        `${ARTICLES_ENDPOINT}/${article._id}/clean`,
+      );
+      const cleanedArticle = responseData?.data;
 
-      if (responseData?.data) {
-        const cleanedArticle = responseData.data;
+      if (cleanedArticle) {
         queryClient.setQueryData<PaginatedResponse<WpArticle>>(
           ['wp-articles', { page, limit, date: filterDate }],
           (previous) =>
@@ -430,7 +443,7 @@ export default function ManageWpScreen() {
     } catch (error) {
       setNotification({
         title: 'Lỗi',
-        description: error instanceof Error ? error.message : 'Lỗi khi làm sạch dữ liệu',
+        description: getApiErrorMessage(error, 'Lỗi khi làm sạch dữ liệu'),
         type: 'error'
       });
     } finally {
@@ -473,55 +486,50 @@ export default function ManageWpScreen() {
     { action: string; ids: string[] }
   >({
     mutationFn: async ({ action, ids }) => {
-      if (action === 'publish') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/publish-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        if (!res.ok) throw new Error('Đăng bài hàng loạt thất bại');
-        return { message: 'Đã đăng bài hàng loạt thành công' };
-      }
-
-      if (action === 'analyze') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/market-analysis-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        if (!res.ok) throw new Error('Crawl tin tức thất bại');
-        return { message: 'Đã crawl xong tin tức' };
-      }
-
-      if (action === 'analyze_market_trends') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/analyze-market-trends`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        const responseData = (await res.json().catch(() => null)) as
-          | { data?: string; message?: string }
-          | null;
-        if (!res.ok || !responseData?.data) {
-          throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
+      try {
+        if (action === 'publish') {
+          await apiAxios.post(`${ARTICLES_ENDPOINT}/publish-bulk`, { ids });
+          return { message: 'Đã đăng bài hàng loạt thành công' };
         }
-        return {
-          message: 'Đã phân tích thị trường thành công',
-          analysisContent: responseData.data
-        };
-      }
 
-      if (action === 'delete') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/delete-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        if (!res.ok) throw new Error('Xóa hàng loạt thất bại');
-        return { message: 'Đã xóa thành công' };
-      }
+        if (action === 'analyze') {
+          await apiAxios.post(`${ARTICLES_ENDPOINT}/market-analysis-bulk`, { ids });
+          return { message: 'Đã crawl xong tin tức' };
+        }
 
-      throw new Error('Hành động không hợp lệ');
+        if (action === 'analyze_market_trends') {
+          const { data: responseData } = await apiAxios.post<{ data?: string; message?: string }>(
+            `${ARTICLES_ENDPOINT}/analyze-market-trends`,
+            { ids },
+          );
+          if (!responseData?.data) {
+            throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
+          }
+          return {
+            message: 'Đã phân tích thị trường thành công',
+            analysisContent: responseData.data
+          };
+        }
+
+        if (action === 'delete') {
+          await apiAxios.post(`${ARTICLES_ENDPOINT}/delete-bulk`, { ids });
+          return { message: 'Đã xóa thành công' };
+        }
+
+        throw new Error('Hành động không hợp lệ');
+      } catch (err) {
+        const fallback =
+          action === 'publish'
+            ? 'Đăng bài hàng loạt thất bại'
+            : action === 'analyze'
+              ? 'Crawl tin tức thất bại'
+              : action === 'analyze_market_trends'
+                ? 'Lỗi phân tích thị trường'
+                : action === 'delete'
+                  ? 'Xóa hàng loạt thất bại'
+                  : 'Có lỗi xảy ra khi xử lý hàng loạt';
+        throw new Error(getApiErrorMessage(err, fallback));
+      }
     },
     onSuccess: async ({ message, analysisContent }) => {
       if (analysisContent) setMarketAnalysisResult(analysisContent);
@@ -635,6 +643,20 @@ export default function ManageWpScreen() {
             >
               <option value="newest">Mới nhất</option>
               <option value="oldest">Cũ nhất</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              aria-label="Lọc theo trạng thái"
+              title="Lọc trong trang đang xem"
+              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-gray-700 dark:text-gray-300"
+            >
+              <option value="all">Tất cả trạng thái</option>
+              <option value="pending">Chờ đăng</option>
+              <option value="CRAWLED">Đã crawl</option>
+              <option value="POSTED_WP">Đã đăng WP</option>
+              <option value="ERROR">ERROR</option>
             </select>
 
             <div className="relative w-[130px] sm:!w-[300px] flex-shrink-0">

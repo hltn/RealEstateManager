@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   OnModuleInit,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ export interface AiPrompt {
 
 @Injectable()
 export class AiPromptConfigService implements OnModuleInit {
+  private readonly logger = new Logger(AiPromptConfigService.name);
   private prompts: AiPrompt[] = [];
   private readonly promptsFilePath = path.join(
     process.cwd(),
@@ -30,11 +32,11 @@ export class AiPromptConfigService implements OnModuleInit {
         const fileContent = fs.readFileSync(this.promptsFilePath, 'utf8');
         this.prompts = JSON.parse(fileContent);
       } else {
-        console.warn(`Prompts file not found at ${this.promptsFilePath}`);
+        this.logger.warn(`Prompts file not found at ${this.promptsFilePath}`);
         this.prompts = [];
       }
     } catch (error) {
-      console.error('Error loading AI prompts from JSON:', error);
+      this.logger.error('Error loading AI prompts from JSON:', error);
     }
   }
 
@@ -48,6 +50,9 @@ export class AiPromptConfigService implements OnModuleInit {
   }
 
   async updatePrompts(newPrompts: AiPrompt[]) {
+    // Snapshot state cũ để rollback nếu writeFile fail — tránh race khi
+    // in-memory đã cập nhật nhưng file ghi lỗi (state lệch nhau).
+    const previousPrompts = this.prompts;
     this.prompts = newPrompts;
     try {
       await fs.promises.writeFile(
@@ -56,7 +61,9 @@ export class AiPromptConfigService implements OnModuleInit {
         'utf8',
       );
     } catch (error) {
-      console.error('Error saving AI prompts to JSON:', error);
+      // Rollback in-memory state về giá trị cũ để giữ tính nhất quán.
+      this.prompts = previousPrompts;
+      this.logger.error('Error saving AI prompts to JSON:', error);
       throw new InternalServerErrorException('Could not save AI prompts');
     }
   }

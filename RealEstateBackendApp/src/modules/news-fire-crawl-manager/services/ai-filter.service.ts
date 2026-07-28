@@ -21,8 +21,6 @@ export class AIFilterService {
   async filterAndRank(filePath: string): Promise<any[]> {
     this.logger.log(`Starting Job 2: AI Filter & Ranking on file ${filePath}`);
 
-    const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-
     // Check OpenRouter first, fallback to Gemini
     const openRouterApiKey =
       this.configService.get<string>('OPENROUTER_API_KEY') ||
@@ -45,6 +43,10 @@ export class AIFilterService {
     }
 
     try {
+      // Đọc + parse file tạm BÊN TRONG try-catch để lỗi (file missing/JSON sai)
+      // được bọc trong BadRequestException thay vì ném Error/SyntaxError gốc.
+      const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
       this.logger.log(
         `Sending data to AI API for filtering and ranking (Model: ${model})`,
       );
@@ -63,7 +65,7 @@ export class AIFilterService {
       let resultText = '[]';
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       try {
         if (openRouterApiKey) {
@@ -101,7 +103,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 60 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
@@ -169,7 +171,7 @@ export class AIFilterService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes for raw article filtering
 
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
@@ -257,7 +259,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 60 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
@@ -325,7 +327,7 @@ export class AIFilterService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
@@ -390,7 +392,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 60 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {
@@ -455,7 +457,7 @@ export class AIFilterService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes for large data
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes for large data
 
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
@@ -529,7 +531,7 @@ export class AIFilterService {
         }
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 180 seconds');
+          throw new Error('AI API request timed out after 300 seconds');
         }
         throw err;
       } finally {

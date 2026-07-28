@@ -1,7 +1,14 @@
+import { Logger } from '@nestjs/common';
 import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
 import axios from 'axios';
+
+/**
+ * Logger dùng ở cấp module vì ArticleExtractorUtil expose static method
+ * (không inject qua DI). Vẫn tuân guideline mục 3: cấm dùng console.*.
+ */
+const articleExtractorLogger = new Logger('ArticleExtractorUtil');
 
 export class ArticleExtractorUtil {
   /**
@@ -59,9 +66,9 @@ export class ArticleExtractorUtil {
 
       return { markdown, thumbnailUrl, publishDate };
     } catch (error) {
-      console.error(
-        `[ArticleExtractorUtil] Error extracting from ${url}:`,
-        error,
+      articleExtractorLogger.error(
+        `Error extracting from ${url}:`,
+        error instanceof Error ? error.stack : String(error),
       );
       throw error;
     }

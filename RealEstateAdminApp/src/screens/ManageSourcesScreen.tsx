@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Edit2, Trash2, Plus, X, Server, Database } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import apiAxios from '../api/axios';
+import { getApiErrorMessage } from '../utils/fetchPaginated';
 
 export interface NewsSource {
   _id: string;
@@ -20,25 +22,32 @@ export default function ManageSourcesScreen() {
   const { data, isLoading: isSourcesLoading } = useQuery<{ data: NewsSource[] }>({
     queryKey: ['news-sources'],
     queryFn: async () => {
-      const res = await fetch('/api/v1/news-sources');
-      if (!res.ok) throw new Error('Failed to fetch sources');
-      return res.json();
+      try {
+        const { data: body } = await apiAxios.get<{ data: NewsSource[] }>('/news-sources');
+        return body;
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, 'Failed to fetch sources'));
+      }
     }
   });
 
   const sources = data?.data || [];
 
   const saveMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const url = editingId ? `/api/v1/news-sources/${editingId}` : '/api/v1/news-sources';
-      const method = editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Failed to save source');
-      return res.json();
+    mutationFn: async (payload: Partial<NewsSource>) => {
+      try {
+        if (editingId) {
+          const { data: body } = await apiAxios.put<NewsSource>(
+            `/news-sources/${editingId}`,
+            payload,
+          );
+          return body;
+        }
+        const { data: body } = await apiAxios.post<NewsSource>('/news-sources', payload);
+        return body;
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, 'Failed to save source'));
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['news-sources'] });
@@ -84,20 +93,22 @@ export default function ManageSourcesScreen() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/v1/news-sources/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete source');
+      try {
+        await apiAxios.delete(`/news-sources/${id}`);
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, 'Failed to delete source'));
+      }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['news-sources'] })
   });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, currentActive }: { id: string, currentActive: boolean }) => {
-      const res = await fetch(`/api/v1/news-sources/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !currentActive })
-      });
-      if (!res.ok) throw new Error('Failed to toggle source');
+      try {
+        await apiAxios.put(`/news-sources/${id}`, { isActive: !currentActive });
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, 'Failed to toggle source'));
+      }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['news-sources'] })
   });

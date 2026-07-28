@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import Logo from "../images/logo/logo.png";
 
 // Assume these icons are imported from an icon library
 import {
@@ -10,6 +11,7 @@ import {
   PlugInIcon,
   TableIcon,
   UserCircleIcon,
+  UserIcon,
   DocsIcon,
 } from "../icons";
 
@@ -18,6 +20,8 @@ const HorizontaLDotsAny = HorizontaLDots as any;
 
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
+import { useAuth } from "../hooks/useAuth";
+import { UserRole } from "../types/user";
 
 type NavItem = {
   name: string;
@@ -42,6 +46,15 @@ const navItems: NavItem[] = [
     name: "Sources",
     path: "/sources",
   },
+];
+
+const othersItems: NavItem[] = [];
+
+/**
+ * Menu dành riêng cho ADMIN — chỉ render khi user có role ADMIN (WI-14 dynamic menu).
+ * Bao gồm: AI Config, AI Prompt Config, Cronjob, Quản lý tài khoản.
+ */
+const adminItems: NavItem[] = [
   {
     icon: <PlugInIcon />,
     name: "AI Config",
@@ -56,14 +69,19 @@ const navItems: NavItem[] = [
     icon: <CalenderIcon />,
     name: "Cronjob",
     path: "/cronjob",
-  }
+  },
+  {
+    icon: <UserIcon />,
+    name: "Quản lý tài khoản",
+    path: "/users",
+  },
 ];
-
-const othersItems: NavItem[] = [];
 
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === UserRole.ADMIN;
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -267,35 +285,28 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div
-        className={`py-8 flex ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
-        }`}
-      >
+      <div className="py-8 flex justify-center">
         <Link to="/">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <img
                 className="dark:hidden"
-                src="/images/logo/logo.svg"
+                src={Logo}
                 alt="Logo"
-                width={150}
-                height={40}
+                width={60}
               />
               <img
                 className="hidden dark:block"
-                src="/images/logo/logo-dark.svg"
+                src={Logo}
                 alt="Logo"
-                width={150}
-                height={40}
+                width={60}
               />
             </>
           ) : (
             <img
-              src="/images/logo/logo-icon.svg"
+              src={Logo}
               alt="Logo"
               width={32}
-              height={32}
             />
           )}
         </Link>
@@ -318,6 +329,11 @@ const AppSidebar: React.FC = () => {
                 )}
               </h2>
               {renderMenuItems(navItems, "main")}
+              {isAdmin && (
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                  {renderMenuItems(adminItems, "main")}
+                </div>
+              )}
             </div>
           </div>
         </nav>

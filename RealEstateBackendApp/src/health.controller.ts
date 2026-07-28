@@ -5,6 +5,7 @@ import {
   HealthCheck,
 } from '@nestjs/terminus';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from './common/decorators/public.decorator';
 
 @ApiTags('Health')
 @Controller('health')
@@ -14,6 +15,7 @@ export class HealthController {
     private mongoose: MongooseHealthIndicator,
   ) {}
 
+  @Public()
   @Get('liveness')
   @HealthCheck()
   @ApiOperation({
@@ -24,6 +26,7 @@ export class HealthController {
     return this.health.check([]);
   }
 
+  @Public()
   @Get('readiness')
   @HealthCheck()
   @ApiOperation({

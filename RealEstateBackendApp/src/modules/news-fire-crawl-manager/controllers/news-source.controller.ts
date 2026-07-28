@@ -13,6 +13,7 @@ import {
   CreateNewsSourceDto,
   UpdateNewsSourceDto,
 } from '../dtos/news-source.dto';
+import { buildPaginationMeta } from '../../../common/utils/pagination.util';
 
 @ApiTags('News Sources')
 @Controller('news-sources')
@@ -26,15 +27,15 @@ export class NewsSourceController {
   })
   async findAll() {
     const sources = await this.newsSourceService.findAll();
-    return {
-      data: sources,
-      meta: {
-        total: sources.length,
-        page: 1,
-        limit: sources.length,
-        totalPages: 1,
-      },
-    };
+    // Controller này trả toàn bộ sources (không phân trang thật), nhưng vẫn
+    // phải tuân shape { data, meta: { total, page, limit, totalPages } }.
+    // Dùng buildPaginationMeta để totalPages đúng (Math.ceil) thay vì
+    // hardcode totalPages: 1 — khi total=0 → totalPages=0 (không NaN).
+    const total = sources.length;
+    const page = 1;
+    const limit = total;
+    const meta = buildPaginationMeta(total, page, limit);
+    return { data: sources, meta };
   }
 
   @Post()

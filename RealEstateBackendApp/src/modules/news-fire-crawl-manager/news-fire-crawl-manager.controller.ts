@@ -7,11 +7,11 @@ import {
   Query,
   Delete,
   Logger,
-  InternalServerErrorException,
-  HttpException,
   Put,
+  Headers,
+  ConflictException,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags, ApiParam } from '@nestjs/swagger';
+import { ApiOperation, ApiTags, ApiParam, ApiHeader } from '@nestjs/swagger';
 import {
   UpdateCronConfigDto,
   BulkIdsDto,
@@ -35,10 +35,13 @@ import { CustomCrawlerService } from './services/custom-crawler.service';
 import { AIFilterService } from './services/ai-filter.service';
 import { NewsArticleService } from './services/news-article.service';
 import { CronjobService } from './services/cronjob.service';
-import {
-  AiPromptConfigService,
-  AiPrompt,
-} from './services/ai-prompt-config.service';
+import { AiPromptConfigService } from './services/ai-prompt-config.service';
+import { IdempotencyService } from '../../common/services/idempotency.service';
+import { AuditAction } from './schemas/audit-log.schema';
+import { AuditLogService } from './services/audit-log.service';
+import { AnalyzeJobService } from './services/analyze-job.service';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 @ApiTags('News Manager')
 @Controller('news-manager')
@@ -51,8 +54,12 @@ export class NewsFireCrawlManagerController {
     private readonly newsArticleService: NewsArticleService,
     private readonly cronjobService: CronjobService,
     private readonly aiPromptConfigService: AiPromptConfigService,
+    private readonly idempotencyService: IdempotencyService,
+    private readonly auditLogService: AuditLogService,
+    private readonly analyzeJobService: AnalyzeJobService,
   ) {}
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
   @Get('prompts')
   getPrompts() {
@@ -62,6 +69,7 @@ export class NewsFireCrawlManagerController {
     };
   }
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Update prompts', description: 'Update prompts' })
   @Put('prompts')
   async updatePrompts(@Body() newPrompts: AiPromptDto[]) {
@@ -69,24 +77,21 @@ export class NewsFireCrawlManagerController {
     return { success: true, message: 'Prompts updated successfully' };
   }
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get cron config', description: 'Get cron config' })
   @Get('cron')
   getCronConfig() {
     return this.cronjobService.getConfig();
   }
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({
     summary: 'Update cron config',
     description: 'Update cron config',
   })
   @Post('cron')
   updateCronConfig(@Body() body: UpdateCronConfigDto) {
-    try {
-      return this.cronjobService.updateConfig(body.isActive, body.frequency);
-    } catch (error: any) {
-      this.logger.error('Error updating cron config', error.stack);
-      throw new InternalServerErrorException('Failed to update cron config');
-    }
+    return this.cronjobService.updateConfig(body.isActive, body.frequency);
   }
 
   @ApiOperation({
@@ -98,29 +103,24 @@ export class NewsFireCrawlManagerController {
   async getRawArticles(
     @Query() query: GetRawArticlesQueryDto,
   ): Promise<PaginatedResponseDto<RawArticle>> {
-    try {
-      const { search, sort, startDate, endDate } = query;
-      // Chuẩn hóa page/limit trước khi xuống service để meta trả về luôn khớp
-      // với tham số thực sự dùng cho skip/limit.
-      const { page, limit } = normalizePagination(query.page, query.limit);
+    const { search, sort, startDate, endDate } = query;
+    // Chuẩn hóa page/limit trước khi xuống service để meta trả về luôn khớp
+    // với tham số thực sự dùng cho skip/limit.
+    const { page, limit } = normalizePagination(query.page, query.limit);
 
-      const { data, total } = await this.customCrawlerService.getRawArticles(
-        search,
-        sort,
-        startDate,
-        endDate,
-        page,
-        limit,
-      );
+    const { data, total } = await this.customCrawlerService.getRawArticles(
+      search,
+      sort,
+      startDate,
+      endDate,
+      page,
+      limit,
+    );
 
-      return {
-        data,
-        meta: buildPaginationMeta(total, page, limit),
-      };
-    } catch (error: any) {
-      this.logger.error('Error fetching raw articles', error.stack);
-      throw new InternalServerErrorException('Failed to fetch raw articles');
-    }
+    return {
+      data,
+      meta: buildPaginationMeta(total, page, limit),
+    };
   }
 
   @ApiOperation({
@@ -130,13 +130,15 @@ export class NewsFireCrawlManagerController {
   @ApiParam({ name: 'id', required: true })
   @Delete('raw-articles/:id')
   async deleteRawArticle(@Param('id') id: string) {
-    try {
-      await this.customCrawlerService.deleteRawArticle(id);
-      return { message: 'Raw article deleted successfully' };
-    } catch (error: any) {
-      this.logger.error(`Error deleting raw article ${id}`, error.stack);
-      throw new InternalServerErrorException('Failed to delete raw article');
-    }
+    await this.customCrawlerService.deleteRawArticle(id);
+    // Ghi audit log sau khi xóa thành công (fire-and-forget)
+    void this.auditLogService.log(
+      AuditAction.DELETE,
+      'raw_articles',
+      [id],
+      'system',
+    );
+    return { message: 'Raw article deleted successfully' };
   }
 
   @ApiOperation({
@@ -145,20 +147,21 @@ export class NewsFireCrawlManagerController {
   })
   @Post('raw-articles/delete-bulk')
   async deleteRawArticlesBulk(@Body() body: BulkIdsDto) {
-    try {
-      const { ids } = body;
+    const { ids } = body;
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return { message: 'No articles to delete' };
-      }
-      await this.customCrawlerService.deleteRawArticlesBulk(ids);
-      return { message: 'Raw articles deleted successfully' };
-    } catch (error: any) {
-      this.logger.error('Error bulk deleting raw articles', error.stack);
-      throw new InternalServerErrorException(
-        'Failed to bulk delete raw articles',
-      );
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { message: 'No articles to delete' };
     }
+    await this.customCrawlerService.deleteRawArticlesBulk(ids);
+    // Ghi audit log sau khi xóa bulk thành công (fire-and-forget)
+    void this.auditLogService.log(
+      AuditAction.BULK_DELETE,
+      'raw_articles',
+      ids,
+      'system',
+      { count: ids.length },
+    );
+    return { message: 'Raw articles deleted successfully' };
   }
 
   @ApiOperation({
@@ -167,35 +170,76 @@ export class NewsFireCrawlManagerController {
   })
   @Post('raw-articles/move-bulk')
   async moveRawArticlesBulk(@Body() body: BulkIdsDto) {
-    try {
-      const { ids } = body;
+    const { ids } = body;
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return { message: 'No articles to move' };
-      }
-      const rawArticles =
-        await this.customCrawlerService.getRawArticlesByIds(ids);
-      if (rawArticles.length > 0) {
-        const { processedUrlHashes } =
-          await this.newsArticleService.saveArticles(rawArticles);
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { message: 'No articles to move' };
+    }
+    const rawArticles =
+      await this.customCrawlerService.getRawArticlesByIds(ids);
+    if (rawArticles.length > 0) {
+      const { processedUrlHashes, newlySavedUrlHashes } =
+        await this.newsArticleService.saveArticles(rawArticles);
 
-        const successfulIds = rawArticles
-          .filter(
-            (raw) => raw.urlHash && processedUrlHashes.includes(raw.urlHash),
-          )
-          .map((raw) => raw._id.toString());
+      // successfulIds: tất cả bài đã được xử lý (saved mới + duplicate đã tồn tại)
+      // → an toàn để xóa khỏi raw_articles vì đã có trong news_articles
+      const typedRawArticles = rawArticles as Array<{
+        _id: { toString: () => string };
+        urlHash?: string | null;
+      }>;
 
-        if (successfulIds.length > 0) {
+      const successfulIds = typedRawArticles
+        .filter(
+          (
+            raw,
+          ): raw is {
+            _id: { toString: () => string };
+            urlHash: string;
+          } => Boolean(raw.urlHash && processedUrlHashes.includes(raw.urlHash)),
+        )
+        .map((raw) => raw._id.toString());
+
+      if (successfulIds.length > 0) {
+        try {
           await this.customCrawlerService.deleteRawArticlesBulk(successfulIds);
+          void this.auditLogService.log(
+            AuditAction.BULK_MOVE,
+            'raw_articles',
+            successfulIds,
+            'system',
+            {
+              count: successfulIds.length,
+              movedTo: 'news_articles',
+            },
+          );
+        } catch (deleteError: any) {
+          // Compensating transaction: rollback các bài được insert MỚI (không rollback duplicate)
+          // vì duplicate đã tồn tại từ trước — xóa đi sẽ gây mất dữ liệu cũ
+          this.logger.error(
+            `deleteRawArticlesBulk thất bại sau saveArticles — bắt đầu rollback ${newlySavedUrlHashes.length} bài mới đã lưu`,
+            deleteError.stack,
+          );
+          if (newlySavedUrlHashes.length > 0) {
+            try {
+              await this.newsArticleService.deleteArticlesByUrlHashes(
+                newlySavedUrlHashes,
+              );
+              this.logger.log(
+                `Rollback thành công: đã xóa ${newlySavedUrlHashes.length} bài khỏi news_articles`,
+              );
+            } catch (rollbackError: any) {
+              // Rollback thất bại → log rõ để operator xử lý thủ công
+              this.logger.error(
+                `Rollback THẤT BẠI — dữ liệu không nhất quán. Nguyên nhân gốc (deleteRaw): ${deleteError.message}. ${newlySavedUrlHashes.length} bài tồn tại ở cả 2 collection. urlHashes cần xóa thủ công: [${newlySavedUrlHashes.join(', ')}]`,
+                rollbackError.stack,
+              );
+            }
+          }
+          throw deleteError;
         }
       }
-      return { message: 'Raw articles moved successfully' };
-    } catch (error: any) {
-      this.logger.error('Error bulk moving raw articles', error.stack);
-      throw new InternalServerErrorException(
-        'Failed to bulk move raw articles',
-      );
     }
+    return { message: 'Raw articles moved successfully' };
   }
 
   @ApiOperation({
@@ -204,29 +248,24 @@ export class NewsFireCrawlManagerController {
   })
   @Post('crawl')
   async triggerManualCrawl(@Body() body: TriggerManualCrawlDto) {
-    try {
-      const { days, startDate, endDate } = body;
-      this.logger.log(
-        `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
-      );
-      const { filePath, stats } = await this.customCrawlerService.crawlData(
-        days,
-        startDate,
-        endDate,
-      );
+    const { days, startDate, endDate } = body;
+    this.logger.log(
+      `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
+    );
+    const { filePath, stats } = await this.customCrawlerService.crawlData(
+      days,
+      startDate,
+      endDate,
+    );
 
-      const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-      return {
-        message: 'Crawl completed successfully',
-        filePath,
-        stats,
-        data: rawData,
-      };
-    } catch (error: any) {
-      this.logger.error('Error in manual crawl', error.stack);
-      throw new InternalServerErrorException('Failed to process crawl');
-    }
+    return {
+      message: 'Crawl completed successfully',
+      filePath,
+      stats,
+      data: rawData,
+    };
   }
 
   @ApiOperation({
@@ -247,41 +286,51 @@ export class NewsFireCrawlManagerController {
         message: 'AI filtering completed successfully',
         data: top5Articles,
       };
-    } catch (error: any) {
-      this.logger.error('Error in manual analyze', error.stack);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to process filter');
     } finally {
-      if (filePath) {
-        import('fs').then((fs) => {
-          fs.promises
-            .unlink(filePath)
-            .catch((err) =>
-              this.logger.error(
-                `Failed to delete temp file ${filePath}`,
-                err.stack,
-              ),
-            );
-        });
-      }
+      // Dọn file tạm sau mỗi lần analyze, bất kể thành công hay lỗi.
+      // Dùng static fs (đã import đầu file) thay vì dynamic import('fs')
+      // để tránh crash Jest VM (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG).
+      fs.promises
+        .unlink(filePath)
+        .catch((err) =>
+          this.logger.error(
+            `Failed to delete temp file ${filePath}`,
+            err.stack,
+          ),
+        );
     }
   }
 
   @ApiOperation({
-    summary: 'Analyze raw articles',
-    description: 'Analyze raw articles',
+    summary: 'Analyze raw articles (async)',
+    description:
+      'Trả về jobId ngay lập tức, việc gọi AI + xóa bài chạy nền. ' +
+      'Dùng GET /analyze-raw/:jobId để lấy kết quả khi hoàn tất.',
   })
   @Post('analyze-raw')
-  async analyzeRawArticles(@Body() body: AnalyzeRawArticlesDto) {
-    try {
-      const { articles } = body;
+  analyzeRawArticles(@Body() body: AnalyzeRawArticlesDto) {
+    const { articles } = body;
 
-      this.logger.log('Analyze Raw Articles called');
-      if (!articles || articles.length === 0) {
-        return { message: 'No articles to analyze', data: [] };
-      }
+    this.logger.log('Analyze Raw Articles called');
+    if (!articles || articles.length === 0) {
+      return { jobId: null, message: 'No articles to analyze' };
+    }
+
+    const jobId = this.analyzeJobService.createJob();
+
+    // Fire-and-forget: không await trong request handler để HTTP response
+    // trả về ngay, tránh phụ thuộc vào thời gian xử lý thực tế của AI upstream.
+    void this.runAnalyzeRawArticlesJob(jobId, articles);
+
+    return { jobId, message: 'Đã nhận yêu cầu, đang xử lý trong nền' };
+  }
+
+  /** Thực thi job phân tích AI + xóa bài trong nền, cập nhật trạng thái vào AnalyzeJobService. */
+  private async runAnalyzeRawArticlesJob(
+    jobId: string,
+    articles: Record<string, any>[],
+  ): Promise<void> {
+    try {
       // Tập urlHash FE gửi lên — phạm vi an toàn để xóa (chỉ trong trang hiện tại, không phải toàn collection)
       const submittedHashes = articles
         .map((a: any) => a.urlHash)
@@ -301,37 +350,43 @@ export class NewsFireCrawlManagerController {
         keepHashes,
       );
 
-      return {
-        message: 'Raw articles filtered successfully',
-        data: filteredArticles,
-      };
+      this.analyzeJobService.markDone(jobId, filteredArticles);
     } catch (error: any) {
-      this.logger.error('Error in analyze raw articles', error.stack);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to analyze raw articles');
+      this.logger.error(
+        `Analyze job ${jobId} failed: ${error.message}`,
+        error.stack,
+      );
+      this.analyzeJobService.markError(jobId, error.message || 'Lỗi không xác định');
     }
+  }
+
+  @ApiOperation({
+    summary: 'Get analyze-raw job status',
+    description: 'Poll trạng thái job phân tích AI chạy nền theo jobId.',
+  })
+  @ApiParam({ name: 'jobId', description: 'ID job trả về từ POST /analyze-raw' })
+  @Get('analyze-raw/:jobId')
+  getAnalyzeRawJob(@Param('jobId') jobId: string) {
+    const job = this.analyzeJobService.getJob(jobId);
+    if (!job) {
+      return { status: 'not_found' };
+    }
+    return job;
   }
 
   @ApiOperation({ summary: 'Save articles', description: 'Save articles' })
   @Post('articles/save')
   async saveArticles(@Body() body: SaveArticlesDto) {
-    try {
-      const { articles } = body;
+    const { articles } = body;
 
-      if (!Array.isArray(articles) || articles.length === 0) {
-        return { message: 'No articles to save' };
-      }
-      const result = await this.newsArticleService.saveArticles(articles);
-      return {
-        message: 'Articles processed',
-        ...result,
-      };
-    } catch (error: any) {
-      this.logger.error('Error saving articles', error.stack);
-      throw new InternalServerErrorException('Failed to save articles');
+    if (!Array.isArray(articles) || articles.length === 0) {
+      return { message: 'No articles to save' };
     }
+    const result = await this.newsArticleService.saveArticles(articles);
+    return {
+      message: 'Articles processed',
+      ...result,
+    };
   }
 
   @ApiOperation({
@@ -343,25 +398,20 @@ export class NewsFireCrawlManagerController {
   async getArticles(
     @Query() query: GetArticlesQueryDto,
   ): Promise<PaginatedResponseDto<NewsArticle>> {
-    try {
-      // Chuẩn hóa page/limit trước khi xuống service để meta trả về luôn khớp
-      // với tham số thực sự dùng cho skip/limit.
-      const { page, limit } = normalizePagination(query.page, query.limit);
+    // Chuẩn hóa page/limit trước khi xuống service để meta trả về luôn khớp
+    // với tham số thực sự dùng cho skip/limit.
+    const { page, limit } = normalizePagination(query.page, query.limit);
 
-      const { data, total } = await this.newsArticleService.getSavedArticles(
-        query.date,
-        page,
-        limit,
-      );
+    const { data, total } = await this.newsArticleService.getSavedArticles(
+      query.date,
+      page,
+      limit,
+    );
 
-      return {
-        data,
-        meta: buildPaginationMeta(total, page, limit),
-      };
-    } catch (error: any) {
-      this.logger.error('Error fetching articles', error.stack);
-      throw new InternalServerErrorException('Failed to fetch articles');
-    }
+    return {
+      data,
+      meta: buildPaginationMeta(total, page, limit),
+    };
   }
 
   @ApiOperation({
@@ -370,18 +420,11 @@ export class NewsFireCrawlManagerController {
   })
   @Get('articles/market-analysis-history')
   async getMarketAnalysisHistory() {
-    try {
-      const history = await this.newsArticleService.getMarketAnalysisHistory();
-      return {
-        message: 'Market analysis history fetched successfully',
-        data: history,
-      };
-    } catch (error: any) {
-      this.logger.error('Error fetching market analysis history', error.stack);
-      throw new InternalServerErrorException(
-        'Failed to fetch market analysis history',
-      );
-    }
+    const history = await this.newsArticleService.getMarketAnalysisHistory();
+    return {
+      message: 'Market analysis history fetched successfully',
+      data: history,
+    };
   }
 
   @ApiOperation({
@@ -391,26 +434,14 @@ export class NewsFireCrawlManagerController {
   @ApiParam({ name: 'id', required: true })
   @Get('articles/market-analysis-history/:id')
   async getMarketAnalysisHistoryById(@Param('id') id: string) {
-    try {
-      const record =
-        await this.newsArticleService.getMarketAnalysisHistoryById(id);
-      return {
-        message: 'Market analysis history record fetched successfully',
-        data: record,
-      };
-    } catch (error: any) {
-      this.logger.error(
-        `Error fetching market analysis history record ${id}`,
-        error.stack,
-      );
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new InternalServerErrorException(
-        'Failed to fetch market analysis history record',
-      );
-    }
+    const record =
+      await this.newsArticleService.getMarketAnalysisHistoryById(id);
+    return {
+      message: 'Market analysis history record fetched successfully',
+      data: record,
+    };
   }
+
   @ApiOperation({
     summary: 'Get article by id',
     description: 'Get article by id',
@@ -418,19 +449,11 @@ export class NewsFireCrawlManagerController {
   @ApiParam({ name: 'id', required: true })
   @Get('articles/:id')
   async getArticleById(@Param('id') id: string) {
-    try {
-      const article = await this.newsArticleService.getArticleById(id);
-      return {
-        message: 'Article fetched successfully',
-        data: article,
-      };
-    } catch (error: any) {
-      this.logger.error(`Error fetching article ${id}`, error.stack);
-      if (error.status === 404) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to fetch article');
-    }
+    const article = await this.newsArticleService.getArticleById(id);
+    return {
+      message: 'Article fetched successfully',
+      data: article,
+    };
   }
 
   @ApiOperation({
@@ -439,24 +462,16 @@ export class NewsFireCrawlManagerController {
   })
   @Post('articles/analyze-market-trends')
   async analyzeMarketTrends(@Body() body: BulkIdsDto) {
-    try {
-      const { ids } = body;
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return { message: 'No articles to analyze' };
-      }
-
-      const result = await this.newsArticleService.analyzeMarketTrendsByAI(ids);
-      return {
-        message: 'Market trends analysis completed',
-        data: result,
-      };
-    } catch (error: any) {
-      this.logger.error('Error in AI market trends analysis', error.stack);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to analyze market trends');
+    const { ids } = body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { message: 'No articles to analyze' };
     }
+
+    const result = await this.newsArticleService.analyzeMarketTrendsByAI(ids);
+    return {
+      message: 'Market trends analysis completed',
+      data: result,
+    };
   }
 
   @ApiOperation({
@@ -465,24 +480,17 @@ export class NewsFireCrawlManagerController {
   })
   @Post('articles/market-analysis-bulk')
   async analyzeMarketBulk(@Body() body: BulkIdsDto) {
-    try {
-      const { ids } = body;
+    const { ids } = body;
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return { message: 'No articles to analyze' };
-      }
-
-      const result = await this.newsArticleService.analyzeMarketBulk(ids);
-      return {
-        message: 'Bulk market analysis completed',
-        data: result,
-      };
-    } catch (error: any) {
-      this.logger.error('Error in bulk market analysis', error.stack);
-      throw new InternalServerErrorException(
-        'Failed to analyze market for articles',
-      );
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { message: 'No articles to analyze' };
     }
+
+    const result = await this.newsArticleService.analyzeMarketBulk(ids);
+    return {
+      message: 'Bulk market analysis completed',
+      data: result,
+    };
   }
 
   @ApiOperation({
@@ -491,63 +499,126 @@ export class NewsFireCrawlManagerController {
   })
   @Post('articles/delete-bulk')
   async deleteBulkArticles(@Body() body: BulkIdsDto) {
-    try {
-      const { ids } = body;
+    const { ids } = body;
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return { message: 'No articles to delete' };
-      }
-      const result = await this.newsArticleService.deleteBulkArticles(ids);
-      return {
-        message: 'Articles deleted successfully',
-        data: result,
-      };
-    } catch (error: any) {
-      this.logger.error('Error bulk deleting articles', error.stack);
-      throw new InternalServerErrorException('Failed to bulk delete articles');
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { message: 'No articles to delete' };
     }
+    const result = await this.newsArticleService.deleteBulkArticles(ids);
+    // Ghi audit log sau khi xóa bulk thành công (fire-and-forget)
+    void this.auditLogService.log(
+      AuditAction.BULK_DELETE,
+      'news_articles',
+      ids,
+      'system',
+      { count: ids.length },
+    );
+    return {
+      message: 'Articles deleted successfully',
+      data: result,
+    };
   }
 
   @ApiOperation({
     summary: 'Publish bulk articles',
     description: 'Publish bulk articles',
   })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    required: false,
+    description: 'Chống đăng đúp khi double-click/retry',
+  })
   @Post('articles/publish-bulk')
-  async publishBulkArticles(@Body() body: BulkIdsDto) {
-    try {
-      const { ids } = body;
+  async publishBulkArticles(
+    @Body() body: BulkIdsDto,
+    @Headers('x-idempotency-key') idempotencyKey?: string,
+  ) {
+    const { ids } = body;
 
-      if (!Array.isArray(ids) || ids.length === 0) {
-        return { message: 'No articles to publish' };
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { message: 'No articles to publish' };
+    }
+
+    const iKey = idempotencyKey ? `bulk:${idempotencyKey}` : undefined;
+    if (iKey) {
+      const cached = this.idempotencyService.get(iKey);
+      if (cached) return cached;
+      if (this.idempotencyService.isInFlight(iKey)) {
+        throw new ConflictException(
+          'Request đang được xử lý, vui lòng thử lại sau',
+        );
       }
+      this.idempotencyService.markInFlight(iKey);
+    }
 
+    try {
       const results = await Promise.all(
         ids.map((id) => this.newsArticleService.publishToWordPress(id)),
       );
 
-      return {
+      // Ghi audit log sau khi publish bulk thành công (fire-and-forget)
+      void this.auditLogService.log(
+        AuditAction.BULK_PUBLISH,
+        'news_articles',
+        ids,
+        'system',
+        { count: ids.length },
+      );
+
+      const response = {
         message: 'Articles published to WordPress successfully',
         data: results,
       };
-    } catch (error: any) {
-      this.logger.error(`Error bulk publishing articles`, error.stack);
-      throw new InternalServerErrorException('Failed to publish articles');
+
+      if (iKey) this.idempotencyService.set(iKey, response);
+      return response;
+    } finally {
+      if (iKey) this.idempotencyService.clearInFlight(iKey);
     }
   }
 
   @ApiOperation({ summary: 'Publish article', description: 'Publish article' })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    required: false,
+    description: 'Chống đăng đúp khi double-click/retry',
+  })
   @ApiParam({ name: 'id', required: true })
   @Post('articles/:id/publish')
-  async publishArticle(@Param('id') id: string) {
+  async publishArticle(
+    @Param('id') id: string,
+    @Headers('x-idempotency-key') idempotencyKey?: string,
+  ) {
+    const iKey = idempotencyKey ? `single:${idempotencyKey}` : undefined;
+    if (iKey) {
+      const cached = this.idempotencyService.get(iKey);
+      if (cached) return cached;
+      if (this.idempotencyService.isInFlight(iKey)) {
+        throw new ConflictException(
+          'Request đang được xử lý, vui lòng thử lại sau',
+        );
+      }
+      this.idempotencyService.markInFlight(iKey);
+    }
+
     try {
       const result = await this.newsArticleService.publishToWordPress(id);
-      return {
+      // Ghi audit log sau khi publish thành công (fire-and-forget)
+      void this.auditLogService.log(
+        AuditAction.PUBLISH,
+        'news_articles',
+        [id],
+        'system',
+        { wpPostId: result.wpPostId },
+      );
+      const response = {
         message: 'Article published to WordPress successfully',
         data: result,
       };
-    } catch (error: any) {
-      this.logger.error(`Error publishing article ${id}`, error.stack);
-      throw new InternalServerErrorException('Failed to publish article');
+      if (iKey) this.idempotencyService.set(iKey, response);
+      return response;
+    } finally {
+      if (iKey) this.idempotencyService.clearInFlight(iKey);
     }
   }
 
@@ -555,18 +626,10 @@ export class NewsFireCrawlManagerController {
   @ApiParam({ name: 'id', required: true })
   @Post('articles/:id/clean')
   async cleanArticle(@Param('id') id: string) {
-    try {
-      const result = await this.newsArticleService.cleanArticle(id);
-      return {
-        message: 'Article cleaned successfully',
-        data: result,
-      };
-    } catch (error: any) {
-      this.logger.error(`Error cleaning article ${id}`, error.stack);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to clean article');
-    }
+    const result = await this.newsArticleService.cleanArticle(id);
+    return {
+      message: 'Article cleaned successfully',
+      data: result,
+    };
   }
 }

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Database, Trash2, Eye, Search, Play } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAnalyzeJob } from "../context/AnalyzeJobContext";
 import { DatePicker } from "../components/ui/DatePicker";
 import { Pagination } from "../components/common/Pagination";
 import { TableSkeletonRows } from "../components/common/TableSkeletonRows";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { buildListQuery, fetchPaginated } from "../utils/fetchPaginated";
+import { buildListQuery, fetchPaginated, getApiErrorMessage } from "../utils/fetchPaginated";
+import apiAxios from "../api/axios";
 import { DEFAULT_PAGE_SIZE } from "../types/pagination";
 import type { PaginatedResponse } from "../types/pagination";
 
@@ -31,7 +33,7 @@ interface CrawlStats {
   failedDetails?: { url: string }[];
 }
 
-const RAW_ARTICLES_ENDPOINT = "/api/v1/news-manager/raw-articles";
+const RAW_ARTICLES_ENDPOINT = "/news-manager/raw-articles";
 
 /** Tách chuỗi ngày của DatePicker (mode range) thành startDate / endDate. */
 const parseDateRange = (rangeValue: string): { startDate?: string; endDate?: string } => {
@@ -71,6 +73,7 @@ const renderHighlightedText = (text: string, query: string) => {
 
 export default function RawArticlesScreen() {
   const queryClient = useQueryClient();
+  const { status: analyzeJobStatus, startJob: startAnalyzeJob } = useAnalyzeJob();
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -156,16 +159,15 @@ export default function RawArticlesScreen() {
 
   const crawlMutation = useMutation<{ articles: unknown[]; stats?: CrawlStats }, Error>({
     mutationFn: async () => {
-      const response = await fetch("/api/v1/news-manager/crawl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parseDateRange(dateRange)),
-      });
-      const resData = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(resData?.message || "Lỗi từ máy chủ");
+      try {
+        const { data: resData } = await apiAxios.post<{ data?: unknown[]; stats?: CrawlStats; message?: string }>(
+          "/news-manager/crawl",
+          parseDateRange(dateRange),
+        );
+        return { articles: resData?.data ?? [], stats: resData?.stats };
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Lỗi từ máy chủ"));
       }
-      return { articles: resData?.data ?? [], stats: resData?.stats };
     },
     onMutate: () => {
       setError("");
@@ -184,7 +186,9 @@ export default function RawArticlesScreen() {
     onError: (err) => setError(err.message || "Có lỗi xảy ra khi thu thập dữ liệu."),
   });
 
-  const analyzeMutation = useMutation<void, Error>({
+  // Chạy nền: submit job rồi trả về ngay, AnalyzeJobProvider (ở AppLayout) sẽ tự poll
+  // trạng thái và invalidate danh sách khi xong, kể cả khi user đã rời khỏi màn hình này.
+  const analyzeMutation = useMutation<string | null, Error>({
     mutationFn: async () => {
       // Chỉ phân tích các bài đang hiển thị trên trang hiện tại (server-side pagination).
       const articlesToSend = articles.map((item) => ({
@@ -193,31 +197,38 @@ export default function RawArticlesScreen() {
         description: item.description,
       }));
 
-      const response = await fetch("/api/v1/news-manager/analyze-raw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles: articlesToSend }),
-      });
-      const resData = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(resData?.message || "Lỗi khi phân tích tin tức");
+      try {
+        const { data: resData } = await apiAxios.post<{ jobId?: string; message?: string }>(
+          "/news-manager/analyze-raw",
+          { articles: articlesToSend },
+        );
+        return resData?.jobId ?? null;
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Lỗi khi phân tích tin tức"));
       }
     },
     onMutate: () => {
       setError("");
       setSuccess("");
     },
-    onSuccess: async () => {
-      setSuccess("Phân tích AI thành công, đã lọc các tin không liên quan!");
-      await invalidateList();
+    onSuccess: (jobId) => {
+      if (jobId) {
+        startAnalyzeJob(jobId);
+        setSuccess("Đã gửi yêu cầu phân tích, kết quả sẽ hiển thị ở góc trên bên phải.");
+      } else {
+        setSuccess("Không có bài viết nào để phân tích.");
+      }
     },
     onError: (err) => setError(err.message || "Đã xảy ra lỗi khi phân tích AI"),
   });
 
   const deleteSingleMutation = useMutation<void, Error, string>({
     mutationFn: async (id) => {
-      const res = await fetch(`${RAW_ARTICLES_ENDPOINT}/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Xóa thất bại");
+      try {
+        await apiAxios.delete(`${RAW_ARTICLES_ENDPOINT}/${id}`);
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Xóa thất bại"));
+      }
     },
     onSuccess: async () => {
       setSuccess("Đã xóa bài viết thành công!");
@@ -232,13 +243,12 @@ export default function RawArticlesScreen() {
         action === "delete"
           ? `${RAW_ARTICLES_ENDPOINT}/delete-bulk`
           : `${RAW_ARTICLES_ENDPOINT}/move-bulk`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      if (!res.ok) {
-        throw new Error(action === "delete" ? "Xóa hàng loạt thất bại" : "Di chuyển dữ liệu thất bại");
+      try {
+        await apiAxios.post(endpoint, { ids });
+      } catch (err) {
+        throw new Error(
+          getApiErrorMessage(err, action === "delete" ? "Xóa hàng loạt thất bại" : "Di chuyển dữ liệu thất bại"),
+        );
       }
     },
     onSuccess: async (_result, { action, ids }) => {
@@ -253,8 +263,13 @@ export default function RawArticlesScreen() {
     onError: (err) => setError(err.message || "Lỗi khi xử lý hàng loạt"),
   });
 
+  const isAnalyzeJobRunning = analyzeJobStatus === "pending";
   const isBusy =
-    isFetching || crawlMutation.isPending || analyzeMutation.isPending || bulkMutation.isPending;
+    isFetching ||
+    crawlMutation.isPending ||
+    analyzeMutation.isPending ||
+    isAnalyzeJobRunning ||
+    bulkMutation.isPending;
 
   const handleDeleteSingle = (id: string) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa bài viết này?")) return;
@@ -341,7 +356,7 @@ export default function RawArticlesScreen() {
             disabled={isBusy || articles.length === 0}
             className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-brand-500 bg-brand-50 dark:bg-brand-500/15 border border-brand-100 dark:border-brand-500/25 transition-all duration-300 hover:bg-brand-100 dark:hover:bg-brand-500/25 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
-            {analyzeMutation.isPending ? "Đang phân tích..." : "Phân tích tin tức"}
+            {analyzeMutation.isPending || isAnalyzeJobRunning ? "Đang phân tích..." : "Phân tích tin tức"}
           </button>
           <button
             onClick={() => refetch()}

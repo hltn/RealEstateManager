@@ -1,3 +1,5 @@
+import axios, { type AxiosError } from 'axios';
+import apiAxios from '../api/axios';
 import type { PaginatedResponse, PaginationMeta } from '../types/pagination';
 
 /** Chuẩn JSON lỗi của Backend: { statusCode, message, timestamp, path } */
@@ -9,9 +11,21 @@ interface ApiErrorBody {
 }
 
 /** Lấy message dễ đọc từ body lỗi của Backend (message có thể là mảng khi validate DTO). */
-const extractErrorMessage = (body: ApiErrorBody | null, fallback: string): string => {
+const extractErrorMessage = (body: ApiErrorBody | null | undefined, fallback: string): string => {
   if (!body?.message) return fallback;
   return Array.isArray(body.message) ? body.message.join(', ') : body.message;
+};
+
+/**
+ * Lấy message dễ đọc từ lỗi Axios do Backend trả về (status 4xx/5xx).
+ * Dùng chung cho các screen/service sau khi migrate sang axios instance.
+ */
+export const getApiErrorMessage = (err: unknown, fallback: string): string => {
+  if (axios.isAxiosError(err)) {
+    const axiosErr = err as AxiosError<ApiErrorBody>;
+    return extractErrorMessage(axiosErr.response?.data, fallback);
+  }
+  return err instanceof Error ? err.message : fallback;
 };
 
 /**
@@ -38,8 +52,9 @@ const normalizeMeta = (
 };
 
 /**
- * Gọi API danh sách có phân trang và trả về đúng shape { data, meta }.
- * Ném Error với message từ Backend khi response không OK.
+ * Gọi API danh sách có phân trang qua axios instance (tự đính token + refresh 401).
+ * Trả về đúng shape { data, meta }. Ném Error với message từ Backend khi lỗi.
+ * URL truyền vào là path tương đối (KHÔNG chứa prefix `/api/v1` — axios baseURL đã có).
  */
 export async function fetchPaginated<T>(
   url: string,
@@ -47,20 +62,20 @@ export async function fetchPaginated<T>(
   requestedLimit: number,
   signal?: AbortSignal,
 ): Promise<PaginatedResponse<T>> {
-  const response = await fetch(url, { signal });
-  const body = (await response.json().catch(() => null)) as
-    | (Partial<PaginatedResponse<T>> & ApiErrorBody)
-    | null;
+  try {
+    const response = await apiAxios.get<Partial<PaginatedResponse<T>> & ApiErrorBody>(url, {
+      signal,
+    });
+    const body = response.data;
 
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(body, 'Lỗi khi tải dữ liệu từ máy chủ'));
+    const items = Array.isArray(body?.data) ? (body.data as T[]) : [];
+    return {
+      data: items,
+      meta: normalizeMeta(body?.meta, items.length, requestedPage, requestedLimit),
+    };
+  } catch (err) {
+    throw new Error(getApiErrorMessage(err, 'Lỗi khi tải dữ liệu từ máy chủ'));
   }
-
-  const items = Array.isArray(body?.data) ? (body.data as T[]) : [];
-  return {
-    data: items,
-    meta: normalizeMeta(body?.meta, items.length, requestedPage, requestedLimit),
-  };
 }
 
 /** Ghép query string cho API danh sách, bỏ qua các param rỗng. */

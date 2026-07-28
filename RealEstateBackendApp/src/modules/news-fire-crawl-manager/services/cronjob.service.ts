@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
+import * as fs from 'fs';
 import { CustomCrawlerService } from './custom-crawler.service';
 import { AIFilterService } from './ai-filter.service';
 import { NewsArticleService } from './news-article.service';
@@ -78,17 +79,17 @@ export class CronjobService {
     } catch (error: any) {
       this.logger.error('Error executing cron flow', error.stack);
     } finally {
+      // Dọn file tạm sau mỗi lần crawl — dùng static fs thay vì dynamic
+      // import('fs') để tránh crash Jest VM (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG).
       if (filePath) {
-        import('fs').then((fs) => {
-          fs.promises
-            .unlink(filePath!)
-            .catch((err) =>
-              this.logger.error(
-                `Failed to delete temp file ${filePath}`,
-                err.stack,
-              ),
-            );
-        });
+        fs.promises
+          .unlink(filePath)
+          .catch((err) =>
+            this.logger.error(
+              `Failed to delete temp file ${filePath}`,
+              err.stack,
+            ),
+          );
       }
     }
   }
