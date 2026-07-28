@@ -8,7 +8,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
-import * as crypto from 'crypto';
 import { WordPressService } from './wordpress.service';
 import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
@@ -20,6 +19,7 @@ import {
   DEFAULT_PAGE,
 } from '../../../common/dto/pagination-query.dto';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import { generateUrlHash } from '../../../common/utils/url-hash.util';
 
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
@@ -86,9 +86,7 @@ export class NewsArticleService implements OnModuleInit {
 
     for (const article of articles) {
       try {
-        const urlHash =
-          article.urlHash ||
-          crypto.createHash('sha256').update(article.url).digest('hex');
+        const urlHash = article.urlHash || generateUrlHash(article.url);
 
         const existing = await this.newsArticleModel.findOne({ urlHash });
         if (existing) {
