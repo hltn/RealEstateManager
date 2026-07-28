@@ -1,5 +1,26 @@
 import { useState, useEffect } from 'react';
 import { Bot, Save, AlertCircle, Link } from 'lucide-react';
+import apiAxios from '../api/axios';
+import { getApiErrorMessage } from '../utils/fetchPaginated';
+
+interface OpenRouterModel {
+  id: string;
+  name?: string;
+}
+
+interface AiConfigResponse {
+  apiKey?: string;
+  provider?: string;
+  model?: string;
+  must1cApiKey?: string;
+  must1cModel?: string;
+  activePlatform?: string;
+}
+
+interface OpenRouterModelsResponse {
+  models?: OpenRouterModel[];
+  data?: OpenRouterModel[];
+}
 
 export default function AiConfigScreen() {
   const [apiKey, setApiKey] = useState('');
@@ -17,36 +38,33 @@ export default function AiConfigScreen() {
   const [isSavingMust1c, setIsSavingMust1c] = useState(false);
   const [must1cMessage, setMust1cMessage] = useState<{ text: string; type: string }>({ text: '', type: '' });
 
-  const [allModels, setAllModels] = useState<any[]>([]);
-  const [modelsList, setModelsList] = useState<any[]>([]);
+  const [allModels, setAllModels] = useState<OpenRouterModel[]>([]);
+  const [modelsList, setModelsList] = useState<OpenRouterModel[]>([]);
   const [providersList, setProvidersList] = useState<string[]>([]);
 
   useEffect(() => {
     const loadConfig = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch('/api/v1/settings/ai-config');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.apiKey) {
-            setApiKey('***');
-            setHasApiKey(true);
-            setProvider(data.provider || '');
-            setModel(data.model || '');
-            await fetchModels(data.provider, data.model);
-          }
-          if (data.must1cApiKey) {
-            setMust1cApiKey('***');
-          }
-          if (data.must1cModel) {
-            setMust1cModel(data.must1cModel);
-          }
-          if (data.activePlatform) {
-            setActivePlatform(data.activePlatform);
-          }
+        const { data } = await apiAxios.get<AiConfigResponse>('/settings/ai-config');
+        if (data.apiKey) {
+          setApiKey('***');
+          setHasApiKey(true);
+          setProvider(data.provider || '');
+          setModel(data.model || '');
+          await fetchModels(data.provider, data.model);
+        }
+        if (data.must1cApiKey) {
+          setMust1cApiKey('***');
+        }
+        if (data.must1cModel) {
+          setMust1cModel(data.must1cModel);
+        }
+        if (data.activePlatform) {
+          setActivePlatform(data.activePlatform);
         }
       } catch (err) {
-        console.error(err);
+        console.error(getApiErrorMessage(err, 'Không tải được cấu hình AI'));
       } finally {
         setIsLoading(false);
       }
@@ -56,37 +74,32 @@ export default function AiConfigScreen() {
 
   const fetchModels = async (initialProvider?: string, initialModel?: string) => {
     try {
-      const res = await fetch('/api/v1/settings/openrouter-models');
-      if (res.ok) {
-        const data = await res.json();
-        const models = data.models || data.data || [];
-        setAllModels(models);
-        
-        const providers = [...new Set(models.map((m: any) => m.id.split('/')[0]))] as string[];
-        setProvidersList(providers);
+      const { data } = await apiAxios.get<OpenRouterModelsResponse>('/settings/openrouter-models');
+      const models = data.models || data.data || [];
+      setAllModels(models);
 
-        const activeProvider = initialProvider || providers[0] || '';
-        setProvider(activeProvider);
+      const providers = [...new Set(models.map((m) => m.id.split('/')[0]))] as string[];
+      setProvidersList(providers);
 
-        const filteredModels = models.filter((m: any) => m.id.startsWith(activeProvider + '/'));
-        setModelsList(filteredModels);
+      const activeProvider = initialProvider || providers[0] || '';
+      setProvider(activeProvider);
 
-        if (initialModel && filteredModels.find((m: any) => m.id === initialModel)) {
-          setModel(initialModel);
-        } else if (filteredModels.length > 0) {
-          setModel(filteredModels[0].id);
-        }
-      } else {
-        throw new Error('Failed to fetch models from OpenRouter');
+      const filteredModels = models.filter((m) => m.id.startsWith(activeProvider + '/'));
+      setModelsList(filteredModels);
+
+      if (initialModel && filteredModels.find((m) => m.id === initialModel)) {
+        setModel(initialModel);
+      } else if (filteredModels.length > 0) {
+        setModel(filteredModels[0].id);
       }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
+    } catch (err) {
+      setMessage({ text: getApiErrorMessage(err, 'Failed to fetch models from OpenRouter'), type: 'error' });
     }
   };
 
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider);
-    const filteredModels = allModels.filter((m: any) => m.id.startsWith(newProvider + '/'));
+    const filteredModels = allModels.filter((m) => m.id.startsWith(newProvider + '/'));
     setModelsList(filteredModels);
     if (filteredModels.length > 0) {
       setModel(filteredModels[0].id);
@@ -103,20 +116,12 @@ export default function AiConfigScreen() {
     setIsSaving(true);
     setMessage({ text: '', type: '' });
     try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey }),
-      });
-      if (response.ok) {
-        setMessage({ text: 'Lưu API Key thành công! Đang tải danh sách model...', type: 'success' });
-        setHasApiKey(true);
-        await fetchModels();
-      } else {
-        throw new Error('Lỗi khi lưu API Key');
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
+      await apiAxios.post('/settings/ai-config', { apiKey });
+      setMessage({ text: 'Lưu API Key thành công! Đang tải danh sách model...', type: 'success' });
+      setHasApiKey(true);
+      await fetchModels();
+    } catch (err) {
+      setMessage({ text: getApiErrorMessage(err, 'Lỗi khi lưu API Key'), type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -126,44 +131,29 @@ export default function AiConfigScreen() {
     setIsSaving(true);
     setMessage({ text: '', type: '' });
     try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, model, apiKey }),
-      });
-      if (response.ok) {
-        setMessage({ text: 'Lưu cấu hình AI thành công!', type: 'success' });
-        if (apiKey && apiKey !== '***') {
-          // If they updated the API key along with the model
-          await fetchModels(provider, model);
-        }
-      } else {
-        throw new Error('Lỗi khi lưu cấu hình');
+      await apiAxios.post('/settings/ai-config', { provider, model, apiKey });
+      setMessage({ text: 'Lưu cấu hình AI thành công!', type: 'success' });
+      if (apiKey && apiKey !== '***') {
+        // If they updated the API key along with the model
+        await fetchModels(provider, model);
       }
-    } catch (err: any) {
-      setMessage({ text: err.message, type: 'error' });
+    } catch (err) {
+      setMessage({ text: getApiErrorMessage(err, 'Lỗi khi lưu cấu hình'), type: 'error' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  
+
   const handleTogglePlatform = async (platform: string) => {
     if (activePlatform === platform) return;
-    
+
     setActivePlatform(platform);
-    
+
     try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activePlatform: platform }),
-      });
-      if (!response.ok) {
-        throw new Error('Failed to save active platform');
-      }
-    } catch (err: any) {
-      console.error(err);
+      await apiAxios.post('/settings/ai-config', { activePlatform: platform });
+    } catch (err) {
+      console.error(getApiErrorMessage(err, 'Failed to save active platform'));
     }
   };
 
@@ -175,18 +165,10 @@ const handleSaveMust1c = async () => {
     setIsSavingMust1c(true);
     setMust1cMessage({ text: '', type: '' });
     try {
-      const response = await fetch('/api/v1/settings/ai-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ must1cApiKey, must1cModel }),
-      });
-      if (response.ok) {
-        setMust1cMessage({ text: 'Lưu cấu hình Must1c thành công!', type: 'success' });
-      } else {
-        throw new Error('Lỗi khi lưu cấu hình Must1c');
-      }
-    } catch (err: any) {
-      setMust1cMessage({ text: err.message, type: 'error' });
+      await apiAxios.post('/settings/ai-config', { must1cApiKey, must1cModel });
+      setMust1cMessage({ text: 'Lưu cấu hình Must1c thành công!', type: 'success' });
+    } catch (err) {
+      setMust1cMessage({ text: getApiErrorMessage(err, 'Lỗi khi lưu cấu hình Must1c'), type: 'error' });
     } finally {
       setIsSavingMust1c(false);
     }

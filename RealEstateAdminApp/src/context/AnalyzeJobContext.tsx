@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import apiAxios from "../api/axios";
 
 export type AnalyzeJobStatus = "idle" | "pending" | "done" | "error";
 
@@ -41,9 +42,15 @@ export const AnalyzeJobProvider: React.FC<{ children: React.ReactNode }> = ({
   const { data } = useQuery<AnalyzeJobResponse>({
     queryKey: ["analyze-raw-job", jobId],
     queryFn: async ({ signal }) => {
-      const res = await fetch(`/api/v1/news-manager/analyze-raw/${jobId}`, { signal });
-      if (!res.ok) throw new Error("Không lấy được trạng thái job phân tích");
-      return res.json();
+      try {
+        const { data } = await apiAxios.get<AnalyzeJobResponse>(
+          `/news-manager/analyze-raw/${jobId}`,
+          { signal },
+        );
+        return data;
+      } catch {
+        throw new Error("Không lấy được trạng thái job phân tích");
+      }
     },
     enabled: !!jobId,
     refetchInterval: (query) => {

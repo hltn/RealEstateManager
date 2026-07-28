@@ -6,7 +6,8 @@ import { DatePicker } from "../components/ui/DatePicker";
 import { Pagination } from "../components/common/Pagination";
 import { TableSkeletonRows } from "../components/common/TableSkeletonRows";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { buildListQuery, fetchPaginated } from "../utils/fetchPaginated";
+import { buildListQuery, fetchPaginated, getApiErrorMessage } from "../utils/fetchPaginated";
+import apiAxios from "../api/axios";
 import { DEFAULT_PAGE_SIZE } from "../types/pagination";
 import type { PaginatedResponse } from "../types/pagination";
 
@@ -32,7 +33,7 @@ interface CrawlStats {
   failedDetails?: { url: string }[];
 }
 
-const RAW_ARTICLES_ENDPOINT = "/api/v1/news-manager/raw-articles";
+const RAW_ARTICLES_ENDPOINT = "/news-manager/raw-articles";
 
 /** Tách chuỗi ngày của DatePicker (mode range) thành startDate / endDate. */
 const parseDateRange = (rangeValue: string): { startDate?: string; endDate?: string } => {
@@ -158,16 +159,15 @@ export default function RawArticlesScreen() {
 
   const crawlMutation = useMutation<{ articles: unknown[]; stats?: CrawlStats }, Error>({
     mutationFn: async () => {
-      const response = await fetch("/api/v1/news-manager/crawl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parseDateRange(dateRange)),
-      });
-      const resData = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(resData?.message || "Lỗi từ máy chủ");
+      try {
+        const { data: resData } = await apiAxios.post<{ data?: unknown[]; stats?: CrawlStats; message?: string }>(
+          "/news-manager/crawl",
+          parseDateRange(dateRange),
+        );
+        return { articles: resData?.data ?? [], stats: resData?.stats };
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Lỗi từ máy chủ"));
       }
-      return { articles: resData?.data ?? [], stats: resData?.stats };
     },
     onMutate: () => {
       setError("");
@@ -197,16 +197,15 @@ export default function RawArticlesScreen() {
         description: item.description,
       }));
 
-      const response = await fetch("/api/v1/news-manager/analyze-raw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles: articlesToSend }),
-      });
-      const resData = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(resData?.message || "Lỗi khi phân tích tin tức");
+      try {
+        const { data: resData } = await apiAxios.post<{ jobId?: string; message?: string }>(
+          "/news-manager/analyze-raw",
+          { articles: articlesToSend },
+        );
+        return resData?.jobId ?? null;
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Lỗi khi phân tích tin tức"));
       }
-      return resData?.jobId ?? null;
     },
     onMutate: () => {
       setError("");
@@ -225,8 +224,11 @@ export default function RawArticlesScreen() {
 
   const deleteSingleMutation = useMutation<void, Error, string>({
     mutationFn: async (id) => {
-      const res = await fetch(`${RAW_ARTICLES_ENDPOINT}/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Xóa thất bại");
+      try {
+        await apiAxios.delete(`${RAW_ARTICLES_ENDPOINT}/${id}`);
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Xóa thất bại"));
+      }
     },
     onSuccess: async () => {
       setSuccess("Đã xóa bài viết thành công!");
@@ -241,13 +243,12 @@ export default function RawArticlesScreen() {
         action === "delete"
           ? `${RAW_ARTICLES_ENDPOINT}/delete-bulk`
           : `${RAW_ARTICLES_ENDPOINT}/move-bulk`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      if (!res.ok) {
-        throw new Error(action === "delete" ? "Xóa hàng loạt thất bại" : "Di chuyển dữ liệu thất bại");
+      try {
+        await apiAxios.post(endpoint, { ids });
+      } catch (err) {
+        throw new Error(
+          getApiErrorMessage(err, action === "delete" ? "Xóa hàng loạt thất bại" : "Di chuyển dữ liệu thất bại"),
+        );
       }
     },
     onSuccess: async (_result, { action, ids }) => {

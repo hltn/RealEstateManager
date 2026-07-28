@@ -7,7 +7,8 @@ import { DatePicker } from '../components/ui/DatePicker';
 import { Pagination } from '../components/common/Pagination';
 import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { buildListQuery, fetchPaginated } from '../utils/fetchPaginated';
+import { buildListQuery, fetchPaginated, getApiErrorMessage } from '../utils/fetchPaginated';
+import apiAxios from '../api/axios';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -155,8 +156,7 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   const fetchHistory = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/news-manager/articles/market-analysis-history');
-      const data = await res.json();
+      const { data } = await apiAxios.get<{ data?: unknown[] }>('/news-manager/articles/market-analysis-history');
       setHistory(data.data || []);
     } catch (error) {
       console.error('Error fetching history', error);
@@ -219,7 +219,7 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   );
 };
 
-const ARTICLES_ENDPOINT = '/api/v1/news-manager/articles';
+const ARTICLES_ENDPOINT = '/news-manager/articles';
 
 type SortOrder = 'newest' | 'oldest';
 type StatusFilter = 'all' | 'pending' | 'CRAWLED' | 'POSTED_WP' | 'ERROR';
@@ -395,13 +395,12 @@ export default function ManageWpScreen() {
   const handlePublish = async (id: string) => {
     try {
       setPublishingIds(prev => new Set(prev).add(id));
-      const res = await fetch(`${ARTICLES_ENDPOINT}/${id}/publish`, { method: 'POST' });
-      if (!res.ok) throw new Error('Đăng bài thất bại');
+      await apiAxios.post(`${ARTICLES_ENDPOINT}/${id}/publish`);
       await queryClient.invalidateQueries({ queryKey: ['wp-articles'] });
     } catch (error) {
       setNotification({
         title: 'Lỗi',
-        description: error instanceof Error ? error.message : 'Lỗi khi đăng bài',
+        description: getApiErrorMessage(error, 'Lỗi khi đăng bài'),
         type: 'error'
       });
     } finally {
@@ -417,12 +416,12 @@ export default function ManageWpScreen() {
   const handleClean = async (article: WpArticle) => {
     try {
       setCleaningIds(prev => new Set(prev).add(article._id));
-      const res = await fetch(`${ARTICLES_ENDPOINT}/${article._id}/clean`, { method: 'POST' });
-      const responseData = (await res.json().catch(() => null)) as { data?: WpArticle } | null;
-      if (!res.ok) throw new Error('Làm sạch dữ liệu thất bại');
+      const { data: responseData } = await apiAxios.post<{ data?: WpArticle }>(
+        `${ARTICLES_ENDPOINT}/${article._id}/clean`,
+      );
+      const cleanedArticle = responseData?.data;
 
-      if (responseData?.data) {
-        const cleanedArticle = responseData.data;
+      if (cleanedArticle) {
         queryClient.setQueryData<PaginatedResponse<WpArticle>>(
           ['wp-articles', { page, limit, date: filterDate }],
           (previous) =>
@@ -444,7 +443,7 @@ export default function ManageWpScreen() {
     } catch (error) {
       setNotification({
         title: 'Lỗi',
-        description: error instanceof Error ? error.message : 'Lỗi khi làm sạch dữ liệu',
+        description: getApiErrorMessage(error, 'Lỗi khi làm sạch dữ liệu'),
         type: 'error'
       });
     } finally {
@@ -487,55 +486,50 @@ export default function ManageWpScreen() {
     { action: string; ids: string[] }
   >({
     mutationFn: async ({ action, ids }) => {
-      if (action === 'publish') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/publish-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        if (!res.ok) throw new Error('Đăng bài hàng loạt thất bại');
-        return { message: 'Đã đăng bài hàng loạt thành công' };
-      }
-
-      if (action === 'analyze') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/market-analysis-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        if (!res.ok) throw new Error('Crawl tin tức thất bại');
-        return { message: 'Đã crawl xong tin tức' };
-      }
-
-      if (action === 'analyze_market_trends') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/analyze-market-trends`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        const responseData = (await res.json().catch(() => null)) as
-          | { data?: string; message?: string }
-          | null;
-        if (!res.ok || !responseData?.data) {
-          throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
+      try {
+        if (action === 'publish') {
+          await apiAxios.post(`${ARTICLES_ENDPOINT}/publish-bulk`, { ids });
+          return { message: 'Đã đăng bài hàng loạt thành công' };
         }
-        return {
-          message: 'Đã phân tích thị trường thành công',
-          analysisContent: responseData.data
-        };
-      }
 
-      if (action === 'delete') {
-        const res = await fetch(`${ARTICLES_ENDPOINT}/delete-bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
-        });
-        if (!res.ok) throw new Error('Xóa hàng loạt thất bại');
-        return { message: 'Đã xóa thành công' };
-      }
+        if (action === 'analyze') {
+          await apiAxios.post(`${ARTICLES_ENDPOINT}/market-analysis-bulk`, { ids });
+          return { message: 'Đã crawl xong tin tức' };
+        }
 
-      throw new Error('Hành động không hợp lệ');
+        if (action === 'analyze_market_trends') {
+          const { data: responseData } = await apiAxios.post<{ data?: string; message?: string }>(
+            `${ARTICLES_ENDPOINT}/analyze-market-trends`,
+            { ids },
+          );
+          if (!responseData?.data) {
+            throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
+          }
+          return {
+            message: 'Đã phân tích thị trường thành công',
+            analysisContent: responseData.data
+          };
+        }
+
+        if (action === 'delete') {
+          await apiAxios.post(`${ARTICLES_ENDPOINT}/delete-bulk`, { ids });
+          return { message: 'Đã xóa thành công' };
+        }
+
+        throw new Error('Hành động không hợp lệ');
+      } catch (err) {
+        const fallback =
+          action === 'publish'
+            ? 'Đăng bài hàng loạt thất bại'
+            : action === 'analyze'
+              ? 'Crawl tin tức thất bại'
+              : action === 'analyze_market_trends'
+                ? 'Lỗi phân tích thị trường'
+                : action === 'delete'
+                  ? 'Xóa hàng loạt thất bại'
+                  : 'Có lỗi xảy ra khi xử lý hàng loạt';
+        throw new Error(getApiErrorMessage(err, fallback));
+      }
     },
     onSuccess: async ({ message, analysisContent }) => {
       if (analysisContent) setMarketAnalysisResult(analysisContent);

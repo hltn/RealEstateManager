@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Clock, Power } from 'lucide-react';
+import apiAxios from '../api/axios';
+
+interface CronConfig {
+  isActive?: boolean;
+  frequency?: string;
+}
 
 export default function CronjobScreen() {
   const [isActive, setIsActive] = useState(false);
@@ -9,10 +15,9 @@ export default function CronjobScreen() {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const res = await fetch('/api/v1/news-manager/cron');
-        const data = await res.json();
-        setIsActive(data.isActive);
-        setFrequency(data.frequency);
+        const { data } = await apiAxios.get<CronConfig>('/news-manager/cron');
+        setIsActive(Boolean(data.isActive));
+        if (data.frequency) setFrequency(data.frequency);
       } catch (error) {
         console.error('Failed to fetch cron config', error);
       }
@@ -23,13 +28,7 @@ export default function CronjobScreen() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await fetch('/api/v1/news-manager/cron', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isActive, frequency })
-      });
+      await apiAxios.post('/news-manager/cron', { isActive, frequency });
       alert('Đã lưu cấu hình thành công!');
     } catch (error) {
       console.error('Failed to save cron config', error);

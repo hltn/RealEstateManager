@@ -10,6 +10,7 @@ import {
   PlugInIcon,
   TableIcon,
   UserCircleIcon,
+  UserIcon,
   DocsIcon,
 } from "../icons";
 
@@ -18,6 +19,8 @@ const HorizontaLDotsAny = HorizontaLDots as any;
 
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
+import { useAuth } from "../hooks/useAuth";
+import { UserRole } from "../types/user";
 
 type NavItem = {
   name: string;
@@ -61,9 +64,20 @@ const navItems: NavItem[] = [
 
 const othersItems: NavItem[] = [];
 
+/** Menu "Quản lý tài khoản" — chỉ ADMIN được render (WI-14 dynamic menu). */
+const adminItems: NavItem[] = [
+  {
+    icon: <UserIcon />,
+    name: "Quản lý tài khoản",
+    path: "/users",
+  },
+];
+
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === UserRole.ADMIN;
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -318,6 +332,11 @@ const AppSidebar: React.FC = () => {
                 )}
               </h2>
               {renderMenuItems(navItems, "main")}
+              {isAdmin && (
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                  {renderMenuItems(adminItems, "main")}
+                </div>
+              )}
             </div>
           </div>
         </nav>

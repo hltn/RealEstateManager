@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, Save, FileText } from 'lucide-react';
+import apiAxios from '../api/axios';
+import { getApiErrorMessage } from '../utils/fetchPaginated';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -100,8 +102,9 @@ export default function AiPromptConfigScreen() {
   const fetchPrompts = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/v1/news-manager/prompts');
-      const data = await response.json();
+      const { data } = await apiAxios.get<{ success?: boolean; data?: PromptConfig[] }>(
+        '/news-manager/prompts',
+      );
       if (data.success && Array.isArray(data.data)) {
         setPrompts(data.data);
       }
@@ -110,7 +113,7 @@ export default function AiPromptConfigScreen() {
       setToast({
         type: 'error',
         title: 'Lỗi tải dữ liệu',
-        description: 'Không thể tải cấu hình AI Prompts',
+        description: getApiErrorMessage(error, 'Không thể tải cấu hình AI Prompts'),
       });
     } finally {
       setIsLoading(false);
@@ -126,14 +129,10 @@ export default function AiPromptConfigScreen() {
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      const response = await fetch('/api/v1/news-manager/prompts', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(prompts),
-      });
-      const data = await response.json();
+      const { data } = await apiAxios.put<{ success?: boolean; message?: string }>(
+        '/news-manager/prompts',
+        prompts,
+      );
       if (data.success) {
         setToast({
           type: 'success',
@@ -148,7 +147,7 @@ export default function AiPromptConfigScreen() {
       setToast({
         type: 'error',
         title: 'Lỗi',
-        description: 'Đã có lỗi xảy ra khi lưu cấu hình AI Prompts',
+        description: getApiErrorMessage(error, 'Đã có lỗi xảy ra khi lưu cấu hình AI Prompts'),
       });
     } finally {
       setIsSaving(false);
