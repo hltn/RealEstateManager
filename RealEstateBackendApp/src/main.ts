@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { CustomLogger } from './common/logger/custom-logger.service';
 import { ConfigService } from '@nestjs/config';
 import {
   FastifyAdapter,
@@ -10,11 +11,12 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
+    { logger: new CustomLogger() },
   );
+  const logger = new CustomLogger('Bootstrap');
 
   // Set global prefix
   app.setGlobalPrefix('api/v1');
