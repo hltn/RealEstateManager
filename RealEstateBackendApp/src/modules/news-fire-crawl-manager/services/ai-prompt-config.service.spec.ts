@@ -65,14 +65,9 @@ describe('AiPromptConfigService', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue('not-json');
 
-      // Giữ lại spy console.error để verify fire-and-forget
-      const errSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-
+      // Sau khi đổi console.error → Logger, không còn spy console.
+      // Chỉ verify không throw (loadPrompts catch + log, không crash).
       expect(() => service.onModuleInit()).not.toThrow();
-
-      errSpy.mockRestore();
     });
   });
 
@@ -126,6 +121,28 @@ describe('AiPromptConfigService', () => {
           { api_ai_name: 'X', prompt: 'y', api_ai_path: '' },
         ]),
       ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('should rollback in-memory prompts when writeFile fails (chống race state lệch)', async () => {
+      // Load prompts ban đầu (2 prompts) — onModuleInit set state cũ.
+      service.onModuleInit();
+      const before = service.getPrompts();
+
+      (fs.promises.writeFile as jest.Mock).mockRejectedValueOnce(
+        new Error('disk full'),
+      );
+
+      await expect(
+        service.updatePrompts([
+          { api_ai_name: 'FAIL', prompt: 'x', api_ai_path: '' },
+        ]),
+      ).rejects.toThrow(InternalServerErrorException);
+
+      // Rollback: state in-memory phải về giá trị cũ, KHÔNG giữ payload lỗi.
+      expect(service.getPrompts()).toEqual(before);
+      expect(
+        service.getPrompts().some((p) => p.api_ai_name === 'FAIL'),
+      ).toBe(false);
     });
   });
 });

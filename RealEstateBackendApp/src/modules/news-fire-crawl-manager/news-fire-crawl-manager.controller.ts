@@ -281,17 +281,17 @@ export class NewsFireCrawlManagerController {
         data: top5Articles,
       };
     } finally {
-      // Dọn file tạm sau mỗi lần analyze, bất kể thành công hay lỗi
-      void import('fs').then((fs) => {
-        fs.promises
-          .unlink(filePath)
-          .catch((err) =>
-            this.logger.error(
-              `Failed to delete temp file ${filePath}`,
-              err.stack,
-            ),
-          );
-      });
+      // Dọn file tạm sau mỗi lần analyze, bất kể thành công hay lỗi.
+      // Dùng static fs (đã import đầu file) thay vì dynamic import('fs')
+      // để tránh crash Jest VM (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG).
+      fs.promises
+        .unlink(filePath)
+        .catch((err) =>
+          this.logger.error(
+            `Failed to delete temp file ${filePath}`,
+            err.stack,
+          ),
+        );
     }
   }
 

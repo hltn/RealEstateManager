@@ -90,4 +90,29 @@ describe('UpdateAiConfigDto (contract mục 3)', () => {
     expect(errors).toHaveLength(0);
     expect(dto.provider).toBe('');
   });
+
+  it('apiKey chứa newline → fail Matches (chống env injection)', async () => {
+    const { errors } = await run({ apiKey: 'sk-x\nEVIL=1' });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((m) => /xuống dòng|env injection/i.test(m))).toBe(true);
+  });
+
+  it('must1cApiKey chứa newline → fail Matches', async () => {
+    const { errors } = await run({ must1cApiKey: 'k\r\nINJECT=1' });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((m) => /xuống dòng|env injection/i.test(m))).toBe(true);
+  });
+
+  it('apiKey có whitespace hai đầu → trim thành giá trị sạch', async () => {
+    const { dto, errors } = await run({ apiKey: '  sk-x  ' });
+    expect(errors).toHaveLength(0);
+    expect(dto.apiKey).toBe('sk-x');
+  });
+
+  it('apiKey chỉ whitespace → trim thành "" vẫn pass (IsOptional + IsString cho phép rỗng)', async () => {
+    // trim '   ' → '' → IsString pass, Matches pass (regex cho phép rỗng).
+    const { dto, errors } = await run({ apiKey: '   ' });
+    expect(errors).toHaveLength(0);
+    expect(dto.apiKey).toBe('');
+  });
 });

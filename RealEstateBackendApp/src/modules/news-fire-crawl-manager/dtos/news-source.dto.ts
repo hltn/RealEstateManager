@@ -6,6 +6,11 @@ import {
   IsObject,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+
+/** Chỉ trim khi value là string, tránh ném TypeError với non-string input. */
+const trimIfString = () =>
+  Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 
 export class CreateNewsSourceDto {
   @ApiProperty({ description: 'The name of the news source' })
@@ -16,6 +21,7 @@ export class CreateNewsSourceDto {
   @ApiProperty({ description: 'The base URL of the news source' })
   @IsString()
   @IsNotEmpty()
+  @trimIfString()
   url: string;
 
   @ApiProperty({
@@ -24,6 +30,7 @@ export class CreateNewsSourceDto {
   })
   @IsString()
   @IsOptional()
+  @trimIfString()
   rssUrl?: string;
 
   @ApiProperty({ description: 'Crawl configuration mapping', required: false })
@@ -49,6 +56,8 @@ export class UpdateNewsSourceDto {
   })
   @IsString()
   @IsOptional()
+  @IsNotEmpty()
+  @trimIfString()
   url?: string;
 
   @ApiProperty({
@@ -57,6 +66,7 @@ export class UpdateNewsSourceDto {
   })
   @IsString()
   @IsOptional()
+  @trimIfString()
   rssUrl?: string;
 
   @ApiProperty({ description: 'Crawl configuration mapping', required: false })

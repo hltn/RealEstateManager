@@ -1,5 +1,19 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+/**
+ * Regex chống env injection: value không được chứa ký tự xuống dòng (\r, \n).
+ * Khi `updateAiConfig` ghi `process.env[key]=value` + `KEY=value` vào file .env,
+ * newline trong value có thể chèn thêm biến môi trường độc hại.
+ */
+const NO_NEWLINE_REGEX = /^[^\r\n]*$/;
+const NO_NEWLINE_MSG =
+  'giá trị không được chứa ký tự xuống dòng (chống env injection)';
+
+/** Chỉ trim khi value là string, tránh ném TypeError với non-string input. */
+const trimIfString = () =>
+  Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 
 export class UpdateAiConfigDto {
   @ApiPropertyOptional({
@@ -24,6 +38,8 @@ export class UpdateAiConfigDto {
   })
   @IsOptional()
   @IsString()
+  @Matches(NO_NEWLINE_REGEX, { message: NO_NEWLINE_MSG })
+  @trimIfString()
   apiKey?: string;
 
   @ApiPropertyOptional({
@@ -32,6 +48,8 @@ export class UpdateAiConfigDto {
   })
   @IsOptional()
   @IsString()
+  @Matches(NO_NEWLINE_REGEX, { message: NO_NEWLINE_MSG })
+  @trimIfString()
   must1cApiKey?: string;
 
   @ApiPropertyOptional({

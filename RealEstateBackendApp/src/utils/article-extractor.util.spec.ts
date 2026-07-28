@@ -44,15 +44,12 @@ import TurndownService from 'turndown';
 import axios from 'axios';
 
 describe('ArticleExtractorUtil (contract mục 1/4)', () => {
-  let consoleErrorSpy: jest.SpyInstance;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    consoleErrorSpy.mockRestore();
+    jest.restoreAllMocks();
   });
 
   describe('extractArticle — happy path', () => {
@@ -146,9 +143,8 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
       await expect(
         ArticleExtractorUtil.extractArticle('https://x.com/a'),
       ).rejects.toThrow('Failed to parse article content using Readability.');
-      // console.error được gọi khi re-throw (LƯU Ý: source dùng console.error
-      // thay vì CustomLogger — vi phạm guideline mục 3, ghi nhận trong báo cáo).
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      // Sau fix: source dùng Logger thay vì console.error — không còn spy console.
+      // Chỉ verify re-throw đúng message.
     });
 
     it('Readability.parse trả { content: null } → throw', async () => {
@@ -168,7 +164,6 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
       await expect(
         ArticleExtractorUtil.extractArticle('https://x.com/down'),
       ).rejects.toThrow('ETIMEDOUT');
-      expect(consoleErrorSpy).toHaveBeenCalled();
     });
   });
 });

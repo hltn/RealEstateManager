@@ -6,6 +6,14 @@ jest.mock('cron', () => ({
     return this;
   }),
 }));
+// Mock fs để verify unlink temp file trong finally (sau khi đổi sang static import).
+jest.mock('fs', () => ({
+  __esModule: true,
+  default: {
+    promises: { unlink: jest.fn().mockResolvedValue(undefined) },
+  },
+  promises: { unlink: jest.fn().mockResolvedValue(undefined) },
+}));
 // Tránh chuỗi import ESM từ jsdom → @exodus/bytes (chuỗi ArticleExtractorUtil → jsdom)
 jest.mock('jsdom', () => ({}));
 jest.mock('@mozilla/readability', () => ({}));
@@ -18,6 +26,7 @@ import { CustomCrawlerService } from './custom-crawler.service';
 import { AIFilterService } from './ai-filter.service';
 import { NewsArticleService } from './news-article.service';
 import { CronJob } from 'cron';
+import * as fs from 'fs';
 
 /**
  * Unit test cho CronjobService — quản lý cron job tạo/cập nhật qua SchedulerRegistry.
@@ -123,25 +132,61 @@ describe('CronjobService', () => {
     });
   });
 
-  describe('executeCrawlFlow (qua callback CronJob)', () => {
-    // LƯU Ý: không test case filePath truthy vì executeCrawlFlow dùng
-    // dynamic `import('fs')` trong finally — Node 24 + jest 30 (CJS) throw
-    // ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG đồng bộ, crash process.
-    // Để cover case đó cần bật --experimental-vm-modules hoặc refactor
-    // source đổi `import('fs')` thành static `require('fs')`. Đã ghi nhận
-    // vào phần bug/lech contract của báo cáo.
+  describe('executeCrawlFlow (qa callback CronJob)', () => {
+    // Sau fix dynamic import('fs') → static import, có thể test happy-path
+    // filePath truthy: gọi filterAndRank + saveArticles + xoá temp file.
 
-    it('should skip filterAndRank when filePath null', async () => {
-      mockCustomCrawlerService.crawlData.mockResolvedValue({ filePath: null });
-
+    const runLastCallback = async () => {
       service.updateConfig(true, '0 6 * * *');
       const lastCall = (CronJob as unknown as jest.Mock).mock.calls[
         (CronJob as unknown as jest.Mock).mock.calls.length - 1
       ];
-      await (lastCall[1] as () => Promise<void>)();
+      return (lastCall[1] as () => Promise<void>)();
+    };
+
+    it('should skip filterAndRank when filePath null', async () => {
+      mockCustomCrawlerService.crawlData.mockResolvedValue({ filePath: null });
+
+      await runLastCallback();
 
       expect(mockAiFilterService.filterAndRank).not.toHaveBeenCalled();
       expect(mockNewsArticleService.saveArticles).not.toHaveBeenCalled();
+    });
+
+    it('filePath present → gọi filterAndRank + saveArticles + xoá temp file', async () => {
+      mockCustomCrawlerService.crawlData.mockResolvedValue({
+        filePath: '/tmp/crawl.json',
+      });
+      mockAiFilterService.filterAndRank.mockResolvedValue([
+        { url: 'https://x', title: 'T1' },
+      ]);
+      const unlinkSpy = jest.spyOn(fs.promises, 'unlink');
+
+      await runLastCallback();
+
+      expect(mockAiFilterService.filterAndRank).toHaveBeenCalledWith(
+        '/tmp/crawl.json',
+      );
+      expect(mockNewsArticleService.saveArticles).toHaveBeenCalledWith([
+        { url: 'https://x', title: 'T1' },
+      ]);
+      // finally xoá temp file qua static fs.promises.unlink.
+      expect(unlinkSpy).toHaveBeenCalledWith('/tmp/crawl.json');
+    });
+
+    it('filePath present nhưng saveArticles không chạy khi top5 rỗng', async () => {
+      mockCustomCrawlerService.crawlData.mockResolvedValue({
+        filePath: '/tmp/empty.json',
+      });
+      mockAiFilterService.filterAndRank.mockResolvedValue([]);
+      const unlinkSpy = jest.spyOn(fs.promises, 'unlink');
+
+      await runLastCallback();
+
+      expect(mockAiFilterService.filterAndRank).toHaveBeenCalled();
+      expect(mockNewsArticleService.saveArticles).not.toHaveBeenCalled();
+      // Vẫn xoá temp file trong finally.
+      expect(unlinkSpy).toHaveBeenCalledWith('/tmp/empty.json');
     });
 
     it('should swallow error when crawlData throws (cron không ném lỗi ra ngoài)', async () => {
@@ -149,13 +194,7 @@ describe('CronjobService', () => {
         new Error('crawl failed'),
       );
 
-      service.updateConfig(true, '0 6 * * *');
-      const lastCall = (CronJob as unknown as jest.Mock).mock.calls[
-        (CronJob as unknown as jest.Mock).mock.calls.length - 1
-      ];
-      await expect(
-        (lastCall[1] as () => Promise<void>)(),
-      ).resolves.toBeUndefined();
+      await expect(runLastCallback()).resolves.toBeUndefined();
     });
 
     it('callback được truyền vào CronJob phải là async function', () => {

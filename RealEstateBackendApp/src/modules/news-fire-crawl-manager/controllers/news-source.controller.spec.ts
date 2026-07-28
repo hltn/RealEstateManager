@@ -51,10 +51,11 @@ describe('NewsSourceController', () => {
       });
     });
 
-    it('khi không có source → meta total=0, totalPages=1 (controller hardcode totalPages=1)', async () => {
+    it('khi không có source → meta total=0, totalPages=0 (dùng buildPaginationMeta, không hardcode)', async () => {
       newsSourceService.findAll.mockResolvedValue([]);
       const result = await controller.findAll();
-      expect(result.meta).toEqual({ total: 0, page: 1, limit: 0, totalPages: 1 });
+      // buildPaginationMeta(0,1,0) → totalPages=0 (tránh NaN/Infinity khi limit=0).
+      expect(result.meta).toEqual({ total: 0, page: 1, limit: 0, totalPages: 0 });
     });
   });
 

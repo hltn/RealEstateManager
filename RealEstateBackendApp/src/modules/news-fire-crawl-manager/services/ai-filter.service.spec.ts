@@ -142,15 +142,18 @@ describe('AIFilterService', () => {
       expect(result).toEqual(top5);
     });
 
-    it('should leak raw Error when fs.readFileSync throws (readFile nằm trước try-catch)', async () => {
-      // LƯU Ý: readFileSync ở line 24 nằm NGOÀI try-catch (try bắt đầu line 47),
-      // nên lỗi đọc file KHÔNG được bọc trong BadRequestException.
+    it('should wrap readFileSync error in BadRequestException (sau khi fix, readFile trong try-catch)', async () => {
+      // Sau fix: readFileSync + JSON.parse nằm TRONG try-catch → lỗi được bọc
+      // trong BadRequestException với message nhất quán.
       mockFs.readFileSync.mockImplementation(() => {
         throw new Error('file missing');
       });
 
       await expect(service.filterAndRank('file.json')).rejects.toThrow(
-        'file missing',
+        BadRequestException,
+      );
+      await expect(service.filterAndRank('file.json')).rejects.toThrow(
+        /file missing/i,
       );
     });
   });

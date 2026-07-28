@@ -25,8 +25,10 @@ import * as fs from 'fs';
 jest.mock('jsdom', () => ({}));
 // Mock fs để triggerManualCrawl không đọc đĩa thật; readFileSync là
 // non-configurable trên builtin nên phải dùng factory mock (không spyOn được).
+// Bao gồm promises.unlink cho triggerManualAnalyze cleanup temp file.
 jest.mock('fs', () => ({
   readFileSync: jest.fn(),
+  promises: { unlink: jest.fn().mockResolvedValue(undefined) },
 }));
 import { NewsFireCrawlManagerController } from './news-fire-crawl-manager.controller';
 import { CustomCrawlerService } from './services/custom-crawler.service';
@@ -288,15 +290,33 @@ describe('NewsFireCrawlManagerController', () => {
       expect(aiFilterService.filterAndRank).not.toHaveBeenCalled();
     });
 
-    it('filePath hợp lệ → (KHÔNG test được) finally dùng dynamic import("fs") crash Jest VM', () => {
-      // Service dùng `void import('fs').then(...)` trong finally. Dưới Jest
-      // (không --experimental-vm-modules) dynamic import() throw đồng bộ
-      // ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG → crash cả process Node.
-      // Đây là gap test-infrastructure, KHÔNG phải bug source. Cần chạy jest
-      // với --experimental-vm-modules hoặc đổi source sang `await import('fs')`
-      // (top-level không throw) để test được nhánh này.
-      // Marker test để khỏi mất coverage visibility:
-      expect(typeof controller.triggerManualAnalyze).toBe('function');
+    it('filePath hợp lệ → gọi filterAndRank, trả data + xoá temp file trong finally', async () => {
+      const top5 = [{ url: 'https://x', title: 'T1' }];
+      aiFilterService.filterAndRank.mockResolvedValue(top5);
+      const unlinkSpy = fs.promises.unlink as unknown as jest.Mock;
+
+      const result = await controller.triggerManualAnalyze({
+        filePath: '/tmp/x.json',
+      } as any);
+
+      expect(aiFilterService.filterAndRank).toHaveBeenCalledWith('/tmp/x.json');
+      expect(result).toEqual({
+        message: 'AI filtering completed successfully',
+        data: top5,
+      });
+      // finally xoá temp file qua static fs.promises.unlink.
+      expect(unlinkSpy).toHaveBeenCalledWith('/tmp/x.json');
+    });
+
+    it('filePath hợp lệ nhưng filterAndRank throw → vẫn xoá temp file trong finally', async () => {
+      aiFilterService.filterAndRank.mockRejectedValue(new Error('AI down'));
+      const unlinkSpy = fs.promises.unlink as unknown as jest.Mock;
+
+      await expect(
+        controller.triggerManualAnalyze({ filePath: '/tmp/y.json' } as any),
+      ).rejects.toThrow('AI down');
+      // finally vẫn chạy dù error → xoá temp file.
+      expect(unlinkSpy).toHaveBeenCalledWith('/tmp/y.json');
     });
   });
 

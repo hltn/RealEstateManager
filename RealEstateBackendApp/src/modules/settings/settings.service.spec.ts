@@ -262,5 +262,26 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
         'network down',
       );
     });
+
+    it('fetch treo quá 5s → throw timeout (AbortController abort)', async () => {
+      configService.get.mockImplementation((key: string) => {
+        if (key === 'OPENROUTER_API_KEY') return 'sk-or';
+        return undefined;
+      });
+      // Fetch ném AbortError khi signal abort.
+      (global.fetch as unknown as jest.Mock) = jest
+        .fn()
+        .mockImplementation((_url: string, init: RequestInit) =>
+          Promise.reject(
+            Object.assign(new Error('The operation was aborted'), {
+              name: 'AbortError',
+            }),
+          ),
+        );
+
+      await expect(service.getOpenRouterModels()).rejects.toThrow(
+        /timed out after 5s/i,
+      );
+    });
   });
 });

@@ -208,11 +208,18 @@ describe('AiPromptDto', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it('prompt rỗng → fail IsString', async () => {
+  it('prompt rỗng → fail IsNotEmpty (sau khi thêm @IsNotEmpty cho prompt)', async () => {
     const errors = await validate(
       plainToInstance(AiPromptDto, { api_ai_name: 'x', api_ai_path: '/x', prompt: '' }),
     );
-    // IsString không cấm rỗng → '' vẫn pass. Ghi nhận behavior.
-    expect(errors).toHaveLength(0);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(messages(errors).some((m) => /empty/i.test(m))).toBe(true);
+  });
+
+  it('api_ai_path rỗng → fail IsNotEmpty', async () => {
+    const errors = await validate(
+      plainToInstance(AiPromptDto, { api_ai_name: 'x', api_ai_path: '', prompt: 'p' }),
+    );
+    expect(errors.length).toBeGreaterThan(0);
   });
 });

@@ -44,11 +44,21 @@ describe('CreateNewsSourceDto', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it('url rỗng whitespace → VẪN PASS (gap: @IsNotEmpty không trim whitespace — nên bổ sung @Transform trim)', async () => {
-    // Hành vi thực tế: '   ' không phải '' nên @IsNotEmpty cho pass.
-    // Đây là gap bảo mật/chất lượng: URL whitespace được chấp nhận.
+  it('url rỗng whitespace → trim thành "" → fail IsNotEmpty (sau khi thêm @Transform trim)', async () => {
+    // Sau fix: @Transform trim '   ' → '' → @IsNotEmpty fail.
     const errors = await validate(
       plainToInstance(CreateNewsSourceDto, { name: 'X', url: '   ' }),
+    );
+    expect(errors.length).toBeGreaterThan(0);
+    expect(messages(errors).some((m) => /empty|url/i.test(m))).toBe(true);
+  });
+
+  it('url có whitespace hai đầu → trim thành giá trị sạch → pass', async () => {
+    const errors = await validate(
+      plainToInstance(CreateNewsSourceDto, {
+        name: 'X',
+        url: '  https://x.example  ',
+      }),
     );
     expect(errors).toHaveLength(0);
   });
@@ -121,5 +131,19 @@ describe('UpdateNewsSourceDto', () => {
     );
     // IsObject: array không phải plain object → fail.
     expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('url whitespace → trim "" → fail IsNotEmpty (Update cũng cần trim)', async () => {
+    const errors = await validate(
+      plainToInstance(UpdateNewsSourceDto, { url: '   ' }),
+    );
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('url hợp lệ có whitespace → trim thành giá trị sạch → pass', async () => {
+    const errors = await validate(
+      plainToInstance(UpdateNewsSourceDto, { url: '  https://x.example  ' }),
+    );
+    expect(errors).toHaveLength(0);
   });
 });

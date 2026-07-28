@@ -21,8 +21,6 @@ export class AIFilterService {
   async filterAndRank(filePath: string): Promise<any[]> {
     this.logger.log(`Starting Job 2: AI Filter & Ranking on file ${filePath}`);
 
-    const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-
     // Check OpenRouter first, fallback to Gemini
     const openRouterApiKey =
       this.configService.get<string>('OPENROUTER_API_KEY') ||
@@ -45,6 +43,10 @@ export class AIFilterService {
     }
 
     try {
+      // Đọc + parse file tạm BÊN TRONG try-catch để lỗi (file missing/JSON sai)
+      // được bọc trong BadRequestException thay vì ném Error/SyntaxError gốc.
+      const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
       this.logger.log(
         `Sending data to AI API for filtering and ranking (Model: ${model})`,
       );
