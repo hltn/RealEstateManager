@@ -46,6 +46,15 @@ const navItems: NavItem[] = [
     name: "Sources",
     path: "/sources",
   },
+];
+
+const othersItems: NavItem[] = [];
+
+/**
+ * Menu dành riêng cho ADMIN — chỉ render khi user có role ADMIN (WI-14 dynamic menu).
+ * Bao gồm: AI Config, AI Prompt Config, Cronjob, Quản lý tài khoản.
+ */
+const adminItems: NavItem[] = [
   {
     icon: <PlugInIcon />,
     name: "AI Config",
@@ -60,13 +69,7 @@ const navItems: NavItem[] = [
     icon: <CalenderIcon />,
     name: "Cronjob",
     path: "/cronjob",
-  }
-];
-
-const othersItems: NavItem[] = [];
-
-/** Menu "Quản lý tài khoản" — chỉ ADMIN được render (WI-14 dynamic menu). */
-const adminItems: NavItem[] = [
+  },
   {
     icon: <UserIcon />,
     name: "Quản lý tài khoản",

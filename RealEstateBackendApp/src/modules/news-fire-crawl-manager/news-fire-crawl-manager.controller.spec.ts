@@ -40,6 +40,8 @@ import { IdempotencyService } from '../../common/services/idempotency.service';
 import { AuditLogService } from './services/audit-log.service';
 import { AnalyzeJobService } from './services/analyze-job.service';
 import { AuditAction } from './schemas/audit-log.schema';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 describe('NewsFireCrawlManagerController', () => {
   let controller: NewsFireCrawlManagerController;
@@ -539,6 +541,31 @@ describe('NewsFireCrawlManagerController', () => {
       const result = await controller.cleanArticle('1');
       expect(newsArticleService.cleanArticle).toHaveBeenCalledWith('1');
       expect(result).toMatchObject({ message: 'Article cleaned successfully', data: { _id: '1', content: 'clean' } });
+    });
+  });
+
+  describe('RBAC — @Roles metadata (mục 11 RBAC matrix)', () => {
+    it.each([
+      ['getPrompts', 'GET /news-manager/prompts'],
+      ['updatePrompts', 'PUT /news-manager/prompts'],
+      ['getCronConfig', 'GET /news-manager/cron'],
+      ['updateCronConfig', 'POST /news-manager/cron'],
+    ])('%s phải có @Roles(ADMIN)', (methodName) => {
+      const method = (NewsFireCrawlManagerController.prototype as any)[methodName];
+      const roles: UserRole[] = Reflect.getMetadata(ROLES_KEY, method);
+      expect(roles).toBeDefined();
+      expect(roles).toContain(UserRole.ADMIN);
+    });
+
+    it.each([
+      ['triggerManualCrawl', 'POST /crawl'],
+      ['publishArticle', 'POST /articles/:id/publish'],
+      ['deleteBulkArticles', 'DELETE /articles bulk'],
+      ['moveRawArticlesBulk', 'POST /raw-articles/move-bulk'],
+    ])('%s không có @Roles restriction (EDITOR accessible)', (methodName) => {
+      const method = (NewsFireCrawlManagerController.prototype as any)[methodName];
+      const roles: UserRole[] | undefined = Reflect.getMetadata(ROLES_KEY, method);
+      expect(roles).toBeUndefined();
     });
   });
 });

@@ -40,6 +40,8 @@ import { IdempotencyService } from '../../common/services/idempotency.service';
 import { AuditAction } from './schemas/audit-log.schema';
 import { AuditLogService } from './services/audit-log.service';
 import { AnalyzeJobService } from './services/analyze-job.service';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 @ApiTags('News Manager')
 @Controller('news-manager')
@@ -57,6 +59,7 @@ export class NewsFireCrawlManagerController {
     private readonly analyzeJobService: AnalyzeJobService,
   ) {}
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
   @Get('prompts')
   getPrompts() {
@@ -66,6 +69,7 @@ export class NewsFireCrawlManagerController {
     };
   }
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Update prompts', description: 'Update prompts' })
   @Put('prompts')
   async updatePrompts(@Body() newPrompts: AiPromptDto[]) {
@@ -73,12 +77,14 @@ export class NewsFireCrawlManagerController {
     return { success: true, message: 'Prompts updated successfully' };
   }
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get cron config', description: 'Get cron config' })
   @Get('cron')
   getCronConfig() {
     return this.cronjobService.getConfig();
   }
 
+  @Roles(UserRole.ADMIN)
   @ApiOperation({
     summary: 'Update cron config',
     description: 'Update cron config',

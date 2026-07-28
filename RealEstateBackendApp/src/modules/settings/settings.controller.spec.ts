@@ -10,6 +10,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 
 describe('SettingsController (contract mục 1/3)', () => {
   let controller: SettingsController;
@@ -95,6 +99,23 @@ describe('SettingsController (contract mục 1/3)', () => {
       await expect(controller.getOpenRouterModels()).rejects.toThrow(
         'OpenRouter API key is not configured',
       );
+    });
+  });
+
+  describe('@Roles metadata — RBAC matrix mục 11', () => {
+    it('getAiConfig có @Roles(ADMIN)', () => {
+      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getAiConfig);
+      expect(roles).toEqual([UserRole.ADMIN]);
+    });
+
+    it('updateAiConfig có @Roles(ADMIN)', () => {
+      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.updateAiConfig);
+      expect(roles).toEqual([UserRole.ADMIN]);
+    });
+
+    it('getOpenRouterModels có @Roles(ADMIN)', () => {
+      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getOpenRouterModels);
+      expect(roles).toEqual([UserRole.ADMIN]);
     });
   });
 });

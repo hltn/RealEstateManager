@@ -36,9 +36,52 @@ function App() {
             <Route path="manage-wp" element={<ManageWpScreen />} />
             <Route path="news-detail/:id" element={<NewsDetailScreen />} />
             <Route path="sources" element={<ManageSourcesScreen />} />
-            <Route path="ai-config" element={<AiConfigScreen />} />
-            <Route path="ai-prompt-config" element={<AiPromptConfigScreen />} />
-            <Route path="cronjob" element={<CronjobScreen />} />
+            {/* ADMIN only — cấu hình hệ thống */}
+            <Route
+              path="ai-config"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <AiConfigScreen />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="ai-prompt-config"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <AiPromptConfigScreen />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="cronjob"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <CronjobScreen />
+                </RoleGuard>
+              }
+            />
             {/* ADMIN only — quản lý tài khoản */}
             <Route
               path="users"
