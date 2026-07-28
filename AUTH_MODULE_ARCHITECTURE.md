@@ -459,13 +459,13 @@ Quy tắc:
 Trong `UsersController` handler `PATCH /api/v1/users/:id/status`:
 
 
-- So sánh `currentUser._id` (lấy từ `@CurrentUser()` — chính là `payload.sub`) với `params.id`.
+- So sánh `currentUser.sub` (lấy từ `@CurrentUser()` — chính là `payload.sub`, ObjectId string) với `params.id`.
 
 
 - Nếu trùng → throw `ForbiddenException(403, 'Cannot block your own account')` **trước** khi gọi service.
 
 
-- Ép kiểu nhất quán: so sánh `String(currentUser._id) === String(params.id)` để tránh sai lệch ObjectId vs string.
+- Ép kiểu nhất quán: so sánh `String(currentUser.sub) === String(params.id)` để tránh sai lệch ObjectId vs string.
 
 
 - Không áp dụng cho `PATCH /users/:id/role` (ADMIN được đổi role chính mình nếu nghiệp vụ cho phép — không chặn ở MVP).
@@ -1241,7 +1241,7 @@ Bảng đầy đủ ở 6.3. Assert body `message` theo exact string. Nhớ: l�
 ### 16.6 "Không block chính mình" (xem 6.4)
 
 
-`String(currentUser._id) === String(params.id)` → `ForbiddenException('Cannot block your own account')`. Chỉ `/users/:id/status`, không áp dụng `/role`.
+`String(currentUser.sub) === String(params.id)` → `ForbiddenException('Cannot block your own account')`. Chỉ `/users/:id/status`, không áp dụng `/role`.
 
 
 ### 16.7 Throttler Test Strategy
