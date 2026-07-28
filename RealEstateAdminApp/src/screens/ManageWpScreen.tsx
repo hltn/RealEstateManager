@@ -222,6 +222,7 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
 const ARTICLES_ENDPOINT = '/api/v1/news-manager/articles';
 
 type SortOrder = 'newest' | 'oldest';
+type StatusFilter = 'all' | 'pending' | 'CRAWLED' | 'POSTED_WP' | 'ERROR';
 
 /** Bài viết đã duyệt trong Database, dùng cho bảng quản lý đăng WordPress. */
 interface WpArticle {
@@ -250,6 +251,7 @@ export default function ManageWpScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [bulkAction, setBulkAction] = useState('publish');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
@@ -301,7 +303,7 @@ export default function ManageWpScreen() {
    */
   const articles = useMemo(() => {
     const pageArticles = articlesPage?.data ?? [];
-    const filtered =
+    const bySearch =
       searchQuery.length >= 2
         ? pageArticles.filter((article) => {
             const keyword = searchQuery.toLowerCase();
@@ -312,13 +314,25 @@ export default function ManageWpScreen() {
           })
         : [...pageArticles];
 
+    const filtered =
+      statusFilter === 'all'
+        ? bySearch
+        : bySearch.filter((article) => {
+            const statuses = Array.isArray(article.status)
+              ? article.status
+              : article.status
+                ? [article.status]
+                : [];
+            return statusFilter === 'pending' ? statuses.length === 0 : statuses.includes(statusFilter);
+          });
+
     // Đồng bộ với BE: sort theo createdAt (BE cũng sort theo createdAt) để STT global offset khớp đúng.
     return filtered.sort((a, b) => {
       const timeA = new Date(a.createdAt || 0).getTime();
       const timeB = new Date(b.createdAt || 0).getTime();
       return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
     });
-  }, [articlesPage, searchQuery, sortOrder]);
+  }, [articlesPage, searchQuery, sortOrder, statusFilter]);
   const meta = articlesPage?.meta ?? { total: 0, page, limit, totalPages: 0 };
 
   // Nếu trang hiện tại vượt quá totalPages (VD: vừa xóa hết bài ở trang cuối), lùi về trang cuối còn dữ liệu.
@@ -363,11 +377,11 @@ export default function ManageWpScreen() {
     articles.length > 0 && articles.every(article => selectedIds.has(article._id));
 
   // Có filter đang áp dụng thì thông báo rỗng phải khác với "database chưa có bài nào".
-  const hasActiveFilter = Boolean(filterDate) || searchQuery.length >= 2;
+  const hasActiveFilter = Boolean(filterDate) || searchQuery.length >= 2 || statusFilter !== 'all';
 
-  // Khi search/sort trong trang làm đổi thứ tự hoặc lược bớt dòng, STT tính theo
+  // Khi search/sort/status trong trang làm đổi thứ tự hoặc lược bớt dòng, STT tính theo
   // vị trí toàn cục không còn đúng, nên đánh số lại từ 1 trong phạm vi kết quả.
-  const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest';
+  const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest' || statusFilter !== 'all';
 
   /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại. */
   const toggleSelectAllOnPage = () => {
@@ -635,6 +649,20 @@ export default function ManageWpScreen() {
             >
               <option value="newest">Mới nhất</option>
               <option value="oldest">Cũ nhất</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              aria-label="Lọc theo trạng thái"
+              title="Lọc trong trang đang xem"
+              className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-gray-700 dark:text-gray-300"
+            >
+              <option value="all">Tất cả trạng thái</option>
+              <option value="pending">Chờ đăng</option>
+              <option value="CRAWLED">Đã crawl</option>
+              <option value="POSTED_WP">Đã đăng WP</option>
+              <option value="ERROR">ERROR</option>
             </select>
 
             <div className="relative w-[130px] sm:!w-[300px] flex-shrink-0">
