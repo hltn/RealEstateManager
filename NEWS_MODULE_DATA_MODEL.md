@@ -109,7 +109,7 @@ RawArticle (raw_articles)  ── Bulk Move (không transaction) ──▶  Ne
 | **description**          | string      |  Không   |       Không       | Mô tả ngắn / Sapo.                                                                                                                                |
 | **content**              | string      |  Không   |       Không       | Nội dung chi tiết. **Lưu ý Phase 1:** Để chuỗi rỗng `''` là chuẩn thiết kế Lazy Loading, đỡ tốn bộ nhớ lưu trữ!                                   |
 | **url**                  | string      |    Có    |       Không       | URL tuyệt đối. **Nên dùng `trim: true`** để xóa khoảng trắng thừa.                                                                                |
-| **urlHash**              | string      |    Có    |    **Unique**     | Băm MD5 để chống cào trùng bài. **CẢNH BÁO:** MD5 dễ trùng lặp (Collision) hơn SHA-256. Nên đồng bộ sang SHA-256 với `NewsArticle`!               |
+| **urlHash**              | string      |    Có    |    **Unique**     | Băm SHA-256 (64 hex chars) chống cào trùng bài — đã đồng bộ với `NewsArticle` (trước đây dùng MD5, xem mục 7 migration 002).                        |
 | **publishedAt**          | Date        |  Không   | **Có (Compound)** | **SỬA GẤP GAP:** Chuyển từ `string` sang `Date`. Cần đánh Compound Index `{ publishedAt: -1, source: 1 }` để filter theo ngày không bị Full Scan. |
 | **thumbnailUrl**         | string      |  Không   |       Không       | Link ảnh đại diện.                                                                                                                                |
 | **source**               | string      |    Có    |      **Có**       | Lưu tên nguồn tin (Denormalization). Đánh index để hỗ trợ filter theo nguồn.                                                                      |
@@ -118,7 +118,7 @@ RawArticle (raw_articles)  ── Bulk Move (không transaction) ──▶  Ne
 
   
 
-**Cảnh báo tính nhất quán urlHash:** `CustomCrawlerService.crawlData()` tính `urlHash` bằng MD5, còn `NewsArticleService.saveArticles()` (dùng cho crawl tự động qua cron và cho luồng lưu AI-filtered) tính `urlHash` bằng SHA-256 khi bài viết chưa có `urlHash` sẵn. Khi Bulk Move (`raw-articles/move-bulk`) chạy, `RawArticle.urlHash` (MD5) được giữ nguyên (`article.urlHash || sha256(...)` — ưu tiên giá trị có sẵn), nên `NewsArticle.urlHash` tạo từ Bulk Move là MD5, còn `NewsArticle.urlHash` tạo từ luồng cron/AI-filter thẳng là SHA-256. Cùng một field nhưng hai thuật toán hash khác nhau tùy đường đi — không sai về tính duy nhất (vẫn unique index chặn trùng) nhưng là nợ kỹ thuật cần thống nhất một hàm hash duy nhất dùng chung (đề xuất: tách `UrlHashUtil.generate(url)` dùng SHA-256 cho toàn bộ module).
+**Nhất quán urlHash (ĐÃ XỬ LÝ):** Toàn bộ module giờ dùng chung `generateUrlHash(url)` (SHA-256, 64 hex) ở `src/common/utils/url-hash.util.ts` cho cả `CustomCrawlerService.crawlData()` và `NewsArticleService.saveArticles()`. Nợ kỹ thuật MD5 cũ (RawArticle sinh MD5, Bulk Move copy MD5 sang NewsArticle) đã được thanh toán bằng migration 002 — xem mục 7 changelog. Không còn 2 thuật toán hash song song.
 
   
 
@@ -184,7 +184,7 @@ Hiện trạng: **chỉ có 2 index thật trong toàn module** — `RawArticle.
 | **source**               | string          |  Không   |       Không       | Tên nguồn tin (Liên kết mềm).                                                                                                                                    |
 | **url**                  | string          |  Không   |       Không       | Link gốc bài viết.                                                                                                                                               |
 | **keywords**             | string[]        |  Không   |       Không       | Mảng từ khóa SEO/Thẻ tag.                                                                                                                                        |
-| **urlHash**              | string          |    Có    |    **Unique**     | Băm SHA-256 chống trùng. (Cần đồng bộ SHA-256 toàn bộ hệ thống thay vì MD5).                                                                                     |
+| **urlHash**              | string          |    Có    |    **Unique**     | Băm SHA-256 chống trùng — đã đồng bộ toàn bộ hệ thống (RawArticle cũng dùng SHA-256 từ migration 002).                                                            |
 | **wpPostId**             | number / null   |  Không   |  **Có (Sparse)**  | ID bài viết trên WordPress (`default: null`). **Đánh Sparse Index** để tra cứu ngược từ WP Post ID về DB cực nhanh.                                              |
 | **content**              | string          |  Không   |       Không       | Nội dung chi tiết đã được AI viết lại.                                                                                                                           |
 | **status**               | string[] (enum) |  Không   |      **Có**       | Mảng trạng thái `['CRAWLED', 'POSTED_WP', 'ERROR']`. **Bắt buộc đánh index** vì API sẽ query lọc tin theo trạng thái cực nhiều!                                  |
@@ -268,6 +268,7 @@ Hướng dẫn ghi log:
 | :---: | :--- | :--- | :---: | :--- | :--- |
 | *YYYY-MM-DD* | *Tên Collection* | *Mô tả ngắn gọn thay đổi* | *Yes/No* | *File / Script thực thi* | *Người thực hiện / PR Link* |
 | 2026-07-27 | `NewsArticle`, `RawArticle`, `NewsSource` | Bổ sung field `deletedAt: Date` (Soft Delete) & Đánh Compound Index | **Yes** | `scripts/migrations/001_add_deleted_at_index.ts` | Neptune / [#102](https://github.com/...) |
+| 2026-07-28 | `RawArticle`, `NewsArticle` | Đổi `urlHash` từ MD5 (32 hex) sang SHA-256 (64 hex) — đồng bộ cả 2 collection (RawArticle + NewsArticle sinh từ Bulk Move mang MD5 cũ). Giá trị hash đổi, unique index giữ nguyên. Dedup theo `url` trước rehash để tránh xung unique khi 2 hash MD5 cũ của cùng url thu về 1 hash SHA-256. | **No** | `RealEstateBackendApp/scripts/migrations/002_recompute_urlhash_sha256.ts` (dry-run mặc định, `--apply` để ghi — bọc transaction + snapshot backup) | coder-backend-agent / [#TBD](https://github.com/...) |
 
   
 
