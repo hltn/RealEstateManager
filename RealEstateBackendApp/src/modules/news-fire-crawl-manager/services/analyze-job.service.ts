@@ -5,7 +5,9 @@ export type AnalyzeJobStatus = 'pending' | 'done' | 'error';
 
 export interface AnalyzeJob {
   status: AnalyzeJobStatus;
-  result?: any[];
+  // Kiểu kết quả tùy job: analyze-raw trả về mảng bài viết, market-trends trả về
+  // markdown string. Generalize sang `unknown` để tái sử dụng chung 1 service cho mọi job.
+  result?: unknown;
   error?: string;
   updatedAt: number;
 }
@@ -32,7 +34,7 @@ export class AnalyzeJobService {
     return this.jobs.get(jobId);
   }
 
-  markDone(jobId: string, result: any[]): void {
+  markDone(jobId: string, result: unknown): void {
     this.jobs.set(jobId, { status: 'done', result, updatedAt: Date.now() });
   }
 

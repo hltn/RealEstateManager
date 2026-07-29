@@ -1,27 +1,20 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
-import { GoogleGenAI } from '@google/genai';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 
 @Injectable()
 export class AIFilterService {
   private readonly logger = new Logger(AIFilterService.name);
-  private ai: GoogleGenAI;
 
   constructor(
     private configService: ConfigService,
     private aiPromptConfigService: AiPromptConfigService,
-  ) {
-    this.ai = new GoogleGenAI({
-      apiKey: this.configService.get<string>('GEMINI_API_KEY') || 'dummy',
-    });
-  }
+  ) {}
 
   async filterAndRank(filePath: string): Promise<any[]> {
     this.logger.log(`Starting Job 2: AI Filter & Ranking on file ${filePath}`);
 
-    // Check OpenRouter first, fallback to Gemini
     const openRouterApiKey =
       this.configService.get<string>('OPENROUTER_API_KEY') ||
       process.env.OPENROUTER_API_KEY;
@@ -30,15 +23,8 @@ export class AIFilterService {
       process.env.OPENROUTER_AI_MODEL ||
       'google/gemini-2.5-flash';
 
-    const geminiApiKey = this.configService.get<string>('GEMINI_API_KEY');
-
-    if (
-      !openRouterApiKey &&
-      (!geminiApiKey || geminiApiKey === 'your_gemini_api_key_here')
-    ) {
-      this.logger.error(
-        'No valid AI API Key found (neither OpenRouter nor Gemini).',
-      );
+    if (!openRouterApiKey) {
+      this.logger.error('No valid AI API Key found (OpenRouter key missing).');
       throw new BadRequestException('AI API Key is not set or invalid.');
     }
 
@@ -51,8 +37,6 @@ export class AIFilterService {
         `Sending data to AI API for filtering and ranking (Model: ${model})`,
       );
 
-      // Take the first article's content for demonstration to avoid context limits
-      // In a real scenario, you'd chunk this or use Gemini's large context window for multiple articles
       const contentToAnalyze = rawData
         .map(
           (d: any) => `URL: ${d.url}\nTitle: ${d.title}\nContent: ${d.content}`,
@@ -68,39 +52,30 @@ export class AIFilterService {
       const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       try {
-        if (openRouterApiKey) {
-          this.logger.log('Using OpenRouter API');
-          const res = await fetch(
-            'https://openrouter.ai/api/v1/chat/completions',
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${openRouterApiKey}`,
-                'Content-Type': 'application/json',
-              },
-              signal: controller.signal,
-              body: JSON.stringify({
-                model: model,
-                messages: [{ role: 'user', content: prompt }],
-              }),
+        this.logger.log('Using OpenRouter API');
+        const res = await fetch(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${openRouterApiKey}`,
+              'Content-Type': 'application/json',
             },
-          );
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: 'user', content: prompt }],
+            }),
+          },
+        );
 
-          if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '[]';
-        } else {
-          this.logger.log('Using Gemini Native API');
-          const response = await this.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-          });
-          resultText = response.text || '[]';
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
         }
+
+        const data = await res.json();
+        resultText = data.choices?.[0]?.message?.content || '[]';
       } catch (err: any) {
         if (err.name === 'AbortError') {
           throw new Error('AI API request timed out after 300 seconds');
@@ -321,9 +296,6 @@ export class AIFilterService {
       this.configService.get<string>('MUST1C_API_URL') ||
       process.env.MUST1C_API_URL ||
       'https://htmustc.id.vn/v1/chat/completions';
-    const geminiApiKey =
-      this.configService.get<string>('GEMINI_API_KEY') ||
-      process.env.GEMINI_API_KEY;
 
     try {
       const controller = new AbortController();
@@ -377,16 +349,6 @@ export class AIFilterService {
 
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
-        } else if (
-          geminiApiKey &&
-          geminiApiKey !== 'your_gemini_api_key_here'
-        ) {
-          this.logger.log('Using Gemini Native API for cleaning');
-          const response = await this.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-          });
-          resultText = response.text || '';
         } else {
           throw new BadRequestException('No AI platform configured');
         }
@@ -424,12 +386,12 @@ export class AIFilterService {
     this.logger.log(`Starting Market Trends Analysis with AI`);
     if (!contentData || contentData.trim() === '') return '';
 
+    this.logger.log(`Input size: ${contentData.length} chars (~${Math.ceil(contentData.length / 3)} tokens estimated)`);
+
     const activePlatform =
       this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
       process.env.ACTIVE_AI_PLATFORM ||
       'OpenRouter';
-
-    // const fullPrompt = `${systemPrompt}\n\nHere is the data:\n${contentData}`;
 
     let resultText = '';
 
@@ -451,9 +413,6 @@ export class AIFilterService {
       this.configService.get<string>('MUST1C_API_URL') ||
       process.env.MUST1C_API_URL ||
       'https://htmustc.id.vn/v1/chat/completions';
-    const geminiApiKey =
-      this.configService.get<string>('GEMINI_API_KEY') ||
-      process.env.GEMINI_API_KEY;
 
     try {
       const controller = new AbortController();
@@ -485,6 +444,7 @@ export class AIFilterService {
 
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
+          this.logger.log(`Must1c usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`);
         } else if (openRouterApiKey) {
           this.logger.log('Using OpenRouter API for analysis');
           const res = await fetch(
@@ -513,19 +473,7 @@ export class AIFilterService {
 
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
-        } else if (
-          geminiApiKey &&
-          geminiApiKey !== 'your_gemini_api_key_here'
-        ) {
-          this.logger.log('Using Gemini Native API for analysis');
-          const response = await this.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: contentData,
-            config: {
-              systemInstruction: systemPrompt,
-            },
-          });
-          resultText = response.text || '';
+          this.logger.log(`OpenRouter usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`);
         } else {
           throw new BadRequestException('No AI platform configured');
         }

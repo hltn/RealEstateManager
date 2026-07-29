@@ -1,0 +1,75 @@
+services:
+
+  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: realestate_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - realestate_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── NestJS Backend ────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./RealEstateBackendApp
+      dockerfile: Dockerfile
+    container_name: realestate_backend
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/realestate
+      - PORT=3000
+      - FRONTEND_URL=http://localhost
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - realestate_net
+
+  # ── React Admin (Nginx) ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./RealEstateAdminApp
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    container_name: realestate_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - realestate_net
+
+  # ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: realestate_cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+    networks:
+      - realestate_net
+
+networks:
+  realestate_net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local

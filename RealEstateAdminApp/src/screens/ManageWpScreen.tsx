@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, History, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -9,6 +9,8 @@ import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { buildListQuery, fetchPaginated, getApiErrorMessage } from '../utils/fetchPaginated';
 import apiAxios from '../api/axios';
+import { useManageWpStatus } from '../context/ManageWpStatusContext';
+import { useMarketAnalysisJob } from '../context/MarketAnalysisJobContext';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -26,20 +28,20 @@ const ToastNotification = ({ title, description, type = 'success', onClose }: To
   const [progress, setProgress] = useState(100);
   const [isClosing, setIsClosing] = useState(false);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+
   useEffect(() => {
-    // start progress shrink immediately
     const t1 = setTimeout(() => setProgress(0), 50);
-    
     const timer = setTimeout(() => {
       setIsClosing(true);
-      setTimeout(onClose, 300); // Wait for slide out animation
+      setTimeout(() => onCloseRef.current(), 300);
     }, 5000);
-    
     return () => {
       clearTimeout(t1);
       clearTimeout(timer);
     };
-  }, [title, description, onClose]);
+  }, [title, description]);
 
   const config = {
     success: {
@@ -101,8 +103,7 @@ const AnalysisDetailModal = ({ content, title, onClose }: { content: string, tit
       await navigator.clipboard.writeText(content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy', err);
+    } catch {
     }
   };
 
@@ -143,27 +144,24 @@ const AnalysisDetailModal = ({ content, title, onClose }: { content: string, tit
   );
 };
 
+interface MarketAnalysisHistoryItem {
+  _id: string;
+  content: string;
+  articleIds: string[];
+  createdAt: string;
+}
+
 const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
-  const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { data: historyData, isLoading: loading } = useQuery<MarketAnalysisHistoryItem[]>({
+    queryKey: ['market-analysis-history'],
+    queryFn: async ({ signal }) => {
+      const { data } = await apiAxios.get<{ data?: MarketAnalysisHistoryItem[] }>('/news-manager/articles/market-analysis-history', { signal });
+      return data.data ?? [];
+    },
+    enabled: isOpen,
+  });
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchHistory();
-    }
-  }, [isOpen]);
-
-  const fetchHistory = async () => {
-    try {
-      setLoading(true);
-      const { data } = await apiAxios.get<{ data?: unknown[] }>('/news-manager/articles/market-analysis-history');
-      setHistory(data.data || []);
-    } catch (error) {
-      console.error('Error fetching history', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const history = historyData ?? [];
 
   if (!isOpen) return null;
 
@@ -246,6 +244,14 @@ const formatDisplayDate = (article: WpArticle): string => {
 
 export default function ManageWpScreen() {
   const queryClient = useQueryClient();
+  const { setCrawlStatus, setMarketAnalysisStatus } = useManageWpStatus();
+  const {
+    status: marketJobStatus,
+    errorMessage: marketJobErrorMessage,
+    resultContent: marketJobResultContent,
+    startJob: startMarketAnalysisJob,
+    clearResult: clearMarketAnalysisJobResult,
+  } = useMarketAnalysisJob();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -358,9 +364,6 @@ export default function ManageWpScreen() {
   };
 
   const changePage = (nextPage: number) => {
-    // Clear selection khi đổi trang: giữ lại các id không còn hiển thị rất dễ
-    // dẫn tới đăng/xóa nhầm bài mà user không nhìn thấy.
-    setSelectedIds(new Set());
     setPage(nextPage);
   };
 
@@ -383,11 +386,16 @@ export default function ManageWpScreen() {
   // vị trí toàn cục không còn đúng, nên đánh số lại từ 1 trong phạm vi kết quả.
   const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest' || statusFilter !== 'all';
 
-  /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại. */
+  /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại.
+   * Khi chọn: merge id trang hiện tại vào selection hiện có (giữ lại các trang khác).
+   * Khi bỏ chọn: chỉ xóa id trang hiện tại, không ảnh hưởng selection các trang khác.
+   */
   const toggleSelectAllOnPage = () => {
     setSelectedIds(prev => {
       const isAllSelected = articles.length > 0 && articles.every(article => prev.has(article._id));
-      return isAllSelected ? new Set<string>() : new Set(articles.map(article => article._id));
+      return isAllSelected
+        ? new Set([...prev].filter(id => !articles.some(a => a._id === id)))
+        : new Set([...prev, ...articles.map(a => a._id)]);
     });
   };
 
@@ -475,13 +483,15 @@ export default function ManageWpScreen() {
     );
   };
 
+  const runningActionRef = useRef<string | null>(null);
+
   /**
    * Thực thi hành động hàng loạt trên các bài ĐANG CHỌN Ở TRANG HIỆN TẠI.
    * Với server-side pagination, selection chỉ có phạm vi 1 trang nên đây luôn là
    * tập con của trang đang xem — tránh tác động lên bài user không nhìn thấy.
    */
   const bulkMutation = useMutation<
-    { message: string; analysisContent?: string },
+    { message: string; jobId?: string },
     Error,
     { action: string; ids: string[] }
   >({
@@ -498,16 +508,18 @@ export default function ManageWpScreen() {
         }
 
         if (action === 'analyze_market_trends') {
-          const { data: responseData } = await apiAxios.post<{ data?: string; message?: string }>(
+          // Backend trả ngay { message, jobId } rồi xử lý AI ngầm — không còn chờ đồng bộ
+          // nên không cần override timeout nữa, kết quả sẽ được poll qua MarketAnalysisJobContext.
+          const { data: responseData } = await apiAxios.post<{ message?: string; jobId?: string }>(
             `${ARTICLES_ENDPOINT}/analyze-market-trends`,
             { ids },
           );
-          if (!responseData?.data) {
+          if (!responseData?.jobId) {
             throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
           }
           return {
-            message: 'Đã phân tích thị trường thành công',
-            analysisContent: responseData.data
+            message: 'Đã bắt đầu phân tích thị trường, đang chờ kết quả...',
+            jobId: responseData.jobId,
           };
         }
 
@@ -531,12 +543,30 @@ export default function ManageWpScreen() {
         throw new Error(getApiErrorMessage(err, fallback));
       }
     },
-    onSuccess: async ({ message, analysisContent }) => {
-      if (analysisContent) setMarketAnalysisResult(analysisContent);
-      await invalidateArticles();
+    onMutate: ({ action }) => {
+      runningActionRef.current = action;
+      if (action === 'analyze') setCrawlStatus('pending');
+      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('pending');
+    },
+    onSuccess: async ({ message, jobId }, { action }) => {
+      runningActionRef.current = null;
+      if (action === 'analyze') {
+        setCrawlStatus('done');
+        await invalidateArticles();
+      } else if (action === 'analyze_market_trends') {
+        // Không set 'done' ngay — job vẫn đang chạy nền, MarketAnalysisJobContext sẽ
+        // poll trạng thái và cập nhật marketAnalysisStatus khi có kết quả thật.
+        if (jobId) startMarketAnalysisJob(jobId);
+        setSelectedIds(new Set());
+      } else {
+        await invalidateArticles();
+      }
       setNotification({ title: 'Thành công', description: message, type: 'success' });
     },
-    onError: (error) => {
+    onError: (error, { action }) => {
+      runningActionRef.current = null;
+      if (action === 'analyze') setCrawlStatus('error', error.message);
+      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('error', error.message);
       setNotification({
         title: 'Lỗi',
         description: error.message || 'Có lỗi xảy ra khi xử lý hàng loạt',
@@ -544,6 +574,31 @@ export default function ManageWpScreen() {
       });
     }
   });
+
+  // Theo dõi trạng thái job phân tích thị trường (polling qua MarketAnalysisJobContext).
+  // Khi 'done': mở modal hiển thị kết quả (tái dùng AnalysisDetailModal đã có cho lịch sử).
+  // Khi 'error': hiển thị toast lỗi. Cả 2 trường hợp đều clear job sau khi xử lý.
+  useEffect(() => {
+    if (marketJobStatus === 'done') {
+      setMarketAnalysisStatus('done');
+      if (marketJobResultContent) setMarketAnalysisResult(marketJobResultContent);
+      clearMarketAnalysisJobResult();
+    } else if (marketJobStatus === 'error') {
+      setMarketAnalysisStatus('error', marketJobErrorMessage ?? undefined);
+      setNotification({
+        title: 'Lỗi',
+        description: marketJobErrorMessage || 'Lỗi phân tích thị trường',
+        type: 'error',
+      });
+      clearMarketAnalysisJobResult();
+    }
+  }, [
+    marketJobStatus,
+    marketJobResultContent,
+    marketJobErrorMessage,
+    clearMarketAnalysisJobResult,
+    setMarketAnalysisStatus,
+  ]);
 
   const handleBulkAction = () => {
     if (selectedIds.size === 0) return;
@@ -557,8 +612,15 @@ export default function ManageWpScreen() {
   };
 
   const isApplying = bulkMutation.isPending;
-
-
+  // Job phân tích thị trường có thể chạy nền tới ~300s, trong khi bulkMutation.isPending
+  // chỉ true trong lúc chờ POST trả jobId (rất ngắn). Nếu không chặn thêm ở đây, user có
+  // thể bấm "Áp dụng" lần 2 với action analyze_market_trends ngay khi job cũ còn đang chạy,
+  // gây gọi AI song song (tốn cost gấp đôi) và làm jobId cũ trong context bị ghi đè, không
+  // ai còn poll kết quả job cũ. Chỉ chặn khi action đang chọn là analyze_market_trends —
+  // không ảnh hưởng tới publish/analyze/delete vì các action đó chạy độc lập với job này.
+  const isMarketAnalysisActionBlocked =
+    bulkAction === 'analyze_market_trends' && marketJobStatus === 'pending';
+  const isApplyDisabled = isApplying || isMarketAnalysisActionBlocked || selectedIds.size === 0;
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -609,13 +671,26 @@ export default function ManageWpScreen() {
             </select>
             <button
               onClick={handleBulkAction}
-              disabled={isApplying || selectedIds.size === 0}
+              disabled={isApplyDisabled}
+              title={
+                isMarketAnalysisActionBlocked
+                  ? 'Đang phân tích thị trường, vui lòng đợi...'
+                  : undefined
+              }
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isApplying ? (
+              {(isApplying || isMarketAnalysisActionBlocked) && (
                 <Loader2 size={16} className="animate-spin" />
-              ) : null}
-              Áp dụng {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+              )}
+              {isApplying && runningActionRef.current === 'analyze'
+                ? 'Đang crawl tin tức...'
+                : isApplying && runningActionRef.current === 'analyze_market_trends'
+                  ? 'Đang phân tích thị trường...'
+                  : isApplying
+                    ? 'Đang xử lý...'
+                    : isMarketAnalysisActionBlocked
+                      ? 'Đang phân tích thị trường...'
+                      : `Áp dụng${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
             </button>
 
             <div className="hidden xl:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>

@@ -361,6 +361,85 @@ export class NewsFireCrawlManagerController {
   }
 
   @ApiOperation({
+    summary: 'Analyze all raw articles (async)',
+    description:
+      'Tự lấy toàn bộ raw articles từ DB rồi chạy pipeline AI. ' +
+      'Trả về jobId ngay lập tức — dùng GET /analyze-raw/:jobId để poll kết quả.',
+  })
+  @Post('analyze-raw-all')
+  async analyzeAllRawArticles() {
+    // Khóa global để chống 2 job chạy song song (double-click FE, 2 client)
+    const LOCK_KEY = 'analyze-raw-all:global';
+    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+      throw new ConflictException(
+        'Đang có job phân tích toàn bộ đang chạy, vui lòng đợi hoàn tất',
+      );
+    }
+    this.idempotencyService.markInFlight(LOCK_KEY);
+
+    this.logger.log('Analyze All Raw Articles called');
+    const jobId = this.analyzeJobService.createJob();
+    // Fire-and-forget: không await để HTTP response trả về ngay lập tức
+    void this.runAnalyzeAllRawArticlesJob(jobId, LOCK_KEY);
+    return {
+      jobId,
+      message: 'Đã nhận yêu cầu phân tích toàn bộ, đang xử lý trong nền',
+    };
+  }
+
+  /**
+   * Lấy toàn bộ raw articles từ DB rồi chạy pipeline AI phân tích + xóa bài không đạt.
+   * Khác runAnalyzeRawArticlesJob: tự query DB thay vì nhận danh sách từ FE,
+   * nên phạm vi xóa là toàn bộ collection thay vì chỉ trang hiện tại.
+   */
+  private async runAnalyzeAllRawArticlesJob(
+    jobId: string,
+    lockKey: string,
+  ): Promise<void> {
+    try {
+      // Lấy toàn bộ articles từ DB (không phân trang), chỉ lấy field cần thiết
+      const allArticles =
+        await this.customCrawlerService.getAllRawArticles();
+
+      if (!allArticles || allArticles.length === 0) {
+        this.analyzeJobService.markDone(jobId, []);
+        return;
+      }
+
+      // submittedHashes = phạm vi toàn bộ collection → AI có thể xóa bất kỳ bài nào
+      const submittedHashes = allArticles
+        .map((a) => a.urlHash)
+        .filter(Boolean) as string[];
+
+      const filteredArticles =
+        await this.aiFilterService.filterRawArticles(allArticles);
+
+      // Xóa bài nằm trong submittedHashes mà AI không giữ lại
+      const keepHashes: string[] = filteredArticles
+        ? filteredArticles.map((a: any) => a.urlHash)
+        : [];
+      await this.customCrawlerService.deleteRawArticlesInSetNotIn(
+        submittedHashes,
+        keepHashes,
+      );
+
+      this.analyzeJobService.markDone(jobId, filteredArticles);
+    } catch (error: any) {
+      this.logger.error(
+        `Analyze-all job ${jobId} failed: ${error.message}`,
+        error.stack,
+      );
+      this.analyzeJobService.markError(
+        jobId,
+        error.message || 'Lỗi không xác định',
+      );
+    } finally {
+      // Giải phóng lock bất kể thành công hay lỗi, tránh block mọi request tiếp theo
+      this.idempotencyService.clearInFlight(lockKey);
+    }
+  }
+
+  @ApiOperation({
     summary: 'Get analyze-raw job status',
     description: 'Poll trạng thái job phân tích AI chạy nền theo jobId.',
   })
@@ -457,21 +536,73 @@ export class NewsFireCrawlManagerController {
   }
 
   @ApiOperation({
-    summary: 'Analyze market trends',
-    description: 'Analyze market trends',
+    summary: 'Analyze market trends (async)',
+    description:
+      'Trả về jobId ngay lập tức, việc gọi AI phân tích thị trường (có thể mất tới 300s) ' +
+      'chạy nền. Dùng GET /articles/analyze-market-trends/:jobId để lấy kết quả khi hoàn tất.',
   })
   @Post('articles/analyze-market-trends')
-  async analyzeMarketTrends(@Body() body: BulkIdsDto) {
+  analyzeMarketTrends(@Body() body: BulkIdsDto) {
     const { ids } = body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return { message: 'No articles to analyze' };
     }
 
-    const result = await this.newsArticleService.analyzeMarketTrendsByAI(ids);
-    return {
-      message: 'Market trends analysis completed',
-      data: result,
-    };
+    // Khóa global để chống 2 job phân tích thị trường chạy song song
+    // (double-click FE, 2 tab/client) — tránh tốn API cost gấp đôi và job cũ mất track.
+    const LOCK_KEY = 'analyze-market-trends:global';
+    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+      throw new ConflictException(
+        'Đang có job phân tích thị trường khác đang chạy, vui lòng đợi hoàn tất',
+      );
+    }
+    this.idempotencyService.markInFlight(LOCK_KEY);
+
+    const jobId = this.analyzeJobService.createJob();
+
+    // Fire-and-forget: không await trong request handler để HTTP response trả về ngay,
+    // tránh phụ thuộc vào thời gian xử lý AI upstream (có thể tới 300s) — giống pattern analyze-raw.
+    void this.runAnalyzeMarketTrendsJob(jobId, ids, LOCK_KEY);
+
+    return { message: 'Market trends analysis started', jobId };
+  }
+
+  /** Thực thi job phân tích thị trường bằng AI trong nền, cập nhật trạng thái vào AnalyzeJobService. */
+  private async runAnalyzeMarketTrendsJob(
+    jobId: string,
+    ids: string[],
+    lockKey: string,
+  ): Promise<void> {
+    try {
+      const result = await this.newsArticleService.analyzeMarketTrendsByAI(ids);
+      this.analyzeJobService.markDone(jobId, result);
+    } catch (error: any) {
+      this.logger.error(
+        `Analyze market trends job ${jobId} failed: ${error.message}`,
+        error.stack,
+      );
+      this.analyzeJobService.markError(jobId, error.message || 'Lỗi không xác định');
+    } finally {
+      // Giải phóng lock bất kể thành công hay lỗi, tránh block mọi request tiếp theo
+      this.idempotencyService.clearInFlight(lockKey);
+    }
+  }
+
+  @ApiOperation({
+    summary: 'Get analyze-market-trends job status',
+    description: 'Poll trạng thái job phân tích thị trường AI chạy nền theo jobId.',
+  })
+  @ApiParam({
+    name: 'jobId',
+    description: 'ID job trả về từ POST /articles/analyze-market-trends',
+  })
+  @Get('articles/analyze-market-trends/:jobId')
+  getAnalyzeMarketTrendsJob(@Param('jobId') jobId: string) {
+    const job = this.analyzeJobService.getJob(jobId);
+    if (!job) {
+      return { status: 'not_found' };
+    }
+    return job;
   }
 
   @ApiOperation({
