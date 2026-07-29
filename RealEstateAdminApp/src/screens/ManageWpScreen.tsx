@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, History, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -9,6 +9,7 @@ import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { buildListQuery, fetchPaginated, getApiErrorMessage } from '../utils/fetchPaginated';
 import apiAxios from '../api/axios';
+import { useManageWpStatus } from '../context/ManageWpStatusContext';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -26,20 +27,20 @@ const ToastNotification = ({ title, description, type = 'success', onClose }: To
   const [progress, setProgress] = useState(100);
   const [isClosing, setIsClosing] = useState(false);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
+
   useEffect(() => {
-    // start progress shrink immediately
     const t1 = setTimeout(() => setProgress(0), 50);
-    
     const timer = setTimeout(() => {
       setIsClosing(true);
-      setTimeout(onClose, 300); // Wait for slide out animation
+      setTimeout(() => onCloseRef.current(), 300);
     }, 5000);
-    
     return () => {
       clearTimeout(t1);
       clearTimeout(timer);
     };
-  }, [title, description, onClose]);
+  }, [title, description]);
 
   const config = {
     success: {
@@ -101,8 +102,7 @@ const AnalysisDetailModal = ({ content, title, onClose }: { content: string, tit
       await navigator.clipboard.writeText(content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy', err);
+    } catch {
     }
   };
 
@@ -143,27 +143,24 @@ const AnalysisDetailModal = ({ content, title, onClose }: { content: string, tit
   );
 };
 
+interface MarketAnalysisHistoryItem {
+  _id: string;
+  content: string;
+  articleIds: string[];
+  createdAt: string;
+}
+
 const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
-  const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { data: historyData, isLoading: loading, isError: historyError } = useQuery<MarketAnalysisHistoryItem[]>({
+    queryKey: ['market-analysis-history'],
+    queryFn: async ({ signal }) => {
+      const { data } = await apiAxios.get<{ data?: MarketAnalysisHistoryItem[] }>('/news-manager/articles/market-analysis-history', { signal });
+      return data.data ?? [];
+    },
+    enabled: isOpen,
+  });
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchHistory();
-    }
-  }, [isOpen]);
-
-  const fetchHistory = async () => {
-    try {
-      setLoading(true);
-      const { data } = await apiAxios.get<{ data?: unknown[] }>('/news-manager/articles/market-analysis-history');
-      setHistory(data.data || []);
-    } catch (error) {
-      console.error('Error fetching history', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const history = historyData ?? [];
 
   if (!isOpen) return null;
 
@@ -246,6 +243,7 @@ const formatDisplayDate = (article: WpArticle): string => {
 
 export default function ManageWpScreen() {
   const queryClient = useQueryClient();
+  const { setCrawlStatus, setMarketAnalysisStatus } = useManageWpStatus();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -477,6 +475,8 @@ export default function ManageWpScreen() {
     );
   };
 
+  const runningActionRef = useRef<string | null>(null);
+
   /**
    * Thực thi hành động hàng loạt trên các bài ĐANG CHỌN Ở TRANG HIỆN TẠI.
    * Với server-side pagination, selection chỉ có phạm vi 1 trang nên đây luôn là
@@ -533,12 +533,23 @@ export default function ManageWpScreen() {
         throw new Error(getApiErrorMessage(err, fallback));
       }
     },
-    onSuccess: async ({ message, analysisContent }) => {
+    onMutate: ({ action }) => {
+      runningActionRef.current = action;
+      if (action === 'analyze') setCrawlStatus('pending');
+      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('pending');
+    },
+    onSuccess: async ({ message, analysisContent }, { action }) => {
+      runningActionRef.current = null;
+      if (action === 'analyze') setCrawlStatus('done');
+      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('done');
       if (analysisContent) setMarketAnalysisResult(analysisContent);
       await invalidateArticles();
       setNotification({ title: 'Thành công', description: message, type: 'success' });
     },
-    onError: (error) => {
+    onError: (error, { action }) => {
+      runningActionRef.current = null;
+      if (action === 'analyze') setCrawlStatus('error', error.message);
+      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('error', error.message);
       setNotification({
         title: 'Lỗi',
         description: error.message || 'Có lỗi xảy ra khi xử lý hàng loạt',
@@ -614,10 +625,16 @@ export default function ManageWpScreen() {
               disabled={isApplying || selectedIds.size === 0}
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isApplying ? (
+              {isApplying && (
                 <Loader2 size={16} className="animate-spin" />
-              ) : null}
-              Áp dụng {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+              )}
+              {isApplying && runningActionRef.current === 'analyze'
+                ? 'Đang crawl tin tức...'
+                : isApplying && runningActionRef.current === 'analyze_market_trends'
+                  ? 'Đang phân tích thị trường...'
+                  : isApplying
+                    ? 'Đang xử lý...'
+                    : `Áp dụng${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
             </button>
 
             <div className="hidden xl:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>

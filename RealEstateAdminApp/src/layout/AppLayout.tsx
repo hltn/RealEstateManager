@@ -1,5 +1,6 @@
 import { SidebarProvider, useSidebar } from "../context/SidebarContext";
 import { AnalyzeJobProvider } from "../context/AnalyzeJobContext";
+import { ManageWpStatusProvider } from "../context/ManageWpStatusContext";
 import { Outlet } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
@@ -32,7 +33,9 @@ const AppLayout: React.FC = () => {
   return (
     <SidebarProvider>
       <AnalyzeJobProvider>
-        <LayoutContent />
+        <ManageWpStatusProvider>
+          <LayoutContent />
+        </ManageWpStatusProvider>
       </AnalyzeJobProvider>
     </SidebarProvider>
   );

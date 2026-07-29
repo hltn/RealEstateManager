@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import { Link } from "react-router-dom";
 import Logo from "../images/logo/logo.png";
 import { useSidebar } from "../context/SidebarContext";
 import { useAnalyzeJob } from "../context/AnalyzeJobContext";
+import { useManageWpStatus } from "../context/ManageWpStatusContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationDropdown from "../components/header/NotificationDropdown";
 import UserDropdown from "../components/header/UserDropdown";
@@ -17,7 +19,7 @@ const AnalyzeJobBadge: React.FC = () => {
   if (status === "pending") {
     return (
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
-        <span className="h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
+        <Loader2 size={14} className="animate-spin" />
         <span>Đang phân tích tin tức...</span>
       </div>
     );
@@ -41,6 +43,80 @@ const AnalyzeJobBadge: React.FC = () => {
       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-error-50 text-error-500 dark:bg-error-500/15 dark:text-error-400 hover:opacity-80"
     >
       <span>Phân tích tin tức lỗi</span>
+    </button>
+  );
+};
+
+/** Badge hiển thị trạng thái crawl tin tức từ ManageWpScreen. */
+const CrawlStatusBadge: React.FC = () => {
+  const { crawlStatus, crawlError, clearCrawlStatus } = useManageWpStatus();
+
+  if (crawlStatus === "idle") return null;
+
+  if (crawlStatus === "pending") {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+        <Loader2 size={14} className="animate-spin" />
+        <span>Đang crawl tin tức...</span>
+      </div>
+    );
+  }
+
+  if (crawlStatus === "done") {
+    return (
+      <button
+        onClick={clearCrawlStatus}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-success-50 text-success-500 dark:bg-success-500/15 dark:text-success-400 hover:opacity-80"
+      >
+        <span>Crawl tin tức hoàn tất</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={clearCrawlStatus}
+      title={crawlError ?? undefined}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-error-50 text-error-500 dark:bg-error-500/15 dark:text-error-400 hover:opacity-80"
+    >
+      <span>Crawl tin tức lỗi</span>
+    </button>
+  );
+};
+
+/** Badge hiển thị trạng thái phân tích thị trường từ ManageWpScreen. */
+const MarketAnalysisBadge: React.FC = () => {
+  const { marketAnalysisStatus, marketAnalysisError, clearMarketAnalysisStatus } = useManageWpStatus();
+
+  if (marketAnalysisStatus === "idle") return null;
+
+  if (marketAnalysisStatus === "pending") {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+        <Loader2 size={14} className="animate-spin" />
+        <span>Đang phân tích thị trường...</span>
+      </div>
+    );
+  }
+
+  if (marketAnalysisStatus === "done") {
+    return (
+      <button
+        onClick={clearMarketAnalysisStatus}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-success-50 text-success-500 dark:bg-success-500/15 dark:text-success-400 hover:opacity-80"
+      >
+        <span>Phân tích thị trường hoàn tất</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={clearMarketAnalysisStatus}
+      title={marketAnalysisError ?? undefined}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-theme-xs font-medium bg-error-50 text-error-500 dark:bg-error-500/15 dark:text-error-400 hover:opacity-80"
+    >
+      <span>Phân tích thị trường lỗi</span>
     </button>
   );
 };
@@ -195,6 +271,8 @@ const AppHeader: React.FC = () => {
             } items-center justify-between w-full gap-4 px-5 py-4 lg:flex shadow-theme-md lg:justify-end lg:px-0 lg:shadow-none`}
         >
           <div className="flex items-center gap-2 2xsm:gap-3">
+            <CrawlStatusBadge />
+            <MarketAnalysisBadge />
             <AnalyzeJobBadge />
             {/* <!-- Dark Mode Toggler --> */}
             <ThemeToggleButton />
