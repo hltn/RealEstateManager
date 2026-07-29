@@ -31,6 +31,7 @@ async function bootstrap() {
   // CORS: credentials=true cho httpOnly cookie cross-origin (dev).
   app.enableCors({
     origin: configService.get<string>('FRONTEND_URL') || 'http://localhost:5173',
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 

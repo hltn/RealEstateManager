@@ -377,6 +377,22 @@ export class CustomCrawlerService {
       .exec();
   }
 
+  /**
+   * Lấy toàn bộ raw articles chỉ với các field cần thiết cho pipeline phân tích AI.
+   * Áp dụng nguyên tắc Least Privilege Data: chỉ select urlHash, title, description.
+   */
+  async getAllRawArticles(): Promise<
+    Array<{ urlHash: string; title: string; description: string }>
+  > {
+    return this.rawArticleModel
+      .find()
+      .select('urlHash title description')
+      .lean()
+      .exec() as Promise<
+      Array<{ urlHash: string; title: string; description: string }>
+    >;
+  }
+
   async deleteRawArticle(id: string): Promise<void> {
     await this.rawArticleModel.findByIdAndDelete(id).exec();
   }

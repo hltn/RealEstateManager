@@ -222,6 +222,33 @@ export default function RawArticlesScreen() {
     onError: (err) => setError(err.message || "Đã xảy ra lỗi khi phân tích AI"),
   });
 
+  // Phân tích toàn bộ tin tức thô trong database — không giới hạn theo trang hiện tại.
+  const analyzeAllMutation = useMutation<string | null, Error>({
+    mutationFn: async () => {
+      try {
+        const { data: resData } = await apiAxios.post<{ jobId?: string; message?: string }>(
+          "/news-manager/analyze-raw-all",
+        );
+        return resData?.jobId ?? null;
+      } catch (err) {
+        throw new Error(getApiErrorMessage(err, "Lỗi khi phân tích tất cả tin tức"));
+      }
+    },
+    onMutate: () => {
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: (jobId) => {
+      if (jobId) {
+        startAnalyzeJob(jobId);
+        setSuccess("Đã gửi yêu cầu phân tích tất cả, kết quả sẽ hiển thị ở góc trên bên phải.");
+      } else {
+        setSuccess("Không có bài viết nào để phân tích.");
+      }
+    },
+    onError: (err) => setError(err.message || "Đã xảy ra lỗi khi phân tích tất cả tin tức"),
+  });
+
   const deleteSingleMutation = useMutation<void, Error, string>({
     mutationFn: async (id) => {
       try {
@@ -268,6 +295,7 @@ export default function RawArticlesScreen() {
     isFetching ||
     crawlMutation.isPending ||
     analyzeMutation.isPending ||
+    analyzeAllMutation.isPending ||
     isAnalyzeJobRunning ||
     bulkMutation.isPending;
 
@@ -445,6 +473,21 @@ export default function RawArticlesScreen() {
               Đã chọn {selectedIds.length} bài trên trang này
             </span>
           )}
+          <button
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Phân tích tất cả tin tức trong database? Thao tác này có thể mất nhiều thời gian.",
+                )
+              )
+                return;
+              analyzeAllMutation.mutate();
+            }}
+            disabled={isBusy}
+            className="px-4 py-2 font-medium text-amber-600 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/25 hover:bg-amber-100 dark:hover:bg-amber-500/25 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            {analyzeAllMutation.isPending || isAnalyzeJobRunning ? "Đang phân tích..." : "Phân tích tất cả"}
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
