@@ -358,9 +358,6 @@ export default function ManageWpScreen() {
   };
 
   const changePage = (nextPage: number) => {
-    // Clear selection khi đổi trang: giữ lại các id không còn hiển thị rất dễ
-    // dẫn tới đăng/xóa nhầm bài mà user không nhìn thấy.
-    setSelectedIds(new Set());
     setPage(nextPage);
   };
 
@@ -383,11 +380,16 @@ export default function ManageWpScreen() {
   // vị trí toàn cục không còn đúng, nên đánh số lại từ 1 trong phạm vi kết quả.
   const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest' || statusFilter !== 'all';
 
-  /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại. */
+  /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại.
+   * Khi chọn: merge id trang hiện tại vào selection hiện có (giữ lại các trang khác).
+   * Khi bỏ chọn: chỉ xóa id trang hiện tại, không ảnh hưởng selection các trang khác.
+   */
   const toggleSelectAllOnPage = () => {
     setSelectedIds(prev => {
       const isAllSelected = articles.length > 0 && articles.every(article => prev.has(article._id));
-      return isAllSelected ? new Set<string>() : new Set(articles.map(article => article._id));
+      return isAllSelected
+        ? new Set([...prev].filter(id => !articles.some(a => a._id === id)))
+        : new Set([...prev, ...articles.map(a => a._id)]);
     });
   };
 
