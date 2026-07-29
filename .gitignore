@@ -22,3 +22,5 @@ RealEstateBackendApp/scripts/migrations/backups/
 .agents/
 
 graphify-out/
+
+CLAUDE.md
