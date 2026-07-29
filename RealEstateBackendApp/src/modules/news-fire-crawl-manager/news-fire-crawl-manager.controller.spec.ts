@@ -411,19 +411,69 @@ describe('NewsFireCrawlManagerController', () => {
     });
   });
 
-  describe('analyzeMarketTrends / analyzeMarketBulk', () => {
-    it('ids rỗng → message, không gọi service', async () => {
-      const r1 = await controller.analyzeMarketTrends({ ids: [] } as any);
-      const r2 = await controller.analyzeMarketBulk({ ids: [] } as any);
-      expect(r1).toEqual({ message: 'No articles to analyze' });
-      expect(r2).toEqual({ message: 'No articles to analyze' });
+  describe('analyzeMarketTrends (async job) — Idempotency lock chống double-submit', () => {
+    const LOCK_KEY = 'analyze-market-trends:global';
+
+    it('ids rỗng → trả message, không tạo job, không check lock', () => {
+      const result = controller.analyzeMarketTrends({ ids: [] } as any);
+      expect(result).toEqual({ message: 'No articles to analyze' });
+      expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+      expect(idempotencyService.isInFlight).not.toHaveBeenCalled();
     });
 
-    it('analyzeMarketTrends → gọi service.analyzeMarketTrendsByAI(ids)', async () => {
+    it('ids có giá trị, không có job nào đang chạy → markInFlight + tạo job, trả jobId ngay lập tức (fire-and-forget)', () => {
+      idempotencyService.isInFlight.mockReturnValue(false);
+      analyzeJobService.createJob.mockReturnValue('job-mt-1');
+      const result = controller.analyzeMarketTrends({ ids: ['1', '2'] } as any);
+      expect(idempotencyService.isInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      expect(idempotencyService.markInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      expect(analyzeJobService.createJob).toHaveBeenCalled();
+      expect(result).toEqual({ message: 'Market trends analysis started', jobId: 'job-mt-1' });
+      // Không await job nền trong request handler — service chưa chắc đã được gọi ngay tick này.
+    });
+
+    it('đang có job phân tích thị trường khác chạy (double-submit) → ConflictException, KHÔNG tạo job mới', () => {
+      idempotencyService.isInFlight.mockReturnValue(true);
+      expect(() =>
+        controller.analyzeMarketTrends({ ids: ['1', '2'] } as any),
+      ).toThrow(ConflictException);
+      expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+      expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+    });
+
+    it('job nền: gọi analyzeMarketTrendsByAI(ids) rồi markDone với kết quả markdown + clearInFlight lock', async () => {
       newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('analysis result' as any);
-      const result = await controller.analyzeMarketTrends({ ids: ['1', '2'] } as any);
+      await (controller as any).runAnalyzeMarketTrendsJob('job-mt-2', ['1', '2'], LOCK_KEY);
       expect(newsArticleService.analyzeMarketTrendsByAI).toHaveBeenCalledWith(['1', '2']);
-      expect(result).toMatchObject({ message: 'Market trends analysis completed', data: 'analysis result' });
+      expect(analyzeJobService.markDone).toHaveBeenCalledWith('job-mt-2', 'analysis result');
+      expect(idempotencyService.clearInFlight).toHaveBeenCalledWith(LOCK_KEY);
+    });
+
+    it('job nền lỗi → markError với message, vẫn clearInFlight lock trong finally (không bị stuck lock)', async () => {
+      newsArticleService.analyzeMarketTrendsByAI.mockRejectedValue(new Error('AI timeout'));
+      await (controller as any).runAnalyzeMarketTrendsJob('job-mt-err', ['1'], LOCK_KEY);
+      expect(analyzeJobService.markError).toHaveBeenCalledWith('job-mt-err', 'AI timeout');
+      expect(idempotencyService.clearInFlight).toHaveBeenCalledWith(LOCK_KEY);
+    });
+  });
+
+  describe('getAnalyzeMarketTrendsJob', () => {
+    it('jobId không tồn tại → { status: not_found }', () => {
+      analyzeJobService.getJob.mockReturnValue(undefined);
+      expect(controller.getAnalyzeMarketTrendsJob('missing')).toEqual({ status: 'not_found' });
+    });
+
+    it('job tồn tại → trả nguyên job object', () => {
+      const job = { status: 'done', result: '# Market Analysis', updatedAt: 123 };
+      analyzeJobService.getJob.mockReturnValue(job as any);
+      expect(controller.getAnalyzeMarketTrendsJob('j1')).toEqual(job);
+    });
+  });
+
+  describe('analyzeMarketBulk', () => {
+    it('ids rỗng → message, không gọi service', async () => {
+      const result = await controller.analyzeMarketBulk({ ids: [] } as any);
+      expect(result).toEqual({ message: 'No articles to analyze' });
     });
 
     it('analyzeMarketBulk → gọi service.analyzeMarketBulk(ids)', async () => {

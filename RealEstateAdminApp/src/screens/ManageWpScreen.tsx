@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Send, FileText, Eye, Wand2, Loader2, CheckCircle, XCircle, AlertTriangle, Info as InfoIcon, History, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -10,6 +10,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { buildListQuery, fetchPaginated, getApiErrorMessage } from '../utils/fetchPaginated';
 import apiAxios from '../api/axios';
 import { useManageWpStatus } from '../context/ManageWpStatusContext';
+import { useMarketAnalysisJob } from '../context/MarketAnalysisJobContext';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -151,7 +152,7 @@ interface MarketAnalysisHistoryItem {
 }
 
 const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
-  const { data: historyData, isLoading: loading, isError: historyError } = useQuery<MarketAnalysisHistoryItem[]>({
+  const { data: historyData, isLoading: loading } = useQuery<MarketAnalysisHistoryItem[]>({
     queryKey: ['market-analysis-history'],
     queryFn: async ({ signal }) => {
       const { data } = await apiAxios.get<{ data?: MarketAnalysisHistoryItem[] }>('/news-manager/articles/market-analysis-history', { signal });
@@ -244,6 +245,13 @@ const formatDisplayDate = (article: WpArticle): string => {
 export default function ManageWpScreen() {
   const queryClient = useQueryClient();
   const { setCrawlStatus, setMarketAnalysisStatus } = useManageWpStatus();
+  const {
+    status: marketJobStatus,
+    errorMessage: marketJobErrorMessage,
+    resultContent: marketJobResultContent,
+    startJob: startMarketAnalysisJob,
+    clearResult: clearMarketAnalysisJobResult,
+  } = useMarketAnalysisJob();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -483,7 +491,7 @@ export default function ManageWpScreen() {
    * tập con của trang đang xem — tránh tác động lên bài user không nhìn thấy.
    */
   const bulkMutation = useMutation<
-    { message: string; analysisContent?: string },
+    { message: string; jobId?: string },
     Error,
     { action: string; ids: string[] }
   >({
@@ -500,16 +508,18 @@ export default function ManageWpScreen() {
         }
 
         if (action === 'analyze_market_trends') {
-          const { data: responseData } = await apiAxios.post<{ data?: string; message?: string }>(
+          // Backend trả ngay { message, jobId } rồi xử lý AI ngầm — không còn chờ đồng bộ
+          // nên không cần override timeout nữa, kết quả sẽ được poll qua MarketAnalysisJobContext.
+          const { data: responseData } = await apiAxios.post<{ message?: string; jobId?: string }>(
             `${ARTICLES_ENDPOINT}/analyze-market-trends`,
             { ids },
           );
-          if (!responseData?.data) {
+          if (!responseData?.jobId) {
             throw new Error(responseData?.message || 'Lỗi phân tích thị trường');
           }
           return {
-            message: 'Đã phân tích thị trường thành công',
-            analysisContent: responseData.data
+            message: 'Đã bắt đầu phân tích thị trường, đang chờ kết quả...',
+            jobId: responseData.jobId,
           };
         }
 
@@ -538,12 +548,19 @@ export default function ManageWpScreen() {
       if (action === 'analyze') setCrawlStatus('pending');
       else if (action === 'analyze_market_trends') setMarketAnalysisStatus('pending');
     },
-    onSuccess: async ({ message, analysisContent }, { action }) => {
+    onSuccess: async ({ message, jobId }, { action }) => {
       runningActionRef.current = null;
-      if (action === 'analyze') setCrawlStatus('done');
-      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('done');
-      if (analysisContent) setMarketAnalysisResult(analysisContent);
-      await invalidateArticles();
+      if (action === 'analyze') {
+        setCrawlStatus('done');
+        await invalidateArticles();
+      } else if (action === 'analyze_market_trends') {
+        // Không set 'done' ngay — job vẫn đang chạy nền, MarketAnalysisJobContext sẽ
+        // poll trạng thái và cập nhật marketAnalysisStatus khi có kết quả thật.
+        if (jobId) startMarketAnalysisJob(jobId);
+        setSelectedIds(new Set());
+      } else {
+        await invalidateArticles();
+      }
       setNotification({ title: 'Thành công', description: message, type: 'success' });
     },
     onError: (error, { action }) => {
@@ -558,6 +575,31 @@ export default function ManageWpScreen() {
     }
   });
 
+  // Theo dõi trạng thái job phân tích thị trường (polling qua MarketAnalysisJobContext).
+  // Khi 'done': mở modal hiển thị kết quả (tái dùng AnalysisDetailModal đã có cho lịch sử).
+  // Khi 'error': hiển thị toast lỗi. Cả 2 trường hợp đều clear job sau khi xử lý.
+  useEffect(() => {
+    if (marketJobStatus === 'done') {
+      setMarketAnalysisStatus('done');
+      if (marketJobResultContent) setMarketAnalysisResult(marketJobResultContent);
+      clearMarketAnalysisJobResult();
+    } else if (marketJobStatus === 'error') {
+      setMarketAnalysisStatus('error', marketJobErrorMessage ?? undefined);
+      setNotification({
+        title: 'Lỗi',
+        description: marketJobErrorMessage || 'Lỗi phân tích thị trường',
+        type: 'error',
+      });
+      clearMarketAnalysisJobResult();
+    }
+  }, [
+    marketJobStatus,
+    marketJobResultContent,
+    marketJobErrorMessage,
+    clearMarketAnalysisJobResult,
+    setMarketAnalysisStatus,
+  ]);
+
   const handleBulkAction = () => {
     if (selectedIds.size === 0) return;
     if (bulkAction === 'delete') {
@@ -570,8 +612,15 @@ export default function ManageWpScreen() {
   };
 
   const isApplying = bulkMutation.isPending;
-
-
+  // Job phân tích thị trường có thể chạy nền tới ~300s, trong khi bulkMutation.isPending
+  // chỉ true trong lúc chờ POST trả jobId (rất ngắn). Nếu không chặn thêm ở đây, user có
+  // thể bấm "Áp dụng" lần 2 với action analyze_market_trends ngay khi job cũ còn đang chạy,
+  // gây gọi AI song song (tốn cost gấp đôi) và làm jobId cũ trong context bị ghi đè, không
+  // ai còn poll kết quả job cũ. Chỉ chặn khi action đang chọn là analyze_market_trends —
+  // không ảnh hưởng tới publish/analyze/delete vì các action đó chạy độc lập với job này.
+  const isMarketAnalysisActionBlocked =
+    bulkAction === 'analyze_market_trends' && marketJobStatus === 'pending';
+  const isApplyDisabled = isApplying || isMarketAnalysisActionBlocked || selectedIds.size === 0;
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -622,10 +671,15 @@ export default function ManageWpScreen() {
             </select>
             <button
               onClick={handleBulkAction}
-              disabled={isApplying || selectedIds.size === 0}
+              disabled={isApplyDisabled}
+              title={
+                isMarketAnalysisActionBlocked
+                  ? 'Đang phân tích thị trường, vui lòng đợi...'
+                  : undefined
+              }
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isApplying && (
+              {(isApplying || isMarketAnalysisActionBlocked) && (
                 <Loader2 size={16} className="animate-spin" />
               )}
               {isApplying && runningActionRef.current === 'analyze'
@@ -634,7 +688,9 @@ export default function ManageWpScreen() {
                   ? 'Đang phân tích thị trường...'
                   : isApplying
                     ? 'Đang xử lý...'
-                    : `Áp dụng${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+                    : isMarketAnalysisActionBlocked
+                      ? 'Đang phân tích thị trường...'
+                      : `Áp dụng${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
             </button>
 
             <div className="hidden xl:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
