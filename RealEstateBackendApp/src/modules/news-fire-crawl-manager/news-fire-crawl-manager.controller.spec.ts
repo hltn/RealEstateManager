@@ -470,17 +470,95 @@ describe('NewsFireCrawlManagerController', () => {
     });
   });
 
-  describe('analyzeMarketBulk', () => {
-    it('ids rỗng → message, không gọi service', async () => {
-      const result = await controller.analyzeMarketBulk({ ids: [] } as any);
+  describe('analyzeMarketBulk (async job) — Idempotency lock chống double-submit', () => {
+    const LOCK_KEY = 'market-analysis-bulk:global';
+
+    it('ids rỗng → trả message, không tạo job, không check lock, không audit', () => {
+      const result = controller.analyzeMarketBulk({ ids: [] } as any);
       expect(result).toEqual({ message: 'No articles to analyze' });
+      expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+      expect(idempotencyService.isInFlight).not.toHaveBeenCalled();
+      expect(auditLogService.log).not.toHaveBeenCalled();
     });
 
-    it('analyzeMarketBulk → gọi service.analyzeMarketBulk(ids)', async () => {
+    it('ids có giá trị, không có job nào đang chạy → markInFlight + tạo job, trả jobId ngay lập tức (fire-and-forget) + audit MARKET_ANALYSIS_BULK', () => {
+      idempotencyService.isInFlight.mockReturnValue(false);
+      analyzeJobService.createJob.mockReturnValue('job-mab-1');
+      const result = controller.analyzeMarketBulk({ ids: ['1', '2'] } as any);
+      expect(idempotencyService.isInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      expect(idempotencyService.markInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      expect(analyzeJobService.createJob).toHaveBeenCalled();
+      expect(result).toEqual({ jobId: 'job-mab-1', message: 'Bulk market analysis started' });
+      // Audit fire-and-forget ngay khi trigger thành công (sau lock, trước job nền).
+      expect(auditLogService.log).toHaveBeenCalledWith(
+        AuditAction.MARKET_ANALYSIS_BULK,
+        'news_articles',
+        ['1', '2'],
+        'system',
+        { jobId: 'job-mab-1', count: 2 },
+      );
+      // Fire-and-forget: request handler không await job nền — trả ngay jobId.
+    });
+
+    it('đang có job bulk khác chạy (double-submit) → ConflictException, KHÔNG tạo job mới, KHÔNG audit', () => {
+      idempotencyService.isInFlight.mockReturnValue(true);
+      expect(() =>
+        controller.analyzeMarketBulk({ ids: ['1', '2'] } as any),
+      ).toThrow(ConflictException);
+      expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+      expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+      expect(auditLogService.log).not.toHaveBeenCalled();
+    });
+
+    it('job nền: gọi analyzeMarketBulk(ids) rồi markDone với kết quả + clearInFlight lock', async () => {
       newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 2 } as any);
-      const result = await controller.analyzeMarketBulk({ ids: ['1'] } as any);
-      expect(newsArticleService.analyzeMarketBulk).toHaveBeenCalledWith(['1']);
-      expect(result).toMatchObject({ message: 'Bulk market analysis completed', data: { processed: 2 } });
+      await (controller as any).runAnalyzeMarketBulkJob('job-mab-2', ['1', '2'], LOCK_KEY);
+      expect(newsArticleService.analyzeMarketBulk).toHaveBeenCalledWith(['1', '2']);
+      expect(analyzeJobService.markDone).toHaveBeenCalledWith('job-mab-2', { processed: 2 });
+      expect(idempotencyService.clearInFlight).toHaveBeenCalledWith(LOCK_KEY);
+    });
+
+    it('job nền lỗi → markError với message, vẫn clearInFlight lock trong finally (không bị stuck lock)', async () => {
+      newsArticleService.analyzeMarketBulk.mockRejectedValue(new Error('AI timeout'));
+      await (controller as any).runAnalyzeMarketBulkJob('job-mab-err', ['1'], LOCK_KEY);
+      expect(analyzeJobService.markError).toHaveBeenCalledWith('job-mab-err', 'AI timeout');
+      expect(idempotencyService.clearInFlight).toHaveBeenCalledWith(LOCK_KEY);
+    });
+
+    it('markDone throw → KHÔNG reject promise (robustness: lifecycle throw không sinh unhandled rejection)', async () => {
+      newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 2 } as any);
+      analyzeJobService.markDone.mockImplementation(() => {
+        throw new Error('markDone boom');
+      });
+      // Promise phải resolve (không reject) dù markDone ném lỗi.
+      await expect(
+        (controller as any).runAnalyzeMarketBulkJob('job-md', ['1'], LOCK_KEY),
+      ).resolves.toBeUndefined();
+      expect(idempotencyService.clearInFlight).toHaveBeenCalledWith(LOCK_KEY);
+    });
+
+    it('clearInFlight throw → KHÔNG reject promise (robustness: lifecycle throw không sinh unhandled rejection)', async () => {
+      newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 2 } as any);
+      idempotencyService.clearInFlight.mockImplementation(() => {
+        throw new Error('clear boom');
+      });
+      await expect(
+        (controller as any).runAnalyzeMarketBulkJob('job-ci', ['1'], LOCK_KEY),
+      ).resolves.toBeUndefined();
+      expect(analyzeJobService.markDone).toHaveBeenCalledWith('job-ci', { processed: 2 });
+    });
+  });
+
+  describe('getAnalyzeMarketBulkJob', () => {
+    it('jobId không tồn tại → { status: not_found }', () => {
+      analyzeJobService.getJob.mockReturnValue(undefined);
+      expect(controller.getAnalyzeMarketBulkJob('missing')).toEqual({ status: 'not_found' });
+    });
+
+    it('job tồn tại → trả nguyên job object', () => {
+      const job = { status: 'done', result: { processed: 2 }, updatedAt: 123 };
+      analyzeJobService.getJob.mockReturnValue(job as any);
+      expect(controller.getAnalyzeMarketBulkJob('j1')).toEqual(job);
     });
   });
 

@@ -7,6 +7,11 @@ export enum AuditAction {
   BULK_MOVE = 'BULK_MOVE',
   PUBLISH = 'PUBLISH',
   BULK_PUBLISH = 'BULK_PUBLISH',
+  /**
+   * Admin trigger phân tích thị trường bulk (chạy nền).
+   * Backward compatible: chỉ thêm giá trị enum mới, document cũ không bị ảnh hưởng.
+   */
+  MARKET_ANALYSIS_BULK = 'MARKET_ANALYSIS_BULK',
 }
 
 /**

@@ -11,6 +11,7 @@ import { buildListQuery, fetchPaginated, getApiErrorMessage } from '../utils/fet
 import apiAxios from '../api/axios';
 import { useManageWpStatus } from '../context/ManageWpStatusContext';
 import { useMarketAnalysisJob } from '../context/MarketAnalysisJobContext';
+import { useBulkCrawlJob } from '../context/BulkCrawlJobContext';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -244,7 +245,7 @@ const formatDisplayDate = (article: WpArticle): string => {
 
 export default function ManageWpScreen() {
   const queryClient = useQueryClient();
-  const { setCrawlStatus, setMarketAnalysisStatus } = useManageWpStatus();
+  const { crawlStatus, setCrawlStatus, setMarketAnalysisStatus } = useManageWpStatus();
   const {
     status: marketJobStatus,
     errorMessage: marketJobErrorMessage,
@@ -252,6 +253,7 @@ export default function ManageWpScreen() {
     startJob: startMarketAnalysisJob,
     clearResult: clearMarketAnalysisJobResult,
   } = useMarketAnalysisJob();
+  const { startJob: startBulkCrawlJob } = useBulkCrawlJob();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -503,8 +505,19 @@ export default function ManageWpScreen() {
         }
 
         if (action === 'analyze') {
-          await apiAxios.post(`${ARTICLES_ENDPOINT}/market-analysis-bulk`, { ids });
-          return { message: 'Đã crawl xong tin tức' };
+          // Backend trả ngay { jobId } rồi crawl ngầm — không còn chờ đồng bộ,
+          // tránh Axios timeout 30s. Kết quả được poll qua BulkCrawlJobContext.
+          const { data: responseData } = await apiAxios.post<{ message?: string; jobId?: string }>(
+            `${ARTICLES_ENDPOINT}/market-analysis-bulk`,
+            { ids },
+          );
+          if (!responseData?.jobId) {
+            throw new Error(responseData?.message || 'Crawl tin tức thất bại');
+          }
+          return {
+            message: 'Đã bắt đầu crawl tin tức, đang chờ kết quả...',
+            jobId: responseData.jobId,
+          };
         }
 
         if (action === 'analyze_market_trends') {
@@ -551,8 +564,12 @@ export default function ManageWpScreen() {
     onSuccess: async ({ message, jobId }, { action }) => {
       runningActionRef.current = null;
       if (action === 'analyze') {
-        setCrawlStatus('done');
-        await invalidateArticles();
+        // Job crawl chạy ngầm — KHÔNG set 'done' ở đây. BulkCrawlJobContext sẽ
+        // poll và setCrawlStatus('done') + invalidate wp-articles khi xong.
+        // Xoá selection vì job đã bắt đầu thành công (giống analyze_market_trends);
+        // nếu POST lỗi thì onError giữ nguyên selection (không mất bài đã chọn).
+        if (jobId) startBulkCrawlJob(jobId);
+        setSelectedIds(new Set());
       } else if (action === 'analyze_market_trends') {
         // Không set 'done' ngay — job vẫn đang chạy nền, MarketAnalysisJobContext sẽ
         // poll trạng thái và cập nhật marketAnalysisStatus khi có kết quả thật.
@@ -612,6 +629,14 @@ export default function ManageWpScreen() {
   };
 
   const isApplying = bulkMutation.isPending;
+  // Job crawl tin tức giờ chạy ngầm (POST trả jobId ngay). bulkMutation.isPending
+  // chỉ true trong lúc chờ POST trả về (rất ngắn). Nếu không chặn thêm ở đây,
+  // user có thể bấm "Áp dụng" lần 2 với action analyze khi crawl cũ còn đang chạy,
+  // gây gọi backend song song và ghi đè jobId cũ trong BulkCrawlJobContext, không
+  // ai còn poll kết quả job cũ. Chỉ chặn khi action đang chọn là analyze — không
+  // ảnh hưởng publish/delete vì các action đó chạy độc lập với job này.
+  const isCrawlActionBlocked =
+    bulkAction === 'analyze' && crawlStatus === 'pending';
   // Job phân tích thị trường có thể chạy nền tới ~300s, trong khi bulkMutation.isPending
   // chỉ true trong lúc chờ POST trả jobId (rất ngắn). Nếu không chặn thêm ở đây, user có
   // thể bấm "Áp dụng" lần 2 với action analyze_market_trends ngay khi job cũ còn đang chạy,
@@ -620,7 +645,11 @@ export default function ManageWpScreen() {
   // không ảnh hưởng tới publish/analyze/delete vì các action đó chạy độc lập với job này.
   const isMarketAnalysisActionBlocked =
     bulkAction === 'analyze_market_trends' && marketJobStatus === 'pending';
-  const isApplyDisabled = isApplying || isMarketAnalysisActionBlocked || selectedIds.size === 0;
+  const isApplyDisabled =
+    isApplying ||
+    isCrawlActionBlocked ||
+    isMarketAnalysisActionBlocked ||
+    selectedIds.size === 0;
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -673,13 +702,15 @@ export default function ManageWpScreen() {
               onClick={handleBulkAction}
               disabled={isApplyDisabled}
               title={
-                isMarketAnalysisActionBlocked
-                  ? 'Đang phân tích thị trường, vui lòng đợi...'
-                  : undefined
+                isCrawlActionBlocked
+                  ? 'Đang crawl tin tức, vui lòng đợi...'
+                  : isMarketAnalysisActionBlocked
+                    ? 'Đang phân tích thị trường, vui lòng đợi...'
+                    : undefined
               }
               className="inline-flex items-center justify-center gap-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {(isApplying || isMarketAnalysisActionBlocked) && (
+              {(isApplying || isCrawlActionBlocked || isMarketAnalysisActionBlocked) && (
                 <Loader2 size={16} className="animate-spin" />
               )}
               {isApplying && runningActionRef.current === 'analyze'
@@ -688,9 +719,11 @@ export default function ManageWpScreen() {
                   ? 'Đang phân tích thị trường...'
                   : isApplying
                     ? 'Đang xử lý...'
-                    : isMarketAnalysisActionBlocked
-                      ? 'Đang phân tích thị trường...'
-                      : `Áp dụng${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+                    : isCrawlActionBlocked
+                      ? 'Đang crawl tin tức...'
+                      : isMarketAnalysisActionBlocked
+                        ? 'Đang phân tích thị trường...'
+                        : `Áp dụng${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
             </button>
 
             <div className="hidden xl:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
