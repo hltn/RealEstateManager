@@ -548,7 +548,7 @@ export default function RawArticlesScreen() {
                   <th className="px-5 py-3 text-left">
                     <input
                       type="checkbox"
-                      onChange={toggleSelectAllOnPage}
+                      onChange={handleSelectAllOnPage}
                       checked={isAllOnPageSelected}
                       disabled={currentPageIds.length === 0}
                       title="Chọn tất cả trên trang này"
