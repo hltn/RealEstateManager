@@ -77,7 +77,7 @@ export default function RawArticlesScreen() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [bulkAction, setBulkAction] = useState("");
@@ -99,7 +99,6 @@ export default function RawArticlesScreen() {
   if (prevFilterSignature !== filterSignature) {
     setPrevFilterSignature(filterSignature);
     setPage(1);
-    setSelectedIds([]);
   }
 
   const queryString = buildListQuery({
@@ -142,18 +141,15 @@ export default function RawArticlesScreen() {
 
   const currentPageIds = articles.map((item) => item._id);
   const isAllOnPageSelected =
-    currentPageIds.length > 0 && currentPageIds.every((id) => selectedIds.includes(id));
+    currentPageIds.length > 0 && currentPageIds.every((id) => selectedIds.has(id));
 
   /** Làm mới danh sách sau các thao tác ghi, đồng thời clear selection cho an toàn. */
   const invalidateList = async () => {
-    setSelectedIds([]);
+    setSelectedIds(new Set());
     await queryClient.invalidateQueries({ queryKey: ["raw-articles"] });
   };
 
   const changePage = (nextPage: number) => {
-    // Bỏ selection khi đổi trang: người dùng không còn thấy các item đã chọn,
-    // giữ lại rất dễ dẫn tới xóa/di chuyển nhầm dữ liệu.
-    setSelectedIds([]);
     setPage(nextPage);
   };
 
@@ -257,9 +253,17 @@ export default function RawArticlesScreen() {
         throw new Error(getApiErrorMessage(err, "Xóa thất bại"));
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, deletedId) => {
       setSuccess("Đã xóa bài viết thành công!");
-      await invalidateList();
+      // Chỉ xóa ID đã biết chắc chắn bị xóa khỏi selection, giữ nguyên các
+      // selection ở trang khác (cross-page selection). Không so sánh với dữ liệu
+      // trang hiện tại vì pagination không phản ánh toàn bộ dataset.
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deletedId);
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["raw-articles"] });
     },
     onError: (err) => setError(err.message || "Lỗi khi xóa bài viết"),
   });
@@ -306,30 +310,43 @@ export default function RawArticlesScreen() {
   };
 
   const handleApplyBulkAction = () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.size === 0) return;
     if (bulkAction !== "delete" && bulkAction !== "move_to_main") return;
 
+    const selectedCount = selectedIds.size;
     const confirmMessage =
       bulkAction === "delete"
-        ? `Bạn có chắc chắn muốn xóa ${selectedIds.length} bài viết đã chọn?`
-        : `Bạn có chắc chắn muốn di chuyển ${selectedIds.length} bài viết đã chọn sang danh sách chính?`;
+        ? `Bạn có chắc chắn muốn xóa ${selectedCount} bài viết đã chọn?`
+        : `Bạn có chắc chắn muốn di chuyển ${selectedCount} bài viết đã chọn sang danh sách chính?`;
     if (!window.confirm(confirmMessage)) return;
 
     setError("");
     setSuccess("");
-    bulkMutation.mutate({ action: bulkAction, ids: selectedIds });
+    bulkMutation.mutate({ action: bulkAction, ids: Array.from(selectedIds) });
   };
 
   const handleSelectAllOnPage = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.checked) {
-      setSelectedIds(Array.from(new Set([...selectedIds, ...currentPageIds])));
+      setSelectedIds((prev) => new Set([...prev, ...currentPageIds]));
     } else {
-      setSelectedIds(selectedIds.filter((id) => !currentPageIds.includes(id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        currentPageIds.forEach((id) => next.delete(id));
+        return next;
+      });
     }
   };
 
   const handleSelect = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
   const handleSearchSubmit = (event: React.FormEvent) => {
@@ -463,14 +480,14 @@ export default function RawArticlesScreen() {
           </select>
           <button
             onClick={handleApplyBulkAction}
-            disabled={!bulkAction || selectedIds.length === 0 || bulkMutation.isPending}
+            disabled={!bulkAction || selectedIds.size === 0 || bulkMutation.isPending}
             className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-medium rounded-lg text-sm shadow-sm transition-colors disabled:opacity-50 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            Áp dụng {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
+            Áp dụng {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
           </button>
-          {selectedIds.length > 0 && (
+          {selectedIds.size > 0 && (
             <span className="text-theme-xs text-gray-500 dark:text-gray-400">
-              Đã chọn {selectedIds.length} bài trên trang này
+              Đã chọn {selectedIds.size} bài trên trang này
             </span>
           )}
           <button
@@ -569,7 +586,7 @@ export default function RawArticlesScreen() {
                       <td className="px-5 py-4">
                         <input
                           type="checkbox"
-                          checked={selectedIds.includes(item._id)}
+                          checked={selectedIds.has(item._id)}
                           onChange={() => handleSelect(item._id)}
                           aria-label={`Chọn bài viết ${item.title ?? item._id}`}
                           className="rounded border-gray-300 text-brand-500 focus:ring-brand-500 cursor-pointer"
