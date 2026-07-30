@@ -185,6 +185,9 @@ export class NewsArticleService implements OnModuleInit {
       // date is in YYYY-MM-DD format
       const startDate = new Date(`${date}T00:00:00.000Z`);
       const endDate = new Date(`${date}T23:59:59.999Z`);
+      // Chỉ dùng createdAt làm fallback khi publishDate không tồn tại.
+      // Tránh $or song song gây lẫn bài ngày khác: bài publishDate=28/07
+      // nhưng createdAt=29/07 sẽ không còn hiện khi lọc 29/07 nữa.
       query.$or = [
         {
           publishDate: {
@@ -192,7 +195,12 @@ export class NewsArticleService implements OnModuleInit {
             $lte: endDate.toISOString(),
           },
         },
-        { createdAt: { $gte: startDate, $lte: endDate } },
+        {
+          $and: [
+            { $or: [{ publishDate: { $exists: false } }, { publishDate: null }] },
+            { createdAt: { $gte: startDate, $lte: endDate } },
+          ],
+        },
       ];
     }
     const { skip, limit: pageSize } = normalizePagination(page, limit);
