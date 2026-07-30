@@ -320,17 +320,28 @@ export class NewsFireCrawlManagerController {
 
     // Fire-and-forget: không await trong request handler để HTTP response
     // trả về ngay, tránh phụ thuộc vào thời gian xử lý thực tế của AI upstream.
-    void this.runAnalyzeRawArticlesJob(jobId, articles);
+    // `.catch` là safety net cuối cùng — runJob đã tự catch mọi lỗi lifecycle,
+    // nhưng giữ lại để chống unhandled rejection nếu có lỗi ngoài dự kiến.
+    void this.runAnalyzeRawArticlesJob(jobId, articles).catch((err: any) =>
+      this.logger.error(
+        `Analyze raw articles fire-and-forget rejected: ${err?.message}`,
+        err?.stack,
+      ),
+    );
 
     return { jobId, message: 'Đã nhận yêu cầu, đang xử lý trong nền' };
   }
 
-  /** Thực thi job phân tích AI + xóa bài trong nền, cập nhật trạng thái vào AnalyzeJobService. */
-  private async runAnalyzeRawArticlesJob(
+  /**
+   * Thực thi job phân tích AI + xóa bài trong nền. Chỉ chứa phần logic riêng
+   * (filter + delete theo urlHash); lifecycle (markDone/markError) được delegate
+   * cho runJob chung để DRY và chống unhandled rejection (QA: DRY + robustness).
+   */
+  private runAnalyzeRawArticlesJob(
     jobId: string,
     articles: Record<string, any>[],
   ): Promise<void> {
-    try {
+    return this.runJob(jobId, 'Analyze job', async () => {
       // Tập urlHash FE gửi lên — phạm vi an toàn để xóa (chỉ trong trang hiện tại, không phải toàn collection)
       const submittedHashes = articles
         .map((a: any) => a.urlHash)
@@ -350,14 +361,8 @@ export class NewsFireCrawlManagerController {
         keepHashes,
       );
 
-      this.analyzeJobService.markDone(jobId, filteredArticles);
-    } catch (error: any) {
-      this.logger.error(
-        `Analyze job ${jobId} failed: ${error.message}`,
-        error.stack,
-      );
-      this.analyzeJobService.markError(jobId, error.message || 'Lỗi không xác định');
-    }
+      return filteredArticles;
+    });
   }
 
   @ApiOperation({
@@ -379,8 +384,14 @@ export class NewsFireCrawlManagerController {
 
     this.logger.log('Analyze All Raw Articles called');
     const jobId = this.analyzeJobService.createJob();
-    // Fire-and-forget: không await để HTTP response trả về ngay lập tức
-    void this.runAnalyzeAllRawArticlesJob(jobId, LOCK_KEY);
+    // Fire-and-forget: không await để HTTP response trả về ngay lập tức.
+    // `.catch` safety net chống unhandled rejection ngoài dự kiến.
+    void this.runAnalyzeAllRawArticlesJob(jobId, LOCK_KEY).catch((err: any) =>
+      this.logger.error(
+        `Analyze-all fire-and-forget rejected: ${err?.message}`,
+        err?.stack,
+      ),
+    );
     return {
       jobId,
       message: 'Đã nhận yêu cầu phân tích toàn bộ, đang xử lý trong nền',
@@ -391,19 +402,20 @@ export class NewsFireCrawlManagerController {
    * Lấy toàn bộ raw articles từ DB rồi chạy pipeline AI phân tích + xóa bài không đạt.
    * Khác runAnalyzeRawArticlesJob: tự query DB thay vì nhận danh sách từ FE,
    * nên phạm vi xóa là toàn bộ collection thay vì chỉ trang hiện tại.
+   * Lifecycle (markDone/markError/clearInFlight) delegate cho runLockedJob chung (DRY).
    */
-  private async runAnalyzeAllRawArticlesJob(
+  private runAnalyzeAllRawArticlesJob(
     jobId: string,
     lockKey: string,
   ): Promise<void> {
-    try {
+    return this.runLockedJob(jobId, lockKey, 'Analyze-all job', async () => {
       // Lấy toàn bộ articles từ DB (không phân trang), chỉ lấy field cần thiết
       const allArticles =
         await this.customCrawlerService.getAllRawArticles();
 
       if (!allArticles || allArticles.length === 0) {
-        this.analyzeJobService.markDone(jobId, []);
-        return;
+        // markDone([]) được runLockedJob gọi khi work trả về [].
+        return [];
       }
 
       // submittedHashes = phạm vi toàn bộ collection → AI có thể xóa bất kỳ bài nào
@@ -423,20 +435,8 @@ export class NewsFireCrawlManagerController {
         keepHashes,
       );
 
-      this.analyzeJobService.markDone(jobId, filteredArticles);
-    } catch (error: any) {
-      this.logger.error(
-        `Analyze-all job ${jobId} failed: ${error.message}`,
-        error.stack,
-      );
-      this.analyzeJobService.markError(
-        jobId,
-        error.message || 'Lỗi không xác định',
-      );
-    } finally {
-      // Giải phóng lock bất kể thành công hay lỗi, tránh block mọi request tiếp theo
-      this.idempotencyService.clearInFlight(lockKey);
-    }
+      return filteredArticles;
+    });
   }
 
   @ApiOperation({
@@ -562,30 +562,33 @@ export class NewsFireCrawlManagerController {
 
     // Fire-and-forget: không await trong request handler để HTTP response trả về ngay,
     // tránh phụ thuộc vào thời gian xử lý AI upstream (có thể tới 300s) — giống pattern analyze-raw.
-    void this.runAnalyzeMarketTrendsJob(jobId, ids, LOCK_KEY);
+    // `.catch` safety net chống unhandled rejection ngoài dự kiến.
+    void this.runAnalyzeMarketTrendsJob(jobId, ids, LOCK_KEY).catch((err: any) =>
+      this.logger.error(
+        `Analyze market trends fire-and-forget rejected: ${err?.message}`,
+        err?.stack,
+      ),
+    );
 
     return { message: 'Market trends analysis started', jobId };
   }
 
-  /** Thực thi job phân tích thị trường bằng AI trong nền, cập nhật trạng thái vào AnalyzeJobService. */
-  private async runAnalyzeMarketTrendsJob(
+  /**
+   * Thực thi job phân tích thị trường bằng AI trong nền. Lifecycle (markDone/
+   * markError/clearInFlight) delegate cho runLockedJob chung (DRY) — không còn
+   * try/catch/finally trùng lặp với runAnalyzeMarketBulkJob.
+   */
+  private runAnalyzeMarketTrendsJob(
     jobId: string,
     ids: string[],
     lockKey: string,
   ): Promise<void> {
-    try {
-      const result = await this.newsArticleService.analyzeMarketTrendsByAI(ids);
-      this.analyzeJobService.markDone(jobId, result);
-    } catch (error: any) {
-      this.logger.error(
-        `Analyze market trends job ${jobId} failed: ${error.message}`,
-        error.stack,
-      );
-      this.analyzeJobService.markError(jobId, error.message || 'Lỗi không xác định');
-    } finally {
-      // Giải phóng lock bất kể thành công hay lỗi, tránh block mọi request tiếp theo
-      this.idempotencyService.clearInFlight(lockKey);
-    }
+    return this.runLockedJob(
+      jobId,
+      lockKey,
+      'Analyze market trends job',
+      () => this.newsArticleService.analyzeMarketTrendsByAI(ids),
+    );
   }
 
   @ApiOperation({
@@ -606,22 +609,149 @@ export class NewsFireCrawlManagerController {
   }
 
   @ApiOperation({
-    summary: 'Analyze market bulk',
-    description: 'Analyze market bulk',
+    summary: 'Analyze market bulk (async)',
+    description:
+      'Trả về jobId ngay lập tức, việc crawl/ phân tích thị trường bulk chạy nền. ' +
+      'Dùng GET /articles/market-analysis-bulk/:jobId để poll kết quả khi hoàn tất.',
   })
   @Post('articles/market-analysis-bulk')
-  async analyzeMarketBulk(@Body() body: BulkIdsDto) {
+  analyzeMarketBulk(@Body() body: BulkIdsDto) {
     const { ids } = body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return { message: 'No articles to analyze' };
     }
 
-    const result = await this.newsArticleService.analyzeMarketBulk(ids);
-    return {
-      message: 'Bulk market analysis completed',
-      data: result,
-    };
+    // Khóa global để chống 2 job bulk chạy song song (double-click FE, 2 tab/client)
+    // — tránh tốn API cost gấp đôi và job cũ mất track, giống pattern analyze-market-trends.
+    const LOCK_KEY = 'market-analysis-bulk:global';
+    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+      throw new ConflictException(
+        'Đang có job phân tích bulk khác đang chạy, vui lòng đợi hoàn tất',
+      );
+    }
+    this.idempotencyService.markInFlight(LOCK_KEY);
+
+    const jobId = this.analyzeJobService.createJob();
+
+    // Audit: admin trigger phân tích thị trường bulk — ghi lại ai/ids/jobId ngay
+    // khi trigger thành công (fire-and-forget). Job chạy nền có thể fail, nhưng
+    // bản thân trigger là sự kiện audit-worthy theo pattern các endpoint admin
+    // khác (delete/publish). Chỉ audit khi đã qua lock (không audit khi Conflict).
+    void this.auditLogService.log(
+      AuditAction.MARKET_ANALYSIS_BULK,
+      'news_articles',
+      ids,
+      'system',
+      { jobId, count: ids.length },
+    );
+
+    // Fire-and-forget: không await trong request handler để HTTP response trả về ngay,
+    // tránh phụ thuộc vào thời gian crawl thực tế (gây Axios 30s timeout phía FE) —
+    // giống pattern analyze-raw / analyze-market-trends.
+    // `.catch` safety net chống unhandled rejection ngoài dự kiến.
+    void this.runAnalyzeMarketBulkJob(jobId, ids, LOCK_KEY).catch((err: any) =>
+      this.logger.error(
+        `Analyze market bulk fire-and-forget rejected: ${err?.message}`,
+        err?.stack,
+      ),
+    );
+
+    return { jobId, message: 'Bulk market analysis started' };
+  }
+
+  /**
+   * Thực thi job phân tích thị trường bulk trong nền. Lifecycle delegate cho
+   * runLockedJob chung — không còn try/catch/finally trùng lặp với
+   * runAnalyzeMarketTrendsJob (QA: DRY).
+   */
+  private runAnalyzeMarketBulkJob(
+    jobId: string,
+    ids: string[],
+    lockKey: string,
+  ): Promise<void> {
+    return this.runLockedJob(
+      jobId,
+      lockKey,
+      'Analyze market bulk job',
+      () => this.newsArticleService.analyzeMarketBulk(ids),
+    );
+  }
+
+  /**
+   * Chạy background job CÓ global lock (chống double-submit). Lifecycle an toàn:
+   * markDone/markError/clearInFlight được bọc try/catch riêng để không bao giờ sinh
+   * unhandled rejection từ chính các method lifecycle (QA: robustness).
+   * DRY: dùng chung cho mọi job fire-and-forget có lock (market-trends, bulk, all).
+   */
+  private runLockedJob(
+    jobId: string,
+    lockKey: string,
+    jobLabel: string,
+    work: () => Promise<unknown>,
+  ): Promise<void> {
+    return this.runJob(jobId, jobLabel, work).finally(() => {
+      // Giải phóng lock bất kể thành công hay lỗi, tránh block mọi request tiếp theo.
+      // Bọc try/catch để clearInFlight ném lỗi cũng không sinh unhandled rejection.
+      try {
+        this.idempotencyService.clearInFlight(lockKey);
+      } catch (err: any) {
+        this.logger.error(
+          `${jobLabel} ${jobId}: clearInFlight threw — lock có thể stuck`,
+          err?.stack,
+        );
+      }
+    });
+  }
+
+  /**
+   * Chạy background job KHÔNG có lock. Exception-safe toàn vẹn: mọi lỗi từ work
+   * VÀ từ lifecycle (markDone/markError) đều được bắt + log, không rethrow →
+   * fire-and-forget promise không bao giờ reject (QA: robustness).
+   */
+  private async runJob(
+    jobId: string,
+    jobLabel: string,
+    work: () => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      const result = await work();
+      try {
+        this.analyzeJobService.markDone(jobId, result);
+      } catch (err: any) {
+        this.logger.error(`${jobLabel} ${jobId}: markDone threw`, err?.stack);
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `${jobLabel} ${jobId} failed: ${error.message}`,
+        error.stack,
+      );
+      try {
+        this.analyzeJobService.markError(
+          jobId,
+          error.message || 'Lỗi không xác định',
+        );
+      } catch (err: any) {
+        this.logger.error(`${jobLabel} ${jobId}: markError threw`, err?.stack);
+      }
+    }
+  }
+
+  @ApiOperation({
+    summary: 'Get market-analysis-bulk job status',
+    description: 'Poll trạng thái job phân tích thị trường bulk chạy nền theo jobId.',
+  })
+  @ApiParam({
+    name: 'jobId',
+    description: 'ID job trả về từ POST /articles/market-analysis-bulk',
+  })
+  @Get('articles/market-analysis-bulk/:jobId')
+  getAnalyzeMarketBulkJob(@Param('jobId') jobId: string) {
+    const job = this.analyzeJobService.getJob(jobId);
+    if (!job) {
+      return { status: 'not_found' };
+    }
+    return job;
   }
 
   @ApiOperation({

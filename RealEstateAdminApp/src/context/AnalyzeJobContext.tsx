@@ -39,7 +39,7 @@ export const AnalyzeJobProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Poll độc lập với màn hình hiện tại — provider sống ở AppLayout nên vẫn
   // tiếp tục chạy dù user rời khỏi RawArticlesScreen.
-  const { data } = useQuery<AnalyzeJobResponse>({
+  const { data, isError, error } = useQuery<AnalyzeJobResponse>({
     queryKey: ["analyze-raw-job", jobId],
     queryFn: async ({ signal }) => {
       try {
@@ -60,7 +60,18 @@ export const AnalyzeJobProvider: React.FC<{ children: React.ReactNode }> = ({
   });
 
   useEffect(() => {
-    if (!jobId || !data) return;
+    if (!jobId) return;
+
+    // Polling thất bại sau khi React Query đã retry (mặc định 3 lần) — dừng poll
+    // và báo lỗi để header badge không bị kẹt ở 'pending' mãi mãi.
+    if (isError) {
+      setJobId(null);
+      setFinishedStatus("error");
+      setErrorMessage(error?.message ?? "Lỗi không xác định khi poll job phân tích");
+      return;
+    }
+
+    if (!data) return;
 
     if (data.status === "done") {
       setJobId(null);
@@ -76,7 +87,7 @@ export const AnalyzeJobProvider: React.FC<{ children: React.ReactNode }> = ({
       setFinishedStatus("error");
       setErrorMessage("Không tìm thấy job (có thể server đã khởi động lại)");
     }
-  }, [data, jobId, queryClient]);
+  }, [data, isError, error, jobId, queryClient]);
 
   const startJob = useCallback((newJobId: string) => {
     setFinishedStatus(null);
