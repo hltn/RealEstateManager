@@ -17,9 +17,17 @@ export interface AiPrompt {
 export class AiPromptConfigService implements OnModuleInit {
   private readonly logger = new Logger(AiPromptConfigService.name);
   private prompts: AiPrompt[] = [];
-  private readonly promptsFilePath = path.join(
-    process.cwd(),
-    'src/modules/news-fire-crawl-manager/constants/ai-prompts.json',
+  /**
+   * Đường dẫn tới file prompts JSON. Dùng __dirname (thư mục chứa file .js đã
+   * compile) thay vì process.cwd() để hoạt động đúng trong cả dev (ts-node)
+   * lẫn production (node dist/main). Kết hợp với nest-cli.json assets để
+   * JSON được copy vào dist/ khi build.
+   */
+  private readonly promptsFilePath = path.resolve(
+    __dirname,
+    '..',
+    'constants',
+    'ai-prompts.json',
   );
 
   onModuleInit() {
