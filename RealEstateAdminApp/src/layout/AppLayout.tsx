@@ -35,13 +35,13 @@ const AppLayout: React.FC = () => {
   return (
     <SidebarProvider>
       <AnalyzeJobProvider>
-        <MarketAnalysisJobProvider>
-          <ManageWpStatusProvider>
+        <ManageWpStatusProvider>
+          <MarketAnalysisJobProvider>
             <BulkCrawlJobProvider>
               <LayoutContent />
             </BulkCrawlJobProvider>
-          </ManageWpStatusProvider>
-        </MarketAnalysisJobProvider>
+          </MarketAnalysisJobProvider>
+        </ManageWpStatusProvider>
       </AnalyzeJobProvider>
     </SidebarProvider>
   );

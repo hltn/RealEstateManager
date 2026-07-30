@@ -593,15 +593,15 @@ export default function ManageWpScreen() {
   });
 
   // Theo dõi trạng thái job phân tích thị trường (polling qua MarketAnalysisJobContext).
-  // Khi 'done': mở modal hiển thị kết quả (tái dùng AnalysisDetailModal đã có cho lịch sử).
-  // Khi 'error': hiển thị toast lỗi. Cả 2 trường hợp đều clear job sau khi xử lý.
+  // Việc sync sang ManageWpStatusContext (để header badge hiển thị) đã được
+  // MarketAnalysisJobProvider tự xử lý — không cần làm ở đây nữa, tránh mất
+  // sync khi user rời khỏi màn hình Manage WP.
+  // Khi 'done': mở modal hiển thị kết quả. Khi 'error': hiển thị toast lỗi.
   useEffect(() => {
     if (marketJobStatus === 'done') {
-      setMarketAnalysisStatus('done');
       if (marketJobResultContent) setMarketAnalysisResult(marketJobResultContent);
       clearMarketAnalysisJobResult();
     } else if (marketJobStatus === 'error') {
-      setMarketAnalysisStatus('error', marketJobErrorMessage ?? undefined);
       setNotification({
         title: 'Lỗi',
         description: marketJobErrorMessage || 'Lỗi phân tích thị trường',
@@ -614,7 +614,6 @@ export default function ManageWpScreen() {
     marketJobResultContent,
     marketJobErrorMessage,
     clearMarketAnalysisJobResult,
-    setMarketAnalysisStatus,
   ]);
 
   const handleBulkAction = () => {

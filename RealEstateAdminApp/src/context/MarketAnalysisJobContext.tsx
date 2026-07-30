@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import apiAxios from "../api/axios";
+import { useManageWpStatus } from "./ManageWpStatusContext";
 
 export type MarketAnalysisJobStatus = "idle" | "pending" | "done" | "error";
 
@@ -37,6 +38,7 @@ export const MarketAnalysisJobProvider: React.FC<{ children: React.ReactNode }> 
   children,
 }) => {
   const queryClient = useQueryClient();
+  const { setMarketAnalysisStatus } = useManageWpStatus();
   const [jobId, setJobId] = useState<string | null>(null);
   const [finishedStatus, setFinishedStatus] = useState<"done" | "error" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -71,18 +73,21 @@ export const MarketAnalysisJobProvider: React.FC<{ children: React.ReactNode }> 
       setJobId(null);
       setFinishedStatus("done");
       setResultContent(data.result ?? null);
+      setMarketAnalysisStatus("done");
       void queryClient.invalidateQueries({ queryKey: ["market-analysis-history"] });
     } else if (data.status === "error") {
       setJobId(null);
       setFinishedStatus("error");
       setErrorMessage(data.error ?? "Lỗi không xác định");
+      setMarketAnalysisStatus("error", data.error ?? "Lỗi không xác định");
     } else if (data.status === "not_found") {
       // Job hết TTL hoặc server đã restart — dừng poll, coi như lỗi để user biết.
       setJobId(null);
       setFinishedStatus("error");
       setErrorMessage("Không tìm thấy job (có thể server đã khởi động lại)");
+      setMarketAnalysisStatus("error", "Không tìm thấy job (có thể server đã khởi động lại)");
     }
-  }, [data, jobId, queryClient]);
+  }, [data, jobId, queryClient, setMarketAnalysisStatus]);
 
   const startJob = useCallback((newJobId: string) => {
     setFinishedStatus(null);
