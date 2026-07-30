@@ -87,7 +87,7 @@ export const BulkCrawlJobProvider: React.FC<{ children: React.ReactNode }> = ({
       setJobId(null);
       setCrawlStatus("error", "Không tìm thấy job (có thể server đã khởi động lại)");
     }
-  }, [data, jobId, queryClient, setCrawlStatus]);
+  }, [data, isError, error, jobId, queryClient, setCrawlStatus]);
 
   const startJob = useCallback(
     (newJobId: string) => {

@@ -487,7 +487,7 @@ export default function RawArticlesScreen() {
           </button>
           {selectedIds.size > 0 && (
             <span className="text-theme-xs text-gray-500 dark:text-gray-400">
-              Đã chọn {selectedIds.size} bài trên trang này
+              Đã chọn {selectedIds.size} bài viết
             </span>
           )}
           <button
