@@ -521,7 +521,7 @@ describe('NewsFireCrawlManagerController', () => {
   });
 
   describe('analyzeMarketBulk (async job) — Idempotency lock chống double-submit', () => {
-    const LOCK_KEY = 'market-analysis-bulk:global';
+    const LOCK_KEY = 'crawl:global';
 
     it('ids rỗng → trả message, không tạo job, không check lock, không audit', () => {
       const result = controller.analyzeMarketBulk({ ids: [] } as any);

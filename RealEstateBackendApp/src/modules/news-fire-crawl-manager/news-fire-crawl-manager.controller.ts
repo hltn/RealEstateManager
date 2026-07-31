@@ -255,12 +255,13 @@ export class NewsFireCrawlManagerController {
       `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
     );
 
-    // Khóa global dùng chung với bulk crawl — chống 2 job crawl chạy song song
-    // (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi và upsert articles đè nhau.
+    // Khóa global dùng chung với bulk crawl — chống 2 job thu thập/phân tích chạy
+    // song song (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi và
+    // upsert articles đè nhau.
     const LOCK_KEY = 'crawl:global';
     if (this.idempotencyService.isInFlight(LOCK_KEY)) {
       throw new ConflictException(
-        'Đang có tác vụ thu thập đang chạy, vui lòng đợi hoàn tất',
+        'Đang có tác vụ thu thập/phân tích đang chạy, vui lòng đợi hoàn tất',
       );
     }
     this.idempotencyService.markInFlight(LOCK_KEY);
@@ -689,12 +690,13 @@ export class NewsFireCrawlManagerController {
       return { message: 'No articles to analyze' };
     }
 
-    // Khóa global để chống 2 job bulk chạy song song (double-click FE, 2 tab/client)
-    // — tránh tốn API cost gấp đôi và job cũ mất track, giống pattern analyze-market-trends.
-    const LOCK_KEY = 'market-analysis-bulk:global';
+    // Khóa global dùng chung với manual crawl — chống 2 job thu thập/phân tích
+    // chạy song song (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi
+    // và job cũ mất track, giống pattern analyze-market-trends.
+    const LOCK_KEY = 'crawl:global';
     if (this.idempotencyService.isInFlight(LOCK_KEY)) {
       throw new ConflictException(
-        'Đang có job phân tích bulk khác đang chạy, vui lòng đợi hoàn tất',
+        'Đang có tác vụ thu thập/phân tích đang chạy, vui lòng đợi hoàn tất',
       );
     }
     this.idempotencyService.markInFlight(LOCK_KEY);
