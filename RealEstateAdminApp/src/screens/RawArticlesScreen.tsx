@@ -27,14 +27,6 @@ interface RawArticle {
 
 type SortOrder = "newest" | "oldest";
 
-interface CrawlStats {
-  successfulSources: number;
-  failedSources: number;
-  totalArticles: number;
-  successfulDetails?: { url: string; count: number }[];
-  failedDetails?: { url: string }[];
-}
-
 const RAW_ARTICLES_ENDPOINT = "/news-manager/raw-articles";
 
 /** Tách chuỗi ngày của DatePicker (mode range) thành startDate / endDate. */
@@ -81,6 +73,16 @@ export default function RawArticlesScreen() {
   const { crawlStatus } = useManageWpStatus();
   const isManualCrawlPending = crawlStatus === "pending";
 
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [searchInput, setSearchInput] = useState("");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+  const [bulkAction, setBulkAction] = useState("");
+  const [dateRange, setDateRange] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+
   // Khi job crawl nền xong → thông báo count (provider đã invalidate raw-articles).
   useEffect(() => {
     if (!manualCrawlDoneResult) return;
@@ -91,17 +93,6 @@ export default function RawArticlesScreen() {
       setSuccess("Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.");
     }
   }, [manualCrawlDoneResult]);
-
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchInput, setSearchInput] = useState("");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
-  const [bulkAction, setBulkAction] = useState("");
-  const [dateRange, setDateRange] = useState("");
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
-  const [crawlStats, setCrawlStats] = useState<CrawlStats | null>(null);
 
   // Debounce ô tìm kiếm để không spam request mỗi lần user gõ.
   const searchQuery = useDebouncedValue(searchInput, 400);
@@ -185,7 +176,6 @@ export default function RawArticlesScreen() {
     onMutate: () => {
       setError("");
       setSuccess("");
-      setCrawlStats(null);
     },
     onSuccess: ({ jobId }) => {
       if (!jobId) {
@@ -198,7 +188,6 @@ export default function RawArticlesScreen() {
     },
     onError: (err) => setError(err.message || "Có lỗi xảy ra khi thu thập dữ liệu."),
   });
-
 
   // Chạy nền: submit job rồi trả về ngay, AnalyzeJobProvider (ở AppLayout) sẽ tự poll
   // trạng thái và invalidate danh sách khi xong, kể cả khi user đã rời khỏi màn hình này.
@@ -442,45 +431,6 @@ export default function RawArticlesScreen() {
         <div className="p-4 rounded-lg bg-error-50 dark:bg-error-500/15 border border-error-100 dark:border-error-500/25 flex items-center gap-3 text-error-500">
           <AlertCircle className="shrink-0" size={20} />
           <span className="text-theme-sm font-medium">{displayError}</span>
-        </div>
-      )}
-
-      {crawlStats && (
-        <div className="mb-4 p-4 rounded-xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]">
-          <div className="text-theme-sm font-medium text-success-500 dark:text-success-400 mb-2">
-            Tất cả: {crawlStats.successfulSources} link thành công / {crawlStats.totalArticles} số lượng bài. {crawlStats.failedSources} link thất bại.
-          </div>
-
-          {(crawlStats.successfulDetails?.length || crawlStats.failedDetails?.length) ? (
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-theme-xs">
-              {crawlStats.successfulDetails && crawlStats.successfulDetails.length > 0 && (
-                <div>
-                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh sách link thành công:</div>
-                  <ul className="space-y-2 text-gray-600 dark:text-gray-400 max-h-[300px] overflow-y-auto pr-2">
-                    {crawlStats.successfulDetails.map((item, idx) => (
-                      <li key={idx} className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-1">
-                        <span className="truncate pr-2 block w-full" title={item.url}>{item.url}</span>
-                        <span className="font-medium text-success-600 dark:text-success-500 whitespace-nowrap bg-success-50 dark:bg-success-500/10 px-2 py-0.5 rounded text-[10px]">{item.count} bài</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {crawlStats.failedDetails && crawlStats.failedDetails.length > 0 && (
-                <div>
-                  <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh sách link thất bại:</div>
-                  <ul className="space-y-2 text-error-600 dark:text-error-500 max-h-[300px] overflow-y-auto pr-2">
-                    {crawlStats.failedDetails.map((item, idx) => (
-                      <li key={idx} className="truncate border-b border-gray-100 dark:border-gray-800 pb-1" title={item.url}>
-                        {item.url}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          ) : null}
         </div>
       )}
 
