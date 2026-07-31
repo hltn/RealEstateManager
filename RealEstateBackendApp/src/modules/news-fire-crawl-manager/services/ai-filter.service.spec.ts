@@ -296,10 +296,14 @@ describe('AIFilterService', () => {
     });
   });
 
-  describe('analyzeMarketTrends', () => {
+  describe('callAiCompletion', () => {
     it('should return empty string when contentData is empty', async () => {
-      expect(await service.analyzeMarketTrends('sys', '')).toBe('');
-      expect(await service.analyzeMarketTrends('sys', '   ')).toBe('');
+      expect(
+        await service.callAiCompletion('sys', '', 'Market trends analysis'),
+      ).toBe('');
+      expect(
+        await service.callAiCompletion('sys', '   ', 'Extract listings'),
+      ).toBe('');
     });
 
     it('should send system + user messages to OpenRouter', async () => {
@@ -312,7 +316,11 @@ describe('AIFilterService', () => {
           }),
         );
 
-      const result = await service.analyzeMarketTrends('SYS', 'CONTENT');
+      const result = await service.callAiCompletion(
+        'SYS',
+        'CONTENT',
+        'Market trends analysis',
+      );
       expect(fetchSpy).toHaveBeenCalledWith(
         'https://openrouter.ai/api/v1/chat/completions',
         expect.objectContaining({
@@ -328,7 +336,7 @@ describe('AIFilterService', () => {
         .mockResolvedValue(mockFetchResponse(false, 'err', 500));
 
       await expect(
-        service.analyzeMarketTrends('SYS', 'CONTENT'),
+        service.callAiCompletion('SYS', 'CONTENT', 'Extract listings'),
       ).rejects.toThrow(BadRequestException);
     });
   });

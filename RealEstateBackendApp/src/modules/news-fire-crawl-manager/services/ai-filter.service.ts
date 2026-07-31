@@ -379,14 +379,19 @@ export class AIFilterService {
     }
   }
 
-  async analyzeMarketTrends(
+  // Hàm generic gọi AI completion, nhận systemPrompt + contentData và trả về text.
+  // contextLabel dùng để log phân biệt ngữ cảnh gọi (extract listings / market trends / ...).
+  async callAiCompletion(
     systemPrompt: string,
     contentData: string,
+    contextLabel: string,
   ): Promise<string> {
-    this.logger.log(`Starting Market Trends Analysis with AI`);
+    this.logger.log(`Starting AI completion [${contextLabel}]`);
     if (!contentData || contentData.trim() === '') return '';
 
-    this.logger.log(`Input size: ${contentData.length} chars (~${Math.ceil(contentData.length / 3)} tokens estimated)`);
+    this.logger.log(
+      `Input size [${contextLabel}]: ${contentData.length} chars (~${Math.ceil(contentData.length / 3)} tokens estimated)`,
+    );
 
     const activePlatform =
       this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
@@ -495,7 +500,7 @@ export class AIFilterService {
       return resultText;
     } catch (error: any) {
       this.logger.error(
-        `Error in analyzeMarketTrends: ${error.message}`,
+        `Error in callAiCompletion [${contextLabel}]: ${error.message}`,
         error.stack,
       );
       throw new BadRequestException(`Error in AI analysis: ${error.message}`);

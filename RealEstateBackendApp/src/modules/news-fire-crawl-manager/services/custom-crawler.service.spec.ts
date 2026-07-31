@@ -72,7 +72,7 @@ describe('CustomCrawlerService', () => {
     };
 
     newsSourceService = { findActive: jest.fn() };
-    aiFilterService = { analyzeMarketTrends: jest.fn() };
+    aiFilterService = { callAiCompletion: jest.fn() };
     aiPromptConfigService = { getPromptByName: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -226,7 +226,7 @@ describe('CustomCrawlerService', () => {
         data: '<html><body><a href="/post-1">Post 1</a></body></html>',
       });
       aiPromptConfigService.getPromptByName.mockReturnValue('extract prompt');
-      aiFilterService.analyzeMarketTrends.mockResolvedValue(
+      aiFilterService.callAiCompletion.mockResolvedValue(
         JSON.stringify([
           { title: 'Post 1', url: '/post-1', publishedAt: new Date().toISOString() },
         ]),
@@ -244,7 +244,7 @@ describe('CustomCrawlerService', () => {
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
-      aiFilterService.analyzeMarketTrends.mockResolvedValue(
+      aiFilterService.callAiCompletion.mockResolvedValue(
         JSON.stringify({ articles: [{ title: 'A', url: 'https://ai.example/a', publishedAt: new Date().toISOString() }] }),
       );
 
@@ -269,7 +269,7 @@ describe('CustomCrawlerService', () => {
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
-      aiFilterService.analyzeMarketTrends.mockResolvedValue('not-json');
+      aiFilterService.callAiCompletion.mockResolvedValue('not-json');
 
       const result = await service.crawlData();
       expect(result.stats.totalArticles).toBe(0);
@@ -283,7 +283,7 @@ describe('CustomCrawlerService', () => {
       mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
       const inner = JSON.stringify([{ title: 'Fenced', url: 'https://ai.example/f', publishedAt: new Date().toISOString() }]);
-      aiFilterService.analyzeMarketTrends.mockResolvedValue('```json\n' + inner + '\n```');
+      aiFilterService.callAiCompletion.mockResolvedValue('```json\n' + inner + '\n```');
 
       const result = await service.crawlData();
       expect(result.stats.totalArticles).toBe(1);

@@ -184,9 +184,10 @@ export class CustomCrawlerService {
             );
           }
 
-          const aiResult = await this.aiFilterService.analyzeMarketTrends(
+          const aiResult = await this.aiFilterService.callAiCompletion(
             prompt,
             cleanHtml.substring(0, 30000),
+            'Extract listings',
           );
 
           try {
