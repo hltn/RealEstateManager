@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Database, Trash2, Eye, Search, Play } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAnalyzeJob } from "../context/AnalyzeJobContext";
+import { useManualCrawlJob } from "../context/ManualCrawlJobContext";
+import { useManageWpStatus } from "../context/ManageWpStatusContext";
 import { DatePicker } from "../components/ui/DatePicker";
 import { Pagination } from "../components/common/Pagination";
 import { TableSkeletonRows } from "../components/common/TableSkeletonRows";
@@ -74,6 +76,21 @@ const renderHighlightedText = (text: string, query: string) => {
 export default function RawArticlesScreen() {
   const queryClient = useQueryClient();
   const { status: analyzeJobStatus, startJob: startAnalyzeJob } = useAnalyzeJob();
+  const { startJob: startManualCrawlJob, doneResult: manualCrawlDoneResult } =
+    useManualCrawlJob();
+  const { crawlStatus } = useManageWpStatus();
+  const isManualCrawlPending = crawlStatus === "pending";
+
+  // Khi job crawl nền xong → thông báo count (provider đã invalidate raw-articles).
+  useEffect(() => {
+    if (!manualCrawlDoneResult) return;
+    const count = manualCrawlDoneResult.count;
+    if (typeof count === "number" && count > 0) {
+      setSuccess(`Thu thập hoàn tất — ${count} bài mới.`);
+    } else {
+      setSuccess("Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.");
+    }
+  }, [manualCrawlDoneResult]);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -153,14 +170,14 @@ export default function RawArticlesScreen() {
     setPage(nextPage);
   };
 
-  const crawlMutation = useMutation<{ articles: unknown[]; stats?: CrawlStats }, Error>({
+  const crawlMutation = useMutation<{ jobId?: string }, Error>({
     mutationFn: async () => {
       try {
-        const { data: resData } = await apiAxios.post<{ data?: unknown[]; stats?: CrawlStats; message?: string }>(
+        const { data: resData } = await apiAxios.post<{ jobId?: string; message?: string }>(
           "/news-manager/crawl",
           parseDateRange(dateRange),
         );
-        return { articles: resData?.data ?? [], stats: resData?.stats };
+        return { jobId: resData?.jobId };
       } catch (err) {
         throw new Error(getApiErrorMessage(err, "Lỗi từ máy chủ"));
       }
@@ -170,17 +187,18 @@ export default function RawArticlesScreen() {
       setSuccess("");
       setCrawlStats(null);
     },
-    onSuccess: async ({ articles: crawled, stats }) => {
-      if (stats) setCrawlStats(stats);
-      if (crawled.length > 0) {
-        setSuccess(`Thu thập thành công ${crawled.length} bài viết! Đã tải lại danh sách.`);
-        await invalidateList();
-      } else {
-        setSuccess("Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.");
+    onSuccess: ({ jobId }) => {
+      if (!jobId) {
+        setError("Không nhận được jobId từ máy chủ");
+        return;
       }
+      // Chạy nền: submit job rồi trả về ngay, ManualCrawlJobProvider (AppLayout) sẽ
+      // tự poll trạng thái và invalidate danh sách khi xong, kể cả khi user đã rời màn.
+      startManualCrawlJob(jobId);
     },
     onError: (err) => setError(err.message || "Có lỗi xảy ra khi thu thập dữ liệu."),
   });
+
 
   // Chạy nền: submit job rồi trả về ngay, AnalyzeJobProvider (ở AppLayout) sẽ tự poll
   // trạng thái và invalidate danh sách khi xong, kể cả khi user đã rời khỏi màn hình này.
@@ -298,6 +316,7 @@ export default function RawArticlesScreen() {
   const isBusy =
     isFetching ||
     crawlMutation.isPending ||
+    isManualCrawlPending ||
     analyzeMutation.isPending ||
     analyzeAllMutation.isPending ||
     isAnalyzeJobRunning ||
@@ -393,8 +412,8 @@ export default function RawArticlesScreen() {
             disabled={isBusy}
             className="inline-flex items-center justify-center gap-3 px-5 py-3 font-medium text-white transition-all duration-300 bg-brand-500 hover:bg-brand-600 rounded-lg active:scale-[0.98] disabled:opacity-70 disabled:hover:scale-100"
           >
-            <Play size={20} className={crawlMutation.isPending ? "animate-pulse" : ""} />
-            <span>{crawlMutation.isPending ? "Đang thu thập..." : "Chạy quy trình thu thập"}</span>
+            <Play size={20} className={isManualCrawlPending ? "animate-pulse" : ""} />
+            <span>{isManualCrawlPending ? "Đang thu thập..." : "Chạy quy trình thu thập"}</span>
           </button>
           <button
             onClick={() => analyzeMutation.mutate()}
