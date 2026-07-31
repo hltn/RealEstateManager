@@ -70,7 +70,7 @@ export default function RawArticlesScreen() {
   const { status: analyzeJobStatus, startJob: startAnalyzeJob } = useAnalyzeJob();
   const { startJob: startManualCrawlJob, doneResult: manualCrawlDoneResult } =
     useManualCrawlJob();
-  const { crawlStatus } = useManageWpStatus();
+  const { crawlStatus, crawlError } = useManageWpStatus();
   const isManualCrawlPending = crawlStatus === "pending";
 
   const [error, setError] = useState("");
@@ -93,6 +93,13 @@ export default function RawArticlesScreen() {
       setSuccess("Quá trình hoàn tất nhưng không tìm thấy bài viết nào mới.");
     }
   }, [manualCrawlDoneResult]);
+
+  // Khi job crawl nền lỗi (markError / not_found / poll error) → hiện lỗi inline.
+  useEffect(() => {
+    if (crawlStatus !== "error") return;
+    setSuccess("");
+    setError(crawlError ?? "Lỗi không xác định khi thu thập dữ liệu");
+  }, [crawlStatus, crawlError]);
 
   // Debounce ô tìm kiếm để không spam request mỗi lần user gõ.
   const searchQuery = useDebouncedValue(searchInput, 400);
