@@ -10,8 +10,9 @@
  * - deleteRawArticlesBulk / deleteBulkArticles → guard mảng rỗng + audit log fire-and-forget.
  * - analyzeRawArticles → trả jobId ngay, job chạy nền.
  * - getAnalyzeRawJob → not_found khi jobId chưa có.
- * - triggerManualCrawl → đọc file tạm và trả data.
+ * - triggerManualCrawl (async) → trả { message, jobId } ngay, crawlData chạy nền + markDone; ConflictException khi lock in-flight.
  * - triggerManualAnalyze → filePath rỗng trả message + data rỗng; cleanup file trong finally.
+ * - getManualCrawlJob → poll trạng thái job crawl, not_found khi hết TTL.
  *
  * Gọi method trực tiếp (param decorator @Query/@Body/@Headers/@Param chỉ active qua runtime).
  */
@@ -267,21 +268,70 @@ describe('NewsFireCrawlManagerController', () => {
     });
   });
 
-  describe('triggerManualCrawl', () => {
-    it('trả { message, filePath, stats, data } sau khi đọc file tạm', async () => {
-      const fakeFilePath = '/tmp/crawled_data_1.json';
-      customCrawlerService.crawlData.mockResolvedValue({ filePath: fakeFilePath, stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [], failedDetails: [] } });
-      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ title: 'A' }]));
+  describe('triggerManualCrawl (async)', () => {
+    it('trả { message, jobId } ngay, markInFlight crawl:global + tạo job + audit', async () => {
+      analyzeJobService.createJob.mockReturnValue('job-1');
+      customCrawlerService.crawlData.mockResolvedValue({
+        filePath: '/tmp/x.json',
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+      });
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ a: 1 }, { b: 2 }]));
 
       const result = await controller.triggerManualCrawl({ days: 3 } as any);
 
-      expect(customCrawlerService.crawlData).toHaveBeenCalledWith(3, undefined, undefined);
-      expect(result).toEqual({
-        message: 'Crawl completed successfully',
-        filePath: fakeFilePath,
-        stats: expect.any(Object),
-        data: [{ title: 'A' }],
+      expect(idempotencyService.markInFlight).toHaveBeenCalledWith('crawl:global');
+      expect(analyzeJobService.createJob).toHaveBeenCalled();
+      expect(result).toEqual({ message: 'Crawl started', jobId: 'job-1' });
+      expect(auditLogService.log).toHaveBeenCalledWith(
+        AuditAction.MANUAL_CRAWL,
+        'raw_articles',
+        [],
+        'system',
+        expect.objectContaining({ jobId: 'job-1', days: 3 }),
+      );
+    });
+
+    it('lock in-flight → ConflictException, không tạo job / không audit', () => {
+      idempotencyService.isInFlight.mockReturnValue(true);
+      expect(() =>
+        controller.triggerManualCrawl({ days: 3 } as any),
+      ).toThrow(ConflictException);
+      expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+      expect(auditLogService.log).not.toHaveBeenCalled();
+    });
+
+    it('chạy nền: crawlData(days,...) + markDone count + clearInFlight', async () => {
+      analyzeJobService.createJob.mockReturnValue('job-2');
+      customCrawlerService.crawlData.mockResolvedValue({
+        filePath: '/tmp/y.json',
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
       });
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ a: 1 }, { b: 2 }]));
+
+      await controller.triggerManualCrawl({ days: 3 } as any);
+      // Flush fire-and-forget microtasks (crawlData là async, runJob await work()).
+      await new Promise(setImmediate);
+
+      expect(customCrawlerService.crawlData).toHaveBeenCalledWith(3, undefined, undefined);
+      expect(analyzeJobService.markDone).toHaveBeenCalledWith('job-2', {
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        count: 2,
+        filePath: '/tmp/y.json',
+      });
+      expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('crawl:global');
+    });
+  });
+
+  describe('getManualCrawlJob', () => {
+    it('jobId không có → { status: not_found }', () => {
+      analyzeJobService.getJob.mockReturnValue(undefined);
+      expect(controller.getManualCrawlJob('missing')).toEqual({ status: 'not_found' });
+    });
+
+    it('job có → trả nguyên job object', () => {
+      const job = { status: 'done', result: { count: 5 } };
+      analyzeJobService.getJob.mockReturnValue(job as any);
+      expect(controller.getManualCrawlJob('job-1')).toEqual(job);
     });
   });
 

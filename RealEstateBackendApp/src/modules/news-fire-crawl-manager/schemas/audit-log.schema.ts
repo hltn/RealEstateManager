@@ -12,6 +12,11 @@ export enum AuditAction {
    * Backward compatible: chỉ thêm giá trị enum mới, document cũ không bị ảnh hưởng.
    */
   MARKET_ANALYSIS_BULK = 'MARKET_ANALYSIS_BULK',
+  /**
+   * Admin trigger thu thập thủ công (chạy nền). Backward compatible: chỉ thêm
+   * giá trị enum mới, document cũ không bị ảnh hưởng.
+   */
+  MANUAL_CRAWL = 'MANUAL_CRAWL',
 }
 
 /**
