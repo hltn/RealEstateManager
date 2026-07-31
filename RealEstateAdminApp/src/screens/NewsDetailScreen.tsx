@@ -109,14 +109,16 @@ export default function NewsDetailScreen() {
           </div>
 
           {article.summary && (
-            <div className="text-lg text-gray-600 dark:text-gray-300 font-medium leading-relaxed italic border-l-4 border-brand-500 pl-6 mb-8">
-              {article.summary}
+            <div className="text-lg text-gray-600 dark:text-gray-300 font-medium leading-relaxed italic border-l-4 border-brand-500 pl-6 mb-8 whitespace-pre-wrap">
+              {article.summary.replace(/\\n/g, '\n')}
             </div>
           )}
 
           <div className="prose prose-lg dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline">
             {article.content ? (
-              <ReactMarkdown remarkPlugins={[remarkBreaks]}>{article.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkBreaks]}>
+                {article.content.replace(/\\n/g, '\n')}
+              </ReactMarkdown>
             ) : (
               <p className="text-gray-500 italic">Nội dung chưa được phân tích hoặc không khả dụng.</p>
             )}
