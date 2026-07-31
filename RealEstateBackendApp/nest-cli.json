@@ -7,7 +7,7 @@
     "assets": [
       {
         "include": "modules/news-fire-crawl-manager/constants/*.json",
-        "outDir": "dist"
+        "outDir": "dist/src"
       }
     ]
   }
