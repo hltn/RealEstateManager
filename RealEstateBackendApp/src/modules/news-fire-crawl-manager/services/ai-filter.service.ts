@@ -12,6 +12,71 @@ export class AIFilterService {
     private aiPromptConfigService: AiPromptConfigService,
   ) {}
 
+  /**
+   * Validate & ép giá trị parsed về dạng mảng article.
+   * - Nếu đã là mảng → trả về nguyên.
+   * - Nếu là object wrapper (VD: `{ data: [...] }`, `{ articles: [...] }`)
+   *   → trả về giá trị mảng đầu tiên tìm được bên trong.
+   * - Nếu là primitive hoặc object không chứa mảng con → throw Error rõ ràng
+   *   (fail-fast) kèm contextLabel + 200 ký tự raw để caller biết contract bị
+   *   vi phạm, KHÔNG fallback bọc `[parsed]` gây silent data corruption.
+   */
+  private extractArray(
+    parsed: any,
+    contextLabel: string,
+    rawText: string,
+  ): any[] {
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed !== null && typeof parsed === 'object') {
+      const innerArray = Object.values(parsed).find((v) => Array.isArray(v));
+      if (innerArray) return innerArray as any[];
+    }
+    throw new Error(
+      `AI response is not a JSON array and contains no nested array ${contextLabel}. Raw text: ${rawText.substring(0, 200)}...`,
+    );
+  }
+
+  /**
+   * Extract & parse a JSON array từ text response của AI, chịu được
+   * preamble/văn dẫn nhập bao quanh. Tìm '[' đầu tiên và ']' cuối cùng,
+   * parse slice đó. Throw Error có message rõ ràng nếu không parse được.
+   */
+  private parseJsonArrayResponse(
+    rawText: string,
+    contextLabel: string,
+  ): any[] {
+    const cleaned = rawText
+      .replace(/```json/gi, '')
+      .replace(/```/gi, '')
+      .trim();
+
+    // Parse JSON: thử trực tiếp trước, nếu lỗi thì fallback trích slice
+    // từ '[' đầu tiên đến ']' cuối cùng.
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const start = cleaned.indexOf('[');
+      const end = cleaned.lastIndexOf(']');
+      if (start !== -1 && end !== -1 && end > start) {
+        try {
+          parsed = JSON.parse(cleaned.substring(start, end + 1));
+        } catch {
+          throw new Error(
+            `JSON parsing failed: ${contextLabel}. Raw text: ${cleaned.substring(0, 200)}...`,
+          );
+        }
+      } else {
+        throw new Error(
+          `JSON parsing failed: ${contextLabel}. Raw text: ${cleaned.substring(0, 200)}...`,
+        );
+      }
+    }
+
+    // Validate & ép về mảng (fail-fast nếu contract bị vi phạm).
+    return this.extractArray(parsed, contextLabel, cleaned);
+  }
+
   async filterAndRank(filePath: string): Promise<any[]> {
     this.logger.log(`Starting Job 2: AI Filter & Ranking on file ${filePath}`);
 
@@ -85,13 +150,8 @@ export class AIFilterService {
         clearTimeout(timeoutId);
       }
 
-      // Cleanup potential markdown wrappers
-      resultText = resultText
-        .replace(/```json/g, '')
-        .replace(/```/g, '')
-        .trim();
-
-      const finalTop5 = JSON.parse(resultText);
+      // Parse phòng thủ: chịu được văn dẫn nhập/markdown wrapper quanh JSON
+      const finalTop5 = this.parseJsonArrayResponse(resultText, 'filterAndRank');
       this.logger.log(
         `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
       );
@@ -241,19 +301,8 @@ export class AIFilterService {
         clearTimeout(timeoutId);
       }
 
-      resultText = resultText
-        .replace(/```json/g, '')
-        .replace(/```/g, '')
-        .trim();
-
-      try {
-        const parsed = JSON.parse(resultText);
-        return parsed;
-      } catch (parseError: any) {
-        throw new Error(
-          `JSON parsing failed: ${parseError.message}. Raw text: ${resultText.substring(0, 100)}...`,
-        );
-      }
+      // Parse phòng thủ: chịu được văn dẫn nhập/markdown wrapper quanh JSON
+      return this.parseJsonArrayResponse(resultText, 'filterRawArticles');
     } catch (error: any) {
       this.logger.error(
         `Error in filterRawArticles: ${error.message}`,
