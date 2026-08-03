@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Logs (daily-rotation runtime, KHÔNG commit)
+logs/
+*.log
+
+# Env (chỉ giữ .env.example trong repo)
+.env
+.env.local
+.env.*.local
+
+# Coverage
+coverage/
+
+# IDE/OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

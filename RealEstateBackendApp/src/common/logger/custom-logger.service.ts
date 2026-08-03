@@ -1,10 +1,24 @@
 import { ConsoleLogger, Injectable } from '@nestjs/common';
+import type { Logger } from 'winston';
+import {
+  createAppFileLogger,
+  resolveLoggerOptions,
+} from './winston.config';
 
 /**
  * Logger tuỳ chỉnh kế thừa ConsoleLogger của NestJS.
  * Mục đích: đính kèm `[<file-caller>:<dong>]` vào mọi dòng log, trong đó
  * file:dòng là vị trí của CODE GỌI log (caller thật), không phải vị trí
  * bên trong file logger này.
+ *
+ * Cơ chế ghi (dual, Option B):
+ * - Console (stdout): do `super.*` của ConsoleLogger đảm nhiệm — giữ
+ *   nguyên cho dev/CI/container stdout + bảo toàn test spy trên
+ *   `ConsoleLogger.prototype.*`.
+ * - File (daily rotation): forward prepended message xuống winston logger
+ *   nội bộ (chỉ transport file, không console → không double-log).
+ * Caller info `[file:line]` được tính 1 lần (getCallerInfo) rồi dùng chung
+ * cho cả console + file → log file có cùng ngữ cảnh truy vết.
  */
 @Injectable()
 export class CustomLogger extends ConsoleLogger {
@@ -91,23 +105,87 @@ export class CustomLogger extends ConsoleLogger {
     return `${callerInfo}${String(message)}`;
   }
 
+  /**
+   * Singleton winston logger (file daily-rotation). Lazy-init tại lần log
+   * đầu tiên để process.env đã được `@nestjs/config` load (.env) — vì
+   * CustomLogger có thể được `new` trước khi DI load env (vd: trong main.ts
+   * `new CustomLogger()` ngay tại NestFactory.create).
+   *
+   * Trả `null` (disabled) khi:
+   * - NODE_ENV === 'test' → không tạo file log trong jest, giữ spec sạch.
+   * - Init winston throw bất kỳ lỗi nào → không làm crash app, console
+   *   (super.*) vẫn hoạt động.
+   * Cache bằng biến instance: `undefined` = chưa init, `null` = disabled.
+   */
+  private fileLogger: Logger | null | undefined;
+
+  private getFileLogger(): Logger | null {
+    if (this.fileLogger !== undefined) {
+      return this.fileLogger;
+    }
+    try {
+      if (process.env.NODE_ENV === 'test') {
+        this.fileLogger = null;
+        return null;
+      }
+      this.fileLogger = createAppFileLogger(resolveLoggerOptions());
+      return this.fileLogger;
+    } catch {
+      // Fail-open: lỗi winston không được làm sập app; console vẫn log.
+      this.fileLogger = null;
+      return null;
+    }
+  }
+
+  /**
+   * Forward prepended message xuống winston file logger với đúng level.
+   * Bọc try/catch để lỗi ghi file không ảnh hưởng luồng chính.
+   */
+  private forwardToFile(
+    level: 'log' | 'error' | 'warn' | 'debug' | 'verbose',
+    message: string,
+  ): void {
+    const wl = this.getFileLogger();
+    if (!wl) {
+      return;
+    }
+    try {
+      // Map tên method NestJS → winston level (NestJS 'log' == 'info').
+      const winstonLevel =
+        level === 'log' ? 'info' : (level as 'error' | 'warn' | 'debug' | 'verbose');
+      wl.log(winstonLevel, message);
+    } catch {
+      // Im lặng: lỗi file logger không được phá console output.
+    }
+  }
+
   log(message: unknown, ...optionalParams: unknown[]): void {
-    super.log(this.prependCallerInfo(message), ...optionalParams);
+    const prepended = this.prependCallerInfo(message);
+    super.log(prepended, ...optionalParams);
+    this.forwardToFile('log', prepended);
   }
 
   error(message: unknown, ...optionalParams: unknown[]): void {
-    super.error(this.prependCallerInfo(message), ...optionalParams);
+    const prepended = this.prependCallerInfo(message);
+    super.error(prepended, ...optionalParams);
+    this.forwardToFile('error', prepended);
   }
 
   warn(message: unknown, ...optionalParams: unknown[]): void {
-    super.warn(this.prependCallerInfo(message), ...optionalParams);
+    const prepended = this.prependCallerInfo(message);
+    super.warn(prepended, ...optionalParams);
+    this.forwardToFile('warn', prepended);
   }
 
   debug(message: unknown, ...optionalParams: unknown[]): void {
-    super.debug(this.prependCallerInfo(message), ...optionalParams);
+    const prepended = this.prependCallerInfo(message);
+    super.debug(prepended, ...optionalParams);
+    this.forwardToFile('debug', prepended);
   }
 
   verbose(message: unknown, ...optionalParams: unknown[]): void {
-    super.verbose(this.prependCallerInfo(message), ...optionalParams);
+    const prepended = this.prependCallerInfo(message);
+    super.verbose(prepended, ...optionalParams);
+    this.forwardToFile('verbose', prepended);
   }
 }
