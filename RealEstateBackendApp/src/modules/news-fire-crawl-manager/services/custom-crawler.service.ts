@@ -117,7 +117,7 @@ export class CustomCrawlerService {
           this.logger.log(
             `Using RSS Feed for ${source.name}: ${source.rssUrl}`,
           );
-          const rssBody = await this.fetchRssFeed(source.rssUrl);
+          const rssBody = await this.fetchWithAntiBotBypass(source.rssUrl);
           // Remove BOM, control characters (except tab, newline, carriage return), and trim
           const cleanXml = rssBody
             .replace(/^\uFEFF/g, '')
@@ -159,15 +159,12 @@ export class CustomCrawlerService {
           this.logger.log(
             `Using AI Extractor for ${source.name}: ${source.url}`,
           );
-          const response = await axios.get(source.url, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 30000,
-          });
-          const html = response.data;
+          // Dùng helper bypass chung (cả RSS + HTML) — chống duplicate logic
+          // anti-bot challenge ở 2 nhánh. axios mặc định follow redirect
+          // (maxRedirects: 5) nên sau khi replay cookie, nếu site trả 302
+          // tới trang thật (VD quochoi.vn → /Pages/default.aspx) thì axios
+          // tự follow và lấy HTML thật cho AI.
+          const html = await this.fetchWithAntiBotBypass(source.url);
 
           const $ = cheerio.load(html);
           $('script, style, noscript, iframe, nav, footer, header').remove();
@@ -313,24 +310,30 @@ export class CustomCrawlerService {
   }
 
   /**
-   * Fetch RSS feed có bypass anti-bot challenge (VD: laodong.vn / Cloudrity).
+   * Fetch body (RSS XML hoặc HTML) có bypass anti-bot challenge
+   * (VD: laodong.vn / quochoi.vn / Cloudrity-fronted).
    *
    * Một số site trả challenge HTML set cookie qua JS `document.cookie="D1N=..."`
    * rồi `window.location.reload()`. Gọi lại cùng url với header `Cookie: <name>=<value>`
-   * thì trả RSS XML thật.
+   * thì trả body thật (RSS XML hoặc HTML trang thật).
    *
    * Chiến lược:
-   * 1. Gọi request đầu tiên (giữ config y hệt nhánh cũ: UA, httpsAgent, timeout 30s).
+   * 1. Gọi request đầu tiên (config chung: UA, httpsAgent, timeout 30s,
+   *    responseType 'text' để luôn trả string cho cả RSS + HTML).
    * 2. Nếu body chứa pattern `document.cookie="..."` + `window.location.reload`
    *    → extract cặp `name=value` (ưu tiên D1N cụ thể, fallback generic) →
-   *    re-fetch với header `Cookie`.
+   *    re-fetch với header `Cookie`. Axios mặc định follow redirect
+   *    (maxRedirects: 5) KHÔNG bị tắt → request 2 tự follow 302 tới trang thật.
    * 3. Giới hạn retry đúng 1 lần (2 request tổng) — chống loop vô hạn.
-   * 4. Nếu sau retry vẫn là challenge → throw Error rõ ràng, rơi vào catch của crawlData
-   *    và được lưu vào failedDetails.error.
+   * 4. Nếu sau retry vẫn là challenge → throw Error rõ ràng, rơi vào catch của
+   *    crawlData và được lưu vào failedDetails.error.
+   *
+   * Dùng chung cho cả nhánh RSS (source.rssUrl) và nhánh AI Extractor
+   * (source.url) — DRY: 1 helper generic, không lặp logic bypass ở 2 chỗ.
    *
    * Lưu ý bảo mật: KHÔNG log giá trị cookie.
    */
-  private async fetchRssFeed(rssUrl: string): Promise<string> {
+  private async fetchWithAntiBotBypass(url: string): Promise<string> {
     const requestConfig = {
       headers: {
         'User-Agent': CustomCrawlerService.USER_AGENT,
@@ -340,7 +343,7 @@ export class CustomCrawlerService {
       responseType: 'text' as const,
     };
 
-    const firstResponse = await axios.get(rssUrl, requestConfig);
+    const firstResponse = await axios.get(url, requestConfig);
     const firstBody =
       typeof firstResponse.data === 'string'
         ? firstResponse.data
@@ -362,9 +365,9 @@ export class CustomCrawlerService {
 
       if (cookiePair) {
         this.logger.warn(
-          `Anti-bot challenge detected for ${rssUrl}, replaying with cookie`,
+          `Anti-bot challenge detected for ${url}, replaying with cookie`,
         );
-        const secondResponse = await axios.get(rssUrl, {
+        const secondResponse = await axios.get(url, {
           ...requestConfig,
           headers: {
             ...requestConfig.headers,
@@ -382,7 +385,7 @@ export class CustomCrawlerService {
           secondBody.includes('window.location.reload')
         ) {
           throw new Error(
-            `RSS fetch failed: anti-bot challenge could not be bypassed for ${rssUrl}`,
+            `Fetch failed: anti-bot challenge could not be bypassed for ${url}`,
           );
         }
         return secondBody;
