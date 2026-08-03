@@ -449,6 +449,52 @@ export default function RawArticlesScreen() {
         </div>
       )}
 
+      {/* Panel thống kê link thành công/thất bại của lần crawl thủ công vừa hoàn tất.
+          Đọc trực tiếp từ manualCrawlDoneResult.stats — không cần state riêng:
+          startJob mới đã setDoneResult(null) → panel tự ẩn khi crawl lại. */}
+      {(() => {
+        const stats = manualCrawlDoneResult?.stats;
+        if (!stats) return null;
+        return (
+          <div className="mb-4 p-4 rounded-xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]">
+            <div className="text-theme-sm font-medium text-success-500 dark:text-success-400 mb-2">
+              Tất cả: {stats.successfulSources} link thành công / {stats.totalArticles} số lượng bài. {stats.failedSources} link thất bại.
+            </div>
+
+            {(stats.successfulDetails?.length || stats.failedDetails?.length) ? (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 text-theme-xs">
+                {stats.successfulDetails && stats.successfulDetails.length > 0 && (
+                  <div>
+                    <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh sách link thành công:</div>
+                    <ul className="space-y-2 text-gray-600 dark:text-gray-400 max-h-[300px] overflow-y-auto pr-2">
+                      {stats.successfulDetails.map((item, idx) => (
+                        <li key={idx} className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-1">
+                          <span className="truncate pr-2 block w-full" title={item.url}>{item.url}</span>
+                          <span className="font-medium text-success-600 dark:text-success-500 whitespace-nowrap bg-success-50 dark:bg-success-500/10 px-2 py-0.5 rounded text-[10px]">{item.count} bài</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {stats.failedDetails && stats.failedDetails.length > 0 && (
+                  <div>
+                    <div className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Danh sách link thất bại:</div>
+                    <ul className="space-y-2 text-error-600 dark:text-error-500 max-h-[300px] overflow-y-auto pr-2">
+                      {stats.failedDetails.map((item, idx) => (
+                        <li key={idx} className="truncate border-b border-gray-100 dark:border-gray-800 pb-1" title={item.url}>
+                          {item.url}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
+
       {/* Sorting, Filtering, Bulk Actions */}
       <div className="flex flex-col md:flex-row justify-between gap-4 mb-2">
         <div className="flex items-center gap-2">

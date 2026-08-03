@@ -3,10 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import apiAxios from "../api/axios";
 import { useManageWpStatus } from "./ManageWpStatusContext";
 
+/** Thống kê chi tiết kết quả crawl từ CustomCrawlerService.crawlData (backend). */
+export interface CrawlStats {
+  successfulSources: number;
+  failedSources: number;
+  totalArticles: number;
+  successfulDetails?: { url: string; count: number }[];
+  failedDetails?: { url: string }[];
+}
+
 /** Phản hồi từ GET /news-manager/crawl/:jobId. */
 export interface ManualCrawlJobResponse {
   status: "pending" | "done" | "error" | "not_found";
-  result?: { stats?: unknown; count?: number; filePath?: string };
+  result?: { stats?: CrawlStats; count?: number; filePath?: string };
   error?: string;
 }
 
