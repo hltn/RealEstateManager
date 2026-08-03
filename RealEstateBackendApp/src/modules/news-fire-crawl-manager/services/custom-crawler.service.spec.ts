@@ -188,7 +188,7 @@ describe('CustomCrawlerService', () => {
       const result = await service.crawlData();
       expect(result.stats.failedSources).toBe(1);
       expect(result.stats.successfulSources).toBe(0);
-      expect(result.stats.failedDetails).toEqual([{ url: 'https://bad.example' }]);
+      expect(result.stats.failedDetails).toEqual([{ url: 'https://bad.example', error: 'network down' }]);
     });
 
     it('RSS parse throw → source tính là failed', async () => {

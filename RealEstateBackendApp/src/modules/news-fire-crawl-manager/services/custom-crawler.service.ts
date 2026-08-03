@@ -53,7 +53,7 @@ export class CustomCrawlerService {
       failedSources: number;
       totalArticles: number;
       successfulDetails: { url: string; count: number }[];
-      failedDetails: { url: string }[];
+      failedDetails: { url: string; error: string }[];
     };
   }> {
     this.logger.log(
@@ -95,7 +95,7 @@ export class CustomCrawlerService {
     let successfulSources = 0;
     let failedSources = 0;
     const successfulDetails: { url: string; count: number }[] = [];
-    const failedDetails: { url: string }[] = [];
+    const failedDetails: { url: string; error: string }[] = [];
 
     for (const source of activeSources) {
       this.logger.log(
@@ -284,7 +284,7 @@ export class CustomCrawlerService {
         successfulDetails.push({ url: source.url, count: validArticlesCount });
       } catch (e: any) {
         failedSources++;
-        failedDetails.push({ url: source.url });
+        failedDetails.push({ url: source.url, error: e?.message ?? 'Unknown error' });
         this.logger.error(
           `Error processing source ${source.name}: ${e.message}`,
           e.stack,
