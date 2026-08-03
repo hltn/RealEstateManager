@@ -25,6 +25,13 @@ export class CustomCrawlerService {
   private readonly logger = new Logger(CustomCrawlerService.name);
   private rssParser: Parser;
 
+  /**
+   * User-Agent chung cho mọi request fetch RSS/HTML.
+   * Tránh duplicate chuỗi UA dài ở nhiều nhánh fetch (DRY).
+   */
+  private static readonly USER_AGENT =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
   constructor(
     private newsSourceService: NewsSourceService,
     private aiFilterService: AIFilterService,
@@ -110,17 +117,9 @@ export class CustomCrawlerService {
           this.logger.log(
             `Using RSS Feed for ${source.name}: ${source.rssUrl}`,
           );
-          const rssResponse = await axios.get(source.rssUrl, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 30000,
-            responseType: 'text',
-          });
+          const rssBody = await this.fetchRssFeed(source.rssUrl);
           // Remove BOM, control characters (except tab, newline, carriage return), and trim
-          const cleanXml = rssResponse.data
+          const cleanXml = rssBody
             .replace(/^\uFEFF/g, '')
             .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
             .trim();
@@ -311,6 +310,86 @@ export class CustomCrawlerService {
         failedDetails,
       },
     };
+  }
+
+  /**
+   * Fetch RSS feed có bypass anti-bot challenge (VD: laodong.vn / Cloudrity).
+   *
+   * Một số site trả challenge HTML set cookie qua JS `document.cookie="D1N=..."`
+   * rồi `window.location.reload()`. Gọi lại cùng url với header `Cookie: <name>=<value>`
+   * thì trả RSS XML thật.
+   *
+   * Chiến lược:
+   * 1. Gọi request đầu tiên (giữ config y hệt nhánh cũ: UA, httpsAgent, timeout 30s).
+   * 2. Nếu body chứa pattern `document.cookie="..."` + `window.location.reload`
+   *    → extract cặp `name=value` (ưu tiên D1N cụ thể, fallback generic) →
+   *    re-fetch với header `Cookie`.
+   * 3. Giới hạn retry đúng 1 lần (2 request tổng) — chống loop vô hạn.
+   * 4. Nếu sau retry vẫn là challenge → throw Error rõ ràng, rơi vào catch của crawlData
+   *    và được lưu vào failedDetails.error.
+   *
+   * Lưu ý bảo mật: KHÔNG log giá trị cookie.
+   */
+  private async fetchRssFeed(rssUrl: string): Promise<string> {
+    const requestConfig = {
+      headers: {
+        'User-Agent': CustomCrawlerService.USER_AGENT,
+      },
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      timeout: 30000,
+      responseType: 'text' as const,
+    };
+
+    const firstResponse = await axios.get(rssUrl, requestConfig);
+    const firstBody =
+      typeof firstResponse.data === 'string'
+        ? firstResponse.data
+        : String(firstResponse.data);
+
+    // Detect anti-bot challenge: set cookie qua JS rồi reload trang
+    const isChallenge =
+      firstBody.includes('document.cookie=') ||
+      firstBody.includes('window.location.reload');
+
+    if (isChallenge) {
+      // Ưu tiên cookie D1N cụ thể (laodong.vn), fallback generic cho các challenge tương tự.
+      // Regex generic bắt cả cặp `name=value` gốc (VD `D1N=abc`) để gửi nguyên vẹn lên header.
+      const d1nMatch = firstBody.match(/document\.cookie="D1N=([a-f0-9]+)"/);
+      const genericMatch = firstBody.match(/document\.cookie="([^"]+)"/);
+      const cookiePair = d1nMatch
+        ? `D1N=${d1nMatch[1]}`
+        : genericMatch?.[1];
+
+      if (cookiePair) {
+        this.logger.warn(
+          `Anti-bot challenge detected for ${rssUrl}, replaying with cookie`,
+        );
+        const secondResponse = await axios.get(rssUrl, {
+          ...requestConfig,
+          headers: {
+            ...requestConfig.headers,
+            Cookie: cookiePair,
+          },
+        });
+        const secondBody =
+          typeof secondResponse.data === 'string'
+            ? secondResponse.data
+            : String(secondResponse.data);
+
+        // Cookie không bypass được → throw rõ ràng để crawlData catch và log
+        if (
+          secondBody.includes('document.cookie=') ||
+          secondBody.includes('window.location.reload')
+        ) {
+          throw new Error(
+            `RSS fetch failed: anti-bot challenge could not be bypassed for ${rssUrl}`,
+          );
+        }
+        return secondBody;
+      }
+    }
+
+    return firstBody;
   }
 
   /**
