@@ -15,8 +15,14 @@ interface AnalyzeJobContextType {
   errorMessage: string | null;
   /** Bắt đầu theo dõi 1 job mới (gọi ngay sau khi POST /analyze-raw trả về jobId). */
   startJob: (jobId: string) => void;
-  /** Ẩn badge kết quả (done/error) sau khi user đã đọc. */
+  /** Ẩn badge kết quả (done/error) sau khi user đã đọc. Giữ nguyên jobId/poll. */
   clearResult: () => void;
+  /**
+   * Reset đầy đủ trạng thái AnalyzeJob: clear jobId (dừng React Query poll),
+   * finishedStatus, errorMessage và xoá query data cũ tránh stale khi start job mới.
+   * Job vẫn chạy server-side — chỉ dừng hiển thị/poll client.
+   */
+  reset: () => void;
 }
 
 const AnalyzeJobContext = createContext<AnalyzeJobContextType | undefined>(undefined);
@@ -100,10 +106,20 @@ export const AnalyzeJobProvider: React.FC<{ children: React.ReactNode }> = ({
     setErrorMessage(null);
   }, []);
 
+  // Reset đầy đủ khi user rời màn hình/sang op async khác: clear jobId để
+  // useQuery enabled=false tự dừng poll, đồng thời removeQueries tránh stale
+  // data kẹt ở key ["analyze-raw-job"] khi start job mới cùng key.
+  const reset = useCallback(() => {
+    setJobId(null);
+    setFinishedStatus(null);
+    setErrorMessage(null);
+    queryClient.removeQueries({ queryKey: ["analyze-raw-job"] });
+  }, [queryClient]);
+
   const status: AnalyzeJobStatus = jobId ? "pending" : finishedStatus ?? "idle";
 
   return (
-    <AnalyzeJobContext.Provider value={{ status, errorMessage, startJob, clearResult }}>
+    <AnalyzeJobContext.Provider value={{ status, errorMessage, startJob, clearResult, reset }}>
       {children}
     </AnalyzeJobContext.Provider>
   );

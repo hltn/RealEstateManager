@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAnalyzeJob } from "../context/AnalyzeJobContext";
 import { useManualCrawlJob } from "../context/ManualCrawlJobContext";
 import { useManageWpStatus } from "../context/ManageWpStatusContext";
+import { useHeaderStatusReset } from "../hooks/useHeaderStatusReset";
 import { DatePicker } from "../components/ui/DatePicker";
 import { Pagination } from "../components/common/Pagination";
 import { TableSkeletonRows } from "../components/common/TableSkeletonRows";
@@ -71,6 +72,7 @@ export default function RawArticlesScreen() {
   const { startJob: startManualCrawlJob, doneResult: manualCrawlDoneResult } =
     useManualCrawlJob();
   const { crawlStatus, crawlError } = useManageWpStatus();
+  const resetHeaderStatuses = useHeaderStatusReset();
   const isManualCrawlPending = crawlStatus === "pending";
 
   const [error, setError] = useState("");
@@ -191,6 +193,8 @@ export default function RawArticlesScreen() {
       }
       // Chạy nền: submit job rồi trả về ngay, ManualCrawlJobProvider (AppLayout) sẽ
       // tự poll trạng thái và invalidate danh sách khi xong, kể cả khi user đã rời màn.
+      // Reset header badge cũ trước khi start job mới (tránh cộng dồn nhiều badge).
+      resetHeaderStatuses();
       startManualCrawlJob(jobId);
     },
     onError: (err) => setError(err.message || "Có lỗi xảy ra khi thu thập dữ liệu."),
@@ -223,6 +227,8 @@ export default function RawArticlesScreen() {
     },
     onSuccess: (jobId) => {
       if (jobId) {
+        // Reset header badge cũ trước khi start job mới (tránh cộng dồn nhiều badge).
+        resetHeaderStatuses();
         startAnalyzeJob(jobId);
         setSuccess("Đã gửi yêu cầu phân tích, kết quả sẽ hiển thị ở góc trên bên phải.");
       } else {
@@ -250,6 +256,8 @@ export default function RawArticlesScreen() {
     },
     onSuccess: (jobId) => {
       if (jobId) {
+        // Reset header badge cũ trước khi start job mới (tránh cộng dồn nhiều badge).
+        resetHeaderStatuses();
         startAnalyzeJob(jobId);
         setSuccess("Đã gửi yêu cầu phân tích tất cả, kết quả sẽ hiển thị ở góc trên bên phải.");
       } else {
