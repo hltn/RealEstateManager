@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as fs from 'fs';
 import * as path from 'path';
-import axios from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as https from 'https';
 import * as cheerio from 'cheerio';
 import Parser from 'rss-parser';
@@ -12,6 +12,7 @@ import { NewsSourceService } from './news-source.service';
 import { RawArticle } from '../schemas/raw-article.schema';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 import { PaginatedResult } from '../../../common/dto/paginated-response.dto';
 import {
   DEFAULT_LIMIT,
@@ -36,6 +37,7 @@ export class CustomCrawlerService {
     private newsSourceService: NewsSourceService,
     private aiFilterService: AIFilterService,
     private aiPromptConfigService: AiPromptConfigService,
+    private externalLogService: ExternalLogService,
     @InjectModel(RawArticle.name) private rawArticleModel: Model<RawArticle>,
   ) {
     this.rssParser = new Parser({
@@ -117,7 +119,10 @@ export class CustomCrawlerService {
           this.logger.log(
             `Using RSS Feed for ${source.name}: ${source.rssUrl}`,
           );
-          const rssBody = await this.fetchWithAntiBotBypass(source.rssUrl);
+          const rssBody = await this.fetchWithAntiBotBypass(
+            source.rssUrl,
+            source.name,
+          );
           // Remove BOM, control characters (except tab, newline, carriage return), and trim
           const cleanXml = rssBody
             .replace(/^\uFEFF/g, '')
@@ -164,7 +169,10 @@ export class CustomCrawlerService {
           // (maxRedirects: 5) nên sau khi replay cookie, nếu site trả 302
           // tới trang thật (VD quochoi.vn → /Pages/default.aspx) thì axios
           // tự follow và lấy HTML thật cho AI.
-          const html = await this.fetchWithAntiBotBypass(source.url);
+          const html = await this.fetchWithAntiBotBypass(
+            source.url,
+            source.name,
+          );
 
           const $ = cheerio.load(html);
           $('script, style, noscript, iframe, nav, footer, header').remove();
@@ -280,7 +288,10 @@ export class CustomCrawlerService {
         successfulDetails.push({ url: source.url, count: validArticlesCount });
       } catch (e: any) {
         failedSources++;
-        failedDetails.push({ url: source.url, error: e?.message ?? 'Unknown error' });
+        failedDetails.push({
+          url: source.url,
+          error: e?.message ?? 'Unknown error',
+        });
         this.logger.error(
           `Error processing source ${source.name}: ${e.message}`,
           e.stack,
@@ -333,7 +344,13 @@ export class CustomCrawlerService {
    *
    * Lưu ý bảo mật: KHÔNG log giá trị cookie.
    */
-  private async fetchWithAntiBotBypass(url: string): Promise<string> {
+  private async fetchWithAntiBotBypass(
+    url: string,
+    sourceName?: string,
+  ): Promise<string> {
+    // targetService = source.name theo §9.1 spec; fallback hostname nếu không có context.
+    const targetService = sourceName ?? this.extractHostname(url);
+
     const requestConfig = {
       headers: {
         'User-Agent': CustomCrawlerService.USER_AGENT,
@@ -343,7 +360,12 @@ export class CustomCrawlerService {
       responseType: 'text' as const,
     };
 
-    const firstResponse = await axios.get(url, requestConfig);
+    const firstResponse = await this.performFetch(
+      url,
+      requestConfig,
+      targetService,
+      0,
+    );
     const firstBody =
       typeof firstResponse.data === 'string'
         ? firstResponse.data
@@ -359,21 +381,24 @@ export class CustomCrawlerService {
       // Regex generic bắt cả cặp `name=value` gốc (VD `D1N=abc`) để gửi nguyên vẹn lên header.
       const d1nMatch = firstBody.match(/document\.cookie="D1N=([a-f0-9]+)"/);
       const genericMatch = firstBody.match(/document\.cookie="([^"]+)"/);
-      const cookiePair = d1nMatch
-        ? `D1N=${d1nMatch[1]}`
-        : genericMatch?.[1];
+      const cookiePair = d1nMatch ? `D1N=${d1nMatch[1]}` : genericMatch?.[1];
 
       if (cookiePair) {
         this.logger.warn(
           `Anti-bot challenge detected for ${url}, replaying with cookie`,
         );
-        const secondResponse = await axios.get(url, {
-          ...requestConfig,
-          headers: {
-            ...requestConfig.headers,
-            Cookie: cookiePair,
+        const secondResponse = await this.performFetch(
+          url,
+          {
+            ...requestConfig,
+            headers: {
+              ...requestConfig.headers,
+              Cookie: cookiePair,
+            },
           },
-        });
+          targetService,
+          1,
+        );
         const secondBody =
           typeof secondResponse.data === 'string'
             ? secondResponse.data
@@ -393,6 +418,88 @@ export class CustomCrawlerService {
     }
 
     return firstBody;
+  }
+
+  /**
+   * Choke point crawl: thực hiện 1 HTTP GET ra ngoài (axios) + ghi external log
+   * (fire-and-forget qua ExternalLogService.logCrawl — không bao giờ throw từ logger).
+   *
+   * Theo §9.1 spec:
+   * - Log TỪNG HTTP call (retryCount 0/1) để thấy rõ request nào 403 anti-bot.
+   * - statusCode từ response; axios throw → error.code = err.code (VD ECONNABORTED),
+   *   nếu err.response tồn tại (403 Cloudflare, 503…) vẫn lưu statusCode +
+   *   response.body = err.response.data (raw HTML error).
+   * - response.body là HTML/RSS string → truncate 50KB xảy ra bên trong logger.
+   * - request.prompt để rỗng (không phải AI).
+   * - Cookie KHÔNG bao giờ lọt vào log (sanitizer mask header 'cookie').
+   */
+  private async performFetch(
+    url: string,
+    config: AxiosRequestConfig,
+    targetService: string,
+    retryCount: number,
+  ): Promise<AxiosResponse> {
+    const startTime = Date.now();
+    try {
+      const response = await axios.get(url, config);
+      this.externalLogService.logCrawl({
+        targetService,
+        url,
+        method: 'GET',
+        statusCode: response.status,
+        durationMs: Date.now() - startTime,
+        requestHeaders: config.headers,
+        requestQuery: this.extractQueryParams(url),
+        responseHeaders: response.headers,
+        responseBody: response.data,
+        metadata: { retryCount },
+      });
+      return response;
+    } catch (err: any) {
+      this.externalLogService.logCrawl({
+        targetService,
+        url,
+        method: 'GET',
+        statusCode: err.response?.status,
+        durationMs: Date.now() - startTime,
+        requestHeaders: config.headers,
+        requestQuery: this.extractQueryParams(url),
+        responseHeaders: err.response?.headers as
+          | Record<string, any>
+          | undefined,
+        responseBody: err.response?.data,
+        error: {
+          message: err.message,
+          code: err.code ?? err.name,
+          stack: err.stack,
+        },
+        metadata: { retryCount },
+      });
+      throw err;
+    }
+  }
+
+  /** Tách query params từ URL string thành object (giá trị nhạy cảm sẽ được mask trong logger). */
+  private extractQueryParams(url: string): Record<string, any> {
+    try {
+      const parsed = new URL(url);
+      const query: Record<string, any> = {};
+      parsed.searchParams.forEach((value, key) => {
+        query[key] = value;
+      });
+      return query;
+    } catch {
+      return {};
+    }
+  }
+
+  /** Fallback targetService khi không có source.name (lấy hostname từ URL). */
+  private extractHostname(url: string): string {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
   }
 
   /**

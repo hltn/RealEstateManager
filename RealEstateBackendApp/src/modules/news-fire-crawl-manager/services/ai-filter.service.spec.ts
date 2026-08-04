@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { ConfigService } from '@nestjs/config';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 
 /**
  * Unit test cho AIFilterService — service gọi AI (OpenRouter/Must1c/Gemini).
@@ -74,6 +75,10 @@ describe('AIFilterService', () => {
           provide: AiPromptConfigService,
           useValue: mockAiPromptConfigService,
         },
+        {
+          provide: ExternalLogService,
+          useValue: { logCrawl: jest.fn(), logAi: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -106,6 +111,10 @@ describe('AIFilterService', () => {
       text: jest
         .fn()
         .mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
+      // Phase 2 (ExternalLogModule): service gọi res.clone().text() để log body
+      // mà không tiêu thụ stream của caller (res.text()/res.json()).
+      clone: jest.fn(() => res),
+      headers: new Headers({ 'content-type': 'application/json' }),
     };
     return res as Response;
   };

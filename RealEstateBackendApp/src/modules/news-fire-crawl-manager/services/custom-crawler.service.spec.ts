@@ -20,6 +20,7 @@ import { NewsSourceService } from './news-source.service';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { RawArticle } from '../schemas/raw-article.schema';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 
 // Mock rss-parser: constructor trả object có parseString jest.fn.
 jest.mock('rss-parser', () => {
@@ -84,6 +85,10 @@ describe('CustomCrawlerService', () => {
         {
           provide: getModelToken(RawArticle.name),
           useValue: mockRawArticleModel,
+        },
+        {
+          provide: ExternalLogService,
+          useValue: { logCrawl: jest.fn(), logAi: jest.fn() },
         },
       ],
     }).compile();
