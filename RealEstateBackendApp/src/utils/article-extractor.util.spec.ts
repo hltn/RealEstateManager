@@ -5,11 +5,13 @@
  * Bao phủ:
  * - Happy path: fetch HTML → parse og:image + article:published_time →
  *   Readability.parse → TurndownService → markdown.
+ * - Anti-bot bypass: challenge detected → extract D1N cookie → retry with cookie → success.
+ * - Anti-bot challenge without extractable cookie → proceed with original body.
  * - Readability trả null → throw "Failed to parse article content...".
  * - Readability trả { content: null } → throw.
  * - axios ném error → re-throw sau khi log.
  *
- * Mock toàn bộ 4 thư viện: axios, jsdom, @mozilla/readability, turndown.
+ * Mock toàn bộ thư viện: axios, jsdom, @mozilla/readability, turndown, https.
  */
 
 // --- Mocks phải khai báo trước import source (jest hoisting) ---
@@ -35,6 +37,12 @@ const turndownMock = jest.fn();
 jest.mock('turndown', () => ({
   __esModule: true,
   default: jest.fn(() => ({ turndown: turndownMock })),
+}));
+
+// Mock https.Agent — không cần hành vi thực tế, chỉ cần constructor.
+const httpsAgentMock = jest.fn();
+jest.mock('https', () => ({
+  Agent: httpsAgentMock,
 }));
 
 import { ArticleExtractorUtil } from './article-extractor.util';
@@ -70,13 +78,15 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
         'https://example.com/post/1',
       );
 
-      // axios.get gọi với User-Agent header chuẩn.
+      // axios.get gọi với User-Agent header chuẩn + httpsAgent + timeout.
       expect(axios.get).toHaveBeenCalledWith(
         'https://example.com/post/1',
         expect.objectContaining({
           headers: expect.objectContaining({
             'User-Agent': expect.stringContaining('Mozilla'),
           }),
+          timeout: 30000,
+          responseType: 'text',
         }),
       );
       // JSDOM construct với html + url.
@@ -134,6 +144,126 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
     });
   });
 
+  describe('extractArticle — anti-bot bypass', () => {
+    const CHALLENGE_HTML = `<script>document.cookie="D1N=eb79e4a01234567890abcdef1234567"+" expires=Fri, 31 Dec 2099 23:59:59 GMT; path=/";window.location.reload(true);</script>`;
+    const REAL_HTML = '<html><head><meta property="og:image" content="https://img.laodong.vn/a.jpg"/><meta property="article:published_time" content="2025-06-01T10:00:00Z"/></head><body><p>real content</p></body></html>';
+
+    it('detect challenge D1N → extract cookie → retry with Cookie header → parse real HTML', async () => {
+      // Lần 1: challenge; lần 2: real HTML
+      axiosGetMock
+        .mockResolvedValueOnce({ data: CHALLENGE_HTML })
+        .mockResolvedValueOnce({ data: REAL_HTML });
+
+      querySelectorMock
+        .mockReturnValueOnce({
+          getAttribute: jest.fn().mockReturnValue('https://img.laodong.vn/a.jpg'),
+        })
+        .mockReturnValueOnce({
+          getAttribute: jest.fn().mockReturnValue('2025-06-01T10:00:00Z'),
+        });
+      parseMock.mockReturnValue({ content: '<p>real content</p>' });
+      turndownMock.mockReturnValue('real content');
+
+      const result = await ArticleExtractorUtil.extractArticle(
+        'https://laodong.vn/bai-viet/123',
+      );
+
+      // Verify axios.get được gọi 2 lần.
+      expect(axios.get).toHaveBeenCalledTimes(2);
+
+      // Lần 1: request thường.
+      expect(axios.get).toHaveBeenNthCalledWith(
+        1,
+        'https://laodong.vn/bai-viet/123',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'User-Agent': expect.stringContaining('Mozilla'),
+          }),
+          timeout: 30000,
+          responseType: 'text',
+        }),
+      );
+
+      // Lần 2: retry với Cookie header chứa D1N cookie.
+      expect(axios.get).toHaveBeenNthCalledWith(
+        2,
+        'https://laodong.vn/bai-viet/123',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Cookie: 'D1N=eb79e4a01234567890abcdef1234567',
+          }),
+        }),
+      );
+
+      // JSDOM được gọi với real HTML (lần 2).
+      expect(JSDOM).toHaveBeenCalledWith(REAL_HTML, {
+        url: 'https://laodong.vn/bai-viet/123',
+      });
+
+      expect(result).toEqual({
+        markdown: 'real content',
+        thumbnailUrl: 'https://img.laodong.vn/a.jpg',
+        publishDate: '2025-06-01T10:00:00Z',
+      });
+    });
+
+    it('detect challenge with generic cookie pattern (no D1N) → extract generic → retry', async () => {
+      const genericChallengeHtml =
+        '<script>document.cookie="SOME_COOKIE=xyz789"+" path=/";window.location.reload(true);</script>';
+      const realHtml = '<html><body><p>generic bypass ok</p></body></html>';
+
+      axiosGetMock
+        .mockResolvedValueOnce({ data: genericChallengeHtml })
+        .mockResolvedValueOnce({ data: realHtml });
+
+      querySelectorMock.mockReturnValue(null);
+      parseMock.mockReturnValue({ content: '<p>generic bypass ok</p>' });
+      turndownMock.mockReturnValue('generic bypass ok');
+
+      const result = await ArticleExtractorUtil.extractArticle(
+        'https://some-news.vn/bai/456',
+      );
+
+      expect(axios.get).toHaveBeenCalledTimes(2);
+
+      // Lần 2: retry với generic cookie.
+      expect(axios.get).toHaveBeenNthCalledWith(
+        2,
+        'https://some-news.vn/bai/456',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Cookie: 'SOME_COOKIE=xyz789',
+          }),
+        }),
+      );
+
+      // JSDOM gọi với real HTML.
+      expect(JSDOM).toHaveBeenCalledWith(realHtml, {
+        url: 'https://some-news.vn/bai/456',
+      });
+
+      expect(result.markdown).toBe('generic bypass ok');
+    });
+
+    it('detect challenge but cookie NOT extractable → proceed with original challenge body', async () => {
+      // Body chứa "document.cookie=" nhưng không có pattern extractable (không có dấu nháy kép sau =)
+      const unparseableChallenge = '<script>document.cookie=something;window.location.reload();</script>';
+
+      axiosGetMock.mockResolvedValue({ data: unparseableChallenge });
+
+      querySelectorMock.mockReturnValue(null);
+      // Readability.parse sẽ trả null vì body là challenge script
+      parseMock.mockReturnValue(null);
+
+      await expect(
+        ArticleExtractorUtil.extractArticle('https://bad-challenge.vn/x'),
+      ).rejects.toThrow('Failed to parse article content using Readability.');
+
+      // Chỉ gọi axios.get 1 lần (không retry vì không extract được cookie).
+      expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('extractArticle — error paths', () => {
     it('Readability.parse trả null → throw "Failed to parse article content..."', async () => {
       axiosGetMock.mockResolvedValue({ data: '<html>' });
@@ -143,8 +273,6 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
       await expect(
         ArticleExtractorUtil.extractArticle('https://x.com/a'),
       ).rejects.toThrow('Failed to parse article content using Readability.');
-      // Sau fix: source dùng Logger thay vì console.error — không còn spy console.
-      // Chỉ verify re-throw đúng message.
     });
 
     it('Readability.parse trả { content: null } → throw', async () => {
