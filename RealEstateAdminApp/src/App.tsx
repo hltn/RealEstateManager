@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AppLayout from './layout/AppLayout';
 import ManageWpScreen from './screens/ManageWpScreen';
 import CronjobScreen from './screens/CronjobScreen';
+import ExternalLogsScreen from './screens/ExternalLogsScreen';
 import ManageSourcesScreen from './screens/ManageSourcesScreen';
 import RawArticlesScreen from './screens/RawArticlesScreen';
 import AiConfigScreen from './screens/AiConfigScreen';
@@ -79,6 +80,22 @@ function App() {
                   }
                 >
                   <CronjobScreen />
+                </RoleGuard>
+              }
+            />
+            {/* ADMIN only — request logs */}
+            <Route
+              path="external-logs"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <ExternalLogsScreen />
                 </RoleGuard>
               }
             />
