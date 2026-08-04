@@ -26,9 +26,7 @@ services:
     container_name: realestate_backend
     restart: unless-stopped
     env_file:
-      - .env
-    volumes:
-      - ./.env:/app/.env
+      - .env.docker
     environment:
       - MONGODB_URI=mongodb://mongo:27017/realestate
       - PORT=3000
@@ -40,6 +38,7 @@ services:
       mongo:
         condition: service_healthy
     volumes:
+      - ./.env:/app/.env
       # Log file (daily-rotation) persist ra host tại <repo>/logs/
       - ./logs:/app/logs
     networks:
