@@ -21,6 +21,7 @@ import {
   MarketAnalysisHistorySchema,
 } from './schemas/market-analysis-history.schema';
 import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
+import { ExternalLogModule } from '../external-log/external-log.module';
 
 @Module({
   imports: [
@@ -31,6 +32,8 @@ import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
       { name: MarketAnalysisHistory.name, schema: MarketAnalysisHistorySchema },
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
+    // ExternalLogModule: log tập trung outgoing request (crawl + AI) — §9.5 spec.
+    ExternalLogModule,
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],
   providers: [

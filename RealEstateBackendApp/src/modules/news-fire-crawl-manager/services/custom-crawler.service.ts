@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as fs from 'fs';
 import * as path from 'path';
-import axios from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as https from 'https';
 import * as cheerio from 'cheerio';
 import Parser from 'rss-parser';
@@ -12,6 +12,7 @@ import { NewsSourceService } from './news-source.service';
 import { RawArticle } from '../schemas/raw-article.schema';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 import { PaginatedResult } from '../../../common/dto/paginated-response.dto';
 import {
   DEFAULT_LIMIT,
@@ -25,10 +26,18 @@ export class CustomCrawlerService {
   private readonly logger = new Logger(CustomCrawlerService.name);
   private rssParser: Parser;
 
+  /**
+   * User-Agent chung cho mọi request fetch RSS/HTML.
+   * Tránh duplicate chuỗi UA dài ở nhiều nhánh fetch (DRY).
+   */
+  private static readonly USER_AGENT =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
   constructor(
     private newsSourceService: NewsSourceService,
     private aiFilterService: AIFilterService,
     private aiPromptConfigService: AiPromptConfigService,
+    private externalLogService: ExternalLogService,
     @InjectModel(RawArticle.name) private rawArticleModel: Model<RawArticle>,
   ) {
     this.rssParser = new Parser({
@@ -53,7 +62,7 @@ export class CustomCrawlerService {
       failedSources: number;
       totalArticles: number;
       successfulDetails: { url: string; count: number }[];
-      failedDetails: { url: string }[];
+      failedDetails: { url: string; error: string }[];
     };
   }> {
     this.logger.log(
@@ -95,7 +104,7 @@ export class CustomCrawlerService {
     let successfulSources = 0;
     let failedSources = 0;
     const successfulDetails: { url: string; count: number }[] = [];
-    const failedDetails: { url: string }[] = [];
+    const failedDetails: { url: string; error: string }[] = [];
 
     for (const source of activeSources) {
       this.logger.log(
@@ -110,17 +119,12 @@ export class CustomCrawlerService {
           this.logger.log(
             `Using RSS Feed for ${source.name}: ${source.rssUrl}`,
           );
-          const rssResponse = await axios.get(source.rssUrl, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 30000,
-            responseType: 'text',
-          });
+          const rssBody = await this.fetchWithAntiBotBypass(
+            source.rssUrl,
+            source.name,
+          );
           // Remove BOM, control characters (except tab, newline, carriage return), and trim
-          const cleanXml = rssResponse.data
+          const cleanXml = rssBody
             .replace(/^\uFEFF/g, '')
             .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
             .trim();
@@ -160,15 +164,15 @@ export class CustomCrawlerService {
           this.logger.log(
             `Using AI Extractor for ${source.name}: ${source.url}`,
           );
-          const response = await axios.get(source.url, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 30000,
-          });
-          const html = response.data;
+          // Dùng helper bypass chung (cả RSS + HTML) — chống duplicate logic
+          // anti-bot challenge ở 2 nhánh. axios mặc định follow redirect
+          // (maxRedirects: 5) nên sau khi replay cookie, nếu site trả 302
+          // tới trang thật (VD quochoi.vn → /Pages/default.aspx) thì axios
+          // tự follow và lấy HTML thật cho AI.
+          const html = await this.fetchWithAntiBotBypass(
+            source.url,
+            source.name,
+          );
 
           const $ = cheerio.load(html);
           $('script, style, noscript, iframe, nav, footer, header').remove();
@@ -184,9 +188,10 @@ export class CustomCrawlerService {
             );
           }
 
-          const aiResult = await this.aiFilterService.analyzeMarketTrends(
+          const aiResult = await this.aiFilterService.callAiCompletion(
             prompt,
             cleanHtml.substring(0, 30000),
+            'Extract listings',
           );
 
           try {
@@ -283,7 +288,10 @@ export class CustomCrawlerService {
         successfulDetails.push({ url: source.url, count: validArticlesCount });
       } catch (e: any) {
         failedSources++;
-        failedDetails.push({ url: source.url });
+        failedDetails.push({
+          url: source.url,
+          error: e?.message ?? 'Unknown error',
+        });
         this.logger.error(
           `Error processing source ${source.name}: ${e.message}`,
           e.stack,
@@ -310,6 +318,188 @@ export class CustomCrawlerService {
         failedDetails,
       },
     };
+  }
+
+  /**
+   * Fetch body (RSS XML hoặc HTML) có bypass anti-bot challenge
+   * (VD: laodong.vn / quochoi.vn / Cloudrity-fronted).
+   *
+   * Một số site trả challenge HTML set cookie qua JS `document.cookie="D1N=..."`
+   * rồi `window.location.reload()`. Gọi lại cùng url với header `Cookie: <name>=<value>`
+   * thì trả body thật (RSS XML hoặc HTML trang thật).
+   *
+   * Chiến lược:
+   * 1. Gọi request đầu tiên (config chung: UA, httpsAgent, timeout 30s,
+   *    responseType 'text' để luôn trả string cho cả RSS + HTML).
+   * 2. Nếu body chứa pattern `document.cookie="..."` + `window.location.reload`
+   *    → extract cặp `name=value` (ưu tiên D1N cụ thể, fallback generic) →
+   *    re-fetch với header `Cookie`. Axios mặc định follow redirect
+   *    (maxRedirects: 5) KHÔNG bị tắt → request 2 tự follow 302 tới trang thật.
+   * 3. Giới hạn retry đúng 1 lần (2 request tổng) — chống loop vô hạn.
+   * 4. Nếu sau retry vẫn là challenge → throw Error rõ ràng, rơi vào catch của
+   *    crawlData và được lưu vào failedDetails.error.
+   *
+   * Dùng chung cho cả nhánh RSS (source.rssUrl) và nhánh AI Extractor
+   * (source.url) — DRY: 1 helper generic, không lặp logic bypass ở 2 chỗ.
+   *
+   * Lưu ý bảo mật: KHÔNG log giá trị cookie.
+   */
+  private async fetchWithAntiBotBypass(
+    url: string,
+    sourceName?: string,
+  ): Promise<string> {
+    // targetService = source.name theo §9.1 spec; fallback hostname nếu không có context.
+    const targetService = sourceName ?? this.extractHostname(url);
+
+    const requestConfig = {
+      headers: {
+        'User-Agent': CustomCrawlerService.USER_AGENT,
+      },
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      timeout: 30000,
+      responseType: 'text' as const,
+    };
+
+    const firstResponse = await this.performFetch(
+      url,
+      requestConfig,
+      targetService,
+      0,
+    );
+    const firstBody =
+      typeof firstResponse.data === 'string'
+        ? firstResponse.data
+        : String(firstResponse.data);
+
+    // Detect anti-bot challenge: set cookie qua JS rồi reload trang
+    const isChallenge =
+      firstBody.includes('document.cookie=') ||
+      firstBody.includes('window.location.reload');
+
+    if (isChallenge) {
+      // Ưu tiên cookie D1N cụ thể (laodong.vn), fallback generic cho các challenge tương tự.
+      // Regex generic bắt cả cặp `name=value` gốc (VD `D1N=abc`) để gửi nguyên vẹn lên header.
+      const d1nMatch = firstBody.match(/document\.cookie="D1N=([a-f0-9]+)"/);
+      const genericMatch = firstBody.match(/document\.cookie="([^"]+)"/);
+      const cookiePair = d1nMatch ? `D1N=${d1nMatch[1]}` : genericMatch?.[1];
+
+      if (cookiePair) {
+        this.logger.warn(
+          `Anti-bot challenge detected for ${url}, replaying with cookie`,
+        );
+        const secondResponse = await this.performFetch(
+          url,
+          {
+            ...requestConfig,
+            headers: {
+              ...requestConfig.headers,
+              Cookie: cookiePair,
+            },
+          },
+          targetService,
+          1,
+        );
+        const secondBody =
+          typeof secondResponse.data === 'string'
+            ? secondResponse.data
+            : String(secondResponse.data);
+
+        // Cookie không bypass được → throw rõ ràng để crawlData catch và log
+        if (
+          secondBody.includes('document.cookie=') ||
+          secondBody.includes('window.location.reload')
+        ) {
+          throw new Error(
+            `Fetch failed: anti-bot challenge could not be bypassed for ${url}`,
+          );
+        }
+        return secondBody;
+      }
+    }
+
+    return firstBody;
+  }
+
+  /**
+   * Choke point crawl: thực hiện 1 HTTP GET ra ngoài (axios) + ghi external log
+   * (fire-and-forget qua ExternalLogService.logCrawl — không bao giờ throw từ logger).
+   *
+   * Theo §9.1 spec:
+   * - Log TỪNG HTTP call (retryCount 0/1) để thấy rõ request nào 403 anti-bot.
+   * - statusCode từ response; axios throw → error.code = err.code (VD ECONNABORTED),
+   *   nếu err.response tồn tại (403 Cloudflare, 503…) vẫn lưu statusCode +
+   *   response.body = err.response.data (raw HTML error).
+   * - response.body là HTML/RSS string → truncate 50KB xảy ra bên trong logger.
+   * - request.prompt để rỗng (không phải AI).
+   * - Cookie KHÔNG bao giờ lọt vào log (sanitizer mask header 'cookie').
+   */
+  private async performFetch(
+    url: string,
+    config: AxiosRequestConfig,
+    targetService: string,
+    retryCount: number,
+  ): Promise<AxiosResponse> {
+    const startTime = Date.now();
+    try {
+      const response = await axios.get(url, config);
+      this.externalLogService.logCrawl({
+        targetService,
+        url,
+        method: 'GET',
+        statusCode: response.status,
+        durationMs: Date.now() - startTime,
+        requestHeaders: config.headers,
+        requestQuery: this.extractQueryParams(url),
+        responseHeaders: response.headers,
+        responseBody: response.data,
+        metadata: { retryCount },
+      });
+      return response;
+    } catch (err: any) {
+      this.externalLogService.logCrawl({
+        targetService,
+        url,
+        method: 'GET',
+        statusCode: err.response?.status,
+        durationMs: Date.now() - startTime,
+        requestHeaders: config.headers,
+        requestQuery: this.extractQueryParams(url),
+        responseHeaders: err.response?.headers as
+          | Record<string, any>
+          | undefined,
+        responseBody: err.response?.data,
+        error: {
+          message: err.message,
+          code: err.code ?? err.name,
+          stack: err.stack,
+        },
+        metadata: { retryCount },
+      });
+      throw err;
+    }
+  }
+
+  /** Tách query params từ URL string thành object (giá trị nhạy cảm sẽ được mask trong logger). */
+  private extractQueryParams(url: string): Record<string, any> {
+    try {
+      const parsed = new URL(url);
+      const query: Record<string, any> = {};
+      parsed.searchParams.forEach((value, key) => {
+        query[key] = value;
+      });
+      return query;
+    } catch {
+      return {};
+    }
+  }
+
+  /** Fallback targetService khi không có source.name (lấy hostname từ URL). */
+  private extractHostname(url: string): string {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
   }
 
   /**

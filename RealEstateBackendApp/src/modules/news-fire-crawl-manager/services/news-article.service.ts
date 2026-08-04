@@ -393,9 +393,10 @@ Content: ${article.content || article.summary || 'N/A'}
       .join('\n\n---\n\n');
 
     // Call AIFilterService
-    const markdownResponse = await this.aiFilterService.analyzeMarketTrends(
+    const markdownResponse = await this.aiFilterService.callAiCompletion(
       this.aiPromptConfigService.getPromptByName('MARKET_ANALYSIS_PROMPT'),
       combinedData,
+      'Market trends analysis',
     );
 
     // Save to MarketAnalysisHistory

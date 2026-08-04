@@ -3,6 +3,7 @@ import { AnalyzeJobProvider } from "../context/AnalyzeJobContext";
 import { MarketAnalysisJobProvider } from "../context/MarketAnalysisJobContext";
 import { ManageWpStatusProvider } from "../context/ManageWpStatusContext";
 import { BulkCrawlJobProvider } from "../context/BulkCrawlJobContext";
+import { ManualCrawlJobProvider } from "../context/ManualCrawlJobContext";
 import { Outlet } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
@@ -38,7 +39,9 @@ const AppLayout: React.FC = () => {
         <ManageWpStatusProvider>
           <MarketAnalysisJobProvider>
             <BulkCrawlJobProvider>
-              <LayoutContent />
+              <ManualCrawlJobProvider>
+                <LayoutContent />
+              </ManualCrawlJobProvider>
             </BulkCrawlJobProvider>
           </MarketAnalysisJobProvider>
         </ManageWpStatusProvider>

@@ -12,6 +12,7 @@ import apiAxios from '../api/axios';
 import { useManageWpStatus } from '../context/ManageWpStatusContext';
 import { useMarketAnalysisJob } from '../context/MarketAnalysisJobContext';
 import { useBulkCrawlJob } from '../context/BulkCrawlJobContext';
+import { useHeaderStatusReset } from '../hooks/useHeaderStatusReset';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 import type { PaginatedResponse } from '../types/pagination';
 
@@ -254,6 +255,7 @@ export default function ManageWpScreen() {
     clearResult: clearMarketAnalysisJobResult,
   } = useMarketAnalysisJob();
   const { startJob: startBulkCrawlJob } = useBulkCrawlJob();
+  const resetHeaderStatuses = useHeaderStatusReset();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -558,8 +560,17 @@ export default function ManageWpScreen() {
     },
     onMutate: ({ action }) => {
       runningActionRef.current = action;
-      if (action === 'analyze') setCrawlStatus('pending');
-      else if (action === 'analyze_market_trends') setMarketAnalysisStatus('pending');
+      // Reset header badge cũ trước khi set pending cho op hiện tại — tránh
+      // cộng dồn nhiều badge (done/error của op khác vẫn sót lại trên header).
+      // Lệnh set pending chạy ngay sau reset trong cùng handler nên React ghi
+      // đè lên slot state của op hiện tại (lệnh sau thắng), không mất trạng thái pending.
+      if (action === 'analyze') {
+        resetHeaderStatuses();
+        setCrawlStatus('pending');
+      } else if (action === 'analyze_market_trends') {
+        resetHeaderStatuses();
+        setMarketAnalysisStatus('pending');
+      }
     },
     onSuccess: async ({ message, jobId }, { action }) => {
       runningActionRef.current = null;

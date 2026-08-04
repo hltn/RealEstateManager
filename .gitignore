@@ -24,3 +24,4 @@ RealEstateBackendApp/scripts/migrations/backups/
 graphify-out/
 
 CLAUDE.md
+.worktrees/
