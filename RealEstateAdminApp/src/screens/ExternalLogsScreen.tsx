@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Search, Server, Globe, Zap, Clock, Eye } from "lucide-react";
+import { AlertCircle, Server, Globe, Zap, Clock, Eye } from "lucide-react";
 import { Pagination } from "../components/common/Pagination";
 import { TableSkeletonRows } from "../components/common/TableSkeletonRows";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
@@ -108,7 +108,7 @@ const TruncatedUrl = ({ url, method }: { url: string; method: string }) => {
 };
 
 export default function ExternalLogsScreen() {
-  const [error, setError] = useState("");
+  const [error] = useState("");
 
   // Filter state
   const [logType, setLogType] = useState<LogType>("all");
