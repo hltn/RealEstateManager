@@ -26,16 +26,20 @@ services:
     container_name: realestate_backend
     restart: unless-stopped
     env_file:
-      - .env
-    volumes:
-      - ./.env:/app/.env
+      - .env.docker
     environment:
       - MONGODB_URI=mongodb://mongo:27017/realestate
       - PORT=3000
       - FRONTEND_URL=http://localhost
+      # Ghi file log ra /app/logs trong container, bind mount ra host ./logs
+      # (xem volumes bên dưới) để log persist khi container bị xoá/rebuild.
+      - LOG_DIR=/app/logs
     depends_on:
       mongo:
         condition: service_healthy
+    volumes:
+      # Log file (daily-rotation) persist ra host tại <repo>/logs/
+      - ./logs:/app/logs
     networks:
       - realestate_net
 

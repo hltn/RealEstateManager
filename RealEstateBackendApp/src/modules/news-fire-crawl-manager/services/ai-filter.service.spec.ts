@@ -1,12 +1,9 @@
 jest.mock('fs', () => ({
   readFileSync: jest.fn(),
 }));
-// Mock GoogleGenAI để tránh khởi tạo SDK thật và gọi network
-jest.mock('@google/genai', () => ({
-  GoogleGenAI: jest.fn().mockImplementation(() => ({
-    models: { generateContent: jest.fn() },
-  })),
-}));
+// Lưu ý: Gemini native SDK (@google/genai) đã được bỏ khỏi service (commit
+// 97bb5c2 "remove Gemini SDK"). Service hiện chỉ dùng OpenRouter/Must1c qua
+// fetch — không còn fallback Gemini native. Do đó không mock @google/genai nữa.
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
@@ -14,10 +11,11 @@ import * as fs from 'fs';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { ConfigService } from '@nestjs/config';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 
 /**
  * Unit test cho AIFilterService — service gọi AI (OpenRouter/Must1c/Gemini).
- * Mock fetch global + fs + GoogleGenAI để cô lập logic branching theo platform.
+ * Mock fetch global + fs để cô lập logic branching theo platform (OpenRouter/Must1c).
  */
 describe('AIFilterService', () => {
   let service: AIFilterService;
@@ -25,13 +23,34 @@ describe('AIFilterService', () => {
   let mockAiPromptConfigService: any;
   const mockFs = fs as jest.Mocked<typeof fs>;
 
+  // Service có fallback `configService.get(...) || process.env.*` cho các key
+  // AI platform. Nếu CI load .env có set các key này, test "no key" có thể
+  // pass vì lý do sai (không throw) hoặc fail bất thường. Stub process.env
+  // trong scope test để deterministic, khôi phục lại ở afterEach.
+  const ENV_KEYS = [
+    'OPENROUTER_API_KEY',
+    'OPENROUTER_AI_MODEL',
+    'ACTIVE_AI_PLATFORM',
+    'MUST1C_API_KEY',
+    'MUST1C_MODEL',
+    'MUST1C_API_URL',
+    'GEMINI_API_KEY',
+  ] as const;
+  let savedEnv: Record<string, string | undefined>;
+
   beforeEach(async () => {
     jest.clearAllMocks();
-    // Cấu hình mặc định: có OpenRouter + Gemini
+    // Xóa các env key AI khỏi process.env — lưu giá trị gốc để restore.
+    savedEnv = {};
+    for (const k of ENV_KEYS) {
+      savedEnv[k] = process.env[k];
+      delete process.env[k];
+    }
+
+    // Cấu hình mặc định: có OpenRouter
     mockConfigService = {
       get: jest.fn((key: string) => {
         const cfg: Record<string, string> = {
-          GEMINI_API_KEY: 'gemini-key',
           OPENROUTER_API_KEY: 'or-key',
           OPENROUTER_AI_MODEL: 'google/gemini-2.5-flash',
           ACTIVE_AI_PLATFORM: 'OpenRouter',
@@ -56,13 +75,24 @@ describe('AIFilterService', () => {
           provide: AiPromptConfigService,
           useValue: mockAiPromptConfigService,
         },
+        {
+          provide: ExternalLogService,
+          useValue: { logCrawl: jest.fn(), logAi: jest.fn() },
+        },
       ],
     }).compile();
 
     service = module.get<AIFilterService>(AIFilterService);
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    jest.restoreAllMocks();
+    // Khôi phục process.env về trạng thái gốc sau khi stub.
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k] as string;
+    }
+  });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
@@ -81,21 +111,15 @@ describe('AIFilterService', () => {
       text: jest
         .fn()
         .mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
+      // Phase 2 (ExternalLogModule): service gọi res.clone().text() để log body
+      // mà không tiêu thụ stream của caller (res.text()/res.json()).
+      clone: jest.fn(() => res),
+      headers: new Headers({ 'content-type': 'application/json' }),
     };
     return res as Response;
   };
 
   describe('filterAndRank', () => {
-    it('should throw BadRequestException when no API key configured', async () => {
-      mockConfigService.get.mockImplementation((key: string) =>
-        key === 'OPENROUTER_API_KEY' ? undefined : key === 'GEMINI_API_KEY' ? 'your_gemini_api_key_here' : undefined,
-      );
-
-      await expect(service.filterAndRank('file.json')).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
     it('should call OpenRouter fetch and return parsed JSON', async () => {
       const top5 = [{ url: 'https://x', title: 'T1', score: 9 }];
       const fetchSpy = jest
@@ -125,21 +149,15 @@ describe('AIFilterService', () => {
       );
     });
 
-    it('should fallback to Gemini Native API when no OpenRouter key', async () => {
-      mockConfigService.get.mockImplementation((key: string) =>
-        key === 'OPENROUTER_API_KEY' ? undefined : 'gemini-key',
+    it('should throw BadRequestException when no OpenRouter key (no Gemini fallback)', async () => {
+      // Sau commit 97bb5c2 (remove Gemini SDK), service không còn fallback
+      // Gemini native API. Khi thiếu OpenRouter key → throw BadRequestException
+      // ngay lập tức (contract hiện tại của service).
+      mockConfigService.get.mockReturnValue(undefined);
+
+      await expect(service.filterAndRank('file.json')).rejects.toThrow(
+        BadRequestException,
       );
-      // Lấy instance mock của GoogleGenAI đã tạo trong constructor
-      const genAiInstance = (service as any).ai;
-      const top5 = [{ url: 'https://g', title: 'Gem', score: 8 }];
-      genAiInstance.models.generateContent.mockResolvedValue({
-        text: JSON.stringify(top5),
-      });
-
-      const result = await service.filterAndRank('file.json');
-
-      expect(genAiInstance.models.generateContent).toHaveBeenCalled();
-      expect(result).toEqual(top5);
     });
 
     it('should wrap readFileSync error in BadRequestException (sau khi fix, readFile trong try-catch)', async () => {
@@ -269,22 +287,21 @@ describe('AIFilterService', () => {
       expect(result).toBe('cleaned');
     });
 
-    it('should fallback to Gemini when no OpenRouter/Must1c key', async () => {
+    it('should throw BadRequestException when no OpenRouter/Must1c key (no Gemini fallback)', async () => {
+      // Sau commit 97bb5c2 (remove Gemini SDK), service không còn fallback
+      // Gemini native API. Khi không có OpenRouter/Must1c key và platform
+      // = OpenRouter → throw BadRequestException ('No AI platform configured').
       mockConfigService.get.mockImplementation((key: string) =>
         key === 'OPENROUTER_API_KEY'
           ? undefined
           : key === 'ACTIVE_AI_PLATFORM'
             ? 'OpenRouter'
-            : 'gemini-key',
+            : undefined,
       );
-      const genAiInstance = (service as any).ai;
-      genAiInstance.models.generateContent.mockResolvedValue({
-        text: 'gemini-cleaned',
-      });
 
-      const result = await service.cleanMarkdownContentWithAI('raw');
-      expect(genAiInstance.models.generateContent).toHaveBeenCalled();
-      expect(result).toBe('gemini-cleaned');
+      await expect(
+        service.cleanMarkdownContentWithAI('raw'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException when no platform configured', async () => {
@@ -296,10 +313,14 @@ describe('AIFilterService', () => {
     });
   });
 
-  describe('analyzeMarketTrends', () => {
+  describe('callAiCompletion', () => {
     it('should return empty string when contentData is empty', async () => {
-      expect(await service.analyzeMarketTrends('sys', '')).toBe('');
-      expect(await service.analyzeMarketTrends('sys', '   ')).toBe('');
+      expect(
+        await service.callAiCompletion('sys', '', 'Market trends analysis'),
+      ).toBe('');
+      expect(
+        await service.callAiCompletion('sys', '   ', 'Extract listings'),
+      ).toBe('');
     });
 
     it('should send system + user messages to OpenRouter', async () => {
@@ -312,7 +333,11 @@ describe('AIFilterService', () => {
           }),
         );
 
-      const result = await service.analyzeMarketTrends('SYS', 'CONTENT');
+      const result = await service.callAiCompletion(
+        'SYS',
+        'CONTENT',
+        'Market trends analysis',
+      );
       expect(fetchSpy).toHaveBeenCalledWith(
         'https://openrouter.ai/api/v1/chat/completions',
         expect.objectContaining({
@@ -328,7 +353,7 @@ describe('AIFilterService', () => {
         .mockResolvedValue(mockFetchResponse(false, 'err', 500));
 
       await expect(
-        service.analyzeMarketTrends('SYS', 'CONTENT'),
+        service.callAiCompletion('SYS', 'CONTENT', 'Extract listings'),
       ).rejects.toThrow(BadRequestException);
     });
   });

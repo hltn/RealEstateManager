@@ -20,6 +20,7 @@ import { NewsSourceService } from './news-source.service';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { RawArticle } from '../schemas/raw-article.schema';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 
 // Mock rss-parser: constructor trả object có parseString jest.fn.
 jest.mock('rss-parser', () => {
@@ -72,7 +73,7 @@ describe('CustomCrawlerService', () => {
     };
 
     newsSourceService = { findActive: jest.fn() };
-    aiFilterService = { analyzeMarketTrends: jest.fn() };
+    aiFilterService = { callAiCompletion: jest.fn() };
     aiPromptConfigService = { getPromptByName: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -84,6 +85,10 @@ describe('CustomCrawlerService', () => {
         {
           provide: getModelToken(RawArticle.name),
           useValue: mockRawArticleModel,
+        },
+        {
+          provide: ExternalLogService,
+          useValue: { logCrawl: jest.fn(), logAi: jest.fn() },
         },
       ],
     }).compile();
@@ -188,7 +193,7 @@ describe('CustomCrawlerService', () => {
       const result = await service.crawlData();
       expect(result.stats.failedSources).toBe(1);
       expect(result.stats.successfulSources).toBe(0);
-      expect(result.stats.failedDetails).toEqual([{ url: 'https://bad.example' }]);
+      expect(result.stats.failedDetails).toEqual([{ url: 'https://bad.example', error: 'network down' }]);
     });
 
     it('RSS parse throw → source tính là failed', async () => {
@@ -226,7 +231,7 @@ describe('CustomCrawlerService', () => {
         data: '<html><body><a href="/post-1">Post 1</a></body></html>',
       });
       aiPromptConfigService.getPromptByName.mockReturnValue('extract prompt');
-      aiFilterService.analyzeMarketTrends.mockResolvedValue(
+      aiFilterService.callAiCompletion.mockResolvedValue(
         JSON.stringify([
           { title: 'Post 1', url: '/post-1', publishedAt: new Date().toISOString() },
         ]),
@@ -244,7 +249,7 @@ describe('CustomCrawlerService', () => {
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
-      aiFilterService.analyzeMarketTrends.mockResolvedValue(
+      aiFilterService.callAiCompletion.mockResolvedValue(
         JSON.stringify({ articles: [{ title: 'A', url: 'https://ai.example/a', publishedAt: new Date().toISOString() }] }),
       );
 
@@ -269,7 +274,7 @@ describe('CustomCrawlerService', () => {
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
-      aiFilterService.analyzeMarketTrends.mockResolvedValue('not-json');
+      aiFilterService.callAiCompletion.mockResolvedValue('not-json');
 
       const result = await service.crawlData();
       expect(result.stats.totalArticles).toBe(0);
@@ -283,7 +288,7 @@ describe('CustomCrawlerService', () => {
       mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
       const inner = JSON.stringify([{ title: 'Fenced', url: 'https://ai.example/f', publishedAt: new Date().toISOString() }]);
-      aiFilterService.analyzeMarketTrends.mockResolvedValue('```json\n' + inner + '\n```');
+      aiFilterService.callAiCompletion.mockResolvedValue('```json\n' + inner + '\n```');
 
       const result = await service.crawlData();
       expect(result.stats.totalArticles).toBe(1);

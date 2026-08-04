@@ -66,6 +66,11 @@ const adminItems: NavItem[] = [
     path: "/ai-prompt-config",
   },
   {
+    icon: <DocsIcon />,
+    name: "Request Logs",
+    path: "/external-logs",
+  },
+  {
     icon: <CalenderIcon />,
     name: "Cronjob",
     path: "/cronjob",

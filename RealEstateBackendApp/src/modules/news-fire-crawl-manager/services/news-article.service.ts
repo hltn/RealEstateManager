@@ -21,18 +21,6 @@ import {
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { generateUrlHash } from '../../../common/utils/url-hash.util';
 
-/**
- * Normalize content: unescape literal \n, \t, \r thành ký tự thật.
- * AI API đôi khi trả về literal \n thay vì newline character → DB lưu sai.
- */
-function normalizeContent(content: string | undefined | null): string {
-  if (!content) return '';
-  return content
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '\r');
-}
-
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
   private readonly logger = new Logger(NewsArticleService.name);
@@ -155,7 +143,7 @@ export class NewsArticleService implements OnModuleInit {
           url: article.url,
           keywords: article.keywords,
           wpPostId: article.wpPostId || null,
-          content: normalizeContent(article.content),
+          content: article.content,
           status: initialStatus,
         };
 
@@ -405,14 +393,15 @@ Content: ${article.content || article.summary || 'N/A'}
       .join('\n\n---\n\n');
 
     // Call AIFilterService
-    const markdownResponse = await this.aiFilterService.analyzeMarketTrends(
+    const markdownResponse = await this.aiFilterService.callAiCompletion(
       this.aiPromptConfigService.getPromptByName('MARKET_ANALYSIS_PROMPT'),
       combinedData,
+      'Market trends analysis',
     );
 
     // Save to MarketAnalysisHistory
     const historyEntry = new this.marketAnalysisHistoryModel({
-      content: normalizeContent(markdownResponse),
+      content: markdownResponse,
       articleIds: ids,
     });
     await historyEntry.save();
@@ -463,7 +452,7 @@ Content: ${article.content || article.summary || 'N/A'}
           }
         }
         if (extracted.markdown) {
-          article.content = normalizeContent(extracted.markdown);
+          article.content = extracted.markdown;
         }
       } catch (error: any) {
         this.logger.warn(
@@ -478,9 +467,9 @@ Content: ${article.content || article.summary || 'N/A'}
 
     if (article.content && article.content.trim().length > 0) {
       try {
-        article.content = normalizeContent(await this.aiFilterService.cleanMarkdownContentWithAI(
+        article.content = await this.aiFilterService.cleanMarkdownContentWithAI(
           article.content,
-        ));
+        );
       } catch (error: any) {
         this.logger.warn(
           `AI cleanup failed for article ${id}, retaining raw content fallback: ${error.message}`,

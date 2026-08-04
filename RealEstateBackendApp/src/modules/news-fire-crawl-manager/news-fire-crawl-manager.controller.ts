@@ -243,29 +243,97 @@ export class NewsFireCrawlManagerController {
   }
 
   @ApiOperation({
-    summary: 'Trigger manual crawl',
-    description: 'Trigger manual crawl',
+    summary: 'Trigger manual crawl (async)',
+    description:
+      'Trả về jobId ngay lập tức, việc crawl + AI extract (có thể mất vài phút) chạy nền. ' +
+      'Dùng GET /crawl/:jobId để poll trạng thái khi hoàn tất.',
   })
   @Post('crawl')
-  async triggerManualCrawl(@Body() body: TriggerManualCrawlDto) {
+  triggerManualCrawl(@Body() body: TriggerManualCrawlDto) {
     const { days, startDate, endDate } = body;
     this.logger.log(
       `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
     );
-    const { filePath, stats } = await this.customCrawlerService.crawlData(
-      days,
-      startDate,
-      endDate,
+
+    // Khóa global dùng chung với bulk crawl — chống 2 job thu thập/phân tích chạy
+    // song song (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi và
+    // upsert articles đè nhau.
+    const LOCK_KEY = 'crawl:global';
+    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+      throw new ConflictException(
+        'Đang có tác vụ thu thập/phân tích đang chạy, vui lòng đợi hoàn tất',
+      );
+    }
+    this.idempotencyService.markInFlight(LOCK_KEY);
+
+    const jobId = this.analyzeJobService.createJob();
+
+    // Audit: admin trigger manual crawl — fire-and-forget, chỉ audit khi đã qua lock
+    // (không audit khi Conflict). Giống pattern market-analysis-bulk.
+    void this.auditLogService.log(
+      AuditAction.MANUAL_CRAWL,
+      'raw_articles',
+      [],
+      'system',
+      { jobId, days, startDate, endDate },
     );
 
-    const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    // Fire-and-forget: không await trong request handler để HTTP response trả về ngay,
+    // tránh phụ thuộc thời gian crawl thực tế (gây Axios timeout phía FE) — giống
+    // pattern analyze-raw / analyze-market-trends. `.catch` safety net chống
+    // unhandled rejection ngoài dự kiến.
+    void this.runManualCrawlJob(jobId, days, startDate, endDate, LOCK_KEY).catch(
+      (err: any) =>
+        this.logger.error(
+          `Manual crawl fire-and-forget rejected: ${err?.message}`,
+          err?.stack,
+        ),
+    );
 
-    return {
-      message: 'Crawl completed successfully',
-      filePath,
-      stats,
-      data: rawData,
-    };
+    return { message: 'Crawl started', jobId };
+  }
+
+  /**
+   * Thực thi job crawl thủ công trong nền. Lifecycle (markDone/markError/
+   * clearInFlight) delegate cho runLockedJob chung (DRY) — giống runAnalyzeMarketTrendsJob.
+   */
+  private runManualCrawlJob(
+    jobId: string,
+    days: number | undefined,
+    startDate: string | undefined,
+    endDate: string | undefined,
+    lockKey: string,
+  ): Promise<void> {
+    return this.runLockedJob(jobId, lockKey, 'Manual crawl job', async () => {
+      const { filePath, stats } = await this.customCrawlerService.crawlData(
+        days,
+        startDate,
+        endDate,
+      );
+      const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      return {
+        stats,
+        count: Array.isArray(rawData) ? rawData.length : 0,
+        filePath,
+      };
+    });
+  }
+
+  @ApiOperation({
+    summary: 'Get manual crawl job status',
+    description: 'Poll trạng thái job crawl chạy nền theo jobId.',
+  })
+  @ApiParam({
+    name: 'jobId',
+    description: 'ID job trả về từ POST /crawl',
+  })
+  @Get('crawl/:jobId')
+  getManualCrawlJob(@Param('jobId') jobId: string) {
+    const job = this.analyzeJobService.getJob(jobId);
+    if (!job) {
+      return { status: 'not_found' };
+    }
+    return job;
   }
 
   @ApiOperation({
@@ -622,12 +690,13 @@ export class NewsFireCrawlManagerController {
       return { message: 'No articles to analyze' };
     }
 
-    // Khóa global để chống 2 job bulk chạy song song (double-click FE, 2 tab/client)
-    // — tránh tốn API cost gấp đôi và job cũ mất track, giống pattern analyze-market-trends.
-    const LOCK_KEY = 'market-analysis-bulk:global';
+    // Khóa global dùng chung với manual crawl — chống 2 job thu thập/phân tích
+    // chạy song song (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi
+    // và job cũ mất track, giống pattern analyze-market-trends.
+    const LOCK_KEY = 'crawl:global';
     if (this.idempotencyService.isInFlight(LOCK_KEY)) {
       throw new ConflictException(
-        'Đang có job phân tích bulk khác đang chạy, vui lòng đợi hoàn tất',
+        'Đang có tác vụ thu thập/phân tích đang chạy, vui lòng đợi hoàn tất',
       );
     }
     this.idempotencyService.markInFlight(LOCK_KEY);

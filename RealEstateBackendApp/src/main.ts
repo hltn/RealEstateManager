@@ -1,3 +1,8 @@
+// Nạp `.env` vào process.env ngay khi module eval — TRƯỚC NestFactory.create.
+// CustomLogger lazy-init lần đầu (log nội bộ NestJS trong create()) sẽ thấy
+// process.env.LOG_* đã sẵn → cache đúng giá trị env. dotenv mặc định KHÔNG ghi
+// đè biến env đã set (Docker env_file đã nằm trong process.env lúc spawn).
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';

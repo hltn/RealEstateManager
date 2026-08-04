@@ -3,8 +3,13 @@ jest.mock('fs', () => ({
   readFileSync: jest.fn(),
   promises: { writeFile: jest.fn() },
 }));
+// Service resolve path bằng `path.resolve(__dirname, '..', 'constants', 'ai-prompts.json')`
+// (commit c66885f chuyển từ process.cwd() sang __dirname). Mock phải cung cấp
+// cả `resolve` để reflect contract thật — không chỉ `join`.
 jest.mock('path', () => ({
-  join: jest.fn((...args) => args.join('/')),
+  join: jest.fn((...args: string[]) => args.join('/')),
+  resolve: jest.fn((...args: string[]) => args.join('/')),
+  sep: '/',
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';

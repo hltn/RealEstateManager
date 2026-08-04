@@ -52,7 +52,9 @@
     "rss-parser": "^3.13.0",
     "rxjs": "^7.8.1",
     "turndown": "^7.2.4",
-    "unist-util-visit": "^2.0.3"
+    "unist-util-visit": "^2.0.3",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

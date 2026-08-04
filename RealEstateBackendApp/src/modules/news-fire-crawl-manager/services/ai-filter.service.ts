@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import { AiPromptConfigService } from './ai-prompt-config.service';
+import { ExternalLogService } from '../../external-log/services/external-log.service';
 
 @Injectable()
 export class AIFilterService {
@@ -10,7 +11,70 @@ export class AIFilterService {
   constructor(
     private configService: ConfigService,
     private aiPromptConfigService: AiPromptConfigService,
+    private externalLogService: ExternalLogService,
   ) {}
+
+  /**
+   * Validate & ép giá trị parsed về dạng mảng article.
+   * - Nếu đã là mảng → trả về nguyên.
+   * - Nếu là object wrapper (VD: `{ data: [...] }`, `{ articles: [...] }`)
+   *   → trả về giá trị mảng đầu tiên tìm được bên trong.
+   * - Nếu là primitive hoặc object không chứa mảng con → throw Error rõ ràng
+   *   (fail-fast) kèm contextLabel + 200 ký tự raw để caller biết contract bị
+   *   vi phạm, KHÔNG fallback bọc `[parsed]` gây silent data corruption.
+   */
+  private extractArray(
+    parsed: any,
+    contextLabel: string,
+    rawText: string,
+  ): any[] {
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed !== null && typeof parsed === 'object') {
+      const innerArray = Object.values(parsed).find((v) => Array.isArray(v));
+      if (innerArray) return innerArray;
+    }
+    throw new Error(
+      `AI response is not a JSON array and contains no nested array ${contextLabel}. Raw text: ${rawText.substring(0, 200)}...`,
+    );
+  }
+
+  /**
+   * Extract & parse a JSON array từ text response của AI, chịu được
+   * preamble/văn dẫn nhập bao quanh. Tìm '[' đầu tiên và ']' cuối cùng,
+   * parse slice đó. Throw Error có message rõ ràng nếu không parse được.
+   */
+  private parseJsonArrayResponse(rawText: string, contextLabel: string): any[] {
+    const cleaned = rawText
+      .replace(/```json/gi, '')
+      .replace(/```/gi, '')
+      .trim();
+
+    // Parse JSON: thử trực tiếp trước, nếu lỗi thì fallback trích slice
+    // từ '[' đầu tiên đến ']' cuối cùng.
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const start = cleaned.indexOf('[');
+      const end = cleaned.lastIndexOf(']');
+      if (start !== -1 && end !== -1 && end > start) {
+        try {
+          parsed = JSON.parse(cleaned.substring(start, end + 1));
+        } catch {
+          throw new Error(
+            `JSON parsing failed: ${contextLabel}. Raw text: ${cleaned.substring(0, 200)}...`,
+          );
+        }
+      } else {
+        throw new Error(
+          `JSON parsing failed: ${contextLabel}. Raw text: ${cleaned.substring(0, 200)}...`,
+        );
+      }
+    }
+
+    // Validate & ép về mảng (fail-fast nếu contract bị vi phạm).
+    return this.extractArray(parsed, contextLabel, cleaned);
+  }
 
   async filterAndRank(filePath: string): Promise<any[]> {
     this.logger.log(`Starting Job 2: AI Filter & Ranking on file ${filePath}`);
@@ -53,19 +117,18 @@ export class AIFilterService {
 
       try {
         this.logger.log('Using OpenRouter API');
-        const res = await fetch(
-          'https://openrouter.ai/api/v1/chat/completions',
+        const res = await this.callChatCompletion(
           {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${openRouterApiKey}`,
-              'Content-Type': 'application/json',
-            },
+            model,
+            messages: [{ role: 'user', content: prompt }],
+          },
+          {
+            provider: 'OpenRouter',
+            url: 'https://openrouter.ai/api/v1/chat/completions',
+            apiKey: openRouterApiKey,
+            contextLabel: 'filterAndRank',
+            prompt,
             signal: controller.signal,
-            body: JSON.stringify({
-              model: model,
-              messages: [{ role: 'user', content: prompt }],
-            }),
           },
         );
 
@@ -85,13 +148,11 @@ export class AIFilterService {
         clearTimeout(timeoutId);
       }
 
-      // Cleanup potential markdown wrappers
-      resultText = resultText
-        .replace(/```json/g, '')
-        .replace(/```/g, '')
-        .trim();
-
-      const finalTop5 = JSON.parse(resultText);
+      // Parse phòng thủ: chịu được văn dẫn nhập/markdown wrapper quanh JSON
+      const finalTop5 = this.parseJsonArrayResponse(
+        resultText,
+        'filterAndRank',
+      );
       this.logger.log(
         `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
       );
@@ -151,18 +212,20 @@ export class AIFilterService {
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
           this.logger.log('Using Must1c API');
-          const res = await fetch(must1cApiUrl, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${must1cApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            signal: controller.signal,
-            body: JSON.stringify({
+          const res = await this.callChatCompletion(
+            {
               model: must1cModel || 'gemini-3.6-flash',
               messages: [{ role: 'user', content: prompt }],
-            }),
-          });
+            },
+            {
+              provider: 'Must1c',
+              url: must1cApiUrl,
+              apiKey: must1cApiKey,
+              contextLabel: 'filterRawArticles',
+              prompt,
+              signal: controller.signal,
+            },
+          );
 
           if (!res.ok) {
             const errBody = await res.text();
@@ -206,19 +269,18 @@ export class AIFilterService {
           resultText = data.choices?.[0]?.message?.content || '[]';
         } else if (openRouterApiKey) {
           this.logger.log('Using OpenRouter API');
-          const res = await fetch(
-            'https://openrouter.ai/api/v1/chat/completions',
+          const res = await this.callChatCompletion(
             {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${openRouterApiKey}`,
-                'Content-Type': 'application/json',
-              },
+              model: openRouterModel,
+              messages: [{ role: 'user', content: prompt }],
+            },
+            {
+              provider: 'OpenRouter',
+              url: 'https://openrouter.ai/api/v1/chat/completions',
+              apiKey: openRouterApiKey,
+              contextLabel: 'filterRawArticles',
+              prompt,
               signal: controller.signal,
-              body: JSON.stringify({
-                model: openRouterModel,
-                messages: [{ role: 'user', content: prompt }],
-              }),
             },
           );
 
@@ -241,19 +303,8 @@ export class AIFilterService {
         clearTimeout(timeoutId);
       }
 
-      resultText = resultText
-        .replace(/```json/g, '')
-        .replace(/```/g, '')
-        .trim();
-
-      try {
-        const parsed = JSON.parse(resultText);
-        return parsed;
-      } catch (parseError: any) {
-        throw new Error(
-          `JSON parsing failed: ${parseError.message}. Raw text: ${resultText.substring(0, 100)}...`,
-        );
-      }
+      // Parse phòng thủ: chịu được văn dẫn nhập/markdown wrapper quanh JSON
+      return this.parseJsonArrayResponse(resultText, 'filterRawArticles');
     } catch (error: any) {
       this.logger.error(
         `Error in filterRawArticles: ${error.message}`,
@@ -304,18 +355,20 @@ export class AIFilterService {
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
           this.logger.log('Using Must1c API for cleaning');
-          const res = await fetch(must1cApiUrl, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${must1cApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            signal: controller.signal,
-            body: JSON.stringify({
+          const res = await this.callChatCompletion(
+            {
               model: must1cModel || 'gemini-3.6-flash',
               messages: [{ role: 'user', content: prompt }],
-            }),
-          });
+            },
+            {
+              provider: 'Must1c',
+              url: must1cApiUrl,
+              apiKey: must1cApiKey,
+              contextLabel: 'cleanMarkdownContentWithAI',
+              prompt,
+              signal: controller.signal,
+            },
+          );
 
           if (!res.ok) {
             const errBody = await res.text();
@@ -326,19 +379,18 @@ export class AIFilterService {
           resultText = data.choices?.[0]?.message?.content || '';
         } else if (openRouterApiKey) {
           this.logger.log('Using OpenRouter API for cleaning');
-          const res = await fetch(
-            'https://openrouter.ai/api/v1/chat/completions',
+          const res = await this.callChatCompletion(
             {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${openRouterApiKey}`,
-                'Content-Type': 'application/json',
-              },
+              model: openRouterModel,
+              messages: [{ role: 'user', content: prompt }],
+            },
+            {
+              provider: 'OpenRouter',
+              url: 'https://openrouter.ai/api/v1/chat/completions',
+              apiKey: openRouterApiKey,
+              contextLabel: 'cleanMarkdownContentWithAI',
+              prompt,
               signal: controller.signal,
-              body: JSON.stringify({
-                model: openRouterModel,
-                messages: [{ role: 'user', content: prompt }],
-              }),
             },
           );
 
@@ -379,14 +431,19 @@ export class AIFilterService {
     }
   }
 
-  async analyzeMarketTrends(
+  // Hàm generic gọi AI completion, nhận systemPrompt + contentData và trả về text.
+  // contextLabel dùng để log phân biệt ngữ cảnh gọi (extract listings / market trends / ...).
+  async callAiCompletion(
     systemPrompt: string,
     contentData: string,
+    contextLabel: string,
   ): Promise<string> {
-    this.logger.log(`Starting Market Trends Analysis with AI`);
+    this.logger.log(`Starting AI completion [${contextLabel}]`);
     if (!contentData || contentData.trim() === '') return '';
 
-    this.logger.log(`Input size: ${contentData.length} chars (~${Math.ceil(contentData.length / 3)} tokens estimated)`);
+    this.logger.log(
+      `Input size [${contextLabel}]: ${contentData.length} chars (~${Math.ceil(contentData.length / 3)} tokens estimated)`,
+    );
 
     const activePlatform =
       this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
@@ -421,21 +478,23 @@ export class AIFilterService {
       try {
         if (activePlatform === 'Must1c' && must1cApiKey) {
           this.logger.log('Using Must1c API for analysis');
-          const res = await fetch(must1cApiUrl, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${must1cApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            signal: controller.signal,
-            body: JSON.stringify({
+          const res = await this.callChatCompletion(
+            {
               model: must1cModel || 'gemini-3.6-flash',
               messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: contentData },
               ],
-            }),
-          });
+            },
+            {
+              provider: 'Must1c',
+              url: must1cApiUrl,
+              apiKey: must1cApiKey,
+              contextLabel,
+              prompt: `${systemPrompt}\n${contentData}`,
+              signal: controller.signal,
+            },
+          );
 
           if (!res.ok) {
             const errBody = await res.text();
@@ -444,25 +503,26 @@ export class AIFilterService {
 
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
-          this.logger.log(`Must1c usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`);
+          this.logger.log(
+            `Must1c usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`,
+          );
         } else if (openRouterApiKey) {
           this.logger.log('Using OpenRouter API for analysis');
-          const res = await fetch(
-            'https://openrouter.ai/api/v1/chat/completions',
+          const res = await this.callChatCompletion(
             {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${openRouterApiKey}`,
-                'Content-Type': 'application/json',
-              },
+              model: openRouterModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: contentData },
+              ],
+            },
+            {
+              provider: 'OpenRouter',
+              url: 'https://openrouter.ai/api/v1/chat/completions',
+              apiKey: openRouterApiKey,
+              contextLabel,
+              prompt: `${systemPrompt}\n${contentData}`,
               signal: controller.signal,
-              body: JSON.stringify({
-                model: openRouterModel,
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: contentData },
-                ],
-              }),
             },
           );
 
@@ -473,7 +533,9 @@ export class AIFilterService {
 
           const data = await res.json();
           resultText = data.choices?.[0]?.message?.content || '';
-          this.logger.log(`OpenRouter usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`);
+          this.logger.log(
+            `OpenRouter usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`,
+          );
         } else {
           throw new BadRequestException('No AI platform configured');
         }
@@ -495,10 +557,127 @@ export class AIFilterService {
       return resultText;
     } catch (error: any) {
       this.logger.error(
-        `Error in analyzeMarketTrends: ${error.message}`,
+        `Error in callAiCompletion [${contextLabel}]: ${error.message}`,
         error.stack,
       );
       throw new BadRequestException(`Error in AI analysis: ${error.message}`);
     }
+  }
+
+  /**
+   * Choke point AI (§9.2 Option A): 1 hàm private duy nhất chịu trách nhiệm
+   * fetch → đo thời gian → map usage (snake_case → camelCase ở logger) → logAi().
+   *
+   * Tất cả 4 điểm gọi HTTP ra AI provider (filterAndRank, filterRawArticles,
+   * cleanMarkdownContentWithAI, callAiCompletion) đều đi qua đây — log tự động
+   * bao phủ 100% AI outgoing request, không trùng lặp.
+   *
+   * - Trả về Response gốc để caller giữ nguyên logic res.ok / res.json() như cũ.
+   * - Body được đọc 1 lần qua clone() để log; caller vẫn đọc lại bình thường.
+   * - res.ok → response.body lưu dạng object JSON (kèm usage); !res.ok →
+   *   response.body lưu error body text (theo §9.2).
+   * - AbortError (timeout) → error.code = 'AbortError' + message chuẩn.
+   * - Ghi log fire-and-forget — KHÔNG bao giờ throw từ logger, không ảnh hưởng
+   *   response trả về cho caller.
+   */
+  private async callChatCompletion(
+    payload: {
+      model: string;
+      messages: Array<{ role: string; content: string }>;
+    },
+    providerConfig: {
+      /** 'OpenRouter' | 'Must1c' — → targetService. */
+      provider: string;
+      url: string;
+      apiKey: string;
+      /** Ngữ cảnh gọi (filterAndRank / filterRawArticles / ...) → metadata.contextLabel. */
+      contextLabel: string;
+      /** Prompt đầy đủ (system + content đã ghép) → request.prompt. */
+      prompt: string;
+      signal: AbortSignal;
+    },
+  ): Promise<Response> {
+    const startTime = Date.now();
+    const requestBody = {
+      model: payload.model,
+      messages: payload.messages,
+    };
+    const headers = {
+      Authorization: `Bearer ${providerConfig.apiKey}`,
+      'Content-Type': 'application/json',
+    };
+
+    try {
+      const res = await fetch(providerConfig.url, {
+        method: 'POST',
+        headers,
+        signal: providerConfig.signal,
+        body: JSON.stringify(requestBody),
+      });
+
+      // Đọc body 1 lần qua clone để log; caller vẫn dùng res.text()/res.json().
+      let responseBody: any;
+      let usage: any;
+      const rawBody = await res.clone().text();
+      if (res.ok) {
+        try {
+          const parsed = JSON.parse(rawBody);
+          usage = parsed.usage;
+          responseBody = parsed;
+        } catch {
+          responseBody = rawBody;
+        }
+      } else {
+        // !res.ok → error body text (§9.2).
+        responseBody = rawBody;
+      }
+
+      this.externalLogService.logAi({
+        provider: providerConfig.provider,
+        model: payload.model,
+        url: providerConfig.url,
+        method: 'POST',
+        statusCode: res.status,
+        durationMs: Date.now() - startTime,
+        prompt: providerConfig.prompt,
+        requestHeaders: headers,
+        requestBody,
+        responseHeaders: this.headersToRecord(res.headers),
+        responseBody,
+        usage,
+        metadata: { contextLabel: providerConfig.contextLabel },
+      });
+      return res;
+    } catch (err: any) {
+      const isAbort = err.name === 'AbortError';
+      this.externalLogService.logAi({
+        provider: providerConfig.provider,
+        model: payload.model,
+        url: providerConfig.url,
+        method: 'POST',
+        durationMs: Date.now() - startTime,
+        prompt: providerConfig.prompt,
+        requestHeaders: headers,
+        requestBody,
+        error: {
+          message: isAbort
+            ? 'AI API request timed out after 300 seconds'
+            : err.message,
+          code: isAbort ? 'AbortError' : (err.code ?? err.name),
+          stack: err.stack,
+        },
+        metadata: { contextLabel: providerConfig.contextLabel },
+      });
+      throw err;
+    }
+  }
+
+  /** Chuyển Headers (fetch API) thành Record<string, any> để log. */
+  private headersToRecord(headers: Headers): Record<string, any> {
+    const record: Record<string, any> = {};
+    headers.forEach((value, key) => {
+      record[key] = value;
+    });
+    return record;
   }
 }
