@@ -21,6 +21,18 @@ import {
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { generateUrlHash } from '../../../common/utils/url-hash.util';
 
+/**
+ * Normalize content: unescape literal \n, \t, \r thành ký tự thật.
+ * AI API đôi khi trả về literal \n thay vì newline character → DB lưu sai.
+ */
+function normalizeContent(content: string | undefined | null): string {
+  if (!content) return '';
+  return content
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r');
+}
+
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
   private readonly logger = new Logger(NewsArticleService.name);
@@ -143,7 +155,7 @@ export class NewsArticleService implements OnModuleInit {
           url: article.url,
           keywords: article.keywords,
           wpPostId: article.wpPostId || null,
-          content: article.content,
+          content: normalizeContent(article.content),
           status: initialStatus,
         };
 
@@ -401,7 +413,7 @@ Content: ${article.content || article.summary || 'N/A'}
 
     // Save to MarketAnalysisHistory
     const historyEntry = new this.marketAnalysisHistoryModel({
-      content: markdownResponse,
+      content: normalizeContent(markdownResponse),
       articleIds: ids,
     });
     await historyEntry.save();
@@ -452,7 +464,7 @@ Content: ${article.content || article.summary || 'N/A'}
           }
         }
         if (extracted.markdown) {
-          article.content = extracted.markdown;
+          article.content = normalizeContent(extracted.markdown);
         }
       } catch (error: any) {
         this.logger.warn(
@@ -467,9 +479,9 @@ Content: ${article.content || article.summary || 'N/A'}
 
     if (article.content && article.content.trim().length > 0) {
       try {
-        article.content = await this.aiFilterService.cleanMarkdownContentWithAI(
+        article.content = normalizeContent(await this.aiFilterService.cleanMarkdownContentWithAI(
           article.content,
-        );
+        ));
       } catch (error: any) {
         this.logger.warn(
           `AI cleanup failed for article ${id}, retaining raw content fallback: ${error.message}`,
