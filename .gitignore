@@ -24,3 +24,8 @@ RealEstateBackendApp/scripts/migrations/backups/
 graphify-out/
 
 CLAUDE.md
+
+# Shell scripts
+deploy.sh
+get-docker.sh
+start.sh
