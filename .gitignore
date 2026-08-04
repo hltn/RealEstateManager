@@ -25,3 +25,8 @@ graphify-out/
 
 CLAUDE.md
 .worktrees/
+
+# Shell scripts
+deploy.sh
+get-docker.sh
+start.sh
