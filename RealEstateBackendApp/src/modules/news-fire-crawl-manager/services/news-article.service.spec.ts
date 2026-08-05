@@ -10,6 +10,16 @@ import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 
+/** Tạo chainable query mock: find(query).sort().skip().limit().exec() → data */
+function chainableFind(data: any) {
+  const chain: any = {};
+  chain.sort = jest.fn().mockReturnThis();
+  chain.skip = jest.fn().mockReturnThis();
+  chain.limit = jest.fn().mockReturnThis();
+  chain.exec = jest.fn().mockResolvedValue(data);
+  return chain;
+}
+
 describe('NewsArticleService', () => {
   let service: NewsArticleService;
   let mockNewsArticleModel: any;
@@ -21,6 +31,7 @@ describe('NewsArticleService', () => {
       find: jest.fn(),
       findById: jest.fn(),
       findOne: jest.fn(),
+      countDocuments: jest.fn(),
     };
 
     mockAiFilterService = {
@@ -329,6 +340,49 @@ describe('NewsArticleService', () => {
       expect(result).toBe(mockArticle);
 
       extractSpy.mockRestore();
+    });
+  });
+
+  describe('getSavedArticles', () => {
+    it('date → query lọc theo publishDate/createdAt dùng đúng mốc UTC quy đổi từ giờ Việt Nam (offset +7)', async () => {
+      mockNewsArticleModel.find.mockReturnValue(chainableFind([]));
+      mockNewsArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+
+      await service.getSavedArticles('2026-08-05', 1, 20);
+
+      const query = mockNewsArticleModel.find.mock.calls[0][0];
+      // Literal ISO hardcode (KHÔNG gọi lại startOfDayUtc/endOfDayUtc) để tránh
+      // assertion tự tham chiếu — nếu helper bị sửa sai, test này vẫn phải fail.
+      // 00:00:00 ngày 05/08 giờ VN = 17:00:00 ngày 04/08 UTC (offset +7).
+      const expectedStart = '2026-08-04T17:00:00.000Z';
+      // 23:59:59.999 ngày 05/08 giờ VN = 16:59:59.999 ngày 05/08 UTC (offset +7).
+      const expectedEnd = '2026-08-05T16:59:59.999Z';
+
+      expect(query.$or[0].publishDate.$gte).toBe(expectedStart);
+      expect(query.$or[0].publishDate.$lte).toBe(expectedEnd);
+      expect(query.$or[1].$and[1].createdAt.$gte.toISOString()).toBe(expectedStart);
+      expect(query.$or[1].$and[1].createdAt.$lte.toISOString()).toBe(expectedEnd);
+
+      // Case biên: bài RSS Dân Trí pubDate 06:54:02 sáng giờ VN ngày 05/08
+      // (= 2026-08-04T23:54:02.000Z UTC) phải nằm TRONG khoảng lọc ngày 05/08,
+      // không bị hiểu nhầm là thuộc ngày 04/08 như bug UTC cũ.
+      const boundaryArticlePublishedAt = new Date('2026-08-04T23:54:02.000Z');
+      expect(boundaryArticlePublishedAt.getTime()).toBeGreaterThanOrEqual(
+        new Date(expectedStart).getTime(),
+      );
+      expect(boundaryArticlePublishedAt.getTime()).toBeLessThanOrEqual(
+        new Date(expectedEnd).getTime(),
+      );
+    });
+
+    it('không có date → query rỗng, không set $or', async () => {
+      mockNewsArticleModel.find.mockReturnValue(chainableFind([]));
+      mockNewsArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+
+      await service.getSavedArticles(undefined, 1, 20);
+
+      const query = mockNewsArticleModel.find.mock.calls[0][0];
+      expect(query.$or).toBeUndefined();
     });
   });
 });
