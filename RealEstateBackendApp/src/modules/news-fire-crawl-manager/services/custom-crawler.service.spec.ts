@@ -341,7 +341,7 @@ describe('CustomCrawlerService', () => {
       expect(chain.sort).toHaveBeenCalledWith({ publishedAt: 1 });
     });
 
-    it('startDate/endDate → query.publishedAt có $gte/$lte dạng ISO', async () => {
+    it('startDate/endDate → query.publishedAt có $gte/$lte quy đổi đúng mốc UTC theo giờ Việt Nam (offset +7)', async () => {
       mockRawArticleModel.find.mockReturnValue(chainableFind([]));
       mockRawArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
 
@@ -349,8 +349,10 @@ describe('CustomCrawlerService', () => {
 
       const query = mockRawArticleModel.find.mock.calls[0][0];
       expect(query.publishedAt).toBeDefined();
-      expect(query.publishedAt.$gte).toMatch(/^2026-07-01T00:00:00/);
-      expect(query.publishedAt.$lte).toMatch(/^2026-07-31T23:59:59/);
+      // 00:00:00 ngày 01/07 giờ VN = 17:00:00 ngày 30/06 UTC (offset +7)
+      expect(query.publishedAt.$gte).toBe('2026-06-30T17:00:00.000Z');
+      // 23:59:59.999 ngày 31/07 giờ VN = 16:59:59.999 ngày 31/07 UTC (offset +7)
+      expect(query.publishedAt.$lte).toBe('2026-07-31T16:59:59.999Z');
     });
   });
 

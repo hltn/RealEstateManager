@@ -20,6 +20,11 @@ import {
 } from '../../../common/dto/pagination-query.dto';
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { generateUrlHash } from '../../../common/utils/url-hash.util';
+import {
+  startOfDayUtc,
+  endOfDayUtc,
+  startOfDayUtcDaysAgo,
+} from '../../../common/utils/timezone.util';
 
 @Injectable()
 export class CustomCrawlerService {
@@ -74,19 +79,17 @@ export class CustomCrawlerService {
     let endDateObj: Date | null = null;
 
     if (days && days > 0) {
-      cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - (days - 1));
-      // Reset to start of day
-      cutoffDate.setUTCHours(0, 0, 0, 0);
+      // "Hôm nay" phải tính theo giờ Việt Nam (không phải UTC/giờ local của
+      // server) rồi mới lùi lại (days - 1) ngày và lấy mốc đầu ngày đó —
+      // toàn bộ phép tính gom về timezone.util (startOfDayUtcDaysAgo).
+      cutoffDate = startOfDayUtcDaysAgo(days);
     }
 
     if (startDate) {
-      startDateObj = new Date(startDate);
-      startDateObj.setUTCHours(0, 0, 0, 0);
+      startDateObj = startOfDayUtc(startDate);
     }
     if (endDate) {
-      endDateObj = new Date(endDate);
-      endDateObj.setUTCHours(23, 59, 59, 999);
+      endDateObj = endOfDayUtc(endDate);
     }
 
     const crawledData: Array<{
@@ -529,14 +532,10 @@ export class CustomCrawlerService {
     if (startDate || endDate) {
       query.publishedAt = {};
       if (startDate) {
-        const start = new Date(startDate);
-        start.setUTCHours(0, 0, 0, 0);
-        query.publishedAt.$gte = start.toISOString();
+        query.publishedAt.$gte = startOfDayUtc(startDate).toISOString();
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setUTCHours(23, 59, 59, 999);
-        query.publishedAt.$lte = end.toISOString();
+        query.publishedAt.$lte = endOfDayUtc(endDate).toISOString();
       }
     }
 
