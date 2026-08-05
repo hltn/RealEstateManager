@@ -20,6 +20,10 @@ import {
 } from '../../../common/dto/pagination-query.dto';
 import { normalizePagination } from '../../../common/utils/pagination.util';
 import { generateUrlHash } from '../../../common/utils/url-hash.util';
+import {
+  startOfDayUtc,
+  endOfDayUtc,
+} from '../../../common/utils/timezone.util';
 
 /**
  * Normalize content: unescape literal \n, \t, \r thành ký tự thật.
@@ -194,9 +198,10 @@ export class NewsArticleService implements OnModuleInit {
   ): Promise<PaginatedResult<NewsArticle>> {
     const query: any = {};
     if (date) {
-      // date is in YYYY-MM-DD format
-      const startDate = new Date(`${date}T00:00:00.000Z`);
-      const endDate = new Date(`${date}T23:59:59.999Z`);
+      // date là ngày theo giờ Việt Nam (YYYY-MM-DD) → quy đổi đúng mốc UTC
+      // qua offset +7 (Asia/Ho_Chi_Minh), không hardcode hậu tố Z (UTC).
+      const startDate = startOfDayUtc(date);
+      const endDate = endOfDayUtc(date);
       // Chỉ dùng createdAt làm fallback khi publishDate không tồn tại.
       // Tránh $or song song gây lẫn bài ngày khác: bài publishDate=28/07
       // nhưng createdAt=29/07 sẽ không còn hiện khi lọc 29/07 nữa.
@@ -209,7 +214,9 @@ export class NewsArticleService implements OnModuleInit {
         },
         {
           $and: [
-            { $or: [{ publishDate: { $exists: false } }, { publishDate: null }] },
+            {
+              $or: [{ publishDate: { $exists: false } }, { publishDate: null }],
+            },
             { createdAt: { $gte: startDate, $lte: endDate } },
           ],
         },
@@ -479,9 +486,11 @@ Content: ${article.content || article.summary || 'N/A'}
 
     if (article.content && article.content.trim().length > 0) {
       try {
-        article.content = normalizeContent(await this.aiFilterService.cleanMarkdownContentWithAI(
-          article.content,
-        ));
+        article.content = normalizeContent(
+          await this.aiFilterService.cleanMarkdownContentWithAI(
+            article.content,
+          ),
+        );
       } catch (error: any) {
         this.logger.warn(
           `AI cleanup failed for article ${id}, retaining raw content fallback: ${error.message}`,

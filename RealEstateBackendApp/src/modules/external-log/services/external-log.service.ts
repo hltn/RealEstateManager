@@ -10,6 +10,10 @@ import { Model, Types } from 'mongoose';
 
 import { PaginatedResult } from '../../../common/dto/paginated-response.dto';
 import { normalizePagination } from '../../../common/utils/pagination.util';
+import {
+  startOfDayUtc,
+  endOfDayUtc,
+} from '../../../common/utils/timezone.util';
 import { QueryExternalLogDto } from '../dtos/query-external-log.dto';
 import {
   ExternalRequestLog,
@@ -17,6 +21,16 @@ import {
   TokenUsage,
 } from '../schemas/external-request-log.schema';
 import { ExternalLogSanitizerService } from './external-log-sanitizer.service';
+
+/** FE (ExternalLogsScreen input type=date) gửi date-only YYYY-MM-DD — ngày đó
+ *  là giờ Việt Nam nên phải quy đổi qua startOfDayUtc/endOfDayUtc. Nếu caller
+ *  khác truyền full ISO timestamp thì giữ nguyên new Date() (không phá contract). */
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseFilterDate(dateStr: string, boundary: 'start' | 'end'): Date {
+  if (!DATE_ONLY_REGEX.test(dateStr)) return new Date(dateStr);
+  return boundary === 'start' ? startOfDayUtc(dateStr) : endOfDayUtc(dateStr);
+}
 
 /** Input cho logCrawl() — contract §8.3 spec. */
 export interface LogCrawlInput {
@@ -259,8 +273,10 @@ export class ExternalLogService {
 
     if (filter.startDate || filter.endDate) {
       query.createdAt = {};
-      if (filter.startDate) query.createdAt.$gte = new Date(filter.startDate);
-      if (filter.endDate) query.createdAt.$lte = new Date(filter.endDate);
+      if (filter.startDate)
+        query.createdAt.$gte = parseFilterDate(filter.startDate, 'start');
+      if (filter.endDate)
+        query.createdAt.$lte = parseFilterDate(filter.endDate, 'end');
     }
 
     const sortObj: Record<string, 1 | -1> =
