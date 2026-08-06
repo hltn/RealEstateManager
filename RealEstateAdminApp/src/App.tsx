@@ -5,6 +5,7 @@ import CronjobScreen from './screens/CronjobScreen';
 import ExternalLogsScreen from './screens/ExternalLogsScreen';
 import ManageSourcesScreen from './screens/ManageSourcesScreen';
 import RawArticlesScreen from './screens/RawArticlesScreen';
+import MarketAnalysisWorkflowScreen from './screens/MarketAnalysisWorkflowScreen';
 import AiConfigScreen from './screens/AiConfigScreen';
 import AiPromptConfigScreen from './screens/AiPromptConfigScreen';
 import NewsDetailScreen from './screens/NewsDetailScreen';
@@ -35,6 +36,7 @@ function App() {
           >
             <Route index element={<RawArticlesScreen />} />
             <Route path="manage-wp" element={<ManageWpScreen />} />
+            <Route path="market-analysis-workflow" element={<MarketAnalysisWorkflowScreen />} />
             <Route path="news-detail/:id" element={<NewsDetailScreen />} />
             <Route path="sources" element={<ManageSourcesScreen />} />
             {/* ADMIN only — cấu hình hệ thống */}

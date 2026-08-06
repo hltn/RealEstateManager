@@ -1,6 +1,7 @@
 import { SidebarProvider, useSidebar } from "../context/SidebarContext";
 import { AnalyzeJobProvider } from "../context/AnalyzeJobContext";
 import { MarketAnalysisJobProvider } from "../context/MarketAnalysisJobContext";
+import { MarketAnalysisWorkflowJobProvider } from "../context/MarketAnalysisWorkflowJobContext";
 import { ManageWpStatusProvider } from "../context/ManageWpStatusContext";
 import { BulkCrawlJobProvider } from "../context/BulkCrawlJobContext";
 import { ManualCrawlJobProvider } from "../context/ManualCrawlJobContext";
@@ -38,11 +39,13 @@ const AppLayout: React.FC = () => {
       <AnalyzeJobProvider>
         <ManageWpStatusProvider>
           <MarketAnalysisJobProvider>
-            <BulkCrawlJobProvider>
-              <ManualCrawlJobProvider>
-                <LayoutContent />
-              </ManualCrawlJobProvider>
-            </BulkCrawlJobProvider>
+            <MarketAnalysisWorkflowJobProvider>
+              <BulkCrawlJobProvider>
+                <ManualCrawlJobProvider>
+                  <LayoutContent />
+                </ManualCrawlJobProvider>
+              </BulkCrawlJobProvider>
+            </MarketAnalysisWorkflowJobProvider>
           </MarketAnalysisJobProvider>
         </ManageWpStatusProvider>
       </AnalyzeJobProvider>
