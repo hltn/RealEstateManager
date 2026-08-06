@@ -8,6 +8,7 @@ import {
   ChevronDownIcon,
   HorizontaLDots,
   ListIcon,
+  PieChartIcon,
   PlugInIcon,
   TableIcon,
   UserCircleIcon,
@@ -40,6 +41,11 @@ const navItems: NavItem[] = [
     icon: <TableIcon />,
     name: "Manage WP",
     path: "/manage-wp",
+  },
+  {
+    icon: <PieChartIcon />,
+    name: "Phân tích thị trường",
+    path: "/market-analysis-workflow",
   },
   {
     icon: <UserCircleIcon />,
