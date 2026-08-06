@@ -63,6 +63,7 @@ describe('NewsFireCrawlManagerController', () => {
       getRawArticlesByIds: jest.fn(),
       crawlData: jest.fn(),
       deleteRawArticlesInSetNotIn: jest.fn(),
+      getRawArticlesByDate: jest.fn(),
     } as unknown as jest.Mocked<CustomCrawlerService>;
 
     aiFilterService = {
@@ -82,6 +83,7 @@ describe('NewsFireCrawlManagerController', () => {
       deleteBulkArticles: jest.fn(),
       publishToWordPress: jest.fn(),
       cleanArticle: jest.fn(),
+      getArticleIdsByUrlHashes: jest.fn(),
     } as unknown as jest.Mocked<NewsArticleService>;
 
     cronjobService = {
@@ -112,6 +114,7 @@ describe('NewsFireCrawlManagerController', () => {
       getJob: jest.fn(),
       markDone: jest.fn(),
       markError: jest.fn(),
+      updateJob: jest.fn(),
     } as unknown as jest.Mocked<AnalyzeJobService>;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -719,6 +722,283 @@ describe('NewsFireCrawlManagerController', () => {
       const result = await controller.cleanArticle('1');
       expect(newsArticleService.cleanArticle).toHaveBeenCalledWith('1');
       expect(result).toMatchObject({ message: 'Article cleaned successfully', data: { _id: '1', content: 'clean' } });
+    });
+  });
+
+  describe('market analysis workflow (async, 5-step pipeline)', () => {
+    /**
+     * Fake in-memory job store để mô phỏng đúng hành vi thật của
+     * AnalyzeJobService (getJob/updateJob mutate cùng 1 object reference) —
+     * cần thiết vì `runWorkflow` đọc job.result, mutate rồi ghi lại qua updateJob.
+     */
+    let fakeJobs: Map<string, any>;
+
+    beforeEach(() => {
+      fakeJobs = new Map();
+      analyzeJobService.createJob.mockImplementation(() => {
+        const id = `job-${fakeJobs.size + 1}`;
+        fakeJobs.set(id, { status: 'pending', updatedAt: Date.now() });
+        return id;
+      });
+      analyzeJobService.getJob.mockImplementation((id: string) => fakeJobs.get(id));
+      analyzeJobService.updateJob.mockImplementation((id: string, patch: any) => {
+        const job = fakeJobs.get(id);
+        if (job) Object.assign(job, patch, { updatedAt: Date.now() });
+      });
+      analyzeJobService.markDone.mockImplementation((id: string, result: unknown) => {
+        fakeJobs.set(id, { status: 'done', result, updatedAt: Date.now() });
+      });
+      analyzeJobService.markError.mockImplementation((id: string, error: string) => {
+        fakeJobs.set(id, { status: 'error', error, updatedAt: Date.now() });
+      });
+    });
+
+    describe('POST /market-analysis-workflow', () => {
+      it('trả { message, jobId }, markInFlight lock riêng + set state ban đầu pending', () => {
+        const result = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+
+        expect(idempotencyService.isInFlight).toHaveBeenCalledWith('workflow:market-analysis');
+        expect(idempotencyService.markInFlight).toHaveBeenCalledWith('workflow:market-analysis');
+        expect(result).toEqual({ message: 'Phân tích thị trường đã bắt đầu', jobId: expect.any(String) });
+
+        // runWorkflow là async fire-and-forget: phần đồng bộ trước await đầu tiên
+        // (updateStep(1, running)) đã chạy ngay trong cùng tick — đây là hành vi
+        // JS chuẩn (async function chạy sync tới await đầu tiên), không phải bug.
+        const job = fakeJobs.get(result.jobId);
+        expect(job.status).toBe('pending');
+        expect(job.result.steps).toHaveLength(5);
+        expect(job.result.steps[0]).toMatchObject({ step: 1, status: 'running' });
+        expect(job.result.date).toBe('2026-08-06');
+      });
+
+      it('không truyền date → dùng getTodayVNString() mặc định', () => {
+        const result = controller.triggerMarketAnalysisWorkflow({} as any);
+        const job = fakeJobs.get(result.jobId);
+        expect(job.result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      });
+
+      it('lock đang in-flight → 409 ConflictException, KHÔNG tạo job', () => {
+        idempotencyService.isInFlight.mockReturnValue(true);
+        expect(() =>
+          controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any),
+        ).toThrow(ConflictException);
+        expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('GET /market-analysis-workflow/:jobId', () => {
+      it('jobId không tồn tại → { status: not_found }', () => {
+        analyzeJobService.getJob.mockReturnValueOnce(undefined);
+        expect(controller.getMarketAnalysisWorkflowJob('missing')).toEqual({ status: 'not_found' });
+      });
+
+      it('jobId tồn tại → trả state đã flatten (currentStep/steps/date ở top-level)', () => {
+        fakeJobs.set('job-x', {
+          status: 'pending',
+          result: { currentStep: 2, steps: [{ step: 1, status: 'done' }], date: '2026-08-06' },
+          updatedAt: 1,
+        });
+        expect(controller.getMarketAnalysisWorkflowJob('job-x')).toEqual({
+          status: 'pending',
+          currentStep: 2,
+          steps: [{ step: 1, status: 'done' }],
+          date: '2026-08-06',
+        });
+      });
+
+      it('job status=done có finalResult → flatten ra field `result` top-level', () => {
+        fakeJobs.set('job-y', {
+          status: 'done',
+          result: {
+            currentStep: 5,
+            steps: [],
+            date: '2026-08-06',
+            finalResult: { markdownContent: '# ok', newsArticleCount: 3, stats: { totalArticles: 5, filtered: 3, crawledContent: 3, failedCrawl: 0 } },
+          },
+        });
+        const res: any = controller.getMarketAnalysisWorkflowJob('job-y');
+        expect(res.result).toEqual({ markdownContent: '# ok', newsArticleCount: 3, stats: { totalArticles: 5, filtered: 3, crawledContent: 3, failedCrawl: 0 } });
+        expect(res.status).toBe('done');
+      });
+
+      it('job status=error → giữ error + steps ở top-level (không mất progress)', () => {
+        fakeJobs.set('job-z', {
+          status: 'error',
+          error: 'Firecrawl rate limit',
+          result: { currentStep: 3, steps: [{ step: 3, status: 'error', error: 'Firecrawl rate limit' }], date: '2026-08-06' },
+        });
+        const res: any = controller.getMarketAnalysisWorkflowJob('job-z');
+        expect(res.status).toBe('error');
+        expect(res.error).toBe('Firecrawl rate limit');
+        expect(res.steps).toEqual([{ step: 3, status: 'error', error: 'Firecrawl rate limit' }]);
+      });
+    });
+
+    describe('runWorkflow — pipeline end-to-end (qua trigger)', () => {
+      it('happy path: 5 bước chạy hết → markDone, steps đều done, audit log ghi', async () => {
+        customCrawlerService.crawlData.mockResolvedValue({
+          filePath: '/tmp/z.json',
+          stats: { successfulSources: 1, failedSources: 0, totalArticles: 3 },
+        } as any);
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+          { _id: { toString: () => 'r2' }, urlHash: 'h2' },
+        ] as any);
+        aiFilterService.filterRawArticles.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        customCrawlerService.deleteRawArticlesInSetNotIn.mockResolvedValue(undefined as any);
+        customCrawlerService.getRawArticlesByIds.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        newsArticleService.saveArticles.mockResolvedValue({
+          savedCount: 1, duplicates: 0,
+          processedUrlHashes: ['h1'], newlySavedUrlHashes: ['h1'],
+        } as any);
+        customCrawlerService.deleteRawArticlesBulk.mockResolvedValue(undefined as any);
+        newsArticleService.getArticleIdsByUrlHashes.mockResolvedValue(['a1']);
+        newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
+        newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# Market report' as any);
+
+        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        expect(customCrawlerService.crawlData).toHaveBeenCalledWith(undefined, '2026-08-06', '2026-08-06');
+        expect(newsArticleService.analyzeMarketTrendsByAI).toHaveBeenCalledWith(['a1']);
+        expect(analyzeJobService.markDone).toHaveBeenCalled();
+
+        const job = fakeJobs.get(jobId);
+        expect(job.status).toBe('done');
+        expect(job.result.currentStep).toBe(5);
+        expect(job.result.steps.every((s: any) => s.status === 'done')).toBe(true);
+        // finalResult: markdownContent lấy đúng từ step 5, newsArticleCount đúng độ dài newsArticleIds
+        expect(job.result.finalResult).toMatchObject({
+          markdownContent: '# Market report',
+          newsArticleCount: 1,
+        });
+        expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('workflow:market-analysis');
+        expect(auditLogService.log).toHaveBeenCalledWith(
+          AuditAction.WORKFLOW_MARKET_ANALYSIS,
+          'news_articles',
+          ['a1'],
+          'system',
+          expect.objectContaining({ jobId, date: '2026-08-06', articleCount: 1 }),
+        );
+      });
+
+      it('ngày không có raw_articles → step 2-5 skip, markDone sớm', async () => {
+        customCrawlerService.crawlData.mockResolvedValue({ filePath: '/tmp/e.json', stats: {} } as any);
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([] as any);
+
+        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        expect(aiFilterService.filterRawArticles).not.toHaveBeenCalled();
+        const job = fakeJobs.get(jobId);
+        expect(job.status).toBe('done');
+        expect(job.result.currentStep).toBe(5);
+        expect(job.result.steps[1]).toMatchObject({ status: 'done', result: { filteredCount: 0 } });
+      });
+
+      it('AI filter trả rỗng → step 3-5 skip, markDone sớm', async () => {
+        customCrawlerService.crawlData.mockResolvedValue({ filePath: '/tmp/f.json', stats: {} } as any);
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        aiFilterService.filterRawArticles.mockResolvedValue([] as any);
+        customCrawlerService.deleteRawArticlesInSetNotIn.mockResolvedValue(undefined as any);
+
+        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        expect(newsArticleService.saveArticles).not.toHaveBeenCalled();
+        const job = fakeJobs.get(jobId);
+        expect(job.status).toBe('done');
+        expect(job.result.steps[2]).toMatchObject({ status: 'done', result: { savedCount: 0 } });
+      });
+
+      it('AI filter trả về object CHỈ có {urlHash, title} (đúng RAW_ARTICLES_PROMPT thật, KHÔNG có _id) → vẫn map ngược đúng qua allArticles để lấy _id cho step 3', async () => {
+        customCrawlerService.crawlData.mockResolvedValue({ filePath: '/tmp/h.json', stats: { totalArticles: 2 } } as any);
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1', title: 'Tin 1' },
+          { _id: { toString: () => 'r2' }, urlHash: 'h2', title: 'Tin 2' },
+        ] as any);
+        // AI chỉ trả urlHash + title — KHÔNG có _id, đúng RAW_ARTICLES_PROMPT thật.
+        aiFilterService.filterRawArticles.mockResolvedValue([
+          { urlHash: 'h1', title: 'Tin 1' },
+        ] as any);
+        customCrawlerService.deleteRawArticlesInSetNotIn.mockResolvedValue(undefined as any);
+        customCrawlerService.getRawArticlesByIds.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        newsArticleService.saveArticles.mockResolvedValue({
+          savedCount: 1, duplicates: 0,
+          processedUrlHashes: ['h1'], newlySavedUrlHashes: ['h1'],
+        } as any);
+        customCrawlerService.deleteRawArticlesBulk.mockResolvedValue(undefined as any);
+        newsArticleService.getArticleIdsByUrlHashes.mockResolvedValue(['a1']);
+        newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
+        newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# report' as any);
+
+        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        // rawIds phải map đúng từ allArticles (có _id) qua urlHash — KHÔNG rỗng.
+        expect(customCrawlerService.getRawArticlesByIds).toHaveBeenCalledWith(['r1']);
+        expect(newsArticleService.saveArticles).toHaveBeenCalled();
+        const job = fakeJobs.get(jobId);
+        expect(job.status).toBe('done');
+        expect(job.result.finalResult.newsArticleCount).toBe(1);
+      });
+
+      it('lỗi giữa chừng (step 4 throw) → dừng pipeline, giữ nguyên steps tới bước lỗi, KHÔNG audit log, vẫn clearInFlight', async () => {
+        customCrawlerService.crawlData.mockResolvedValue({ filePath: '/tmp/g.json', stats: {} } as any);
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        aiFilterService.filterRawArticles.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        customCrawlerService.deleteRawArticlesInSetNotIn.mockResolvedValue(undefined as any);
+        customCrawlerService.getRawArticlesByIds.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        newsArticleService.saveArticles.mockResolvedValue({
+          savedCount: 1, duplicates: 0,
+          processedUrlHashes: ['h1'], newlySavedUrlHashes: ['h1'],
+        } as any);
+        customCrawlerService.deleteRawArticlesBulk.mockResolvedValue(undefined as any);
+        newsArticleService.getArticleIdsByUrlHashes.mockResolvedValue(['a1']);
+        newsArticleService.analyzeMarketBulk.mockRejectedValue(new Error('Firecrawl rate limit'));
+
+        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        // Hành vi mới: KHÔNG dùng markError trực tiếp (nó xoá result/steps) —
+        // pipeline tự updateJob giữ nguyên steps + đánh dấu bước lỗi.
+        expect(analyzeJobService.markError).not.toHaveBeenCalled();
+        expect(newsArticleService.analyzeMarketTrendsByAI).not.toHaveBeenCalled();
+        expect(auditLogService.log).not.toHaveBeenCalled();
+        expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('workflow:market-analysis');
+
+        const job = fakeJobs.get(jobId);
+        expect(job.status).toBe('error');
+        expect(job.error).toBe('Firecrawl rate limit');
+        // Steps 1-3 vẫn còn nguyên 'done', step 4 chuyển 'error' — KHÔNG mất progress.
+        expect(job.result.steps[0].status).toBe('done');
+        expect(job.result.steps[2].status).toBe('done');
+        expect(job.result.steps[3]).toMatchObject({ status: 'error', error: 'Firecrawl rate limit' });
+        expect(job.result.steps[4].status).toBe('pending');
+      });
     });
   });
 

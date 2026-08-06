@@ -42,6 +42,17 @@ export class AnalyzeJobService {
     this.jobs.set(jobId, { status: 'error', error, updatedAt: Date.now() });
   }
 
+  /**
+   * Cập nhật partial fields của job (dùng cho progress tracking của workflow).
+   * Không tạo job mới nếu jobId không tồn tại — no-op an toàn.
+   */
+  updateJob(jobId: string, patch: Partial<AnalyzeJob>): void {
+    const job = this.jobs.get(jobId);
+    if (job) {
+      Object.assign(job, patch, { updatedAt: Date.now() });
+    }
+  }
+
   private cleanupExpiredJobs(): void {
     const now = Date.now();
     for (const [id, job] of this.jobs) {
