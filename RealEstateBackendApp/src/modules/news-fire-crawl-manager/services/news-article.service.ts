@@ -534,4 +534,18 @@ Content: ${article.content || article.summary || 'N/A'}
       .deleteMany({ urlHash: { $in: urlHashes } })
       .exec();
   }
+
+  /**
+   * Map urlHashes → news_article _id.
+   * Dùng sau saveArticles để lấy _id của các bài vừa tạo/đã tồn tại.
+   */
+  async getArticleIdsByUrlHashes(urlHashes: string[]): Promise<string[]> {
+    if (!urlHashes || urlHashes.length === 0) return [];
+    const articles = await this.newsArticleModel
+      .find({ urlHash: { $in: urlHashes } })
+      .select('_id')
+      .lean()
+      .exec();
+    return articles.map((a: any) => a._id.toString());
+  }
 }
