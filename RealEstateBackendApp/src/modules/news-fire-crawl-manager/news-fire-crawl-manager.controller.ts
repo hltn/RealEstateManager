@@ -65,7 +65,7 @@ export class NewsFireCrawlManagerController {
     private readonly analyzeJobService: AnalyzeJobService,
   ) {}
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
   @Get('prompts')
   getPrompts() {
@@ -75,7 +75,7 @@ export class NewsFireCrawlManagerController {
     };
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   @ApiOperation({ summary: 'Update prompts', description: 'Update prompts' })
   @Put('prompts')
   async updatePrompts(@Body() newPrompts: AiPromptDto[]) {

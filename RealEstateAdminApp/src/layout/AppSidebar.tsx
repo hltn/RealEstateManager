@@ -56,20 +56,20 @@ const navItems: NavItem[] = [
 
 const othersItems: NavItem[] = [];
 
-/**
- * Menu dành riêng cho ADMIN — chỉ render khi user có role ADMIN (WI-14 dynamic menu).
- * Bao gồm: AI Config, AI Prompt Config, Cronjob, Quản lý tài khoản.
- */
+/** AI Prompt Config được cả ADMIN và EDITOR sử dụng. */
+const promptConfigItems: NavItem[] = [
+  {
+    icon: <DocsIcon />,
+    name: "AI Prompt Config",
+    path: "/ai-prompt-config",
+  },
+];
+
 const adminItems: NavItem[] = [
   {
     icon: <PlugInIcon />,
     name: "AI Config",
     path: "/ai-config",
-  },
-  {
-    icon: <DocsIcon />,
-    name: "AI Prompt Config",
-    path: "/ai-prompt-config",
   },
   {
     icon: <DocsIcon />,
@@ -93,6 +93,8 @@ const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === UserRole.ADMIN;
+  const canManagePrompts =
+    user?.role === UserRole.ADMIN || user?.role === UserRole.EDITOR;
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -340,6 +342,11 @@ const AppSidebar: React.FC = () => {
                 )}
               </h2>
               {renderMenuItems(navItems, "main")}
+              {canManagePrompts && (
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                  {renderMenuItems(promptConfigItems, "main")}
+                </div>
+              )}
               {isAdmin && (
                 <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
                   {renderMenuItems(adminItems, "main")}

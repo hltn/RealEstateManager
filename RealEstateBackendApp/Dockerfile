@@ -19,7 +19,7 @@ FROM node:20-slim AS production
 WORKDIR /app
 # Tạo trước thư mục logs owned bởi user node (app chạy USER node, không thể tự
 # tạo /app/logs vì /app thuộc root). daily-rotate-file sẽ ghi vào đây.
-RUN mkdir -p logs && chown -R node:node logs
+RUN mkdir -p logs tmp && chown -R node:node logs tmp
 COPY --from=deps    --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist         ./dist
 USER node

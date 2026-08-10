@@ -59,7 +59,7 @@ function App() {
               path="ai-prompt-config"
               element={
                 <RoleGuard
-                  allowedRoles={[UserRole.ADMIN]}
+                  allowedRoles={[UserRole.ADMIN, UserRole.EDITOR]}
                   fallback={
                     <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
                       Bạn không có quyền truy cập trang này.
