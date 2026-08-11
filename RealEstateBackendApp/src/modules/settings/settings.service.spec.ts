@@ -49,6 +49,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       expect(cfg.provider).toBe('OpenRouter');
       expect(cfg.model).toBe('google/x');
       expect(cfg.must1cModel).toBe('m-model');
+      expect(cfg.ninerouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
+      expect(cfg.ninerouterApiKey).toBe('***');
+      expect(cfg.ninerouterModel).toBe('');
       expect(cfg.activePlatform).toBe('OpenRouter');
     });
 
@@ -65,6 +68,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       // Default provider/model/activePlatform.
       expect(cfg.provider).toBe('OpenRouter');
       expect(cfg.model).toBe('google/gemini-2.5-flash');
+      expect(cfg.ninerouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
+      expect(cfg.ninerouterApiKey).toBe('');
+      expect(cfg.ninerouterModel).toBe('');
       expect(cfg.activePlatform).toBe('OpenRouter');
     });
 
@@ -110,6 +116,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       expect(content).toContain('OPENROUTER_AI_PROVIDER=OpenRouter');
       expect(content).toContain('OPENROUTER_AI_MODEL=gpt-4');
       expect(content).toContain('OPENROUTER_API_KEY=sk-new');
+      expect(content).toContain('NINEROUTER_BASE_URL=http://custom-9router:20128/v1');
+      expect(content).toContain('NINEROUTER_API_KEY=sk-9router-new-key');
+      expect(content).toContain('NINEROUTER_MODEL=meta/llama-3-70b-instruct');
       // process.env được set song song để reload tức thì.
       expect(process.env.OPENROUTER_AI_PROVIDER).toBe('OpenRouter');
       expect(process.env.OPENROUTER_AI_MODEL).toBe('gpt-4');
@@ -118,6 +127,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       delete process.env.OPENROUTER_AI_PROVIDER;
       delete process.env.OPENROUTER_AI_MODEL;
       delete process.env.OPENROUTER_API_KEY;
+      delete process.env.NINEROUTER_BASE_URL;
+      delete process.env.NINEROUTER_API_KEY;
+      delete process.env.NINEROUTER_MODEL;
     });
 
     it('file có sẵn dòng → replace bằng regex, KHÔNG append duplicate', () => {
@@ -146,17 +158,20 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       readSpy.mockReturnValue('OPENROUTER_API_KEY=sk-real\n');
       // Baseline: env đã có key thật — sentinel không được ghi đè.
       process.env.OPENROUTER_API_KEY = 'sk-real';
+      process.env.NINEROUTER_API_KEY = 'sk-9router-real';
 
-      service.updateAiConfig({ apiKey: '***' });
+      service.updateAiConfig({ apiKey: '***', ninerouterApiKey: '***' });
 
       const content = writeSpy.mock.calls[0][1] as string;
       expect(content).toContain('OPENROUTER_API_KEY=sk-real');
       // Không ghi đè bằng "***".
       expect(content).not.toContain('OPENROUTER_API_KEY=***');
+      expect(content).not.toContain('NINEROUTER_API_KEY=***');
       // process.env KHÔNG bị thay đổi (sentinel skip cả file lẫn env).
       expect(process.env.OPENROUTER_API_KEY).toBe('sk-real');
 
       delete process.env.OPENROUTER_API_KEY;
+      delete process.env.NINEROUTER_API_KEY;
     });
 
     it('must1cApiKey="***" → skip update (giữ key cũ)', () => {
@@ -281,6 +296,64 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
 
       await expect(service.getOpenRouterModels()).rejects.toThrow(
         /timed out after 5s/i,
+      );
+    });
+  });
+
+  describe('get9RouterModels', () => {
+    afterEach(() => {
+      delete process.env.NINEROUTER_API_KEY;
+      delete process.env.NINEROUTER_BASE_URL;
+    });
+
+    it('thiếu API key → throw "9router API key is not configured"', async () => {
+      configService.get.mockReturnValue(undefined);
+      await expect(service.get9RouterModels()).rejects.toThrow(
+        '9router API key is not configured',
+      );
+    });
+
+    it('gọi fetch đúng url, header bearer và timeout (signal)', async () => {
+      configService.get.mockImplementation((key: string) => {
+        if (key === 'NINEROUTER_API_KEY') return 'sk-9router';
+        if (key === 'NINEROUTER_BASE_URL') return 'http://127.0.0.1:20128/v1';
+        return undefined;
+      });
+      const jsonMock = jest.fn().mockResolvedValue({ data: [{ id: 'llama' }] });
+      (global.fetch as unknown as jest.Mock) = jest.fn().mockResolvedValue({
+        ok: true,
+        statusText: 'OK',
+        json: jsonMock,
+      });
+
+      const result = await service.get9RouterModels();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:20128/v1/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer sk-9router',
+          }),
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      expect(result).toEqual({ data: [{ id: 'llama' }] });
+      expect(jsonMock).toHaveBeenCalled();
+    });
+
+    it('fetch trả !ok → throw với statusText', async () => {
+      configService.get.mockImplementation((key: string) => {
+        if (key === 'NINEROUTER_API_KEY') return 'sk-9router';
+        return undefined;
+      });
+      (global.fetch as unknown as jest.Mock) = jest.fn().mockResolvedValue({
+        ok: false,
+        statusText: 'Unauthorized',
+        json: jest.fn(),
+      });
+
+      await expect(service.get9RouterModels()).rejects.toThrow(
+        'Failed to fetch 9router models: Unauthorized',
       );
     });
   });

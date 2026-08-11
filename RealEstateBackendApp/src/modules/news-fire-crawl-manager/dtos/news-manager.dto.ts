@@ -120,3 +120,13 @@ export class AiPromptDto implements AiPrompt {
   @IsNotEmpty()
   prompt: string;
 }
+
+export class TriggerMarketAnalysisWorkflowDto {
+  @ApiPropertyOptional({
+    description: 'Ngày phân tích (YYYY-MM-DD). Mặc định: hôm nay (UTC+7).',
+    example: '2026-08-06',
+  })
+  @IsOptional()
+  @IsString()
+  date?: string;
+}

@@ -567,6 +567,21 @@ export class CustomCrawlerService {
   }
 
   /**
+   * Lấy toàn bộ raw articles trong 1 ngày (YYYY-MM-DD) — không phân trang.
+   * Dùng cho workflow pipeline step 2 (cần toàn bộ, không chỉ 1 trang).
+   */
+  async getRawArticlesByDate(date: string): Promise<RawArticle[]> {
+    const startDate = startOfDayUtc(date);
+    const endDate = endOfDayUtc(date);
+    return this.rawArticleModel
+      .find({
+        createdAt: { $gte: startDate, $lte: endDate },
+      })
+      .lean()
+      .exec();
+  }
+
+  /**
    * Lấy toàn bộ raw articles chỉ với các field cần thiết cho pipeline phân tích AI.
    * Áp dụng nguyên tắc Least Privilege Data: chỉ select urlHash, title, description.
    */
