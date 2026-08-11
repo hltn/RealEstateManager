@@ -39,4 +39,14 @@ export class SettingsController {
   getOpenRouterModels() {
     return this.settingsService.getOpenRouterModels();
   }
-}
+
+  @Roles(UserRole.ADMIN)
+  @Get('9router-models')
+  @ApiOperation({
+    summary: 'Get list of available 9router models',
+    description: 'Get list of available 9router models',
+  })
+  get9RouterModels() {
+    return this.settingsService.get9RouterModels();
+  }
+  }

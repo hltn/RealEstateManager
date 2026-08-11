@@ -102,6 +102,28 @@ describe('SettingsController (contract mục 1/3)', () => {
     });
   });
 
+  describe('GET /settings/9router-models', () => {
+    it('delegate sang service.get9RouterModels (async)', async () => {
+      const expected = { data: [{ id: 'llama' }] };
+      service.get9RouterModels.mockResolvedValue(expected);
+
+      const result = await controller.get9RouterModels();
+
+      expect(service.get9RouterModels).toHaveBeenCalledTimes(1);
+      expect(result).toBe(expected);
+    });
+
+    it('propagate lỗi khi service throw', async () => {
+      service.get9RouterModels.mockRejectedValue(
+        new Error('9router API key is not configured'),
+      );
+
+      await expect(controller.get9RouterModels()).rejects.toThrow(
+        '9router API key is not configured',
+      );
+    });
+  });
+
   describe('@Roles metadata — RBAC matrix mục 11', () => {
     it('getAiConfig có @Roles(ADMIN)', () => {
       const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getAiConfig);

@@ -17,6 +17,11 @@ export enum AuditAction {
    * giá trị enum mới, document cũ không bị ảnh hưởng.
    */
   MANUAL_CRAWL = 'MANUAL_CRAWL',
+  /**
+   * Workflow phân tích thị trường end-to-end (5 bước, chạy nền). Backward
+   * compatible: chỉ thêm giá trị enum mới, document cũ không bị ảnh hưởng.
+   */
+  WORKFLOW_MARKET_ANALYSIS = 'WORKFLOW_MARKET_ANALYSIS',
 }
 
 /**
