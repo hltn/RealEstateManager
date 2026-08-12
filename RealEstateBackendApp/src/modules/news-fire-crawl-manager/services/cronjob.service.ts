@@ -1,10 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import * as fs from 'fs';
-import { CustomCrawlerService } from './custom-crawler.service';
-import { AIFilterService } from './ai-filter.service';
-import { NewsArticleService } from './news-article.service';
+
+/** Callback được controller đăng ký để CronjobService không phụ thuộc vòng vào controller. */
+type MarketAnalysisWorkflowTrigger = () => Promise<{ jobId: string }> | { jobId: string };
 
 @Injectable()
 export class CronjobService {
@@ -12,13 +11,17 @@ export class CronjobService {
   private isActive = false;
   private frequency = '0 8 * * *';
   private readonly JOB_NAME = 'daily_news_crawler';
+  private marketAnalysisWorkflowTrigger?: MarketAnalysisWorkflowTrigger;
 
-  constructor(
-    private schedulerRegistry: SchedulerRegistry,
-    private customCrawlerService: CustomCrawlerService,
-    private aiFilterService: AIFilterService,
-    private newsArticleService: NewsArticleService,
-  ) {}
+  constructor(private schedulerRegistry: SchedulerRegistry) {}
+
+  /**
+   * Đăng ký workflow đầy đủ cho Daily News Crawler. Callback được cung cấp bởi
+   * controller sau khi module khởi tạo để tránh circular dependency.
+   */
+  setMarketAnalysisWorkflowTrigger(trigger: MarketAnalysisWorkflowTrigger): void {
+    this.marketAnalysisWorkflowTrigger = trigger;
+  }
 
   getConfig() {
     return {
@@ -33,26 +36,21 @@ export class CronjobService {
       this.frequency = frequency;
     }
 
-    // Try to delete existing job if any
     try {
       this.schedulerRegistry.deleteCronJob(this.JOB_NAME);
     } catch {
-      // Job might not exist, ignore
+      // Job might not exist, ignore.
     }
 
     if (this.isActive) {
       const job = new CronJob(this.frequency, async () => {
-        this.logger.log(
-          `Executing scheduled job at ${new Date().toISOString()}`,
-        );
-        await this.executeCrawlFlow();
+        this.logger.log(`Executing Daily News Crawler at ${new Date().toISOString()}`);
+        await this.executeWorkflow();
       });
 
       this.schedulerRegistry.addCronJob(this.JOB_NAME, job);
       job.start();
-      this.logger.log(
-        `Cronjob configured and started with frequency: ${this.frequency}`,
-      );
+      this.logger.log(`Cronjob configured and started with frequency: ${this.frequency}`);
     } else {
       this.logger.log('Cronjob is disabled.');
     }
@@ -60,37 +58,22 @@ export class CronjobService {
     return this.getConfig();
   }
 
-  private async executeCrawlFlow() {
-    let filePath: string | null = null;
-    try {
-      const crawlResult = await this.customCrawlerService.crawlData();
-      filePath = crawlResult.filePath;
-      const top5Articles = filePath
-        ? await this.aiFilterService.filterAndRank(filePath)
-        : [];
+  /**
+   * Daily News Crawler luôn kích hoạt toàn bộ workflow phân tích thị trường.
+   * Ngày đầu vào do callback tự xác định theo ngày hiện tại UTC+7, không nhận
+   * giá trị ngày từ cron để tránh chạy nhầm ngày.
+   */
+  private async executeWorkflow(): Promise<void> {
+    if (!this.marketAnalysisWorkflowTrigger) {
+      this.logger.error('Daily News Crawler skipped: market analysis workflow trigger is not registered.');
+      return;
+    }
 
-      if (top5Articles && top5Articles.length > 0) {
-        // Automatically save it
-        await this.newsArticleService.saveArticles(top5Articles);
-        this.logger.log(
-          `Successfully crawled and saved ${top5Articles.length} articles via cron.`,
-        );
-      }
+    try {
+      const { jobId } = await this.marketAnalysisWorkflowTrigger();
+      this.logger.log(`Daily News Crawler started market analysis workflow job ${jobId}.`);
     } catch (error: any) {
-      this.logger.error('Error executing cron flow', error.stack);
-    } finally {
-      // Dọn file tạm sau mỗi lần crawl — dùng static fs thay vì dynamic
-      // import('fs') để tránh crash Jest VM (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG).
-      if (filePath) {
-        fs.promises
-          .unlink(filePath)
-          .catch((err) =>
-            this.logger.error(
-              `Failed to delete temp file ${filePath}`,
-              err.stack,
-            ),
-          );
-      }
+      this.logger.error('Error triggering market analysis workflow from cron', error?.stack);
     }
   }
 }

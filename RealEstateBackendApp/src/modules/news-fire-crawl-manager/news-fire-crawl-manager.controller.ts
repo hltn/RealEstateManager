@@ -66,8 +66,18 @@ export class NewsFireCrawlManagerController {
     private readonly idempotencyService: IdempotencyService,
     private readonly auditLogService: AuditLogService,
     private readonly analyzeJobService: AnalyzeJobService,
-  ) {}
+  ) {
+    if (typeof this.cronjobService.setMarketAnalysisWorkflowTrigger === 'function') {
+      this.cronjobService.setMarketAnalysisWorkflowTrigger(() =>
+        this.triggerMarketAnalysisWorkflowForToday(),
+      );
+    }
+  }
 
+  /** Daily News Crawler luôn dùng ngày hiện tại UTC+7, không nhận input ngày. */
+  private triggerMarketAnalysisWorkflowForToday(): { jobId: string } {
+    return this.startMarketAnalysisWorkflow(this.getTodayVNString(), 'cron');
+  }
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   @ApiOperation({ summary: 'Get prompts', description: 'Get prompts' })
   @Get('prompts')
@@ -853,8 +863,18 @@ export class NewsFireCrawlManagerController {
   triggerMarketAnalysisWorkflow(
     @Body() body: TriggerMarketAnalysisWorkflowDto,
   ) {
-    const date = body.date || this.getTodayVNString();
-    this.logger.log(`Market analysis workflow triggered for date: ${date}`);
+    return this.startMarketAnalysisWorkflow(
+      body.date || this.getTodayVNString(),
+      'manual',
+    );
+  }
+
+  /** Khởi tạo workflow dùng chung cho thao tác tay và Daily News Crawler. */
+  private startMarketAnalysisWorkflow(
+    date: string,
+    source: 'manual' | 'cron',
+  ): { message: string; jobId: string } {
+    this.logger.log(`Market analysis workflow triggered by ${source} for date: ${date}`);
 
     const LOCK_KEY = 'workflow:market-analysis';
     if (this.idempotencyService.isInFlight(LOCK_KEY)) {
@@ -888,7 +908,13 @@ export class NewsFireCrawlManagerController {
       ),
     );
 
-    return { message: 'Phân tích thị trường đã bắt đầu', jobId };
+    return {
+      message:
+        source === 'cron'
+          ? 'Daily News Crawler đã bắt đầu phân tích thị trường'
+          : 'Phân tích thị trường đã bắt đầu',
+      jobId,
+    };
   }
 
   @ApiOperation({
