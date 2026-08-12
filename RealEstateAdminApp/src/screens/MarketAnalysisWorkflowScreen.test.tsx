@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import apiAxios from "../api/axios";
 import MarketAnalysisWorkflowScreen from "./MarketAnalysisWorkflowScreen";
@@ -34,6 +34,9 @@ interface JobHookReturn {
   isRunning: boolean;
   startError: string | null;
   startJob: ReturnType<typeof vi.fn>;
+  retryFailedStep: ReturnType<typeof vi.fn>;
+  isRetrying: boolean;
+  retryError: string | null;
   resetJob: ReturnType<typeof vi.fn>;
 }
 
@@ -54,6 +57,9 @@ function baseJobHook(overrides: Partial<JobHookReturn> = {}): JobHookReturn {
     isRunning: false,
     startError: null,
     startJob: vi.fn(),
+    retryFailedStep: vi.fn(),
+    isRetrying: false,
+    retryError: null,
     resetJob: vi.fn(),
     ...overrides,
   };
@@ -72,7 +78,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
 
     expect(await screen.findByRole("heading", { name: "Phân tích thị trường" })).toBeInTheDocument();
     for (const step of DEFAULT_STEPS) {
-      expect(screen.getAllByText(step.label).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(`${step.step}.${step.label}`).length).toBeGreaterThan(0);
     }
     // Nút "Phân tích" phải khả dụng (không disabled) khi không có job đang chạy.
     const button = screen.getByRole("button", { name: /^phân tích$/i });
@@ -101,7 +107,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     expect(calledWithDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("step 'running' hiển thị spinner, step 'error' hiển thị message lỗi", () => {
+  it("hiển thị retry trong card bước lỗi, không hiển thị nút đóng", () => {
     const stepsWithError = DEFAULT_STEPS.map((s) => {
       if (s.step === 1) return { ...s, status: "done" as const };
       if (s.step === 2) return { ...s, status: "error" as const, error: "Lỗi lọc bài viết" };
@@ -115,8 +121,66 @@ describe("MarketAnalysisWorkflowScreen", () => {
     renderScreen();
 
     expect(screen.getByText("Lỗi lọc bài viết")).toBeInTheDocument();
-    // Step lỗi hiển thị nút "Chạy lại".
-    expect(screen.getByRole("button", { name: /chạy lại/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thực hiện lại" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Đóng thông báo lỗi" })).not.toBeInTheDocument();
+  });
+
+  it("bấm retry ở status error gọi retryFailedStep, không gọi resetJob/startJob", () => {
+    const retryFailedStep = vi.fn();
+    const resetJob = vi.fn();
+    const startJob = vi.fn();
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "error",
+          currentStep: 2,
+          steps: DEFAULT_STEPS.map((step) =>
+            step.step === 1
+              ? { ...step, status: "done" as const }
+              : step.step === 2
+                ? { ...step, status: "error" as const, error: "AI down" }
+                : step,
+          ),
+        },
+        retryFailedStep,
+        resetJob,
+        startJob,
+      }),
+    );
+    renderScreen();
+
+    fireEvent.click(screen.getByRole("button", { name: "Thực hiện lại" }));
+
+    expect(retryFailedStep).toHaveBeenCalledTimes(1);
+    expect(resetJob).not.toHaveBeenCalled();
+    expect(startJob).not.toHaveBeenCalled();
+    expect(screen.getByText("1.Thu thập tin tức")).toBeInTheDocument();
+  });
+
+  it("retry loading disable cả nút retry và Analyze, hiển thị API error nhưng giữ progress", () => {
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "error",
+          currentStep: 2,
+          steps: DEFAULT_STEPS.map((step) =>
+            step.step === 1
+              ? { ...step, status: "done" as const }
+              : step.step === 2
+                ? { ...step, status: "error" as const, error: "AI down" }
+                : step,
+          ),
+        },
+        isRetrying: true,
+        retryError: "Retry service unavailable",
+      }),
+    );
+    renderScreen();
+
+    expect(screen.getByRole("button", { name: "Đang thực hiện lại" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^phân tích$/i })).toBeDisabled();
+    expect(screen.getByText("Retry service unavailable")).toBeInTheDocument();
+    expect(screen.getByText("AI down")).toBeInTheDocument();
   });
 
   it("khi status='done' và có markdownContent → hiển thị kết quả phân tích", async () => {
@@ -153,7 +217,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
   });
 
-  it("render danh sách lịch sử khi API trả dữ liệu, click item mở modal chi tiết", async () => {
+  it("render danh sách lịch sử khi API trả dữ liệu, click item hoặc nút Xem mở modal chi tiết", async () => {
     mockedAxios.get.mockResolvedValue({
       data: {
         data: [
@@ -164,15 +228,61 @@ describe("MarketAnalysisWorkflowScreen", () => {
             createdAt: "2026-08-05T10:00:00.000Z",
           },
         ],
+        meta: { hasMore: false, nextCursor: null },
       },
     });
     mockedUseJob.mockReturnValue(baseJobHook());
     renderScreen();
 
-    const historyItem = await screen.findByText(/Nội dung phân tích lần trước/);
-    fireEvent.click(historyItem);
+    expect(await screen.findByText("1. 05/08/2026 17:00:00")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Xem chi tiết phân tích 1" }));
 
     // Modal chi tiết hiện ra với đúng nội dung (heading "Chi tiết phân tích").
     expect(await screen.findByText("Chi tiết phân tích")).toBeInTheDocument();
+  });
+
+  it("tải thêm trang lịch sử bằng cursor, giữ số thứ tự và không gửi request trùng", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          data: Array.from({ length: 10 }, (_, index) => ({
+            _id: `h${index + 1}`,
+            content: `Nội dung ${index + 1}`,
+            articleIds: [],
+            createdAt: "2026-08-05T10:00:00.000Z",
+          })),
+          meta: { hasMore: true, nextCursor: "cursor-10" },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: "h11", content: "Nội dung 11", articleIds: [], createdAt: "2026-08-04T10:00:00.000Z" }],
+          meta: { hasMore: false, nextCursor: null },
+        },
+      });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    await screen.findByText(/10\. 05\/08\/2026 17:00:00/);
+    fireEvent.click(screen.getByRole("button", { name: "Tải thêm" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tải thêm" }));
+
+    await screen.findByText(/11\. 04\/08\/2026 17:00:00/);
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+    expect(mockedAxios.get.mock.calls[1][1]).toMatchObject({ params: { cursor: "cursor-10" } });
+    expect(screen.getByText("Đã hiển thị tất cả lịch sử.")).toBeInTheDocument();
+  });
+
+  it("hiển thị lỗi tải lịch sử và cho phép thử lại", async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValueOnce({
+      data: { data: [], meta: { hasMore: false, nextCursor: null } },
+    });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/không thể tải lịch sử phân tích/i);
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
   });
 });

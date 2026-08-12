@@ -19,14 +19,29 @@ const mockedAxios = apiAxios as unknown as { get: ReturnType<typeof vi.fn>; post
 
 /** Component test dùng hook — expose state ra DOM để assert. */
 const TestConsumer: React.FC = () => {
-  const { jobState, isRunning, startError, startJob, resetJob } = useMarketAnalysisWorkflowJob();
+  const {
+    jobState,
+    isRunning,
+    startError,
+    startJob,
+    retryFailedStep,
+    isRetrying,
+    retryError,
+    resetJob,
+  } = useMarketAnalysisWorkflowJob();
   return (
     <div>
       <span data-testid="status">{jobState?.status ?? "idle"}</span>
       <span data-testid="is-running">{String(isRunning)}</span>
       <span data-testid="start-error">{startError ?? ""}</span>
+      <span data-testid="retry-error">{retryError ?? ""}</span>
+      <span data-testid="is-retrying">{String(isRetrying)}</span>
       <span data-testid="current-step">{String(jobState?.currentStep ?? "")}</span>
+      <span data-testid="steps">
+        {jobState?.steps?.map((step) => `${step.step}:${step.status}`).join(",") ?? ""}
+      </span>
       <button onClick={() => { void startJob("2026-08-06").catch(() => {}); }}>start</button>
+      <button onClick={() => { void retryFailedStep().catch(() => {}); }}>retry</button>
       <button onClick={resetJob}>reset</button>
     </div>
   );
@@ -143,6 +158,94 @@ describe("MarketAnalysisWorkflowJobContext", () => {
       expect(screen.getByTestId("status").textContent).toBe("done");
     });
     expect(screen.getByTestId("current-step").textContent).toBe("5");
+  });
+
+  it("retry gọi đúng POST endpoint với cùng jobId, không reset progress done và refetch job cũ", async () => {
+    const failedSteps = DEFAULT_STEPS.map((step) => {
+      if (step.step < 3) return { ...step, status: "done" as const };
+      if (step.step === 3) return { ...step, status: "error" as const, error: "save failed" };
+      return step;
+    });
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: { message: "ok", jobId: "job-retry" } })
+      .mockResolvedValueOnce({ data: { message: "retrying", jobId: "job-retry" } });
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: { status: "error", currentStep: 3, steps: failedSteps, error: "save failed" },
+      })
+      .mockResolvedValue({
+        data: {
+          status: "pending",
+          currentStep: 3,
+          steps: failedSteps.map((step) =>
+            step.step === 3 ? { ...step, status: "running", error: undefined } : step,
+          ),
+        },
+      });
+
+    renderWithProviders();
+    await act(async () => {
+      screen.getByText("start").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("error"));
+
+    await act(async () => {
+      screen.getByText("retry").click();
+    });
+
+    expect(mockedAxios.post).toHaveBeenNthCalledWith(
+      2,
+      "/news-manager/market-analysis-workflow/job-retry/retry",
+    );
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("pending"));
+    expect(screen.getByTestId("steps").textContent).toContain("1:done,2:done,3:running");
+    expect(mockedAxios.get).toHaveBeenLastCalledWith(
+      "/news-manager/market-analysis-workflow/job-retry",
+      expect.any(Object),
+    );
+  });
+
+  it("retry pending expose loading; API failure giữ nguyên error và progress đã done", async () => {
+    let rejectRetry!: (reason: unknown) => void;
+    const retryRequest = new Promise((_resolve, reject) => {
+      rejectRetry = reject;
+    });
+    const failedSteps = DEFAULT_STEPS.map((step) => {
+      if (step.step === 1) return { ...step, status: "done" as const };
+      if (step.step === 2) return { ...step, status: "error" as const, error: "AI down" };
+      return step;
+    });
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: { message: "ok", jobId: "job-failure" } })
+      .mockReturnValueOnce(retryRequest);
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { status: "error", currentStep: 2, steps: failedSteps, error: "AI down" },
+    });
+
+    renderWithProviders();
+    await act(async () => {
+      screen.getByText("start").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("error"));
+
+    act(() => {
+      screen.getByText("retry").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("is-retrying").textContent).toBe("true"));
+    expect(screen.getByTestId("status").textContent).toBe("error");
+    expect(screen.getByTestId("steps").textContent).toContain("1:done,2:error");
+
+    await act(async () => {
+      rejectRetry({ response: { data: { message: "Retry service unavailable" } } });
+      await retryRequest.catch(() => {});
+    });
+
+    await waitFor(() => expect(screen.getByTestId("is-retrying").textContent).toBe("false"));
+    expect(screen.getByTestId("retry-error").textContent).toBe("Retry service unavailable");
+    expect(screen.getByTestId("status").textContent).toBe("error");
+    expect(screen.getByTestId("steps").textContent).toContain("1:done,2:error");
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
   });
 
   it("resetJob xóa jobId và startError, quay về trạng thái idle", async () => {

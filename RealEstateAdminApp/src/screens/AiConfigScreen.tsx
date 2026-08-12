@@ -193,13 +193,17 @@ export default function AiConfigScreen() {
   // --- Mutation: đổi platform active (optimistic local) ---
   const togglePlatformMutation = useMutation({
     mutationFn: (platform: string) => saveAiConfig({ activePlatform: platform }),
+    onMutate: () => activePlatform,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['ai', 'config'] });
+    },
+    onError: (_err, _platform, previousPlatform) => {
+      if (previousPlatform) setActivePlatform(previousPlatform);
     },
   });
 
   const handleTogglePlatform = (platform: string) => {
-    if (activePlatform === platform) return;
+    if (activePlatform === platform || togglePlatformMutation.isPending) return;
     setActivePlatform(platform);
     togglePlatformMutation.mutate(platform);
   };
@@ -300,15 +304,17 @@ export default function AiConfigScreen() {
               Sử dụng các mô hình AI từ nền tảng OpenRouter.
             </p>
           </div>
-          <select
-            value={activePlatform}
-            onChange={(e) => handleTogglePlatform(e.target.value)}
-            className="bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 text-theme-sm text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300"
+          <button
+            type="button"
+            role="switch"
+            aria-checked={activePlatform === 'OpenRouter'}
+            aria-label="Kích hoạt OpenRouter"
+            onClick={() => handleTogglePlatform('OpenRouter')}
+            disabled={togglePlatformMutation.isPending}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${activePlatform === 'OpenRouter' ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'}`}
           >
-            <option value="OpenRouter">OpenRouter</option>
-            <option value="Must1c">Must1c</option>
-            <option value="9Router">9Router</option>
-          </select>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${activePlatform === 'OpenRouter' ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
         </div>
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
@@ -424,15 +430,17 @@ export default function AiConfigScreen() {
             Cấu hình sử dụng các mô hình AI từ nền tảng Must1c.
           </p>
         </div>
-          <select
-            value={activePlatform}
-            onChange={(e) => handleTogglePlatform(e.target.value)}
-            className="bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 text-theme-sm text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300"
+          <button
+            type="button"
+            role="switch"
+            aria-checked={activePlatform === 'Must1c'}
+            aria-label="Kích hoạt Must1c"
+            onClick={() => handleTogglePlatform('Must1c')}
+            disabled={togglePlatformMutation.isPending}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${activePlatform === 'Must1c' ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'}`}
           >
-            <option value="OpenRouter">OpenRouter</option>
-            <option value="Must1c">Must1c</option>
-            <option value="9Router">9Router</option>
-          </select>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${activePlatform === 'Must1c' ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
         </div>
 
         <div className="space-y-6">
@@ -501,15 +509,17 @@ export default function AiConfigScreen() {
               Cấu hình sử dụng các mô hình AI từ nền tảng 9Router.
             </p>
           </div>
-          <select
-            value={activePlatform}
-            onChange={(e) => handleTogglePlatform(e.target.value)}
-            className="bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 text-theme-sm text-gray-800 dark:text-white/90 focus:outline-none focus:border-brand-300"
+          <button
+            type="button"
+            role="switch"
+            aria-checked={activePlatform === '9Router'}
+            aria-label="Kích hoạt 9Router"
+            onClick={() => handleTogglePlatform('9Router')}
+            disabled={togglePlatformMutation.isPending}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${activePlatform === '9Router' ? 'bg-brand-500' : 'bg-gray-300 dark:bg-gray-600'}`}
           >
-            <option value="OpenRouter">OpenRouter</option>
-            <option value="Must1c">Must1c</option>
-            <option value="9Router">9Router</option>
-          </select>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${activePlatform === '9Router' ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
         </div>
 
         <div className="space-y-6">

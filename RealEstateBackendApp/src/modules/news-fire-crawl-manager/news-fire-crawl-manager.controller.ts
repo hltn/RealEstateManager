@@ -10,6 +10,8 @@ import {
   Put,
   Headers,
   ConflictException,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiParam, ApiHeader } from '@nestjs/swagger';
 import {
@@ -22,6 +24,7 @@ import {
   TriggerManualAnalyzeDto,
   GetRawArticlesQueryDto,
   GetArticlesQueryDto,
+  GetMarketAnalysisHistoryQueryDto,
   TriggerMarketAnalysisWorkflowDto,
 } from './dtos/news-manager.dto';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
@@ -569,14 +572,15 @@ export class NewsFireCrawlManagerController {
 
   @ApiOperation({
     summary: 'Get market analysis history',
-    description: 'Get market analysis history',
+    description: 'Cursor pagination: returns 10 newest records; pass meta.nextCursor for the next batch.',
   })
   @Get('articles/market-analysis-history')
-  async getMarketAnalysisHistory() {
-    const history = await this.newsArticleService.getMarketAnalysisHistory();
+  async getMarketAnalysisHistory(@Query() query: GetMarketAnalysisHistoryQueryDto) {
+    const history = await this.newsArticleService.getMarketAnalysisHistory(query.cursor);
     return {
       message: 'Market analysis history fetched successfully',
-      data: history,
+      data: history.data,
+      meta: history.meta,
     };
   }
 
@@ -916,6 +920,119 @@ export class NewsFireCrawlManagerController {
     };
   }
 
+  @Post('market-analysis-workflow/:jobId/retry')
+  retryMarketAnalysisWorkflow(@Param('jobId') jobId: string) {
+    const job = this.analyzeJobService.getJob(jobId);
+    if (!job) throw new NotFoundException('Không tìm thấy workflow job');
+    const state = job.result as WorkflowJobState | undefined;
+    const failedStep = state?.steps?.find((step) => step.status === 'error')?.step;
+    if (job.status !== 'error' || !state || !failedStep) {
+      throw new BadRequestException('Workflow job không có bước lỗi để retry');
+    }
+    if (failedStep < 1 || failedStep > 5) {
+      throw new BadRequestException('Workflow job có bước lỗi không hợp lệ');
+    }
+    const lockKey = 'workflow:market-analysis';
+    if (this.idempotencyService.isInFlight(lockKey)) {
+      throw new ConflictException(
+        'Đang có phân tích thị trường đang chạy, vui lòng đợi hoàn tất',
+      );
+    }
+
+    // Retry bước 1/2 không cần checkpoint: bước 1 chạy lại toàn bộ pipeline,
+    // bước 2 chỉ cần date đã lưu trong WorkflowJobState. Bước 3-5 tiếp tục
+    // dùng output bước trước để không chạy lại công việc đã hoàn tất.
+    const step2Result = state.steps[1].result as
+      | { filteredRawArticleIds?: string[] }
+      | undefined;
+    const step3Result = state.steps[2].result as
+      | { newsArticleIds?: string[] }
+      | undefined;
+    if (
+      (failedStep === 3 && !step2Result?.filteredRawArticleIds) ||
+      (failedStep >= 4 && !step3Result?.newsArticleIds)
+    ) {
+      throw new BadRequestException('Workflow job thiếu checkpoint để retry');
+    }
+
+    this.idempotencyService.markInFlight(lockKey);
+    for (let step = failedStep; step <= 5; step += 1) {
+      state.steps[step - 1] = {
+        ...state.steps[step - 1],
+        status: 'pending',
+        result: undefined,
+        error: undefined,
+      };
+    }
+    state.currentStep = failedStep - 1;
+    delete state.finalResult;
+    this.analyzeJobService.updateJob(jobId, {
+      status: 'pending',
+      error: undefined,
+      result: state,
+    });
+
+    if (failedStep <= 2) {
+      void this.runWorkflow(jobId, state.date, lockKey, failedStep);
+    } else {
+      void this.runWorkflowRetry(jobId, lockKey, failedStep);
+    }
+    return { message: `Đang retry bước ${failedStep}`, jobId };
+  }
+
+  private async runWorkflowRetry(jobId: string, lockKey: string, startStep: number): Promise<void> {
+    const updateStep = (step: number, patch: Partial<WorkflowStepState>) => {
+      const job = this.analyzeJobService.getJob(jobId);
+      const state = job?.result as WorkflowJobState | undefined;
+      if (!state?.steps) return;
+      state.steps[step - 1] = { ...state.steps[step - 1], ...patch };
+      state.currentStep = step;
+      this.analyzeJobService.updateJob(jobId, { result: state });
+    };
+    try {
+      const state = this.analyzeJobService.getJob(jobId)!.result as WorkflowJobState;
+      const step2 = state.steps[1].result as { filteredRawArticleIds: string[]; filteredCount: number };
+      let step3 = state.steps[2].result as { newsArticleIds: string[] } | undefined;
+      let newsArticleIds = step3?.newsArticleIds ?? [];
+      let bulkResult = state.steps[3].result as { processed: number; failed: number } | undefined;
+      if (startStep <= 3) {
+        updateStep(3, { status: 'running', error: undefined });
+        const rawArticles = await this.customCrawlerService.getRawArticlesByIds(step2.filteredRawArticleIds);
+        const saveResult = await this.newsArticleService.saveArticles(rawArticles);
+        newsArticleIds = await this.newsArticleService.getArticleIdsByUrlHashes(saveResult.processedUrlHashes);
+        step3 = { newsArticleIds };
+        updateStep(3, { status: 'done', result: { ...step3, savedCount: saveResult.savedCount, duplicates: saveResult.duplicates } });
+      }
+      if (startStep <= 4) {
+        updateStep(4, { status: 'running', error: undefined });
+        bulkResult = await this.newsArticleService.analyzeMarketBulk(newsArticleIds);
+        updateStep(4, { status: 'done', result: bulkResult });
+      }
+      updateStep(5, { status: 'running', error: undefined });
+      const markdownContent = await this.newsArticleService.analyzeMarketTrendsByAI(newsArticleIds);
+      updateStep(5, { status: 'done', result: { content: markdownContent } });
+      const finalState = this.analyzeJobService.getJob(jobId)!.result as WorkflowJobState;
+      finalState.finalResult = {
+        markdownContent,
+        newsArticleCount: newsArticleIds.length,
+        stats: { totalArticles: 0, filtered: step2.filteredCount, crawledContent: bulkResult?.processed ?? 0, failedCrawl: bulkResult?.failed ?? 0 },
+      };
+      this.analyzeJobService.markDone(jobId, finalState);
+    } catch (error: any) {
+      const errMsg = error?.message || 'Lỗi không xác định trong pipeline';
+      const job = this.analyzeJobService.getJob(jobId);
+      const state = job?.result as WorkflowJobState | undefined;
+      const running = state?.steps.find((step) => step.status === 'running');
+      if (state && running) {
+        state.steps[running.step - 1] = { ...running, status: 'error', error: errMsg };
+        this.analyzeJobService.updateJob(jobId, { status: 'error', error: errMsg, result: state });
+      }
+    } finally {
+      try { this.idempotencyService.clearInFlight(lockKey); }
+      catch (err: any) { this.logger.error(`Workflow retry ${jobId}: clearInFlight threw`, err?.stack); }
+    }
+  }
+
   /**
    * Orchestrator: chạy tuần tự 5 bước pipeline market analysis.
    * Mỗi bước: cập nhật job state → gọi service → await → cập nhật result.
@@ -929,6 +1046,7 @@ export class NewsFireCrawlManagerController {
     jobId: string,
     date: string,
     lockKey: string,
+    startStep = 1,
   ): Promise<void> {
     const updateStep = (step: number, patch: Partial<WorkflowStepState>) => {
       const job = this.analyzeJobService.getJob(jobId);
@@ -944,14 +1062,22 @@ export class NewsFireCrawlManagerController {
     };
 
     try {
+      const workflowState = this.analyzeJobService.getJob(jobId)?.result as
+        | WorkflowJobState
+        | undefined;
+      let crawlResult = workflowState?.steps[0]?.result as any;
+
       // ── Step 1: Thu thập tin tức ──
-      updateStep(1, { status: 'running' });
-      const crawlResult = await this.customCrawlerService.crawlData(
-        undefined,
-        date,
-        date,
-      );
-      updateStep(1, { status: 'done', result: crawlResult });
+      // Retry từ step 2 giữ nguyên checkpoint step 1 và chỉ chạy lại 2-5.
+      if (startStep <= 1) {
+        updateStep(1, { status: 'running', error: undefined });
+        crawlResult = await this.customCrawlerService.crawlData(
+          undefined,
+          date,
+          date,
+        );
+        updateStep(1, { status: 'done', result: crawlResult });
+      }
 
       // ── Step 2: Phân tích & lọc ──
       updateStep(2, { status: 'running' });
@@ -1010,6 +1136,9 @@ export class NewsFireCrawlManagerController {
         result: {
           filteredCount: filteredKeepArticles.length,
           deletedCount: submittedHashes.length - keepHashes.length,
+          filteredRawArticleIds: filteredKeepArticles
+            .map((article: any) => article._id?.toString())
+            .filter(Boolean),
         },
       });
 

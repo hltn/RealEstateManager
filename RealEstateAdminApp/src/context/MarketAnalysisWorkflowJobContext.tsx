@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiAxios from "../api/axios";
 
 /** Trạng thái 1 bước trong pipeline 5 bước (mirror BE `WorkflowStepState`). */
@@ -61,6 +61,12 @@ interface MarketAnalysisWorkflowJobContextType {
   startError: string | null;
   /** Bắt đầu 1 job mới — gọi POST /news-manager/market-analysis-workflow. */
   startJob: (date?: string) => Promise<void>;
+  /** Retry đúng bước lỗi của job hiện tại, không tạo/reset job mới. */
+  retryFailedStep: () => Promise<void>;
+  /** true trong lúc POST retry đang pending. */
+  isRetrying: boolean;
+  /** Lỗi riêng của thao tác retry; progress hiện tại vẫn được giữ nguyên. */
+  retryError: string | null;
   /** Reset toàn bộ trạng thái về ban đầu (dùng cho nút "Chạy lại"). */
   resetJob: () => void;
 }
@@ -93,6 +99,7 @@ export const MarketAnalysisWorkflowJobProvider: React.FC<{
   const queryClient = useQueryClient();
   const [jobId, setJobId] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   const { data } = useQuery<WorkflowJobResponse>({
     queryKey: ["market-analysis-workflow-job", jobId],
@@ -125,6 +132,7 @@ export const MarketAnalysisWorkflowJobProvider: React.FC<{
 
   const startJob = useCallback(async (date?: string) => {
     setStartError(null);
+    setRetryError(null);
     try {
       const { data } = await apiAxios.post<{ message: string; jobId: string }>(
         "/news-manager/market-analysis-workflow",
@@ -141,9 +149,52 @@ export const MarketAnalysisWorkflowJobProvider: React.FC<{
     }
   }, []);
 
+  const retryMutation = useMutation({
+    mutationFn: async (currentJobId: string) => {
+      await apiAxios.post(`/news-manager/market-analysis-workflow/${currentJobId}/retry`);
+    },
+    onSuccess: (_data, currentJobId) => {
+      setRetryError(null);
+      // Giữ jobId và progress của job cũ; chỉ chuyển step lỗi sang running để
+      // query tiếp tục poll ngay trong lúc backend chạy lại phần còn lại.
+      queryClient.setQueryData<WorkflowJobResponse>(
+        ["market-analysis-workflow-job", currentJobId],
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+                status: "pending",
+                error: undefined,
+                steps: previous.steps?.map((step) =>
+                  step.status === "error"
+                    ? { ...step, status: "running" as const, error: undefined }
+                    : step,
+                ),
+              }
+            : previous,
+      );
+      void queryClient.refetchQueries({
+        queryKey: ["market-analysis-workflow-job", currentJobId],
+        exact: true,
+      });
+    },
+    onError: (err: any) => {
+      setRetryError(
+        err?.response?.data?.message ?? "Không thể thử lại bước phân tích bị lỗi",
+      );
+    },
+  });
+
+  const retryFailedStep = useCallback(async () => {
+    if (!jobId) return;
+    setRetryError(null);
+    await retryMutation.mutateAsync(jobId);
+  }, [jobId, retryMutation]);
+
   const resetJob = useCallback(() => {
     setJobId(null);
     setStartError(null);
+    setRetryError(null);
   }, []);
 
   const jobState: WorkflowJobResponse | null = jobId ? data ?? { status: "pending" } : null;
@@ -151,7 +202,16 @@ export const MarketAnalysisWorkflowJobProvider: React.FC<{
 
   return (
     <MarketAnalysisWorkflowJobContext.Provider
-      value={{ jobState, isRunning, startError, startJob, resetJob }}
+      value={{
+        jobState,
+        isRunning,
+        startError,
+        startJob,
+        retryFailedStep,
+        isRetrying: retryMutation.isPending,
+        retryError,
+        resetJob,
+      }}
     >
       {children}
     </MarketAnalysisWorkflowJobContext.Provider>

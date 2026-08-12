@@ -24,6 +24,7 @@ describe('SettingsController (contract mục 1/3)', () => {
       getAiConfig: jest.fn(),
       updateAiConfig: jest.fn(),
       getOpenRouterModels: jest.fn(),
+      get9RouterModels: jest.fn(),
     } as unknown as jest.Mocked<SettingsService>;
 
     const module: TestingModule = await Test.createTestingModule({

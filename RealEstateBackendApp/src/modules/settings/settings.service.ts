@@ -17,6 +17,9 @@ export class SettingsService {
     const must1cApiKey =
       this.configService.get<string>('MUST1C_API_KEY') ||
       process.env.MUST1C_API_KEY;
+    const nineRouterApiKey =
+      this.configService.get<string>('NINEROUTER_API_KEY') ||
+      process.env.NINEROUTER_API_KEY;
     return {
       provider:
         this.configService.get<string>('OPENROUTER_AI_PROVIDER') ||
@@ -32,12 +35,12 @@ export class SettingsService {
         this.configService.get<string>('MUST1C_MODEL') ||
         process.env.MUST1C_MODEL ||
         '',
-      ninerouterBaseUrl:
+      nineRouterBaseUrl:
         this.configService.get<string>('NINEROUTER_BASE_URL') ||
         process.env.NINEROUTER_BASE_URL ||
         'http://127.0.0.1:20128/v1',
-      ninerouterApiKey: apiKey ? '***' : '',
-      ninerouterModel:
+      nineRouterApiKey: nineRouterApiKey ? '***' : '',
+      nineRouterModel:
         this.configService.get<string>('NINEROUTER_MODEL') ||
         process.env.NINEROUTER_MODEL ||
         '',
@@ -54,9 +57,9 @@ export class SettingsService {
     apiKey?: string;
     must1cApiKey?: string;
     must1cModel?: string;
-    ninerouterBaseUrl?: string;
-    ninerouterApiKey?: string;
-    ninerouterModel?: string;
+    nineRouterBaseUrl?: string;
+    nineRouterApiKey?: string;
+    nineRouterModel?: string;
     activePlatform?: string;
   }) {
     let envContent = '';
@@ -78,14 +81,14 @@ export class SettingsService {
     if (config.must1cModel) {
       updates['MUST1C_MODEL'] = config.must1cModel;
     }
-    if (config.ninerouterBaseUrl) {
-      updates['NINEROUTER_BASE_URL'] = config.ninerouterBaseUrl;
+    if (config.nineRouterBaseUrl) {
+      updates['NINEROUTER_BASE_URL'] = config.nineRouterBaseUrl;
     }
-    if (config.ninerouterApiKey && config.ninerouterApiKey !== '***') {
-      updates['NINEROUTER_API_KEY'] = config.ninerouterApiKey;
+    if (config.nineRouterApiKey && config.nineRouterApiKey !== '***') {
+      updates['NINEROUTER_API_KEY'] = config.nineRouterApiKey;
     }
-    if (config.ninerouterModel) {
-      updates['NINEROUTER_MODEL'] = config.ninerouterModel;
+    if (config.nineRouterModel) {
+      updates['NINEROUTER_MODEL'] = config.nineRouterModel;
     }
     if (config.activePlatform) {
       updates['ACTIVE_AI_PLATFORM'] = config.activePlatform;
