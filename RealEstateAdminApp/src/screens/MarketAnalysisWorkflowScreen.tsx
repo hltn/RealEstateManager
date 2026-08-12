@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { CheckCircle2, XCircle, Loader2, Circle, History } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, X } from "lucide-react";
 import { DatePicker } from "../components/ui/DatePicker";
 import apiAxios from "../api/axios";
 import {
@@ -51,22 +51,31 @@ const StepCard: React.FC<{ step: WorkflowStepState; isLast: boolean }> = ({ step
   }[step.status];
 
   return (
-    <div className="flex items-center flex-1 min-w-0">
+    <div className="flex flex-col md:flex-row items-center md:items-stretch flex-1 min-w-0">
       <div
-        className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 flex-1 min-w-[120px] transition-colors ${config.cardClass}`}
+        className={`flex w-full md:flex-col items-center md:justify-center gap-3 p-3 md:p-4 rounded-xl border-2 flex-1 min-w-0 md:min-w-[120px] transition-colors ${config.cardClass}`}
       >
-        {config.icon}
-        <span className="text-xs font-medium text-center leading-tight">
+        <span
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${config.textClass}`}
+          aria-label={`Bước ${step.step}`}
+        >
+          {step.step}
+        </span>
+        <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-left md:flex-none md:flex-col md:text-center leading-tight">
+          {config.icon}
           <span className={config.textClass}>{step.label}</span>
         </span>
         {step.status === "error" && step.error && (
-          <span className="text-[11px] text-red-500 dark:text-red-400 text-center line-clamp-2">
+          <span className="text-[11px] text-red-500 dark:text-red-400 text-left md:text-center line-clamp-2">
             {step.error}
           </span>
         )}
       </div>
       {!isLast && (
-        <div className="hidden sm:block w-6 h-0.5 shrink-0 bg-gray-300 dark:bg-gray-700 mx-1" />
+        <div
+          aria-hidden="true"
+          className="h-5 w-0.5 shrink-0 bg-gray-300 dark:bg-gray-700 md:mx-1 md:h-0.5 md:w-6"
+        />
       )}
     </div>
   );
@@ -142,32 +151,21 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           Phân tích thị trường
         </h1>
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+        <div className="flex flex-row max-[359px]:flex-col items-center gap-2 mb-6">
           <DatePicker
             value={selectedDate}
             onChange={(dateStr) => setSelectedDate(dateStr)}
-            className="w-full sm:w-56"
+            className="min-w-0 flex-1 md:flex-none md:w-44"
           />
           <button
             type="button"
             onClick={handleStart}
             disabled={isRunning || isRetrying}
-            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-700 text-white rounded-lg transition-colors shadow-sm"
+            className="inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 py-2.5 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-700 text-white rounded-lg transition-colors shadow-sm max-[359px]:w-full max-[359px]:justify-center"
           >
             {isRunning && <Loader2 className="w-4 h-4 animate-spin" />}
             {isRunning ? "Đang phân tích..." : "Phân tích"}
           </button>
-          {isError && (
-            <button
-              type="button"
-              onClick={handleRetryFailedStep}
-              disabled={isRetrying}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
-            >
-              {isRetrying && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isRetrying ? "Đang thử lại..." : "Thử lại bước lỗi"}
-            </button>
-          )}
           {isNotFound && (
             <button
               type="button"
@@ -198,11 +196,35 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
         )}
 
         {/* Workflow visualization — 5 step cards */}
-        <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2">
+        <div className="flex flex-col md:flex-row items-stretch gap-0 md:gap-2">
           {steps.map((step, index) => (
             <StepCard key={step.step} step={step} isLast={index === steps.length - 1} />
           ))}
         </div>
+
+        {isError && (
+          <div className="mt-4 flex items-center justify-end gap-2" role="group" aria-label="Thao tác lỗi workflow">
+            <button
+              type="button"
+              onClick={handleRetryFailedStep}
+              disabled={isRetrying}
+              aria-label={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
+              title={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              {isRetrying ? <Loader2 className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              aria-label="Đóng thông báo lỗi"
+              title="Đóng thông báo lỗi"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        )}
 
         {/* Kết quả khi hoàn tất */}
         {isDone && resultContent && (
