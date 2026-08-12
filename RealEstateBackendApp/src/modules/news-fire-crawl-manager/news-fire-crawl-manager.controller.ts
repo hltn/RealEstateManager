@@ -24,6 +24,7 @@ import {
   TriggerManualAnalyzeDto,
   GetRawArticlesQueryDto,
   GetArticlesQueryDto,
+  GetMarketAnalysisHistoryQueryDto,
   TriggerMarketAnalysisWorkflowDto,
 } from './dtos/news-manager.dto';
 import { PaginatedResponseDto } from '../../common/dto/paginated-response.dto';
@@ -571,14 +572,15 @@ export class NewsFireCrawlManagerController {
 
   @ApiOperation({
     summary: 'Get market analysis history',
-    description: 'Get market analysis history',
+    description: 'Cursor pagination: returns 10 newest records; pass meta.nextCursor for the next batch.',
   })
   @Get('articles/market-analysis-history')
-  async getMarketAnalysisHistory() {
-    const history = await this.newsArticleService.getMarketAnalysisHistory();
+  async getMarketAnalysisHistory(@Query() query: GetMarketAnalysisHistoryQueryDto) {
+    const history = await this.newsArticleService.getMarketAnalysisHistory(query.cursor);
     return {
       message: 'Market analysis history fetched successfully',
-      data: history,
+      data: history.data,
+      meta: history.meta,
     };
   }
 
