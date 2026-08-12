@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, X, Eye } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye } from "lucide-react";
 import { DatePicker } from "../components/ui/DatePicker";
 import apiAxios from "../api/axios";
 import {
@@ -53,7 +53,12 @@ function getTodayVNString(): string {
 }
 
 /** 1 card trong workflow visualization — màu/icon theo status. */
-const StepCard: React.FC<{ step: WorkflowStepState; isLast: boolean }> = ({ step, isLast }) => {
+const StepCard: React.FC<{
+  step: WorkflowStepState;
+  isLast: boolean;
+  onRetry?: () => void;
+  isRetrying?: boolean;
+}> = ({ step, isLast, onRetry, isRetrying = false }) => {
   const config = {
     pending: {
       icon: <Circle className="w-5 h-5 text-gray-400" />,
@@ -90,6 +95,18 @@ const StepCard: React.FC<{ step: WorkflowStepState; isLast: boolean }> = ({ step
           <span className="text-[11px] text-red-500 dark:text-red-400 text-left md:text-center line-clamp-2">
             {step.error}
           </span>
+        )}
+        {step.status === "error" && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={isRetrying}
+            aria-label={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
+            title={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center self-end rounded-lg bg-white/70 text-red-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900/40 dark:text-red-300 dark:hover:bg-gray-900/70"
+          >
+            {isRetrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+          </button>
         )}
       </div>
       {!isLast && (
@@ -209,7 +226,7 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           Phân tích thị trường
         </h1>
 
-        <div className="flex flex-row max-[359px]:flex-col items-center gap-2 mb-6">
+        <div className="flex flex-row max-[359px]:flex-col lg:w-[300px] items-center gap-2 mb-6">
           <DatePicker
             value={selectedDate}
             onChange={(dateStr) => setSelectedDate(dateStr)}
@@ -256,33 +273,15 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
         {/* Workflow visualization — 5 step cards */}
         <div className="flex flex-col md:flex-row items-stretch gap-0 md:gap-2">
           {steps.map((step, index) => (
-            <StepCard key={step.step} step={step} isLast={index === steps.length - 1} />
+            <StepCard
+              key={step.step}
+              step={step}
+              isLast={index === steps.length - 1}
+              onRetry={isError ? handleRetryFailedStep : undefined}
+              isRetrying={isRetrying}
+            />
           ))}
         </div>
-
-        {isError && (
-          <div className="mt-4 flex items-center justify-end gap-2" role="group" aria-label="Thao tác lỗi workflow">
-            <button
-              type="button"
-              onClick={handleRetryFailedStep}
-              disabled={isRetrying}
-              aria-label={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
-              title={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            >
-              {isRetrying ? <Loader2 className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              aria-label="Đóng thông báo lỗi"
-              title="Đóng thông báo lỗi"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100 text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        )}
 
         {/* Kết quả khi hoàn tất */}
         {isDone && resultContent && (

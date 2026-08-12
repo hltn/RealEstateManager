@@ -107,7 +107,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     expect(calledWithDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("step 'running' hiển thị spinner, step 'error' hiển thị message lỗi", () => {
+  it("hiển thị retry trong card bước lỗi, không hiển thị nút đóng", () => {
     const stepsWithError = DEFAULT_STEPS.map((s) => {
       if (s.step === 1) return { ...s, status: "done" as const };
       if (s.step === 2) return { ...s, status: "error" as const, error: "Lỗi lọc bài viết" };
@@ -122,6 +122,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
 
     expect(screen.getByText("Lỗi lọc bài viết")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thực hiện lại" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Đóng thông báo lỗi" })).not.toBeInTheDocument();
   });
 
   it("bấm retry ở status error gọi retryFailedStep, không gọi resetJob/startJob", () => {
