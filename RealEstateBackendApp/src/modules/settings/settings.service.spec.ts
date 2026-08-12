@@ -38,6 +38,7 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
         if (key === 'OPENROUTER_AI_PROVIDER') return 'OpenRouter';
         if (key === 'OPENROUTER_AI_MODEL') return 'google/x';
         if (key === 'MUST1C_MODEL') return 'm-model';
+        if (key === 'NINEROUTER_API_KEY') return 'nine-router-real';
         if (key === 'ACTIVE_AI_PLATFORM') return 'OpenRouter';
         return undefined;
       });
@@ -49,9 +50,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       expect(cfg.provider).toBe('OpenRouter');
       expect(cfg.model).toBe('google/x');
       expect(cfg.must1cModel).toBe('m-model');
-      expect(cfg.ninerouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
-      expect(cfg.ninerouterApiKey).toBe('***');
-      expect(cfg.ninerouterModel).toBe('');
+      expect(cfg.nineRouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
+      expect(cfg.nineRouterApiKey).toBe('***');
+      expect(cfg.nineRouterModel).toBe('');
       expect(cfg.activePlatform).toBe('OpenRouter');
     });
 
@@ -68,9 +69,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       // Default provider/model/activePlatform.
       expect(cfg.provider).toBe('OpenRouter');
       expect(cfg.model).toBe('google/gemini-2.5-flash');
-      expect(cfg.ninerouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
-      expect(cfg.ninerouterApiKey).toBe('');
-      expect(cfg.ninerouterModel).toBe('');
+      expect(cfg.nineRouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
+      expect(cfg.nineRouterApiKey).toBe('');
+      expect(cfg.nineRouterModel).toBe('');
       expect(cfg.activePlatform).toBe('OpenRouter');
     });
 
@@ -108,6 +109,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
         provider: 'OpenRouter',
         model: 'gpt-4',
         apiKey: 'sk-new',
+        nineRouterBaseUrl: 'http://custom-9router:20128/v1',
+        nineRouterApiKey: 'sk-9router-key',
+        nineRouterModel: 'meta/llama-3-70b-instruct',
       });
 
       expect(result).toEqual({ success: true });
@@ -117,7 +121,7 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       expect(content).toContain('OPENROUTER_AI_MODEL=gpt-4');
       expect(content).toContain('OPENROUTER_API_KEY=sk-new');
       expect(content).toContain('NINEROUTER_BASE_URL=http://custom-9router:20128/v1');
-      expect(content).toContain('NINEROUTER_API_KEY=sk-9router-new-key');
+      expect(content).toContain('NINEROUTER_API_KEY=sk-9router-key');
       expect(content).toContain('NINEROUTER_MODEL=meta/llama-3-70b-instruct');
       // process.env được set song song để reload tức thì.
       expect(process.env.OPENROUTER_AI_PROVIDER).toBe('OpenRouter');
@@ -160,7 +164,7 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       process.env.OPENROUTER_API_KEY = 'sk-real';
       process.env.NINEROUTER_API_KEY = 'sk-9router-real';
 
-      service.updateAiConfig({ apiKey: '***', ninerouterApiKey: '***' });
+      service.updateAiConfig({ apiKey: '***', nineRouterApiKey: '***' });
 
       const content = writeSpy.mock.calls[0][1] as string;
       expect(content).toContain('OPENROUTER_API_KEY=sk-real');

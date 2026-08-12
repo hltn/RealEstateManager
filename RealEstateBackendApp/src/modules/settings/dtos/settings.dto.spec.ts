@@ -48,6 +48,27 @@ describe('UpdateAiConfigDto (contract mục 3)', () => {
     expect(dto.activePlatform).toBe('must1c');
   });
 
+  it('các field 9Router hợp lệ, được trim và whitelist chấp nhận', async () => {
+    const { dto, errors } = await run({
+      nineRouterBaseUrl: '  http://127.0.0.1:20128/v1  ',
+      nineRouterApiKey: '  sk-9router  ',
+      nineRouterModel: 'meta/llama-3-70b-instruct',
+    });
+    expect(errors).toHaveLength(0);
+    expect(dto.nineRouterBaseUrl).toBe('http://127.0.0.1:20128/v1');
+    expect(dto.nineRouterApiKey).toBe('sk-9router');
+    expect(dto.nineRouterModel).toBe('meta/llama-3-70b-instruct');
+  });
+
+  it('nineRouterBaseUrl/nineRouterApiKey chứa newline → fail Matches', async () => {
+    const { errors } = await run({
+      nineRouterBaseUrl: 'http://127.0.0.1\nINJECTED=value',
+      nineRouterApiKey: 'sk-9router\nINJECTED=value',
+    });
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((m) => /xuống dòng|env injection/i.test(m))).toBe(true);
+  });
+
   it('provider=number → vi phạm @IsString', async () => {
     const { errors } = await run({ provider: 123 });
     expect(errors.some((m) => /must be a string/i.test(m))).toBe(true);
