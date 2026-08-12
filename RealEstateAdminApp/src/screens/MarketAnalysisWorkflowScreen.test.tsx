@@ -79,6 +79,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     expect(await screen.findByRole("heading", { name: "Phân tích thị trường" })).toBeInTheDocument();
     for (const step of DEFAULT_STEPS) {
       expect(screen.getAllByText(step.label).length).toBeGreaterThan(0);
+      expect(screen.getByLabelText(`Bước ${step.step}`)).toBeInTheDocument();
     }
     // Nút "Phân tích" phải khả dụng (không disabled) khi không có job đang chạy.
     const button = screen.getByRole("button", { name: /^phân tích$/i });
@@ -121,7 +122,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     renderScreen();
 
     expect(screen.getByText("Lỗi lọc bài viết")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /thử lại bước lỗi/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thực hiện lại" })).toBeInTheDocument();
   });
 
   it("bấm retry ở status error gọi retryFailedStep, không gọi resetJob/startJob", () => {
@@ -148,7 +149,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     );
     renderScreen();
 
-    fireEvent.click(screen.getByRole("button", { name: /thử lại bước lỗi/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Thực hiện lại" }));
 
     expect(retryFailedStep).toHaveBeenCalledTimes(1);
     expect(resetJob).not.toHaveBeenCalled();
@@ -176,7 +177,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     );
     renderScreen();
 
-    expect(screen.getByRole("button", { name: /đang thử lại/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Đang thực hiện lại" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^phân tích$/i })).toBeDisabled();
     expect(screen.getByText("Retry service unavailable")).toBeInTheDocument();
     expect(screen.getByText("AI down")).toBeInTheDocument();
