@@ -17,7 +17,7 @@
  * Gọi method trực tiếp (param decorator @Query/@Body/@Headers/@Param chỉ active qua runtime).
  */
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import * as fs from 'fs';
 
 // Controller import NewsArticleService → ArticleExtractorUtil → jsdom →
@@ -831,6 +831,77 @@ describe('NewsFireCrawlManagerController', () => {
         expect(res.status).toBe('error');
         expect(res.error).toBe('Firecrawl rate limit');
         expect(res.steps).toEqual([{ step: 3, status: 'error', error: 'Firecrawl rate limit' }]);
+      });
+    });
+
+    describe('POST /market-analysis-workflow/:jobId/retry', () => {
+      const failedState = (failedStep: 3 | 4 | 5) => ({
+        currentStep: failedStep,
+        date: '2026-08-06',
+        steps: [1, 2, 3, 4, 5].map((step) => ({
+          step,
+          label: `step-${step}`,
+          status: step < failedStep ? 'done' : step === failedStep ? 'error' : 'pending',
+          ...(step === failedStep ? { error: `step ${step} failed` } : {}),
+          ...(step === 2 ? { result: { filteredRawArticleIds: ['r1'], filteredCount: 1 } } : {}),
+          ...(step === 3 && failedStep > 3 ? { result: { newsArticleIds: ['a1'] } } : {}),
+          ...(step === 4 && failedStep > 4 ? { result: { processed: 1, failed: 0 } } : {}),
+        })),
+      });
+
+      it.each([3, 4, 5] as const)('retry step %s không gọi lại steps trước và giữ same jobId', async (failedStep) => {
+        const jobId = `job-retry-${failedStep}`;
+        fakeJobs.set(jobId, { status: 'error', error: 'old', result: failedState(failedStep) });
+        customCrawlerService.getRawArticlesByIds.mockResolvedValue([{ _id: { toString: () => 'r1' }, urlHash: 'h1' }] as any);
+        newsArticleService.saveArticles.mockResolvedValue({ savedCount: 1, duplicates: 0, processedUrlHashes: ['h1'], newlySavedUrlHashes: ['h1'] } as any);
+        newsArticleService.getArticleIdsByUrlHashes.mockResolvedValue(['a1']);
+        newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
+        newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# retried' as any);
+
+        const response = controller.retryMarketAnalysisWorkflow(jobId);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        expect(response.jobId).toBe(jobId);
+        expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+        expect(customCrawlerService.crawlData).not.toHaveBeenCalled();
+        expect(customCrawlerService.getRawArticlesByDate).not.toHaveBeenCalled();
+        expect(aiFilterService.filterRawArticles).not.toHaveBeenCalled();
+        if (failedStep >= 4) expect(customCrawlerService.getRawArticlesByIds).not.toHaveBeenCalled();
+        if (failedStep === 5) expect(newsArticleService.analyzeMarketBulk).not.toHaveBeenCalled();
+        expect(fakeJobs.get(jobId).status).toBe('done');
+      });
+
+      it('lock/checkpoint errors không đổi state', () => {
+        const lockedState = failedState(4);
+        fakeJobs.set('locked', { status: 'error', error: 'old', result: lockedState });
+        idempotencyService.isInFlight.mockReturnValue(true);
+        expect(() => controller.retryMarketAnalysisWorkflow('locked')).toThrow(ConflictException);
+        expect(fakeJobs.get('locked')).toMatchObject({ status: 'error', error: 'old' });
+        expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+
+        idempotencyService.isInFlight.mockReturnValue(false);
+        const missing = failedState(3);
+        (missing.steps[1] as any).result = undefined;
+        fakeJobs.set('missing', { status: 'error', error: 'original', result: missing });
+        expect(() => controller.retryMarketAnalysisWorkflow('missing')).toThrow(BadRequestException);
+        expect(fakeJobs.get('missing').result.steps[2]).toMatchObject({ status: 'error', error: 'step 3 failed' });
+      });
+
+      it('retry fail giữ state/checkpoint, đánh dấu đúng step lỗi và clear lock', async () => {
+        fakeJobs.set('retry-fail', { status: 'error', error: 'old', result: failedState(4) });
+        newsArticleService.analyzeMarketBulk.mockRejectedValue(new Error('rate limit again'));
+        controller.retryMarketAnalysisWorkflow('retry-fail');
+        await new Promise(setImmediate);
+
+        const job = fakeJobs.get('retry-fail');
+        expect(job.status).toBe('error');
+        expect(job.error).toBe('rate limit again');
+        expect(job.result.steps[0].status).toBe('done');
+        expect(job.result.steps[2].result.newsArticleIds).toEqual(['a1']);
+        expect(job.result.steps[3]).toMatchObject({ status: 'error', error: 'rate limit again' });
+        expect(job.result.steps[4].status).toBe('pending');
+        expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('workflow:market-analysis');
       });
     });
 

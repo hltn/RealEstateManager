@@ -80,7 +80,16 @@ const StepCard: React.FC<{ step: WorkflowStepState; isLast: boolean }> = ({ step
  * (3) kết quả markdown khi hoàn tất, (4) lịch sử các lần phân tích trước.
  */
 const MarketAnalysisWorkflowScreen: React.FC = () => {
-  const { jobState, isRunning, startError, startJob, resetJob } = useMarketAnalysisWorkflowJob();
+  const {
+    jobState,
+    isRunning,
+    startError,
+    startJob,
+    retryFailedStep,
+    isRetrying,
+    retryError,
+    resetJob,
+  } = useMarketAnalysisWorkflowJob();
   const [selectedDate, setSelectedDate] = useState<string>(getTodayVNString());
   const [selectedHistoryContent, setSelectedHistoryContent] = useState<string | null>(null);
 
@@ -114,8 +123,16 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
     }
   };
 
-  const handleRetry = () => {
+  const handleReset = () => {
     resetJob();
+  };
+
+  const handleRetryFailedStep = async () => {
+    try {
+      await retryFailedStep();
+    } catch {
+      // retryError đã được set trong context; giữ nguyên error/progress hiện tại.
+    }
   };
 
   return (
@@ -134,16 +151,27 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           <button
             type="button"
             onClick={handleStart}
-            disabled={isRunning}
+            disabled={isRunning || isRetrying}
             className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed dark:disabled:bg-gray-700 text-white rounded-lg transition-colors shadow-sm"
           >
             {isRunning && <Loader2 className="w-4 h-4 animate-spin" />}
             {isRunning ? "Đang phân tích..." : "Phân tích"}
           </button>
-          {(isError || isNotFound) && (
+          {isError && (
             <button
               type="button"
-              onClick={handleRetry}
+              onClick={handleRetryFailedStep}
+              disabled={isRetrying}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+            >
+              {isRetrying && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isRetrying ? "Đang thử lại..." : "Thử lại bước lỗi"}
+            </button>
+          )}
+          {isNotFound && (
+            <button
+              type="button"
+              onClick={handleReset}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
             >
               Chạy lại
@@ -154,6 +182,12 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
         {startError && (
           <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 text-sm">
             {startError}
+          </div>
+        )}
+
+        {retryError && (
+          <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 text-sm">
+            {retryError}
           </div>
         )}
 

@@ -34,6 +34,9 @@ interface JobHookReturn {
   isRunning: boolean;
   startError: string | null;
   startJob: ReturnType<typeof vi.fn>;
+  retryFailedStep: ReturnType<typeof vi.fn>;
+  isRetrying: boolean;
+  retryError: string | null;
   resetJob: ReturnType<typeof vi.fn>;
 }
 
@@ -54,6 +57,9 @@ function baseJobHook(overrides: Partial<JobHookReturn> = {}): JobHookReturn {
     isRunning: false,
     startError: null,
     startJob: vi.fn(),
+    retryFailedStep: vi.fn(),
+    isRetrying: false,
+    retryError: null,
     resetJob: vi.fn(),
     ...overrides,
   };
@@ -115,8 +121,65 @@ describe("MarketAnalysisWorkflowScreen", () => {
     renderScreen();
 
     expect(screen.getByText("Lỗi lọc bài viết")).toBeInTheDocument();
-    // Step lỗi hiển thị nút "Chạy lại".
-    expect(screen.getByRole("button", { name: /chạy lại/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /thử lại bước lỗi/i })).toBeInTheDocument();
+  });
+
+  it("bấm retry ở status error gọi retryFailedStep, không gọi resetJob/startJob", () => {
+    const retryFailedStep = vi.fn();
+    const resetJob = vi.fn();
+    const startJob = vi.fn();
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "error",
+          currentStep: 2,
+          steps: DEFAULT_STEPS.map((step) =>
+            step.step === 1
+              ? { ...step, status: "done" as const }
+              : step.step === 2
+                ? { ...step, status: "error" as const, error: "AI down" }
+                : step,
+          ),
+        },
+        retryFailedStep,
+        resetJob,
+        startJob,
+      }),
+    );
+    renderScreen();
+
+    fireEvent.click(screen.getByRole("button", { name: /thử lại bước lỗi/i }));
+
+    expect(retryFailedStep).toHaveBeenCalledTimes(1);
+    expect(resetJob).not.toHaveBeenCalled();
+    expect(startJob).not.toHaveBeenCalled();
+    expect(screen.getByText("Thu thập tin tức")).toBeInTheDocument();
+  });
+
+  it("retry loading disable cả nút retry và Analyze, hiển thị API error nhưng giữ progress", () => {
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "error",
+          currentStep: 2,
+          steps: DEFAULT_STEPS.map((step) =>
+            step.step === 1
+              ? { ...step, status: "done" as const }
+              : step.step === 2
+                ? { ...step, status: "error" as const, error: "AI down" }
+                : step,
+          ),
+        },
+        isRetrying: true,
+        retryError: "Retry service unavailable",
+      }),
+    );
+    renderScreen();
+
+    expect(screen.getByRole("button", { name: /đang thử lại/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^phân tích$/i })).toBeDisabled();
+    expect(screen.getByText("Retry service unavailable")).toBeInTheDocument();
+    expect(screen.getByText("AI down")).toBeInTheDocument();
   });
 
   it("khi status='done' và có markdownContent → hiển thị kết quả phân tích", async () => {
