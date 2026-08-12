@@ -23,6 +23,7 @@ function chainableFind(data: any) {
 describe('NewsArticleService', () => {
   let service: NewsArticleService;
   let mockNewsArticleModel: any;
+  let mockMarketAnalysisHistoryModel: any;
   let mockAiFilterService: any;
 
   beforeEach(async () => {
@@ -34,6 +35,7 @@ describe('NewsArticleService', () => {
       countDocuments: jest.fn(),
     };
 
+    mockMarketAnalysisHistoryModel = { find: jest.fn() };
     mockAiFilterService = {
       cleanMarkdownContentWithAI: jest.fn(),
     };
@@ -49,7 +51,7 @@ describe('NewsArticleService', () => {
           // Mock cho MarketAnalysisHistoryModel — dependency của NewsArticleService
           // (pre-existing: spec trước đây thiếu provider này nên DI fail ngay lúc compile).
           provide: getModelToken(MarketAnalysisHistory.name),
-          useValue: {},
+          useValue: mockMarketAnalysisHistoryModel,
         },
         {
           provide: WordPressService,
@@ -340,6 +342,46 @@ describe('NewsArticleService', () => {
       expect(result).toBe(mockArticle);
 
       extractSpy.mockRestore();
+    });
+  });
+
+  describe('getMarketAnalysisHistory', () => {
+    it('returns ten newest records and an opaque cursor when another page exists', async () => {
+      const records = Array.from({ length: 11 }, (_, index) => ({
+        _id: (index + 1).toString(16).padStart(24, '0'),
+        createdAt: new Date(Date.UTC(2026, 7, 12, 10, 0, 0, -index)),
+      }));
+      const query = chainableFind(records);
+      mockMarketAnalysisHistoryModel.find.mockReturnValue(query);
+
+      const result = await service.getMarketAnalysisHistory();
+
+      expect(mockMarketAnalysisHistoryModel.find).toHaveBeenCalledWith({});
+      expect(query.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+      expect(query.limit).toHaveBeenCalledWith(11);
+      expect(result.data).toEqual(records.slice(0, 10));
+      expect(result.meta).toMatchObject({ limit: 10, hasMore: true, nextCursor: expect.any(String) });
+    });
+
+    it('uses createdAt and _id as a stable exclusive cursor boundary', async () => {
+      const anchorId = '507f1f77bcf86cd799439011';
+      const anchorDate = new Date('2026-08-12T10:00:00.000Z');
+      const cursor = Buffer.from(JSON.stringify({ createdAt: anchorDate.toISOString(), id: anchorId })).toString('base64url');
+      mockMarketAnalysisHistoryModel.find.mockReturnValue(chainableFind([]));
+
+      await service.getMarketAnalysisHistory(cursor);
+
+      expect(mockMarketAnalysisHistoryModel.find).toHaveBeenCalledWith({
+        $or: [
+          { createdAt: { $lt: anchorDate } },
+          { createdAt: anchorDate, _id: { $lt: expect.anything() } },
+        ],
+      });
+    });
+
+    it('rejects a malformed cursor before querying MongoDB', async () => {
+      await expect(service.getMarketAnalysisHistory('not-a-cursor')).rejects.toThrow('Invalid market analysis history cursor');
+      expect(mockMarketAnalysisHistoryModel.find).not.toHaveBeenCalled();
     });
   });
 

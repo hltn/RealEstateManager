@@ -1,0 +1,288 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import apiAxios from "../api/axios";
+import MarketAnalysisWorkflowScreen from "./MarketAnalysisWorkflowScreen";
+import {
+  useMarketAnalysisWorkflowJob,
+  DEFAULT_STEPS,
+  type WorkflowJobResponse,
+} from "../context/MarketAnalysisWorkflowJobContext";
+
+vi.mock("../api/axios", () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
+}));
+
+vi.mock("../context/MarketAnalysisWorkflowJobContext", async () => {
+  const actual = await vi.importActual<
+    typeof import("../context/MarketAnalysisWorkflowJobContext")
+  >("../context/MarketAnalysisWorkflowJobContext");
+  return {
+    ...actual,
+    useMarketAnalysisWorkflowJob: vi.fn(),
+  };
+});
+
+const mockedAxios = apiAxios as unknown as { get: ReturnType<typeof vi.fn> };
+const mockedUseJob = useMarketAnalysisWorkflowJob as unknown as ReturnType<typeof vi.fn>;
+
+interface JobHookReturn {
+  jobState: WorkflowJobResponse | null;
+  isRunning: boolean;
+  startError: string | null;
+  startJob: ReturnType<typeof vi.fn>;
+  retryFailedStep: ReturnType<typeof vi.fn>;
+  isRetrying: boolean;
+  retryError: string | null;
+  resetJob: ReturnType<typeof vi.fn>;
+}
+
+function renderScreen() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MarketAnalysisWorkflowScreen />
+    </QueryClientProvider>,
+  );
+}
+
+function baseJobHook(overrides: Partial<JobHookReturn> = {}): JobHookReturn {
+  return {
+    jobState: null,
+    isRunning: false,
+    startError: null,
+    startJob: vi.fn(),
+    retryFailedStep: vi.fn(),
+    isRetrying: false,
+    retryError: null,
+    resetJob: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe("MarketAnalysisWorkflowScreen", () => {
+  beforeEach(() => {
+    mockedAxios.get.mockReset();
+    mockedAxios.get.mockResolvedValue({ data: { data: [] } });
+    mockedUseJob.mockReset();
+  });
+
+  it("hiển thị 5 step card mặc định (pending) khi chưa có job", async () => {
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByRole("heading", { name: "Phân tích thị trường" })).toBeInTheDocument();
+    for (const step of DEFAULT_STEPS) {
+      expect(screen.getAllByText(`${step.step}.${step.label}`).length).toBeGreaterThan(0);
+    }
+    // Nút "Phân tích" phải khả dụng (không disabled) khi không có job đang chạy.
+    const button = screen.getByRole("button", { name: /^phân tích$/i });
+    expect(button).not.toBeDisabled();
+  });
+
+  it("disable nút 'Phân tích' khi isRunning=true — tránh double-submit", () => {
+    mockedUseJob.mockReturnValue(baseJobHook({ isRunning: true }));
+    renderScreen();
+
+    const button = screen.getByRole("button", { name: /đang phân tích/i });
+    expect(button).toBeDisabled();
+  });
+
+  it("bấm nút 'Phân tích' gọi startJob với ngày đã chọn (mặc định hôm nay)", () => {
+    const startJob = vi.fn();
+    mockedUseJob.mockReturnValue(baseJobHook({ startJob }));
+    renderScreen();
+
+    fireEvent.click(screen.getByRole("button", { name: /^phân tích$/i }));
+
+    expect(startJob).toHaveBeenCalledTimes(1);
+    // Không assert giá trị cứng bằng cách gọi lại hàm tính ngày trong test — thay vào đó
+    // chỉ xác nhận có truyền 1 chuỗi ngày dạng YYYY-MM-DD, tránh tautology với logic ngày của component.
+    const calledWithDate = startJob.mock.calls[0][0];
+    expect(calledWithDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("hiển thị retry trong card bước lỗi, không hiển thị nút đóng", () => {
+    const stepsWithError = DEFAULT_STEPS.map((s) => {
+      if (s.step === 1) return { ...s, status: "done" as const };
+      if (s.step === 2) return { ...s, status: "error" as const, error: "Lỗi lọc bài viết" };
+      return s;
+    });
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: { status: "error", currentStep: 2, steps: stepsWithError, error: "Lỗi lọc bài viết" },
+      }),
+    );
+    renderScreen();
+
+    expect(screen.getByText("Lỗi lọc bài viết")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thực hiện lại" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Đóng thông báo lỗi" })).not.toBeInTheDocument();
+  });
+
+  it("bấm retry ở status error gọi retryFailedStep, không gọi resetJob/startJob", () => {
+    const retryFailedStep = vi.fn();
+    const resetJob = vi.fn();
+    const startJob = vi.fn();
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "error",
+          currentStep: 2,
+          steps: DEFAULT_STEPS.map((step) =>
+            step.step === 1
+              ? { ...step, status: "done" as const }
+              : step.step === 2
+                ? { ...step, status: "error" as const, error: "AI down" }
+                : step,
+          ),
+        },
+        retryFailedStep,
+        resetJob,
+        startJob,
+      }),
+    );
+    renderScreen();
+
+    fireEvent.click(screen.getByRole("button", { name: "Thực hiện lại" }));
+
+    expect(retryFailedStep).toHaveBeenCalledTimes(1);
+    expect(resetJob).not.toHaveBeenCalled();
+    expect(startJob).not.toHaveBeenCalled();
+    expect(screen.getByText("1.Thu thập tin tức")).toBeInTheDocument();
+  });
+
+  it("retry loading disable cả nút retry và Analyze, hiển thị API error nhưng giữ progress", () => {
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "error",
+          currentStep: 2,
+          steps: DEFAULT_STEPS.map((step) =>
+            step.step === 1
+              ? { ...step, status: "done" as const }
+              : step.step === 2
+                ? { ...step, status: "error" as const, error: "AI down" }
+                : step,
+          ),
+        },
+        isRetrying: true,
+        retryError: "Retry service unavailable",
+      }),
+    );
+    renderScreen();
+
+    expect(screen.getByRole("button", { name: "Đang thực hiện lại" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^phân tích$/i })).toBeDisabled();
+    expect(screen.getByText("Retry service unavailable")).toBeInTheDocument();
+    expect(screen.getByText("AI down")).toBeInTheDocument();
+  });
+
+  it("khi status='done' và có markdownContent → hiển thị kết quả phân tích", async () => {
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: {
+          status: "done",
+          currentStep: 5,
+          steps: DEFAULT_STEPS.map((s) => ({ ...s, status: "done" as const })),
+          result: { markdownContent: "Kết quả phân tích thị trường XYZ" },
+        },
+      }),
+    );
+    renderScreen();
+
+    expect(await screen.findByText(/Kết quả phân tích thị trường XYZ/)).toBeInTheDocument();
+  });
+
+  it("status='not_found' → hiển thị thông báo lỗi rõ ràng cho user", () => {
+    mockedUseJob.mockReturnValue(
+      baseJobHook({
+        jobState: { status: "not_found" },
+      }),
+    );
+    renderScreen();
+
+    expect(screen.getByText(/không tìm thấy job/i)).toBeInTheDocument();
+  });
+
+  it("hiển thị 'Chưa có lịch sử phân tích' khi API lịch sử trả mảng rỗng", async () => {
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
+  });
+
+  it("render danh sách lịch sử khi API trả dữ liệu, click item hoặc nút Xem mở modal chi tiết", async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        data: [
+          {
+            _id: "h1",
+            content: "Nội dung phân tích lần trước",
+            articleIds: ["a1", "a2"],
+            createdAt: "2026-08-05T10:00:00.000Z",
+          },
+        ],
+        meta: { hasMore: false, nextCursor: null },
+      },
+    });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByText("1. 05/08/2026 17:00:00")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Xem chi tiết phân tích 1" }));
+
+    // Modal chi tiết hiện ra với đúng nội dung (heading "Chi tiết phân tích").
+    expect(await screen.findByText("Chi tiết phân tích")).toBeInTheDocument();
+  });
+
+  it("tải thêm trang lịch sử bằng cursor, giữ số thứ tự và không gửi request trùng", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          data: Array.from({ length: 10 }, (_, index) => ({
+            _id: `h${index + 1}`,
+            content: `Nội dung ${index + 1}`,
+            articleIds: [],
+            createdAt: "2026-08-05T10:00:00.000Z",
+          })),
+          meta: { hasMore: true, nextCursor: "cursor-10" },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: "h11", content: "Nội dung 11", articleIds: [], createdAt: "2026-08-04T10:00:00.000Z" }],
+          meta: { hasMore: false, nextCursor: null },
+        },
+      });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    await screen.findByText(/10\. 05\/08\/2026 17:00:00/);
+    fireEvent.click(screen.getByRole("button", { name: "Tải thêm" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tải thêm" }));
+
+    await screen.findByText(/11\. 04\/08\/2026 17:00:00/);
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+    expect(mockedAxios.get.mock.calls[1][1]).toMatchObject({ params: { cursor: "cursor-10" } });
+    expect(screen.getByText("Đã hiển thị tất cả lịch sử.")).toBeInTheDocument();
+  });
+
+  it("hiển thị lỗi tải lịch sử và cho phép thử lại", async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValueOnce({
+      data: { data: [], meta: { hasMore: false, nextCursor: null } },
+    });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/không thể tải lịch sử phân tích/i);
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
+  });
+});

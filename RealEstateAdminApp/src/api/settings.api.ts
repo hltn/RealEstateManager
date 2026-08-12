@@ -7,6 +7,9 @@ export interface AiConfigResponse {
   model?: string;
   must1cApiKey?: string;
   must1cModel?: string;
+  nineRouterBaseUrl?: string;
+  nineRouterApiKey?: string;
+  nineRouterModel?: string;
   activePlatform?: string;
 }
 
@@ -29,6 +32,9 @@ export interface SaveAiConfigPayload {
   model?: string;
   must1cApiKey?: string;
   must1cModel?: string;
+  nineRouterBaseUrl?: string;
+  nineRouterApiKey?: string;
+  nineRouterModel?: string;
   activePlatform?: string;
 }
 
@@ -52,6 +58,19 @@ export async function getOpenRouterModels(
 ): Promise<OpenRouterModel[]> {
   const { data } = await apiAxios.get<OpenRouterModelsResponse>(
     '/settings/openrouter-models',
+    { signal },
+  );
+  return data.models ?? data.data ?? [];
+}
+
+/**
+ * Lấy danh sách model 9Router — `GET /settings/9router-models`.
+ */
+export async function get9RouterModels(
+  signal?: AbortSignal,
+): Promise<OpenRouterModel[]> {
+  const { data } = await apiAxios.get<OpenRouterModelsResponse>(
+    '/settings/9router-models',
     { signal },
   );
   return data.models ?? data.data ?? [];

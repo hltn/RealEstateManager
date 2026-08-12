@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
 import { WordPressService } from './wordpress.service';
 import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
@@ -35,6 +35,35 @@ function normalizeContent(content: string | undefined | null): string {
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '\t')
     .replace(/\\r/g, '\r');
+}
+
+const MARKET_ANALYSIS_HISTORY_PAGE_SIZE = 10;
+
+export interface MarketAnalysisHistoryPage {
+  data: MarketAnalysisHistory[];
+  meta: { limit: number; hasMore: boolean; nextCursor: string | null };
+}
+
+interface MarketAnalysisHistoryCursor { createdAt: string; id: string; }
+
+function encodeMarketAnalysisHistoryCursor(record: any): string {
+  return Buffer.from(JSON.stringify({
+    createdAt: new Date(record.createdAt).toISOString(),
+    id: record._id.toString(),
+  } satisfies MarketAnalysisHistoryCursor)).toString('base64url');
+}
+
+function decodeMarketAnalysisHistoryCursor(cursor: string): MarketAnalysisHistoryCursor {
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as MarketAnalysisHistoryCursor;
+    const createdAt = new Date(decoded.createdAt);
+    if (!decoded?.id || Number.isNaN(createdAt.getTime()) || !Types.ObjectId.isValid(decoded.id)) {
+      throw new Error('invalid cursor');
+    }
+    return { createdAt: createdAt.toISOString(), id: decoded.id };
+  } catch {
+    throw new BadRequestException('Invalid market analysis history cursor');
+  }
 }
 
 @Injectable()
@@ -428,11 +457,33 @@ Content: ${article.content || article.summary || 'N/A'}
     return markdownResponse;
   }
 
-  async getMarketAnalysisHistory(): Promise<MarketAnalysisHistory[]> {
-    return this.marketAnalysisHistoryModel
-      .find()
-      .sort({ createdAt: -1 })
+  async getMarketAnalysisHistory(cursor?: string): Promise<MarketAnalysisHistoryPage> {
+    const query: Record<string, unknown> = {};
+    if (cursor) {
+      const anchor = decodeMarketAnalysisHistoryCursor(cursor);
+      const anchorDate = new Date(anchor.createdAt);
+      // Pairing createdAt with _id guarantees a stable order and an exclusive boundary.
+      query.$or = [
+        { createdAt: { $lt: anchorDate } },
+        { createdAt: anchorDate, _id: { $lt: new Types.ObjectId(anchor.id) } },
+      ];
+    }
+
+    const records = await this.marketAnalysisHistoryModel
+      .find(query)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(MARKET_ANALYSIS_HISTORY_PAGE_SIZE + 1)
       .exec();
+    const hasMore = records.length > MARKET_ANALYSIS_HISTORY_PAGE_SIZE;
+    const data = hasMore ? records.slice(0, MARKET_ANALYSIS_HISTORY_PAGE_SIZE) : records;
+    return {
+      data,
+      meta: {
+        limit: MARKET_ANALYSIS_HISTORY_PAGE_SIZE,
+        hasMore,
+        nextCursor: hasMore ? encodeMarketAnalysisHistoryCursor(data[data.length - 1]) : null,
+      },
+    };
   }
 
   async getMarketAnalysisHistoryById(
@@ -533,5 +584,19 @@ Content: ${article.content || article.summary || 'N/A'}
     await this.newsArticleModel
       .deleteMany({ urlHash: { $in: urlHashes } })
       .exec();
+  }
+
+  /**
+   * Map urlHashes → news_article _id.
+   * Dùng sau saveArticles để lấy _id của các bài vừa tạo/đã tồn tại.
+   */
+  async getArticleIdsByUrlHashes(urlHashes: string[]): Promise<string[]> {
+    if (!urlHashes || urlHashes.length === 0) return [];
+    const articles = await this.newsArticleModel
+      .find({ urlHash: { $in: urlHashes } })
+      .select('_id')
+      .lean()
+      .exec();
+    return articles.map((a: any) => a._id.toString());
   }
 }

@@ -53,12 +53,40 @@ export class UpdateAiConfigDto {
   must1cApiKey?: string;
 
   @ApiPropertyOptional({
+    description: 'The 9Router base URL',
+    example: 'http://127.0.0.1:20128/v1',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(NO_NEWLINE_REGEX, { message: NO_NEWLINE_MSG })
+  @trimIfString()
+  nineRouterBaseUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'The API key for 9Router',
+    example: 'sk-...',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(NO_NEWLINE_REGEX, { message: NO_NEWLINE_MSG })
+  @trimIfString()
+  nineRouterApiKey?: string;
+
+  @ApiPropertyOptional({
     description: 'The model for Must1C provider',
     example: '...',
   })
   @IsOptional()
   @IsString()
   must1cModel?: string;
+
+  @ApiPropertyOptional({
+    description: 'The model for 9Router',
+    example: 'openai/gpt-4o-mini',
+  })
+  @IsOptional()
+  @IsString()
+  nineRouterModel?: string;
 
   @ApiPropertyOptional({
     description: 'The currently active platform',
