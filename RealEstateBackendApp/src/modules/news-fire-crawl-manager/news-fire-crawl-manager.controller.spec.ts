@@ -835,7 +835,7 @@ describe('NewsFireCrawlManagerController', () => {
     });
 
     describe('POST /market-analysis-workflow/:jobId/retry', () => {
-      const failedState = (failedStep: 3 | 4 | 5) => ({
+      const failedState = (failedStep: 1 | 2 | 3 | 4 | 5) => ({
         currentStep: failedStep,
         date: '2026-08-06',
         steps: [1, 2, 3, 4, 5].map((step) => ({
@@ -843,10 +843,94 @@ describe('NewsFireCrawlManagerController', () => {
           label: `step-${step}`,
           status: step < failedStep ? 'done' : step === failedStep ? 'error' : 'pending',
           ...(step === failedStep ? { error: `step ${step} failed` } : {}),
-          ...(step === 2 ? { result: { filteredRawArticleIds: ['r1'], filteredCount: 1 } } : {}),
+          ...(step === 1 && failedStep > 1
+            ? { result: { filePath: '/tmp/original.json', stats: { totalArticles: 1 } } }
+            : {}),
+          ...(step === 2 && failedStep > 2 ? { result: { filteredRawArticleIds: ['r1'], filteredCount: 1 } } : {}),
           ...(step === 3 && failedStep > 3 ? { result: { newsArticleIds: ['a1'] } } : {}),
           ...(step === 4 && failedStep > 4 ? { result: { processed: 1, failed: 0 } } : {}),
         })),
+      });
+
+      it('retry step 1 chạy lại toàn bộ steps 1-5 với cùng date/jobId', async () => {
+        const jobId = 'job-retry-1';
+        fakeJobs.set(jobId, { status: 'error', error: 'old', result: failedState(1) });
+        customCrawlerService.crawlData.mockResolvedValue({
+          filePath: '/tmp/retry.json',
+          stats: { totalArticles: 1 },
+        } as any);
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        aiFilterService.filterRawArticles.mockResolvedValue([
+          { urlHash: 'h1', title: 'Tin retry' },
+        ] as any);
+        customCrawlerService.deleteRawArticlesInSetNotIn.mockResolvedValue(undefined as any);
+        customCrawlerService.getRawArticlesByIds.mockResolvedValue([
+          { _id: { toString: () => 'r1' }, urlHash: 'h1' },
+        ] as any);
+        newsArticleService.saveArticles.mockResolvedValue({
+          savedCount: 1,
+          duplicates: 0,
+          processedUrlHashes: ['h1'],
+          newlySavedUrlHashes: ['h1'],
+        } as any);
+        customCrawlerService.deleteRawArticlesBulk.mockResolvedValue(undefined as any);
+        newsArticleService.getArticleIdsByUrlHashes.mockResolvedValue(['a1']);
+        newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
+        newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# step 1 retried' as any);
+
+        const response = controller.retryMarketAnalysisWorkflow(jobId);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        expect(response).toMatchObject({ jobId });
+        expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+        expect(customCrawlerService.crawlData).toHaveBeenCalledWith(
+          undefined,
+          '2026-08-06',
+          '2026-08-06',
+        );
+        expect(customCrawlerService.getRawArticlesByDate).toHaveBeenCalledWith('2026-08-06');
+        expect(newsArticleService.analyzeMarketBulk).toHaveBeenCalledWith(['a1']);
+        expect(newsArticleService.analyzeMarketTrendsByAI).toHaveBeenCalledWith(['a1']);
+        expect(fakeJobs.get(jobId).status).toBe('done');
+        expect(fakeJobs.get(jobId).result.steps.every((step: any) => step.status === 'done')).toBe(true);
+      });
+
+      it('retry step 2 không chạy lại step 1 và dùng empty-result path gốc cho date đã lưu', async () => {
+        const jobId = 'job-retry-2-empty';
+        const state = failedState(2);
+        const originalStep1Result = state.steps[0].result;
+        fakeJobs.set(jobId, { status: 'error', error: 'old', result: state });
+        customCrawlerService.getRawArticlesByDate.mockResolvedValue([] as any);
+
+        const response = controller.retryMarketAnalysisWorkflow(jobId);
+        await new Promise(setImmediate);
+        await new Promise(setImmediate);
+
+        expect(response).toMatchObject({ jobId });
+        expect(analyzeJobService.createJob).not.toHaveBeenCalled();
+        expect(customCrawlerService.crawlData).not.toHaveBeenCalled();
+        expect(customCrawlerService.getRawArticlesByDate).toHaveBeenCalledWith('2026-08-06');
+        expect(aiFilterService.filterRawArticles).not.toHaveBeenCalled();
+        expect(newsArticleService.saveArticles).not.toHaveBeenCalled();
+        expect(newsArticleService.analyzeMarketBulk).not.toHaveBeenCalled();
+        expect(newsArticleService.analyzeMarketTrendsByAI).not.toHaveBeenCalled();
+
+        const job = fakeJobs.get(jobId);
+        expect(job.status).toBe('done');
+        expect(job.result.date).toBe('2026-08-06');
+        expect(job.result.steps[0]).toMatchObject({ status: 'done', result: originalStep1Result });
+        expect(job.result.steps[1]).toMatchObject({ status: 'done', result: { filteredCount: 0 } });
+        expect(job.result.steps.slice(2).every((step: any) => step.status === 'done')).toBe(true);
+        expect(job.result.finalResult).toMatchObject({
+          markdownContent: '',
+          newsArticleCount: 0,
+          stats: { totalArticles: 1, filtered: 0, crawledContent: 0, failedCrawl: 0 },
+        });
+        expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('workflow:market-analysis');
       });
 
       it.each([3, 4, 5] as const)('retry step %s không gọi lại steps trước và giữ same jobId', async (failedStep) => {

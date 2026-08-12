@@ -927,28 +927,54 @@ export class NewsFireCrawlManagerController {
     if (job.status !== 'error' || !state || !failedStep) {
       throw new BadRequestException('Workflow job không có bước lỗi để retry');
     }
-    if (failedStep < 3 || failedStep > 5) {
-      throw new BadRequestException('Chỉ hỗ trợ retry từ bước 3, 4 hoặc 5');
+    if (failedStep < 1 || failedStep > 5) {
+      throw new BadRequestException('Workflow job có bước lỗi không hợp lệ');
     }
     const lockKey = 'workflow:market-analysis';
     if (this.idempotencyService.isInFlight(lockKey)) {
-      throw new ConflictException('Đang có phân tích thị trường đang chạy, vui lòng đợi hoàn tất');
+      throw new ConflictException(
+        'Đang có phân tích thị trường đang chạy, vui lòng đợi hoàn tất',
+      );
     }
-    const step2Result = state.steps[1].result as { filteredRawArticleIds?: string[] } | undefined;
-    const step3Result = state.steps[2].result as { newsArticleIds?: string[] } | undefined;
-    if ((failedStep === 3 && !step2Result?.filteredRawArticleIds) ||
-        (failedStep >= 4 && !step3Result?.newsArticleIds)) {
+
+    // Retry bước 1/2 không cần checkpoint: bước 1 chạy lại toàn bộ pipeline,
+    // bước 2 chỉ cần date đã lưu trong WorkflowJobState. Bước 3-5 tiếp tục
+    // dùng output bước trước để không chạy lại công việc đã hoàn tất.
+    const step2Result = state.steps[1].result as
+      | { filteredRawArticleIds?: string[] }
+      | undefined;
+    const step3Result = state.steps[2].result as
+      | { newsArticleIds?: string[] }
+      | undefined;
+    if (
+      (failedStep === 3 && !step2Result?.filteredRawArticleIds) ||
+      (failedStep >= 4 && !step3Result?.newsArticleIds)
+    ) {
       throw new BadRequestException('Workflow job thiếu checkpoint để retry');
     }
+
     this.idempotencyService.markInFlight(lockKey);
-    state.steps[failedStep - 1] = { ...state.steps[failedStep - 1], status: 'pending', error: undefined };
-    for (let step = failedStep + 1; step <= 5; step += 1) {
-      state.steps[step - 1] = { ...state.steps[step - 1], status: 'pending', result: undefined, error: undefined };
+    for (let step = failedStep; step <= 5; step += 1) {
+      state.steps[step - 1] = {
+        ...state.steps[step - 1],
+        status: 'pending',
+        result: undefined,
+        error: undefined,
+      };
     }
     state.currentStep = failedStep - 1;
     delete state.finalResult;
-    this.analyzeJobService.updateJob(jobId, { status: 'pending', error: undefined, result: state });
-    void this.runWorkflowRetry(jobId, lockKey, failedStep);
+    this.analyzeJobService.updateJob(jobId, {
+      status: 'pending',
+      error: undefined,
+      result: state,
+    });
+
+    if (failedStep <= 2) {
+      void this.runWorkflow(jobId, state.date, lockKey, failedStep);
+    } else {
+      void this.runWorkflowRetry(jobId, lockKey, failedStep);
+    }
     return { message: `Đang retry bước ${failedStep}`, jobId };
   }
 
@@ -1018,6 +1044,7 @@ export class NewsFireCrawlManagerController {
     jobId: string,
     date: string,
     lockKey: string,
+    startStep = 1,
   ): Promise<void> {
     const updateStep = (step: number, patch: Partial<WorkflowStepState>) => {
       const job = this.analyzeJobService.getJob(jobId);
@@ -1033,14 +1060,22 @@ export class NewsFireCrawlManagerController {
     };
 
     try {
+      const workflowState = this.analyzeJobService.getJob(jobId)?.result as
+        | WorkflowJobState
+        | undefined;
+      let crawlResult = workflowState?.steps[0]?.result as any;
+
       // ── Step 1: Thu thập tin tức ──
-      updateStep(1, { status: 'running' });
-      const crawlResult = await this.customCrawlerService.crawlData(
-        undefined,
-        date,
-        date,
-      );
-      updateStep(1, { status: 'done', result: crawlResult });
+      // Retry từ step 2 giữ nguyên checkpoint step 1 và chỉ chạy lại 2-5.
+      if (startStep <= 1) {
+        updateStep(1, { status: 'running', error: undefined });
+        crawlResult = await this.customCrawlerService.crawlData(
+          undefined,
+          date,
+          date,
+        );
+        updateStep(1, { status: 'done', result: crawlResult });
+      }
 
       // ── Step 2: Phân tích & lọc ──
       updateStep(2, { status: 'running' });
