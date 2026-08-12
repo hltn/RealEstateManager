@@ -88,31 +88,35 @@ const StepCard: React.FC<{
         className={`flex w-full md:flex-col items-center md:justify-center gap-3 p-3 md:p-4 rounded-xl border-2 flex-1 min-w-0 md:min-w-[120px] transition-colors ${config.cardClass}`}
       >
         <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-left md:flex-none md:flex-col md:text-center leading-tight">
-          {config.icon}
+          <span className="flex items-center gap-2">
+            {config.icon}
+            {step.status === "error" && onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={isRetrying}
+                aria-label={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
+                title={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900/40 dark:text-red-300 dark:hover:bg-gray-900/70"
+              >
+                {isRetrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              </button>
+            )}
+          </span>
           <span className={config.textClass}>{`${step.step}.${step.label}`}</span>
         </span>
+
         {step.status === "error" && step.error && (
           <span className="text-[11px] text-red-500 dark:text-red-400 text-left md:text-center line-clamp-2">
             {step.error}
           </span>
         )}
-        {step.status === "error" && onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            disabled={isRetrying}
-            aria-label={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
-            title={isRetrying ? "Đang thực hiện lại" : "Thực hiện lại"}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center self-end rounded-lg bg-white/70 text-red-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900/40 dark:text-red-300 dark:hover:bg-gray-900/70"
-          >
-            {isRetrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-          </button>
-        )}
+
       </div>
       {!isLast && (
         <div
           aria-hidden="true"
-          className="h-5 w-0.5 shrink-0 bg-gray-300 dark:bg-gray-700 md:mx-1 md:h-0.5 md:w-6"
+          className="h-5 w-0.5 shrink-0 bg-gray-300 dark:bg-gray-700 md:mx-1 md:h-0.5 md:w-6 md:self-center"
         />
       )}
     </div>
