@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import apiAxios from "../api/axios";
 import MarketAnalysisWorkflowScreen from "./MarketAnalysisWorkflowScreen";
@@ -217,7 +217,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
   });
 
-  it("render danh sách lịch sử khi API trả dữ liệu, click item mở modal chi tiết", async () => {
+  it("render danh sách lịch sử khi API trả dữ liệu, click item hoặc nút Xem mở modal chi tiết", async () => {
     mockedAxios.get.mockResolvedValue({
       data: {
         data: [
@@ -228,15 +228,61 @@ describe("MarketAnalysisWorkflowScreen", () => {
             createdAt: "2026-08-05T10:00:00.000Z",
           },
         ],
+        meta: { hasMore: false, nextCursor: null },
       },
     });
     mockedUseJob.mockReturnValue(baseJobHook());
     renderScreen();
 
-    const historyItem = await screen.findByText(/Nội dung phân tích lần trước/);
-    fireEvent.click(historyItem);
+    expect(await screen.findByText("1. 05/08/2026 17:00:00")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Xem chi tiết phân tích 1" }));
 
     // Modal chi tiết hiện ra với đúng nội dung (heading "Chi tiết phân tích").
     expect(await screen.findByText("Chi tiết phân tích")).toBeInTheDocument();
+  });
+
+  it("tải thêm trang lịch sử bằng cursor, giữ số thứ tự và không gửi request trùng", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          data: Array.from({ length: 10 }, (_, index) => ({
+            _id: `h${index + 1}`,
+            content: `Nội dung ${index + 1}`,
+            articleIds: [],
+            createdAt: "2026-08-05T10:00:00.000Z",
+          })),
+          meta: { hasMore: true, nextCursor: "cursor-10" },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ _id: "h11", content: "Nội dung 11", articleIds: [], createdAt: "2026-08-04T10:00:00.000Z" }],
+          meta: { hasMore: false, nextCursor: null },
+        },
+      });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    await screen.findByText(/10\. 05\/08\/2026 17:00:00/);
+    fireEvent.click(screen.getByRole("button", { name: "Tải thêm" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tải thêm" }));
+
+    await screen.findByText(/11\. 04\/08\/2026 17:00:00/);
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+    expect(mockedAxios.get.mock.calls[1][1]).toMatchObject({ params: { cursor: "cursor-10" } });
+    expect(screen.getByText("Đã hiển thị tất cả lịch sử.")).toBeInTheDocument();
+  });
+
+  it("hiển thị lỗi tải lịch sử và cho phép thử lại", async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValueOnce({
+      data: { data: [], meta: { hasMore: false, nextCursor: null } },
+    });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/không thể tải lịch sử phân tích/i);
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
   });
 });
