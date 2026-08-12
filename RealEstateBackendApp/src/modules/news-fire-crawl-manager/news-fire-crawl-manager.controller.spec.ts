@@ -451,10 +451,12 @@ describe('NewsFireCrawlManagerController', () => {
       expect(result).toEqual({ message: 'Article fetched successfully', data: { _id: '1' } });
     });
 
-    it('getMarketAnalysisHistory → trả { message, data }', async () => {
-      newsArticleService.getMarketAnalysisHistory.mockResolvedValue([{ _id: 'h1' }] as any);
-      const result = await controller.getMarketAnalysisHistory();
-      expect(result).toMatchObject({ message: 'Market analysis history fetched successfully', data: [{ _id: 'h1' }] });
+    it('getMarketAnalysisHistory → returns page data and cursor metadata', async () => {
+      const page = { data: [{ _id: 'h1' }], meta: { limit: 10, hasMore: true, nextCursor: 'cursor-1' } };
+      newsArticleService.getMarketAnalysisHistory.mockResolvedValue(page as any);
+      const result = await controller.getMarketAnalysisHistory({ cursor: 'previous' } as any);
+      expect(newsArticleService.getMarketAnalysisHistory).toHaveBeenCalledWith('previous');
+      expect(result).toEqual({ message: 'Market analysis history fetched successfully', ...page });
     });
 
     it('getMarketAnalysisHistoryById → trả { message, data }', async () => {

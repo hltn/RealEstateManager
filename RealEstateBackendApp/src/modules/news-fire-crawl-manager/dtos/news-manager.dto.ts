@@ -104,6 +104,16 @@ export class GetArticlesQueryDto extends PaginationQueryDto {
   date?: string;
 }
 
+/** Cursor pagination for market-analysis history (fixed at 10 records). */
+export class GetMarketAnalysisHistoryQueryDto {
+  @ApiPropertyOptional({
+    description: 'Opaque cursor from meta.nextCursor of the preceding response',
+  })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+}
+
 export class AiPromptDto implements AiPrompt {
   @ApiProperty({ description: 'AI API Name' })
   @IsString()
