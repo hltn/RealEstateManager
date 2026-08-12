@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { CheckCircle2, XCircle, Loader2, Circle, History } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Circle, History, Eye } from "lucide-react";
 import { DatePicker } from "../components/ui/DatePicker";
 import apiAxios from "../api/axios";
 import {
@@ -16,6 +16,33 @@ interface MarketAnalysisHistoryItem {
   content: string;
   articleIds: string[];
   createdAt: string;
+}
+
+interface MarketAnalysisHistoryPage {
+  data: MarketAnalysisHistoryItem[];
+  meta: {
+    hasMore: boolean;
+    nextCursor: string | null;
+  };
+}
+
+/** Hiển thị thống nhất theo định dạng dd/MM/yyyy HH:mm:ss tại Việt Nam. */
+function formatHistoryTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+
+  const parts = new Intl.DateTimeFormat("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("day")}/${value("month")}/${value("year")} ${value("hour")}:${value("minute")}:${value("second")}`;
 }
 
 /** Lấy ngày hôm nay dạng YYYY-MM-DD theo giờ Việt Nam (UTC+7). */
@@ -92,23 +119,60 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
   } = useMarketAnalysisWorkflowJob();
   const [selectedDate, setSelectedDate] = useState<string>(getTodayVNString());
   const [selectedHistoryContent, setSelectedHistoryContent] = useState<string | null>(null);
+  const historyLoadMoreRef = useRef<HTMLDivElement | null>(null);
+  const isFetchingHistoryPageRef = useRef(false);
 
   const steps = jobState?.steps ?? DEFAULT_STEPS;
   const isError = jobState?.status === "error";
   const isDone = jobState?.status === "done";
   const isNotFound = jobState?.status === "not_found";
 
-  const { data: historyData, isLoading: isHistoryLoading } = useQuery<MarketAnalysisHistoryItem[]>({
+  const {
+    data: historyData,
+    isLoading: isHistoryLoading,
+    isError: isHistoryError,
+    error: historyError,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    refetch: refetchHistory,
+  } = useInfiniteQuery({
     queryKey: ["market-analysis-history"],
-    queryFn: async ({ signal }) => {
-      const { data } = await apiAxios.get<{ data?: MarketAnalysisHistoryItem[] }>(
+    initialPageParam: null as string | null,
+    queryFn: async ({ signal, pageParam }) => {
+      const { data } = await apiAxios.get<MarketAnalysisHistoryPage>(
         "/news-manager/articles/market-analysis-history",
-        { signal },
+        { signal, params: pageParam ? { cursor: pageParam } : undefined },
       );
-      return data.data ?? [];
+      return {
+        data: data.data ?? [],
+        meta: data.meta ?? { hasMore: false, nextCursor: null },
+      };
     },
+    getNextPageParam: (lastPage) => lastPage.meta.hasMore ? lastPage.meta.nextCursor : undefined,
   });
-  const history = historyData ?? [];
+  const history = historyData?.pages.flatMap((page) => page.data) ?? [];
+  const loadMoreHistory = useCallback(() => {
+    if (!hasNextPage || isFetchingNextPage || isFetchingHistoryPageRef.current) return;
+    isFetchingHistoryPageRef.current = true;
+    void fetchNextPage().finally(() => {
+      isFetchingHistoryPageRef.current = false;
+    });
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  useEffect(() => {
+    const sentinel = historyLoadMoreRef.current;
+    if (!sentinel || !hasNextPage || isFetchingNextPage || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMoreHistory();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, loadMoreHistory]);
 
   const resultContent = useMemo(() => {
     if (!isDone) return null;
@@ -218,8 +282,21 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           Lịch sử phân tích
         </h2>
         {isHistoryLoading ? (
-          <div className="flex justify-center items-center h-24">
+          <div className="flex justify-center items-center h-24" role="status" aria-label="Đang tải lịch sử phân tích">
             <Loader2 className="w-6 h-6 animate-spin text-brand-500" />
+          </div>
+        ) : isHistoryError ? (
+          <div className="flex flex-col items-center justify-center h-32 gap-3 text-center">
+            <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+              Không thể tải lịch sử phân tích{historyError instanceof Error && historyError.message ? `: ${historyError.message}` : "."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetchHistory()}
+              className="px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+            >
+              Thử lại
+            </button>
           </div>
         ) : history.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2">
@@ -228,22 +305,53 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {history.map((item) => (
-              <button
-                type="button"
+            {history.map((item, index) => (
+              <div
                 key={item._id}
-                onClick={() => setSelectedHistoryContent(item.content)}
-                className="w-full text-left p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30"
+                className="flex gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30"
               >
-                <div className="font-semibold text-gray-900 dark:text-white text-sm mb-1">
-                  Phân tích lúc {new Date(item.createdAt).toLocaleString("vi-VN")}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                  {item.content.slice(0, 100)}
-                  {item.content.length > 100 ? "..." : ""}
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryContent(item.content)}
+                  className="min-w-0 flex-1 text-left rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                  aria-label={`Mở chi tiết phân tích ${index + 1}`}
+                >
+                  <div className="font-semibold text-gray-900 dark:text-white text-sm mb-1">
+                    {index + 1}. {formatHistoryTimestamp(item.createdAt)}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                    {item.content.slice(0, 100)}
+                    {item.content.length > 100 ? "..." : ""}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryContent(item.content)}
+                  className="shrink-0 inline-flex self-center items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-brand-700 dark:text-brand-300 bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/10 dark:hover:bg-brand-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-colors"
+                  aria-label={`Xem chi tiết phân tích ${index + 1}`}
+                >
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                  Xem
+                </button>
+              </div>
             ))}
+            <div ref={historyLoadMoreRef} aria-live="polite" className="py-2 text-center">
+              {isFetchingNextPage ? (
+                <span className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400" role="status">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Đang tải thêm...
+                </span>
+              ) : hasNextPage ? (
+                <button
+                  type="button"
+                  onClick={loadMoreHistory}
+                  className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded"
+                >
+                  Tải thêm
+                </button>
+              ) : (
+                <span className="text-sm text-gray-500 dark:text-gray-400">Đã hiển thị tất cả lịch sử.</span>
+              )}
+            </div>
           </div>
         )}
       </div>
