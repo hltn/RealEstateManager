@@ -82,15 +82,9 @@ const StepCard: React.FC<{ step: WorkflowStepState; isLast: boolean }> = ({ step
       <div
         className={`flex w-full md:flex-col items-center md:justify-center gap-3 p-3 md:p-4 rounded-xl border-2 flex-1 min-w-0 md:min-w-[120px] transition-colors ${config.cardClass}`}
       >
-        <span
-          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${config.textClass}`}
-          aria-label={`Bước ${step.step}`}
-        >
-          {step.step}
-        </span>
         <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-medium text-left md:flex-none md:flex-col md:text-center leading-tight">
           {config.icon}
-          <span className={config.textClass}>{step.label}</span>
+          <span className={config.textClass}>{`${step.step}.${step.label}`}</span>
         </span>
         {step.status === "error" && step.error && (
           <span className="text-[11px] text-red-500 dark:text-red-400 text-left md:text-center line-clamp-2">

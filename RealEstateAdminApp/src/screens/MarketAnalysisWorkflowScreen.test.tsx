@@ -78,8 +78,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
 
     expect(await screen.findByRole("heading", { name: "Phân tích thị trường" })).toBeInTheDocument();
     for (const step of DEFAULT_STEPS) {
-      expect(screen.getAllByText(step.label).length).toBeGreaterThan(0);
-      expect(screen.getByLabelText(`Bước ${step.step}`)).toBeInTheDocument();
+      expect(screen.getAllByText(`${step.step}.${step.label}`).length).toBeGreaterThan(0);
     }
     // Nút "Phân tích" phải khả dụng (không disabled) khi không có job đang chạy.
     const button = screen.getByRole("button", { name: /^phân tích$/i });
@@ -154,7 +153,7 @@ describe("MarketAnalysisWorkflowScreen", () => {
     expect(retryFailedStep).toHaveBeenCalledTimes(1);
     expect(resetJob).not.toHaveBeenCalled();
     expect(startJob).not.toHaveBeenCalled();
-    expect(screen.getByText("Thu thập tin tức")).toBeInTheDocument();
+    expect(screen.getByText("1.Thu thập tin tức")).toBeInTheDocument();
   });
 
   it("retry loading disable cả nút retry và Analyze, hiển thị API error nhưng giữ progress", () => {
