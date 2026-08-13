@@ -274,11 +274,9 @@ export default function ManageWpScreen() {
   // Debounce ô tìm kiếm để không lọc lại liên tục khi user đang gõ.
   const searchQuery = useDebouncedValue(searchTerm, 400);
 
-  // GET /articles hiện chỉ nhận page/limit/date (DTO backend whitelist đúng 3 field này).
-  // Vì vậy chỉ `date` là filter server-side và mới cần reset trang.
-  // Điều chỉnh ngay trong render (không dùng useEffect) để không phát sinh thêm
-  // một request với cặp "filter mới + page cũ".
-  const filterSignature = `${filterDate}|${limit}`;
+  // Status, date và limit được gửi server-side. Điều chỉnh ngay trong render
+  // (không dùng useEffect) để không phát sinh request với filter mới + page cũ.
+  const filterSignature = `${statusFilter}|${filterDate}|${limit}`;
   const [prevFilterSignature, setPrevFilterSignature] = useState(filterSignature);
   if (prevFilterSignature !== filterSignature) {
     setPrevFilterSignature(filterSignature);
@@ -290,6 +288,7 @@ export default function ManageWpScreen() {
     page,
     limit,
     date: filterDate,
+    status: statusFilter === 'all' ? undefined : statusFilter,
   });
 
   const {
@@ -299,7 +298,7 @@ export default function ManageWpScreen() {
     isPlaceholderData,
     error: queryError,
   } = useQuery<PaginatedResponse<WpArticle>, Error>({
-    queryKey: ['wp-articles', { page, limit, date: filterDate }],
+    queryKey: ['wp-articles', { page, limit, date: filterDate, status: statusFilter }],
     queryFn: ({ signal }) =>
       fetchPaginated<WpArticle>(`${ARTICLES_ENDPOINT}?${queryString}`, page, limit, signal),
     // Giữ dữ liệu trang trước trong lúc tải trang mới để bảng không nháy trắng.
@@ -307,9 +306,8 @@ export default function ManageWpScreen() {
   });
 
   /**
-   * Search + sort ở màn này chỉ áp dụng TRONG TRANG hiện tại, vì backend
-   * GET /articles chưa hỗ trợ query param search/sort.
-   * TODO: chuyển sang server-side khi backend bổ sung search/sort cho endpoint này.
+   * Search và sort chỉ áp dụng TRONG TRANG hiện tại. Status/date đã được
+   * backend lọc trước khi tính data, meta và pagination.
    */
   const articles = useMemo(() => {
     const pageArticles = articlesPage?.data ?? [];
@@ -324,25 +322,13 @@ export default function ManageWpScreen() {
           })
         : [...pageArticles];
 
-    const filtered =
-      statusFilter === 'all'
-        ? bySearch
-        : bySearch.filter((article) => {
-            const statuses = Array.isArray(article.status)
-              ? article.status
-              : article.status
-                ? [article.status]
-                : [];
-            return statusFilter === 'pending' ? statuses.length === 0 : statuses.includes(statusFilter);
-          });
-
-    // Đồng bộ với BE: sort theo createdAt (BE cũng sort theo createdAt) để STT global offset khớp đúng.
-    return filtered.sort((a, b) => {
+    // Status đã lọc server-side để meta.total luôn là tổng kết quả đã lọc.
+    return bySearch.sort((a, b) => {
       const timeA = new Date(a.createdAt || 0).getTime();
       const timeB = new Date(b.createdAt || 0).getTime();
       return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
     });
-  }, [articlesPage, searchQuery, sortOrder, statusFilter]);
+  }, [articlesPage, searchQuery, sortOrder]);
   const meta = articlesPage?.meta ?? { total: 0, page, limit, totalPages: 0 };
 
   // Nếu trang hiện tại vượt quá totalPages (VD: vừa xóa hết bài ở trang cuối), lùi về trang cuối còn dữ liệu.
@@ -383,12 +369,11 @@ export default function ManageWpScreen() {
   const isAllOnPageSelected =
     articles.length > 0 && articles.every(article => selectedIds.has(article._id));
 
-  // Có filter đang áp dụng thì thông báo rỗng phải khác với "database chưa có bài nào".
+  // Search là client-side trong trang; status/date đã được server-side lọc.
   const hasActiveFilter = Boolean(filterDate) || searchQuery.length >= 2 || statusFilter !== 'all';
 
-  // Khi search/sort/status trong trang làm đổi thứ tự hoặc lược bớt dòng, STT tính theo
-  // vị trí toàn cục không còn đúng, nên đánh số lại từ 1 trong phạm vi kết quả.
-  const isInPageAdjusted = searchQuery.length >= 2 || sortOrder !== 'newest' || statusFilter !== 'all';
+  const summaryStart = meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1;
+  const summaryEnd = meta.total === 0 ? 0 : Math.min(meta.page * meta.limit, meta.total);
 
   /** Chọn / bỏ chọn toàn bộ bài viết trên trang hiện tại.
    * Khi chọn: merge id trang hiện tại vào selection hiện có (giữ lại các trang khác).
@@ -664,12 +649,12 @@ export default function ManageWpScreen() {
   return (
     <div className="w-full flex flex-col gap-6">
       {notification && (
-        <ToastNotification 
-          key={notification.description} 
-          title={notification.title} 
-          description={notification.description} 
-          type={notification.type} 
-          onClose={() => setNotification(null)} 
+        <ToastNotification
+          key={notification.description}
+          title={notification.title}
+          description={notification.description}
+          type={notification.type}
+          onClose={() => setNotification(null)}
         />
       )}
       {marketAnalysisResult && (
@@ -767,7 +752,7 @@ export default function ManageWpScreen() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               aria-label="Lọc theo trạng thái"
-              title="Lọc trong trang đang xem"
+              title="Lọc theo trạng thái trên toàn bộ danh sách"
               className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/[0.05] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all text-gray-700 dark:text-gray-300"
             >
               <option value="all">Tất cả trạng thái</option>
@@ -786,7 +771,7 @@ export default function ManageWpScreen() {
                 inputClassName="py-1.5 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-white/[0.05]"
               />
             </div>
-            
+
             <div className="hidden sm:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
             <button
@@ -800,6 +785,11 @@ export default function ManageWpScreen() {
         </div>
       </header>
 
+      <div className="px-5 py-3 text-theme-sm text-gray-500 dark:text-gray-400">
+        {meta.total === 0
+          ? `Hiển thị 0 / 0 bài viết · Trang 0/0`
+          : `Hiển thị ${summaryStart}-${summaryEnd} / ${meta.total} bài viết · Trang ${meta.page}/${meta.totalPages}`}
+      </div>
       <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]">
         <div className="overflow-x-auto">
           <table className="min-w-full">
@@ -865,7 +855,7 @@ export default function ManageWpScreen() {
                       />
                     </td>
                     <td className="px-2 py-4 text-theme-sm text-gray-500 dark:text-gray-400">
-                      {isInPageAdjusted ? idx + 1 : (meta.page - 1) * meta.limit + idx + 1}
+                      {(meta.page - 1) * meta.limit + idx + 1}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
@@ -934,7 +924,7 @@ export default function ManageWpScreen() {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <div className="grid grid-cols-2 gap-1.5 w-[180px] ml-auto">
-                        <button 
+                        <button
                           onClick={() => handleClean(article)}
                           disabled={cleaningIds.has(article._id)}
                           className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
@@ -947,7 +937,7 @@ export default function ManageWpScreen() {
                           Làm sạch
                         </button>
                         {!(Array.isArray(article.status) ? article.status : [article.status]).includes('POSTED_WP') && (
-                          <button 
+                          <button
                             onClick={() => handlePublish(article._id)}
                             disabled={publishingIds.has(article._id)}
                             className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
@@ -960,14 +950,14 @@ export default function ManageWpScreen() {
                             Đăng bài
                           </button>
                         )}
-                        <Link 
+                        <Link
                           to={`/news-detail/${article._id}`}
                           className="inline-flex items-center justify-center gap-1 text-xs font-semibold bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                         >
                           <Eye size={14} />
                           Xem
                         </Link>
-                        <a 
+                        <a
                           href={article.url}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -991,6 +981,7 @@ export default function ManageWpScreen() {
         onLimitChange={setLimit}
         isDisabled={isFetching}
         itemLabel="bài viết"
+        showSummary={false}
       />
     </div>
   );

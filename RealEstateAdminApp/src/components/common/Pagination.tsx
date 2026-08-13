@@ -9,6 +9,8 @@ export interface PaginationProps {
   isDisabled?: boolean;
   /** Nhãn đơn vị bản ghi, VD: "bài viết". */
   itemLabel?: string;
+  /** Ẩn phần tóm tắt khi màn hình render nó ở đầu bảng. */
+  showSummary?: boolean;
 }
 
 /** Ký hiệu vị trí rút gọn "..." trong dải số trang. */
@@ -46,6 +48,7 @@ export const Pagination = ({
   onLimitChange,
   isDisabled = false,
   itemLabel = 'bản ghi',
+  showSummary = true,
 }: PaginationProps) => {
   const { total, page, limit, totalPages } = meta;
 
@@ -68,10 +71,12 @@ export const Pagination = ({
       className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1 py-2"
     >
       <div className="flex items-center gap-3 text-theme-sm text-gray-500 dark:text-gray-400">
-        <span>
-          Hiển thị {firstItemIndex}-{lastItemIndex} / {total} {itemLabel} &middot; Trang {safePage}/
-          {totalPages}
-        </span>
+        {showSummary && (
+          <span>
+            Hiển thị {firstItemIndex}-{lastItemIndex} / {total} {itemLabel} &middot; Trang {safePage}/
+            {totalPages}
+          </span>
+        )}
         {onLimitChange && (
           <label className="hidden md:flex items-center gap-2">
             <span className="whitespace-nowrap">Số dòng:</span>

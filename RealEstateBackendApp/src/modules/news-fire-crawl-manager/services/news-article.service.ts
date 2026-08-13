@@ -216,16 +216,17 @@ export class NewsArticleService implements OnModuleInit {
   }
 
   /**
-   * Lấy danh sách bài đã lưu theo ngày (nếu có) + phân trang.
+   * Lấy danh sách bài đã lưu với filter ngày/trạng thái + phân trang.
    * Trả về { data, total }: total đếm bằng countDocuments với CÙNG query filter,
-   * chạy song song với find qua Promise.all để không cộng dồn latency.
+   * trước khi skip/limit nên luôn là tổng toàn bộ tập kết quả đã lọc.
    */
   async getSavedArticles(
     date?: string,
+    status?: 'pending' | 'CRAWLED' | 'POSTED_WP' | 'ERROR',
     page: number = DEFAULT_PAGE,
     limit: number = DEFAULT_LIMIT,
   ): Promise<PaginatedResult<NewsArticle>> {
-    const query: any = {};
+    const filters: any[] = [];
     if (date) {
       // date là ngày theo giờ Việt Nam (YYYY-MM-DD) → quy đổi đúng mốc UTC
       // qua offset +7 (Asia/Ho_Chi_Minh), không hardcode hậu tố Z (UTC).
@@ -234,23 +235,40 @@ export class NewsArticleService implements OnModuleInit {
       // Chỉ dùng createdAt làm fallback khi publishDate không tồn tại.
       // Tránh $or song song gây lẫn bài ngày khác: bài publishDate=28/07
       // nhưng createdAt=29/07 sẽ không còn hiện khi lọc 29/07 nữa.
-      query.$or = [
-        {
-          publishDate: {
-            $gte: startDate.toISOString(),
-            $lte: endDate.toISOString(),
-          },
-        },
-        {
-          $and: [
-            {
-              $or: [{ publishDate: { $exists: false } }, { publishDate: null }],
+      filters.push({
+        $or: [
+          {
+            publishDate: {
+              $gte: startDate.toISOString(),
+              $lte: endDate.toISOString(),
             },
-            { createdAt: { $gte: startDate, $lte: endDate } },
-          ],
-        },
-      ];
+          },
+          {
+            $and: [
+              {
+                $or: [{ publishDate: { $exists: false } }, { publishDate: null }],
+              },
+              { createdAt: { $gte: startDate, $lte: endDate } },
+            ],
+          },
+        ],
+      });
     }
+    if (status === 'pending') {
+      // Bản ghi cũ có thể thiếu status/null; cả ba dạng đều là pending.
+      filters.push({
+        $or: [
+          { status: { $exists: false } },
+          { status: null },
+          { status: { $size: 0 } },
+        ],
+      });
+    } else if (status) {
+      // MongoDB match scalar với field array khi phần tử đó tồn tại.
+      filters.push({ status });
+    }
+
+    const query = filters.length === 0 ? {} : filters.length === 1 ? filters[0] : { $and: filters };
     const { skip, limit: pageSize } = normalizePagination(page, limit);
 
     const [data, total] = await Promise.all([
