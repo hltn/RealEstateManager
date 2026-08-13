@@ -89,6 +89,7 @@ describe('NewsFireCrawlManagerController', () => {
     cronjobService = {
       getConfig: jest.fn(),
       updateConfig: jest.fn(),
+      setMarketAnalysisWorkflowTrigger: jest.fn(),
     } as unknown as jest.Mocked<CronjobService>;
 
     aiPromptConfigService = {
