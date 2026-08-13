@@ -570,6 +570,7 @@ export class NewsFireCrawlManagerController {
 
     const { data, total } = await this.newsArticleService.getSavedArticles(
       query.date,
+      query.status,
       page,
       limit,
     );

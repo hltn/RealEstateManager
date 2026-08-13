@@ -390,7 +390,7 @@ describe('NewsArticleService', () => {
       mockNewsArticleModel.find.mockReturnValue(chainableFind([]));
       mockNewsArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
 
-      await service.getSavedArticles('2026-08-05', 1, 20);
+      await service.getSavedArticles('2026-08-05', undefined, 1, 20);
 
       const query = mockNewsArticleModel.find.mock.calls[0][0];
       // Literal ISO hardcode (KHÔNG gọi lại startOfDayUtc/endOfDayUtc) để tránh
@@ -417,14 +417,38 @@ describe('NewsArticleService', () => {
       );
     });
 
-    it('không có date → query rỗng, không set $or', async () => {
+    it('lọc status=POSTED_WP, rồi đếm toàn bộ 30 record trước khi phân trang trang 2', async () => {
+      const records = Array.from({ length: 10 }, (_, index) => ({ _id: `article-${index + 21}` }));
+      const findQuery = chainableFind(records);
+      mockNewsArticleModel.find.mockReturnValue(findQuery);
+      mockNewsArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(30) });
+
+      const result = await service.getSavedArticles(undefined, NewsStatus.POSTED_WP, 2, 20);
+
+      expect(mockNewsArticleModel.find).toHaveBeenCalledWith({ status: NewsStatus.POSTED_WP });
+      expect(findQuery.skip).toHaveBeenCalledWith(20);
+      expect(findQuery.limit).toHaveBeenCalledWith(20);
+      expect(mockNewsArticleModel.countDocuments).toHaveBeenCalledWith({ status: NewsStatus.POSTED_WP });
+      expect(result).toEqual({ data: records, total: 30 });
+      expect(result.data).toHaveLength(10);
+    });
+
+    it('status=pending match các bài không có status, null, hoặc mảng rỗng', async () => {
       mockNewsArticleModel.find.mockReturnValue(chainableFind([]));
       mockNewsArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
 
-      await service.getSavedArticles(undefined, 1, 20);
+      await service.getSavedArticles(undefined, 'pending', 1, 20);
 
-      const query = mockNewsArticleModel.find.mock.calls[0][0];
-      expect(query.$or).toBeUndefined();
+      expect(mockNewsArticleModel.find).toHaveBeenCalledWith({
+        $or: [
+          { status: { $exists: false } },
+          { status: null },
+          { status: { $size: 0 } },
+        ],
+      });
+      expect(mockNewsArticleModel.countDocuments).toHaveBeenCalledWith(
+        mockNewsArticleModel.find.mock.calls[0][0],
+      );
     });
   });
 });
