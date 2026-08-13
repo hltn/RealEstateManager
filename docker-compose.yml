@@ -31,6 +31,9 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/realestate
       - PORT=3000
       - FRONTEND_URL=http://localhost
+      # Daily News Crawler: giữ config trong file bind-mount để backend có thể
+      # cập nhật và phục hồi cấu hình sau khi container restart/redeploy.
+      - CRON_CONFIG_FILE=/app/.env
       # Ghi file log ra /app/logs trong container, bind mount ra host ./logs
       # (xem volumes bên dưới) để log persist khi container bị xoá/rebuild.
       - LOG_DIR=/app/logs
