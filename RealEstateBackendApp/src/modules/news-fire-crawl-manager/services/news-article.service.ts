@@ -5,13 +5,16 @@ import {
   BadRequestException,
   OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
+import { RawArticle } from '../schemas/raw-article.schema';
 import { WordPressService } from './wordpress.service';
 import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
+import { EmbeddingService } from './embedding.service';
 import { MarketAnalysisHistory } from '../schemas/market-analysis-history.schema';
 import { PaginatedResult } from '../../../common/dto/paginated-response.dto';
 import {
@@ -24,20 +27,27 @@ import {
   startOfDayUtc,
   endOfDayUtc,
 } from '../../../common/utils/timezone.util';
+import { cosineSimilarity } from '../../../utils/cosine-similarity.util';
 
 /**
- * Normalize content: unescape literal \n, \t, \r thành ký tự thật.
- * AI API đôi khi trả về literal \n thay vì newline character → DB lưu sai.
+ * Normalize content: unescape literal \\n, \\t, \\r than ky tu that.
+ * AI API đôi khi tra ve literal \\n thay vì newline character -> DB luu sai.
  */
 function normalizeContent(content: string | undefined | null): string {
   if (!content) return '';
   return content
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '\r');
+    .replace(/\\\\n/g, '\\n')
+    .replace(/\\\\t/g, '\\t')
+    .replace(/\\\\r/g, '\\r');
 }
 
 const MARKET_ANALYSIS_HISTORY_PAGE_SIZE = 10;
+
+/** Default dedup threshold (configurable via env DEDUP_THRESHOLD) */
+const DEFAULT_DEDUP_THRESHOLD = 0.90;
+
+/** Default dedup window in days (configurable via env DEDUP_WINDOW_DAYS) */
+const DEFAULT_DEDUP_WINDOW_DAYS = 30;
 
 export interface MarketAnalysisHistoryPage {
   data: MarketAnalysisHistory[];
@@ -66,19 +76,46 @@ function decodeMarketAnalysisHistoryCursor(cursor: string): MarketAnalysisHistor
   }
 }
 
+/** Result of a duplicate check against existing articles */
+export interface DuplicateResult {
+  isDuplicate: boolean;
+  duplicateOf: Types.ObjectId | null;
+  duplicateScore: number | null;
+}
+
+/** Entry in the in-memory batch embedding buffer */
+interface BatchEmbeddingEntry {
+  embedding: number[];
+  id: string;
+  title: string;
+}
+
 @Injectable()
 export class NewsArticleService implements OnModuleInit {
   private readonly logger = new Logger(NewsArticleService.name);
+  private readonly dedupThreshold: number;
+  private readonly dedupWindowDays: number;
 
   constructor(
     @InjectModel(NewsArticle.name)
     private readonly newsArticleModel: Model<NewsArticle>,
+    @InjectModel(RawArticle.name)
+    private readonly rawArticleModel: Model<RawArticle>,
     @InjectModel(MarketAnalysisHistory.name)
     private readonly marketAnalysisHistoryModel: Model<MarketAnalysisHistory>,
     private readonly wordpressService: WordPressService,
     private readonly aiFilterService: AIFilterService,
     private readonly aiPromptConfigService: AiPromptConfigService,
-  ) {}
+    private readonly embeddingService: EmbeddingService,
+    private readonly configService: ConfigService,
+  ) {
+    this.dedupThreshold = Number(
+      this.configService.get<number>('DEDUP_THRESHOLD', DEFAULT_DEDUP_THRESHOLD),
+    );
+    this.dedupWindowDays = Number(
+      this.configService.get<number>('DEDUP_WINDOW_DAYS', DEFAULT_DEDUP_WINDOW_DAYS),
+    );
+  }
 
   async onModuleInit() {
     await this.cleanupUncontentCrawledStatus();
@@ -116,18 +153,110 @@ export class NewsArticleService implements OnModuleInit {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // DEDUP METHODS
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Query NewsArticle candidates within N days of publishDate that have
+   * embeddings. Returns only fields needed for cosine comparison.
+   */
+  async findDuplicateCandidates(
+    publishDate: string,
+    windowDays: number = this.dedupWindowDays,
+  ): Promise<{ _id: Types.ObjectId; contentEmbedding: number[]; title: string }[]> {
+    const refDate = new Date(publishDate);
+    if (isNaN(refDate.getTime())) {
+      return [];
+    }
+
+    const startDate = new Date(refDate);
+    startDate.setDate(startDate.getDate() - windowDays);
+
+    return this.newsArticleModel
+      .find({
+        contentEmbedding: { $ne: null },
+        publishDate: {
+          $gte: startDate.toISOString(),
+          $lte: refDate.toISOString(),
+        },
+      })
+      .select('_id contentEmbedding title')
+      .lean()
+      .exec() as Promise<{ _id: Types.ObjectId; contentEmbedding: number[]; title: string }[]>;
+  }
+
+  /**
+   * Check if a given embedding is a duplicate of any existing NewsArticle.
+   * Compares against DB candidates + in-memory batch buffer.
+   */
+  async checkDuplicate(
+    embedding: number[],
+    publishDate: string,
+    threshold: number = this.dedupThreshold,
+    batchBuffer: BatchEmbeddingEntry[] = [],
+  ): Promise<DuplicateResult> {
+    // Query DB candidates
+    const candidates = await this.findDuplicateCandidates(publishDate);
+
+    let bestMatch: { id: Types.ObjectId; score: number } | null = null;
+
+    // Compare against DB candidates
+    for (const candidate of candidates) {
+      if (!candidate.contentEmbedding) continue;
+      try {
+        const score = cosineSimilarity(embedding, candidate.contentEmbedding);
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { id: candidate._id, score };
+        }
+      } catch {
+        // Dimension mismatch — skip this candidate
+      }
+    }
+
+    // Compare against in-memory batch buffer (same-batch dedup)
+    for (const prev of batchBuffer) {
+      try {
+        const score = cosineSimilarity(embedding, prev.embedding);
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { id: new Types.ObjectId(prev.id), score };
+        }
+      } catch {
+        // Dimension mismatch — skip
+      }
+    }
+
+    if (bestMatch && bestMatch.score >= threshold) {
+      return {
+        isDuplicate: true,
+        duplicateOf: bestMatch.id,
+        duplicateScore: bestMatch.score,
+      };
+    }
+
+    return { isDuplicate: false, duplicateOf: null, duplicateScore: null };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // saveArticles — WITH DEDUP
+  // ──────────────────────────────────────────────────────────────
+
   async saveArticles(articles: any[]): Promise<{
     savedCount: number;
     duplicates: number;
     processedUrlHashes: string[];
     newlySavedUrlHashes: string[];
   }> {
-    this.logger.log('Starting Job 3: Save to Database');
+    this.logger.log('Starting Job 3: Save to Database (with dedup)');
     let savedCount = 0;
     let duplicates = 0;
     const processedUrlHashes: string[] = [];
-    // Chỉ chứa hash của bài được insert mới — dùng cho rollback compensating transaction
+    // Chi chua hash cua bai duoc insert moi — dung cho rollback compensating transaction
     const newlySavedUrlHashes: string[] = [];
+
+    // In-memory buffer for same-batch dedup detection
+    const batchEmbeddings: BatchEmbeddingEntry[] = [];
+    const embeddingModelName = this.embeddingService.getEmbeddingModelName();
 
     for (const article of articles) {
       try {
@@ -172,35 +301,134 @@ export class NewsArticleService implements OnModuleInit {
           finalPublishDate = new Date().toISOString();
         }
 
-        const mappedArticle = {
-          title: article.title,
-          summary:
-            article.summary ||
-            article.description ||
-            article.content?.substring(0, 200),
-          importanceReason: article.importanceReason,
-          impactLevel: article.impactLevel,
-          targetAudience: article.targetAudience,
-          expertOpinion: article.expertOpinion,
-          publishDate: finalPublishDate,
-          thumbnailUrl: article.thumbnailUrl,
-          source: article.source,
-          url: article.url,
-          keywords: article.keywords,
-          wpPostId: article.wpPostId || null,
-          content: normalizeContent(article.content),
-          status: initialStatus,
-        };
+        // ── DEDUP: Create embedding + check ──
+        let contentEmbedding: number[] | null = null;
+        let embeddingInput: string = '';
+        let isDuplicate = false;
+        let duplicateOfArticleId: Types.ObjectId | null = null;
+        let duplicateScore: number | null = null;
 
-        const newArticle = new this.newsArticleModel({
-          ...mappedArticle,
-          urlHash,
-        });
+        try {
+          embeddingInput = this.embeddingService.prepareEmbeddingInput(article);
+          contentEmbedding = await this.embeddingService.createEmbedding(embeddingInput);
 
-        await newArticle.save();
-        savedCount++;
-        processedUrlHashes.push(urlHash);
-        newlySavedUrlHashes.push(urlHash);
+          // Check duplicate against DB candidates + batch buffer
+          const checkResult = await this.checkDuplicate(
+            contentEmbedding,
+            finalPublishDate,
+            this.dedupThreshold,
+            batchEmbeddings,
+          );
+
+          isDuplicate = checkResult.isDuplicate;
+          duplicateOfArticleId = checkResult.duplicateOf;
+          duplicateScore = checkResult.duplicateScore;
+
+          if (isDuplicate) {
+            this.logger.warn(
+              `Duplicate detected: "${article.title}" ~ existing article ` +
+              `(score: ${duplicateScore?.toFixed(3)}, ref: ${duplicateOfArticleId})`,
+            );
+          }
+        } catch (embeddingError: any) {
+          // Embedding fail → bai xu ly binh thuong (khong dedup)
+          this.logger.error(
+            `Embedding failed for "${article.title}": ${embeddingError.message}`,
+          );
+        }
+
+        if (isDuplicate) {
+          // 4a. TRUNG → KHONG luu vao NewsArticle, cap nhat RawArticle
+          duplicates++;
+          processedUrlHashes.push(urlHash);
+
+          // Update RawArticle if this is a raw article document (has _id)
+          if (article._id) {
+            try {
+              await this.rawArticleModel.updateOne(
+                { _id: article._id },
+                {
+                  $set: {
+                    isDuplicate: true,
+                    duplicateOfArticleId,
+                    duplicateScore,
+                    contentEmbedding,
+                    embeddingInput,
+                    embeddingModel: embeddingModelName,
+                  },
+                },
+              );
+            } catch (rawUpdateError: any) {
+              this.logger.error(
+                `Failed to update RawArticle ${article._id} for duplicate: ${rawUpdateError.message}`,
+              );
+            }
+          }
+        } else {
+          // 4b. KHONG TRUNG → luu vao NewsArticle
+          const mappedArticle = {
+            title: article.title,
+            summary:
+              article.summary ||
+              article.description ||
+              article.content?.substring(0, 200),
+            importanceReason: article.importanceReason,
+            impactLevel: article.impactLevel,
+            targetAudience: article.targetAudience,
+            expertOpinion: article.expertOpinion,
+            publishDate: finalPublishDate,
+            thumbnailUrl: article.thumbnailUrl,
+            source: article.source,
+            url: article.url,
+            keywords: article.keywords,
+            wpPostId: article.wpPostId || null,
+            content: normalizeContent(article.content),
+            status: initialStatus,
+          };
+
+          const newArticle = new this.newsArticleModel({
+            ...mappedArticle,
+            urlHash,
+            contentEmbedding,
+            embeddingInput,
+            embeddingModel: embeddingModelName,
+          });
+
+          await newArticle.save();
+          savedCount++;
+          processedUrlHashes.push(urlHash);
+          newlySavedUrlHashes.push(urlHash);
+
+          // Add to batch buffer for same-batch dedup
+          if (contentEmbedding) {
+            batchEmbeddings.push({
+              embedding: contentEmbedding,
+              id: newArticle._id.toString(),
+              title: article.title,
+            });
+          }
+
+          // Update RawArticle with link to saved NewsArticle (if raw article doc)
+          if (article._id) {
+            try {
+              await this.rawArticleModel.updateOne(
+                { _id: article._id },
+                {
+                  $set: {
+                    savedArticleId: newArticle._id,
+                    contentEmbedding,
+                    embeddingInput,
+                    embeddingModel: embeddingModelName,
+                  },
+                },
+              );
+            } catch (rawUpdateError: any) {
+              this.logger.error(
+                `Failed to update RawArticle ${article._id} with savedArticleId: ${rawUpdateError.message}`,
+              );
+            }
+          }
+        }
       } catch (error: any) {
         this.logger.error(
           `Failed to save article ${article.url}: ${error.message}`,
@@ -215,10 +443,150 @@ export class NewsArticleService implements OnModuleInit {
     return { savedCount, duplicates, processedUrlHashes, newlySavedUrlHashes };
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // BACKFILL & RETROACTIVE DEDUP
+  // ──────────────────────────────────────────────────────────────
+
   /**
-   * Lấy danh sách bài đã lưu với filter ngày/trạng thái + phân trang.
-   * Trả về { data, total }: total đếm bằng countDocuments với CÙNG query filter,
-   * trước khi skip/limit nên luôn là tổng toàn bộ tập kết quả đã lọc.
+   * Backfill embeddings for NewsArticles that don't have one yet.
+   * Processes batchSize articles per call, with 100ms rate limit between API calls.
+   */
+  async backfillEmbeddings(
+    batchSize: number = 50,
+  ): Promise<{ processed: number; failed: number }> {
+    this.logger.log(`Starting backfill embeddings (batchSize=${batchSize})`);
+    let processed = 0;
+    let failed = 0;
+
+    const articlesWithoutEmbedding = await this.newsArticleModel
+      .find({ contentEmbedding: null })
+      .sort({ publishDate: -1 })
+      .limit(batchSize)
+      .exec();
+
+    const embeddingModelName = this.embeddingService.getEmbeddingModelName();
+
+    for (const article of articlesWithoutEmbedding) {
+      try {
+        const input = this.embeddingService.prepareEmbeddingInput({
+          title: article.title,
+          summary: article.summary,
+          content: article.content,
+        });
+        const embedding = await this.embeddingService.createEmbedding(input);
+
+        await this.newsArticleModel.updateOne(
+          { _id: article._id },
+          {
+            $set: {
+              contentEmbedding: embedding,
+              embeddingInput: input,
+              embeddingModel: embeddingModelName,
+            },
+          },
+        );
+        processed++;
+      } catch (error: any) {
+        failed++;
+        this.logger.error(
+          `Backfill failed for ${article._id}: ${error.message}`,
+        );
+      }
+
+      // Rate limiting: wait 100ms between requests
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    this.logger.log(
+      `Backfill completed. Processed: ${processed}, Failed: ${failed}`,
+    );
+    return { processed, failed };
+  }
+
+  /**
+   * Retroactive dedup scan: compare all NewsArticles with embeddings
+   * pair-wise and mark duplicates.
+   */
+  async retroactiveDedupScan(): Promise<{ duplicatesFound: number }> {
+    this.logger.log('Starting retroactive dedup scan');
+    let duplicatesFound = 0;
+
+    // Get all articles with embeddings, sorted by publishDate ascending
+    // (older articles = originals)
+    const articles = await this.newsArticleModel
+      .find({ contentEmbedding: { $ne: null } })
+      .sort({ publishDate: 1 })
+      .select('_id contentEmbedding title publishDate')
+      .lean()
+      .exec();
+
+    for (let i = 1; i < articles.length; i++) {
+      const current = articles[i];
+      if (!current.contentEmbedding) continue;
+
+      // Compare with all previous articles (within window)
+      for (let j = i - 1; j >= 0; j--) {
+        const candidate = articles[j];
+        if (!candidate.contentEmbedding) continue;
+
+        // Check window
+        if (current.publishDate && candidate.publishDate) {
+          const daysDiff =
+            (new Date(current.publishDate).getTime() -
+              new Date(candidate.publishDate).getTime()) /
+            (1000 * 60 * 60 * 24);
+          if (daysDiff > this.dedupWindowDays) break;
+        }
+
+        try {
+          const score = cosineSimilarity(
+            current.contentEmbedding,
+            candidate.contentEmbedding,
+          );
+
+          if (score >= this.dedupThreshold) {
+            // Mark as duplicate in NewsArticle
+            await this.newsArticleModel.updateOne(
+              { _id: current._id },
+              {
+                $set: {
+                  isDuplicate: true,
+                  duplicateOf: candidate._id,
+                  duplicateScore: score,
+                },
+              },
+            );
+            duplicatesFound++;
+            this.logger.warn(
+              `Retroactive duplicate: "${current.title}" ~ "${candidate.title}" (score: ${score.toFixed(3)})`,
+            );
+            break; // Found duplicate, no need to check further
+          }
+        } catch {
+          // Dimension mismatch — skip
+        }
+      }
+
+      // Rate limit: small delay between comparisons to avoid blocking
+      if (i % 100 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    this.logger.log(
+      `Retroactive dedup scan completed. Duplicates found: ${duplicatesFound}`,
+    );
+    return { duplicatesFound };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // EXISTING METHODS (unchanged)
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Lay danh sach bai da luu voi filter ngay/trang thai + phan trang.
+   * Tra ve { data, total }: total dem bang countDocuments voi CUNG query filter,
+   * truoc khi skip/limit nen luon la tong toan bo tap ket qua da loc.
    */
   async getSavedArticles(
     date?: string,
@@ -228,13 +596,8 @@ export class NewsArticleService implements OnModuleInit {
   ): Promise<PaginatedResult<NewsArticle>> {
     const filters: any[] = [];
     if (date) {
-      // date là ngày theo giờ Việt Nam (YYYY-MM-DD) → quy đổi đúng mốc UTC
-      // qua offset +7 (Asia/Ho_Chi_Minh), không hardcode hậu tố Z (UTC).
       const startDate = startOfDayUtc(date);
       const endDate = endOfDayUtc(date);
-      // Chỉ dùng createdAt làm fallback khi publishDate không tồn tại.
-      // Tránh $or song song gây lẫn bài ngày khác: bài publishDate=28/07
-      // nhưng createdAt=29/07 sẽ không còn hiện khi lọc 29/07 nữa.
       filters.push({
         $or: [
           {
@@ -255,7 +618,6 @@ export class NewsArticleService implements OnModuleInit {
       });
     }
     if (status === 'pending') {
-      // Bản ghi cũ có thể thiếu status/null; cả ba dạng đều là pending.
       filters.push({
         $or: [
           { status: { $exists: false } },
@@ -264,7 +626,6 @@ export class NewsArticleService implements OnModuleInit {
         ],
       });
     } else if (status) {
-      // MongoDB match scalar với field array khi phần tử đó tồn tại.
       filters.push({ status });
     }
 
@@ -290,7 +651,6 @@ export class NewsArticleService implements OnModuleInit {
       throw new NotFoundException(`Article with ID ${id} not found`);
     }
 
-    // Ensure array for migration and clean up invalid statuses (like 'SAVED', '', etc)
     let statusArray: any[] = [];
     if (Array.isArray(article.status)) {
       statusArray = article.status;
@@ -303,7 +663,7 @@ export class NewsArticleService implements OnModuleInit {
     ) as NewsStatus[];
 
     if (article.status.includes(NewsStatus.POSTED_WP)) {
-      return article; // Already published
+      return article;
     }
 
     try {
@@ -391,11 +751,9 @@ export class NewsArticleService implements OnModuleInit {
           this.logger.warn(
             `AI cleanup failed for article ${id}, fallback to basic string: ${aiError.message}`,
           );
-          // Fallback to raw markdown if AI fails
           article.content = rawMarkdown;
         }
 
-        // Migration and cleanup of invalid statuses (like 'SAVED', '', etc)
         let statusArray: any[] = [];
         if (Array.isArray(article.status)) {
           statusArray = article.status;
@@ -446,7 +804,6 @@ export class NewsArticleService implements OnModuleInit {
       throw new BadRequestException('Articles not found');
     }
 
-    // Prepare combined data
     const combinedData = articles
       .map((article) => {
         return `
@@ -458,14 +815,12 @@ Content: ${article.content || article.summary || 'N/A'}
       })
       .join('\n\n---\n\n');
 
-    // Call AIFilterService
     const markdownResponse = await this.aiFilterService.callAiCompletion(
       this.aiPromptConfigService.getPromptByName('MARKET_ANALYSIS_PROMPT'),
       combinedData,
       'Market trends analysis',
     );
 
-    // Save to MarketAnalysisHistory
     const historyEntry = new this.marketAnalysisHistoryModel({
       content: normalizeContent(markdownResponse),
       articleIds: ids,
@@ -480,7 +835,6 @@ Content: ${article.content || article.summary || 'N/A'}
     if (cursor) {
       const anchor = decodeMarketAnalysisHistoryCursor(cursor);
       const anchorDate = new Date(anchor.createdAt);
-      // Pairing createdAt with _id guarantees a stable order and an exclusive boundary.
       query.$or = [
         { createdAt: { $lt: anchorDate } },
         { createdAt: anchorDate, _id: { $lt: new Types.ObjectId(anchor.id) } },
@@ -593,9 +947,9 @@ Content: ${article.content || article.summary || 'N/A'}
   }
 
   /**
-   * Xóa các bài trong news_articles theo urlHash — dùng để rollback compensating transaction
-   * khi deleteRawArticlesBulk thất bại sau khi saveArticles đã thành công.
-   * Chỉ xóa đúng các hash được truyền vào, không ảnh hưởng bài khác.
+   * Xoa cac bai trong news_articles theo urlHash — dung de rollback compensating transaction
+   * khi deleteRawArticlesBulk that bai sau khi saveArticles da thanh cong.
+   * Chi xoa dung cac hash duoc truyen vao, khong anh huong bai khac.
    */
   async deleteArticlesByUrlHashes(urlHashes: string[]): Promise<void> {
     if (urlHashes.length === 0) return;
@@ -605,8 +959,8 @@ Content: ${article.content || article.summary || 'N/A'}
   }
 
   /**
-   * Map urlHashes → news_article _id.
-   * Dùng sau saveArticles để lấy _id của các bài vừa tạo/đã tồn tại.
+   * Map urlHashes -> news_article _id.
+   * Dung sau saveArticles de lay _id cua cac vua tao/da ton tai.
    */
   async getArticleIdsByUrlHashes(urlHashes: string[]): Promise<string[]> {
     if (!urlHashes || urlHashes.length === 0) return [];
