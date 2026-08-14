@@ -13,6 +13,7 @@ import { AnalyzeJobService } from './services/analyze-job.service';
 import { IdempotencyService } from '../../common/services/idempotency.service';
 import { RequestContextService } from '../../common/services/request-context.service';
 import { AuditLogService } from './services/audit-log.service';
+import { EmbeddingService } from './services/embedding.service';
 import { NewsArticle, NewsArticleSchema } from './schemas/news-article.schema';
 import { NewsSource, NewsSourceSchema } from './schemas/news-source.schema';
 import { RawArticle, RawArticleSchema } from './schemas/raw-article.schema';
@@ -48,6 +49,7 @@ import { ExternalLogModule } from '../external-log/external-log.module';
     IdempotencyService,
     RequestContextService,
     AuditLogService,
+    EmbeddingService,
   ],
 })
 export class NewsFireCrawlManagerModule {}

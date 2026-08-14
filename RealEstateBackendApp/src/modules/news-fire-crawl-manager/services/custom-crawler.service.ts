@@ -601,6 +601,10 @@ export class CustomCrawlerService {
     await this.rawArticleModel.findByIdAndDelete(id).exec();
   }
 
+  async updateRawArticle(id: string, update: Record<string, any>): Promise<void> {
+    await this.rawArticleModel.updateOne({ _id: id }, { $set: update }).exec();
+  }
+
   async deleteRawArticlesBulk(ids: string[]): Promise<void> {
     await this.rawArticleModel.deleteMany({ _id: { $in: ids } }).exec();
   }
