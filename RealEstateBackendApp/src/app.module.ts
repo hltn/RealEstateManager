@@ -12,6 +12,7 @@ import { HealthModule } from './health.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { GoogleDriveExportModule } from './modules/google-drive-export/google-drive-export.module';
 
 @Module({
   imports: [
@@ -37,6 +38,8 @@ import { UsersModule } from './modules/users/users.module';
     // Auth + Users: bật global JwtAuthGuard/RolesGuard/ThrottlerGuard.
     AuthModule,
     UsersModule,
+    // Google Drive Export (OAuth2 flow + Export).
+    GoogleDriveExportModule,
   ],
   controllers: [AppController],
   providers: [AppService],
