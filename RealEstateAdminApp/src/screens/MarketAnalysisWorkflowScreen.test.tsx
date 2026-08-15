@@ -26,6 +26,30 @@ vi.mock("../context/MarketAnalysisWorkflowJobContext", async () => {
   };
 });
 
+vi.mock("../components/google-drive/GoogleDriveStatusBadge", () => ({
+  default: () => <span data-testid="gdrive-status-badge">Mock Badge</span>,
+}));
+
+vi.mock("../components/google-drive/ExportButton", () => ({
+  default: ({ historyId }: { historyId: string }) => (
+    <button data-testid={`export-btn-${historyId}`}>Mock Export</button>
+  ),
+}));
+
+vi.mock("../context/GoogleDriveAuthContext", () => ({
+  GoogleDriveAuthProvider: ({ children }: { children: React.ReactNode }) => children,
+  useGoogleDriveAuth: () => ({
+    isConnected: true,
+    email: "user@gmail.com",
+    connectedAt: null,
+    isLoading: false,
+    refetchStatus: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    isDisconnecting: false,
+  }),
+}));
+
 const mockedAxios = apiAxios as unknown as { get: ReturnType<typeof vi.fn> };
 const mockedUseJob = useMarketAnalysisWorkflowJob as unknown as ReturnType<typeof vi.fn>;
 
@@ -284,5 +308,41 @@ describe("MarketAnalysisWorkflowScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
     await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/chưa có lịch sử phân tích/i)).toBeInTheDocument();
+  });
+
+  it("hiển thị Google Drive section với badge status", async () => {
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByText("Google Drive")).toBeInTheDocument();
+    expect(screen.getByTestId("gdrive-status-badge")).toBeInTheDocument();
+  });
+
+  it("hiển thị Export button trên mỗi history row", async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        data: [
+          {
+            _id: "h1",
+            content: "Nội dung phân tích 1",
+            articleIds: [],
+            createdAt: "2026-08-05T10:00:00.000Z",
+          },
+          {
+            _id: "h2",
+            content: "Nội dung phân tích 2",
+            articleIds: [],
+            createdAt: "2026-08-04T10:00:00.000Z",
+          },
+        ],
+        meta: { hasMore: false, nextCursor: null },
+      },
+    });
+    mockedUseJob.mockReturnValue(baseJobHook());
+    renderScreen();
+
+    expect(await screen.findByText("1. 05/08/2026 17:00:00")).toBeInTheDocument();
+    expect(screen.getByTestId("export-btn-h1")).toBeInTheDocument();
+    expect(screen.getByTestId("export-btn-h2")).toBeInTheDocument();
   });
 });

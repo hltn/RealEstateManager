@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye, ChevronDown, ChevronUp } from "lucide-react";
 import { DatePicker } from "../components/ui/DatePicker";
+import GoogleDriveStatusBadge from "../components/google-drive/GoogleDriveStatusBadge";
+import ExportButton from "../components/google-drive/ExportButton";
+import { useGoogleDriveAuth } from "../context/GoogleDriveAuthContext";
 import apiAxios from "../api/axios";
 import {
   useMarketAnalysisWorkflowJob,
@@ -124,11 +127,101 @@ const StepCard: React.FC<{
 };
 
 /**
+ * Section Google Drive — hiển thị trạng thái kết nối + nút Connect/Disconnect.
+ * Đặt giữa workflow section và history section.
+ */
+const GoogleDriveSection: React.FC = () => {
+  const { isConnected, email, connectedAt, connect, disconnect, isDisconnecting } = useGoogleDriveAuth();
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleDisconnect = async () => {
+    if (!window.confirm("Bạn có chắc muốn ngắt kết nối Google Drive?")) return;
+    await disconnect();
+  };
+
+  const formatConnectedDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return dateStr;
+    const parts = new Intl.DateTimeFormat("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+    const val = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+    return `${val("day")}/${val("month")}/${val("year")} ${val("hour")}:${val("minute")}`;
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between p-4 text-left"
+      >
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Google Drive</h2>
+          <GoogleDriveStatusBadge />
+        </div>
+        {isExpanded ? (
+          <ChevronUp className="w-5 h-5 text-gray-400" />
+        ) : (
+          <ChevronDown className="w-5 h-5 text-gray-400" />
+        )}
+      </button>
+
+      {isExpanded && (
+        <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-800 pt-4">
+          {isConnected ? (
+            <div className="flex flex-col gap-3">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="text-gray-900 dark:text-white font-medium">Đã kết nối với:</span>{" "}
+                {email}
+              </div>
+              {connectedAt && (
+                <div className="text-sm text-gray-500 dark:text-gray-500">
+                  Thời điểm kết nối: {formatConnectedDate(connectedAt)}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleDisconnect()}
+                disabled={isDisconnecting}
+                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 transition-colors disabled:opacity-50"
+              >
+                {isDisconnecting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isDisconnecting ? "Đang ngắt kết nối..." : "Ngắt kết nối"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Kết nối Google Drive để export báo cáo phân tích thị trường.
+              </p>
+              <button
+                type="button"
+                onClick={() => void connect()}
+                className="self-start inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg text-white bg-brand-500 hover:bg-brand-600 transition-colors shadow-sm"
+              >
+                Kết nối Google Drive
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
  * Màn hình "Phân tích thị trường" — workflow orchestration 5 bước.
  *
  * Layout theo design spec mục 4.3: (1) input ngày + nút bắt đầu, (2) 5 step card
- * trực quan hoá tiến độ real-time (poll qua `MarketAnalysisWorkflowJobContext`),
- * (3) kết quả markdown khi hoàn tất, (4) lịch sử các lần phân tích trước.
+ * trực qu hoá tiến độ real-time (poll qua `MarketAnalysisWorkflowJobContext`),
+ * (3) kết quả markdown khi hoàn tất, (4) Google Drive status, (5) lịch sử các lần phân tích trước.
  */
 const MarketAnalysisWorkflowScreen: React.FC = () => {
   const {
@@ -290,10 +383,13 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
         {/* Kết quả khi hoàn tất */}
         {isDone && resultContent && (
           <div className="mt-6 p-6 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-            <ReactMarkdown>{resultContent.replace(/\\n/g, "\n")}</ReactMarkdown>
+            <ReactMarkdown>{resultContent.replace(/\\\\n/g, "\n")}</ReactMarkdown>
           </div>
         )}
       </div>
+
+      {/* Google Drive section */}
+      <GoogleDriveSection />
 
       {/* Lịch sử phân tích */}
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6">
@@ -343,15 +439,18 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
                     {item.content.length > 100 ? "..." : ""}
                   </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedHistoryContent(item.content)}
-                  className="shrink-0 inline-flex self-center items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-brand-700 dark:text-brand-300 bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/10 dark:hover:bg-brand-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-colors"
-                  aria-label={`Xem chi tiết phân tích ${index + 1}`}
-                >
-                  <Eye className="w-4 h-4" aria-hidden="true" />
-                  Xem
-                </button>
+                <div className="shrink-0 flex items-center gap-2">
+                  <ExportButton historyId={item._id} />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHistoryContent(item.content)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-brand-700 dark:text-brand-300 bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/10 dark:hover:bg-brand-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-colors"
+                    aria-label={`Xem chi tiết phân tích ${index + 1}`}
+                  >
+                    <Eye className="w-4 h-4" aria-hidden="true" />
+                    Xem
+                  </button>
+                </div>
               </div>
             ))}
             <div ref={historyLoadMoreRef} aria-live="polite" className="py-2 text-center">
@@ -390,7 +489,7 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-              <ReactMarkdown>{selectedHistoryContent.replace(/\\n/g, "\n")}</ReactMarkdown>
+              <ReactMarkdown>{selectedHistoryContent.replace(/\\\\n/g, "\n")}</ReactMarkdown>
             </div>
           </div>
         </div>
