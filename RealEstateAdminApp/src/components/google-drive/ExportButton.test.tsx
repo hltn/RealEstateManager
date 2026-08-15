@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ExportButton from "./ExportButton";
 import * as googleDriveApi from "../../api/google-drive.api";
@@ -89,10 +89,12 @@ describe("ExportButton", () => {
     // Button should show exporting state
     expect(await screen.findByText("Đang export...")).toBeInTheDocument();
 
-    // Resolve to clean up
-    resolveExport!({
-      message: "ok",
-      data: { documentId: "x", documentUrl: "url", title: "t" },
+    // Resolve to clean up — wrap in act() to flush state updates
+    await act(async () => {
+      resolveExport!({
+        message: "ok",
+        data: { documentId: "x", documentUrl: "url", title: "t" },
+      });
     });
   });
 
