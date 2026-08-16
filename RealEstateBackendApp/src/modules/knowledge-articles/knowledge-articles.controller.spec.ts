@@ -10,6 +10,8 @@ import { KnowledgeConfigService } from './services/knowledge-config.service';
 import { PipelineLogService } from './services/pipeline-log.service';
 import { PipelineService } from './services/pipeline.service';
 import { NlCronService } from './services/nl-cron.service';
+import { IdempotencyService } from '../../common/services/idempotency.service';
+import { AuditLogService } from '../news-fire-crawl-manager/services/audit-log.service';
 
 describe('KnowledgeArticlesController', () => {
   let controller: KnowledgeArticlesController;
@@ -18,6 +20,8 @@ describe('KnowledgeArticlesController', () => {
   let mockLogService: jest.Mocked<PipelineLogService>;
   let mockPipelineService: jest.Mocked<PipelineService>;
   let mockNlCronService: jest.Mocked<NlCronService>;
+  let mockIdempotencyService: jest.Mocked<IdempotencyService>;
+  let mockAuditLogService: jest.Mocked<AuditLogService>;
 
   beforeEach(() => {
     mockArticleService = {
@@ -69,12 +73,24 @@ describe('KnowledgeArticlesController', () => {
       initFromConfig: jest.fn(),
     } as unknown as jest.Mocked<NlCronService>;
 
+    mockIdempotencyService = {
+      checkAndSet: jest.fn().mockResolvedValue(true),
+      clear: jest.fn(),
+    } as unknown as jest.Mocked<IdempotencyService>;
+
+    mockAuditLogService = {
+      log: jest.fn().mockResolvedValue(undefined),
+      listLogs: jest.fn(),
+    } as unknown as jest.Mocked<AuditLogService>;
+
     controller = new KnowledgeArticlesController(
       mockArticleService,
       mockConfigService,
       mockLogService,
       mockPipelineService,
       mockNlCronService,
+      mockIdempotencyService,
+      mockAuditLogService,
     );
   });
 

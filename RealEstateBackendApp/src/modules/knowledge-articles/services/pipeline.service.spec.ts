@@ -47,7 +47,6 @@ describe('PipelineService', () => {
     generateContent: jest.fn().mockResolvedValue({
       title: 'Generated Title',
       content: 'Markdown content',
-      htmlContent: '<p>HTML content</p>',
       summary: 'Summary',
       tags: ['tag1'],
     }),

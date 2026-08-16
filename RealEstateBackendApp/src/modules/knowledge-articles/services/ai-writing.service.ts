@@ -266,7 +266,7 @@ Return ONLY the JSON object, no preamble or explanation.`;
   /**
    * Simple markdown → HTML converter for fallback.
    */
-  private markdownToHtml(markdown: string): string {
+  markdownToHtml(markdown: string): string {
     return markdown
       .replace(/^### (.+)$/gm, '<h3>$1</h3>')
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')

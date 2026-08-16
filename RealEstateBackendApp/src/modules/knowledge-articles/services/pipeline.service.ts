@@ -270,9 +270,8 @@ export class PipelineService {
             {
               title: contentResult.title,
               content: contentResult.content,
-              htmlContent: contentResult.htmlContent,
               summary: contentResult.summary,
-            } as any,
+            },
           );
 
           await this.updateStep(job, 2, 'done');
@@ -301,7 +300,7 @@ export class PipelineService {
                 KnowledgeArticleState.READY,
                 {
                   featuredImageUrl: imageResult.imageUrl,
-                } as any,
+                },
               );
             } else {
               await this.knowledgeArticleService.updateState(
@@ -343,8 +342,8 @@ export class PipelineService {
 
                 await this.knowledgeArticleService.updateState(
                   article._id.toString(),
-                  undefined as any,
-                  { wpMediaId } as any,
+                  undefined,
+                  { wpMediaId },
                 );
               }
             } catch (uploadError: any) {
@@ -367,7 +366,7 @@ export class PipelineService {
 
           const postResult = await this.wpClientService.createPost({
             title: reloadedArticle.title,
-            content: reloadedArticle.htmlContent || reloadedArticle.content || '',
+            content: this.aiWritingService.markdownToHtml(reloadedArticle.content || ''),
             status: 'publish',
             categories: [reloadedArticle.wpCategoryId || wpCategoryId],
             tags: reloadedArticle.wpTagIds || [],
@@ -377,7 +376,7 @@ export class PipelineService {
           await this.knowledgeArticleService.updateState(
             article._id.toString(),
             KnowledgeArticleState.PUBLISHED,
-            { wpPostId: postResult.postId } as any,
+            { wpPostId: postResult.postId },
           );
 
           await this.updateStep(job, 5, 'done');

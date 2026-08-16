@@ -129,13 +129,18 @@ export class KnowledgeArticleService {
 
   /**
    * Update the pipeline state of a knowledge article.
+   * If `state` is omitted, only the `extra` fields are updated.
    */
   async updateState(
     id: string,
-    state: KnowledgeArticleState,
+    state?: KnowledgeArticleState,
     extra?: Partial<NewsArticle>,
   ): Promise<void> {
-    const update: Record<string, unknown> = { pipelineState: state };
+    const update: Record<string, unknown> = {};
+
+    if (state) {
+      update.pipelineState = state;
+    }
 
     if (extra) {
       Object.assign(update, extra);
@@ -242,7 +247,7 @@ export class KnowledgeArticleService {
 
     await this.updateState(id, KnowledgeArticleState.PUBLISHED, {
       wpPostId,
-    } as Partial<NewsArticle>);
+    });
 
     return { wpPostId };
   }
