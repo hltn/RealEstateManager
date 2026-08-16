@@ -231,6 +231,18 @@ export class AiImageService {
   }
 
   /**
+   * Test image generation — validates config and API connectivity.
+   * Returns just the imageUrl (no buffer) for the test endpoint.
+   */
+  async testGenerate(): Promise<{ imageUrl: string }> {
+    const result = await this.generateFeaturedImage({
+      title: 'Test image generation',
+      contentSummary: 'This is a test to verify the image generation pipeline is working correctly.',
+    });
+    return { imageUrl: result.imageUrl };
+  }
+
+  /**
    * Generate inline images for content sections.
    * Returns array of { imageUrl, buffer, forSection }.
    */

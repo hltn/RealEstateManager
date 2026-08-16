@@ -10,6 +10,10 @@ import { KnowledgeConfigService } from './services/knowledge-config.service';
 import { PipelineLogService } from './services/pipeline-log.service';
 import { PipelineService } from './services/pipeline.service';
 import { NlCronService } from './services/nl-cron.service';
+import { AiImageService } from './services/ai-image.service';
+import { WpClientService } from './services/wp-client.service';
+import { IdempotencyService } from '../../common/services/idempotency.service';
+import { AuditLogService } from '../news-fire-crawl-manager/services/audit-log.service';
 
 describe('KnowledgeArticlesController', () => {
   let controller: KnowledgeArticlesController;
@@ -18,6 +22,10 @@ describe('KnowledgeArticlesController', () => {
   let mockLogService: jest.Mocked<PipelineLogService>;
   let mockPipelineService: jest.Mocked<PipelineService>;
   let mockNlCronService: jest.Mocked<NlCronService>;
+  let mockAiImageService: jest.Mocked<AiImageService>;
+  let mockWpClientService: jest.Mocked<WpClientService>;
+  let mockIdempotencyService: jest.Mocked<IdempotencyService>;
+  let mockAuditLogService: jest.Mocked<AuditLogService>;
 
   beforeEach(() => {
     mockArticleService = {
@@ -69,26 +77,66 @@ describe('KnowledgeArticlesController', () => {
       initFromConfig: jest.fn(),
     } as unknown as jest.Mocked<NlCronService>;
 
+    mockAiImageService = {
+      generateFeaturedImage: jest.fn(),
+      generateInlineImages: jest.fn(),
+      testGenerate: jest.fn(),
+    } as unknown as jest.Mocked<AiImageService>;
+
+    mockWpClientService = {
+      verifyConnection: jest.fn(),
+    } as unknown as jest.Mocked<WpClientService>;
+
+    mockIdempotencyService = {
+      get: jest.fn(),
+      set: jest.fn(),
+      isInFlight: jest.fn().mockReturnValue(false),
+      markInFlight: jest.fn(),
+      clearInFlight: jest.fn(),
+    } as unknown as jest.Mocked<IdempotencyService>;
+
+    mockAuditLogService = {
+      log: jest.fn(),
+    } as unknown as jest.Mocked<AuditLogService>;
+
     controller = new KnowledgeArticlesController(
       mockArticleService,
       mockConfigService,
       mockLogService,
       mockPipelineService,
       mockNlCronService,
+      mockAiImageService,
+      mockWpClientService,
+      mockIdempotencyService,
+      mockAuditLogService,
     );
   });
 
   // ── Config Endpoints ──────────────────────────────────
 
   describe('getWpConfig', () => {
-    it('returns config data', async () => {
+    it('returns config data with appPassword masked', async () => {
+      mockConfigService.getWpConfig.mockResolvedValue({
+        siteUrl: 'https://test.com',
+        appPassword: 'real-secret',
+      });
+
+      const result = await controller.getWpConfig();
+
+      expect(result).toEqual({
+        data: { siteUrl: 'https://test.com', appPassword: '***' },
+      });
+    });
+
+    it('does not add appPassword field when absent', async () => {
       mockConfigService.getWpConfig.mockResolvedValue({
         siteUrl: 'https://test.com',
       });
 
       const result = await controller.getWpConfig();
 
-      expect(result).toEqual({ data: { siteUrl: 'https://test.com' } });
+      expect(result.data).toEqual({ siteUrl: 'https://test.com' });
+      expect(result.data.appPassword).toBeUndefined();
     });
   });
 
@@ -105,6 +153,35 @@ describe('KnowledgeArticlesController', () => {
 
       expect(result.message).toBe('WP config updated');
       expect(result.data).toEqual({ siteUrl: 'https://new.com' });
+    });
+  });
+
+  describe('verifyWpConnection', () => {
+    it('delegates to WpClientService and returns result', async () => {
+      mockWpClientService.verifyConnection.mockResolvedValue({
+        valid: true,
+        siteName: 'Test WP Site',
+      });
+
+      const result = await controller.verifyWpConnection();
+
+      expect(result).toEqual({
+        data: { valid: true, siteName: 'Test WP Site' },
+      });
+      expect(mockWpClientService.verifyConnection).toHaveBeenCalled();
+    });
+
+    it('returns error info when connection fails', async () => {
+      mockWpClientService.verifyConnection.mockResolvedValue({
+        valid: false,
+        error: 'Connection refused',
+      });
+
+      const result = await controller.verifyWpConnection();
+
+      expect(result).toEqual({
+        data: { valid: false, error: 'Connection refused' },
+      });
     });
   });
 
@@ -157,6 +234,21 @@ describe('KnowledgeArticlesController', () => {
       });
 
       expect(result.message).toBe('AI image config updated');
+    });
+  });
+
+  describe('testAiImageGeneration', () => {
+    it('delegates to AiImageService and returns imageUrl', async () => {
+      mockAiImageService.testGenerate.mockResolvedValue({
+        imageUrl: 'https://example.com/test.png',
+      });
+
+      const result = await controller.testAiImageGeneration();
+
+      expect(result).toEqual({
+        data: { imageUrl: 'https://example.com/test.png' },
+      });
+      expect(mockAiImageService.testGenerate).toHaveBeenCalled();
     });
   });
 
@@ -237,8 +329,23 @@ describe('KnowledgeArticlesController', () => {
 
       const result = await controller.publishArticle('abc');
 
-      expect(result.message).toBe('Article published');
-      expect(result.data).toEqual({ wpPostId: 123 });
+      expect((result as any).message).toBe('Article published');
+      expect((result as any).data).toEqual({ wpPostId: 123 });
+      expect(mockAuditLogService.log).toHaveBeenCalledWith(
+        expect.any(String),
+        'news_articles',
+        ['abc'],
+        'system',
+        { wpPostId: 123 },
+      );
+    });
+
+    it('returns in-progress message when idempotency key is in flight', async () => {
+      mockIdempotencyService.isInFlight.mockReturnValue(true);
+
+      const result = await controller.publishArticle('abc', 'key-1');
+
+      expect(result).toEqual({ message: 'Request already in progress' });
     });
   });
 
@@ -250,8 +357,9 @@ describe('KnowledgeArticlesController', () => {
 
       const result = await controller.republishArticle('abc');
 
-      expect(result.message).toBe('Article republished');
-      expect(result.data).toEqual({ wpPostId: 456 });
+      expect((result as any).message).toBe('Article republished');
+      expect((result as any).data).toEqual({ wpPostId: 456 });
+      expect(mockAuditLogService.log).toHaveBeenCalled();
     });
   });
 
@@ -262,6 +370,7 @@ describe('KnowledgeArticlesController', () => {
       const result = await controller.deleteKnowledgeArticle('abc');
 
       expect(result.message).toBe('Article deleted');
+      expect(mockAuditLogService.log).toHaveBeenCalled();
     });
   });
 
@@ -275,8 +384,9 @@ describe('KnowledgeArticlesController', () => {
         ids: ['id1', 'id2'],
       });
 
-      expect(result.message).toBe('2 articles deleted');
-      expect(result.data).toEqual({ deletedCount: 2 });
+      expect((result as any).message).toBe('2 articles deleted');
+      expect((result as any).data).toEqual({ deletedCount: 2 });
+      expect(mockAuditLogService.log).toHaveBeenCalled();
     });
   });
 

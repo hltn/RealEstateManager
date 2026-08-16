@@ -1,10 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
-  NewsArticle,
-  NewsArticleSchema,
-} from '../news-fire-crawl-manager/schemas/news-article.schema';
-import {
   KnowledgeConfig,
   KnowledgeConfigSchema,
 } from './schemas/knowledge-config.schema';
@@ -22,14 +18,16 @@ import { WpClientService } from './services/wp-client.service';
 import { PipelineService } from './services/pipeline.service';
 import { NlCronService } from './services/nl-cron.service';
 import { CategoryRotationService } from './services/category-rotation.service';
+import { NewsFireCrawlManagerModule } from '../news-fire-crawl-manager/news-fire-crawl-manager.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: NewsArticle.name, schema: NewsArticleSchema },
       { name: KnowledgeConfig.name, schema: KnowledgeConfigSchema },
       { name: PipelineLog.name, schema: PipelineLogSchema },
     ]),
+    // Import NewsArticle model + exported IdempotencyService + AuditLogService.
+    NewsFireCrawlManagerModule,
   ],
   controllers: [KnowledgeArticlesController],
   providers: [
