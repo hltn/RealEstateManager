@@ -75,9 +75,15 @@ export class KnowledgeArticlesController {
   @Put('config/wp')
   @ApiOperation({ summary: 'Update WordPress connection config' })
   async updateWpConfig(@Body() body: UpdateWpConfigDto) {
-    const doc = await this.knowledgeConfigService.updateWpConfig(
-      body as Record<string, unknown>,
-    );
+    // M-04: GET masks appPassword as '***'; if FE submits that mask (or an empty
+    // string) back, we must NOT overwrite the stored credential. Strip the field
+    // so updateWpConfig merges only the actually-changed fields.
+    const payload = { ...body } as Record<string, unknown>;
+    if (payload.appPassword === '***' || payload.appPassword === '') {
+      delete payload.appPassword;
+    }
+
+    const doc = await this.knowledgeConfigService.updateWpConfig(payload);
     return { message: 'WP config updated', data: doc.config };
   }
 

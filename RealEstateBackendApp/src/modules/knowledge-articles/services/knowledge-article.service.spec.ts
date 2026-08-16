@@ -3,13 +3,14 @@
  *
  * Mocks the Mongoose Model and tests:
  * - listArticles: pagination, filtering by status/category/search, sort order
- * - getArticleById: returns knowledge article, throws NotFoundException
+ * - getArticleById: returns knowledge article (with deletedAt: null filter), throws NotFoundException
  * - deleteArticle: sets deletedAt
- * - deleteBulkArticles: bulk soft delete
+ * - deleteBulkArticles: bulk soft delete (with deletedAt: null filter)
  * - updateState: updates pipeline state + extra fields
  * - markFailed: sets failed state + step + error
  * - publishToWordPress: validates state, stubs publish
  * - republishToWordPress: validates wpPostId exists
+ * - retryArticle: resumes pipeline from failed step (M-03: now runs inline)
  * - createBatchArticles: creates articles with correct fields
  */
 
@@ -31,12 +32,28 @@ const mockModel = {
   create: mockCreate,
 };
 
-// M-02: Mock WpClientService for publish/republish tests
 const mockWpClientService = {
   createPost: jest.fn().mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
   updatePost: jest.fn().mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
   verifyConnection: jest.fn(),
   uploadMedia: jest.fn(),
+};
+
+const mockAiWritingService = {
+  generateContent: jest.fn().mockResolvedValue({
+    title: 'AI Generated Title',
+    content: 'AI generated content',
+    htmlContent: '<p>AI generated content</p>',
+    summary: 'AI summary',
+  }),
+  markdownToHtml: jest.fn().mockReturnValue('<p>converted</p>'),
+};
+
+const mockAiImageService = {
+  generateFeaturedImage: jest.fn().mockResolvedValue({
+    imageUrl: 'https://example.com/image.jpg',
+    buffer: Buffer.from('fake-image'),
+  }),
 };
 
 import { KnowledgeArticleService } from './knowledge-article.service';
@@ -49,7 +66,12 @@ describe('KnowledgeArticleService', () => {
     jest.clearAllMocks();
     mockLean.mockReturnValue({ exec: mockExec });
     mockExec.mockResolvedValue(null);
-    service = new KnowledgeArticleService(mockModel as never, mockWpClientService as never);
+    service = new KnowledgeArticleService(
+      mockModel as never,
+      mockWpClientService as never,
+      mockAiWritingService as never,
+      mockAiImageService as never,
+    );
   });
 
   describe('getArticleById', () => {
@@ -59,7 +81,8 @@ describe('KnowledgeArticleService', () => {
 
       const result = await service.getArticleById('abc');
 
-      expect(mockFindOne).toHaveBeenCalledWith({ _id: 'abc', type: 'knowledge' });
+      // C-01: query must include deletedAt: null
+      expect(mockFindOne).toHaveBeenCalledWith({ _id: 'abc', type: 'knowledge', deletedAt: null });
       expect(result).toEqual(fakeArticle);
     });
 
@@ -89,6 +112,23 @@ describe('KnowledgeArticleService', () => {
       expect(result.data).toEqual(articles);
       expect(result.meta.total).toBe(10);
       expect(result.meta.page).toBe(1);
+    });
+
+    it('includes deletedAt: null in filter (C-01)', async () => {
+      const mockLimit = jest.fn().mockReturnValue({ lean: mockLean });
+      const mockSkip = jest.fn().mockReturnValue({ limit: mockLimit });
+      const mockSort = jest.fn().mockReturnValue({ skip: mockSkip });
+      mockFind.mockReturnValue({ sort: mockSort });
+      mockExec.mockResolvedValue([]);
+      mockCountDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
+
+      await service.listArticles({});
+
+      expect(mockFind).toHaveBeenCalledWith(
+        expect.objectContaining({ deletedAt: null }),
+      );
     });
 
     it('filters by status', async () => {
@@ -194,17 +234,30 @@ describe('KnowledgeArticleService', () => {
       const result = await service.deleteBulkArticles(['id1', 'id2', 'id3']);
 
       expect(result.deletedCount).toBe(3);
+      // C-01: bulk delete must filter deletedAt: null
       expect(mockUpdateMany).toHaveBeenCalledWith(
         {
           _id: { $in: ['id1', 'id2', 'id3'] },
           type: 'knowledge',
+          deletedAt: null,
         },
         expect.any(Object),
       );
     });
+
+    it('does not include already-deleted articles in bulk delete scope (C-01)', async () => {
+      const mockExecBulk = jest.fn().mockResolvedValue({ modifiedCount: 0 });
+      mockUpdateMany.mockReturnValue({ exec: mockExecBulk });
+
+      await service.deleteBulkArticles(['deleted-id']);
+
+      // Verify deletedAt: null is in the filter — already-deleted articles are excluded
+      const filterArg = mockUpdateMany.mock.calls[0][0];
+      expect(filterArg.deletedAt).toBe(null);
+    });
   });
 
-  describe('retryArticle', () => {
+  describe('retryArticle (M-03)', () => {
     it('throws BadRequestException when article is not in failed state', async () => {
       mockExec.mockResolvedValue({
         _id: 'abc',
@@ -217,73 +270,138 @@ describe('KnowledgeArticleService', () => {
       );
     });
 
-    it('resumes to generating_content when failed at step 1', async () => {
-      mockExec.mockResolvedValue({
-        _id: 'abc',
-        pipelineState: KnowledgeArticleState.FAILED,
-        pipelineFailedStep: 1,
-        pipelineError: 'AI timeout',
-      });
+    it('re-runs pipeline inline when failed at step 1 (M-03)', async () => {
+      // Call sequence for retryArticle:
+      // 1. getArticleById — check state (FAILED)
+      // 2. updateState → GENERATING_CONTENT
+      // 3. aiWritingService.generateContent
+      // 4. updateState → CONTENT_READY
+      // 5. getArticleById — reload for image step
+      // 6. aiImageService.generateFeaturedImage
+      // 7. updateState → READY
+      // 8. updateOne — clear error fields
+      // 9. getArticleById — reload before publish
+      // 10. publishToWordPress uses preloaded (no extra findOne)
+      // 11. updateState → PUBLISHING
+      // 12. wpClientService.createPost
+      // 13. updateState → PUBLISHED
+      mockExec
+        .mockResolvedValueOnce({
+          _id: 'abc',
+          pipelineState: KnowledgeArticleState.FAILED,
+          pipelineFailedStep: 1,
+          title: 'Test Topic',
+          categorySlug: 'ha-noi',
+          featuredImageUrl: null,
+        })
+        .mockResolvedValueOnce({
+          _id: 'abc',
+          title: 'Test Topic',
+          categorySlug: 'ha-noi',
+          featuredImageUrl: null,
+          summary: 'AI summary',
+          content: 'AI content',
+        })
+        .mockResolvedValueOnce({
+          _id: 'abc',
+          pipelineState: KnowledgeArticleState.READY,
+          title: 'AI Generated Title',
+          content: 'AI generated content',
+          htmlContent: '<p>AI generated content</p>',
+          wpCategoryId: 16,
+          wpTagIds: [],
+        })
+        .mockResolvedValue({ _id: 'abc' });
 
       const result = await service.retryArticle('abc');
 
       expect(result.success).toBe(true);
       expect(result.failedStep).toBe(1);
-      expect(mockUpdateOne).toHaveBeenCalledWith(
-        { _id: 'abc' },
-        {
-          $set: {
-            pipelineState: KnowledgeArticleState.GENERATING_CONTENT,
-            pipelineError: null,
-            pipelineFailedStep: null,
-          },
-        },
-      );
+      // Should have called AI writing service
+      expect(mockAiWritingService.generateContent).toHaveBeenCalled();
+      // Should have called AI image service
+      expect(mockAiImageService.generateFeaturedImage).toHaveBeenCalled();
+      // Should have called WP publish
+      expect(mockWpClientService.createPost).toHaveBeenCalled();
     });
 
-    it('resumes to content_ready when failed at step 3', async () => {
-      mockExec.mockResolvedValue({
-        _id: 'abc',
-        pipelineState: KnowledgeArticleState.FAILED,
-        pipelineFailedStep: 3,
-        pipelineError: 'Image API error',
-      });
+    it('skips content regen when failed at step 3 (M-03)', async () => {
+      // Call sequence for failedStep=3:
+      // 1. getArticleById — check state (FAILED)
+      // 2. getArticleById — reload for image step (step 3 check)
+      // 3. aiImageService.generateFeaturedImage
+      // 4. updateState → READY
+      // 5. updateOne — clear error fields
+      // 6. getArticleById — reload before publish
+      // 7. publishToWordPress uses preloaded (no extra findOne)
+      // 8. updateState → PUBLISHING
+      // 9. wpClientService.createPost
+      // 10. updateState → PUBLISHED
+      mockExec
+        .mockResolvedValueOnce({
+          _id: 'abc',
+          pipelineState: KnowledgeArticleState.FAILED,
+          pipelineFailedStep: 3,
+          title: 'Test Topic',
+          categorySlug: 'ha-noi',
+          featuredImageUrl: null,
+          content: 'Existing content',
+          summary: 'Existing summary',
+        })
+        .mockResolvedValueOnce({
+          _id: 'abc',
+          title: 'Test Topic',
+          featuredImageUrl: null,
+          summary: 'Existing summary',
+          content: 'Existing content',
+        })
+        .mockResolvedValueOnce({
+          _id: 'abc',
+          pipelineState: KnowledgeArticleState.READY,
+          title: 'Test Topic',
+          content: 'Existing content',
+          htmlContent: '<p>Existing content</p>',
+          wpCategoryId: 16,
+          wpTagIds: [],
+        })
+        .mockResolvedValue({ _id: 'abc' });
 
       const result = await service.retryArticle('abc');
 
       expect(result.success).toBe(true);
-      expect(mockUpdateOne).toHaveBeenCalledWith(
-        { _id: 'abc' },
-        {
-          $set: {
-            pipelineState: KnowledgeArticleState.CONTENT_READY,
-            pipelineError: null,
-            pipelineFailedStep: null,
-          },
-        },
-      );
+      expect(result.failedStep).toBe(3);
+      // Should NOT call AI writing (step 3 means content was ready)
+      expect(mockAiWritingService.generateContent).not.toHaveBeenCalled();
+      // Should call AI image service
+      expect(mockAiImageService.generateFeaturedImage).toHaveBeenCalled();
     });
 
-    it('resumes to ready when failed at step 5', async () => {
+    it('marks article as failed on retry error (M-03)', async () => {
       mockExec.mockResolvedValue({
         _id: 'abc',
         pipelineState: KnowledgeArticleState.FAILED,
-        pipelineFailedStep: 5,
-        pipelineError: 'WP API error',
+        pipelineFailedStep: 1,
+        title: 'Test Topic',
+        categorySlug: 'ha-noi',
       });
 
-      const result = await service.retryArticle('abc');
+      // Make AI service throw
+      mockAiWritingService.generateContent.mockRejectedValueOnce(
+        new Error('AI service down'),
+      );
 
-      expect(result.success).toBe(true);
+      await expect(service.retryArticle('abc')).rejects.toThrow(
+        'Retry failed at step 1',
+      );
+
+      // Should re-mark as failed
       expect(mockUpdateOne).toHaveBeenCalledWith(
         { _id: 'abc' },
-        {
-          $set: {
-            pipelineState: KnowledgeArticleState.READY,
-            pipelineError: null,
-            pipelineFailedStep: null,
-          },
-        },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            pipelineState: KnowledgeArticleState.FAILED,
+          }),
+        }),
       );
     });
   });

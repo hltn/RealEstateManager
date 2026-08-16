@@ -42,7 +42,6 @@ const pipelineJobs = new Map<
     result?: {
       published: number;
       failed: number;
-      ready: number;
       category: string;
     };
     error?: string;
@@ -281,7 +280,8 @@ export class PipelineService implements OnModuleInit {
       // Process each article sequentially
       let publishedCount = 0;
       let failedCount = 0;
-      let readyCount = 0;
+      // M-05: readyCount removed — every article that reaches READY is published
+      // immediately (steps 4+5 run unconditionally), so this counter was always 0.
 
       for (const article of articles) {
         const articleStartTime = Date.now();
@@ -470,7 +470,7 @@ export class PipelineService implements OnModuleInit {
       await this.pipelineLogService.finalizeLog(batchId, finalStatus, {
         publishedCount,
         failedCount,
-        readyCount,
+        readyCount: 0, // M-05: always 0 — articles are published immediately from READY
         errorSummary:
           failedCount > 0
             ? `${failedCount}/${articles.length} articles failed`
@@ -489,12 +489,11 @@ export class PipelineService implements OnModuleInit {
       job.result = {
         published: publishedCount,
         failed: failedCount,
-        ready: readyCount,
         category: categorySlug || 'auto',
       };
 
       this.logger.log(
-        `Pipeline ${jobId} completed: ${publishedCount} published, ${failedCount} failed, ${readyCount} ready (${totalDuration}ms)`,
+        `Pipeline ${jobId} completed: ${publishedCount} published, ${failedCount} failed (${totalDuration}ms)`,
       );
     } catch (error: any) {
       job.status = 'error';
