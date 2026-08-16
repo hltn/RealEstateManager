@@ -326,4 +326,29 @@ describe('NlCronService', () => {
       await expect(service.onModuleInit()).resolves.not.toThrow();
     });
   });
+
+  describe('C-02 timezone: matchesCron uses ICT (UTC+7)', () => {
+    it('previewSchedule for "0 8 * * *" (8am ICT) should return UTC times at 01:00 UTC', () => {
+      // 08:00 ICT = 01:00 UTC. All returned ISO strings should have hour=01.
+      const result = service.previewSchedule('0 8 * * *');
+      expect(result.nextRuns.length).toBe(5);
+      result.nextRuns.forEach((iso) => {
+        const d = new Date(iso);
+        // The UTC hour must be 1 (= 08:00 ICT) for a daily-at-8am-ICT cron
+        expect(d.getUTCHours()).toBe(1);
+        expect(d.getUTCMinutes()).toBe(0);
+      });
+    });
+
+    it('previewSchedule for "30 14 * * 1-5" (14:30 ICT) should return UTC times at 07:30 UTC', () => {
+      // 14:30 ICT = 07:30 UTC
+      const result = service.previewSchedule('30 14 * * 1-5');
+      expect(result.nextRuns.length).toBe(5);
+      result.nextRuns.forEach((iso) => {
+        const d = new Date(iso);
+        expect(d.getUTCHours()).toBe(7);
+        expect(d.getUTCMinutes()).toBe(30);
+      });
+    });
+  });
 });

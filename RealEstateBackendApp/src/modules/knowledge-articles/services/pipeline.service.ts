@@ -42,7 +42,6 @@ const pipelineJobs = new Map<
     result?: {
       published: number;
       failed: number;
-      ready: number;
       category: string;
     };
     error?: string;
@@ -95,9 +94,7 @@ export class PipelineService implements OnModuleInit {
           `M-01 recovery: marked ${staleCount} RUNNING pipeline log(s) as FAILED due to server restart`,
         );
       } else {
-        this.logger.log(
-          'M-01 startup check: no stale RUNNING pipeline logs found',
-        );
+        this.logger.log('M-01 startup check: no stale RUNNING pipeline logs found');
       }
     } catch (error: any) {
       this.logger.error(
@@ -199,9 +196,7 @@ export class PipelineService implements OnModuleInit {
     // Get the pipeline log to find failed articles
     const log = await this.pipelineLogService.getLogByBatchId(batchId);
     if (!log) {
-      throw new BadRequestException(
-        `Pipeline log not found for batch: ${batchId}`,
-      );
+      throw new BadRequestException(`Pipeline log not found for batch: ${batchId}`);
     }
 
     const failedArticles = (log.articleResults || []).filter(
@@ -244,10 +239,11 @@ export class PipelineService implements OnModuleInit {
       // ── Step 1: Pick Topics (with category rotation) ────
       await this.updateStep(job, 1, 'running');
 
-      const rotationResult = await this.categoryRotationService.pickCategory(
-        categorySlug,
-        articleCount,
-      );
+      const rotationResult =
+        await this.categoryRotationService.pickCategory(
+          categorySlug,
+          articleCount,
+        );
 
       const selectedTopic = rotationResult.topic;
       const wpCategoryId = rotationResult.wpCategoryId;
@@ -259,10 +255,11 @@ export class PipelineService implements OnModuleInit {
         wpCategoryId,
       }));
 
-      const articles = await this.knowledgeArticleService.createBatchArticles(
-        batchId,
-        articleTopics,
-      );
+      const articles =
+        await this.knowledgeArticleService.createBatchArticles(
+          batchId,
+          articleTopics,
+        );
 
       // Create pipeline log
       await this.pipelineLogService.createLog({
@@ -283,7 +280,8 @@ export class PipelineService implements OnModuleInit {
       // Process each article sequentially
       let publishedCount = 0;
       let failedCount = 0;
-      const readyCount = 0;
+      // M-05: readyCount removed — every article that reaches READY is published
+      // immediately (steps 4+5 run unconditionally), so this counter was always 0.
 
       for (const article of articles) {
         const articleStartTime = Date.now();
@@ -327,12 +325,11 @@ export class PipelineService implements OnModuleInit {
               KnowledgeArticleState.GENERATING_IMAGE,
             );
 
-            const imageResult = await this.aiImageService.generateFeaturedImage(
-              {
+            const imageResult =
+              await this.aiImageService.generateFeaturedImage({
                 title: contentResult.title,
                 contentSummary: contentResult.summary,
-              },
-            );
+              });
 
             if (imageResult.imageUrl || imageResult.buffer.length > 0) {
               await this.knowledgeArticleService.updateState(
@@ -406,9 +403,7 @@ export class PipelineService implements OnModuleInit {
 
           const postResult = await this.wpClientService.createPost({
             title: reloadedArticle.title,
-            content: this.aiWritingService.markdownToHtml(
-              reloadedArticle.content || '',
-            ),
+            content: this.aiWritingService.markdownToHtml(reloadedArticle.content || ''),
             status: 'publish',
             categories: [reloadedArticle.wpCategoryId || wpCategoryId],
             tags: reloadedArticle.wpTagIds || [],
@@ -475,7 +470,7 @@ export class PipelineService implements OnModuleInit {
       await this.pipelineLogService.finalizeLog(batchId, finalStatus, {
         publishedCount,
         failedCount,
-        readyCount,
+        readyCount: 0, // M-05: always 0 — articles are published immediately from READY
         errorSummary:
           failedCount > 0
             ? `${failedCount}/${articles.length} articles failed`
@@ -483,7 +478,10 @@ export class PipelineService implements OnModuleInit {
       });
 
       // Update pipeline log total duration
-      await this.pipelineLogService.updateTotalDuration(batchId, totalDuration);
+      await this.pipelineLogService.updateTotalDuration(
+        batchId,
+        totalDuration,
+      );
 
       // Update job status
       job.status = 'done';
@@ -491,12 +489,11 @@ export class PipelineService implements OnModuleInit {
       job.result = {
         published: publishedCount,
         failed: failedCount,
-        ready: readyCount,
         category: categorySlug || 'auto',
       };
 
       this.logger.log(
-        `Pipeline ${jobId} completed: ${publishedCount} published, ${failedCount} failed, ${readyCount} ready (${totalDuration}ms)`,
+        `Pipeline ${jobId} completed: ${publishedCount} published, ${failedCount} failed (${totalDuration}ms)`,
       );
     } catch (error: any) {
       job.status = 'error';

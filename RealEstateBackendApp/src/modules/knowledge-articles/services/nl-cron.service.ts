@@ -49,6 +49,12 @@ Return ONLY a JSON object:
 export class NlCronService implements OnModuleInit {
   private readonly logger = new Logger(NlCronService.name);
   private static readonly CRON_JOB_NAME = 'knowledge_articles_daily';
+  /**
+   * C-02: all cron expressions are authored in Vietnam local time (ICT, UTC+7),
+   * so the CronJob is registered with this IANA timezone. Without it, `cron`
+   * uses the server's local timezone and jobs fire up to 7h off.
+   */
+  private static readonly CRON_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
   constructor(
     private readonly knowledgeConfigService: KnowledgeConfigService,
@@ -293,7 +299,7 @@ export class NlCronService implements OnModuleInit {
 
   /**
    * Calculate next N run times from a cron expression.
-   * Simple implementation for standard 5-field cron.
+   * C-02: interprets the cron fields in Asia/Ho_Chi_Minh (ICT, UTC+7).
    */
   private calculateNextRuns(cronExpression: string, count: number): string[] {
     const parts = cronExpression.trim().split(/\s+/);
@@ -324,15 +330,22 @@ export class NlCronService implements OnModuleInit {
     return runs;
   }
 
+  /**
+   * C-02: matches cron fields against ICT (Asia/Ho_Chi_Minh, UTC+7) local time,
+   * not server-local or UTC. This ensures previewSchedule output aligns with the
+   * registered CronJob which also runs on ICT via its timezone parameter.
+   */
   private matchesCron(
     date: Date,
     minuteField: string,
     hourField: string,
     dowField: string,
   ): boolean {
-    const minute = date.getUTCMinutes();
-    const hour = date.getUTCHours();
-    const dow = date.getUTCDay(); // 0=Sun
+    // Convert to ICT (UTC+7) for field matching
+    const ictDate = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    const minute = ictDate.getUTCMinutes();
+    const hour = ictDate.getUTCHours();
+    const dow = ictDate.getUTCDay(); // 0=Sun
 
     if (!this.matchesField(minuteField, minute, 0, 59)) return false;
     if (!this.matchesField(hourField, hour, 0, 23)) return false;
@@ -457,24 +470,32 @@ export class NlCronService implements OnModuleInit {
   }
 
   private registerCronJob(cronExpression: string): void {
-    const job = new CronJob(cronExpression, async () => {
-      this.logger.log('Cron triggered — starting pipeline...');
+    // C-02: pass ICT timezone so the CronJob fires at Vietnam local time,
+    // matching the previewSchedule output which also interprets fields in ICT.
+    const job = new CronJob(
+      cronExpression,
+      async () => {
+        this.logger.log('Cron triggered — starting pipeline...');
 
-      // Update lastRunAt
-      const now = new Date().toISOString();
-      const preview = this.previewSchedule(cronExpression, 1);
+        // Update lastRunAt
+        const now = new Date().toISOString();
+        const preview = this.previewSchedule(cronExpression, 1);
 
-      await this.knowledgeConfigService.updateCronConfig({
-        lastRunAt: now,
-        nextRunAt: preview.nextRuns[0] || null,
-      });
+        await this.knowledgeConfigService.updateCronConfig({
+          lastRunAt: now,
+          nextRunAt: preview.nextRuns[0] || null,
+        });
 
-      try {
-        await this.pipelineService.startPipeline({ source: 'cron' });
-      } catch (error: any) {
-        this.logger.error(`Cron pipeline failed: ${error.message}`, error);
-      }
-    });
+        try {
+          await this.pipelineService.startPipeline({ source: 'cron' });
+        } catch (error: any) {
+          this.logger.error(`Cron pipeline failed: ${error.message}`, error);
+        }
+      },
+      undefined, // onComplete
+      false,     // start (we call .start() below)
+      NlCronService.CRON_TIMEZONE,
+    );
 
     this.schedulerRegistry.addCronJob(
       NlCronService.CRON_JOB_NAME,

@@ -11,10 +11,14 @@ import {
   NewsArticleSchema,
 } from '../../news-fire-crawl-manager/schemas/news-article.schema';
 import { KnowledgeArticleState } from '../types/knowledge-article-state';
-import { GetKnowledgeArticlesQueryDto } from '../dtos/knowledge-article.dto';
+import {
+  GetKnowledgeArticlesQueryDto,
+} from '../dtos/knowledge-article.dto';
 import { DEFAULT_LIMIT } from '../../../common/dto/pagination-query.dto';
 import { createHash } from 'crypto';
 import { WpClientService } from './wp-client.service';
+import { AiWritingService } from './ai-writing.service';
+import { AiImageService } from './ai-image.service';
 
 @Injectable()
 export class KnowledgeArticleService {
@@ -24,6 +28,8 @@ export class KnowledgeArticleService {
     @InjectModel(NewsArticle.name)
     private readonly newsArticleModel: Model<NewsArticle>,
     private readonly wpClientService: WpClientService,
+    private readonly aiWritingService: AiWritingService,
+    private readonly aiImageService: AiImageService,
   ) {}
 
   // ── CRUD ────────────────────────────────────────────────
@@ -31,7 +37,9 @@ export class KnowledgeArticleService {
   /**
    * List knowledge articles with pagination, filters, and search.
    */
-  async listArticles(query: GetKnowledgeArticlesQueryDto): Promise<{
+  async listArticles(
+    query: GetKnowledgeArticlesQueryDto,
+  ): Promise<{
     data: NewsArticle[];
     meta: { page: number; limit: number; total: number; totalPages: number };
   }> {
@@ -44,7 +52,11 @@ export class KnowledgeArticleService {
       sort = 'newest',
     } = query;
 
-    const filter: Record<string, unknown> = { type: 'knowledge' };
+    // C-01: exclude soft-deleted articles (deletedAt != null) from listing.
+    const filter: Record<string, unknown> = {
+      type: 'knowledge',
+      deletedAt: null,
+    };
 
     if (status) {
       filter.pipelineState = status;
@@ -57,7 +69,7 @@ export class KnowledgeArticleService {
     }
 
     const sortOption: Record<string, SortOrder> =
-      sort === 'oldest' ? { createdAt: 1 } : { createdAt: -1 };
+      sort === 'oldest' ? { createdAt: 1 as SortOrder } : { createdAt: -1 as SortOrder };
 
     const [data, total] = await Promise.all([
       this.newsArticleModel
@@ -85,8 +97,9 @@ export class KnowledgeArticleService {
    * Get a knowledge article by ID.
    */
   async getArticleById(id: string): Promise<NewsArticle> {
+    // C-01: exclude soft-deleted articles from single-article lookup.
     const article = await this.newsArticleModel
-      .findOne({ _id: id, type: 'knowledge' })
+      .findOne({ _id: id, type: 'knowledge', deletedAt: null })
       .lean()
       .exec();
 
@@ -94,7 +107,7 @@ export class KnowledgeArticleService {
       throw new NotFoundException(`Knowledge article not found: ${id}`);
     }
 
-    return article;
+    return article as unknown as NewsArticle;
   }
 
   /**
@@ -113,9 +126,10 @@ export class KnowledgeArticleService {
    * Bulk soft delete knowledge articles.
    */
   async deleteBulkArticles(ids: string[]): Promise<{ deletedCount: number }> {
+    // C-01: exclude soft-deleted articles from bulk delete scope.
     const result = await this.newsArticleModel
       .updateMany(
-        { _id: { $in: ids }, type: 'knowledge' },
+        { _id: { $in: ids }, type: 'knowledge', deletedAt: null },
         { $set: { deletedAt: new Date() } },
       )
       .exec();
@@ -144,13 +158,19 @@ export class KnowledgeArticleService {
       Object.assign(update, extra);
     }
 
-    await this.newsArticleModel.updateOne({ _id: id }, { $set: update }).exec();
+    await this.newsArticleModel
+      .updateOne({ _id: id }, { $set: update })
+      .exec();
   }
 
   /**
    * Mark an article as failed with step and error info.
    */
-  async markFailed(id: string, step: number, error: string): Promise<void> {
+  async markFailed(
+    id: string,
+    step: number,
+    error: string,
+  ): Promise<void> {
     await this.newsArticleModel
       .updateOne(
         { _id: id },
@@ -168,12 +188,23 @@ export class KnowledgeArticleService {
   // ── Manual Controls ─────────────────────────────────────
 
   /**
-   * Retry a failed article. Validates the article is in 'failed' state
-   * and clears the failure info so the pipeline can resume.
+   * Retry a failed article by resuming the pipeline inline from the failed step.
+   *
+   * M-03: Previously this method only reset the article's state field — the
+   * article stayed stuck forever because nothing re-ran the remaining pipeline
+   * steps. Now it actually re-executes the steps after `pipelineFailedStep`:
+   *   - step 1-2 failed → regenerate content (AI writing)
+   *   - step 3 failed   → regenerate featured image (AI image)
+   *   - step 4-5 failed → (re)publish via publishToWordPress
+   * On success the article reaches PUBLISHED; on failure it is re-marked FAILED.
    */
   async retryArticle(
     id: string,
-  ): Promise<{ success: boolean; failedStep: number | null }> {
+  ): Promise<{
+    success: boolean;
+    failedStep: number | null;
+    wpPostId?: number;
+  }> {
     const article = await this.getArticleById(id);
 
     if (article.pipelineState !== KnowledgeArticleState.FAILED) {
@@ -184,44 +215,92 @@ export class KnowledgeArticleService {
 
     const failedStep = article.pipelineFailedStep;
 
-    // Resume from the failed step
-    let nextState: KnowledgeArticleState;
-    if (failedStep !== null && failedStep <= 2) {
-      nextState = KnowledgeArticleState.GENERATING_CONTENT;
-    } else if (failedStep !== null && failedStep <= 3) {
-      nextState = KnowledgeArticleState.CONTENT_READY;
-    } else if (failedStep !== null && failedStep <= 5) {
-      nextState = KnowledgeArticleState.READY;
-    } else {
-      nextState = KnowledgeArticleState.PENDING;
+    try {
+      // ── Step 2: regenerate content if it never became ready ────────
+      if (failedStep === null || failedStep <= 2) {
+        await this.updateState(id, KnowledgeArticleState.GENERATING_CONTENT);
+
+        const contentResult = await this.aiWritingService.generateContent({
+          topic: article.title,
+          category: article.categorySlug || '',
+          topicDescription: '',
+        });
+
+        await this.updateState(id, KnowledgeArticleState.CONTENT_READY, {
+          title: contentResult.title,
+          content: contentResult.content,
+          htmlContent: contentResult.htmlContent,
+          summary: contentResult.summary,
+        });
+      }
+
+      // ── Step 3: regenerate image if content/image stage failed ─────
+      if (failedStep === null || failedStep <= 3) {
+        const reloaded = await this.getArticleById(id);
+
+        if (!reloaded.featuredImageUrl) {
+          await this.updateState(id, KnowledgeArticleState.GENERATING_IMAGE);
+
+          const imageResult =
+            await this.aiImageService.generateFeaturedImage({
+              title: reloaded.title,
+              contentSummary: reloaded.summary || '',
+            });
+
+          if (imageResult.imageUrl || imageResult.buffer?.length > 0) {
+            await this.updateState(id, KnowledgeArticleState.READY, {
+              featuredImageUrl: imageResult.imageUrl,
+            });
+          } else {
+            await this.updateState(id, KnowledgeArticleState.READY);
+          }
+        } else {
+          // Image already generated — move straight to READY
+          await this.updateState(id, KnowledgeArticleState.READY);
+        }
+      }
+
+      // Clear failure info before the publish attempt
+      await this.newsArticleModel
+        .updateOne(
+          { _id: id },
+          { $set: { pipelineError: null, pipelineFailedStep: null } },
+        )
+        .exec();
+
+      // ── Steps 4+5: publish to WordPress (requires READY state) ─────
+      const readyArticle = await this.getArticleById(id);
+      const publishResult = await this.publishToWordPress(id, readyArticle);
+
+      this.logger.log(
+        `Retry succeeded for article ${id} (was failed at step ${failedStep}) — wpPostId: ${publishResult.wpPostId}`,
+      );
+
+      return { success: true, failedStep, wpPostId: publishResult.wpPostId };
+    } catch (error: any) {
+      this.logger.error(
+        `Retry failed for article ${id} at step ${failedStep}: ${error.message}`,
+      );
+
+      // Re-mark as failed so the article can be retried again
+      await this.markFailed(id, failedStep ?? 1, error.message);
+
+      throw new BadRequestException(
+        `Retry failed at step ${failedStep}: ${error.message}`,
+      );
     }
-
-    await this.newsArticleModel
-      .updateOne(
-        { _id: id },
-        {
-          $set: {
-            pipelineState: nextState,
-            pipelineError: null,
-            pipelineFailedStep: null,
-          },
-        },
-      )
-      .exec();
-
-    this.logger.log(
-      `Retried article ${id}: state → ${nextState} (was step ${failedStep})`,
-    );
-
-    return { success: true, failedStep };
   }
 
   /**
    * Publish a ready article to WordPress via WpClientService.
    * M-02: Replaced fake stub with real WP API call.
+   * @param preloadedArticle Optional already-loaded article (avoids redundant DB call).
    */
-  async publishToWordPress(id: string): Promise<{ wpPostId: number }> {
-    const article = await this.getArticleById(id);
+  async publishToWordPress(
+    id: string,
+    preloadedArticle?: NewsArticle,
+  ): Promise<{ wpPostId: number }> {
+    const article = preloadedArticle ?? await this.getArticleById(id);
 
     if (article.pipelineState !== KnowledgeArticleState.READY) {
       throw new BadRequestException(
@@ -232,8 +311,7 @@ export class KnowledgeArticleService {
     await this.updateState(id, KnowledgeArticleState.PUBLISHING);
 
     try {
-      const htmlContent =
-        article.htmlContent || this.markdownToHtml(article.content || '');
+      const htmlContent = article.htmlContent || this.markdownToHtml(article.content || '');
 
       const wpResult = await this.wpClientService.createPost({
         title: article.title,
@@ -276,7 +354,9 @@ export class KnowledgeArticleService {
    * Republish (update) an existing WordPress post via WpClientService.
    * M-02: Replaced fake stub with real WP API call.
    */
-  async republishToWordPress(id: string): Promise<{ wpPostId: number }> {
+  async republishToWordPress(
+    id: string,
+  ): Promise<{ wpPostId: number }> {
     const article = await this.getArticleById(id);
 
     if (!article.wpPostId) {
@@ -288,8 +368,7 @@ export class KnowledgeArticleService {
     await this.updateState(id, KnowledgeArticleState.PUBLISHING);
 
     try {
-      const htmlContent =
-        article.htmlContent || this.markdownToHtml(article.content || '');
+      const htmlContent = article.htmlContent || this.markdownToHtml(article.content || '');
 
       await this.wpClientService.updatePost(article.wpPostId, {
         title: article.title,
@@ -300,9 +379,7 @@ export class KnowledgeArticleService {
 
       await this.updateState(id, KnowledgeArticleState.PUBLISHED);
 
-      this.logger.log(
-        `Article ${id} republished to WP: post ${article.wpPostId}`,
-      );
+      this.logger.log(`Article ${id} republished to WP: post ${article.wpPostId}`);
       return { wpPostId: article.wpPostId };
     } catch (error: any) {
       this.logger.error(`Article ${id} WP republish failed: ${error.message}`);

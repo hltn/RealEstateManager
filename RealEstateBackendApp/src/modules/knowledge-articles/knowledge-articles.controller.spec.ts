@@ -154,6 +154,52 @@ describe('KnowledgeArticlesController', () => {
       expect(result.message).toBe('WP config updated');
       expect(result.data).toEqual({ siteUrl: 'https://new.com' });
     });
+
+    // M-04: masked password must not overwrite real credential in DB
+    it('strips masked appPassword (*** ) before passing to config service', async () => {
+      mockConfigService.updateWpConfig.mockResolvedValue({
+        type: 'wp_connection' as never,
+        config: { siteUrl: 'https://old.com', appPassword: 'real-pw' },
+      } as never);
+
+      await controller.updateWpConfig({
+        siteUrl: 'https://old.com',
+        appPassword: '***' as never,
+      });
+
+      // The config service must receive payload WITHOUT appPassword
+      const passedPayload = mockConfigService.updateWpConfig.mock.calls[0][0];
+      expect(passedPayload).not.toHaveProperty('appPassword');
+    });
+
+    it('strips empty appPassword string before passing to config service', async () => {
+      mockConfigService.updateWpConfig.mockResolvedValue({
+        type: 'wp_connection' as never,
+        config: {},
+      } as never);
+
+      await controller.updateWpConfig({
+        siteUrl: 'https://old.com',
+        appPassword: '' as never,
+      });
+
+      const passedPayload = mockConfigService.updateWpConfig.mock.calls[0][0];
+      expect(passedPayload).not.toHaveProperty('appPassword');
+    });
+
+    it('passes real appPassword through when user actually changes it', async () => {
+      mockConfigService.updateWpConfig.mockResolvedValue({
+        type: 'wp_connection' as never,
+        config: { appPassword: 'new-real-pw' },
+      } as never);
+
+      await controller.updateWpConfig({
+        appPassword: 'new-real-pw' as never,
+      });
+
+      const passedPayload = mockConfigService.updateWpConfig.mock.calls[0][0];
+      expect(passedPayload.appPassword).toBe('new-real-pw');
+    });
   });
 
   describe('verifyWpConnection', () => {
