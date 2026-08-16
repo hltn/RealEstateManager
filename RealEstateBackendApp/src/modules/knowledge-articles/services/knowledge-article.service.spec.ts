@@ -15,11 +15,21 @@
 
 const mockLean = jest.fn();
 const mockExec = jest.fn();
-const mockFind = jest.fn(() => ({ sort: jest.fn(() => ({ skip: jest.fn(() => ({ limit: jest.fn(() => ({ lean: mockLean })) })) })) }));
+const mockFind = jest.fn(() => ({
+  sort: jest.fn(() => ({
+    skip: jest.fn(() => ({ limit: jest.fn(() => ({ lean: mockLean })) })),
+  })),
+}));
 const mockFindOne = jest.fn(() => ({ lean: mockLean }));
-const mockCountDocuments = jest.fn(() => ({ exec: jest.fn().mockResolvedValue(0) }));
-const mockUpdateOne = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) }));
-const mockUpdateMany = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 0 }) }));
+const mockCountDocuments = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue(0),
+}));
+const mockUpdateOne = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+}));
+const mockUpdateMany = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+}));
 const mockCreate = jest.fn();
 
 const mockModel = {
@@ -33,8 +43,12 @@ const mockModel = {
 
 // M-02: Mock WpClientService for publish/republish tests
 const mockWpClientService = {
-  createPost: jest.fn().mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
-  updatePost: jest.fn().mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
+  createPost: jest
+    .fn()
+    .mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
+  updatePost: jest
+    .fn()
+    .mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
   verifyConnection: jest.fn(),
   uploadMedia: jest.fn(),
 };
@@ -49,7 +63,10 @@ describe('KnowledgeArticleService', () => {
     jest.clearAllMocks();
     mockLean.mockReturnValue({ exec: mockExec });
     mockExec.mockResolvedValue(null);
-    service = new KnowledgeArticleService(mockModel as never, mockWpClientService as never);
+    service = new KnowledgeArticleService(
+      mockModel as never,
+      mockWpClientService as never,
+    );
   });
 
   describe('getArticleById', () => {
@@ -59,7 +76,10 @@ describe('KnowledgeArticleService', () => {
 
       const result = await service.getArticleById('abc');
 
-      expect(mockFindOne).toHaveBeenCalledWith({ _id: 'abc', type: 'knowledge' });
+      expect(mockFindOne).toHaveBeenCalledWith({
+        _id: 'abc',
+        type: 'knowledge',
+      });
       expect(result).toEqual(fakeArticle);
     });
 
@@ -181,7 +201,9 @@ describe('KnowledgeArticleService', () => {
 
       expect(mockUpdateOne).toHaveBeenCalledWith(
         { _id: 'abc' },
-        expect.objectContaining({ $set: expect.objectContaining({ deletedAt: expect.any(Date) }) }),
+        expect.objectContaining({
+          $set: expect.objectContaining({ deletedAt: expect.any(Date) }),
+        }),
       );
     });
   });
@@ -311,7 +333,9 @@ describe('KnowledgeArticleService', () => {
         wpTagIds: [1, 2],
         wpMediaId: 42,
       });
-      mockUpdateOne.mockReturnValue({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) });
+      mockUpdateOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+      });
 
       const result = await service.publishToWordPress('abc');
 
@@ -336,7 +360,9 @@ describe('KnowledgeArticleService', () => {
         wpCategoryId: 16,
         wpTagIds: [],
       });
-      mockWpClientService.createPost.mockRejectedValueOnce(new Error('WP auth failed'));
+      mockWpClientService.createPost.mockRejectedValueOnce(
+        new Error('WP auth failed'),
+      );
 
       await expect(service.publishToWordPress('abc')).rejects.toThrow(
         'WordPress publish failed',
@@ -371,7 +397,9 @@ describe('KnowledgeArticleService', () => {
         wpCategoryId: 17,
         wpTagIds: [3],
       });
-      mockUpdateOne.mockReturnValue({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) });
+      mockUpdateOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+      });
 
       const result = await service.republishToWordPress('abc');
 

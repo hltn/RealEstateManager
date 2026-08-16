@@ -1,14 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  PipelineLog,
-  PipelineRunStatus,
-} from '../schemas/pipeline-log.schema';
+import { PipelineLog, PipelineRunStatus } from '../schemas/pipeline-log.schema';
 import { PipelineStepInfo } from '../types/knowledge-pipeline-state';
-import {
-  DEFAULT_LIMIT,
-} from '../../../common/dto/pagination-query.dto';
+import { DEFAULT_LIMIT } from '../../../common/dto/pagination-query.dto';
 
 @Injectable()
 export class PipelineLogService {
@@ -91,10 +86,7 @@ export class PipelineLogService {
     }
 
     await this.logModel
-      .updateOne(
-        { batchId, 'steps.step': step },
-        { $set: stepUpdate },
-      )
+      .updateOne({ batchId, 'steps.step': step }, { $set: stepUpdate })
       .exec();
   }
 
@@ -177,7 +169,7 @@ export class PipelineLogService {
 
   /** Get detail by batchId */
   async getLogByBatchId(batchId: string): Promise<PipelineLog | null> {
-    return this.logModel.findOne({ batchId }).lean().exec() as unknown as PipelineLog | null;
+    return this.logModel.findOne({ batchId }).lean().exec();
   }
 
   /**
