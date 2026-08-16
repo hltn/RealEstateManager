@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { KnowledgeArticleState } from '../../knowledge-articles/types/knowledge-article-state';
 
 export enum NewsStatus {
   POSTED_WP = 'POSTED_WP',
@@ -45,7 +46,7 @@ export class NewsArticle extends Document {
   @Prop({ required: true, unique: true, index: true })
   urlHash: string;
 
-  @Prop({ default: null })
+  @Prop({ type: Number, default: null })
   wpPostId: number;
 
   @Prop({ required: false })
@@ -81,6 +82,61 @@ export class NewsArticle extends Document {
   /** Cosine similarity score against the original article */
   @Prop({ type: Number, default: null })
   duplicateScore: number | null;
+
+  // ── Knowledge Articles Fields ──────────────────────────
+  // Only populated when type === 'knowledge'. All optional.
+
+  /** Discriminator: 'news' (default) | 'knowledge' */
+  @Prop({ default: 'news', index: true })
+  type: string;
+
+  /** Current pipeline state for knowledge articles */
+  @Prop({ type: String, enum: KnowledgeArticleState, default: null })
+  pipelineState: KnowledgeArticleState | null;
+
+  /** Error message from the last failed pipeline step */
+  @Prop({ type: String, default: null })
+  pipelineError: string | null;
+
+  /** Which pipeline step failed (1-5) */
+  @Prop({ type: Number, default: null })
+  pipelineFailedStep: number | null;
+
+  /** WordPress category ID this article belongs to */
+  @Prop({ type: Number, default: null })
+  wpCategoryId: number | null;
+
+  /** WordPress tag IDs applied to this article */
+  @Prop({ type: [Number], default: [] })
+  wpTagIds: number[];
+
+  /** ID of the AI writing prompt config used */
+  @Prop({ type: String, default: null })
+  aiWritingPromptId: string | null;
+
+  /** Featured image URL after generation */
+  @Prop({ type: String, default: null })
+  featuredImageUrl: string | null;
+
+  /** WordPress media ID of the featured image */
+  @Prop({ type: Number, default: null })
+  wpMediaId: number | null;
+
+  /** Array of inline image URLs generated for the article */
+  @Prop({ type: [String], default: [] })
+  inlineImageUrls: string[];
+
+  /** Category slug used for rotation tracking */
+  @Prop({ type: String, default: null })
+  categorySlug: string | null;
+
+  /** Batch ID linking articles generated in the same pipeline run */
+  @Prop({ index: true, type: String, default: null })
+  batchId: string | null;
+
+  /** Soft delete timestamp — null means active */
+  @Prop({ type: Date, default: null })
+  deletedAt: Date | null;
 }
 
 export const NewsArticleSchema = SchemaFactory.createForClass(NewsArticle);
@@ -89,3 +145,8 @@ export const NewsArticleSchema = SchemaFactory.createForClass(NewsArticle);
 NewsArticleSchema.index({ publishDate: -1 });
 NewsArticleSchema.index({ contentEmbedding: 1 }, { sparse: true });
 NewsArticleSchema.index({ publishDate: -1, contentEmbedding: 1 }, { sparse: true });
+
+// === Knowledge Article indexes ===
+NewsArticleSchema.index({ type: 1, pipelineState: 1 });
+NewsArticleSchema.index({ type: 1, batchId: 1 });
+NewsArticleSchema.index({ type: 1, categorySlug: 1, createdAt: -1 });

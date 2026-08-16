@@ -13,6 +13,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { GoogleDriveExportModule } from './modules/google-drive-export/google-drive-export.module';
+import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-articles.module';
 
 @Module({
   imports: [
@@ -40,6 +41,8 @@ import { GoogleDriveExportModule } from './modules/google-drive-export/google-dr
     UsersModule,
     // Google Drive Export (OAuth2 flow + Export).
     GoogleDriveExportModule,
+    // Knowledge Articles (Config CRUD, Pipeline, NL Cron).
+    KnowledgeArticlesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
