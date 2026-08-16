@@ -41,7 +41,7 @@ import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-
     UsersModule,
     // Google Drive Export (OAuth2 flow + Export).
     GoogleDriveExportModule,
-    // Knowledge Articles (Config CRUD, Pipeline, NL Cron).
+    // Knowledge Articles (auto-write, auto-publish pipeline).
     KnowledgeArticlesModule,
   ],
   controllers: [AppController],

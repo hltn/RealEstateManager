@@ -51,5 +51,6 @@ import { ExternalLogModule } from '../external-log/external-log.module';
     AuditLogService,
     EmbeddingService,
   ],
+  exports: [IdempotencyService, AuditLogService],
 })
 export class NewsFireCrawlManagerModule {}

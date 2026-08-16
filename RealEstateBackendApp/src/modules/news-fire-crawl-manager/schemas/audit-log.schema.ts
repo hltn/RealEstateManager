@@ -22,6 +22,26 @@ export enum AuditAction {
    * compatible: chỉ thêm giá trị enum mới, document cũ không bị ảnh hưởng.
    */
   WORKFLOW_MARKET_ANALYSIS = 'WORKFLOW_MARKET_ANALYSIS',
+  /**
+   * Knowledge Articles — publish to WordPress.
+   */
+  KNOWLEDGE_PUBLISH = 'KNOWLEDGE_PUBLISH',
+  /**
+   * Knowledge Articles — republish (update) WordPress post.
+   */
+  KNOWLEDGE_REPUBLISH = 'KNOWLEDGE_REPUBLISH',
+  /**
+   * Knowledge Articles — bulk publish to WordPress.
+   */
+  KNOWLEDGE_BULK_PUBLISH = 'KNOWLEDGE_BULK_PUBLISH',
+  /**
+   * Knowledge Articles — soft delete.
+   */
+  KNOWLEDGE_DELETE = 'KNOWLEDGE_DELETE',
+  /**
+   * Knowledge Articles — bulk soft delete.
+   */
+  KNOWLEDGE_BULK_DELETE = 'KNOWLEDGE_BULK_DELETE',
 }
 
 /**
