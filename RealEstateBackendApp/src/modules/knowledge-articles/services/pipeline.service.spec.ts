@@ -26,7 +26,11 @@ describe('PipelineService', () => {
       model: 'test-model',
       provider: 'OpenRouter',
       topics: [
-        { slug: 'ha-noi', name: 'BĐS Hà Nội', description: 'Thị trường Hà Nội' },
+        {
+          slug: 'ha-noi',
+          name: 'BĐS Hà Nội',
+          description: 'Thị trường Hà Nội',
+        },
         { slug: 'hcm', name: 'BĐS HCM', description: 'Thị trường HCM' },
       ],
       articlesPerBatch: 2,
@@ -78,11 +82,16 @@ describe('PipelineService', () => {
       meta: { page: 1, limit: 10, total: 0, totalPages: 0 },
     }),
     getLogByBatchId: jest.fn(),
+    markRunningAsFailed: jest.fn().mockResolvedValue(0),
   };
 
   const mockCategoryRotationService = {
     pickCategory: jest.fn().mockResolvedValue({
-      topic: { slug: 'ha-noi', name: 'BĐS Hà Nội', description: 'Thị trường Hà Nội' },
+      topic: {
+        slug: 'ha-noi',
+        name: 'BĐS Hà Nội',
+        description: 'Thị trường Hà Nội',
+      },
       wpCategoryId: 16,
       rotationIndex: 0,
     }),
@@ -262,6 +271,24 @@ describe('PipelineService', () => {
       const result = await service.retryFailedArticles('batch-123');
 
       expect(result.retriedCount).toBe(1);
+    });
+  });
+
+  describe('onModuleInit (M-01)', () => {
+    it('marks orphan RUNNING pipeline logs as FAILED on startup', async () => {
+      await service.onModuleInit();
+
+      expect(mockPipelineLogService.markRunningAsFailed).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('does not throw when markRunningAsFailed fails', async () => {
+      mockPipelineLogService.markRunningAsFailed.mockRejectedValueOnce(
+        new Error('DB down'),
+      );
+
+      await expect(service.onModuleInit()).resolves.not.toThrow();
     });
   });
 });

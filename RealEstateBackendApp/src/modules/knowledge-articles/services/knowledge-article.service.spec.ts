@@ -15,11 +15,21 @@
 
 const mockLean = jest.fn();
 const mockExec = jest.fn();
-const mockFind = jest.fn(() => ({ sort: jest.fn(() => ({ skip: jest.fn(() => ({ limit: jest.fn(() => ({ lean: mockLean })) })) })) }));
+const mockFind = jest.fn(() => ({
+  sort: jest.fn(() => ({
+    skip: jest.fn(() => ({ limit: jest.fn(() => ({ lean: mockLean })) })),
+  })),
+}));
 const mockFindOne = jest.fn(() => ({ lean: mockLean }));
-const mockCountDocuments = jest.fn(() => ({ exec: jest.fn().mockResolvedValue(0) }));
-const mockUpdateOne = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) }));
-const mockUpdateMany = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 0 }) }));
+const mockCountDocuments = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue(0),
+}));
+const mockUpdateOne = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+}));
+const mockUpdateMany = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+}));
 const mockCreate = jest.fn();
 
 const mockModel = {
@@ -29,6 +39,18 @@ const mockModel = {
   updateOne: mockUpdateOne,
   updateMany: mockUpdateMany,
   create: mockCreate,
+};
+
+// M-02: Mock WpClientService for publish/republish tests
+const mockWpClientService = {
+  createPost: jest
+    .fn()
+    .mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
+  updatePost: jest
+    .fn()
+    .mockResolvedValue({ postId: 42, postUrl: 'https://example.com/test' }),
+  verifyConnection: jest.fn(),
+  uploadMedia: jest.fn(),
 };
 
 import { KnowledgeArticleService } from './knowledge-article.service';
@@ -41,7 +63,10 @@ describe('KnowledgeArticleService', () => {
     jest.clearAllMocks();
     mockLean.mockReturnValue({ exec: mockExec });
     mockExec.mockResolvedValue(null);
-    service = new KnowledgeArticleService(mockModel as never);
+    service = new KnowledgeArticleService(
+      mockModel as never,
+      mockWpClientService as never,
+    );
   });
 
   describe('getArticleById', () => {
@@ -51,7 +76,10 @@ describe('KnowledgeArticleService', () => {
 
       const result = await service.getArticleById('abc');
 
-      expect(mockFindOne).toHaveBeenCalledWith({ _id: 'abc', type: 'knowledge' });
+      expect(mockFindOne).toHaveBeenCalledWith({
+        _id: 'abc',
+        type: 'knowledge',
+      });
       expect(result).toEqual(fakeArticle);
     });
 
@@ -173,7 +201,9 @@ describe('KnowledgeArticleService', () => {
 
       expect(mockUpdateOne).toHaveBeenCalledWith(
         { _id: 'abc' },
-        expect.objectContaining({ $set: expect.objectContaining({ deletedAt: expect.any(Date) }) }),
+        expect.objectContaining({
+          $set: expect.objectContaining({ deletedAt: expect.any(Date) }),
+        }),
       );
     });
   });
@@ -290,6 +320,96 @@ describe('KnowledgeArticleService', () => {
       await expect(service.publishToWordPress('abc')).rejects.toThrow(
         'Only articles in "ready" state can be published',
       );
+    });
+
+    it('calls wpClientService.createPost and marks article as published', async () => {
+      mockExec.mockResolvedValue({
+        _id: 'abc',
+        pipelineState: KnowledgeArticleState.READY,
+        title: 'Test Article',
+        content: 'Some content',
+        htmlContent: '<p>Some content</p>',
+        wpCategoryId: 16,
+        wpTagIds: [1, 2],
+        wpMediaId: 42,
+      });
+      mockUpdateOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+      });
+
+      const result = await service.publishToWordPress('abc');
+
+      expect(mockWpClientService.createPost).toHaveBeenCalledWith({
+        title: 'Test Article',
+        content: '<p>Some content</p>',
+        status: 'publish',
+        categories: [16],
+        tags: [1, 2],
+        featuredMedia: 42,
+      });
+      expect(result.wpPostId).toBe(42);
+    });
+
+    it('reverts to READY state when WP publish fails', async () => {
+      mockExec.mockResolvedValue({
+        _id: 'abc',
+        pipelineState: KnowledgeArticleState.READY,
+        title: 'Test Article',
+        content: 'content',
+        htmlContent: '<p>content</p>',
+        wpCategoryId: 16,
+        wpTagIds: [],
+      });
+      mockWpClientService.createPost.mockRejectedValueOnce(
+        new Error('WP auth failed'),
+      );
+
+      await expect(service.publishToWordPress('abc')).rejects.toThrow(
+        'WordPress publish failed',
+      );
+
+      // Should have been called twice: once for PUBLISHING, once for revert to READY
+      expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('republishToWordPress', () => {
+    it('throws when article has no wpPostId', async () => {
+      mockExec.mockResolvedValue({
+        _id: 'abc',
+        pipelineState: KnowledgeArticleState.PUBLISHED,
+        wpPostId: null,
+      });
+
+      await expect(service.republishToWordPress('abc')).rejects.toThrow(
+        'Article has not been published to WordPress yet',
+      );
+    });
+
+    it('calls wpClientService.updatePost successfully', async () => {
+      mockExec.mockResolvedValue({
+        _id: 'abc',
+        pipelineState: KnowledgeArticleState.PUBLISHED,
+        wpPostId: 100,
+        title: 'Updated Title',
+        content: 'Updated content',
+        htmlContent: '<p>Updated content</p>',
+        wpCategoryId: 17,
+        wpTagIds: [3],
+      });
+      mockUpdateOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+      });
+
+      const result = await service.republishToWordPress('abc');
+
+      expect(mockWpClientService.updatePost).toHaveBeenCalledWith(100, {
+        title: 'Updated Title',
+        content: '<p>Updated content</p>',
+        categories: [17],
+        tags: [3],
+      });
+      expect(result.wpPostId).toBe(100);
     });
   });
 

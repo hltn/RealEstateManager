@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   InternalServerErrorException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { KnowledgeArticleService } from './knowledge-article.service';
@@ -23,6 +24,13 @@ import { Types } from 'mongoose';
 /**
  * In-memory store for pipeline job statuses.
  * Job lifecycle: created -> running -> done/error
+ *
+ * LIMITATION (M-01): This state lives in RAM only and is NOT persisted to MongoDB.
+ * On server restart all job polling state is lost. This is an accepted trade-off:
+ * the durable pipeline state (per-article results, step statuses, final status) is
+ * persisted in the PipelineLog collection, while this Map only backs short-lived
+ * job-polling. On startup, `onModuleInit` marks any PipelineLog still stuck in
+ * RUNNING as FAILED so the durable state does not stay "running" forever.
  */
 const pipelineJobs = new Map<
   string,
@@ -53,10 +61,10 @@ const pipelineJobs = new Map<
  * - Category rotation via CategoryRotationService
  */
 @Injectable()
-export class PipelineService {
+export class PipelineService implements OnModuleInit {
   private readonly logger = new Logger(PipelineService.name);
 
-  /** Global lock to prevent concurrent pipeline runs */
+  /** Global lock to prevent concurrent pipeline runs (not persisted — resets on restart) */
   private isRunning = false;
 
   constructor(
@@ -68,6 +76,37 @@ export class PipelineService {
     private readonly pipelineLogService: PipelineLogService,
     private readonly categoryRotationService: CategoryRotationService,
   ) {}
+
+  // ── Lifecycle Hooks ────────────────────────────────────
+
+  /**
+   * M-01: On server startup, mark any PipelineLog stuck in RUNNING as FAILED.
+   * In-memory job state (pipelineJobs Map) is lost on restart, so we cannot resume
+   * or continue those jobs. Marking them failed ensures the durable state does not
+   * stay "running" forever and users see an accurate status.
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      const staleCount = await this.pipelineLogService.markRunningAsFailed(
+        'server restarted - pipeline state lost',
+      );
+      if (staleCount > 0) {
+        this.logger.warn(
+          `M-01 recovery: marked ${staleCount} RUNNING pipeline log(s) as FAILED due to server restart`,
+        );
+      } else {
+        this.logger.log(
+          'M-01 startup check: no stale RUNNING pipeline logs found',
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `M-01 recovery failed: could not mark stale RUNNING logs as FAILED — ${error.message}`,
+        error,
+      );
+      // Non-fatal — do not block server startup
+    }
+  }
 
   // ── Public API ──────────────────────────────────────────
 
@@ -160,7 +199,9 @@ export class PipelineService {
     // Get the pipeline log to find failed articles
     const log = await this.pipelineLogService.getLogByBatchId(batchId);
     if (!log) {
-      throw new BadRequestException(`Pipeline log not found for batch: ${batchId}`);
+      throw new BadRequestException(
+        `Pipeline log not found for batch: ${batchId}`,
+      );
     }
 
     const failedArticles = (log.articleResults || []).filter(
@@ -203,11 +244,10 @@ export class PipelineService {
       // ── Step 1: Pick Topics (with category rotation) ────
       await this.updateStep(job, 1, 'running');
 
-      const rotationResult =
-        await this.categoryRotationService.pickCategory(
-          categorySlug,
-          articleCount,
-        );
+      const rotationResult = await this.categoryRotationService.pickCategory(
+        categorySlug,
+        articleCount,
+      );
 
       const selectedTopic = rotationResult.topic;
       const wpCategoryId = rotationResult.wpCategoryId;
@@ -219,11 +259,10 @@ export class PipelineService {
         wpCategoryId,
       }));
 
-      const articles =
-        await this.knowledgeArticleService.createBatchArticles(
-          batchId,
-          articleTopics,
-        );
+      const articles = await this.knowledgeArticleService.createBatchArticles(
+        batchId,
+        articleTopics,
+      );
 
       // Create pipeline log
       await this.pipelineLogService.createLog({
@@ -244,7 +283,7 @@ export class PipelineService {
       // Process each article sequentially
       let publishedCount = 0;
       let failedCount = 0;
-      let readyCount = 0;
+      const readyCount = 0;
 
       for (const article of articles) {
         const articleStartTime = Date.now();
@@ -288,11 +327,12 @@ export class PipelineService {
               KnowledgeArticleState.GENERATING_IMAGE,
             );
 
-            const imageResult =
-              await this.aiImageService.generateFeaturedImage({
+            const imageResult = await this.aiImageService.generateFeaturedImage(
+              {
                 title: contentResult.title,
                 contentSummary: contentResult.summary,
-              });
+              },
+            );
 
             if (imageResult.imageUrl || imageResult.buffer.length > 0) {
               await this.knowledgeArticleService.updateState(
@@ -366,7 +406,9 @@ export class PipelineService {
 
           const postResult = await this.wpClientService.createPost({
             title: reloadedArticle.title,
-            content: this.aiWritingService.markdownToHtml(reloadedArticle.content || ''),
+            content: this.aiWritingService.markdownToHtml(
+              reloadedArticle.content || '',
+            ),
             status: 'publish',
             categories: [reloadedArticle.wpCategoryId || wpCategoryId],
             tags: reloadedArticle.wpTagIds || [],
@@ -441,10 +483,7 @@ export class PipelineService {
       });
 
       // Update pipeline log total duration
-      await this.pipelineLogService.updateTotalDuration(
-        batchId,
-        totalDuration,
-      );
+      await this.pipelineLogService.updateTotalDuration(batchId, totalDuration);
 
       // Update job status
       job.status = 'done';
