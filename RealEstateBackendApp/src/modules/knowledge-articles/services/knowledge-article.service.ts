@@ -16,6 +16,7 @@ import {
 } from '../dtos/knowledge-article.dto';
 import { DEFAULT_LIMIT } from '../../../common/dto/pagination-query.dto';
 import { createHash } from 'crypto';
+import { WpClientService } from './wp-client.service';
 
 @Injectable()
 export class KnowledgeArticleService {
@@ -24,6 +25,7 @@ export class KnowledgeArticleService {
   constructor(
     @InjectModel(NewsArticle.name)
     private readonly newsArticleModel: Model<NewsArticle>,
+    private readonly wpClientService: WpClientService,
   ) {}
 
   // ── CRUD ────────────────────────────────────────────────
@@ -225,8 +227,8 @@ export class KnowledgeArticleService {
   }
 
   /**
-   * Publish a ready article to WordPress.
-   * TODO: Implement real WP publish when WpClientService is ready.
+   * Publish a ready article to WordPress via WpClientService.
+   * M-02: Replaced fake stub with real WP API call.
    */
   async publishToWordPress(
     id: string,
@@ -241,20 +243,49 @@ export class KnowledgeArticleService {
 
     await this.updateState(id, KnowledgeArticleState.PUBLISHING);
 
-    // TODO: Call WpClientService.createPost(...)
-    // For now, stub the wpPostId
-    const wpPostId = Math.floor(Math.random() * 100000);
+    try {
+      const htmlContent = article.htmlContent || this.markdownToHtml(article.content || '');
 
-    await this.updateState(id, KnowledgeArticleState.PUBLISHED, {
-      wpPostId,
-    });
+      const wpResult = await this.wpClientService.createPost({
+        title: article.title,
+        content: htmlContent,
+        status: 'publish' as const,
+        categories: article.wpCategoryId ? [article.wpCategoryId] : [],
+        tags: Array.isArray(article.wpTagIds) ? article.wpTagIds : [],
+        featuredMedia: article.wpMediaId || undefined,
+      });
 
-    return { wpPostId };
+      await this.updateState(id, KnowledgeArticleState.PUBLISHED, {
+        wpPostId: wpResult.postId,
+      });
+
+      this.logger.log(`Article ${id} published to WP: post ${wpResult.postId}`);
+      return { wpPostId: wpResult.postId };
+    } catch (error: any) {
+      this.logger.error(`Article ${id} WP publish failed: ${error.message}`);
+      await this.updateState(id, KnowledgeArticleState.READY);
+      throw new BadRequestException(
+        `WordPress publish failed: ${error.message}`,
+      );
+    }
   }
 
   /**
-   * Republish (update) an existing WordPress post.
-   * TODO: Implement real WP update when WpClientService is ready.
+   * Convert markdown to basic HTML (fallback for articles without htmlContent).
+   */
+  private markdownToHtml(markdown: string): string {
+    return markdown
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+  }
+
+  /**
+   * Republish (update) an existing WordPress post via WpClientService.
+   * M-02: Replaced fake stub with real WP API call.
    */
   async republishToWordPress(
     id: string,
@@ -269,12 +300,27 @@ export class KnowledgeArticleService {
 
     await this.updateState(id, KnowledgeArticleState.PUBLISHING);
 
-    // TODO: Call WpClientService.updatePost(...)
-    const wpPostId = article.wpPostId;
+    try {
+      const htmlContent = article.htmlContent || this.markdownToHtml(article.content || '');
 
-    await this.updateState(id, KnowledgeArticleState.PUBLISHED);
+      await this.wpClientService.updatePost(article.wpPostId, {
+        title: article.title,
+        content: htmlContent,
+        categories: article.wpCategoryId ? [article.wpCategoryId] : [],
+        tags: Array.isArray(article.wpTagIds) ? article.wpTagIds : [],
+      });
 
-    return { wpPostId };
+      await this.updateState(id, KnowledgeArticleState.PUBLISHED);
+
+      this.logger.log(`Article ${id} republished to WP: post ${article.wpPostId}`);
+      return { wpPostId: article.wpPostId };
+    } catch (error: any) {
+      this.logger.error(`Article ${id} WP republish failed: ${error.message}`);
+      await this.updateState(id, KnowledgeArticleState.READY);
+      throw new BadRequestException(
+        `WordPress republish failed: ${error.message}`,
+      );
+    }
   }
 
   // ── Batch Creation ──────────────────────────────────────

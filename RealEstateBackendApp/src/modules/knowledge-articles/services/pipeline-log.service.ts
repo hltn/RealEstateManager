@@ -179,4 +179,25 @@ export class PipelineLogService {
   async getLogByBatchId(batchId: string): Promise<PipelineLog | null> {
     return this.logModel.findOne({ batchId }).lean().exec() as unknown as PipelineLog | null;
   }
+
+  /**
+   * Mark all PipelineLog documents with status `RUNNING` as `FAILED`.
+   * Called on server startup to clean up stale in-memory state that was lost during restart.
+   * Returns the number of logs updated.
+   */
+  async markRunningAsFailed(errorMessage: string): Promise<number> {
+    const result = await this.logModel
+      .updateMany(
+        { status: PipelineRunStatus.RUNNING },
+        {
+          $set: {
+            status: PipelineRunStatus.FAILED,
+            errorSummary: errorMessage,
+          },
+        },
+      )
+      .exec();
+
+    return result.modifiedCount;
+  }
 }
