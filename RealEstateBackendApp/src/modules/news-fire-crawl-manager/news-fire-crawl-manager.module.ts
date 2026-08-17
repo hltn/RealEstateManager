@@ -51,6 +51,10 @@ import { ExternalLogModule } from '../external-log/external-log.module';
     AuditLogService,
     EmbeddingService,
   ],
-  exports: [IdempotencyService, AuditLogService],
+  exports: [
+    MongooseModule.forFeature([{ name: NewsArticle.name, schema: NewsArticleSchema }]),
+    IdempotencyService,
+    AuditLogService,
+  ],
 })
 export class NewsFireCrawlManagerModule {}

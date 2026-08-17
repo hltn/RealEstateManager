@@ -2,7 +2,11 @@ import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { google, type OAuth2Client } from 'googleapis';
+import { google } from 'googleapis';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
+
 import { createHmac, randomBytes } from 'node:crypto';
 import {
   GoogleDriveToken,
