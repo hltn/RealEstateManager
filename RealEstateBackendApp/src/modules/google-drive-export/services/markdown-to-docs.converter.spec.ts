@@ -39,15 +39,21 @@ describe('MarkdownToGoogleDocsConverter', () => {
     it('converts H1 heading to insertText + HEADING_1 style', () => {
       const requests = MarkdownToGoogleDocsConverter.convert('# Title');
 
-      // Should have: insertText for heading text + newline, updateParagraphStyle
-      expect(requests).toHaveLength(2);
+      // Should have: insertText for heading text, insertText for newline, updateParagraphStyle
+      expect(requests).toHaveLength(3);
       expect(requests[0]).toEqual({
         insertText: {
           location: { index: 1 },
-          text: 'Title\n',
+          text: 'Title',
         },
       });
       expect(requests[1]).toEqual({
+        insertText: {
+          location: { index: 6 },
+          text: '\n',
+        },
+      });
+      expect(requests[2]).toEqual({
         updateParagraphStyle: {
           range: { startIndex: 1, endIndex: 7 }, // 'Title' = 5 chars + 1 newline = end at 6+1=7
           paragraphStyle: { namedStyleType: 'HEADING_1' },
@@ -299,6 +305,262 @@ describe('MarkdownToGoogleDocsConverter', () => {
           'Courier New',
       );
       expect(monospace).toBeDefined();
+    });
+  });
+
+  describe('nested inline styles (no raw markdown)', () => {
+    it('does not insert raw asterisks for nested bold+italic', () => {
+      const md = '**Hello _world_ foo**';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // All inserted text should be clean — no raw markdown syntax
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).not.toContain('*');
+      expect(allText).toContain('Hello');
+      expect(allText).toContain('world');
+      expect(allText).toContain('foo');
+    });
+
+    it('applies bold to the full nested range', () => {
+      const md = '**Hello _world_ foo**';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Should have a bold style covering the whole range
+      const boldStyles = requests.filter(
+        (r: any) => r.updateTextStyle?.textStyle?.bold === true,
+      );
+      expect(boldStyles.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('applies italic to the nested italic portion', () => {
+      const md = '**Hello _world_ foo**';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const italicStyles = requests.filter(
+        (r: any) => r.updateTextStyle?.textStyle?.italic === true,
+      );
+      expect(italicStyles.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('links', () => {
+    it('inserts clean link text with hyperlink style', () => {
+      const md = 'See [Google](https://google.com) for more';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Should contain clean text "Google" — not "[Google](...)"
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).toContain('See');
+      expect(allText).toContain('Google');
+      expect(allText).toContain('for more');
+      expect(allText).not.toContain('[');
+      expect(allText).not.toContain(']');
+      expect(allText).not.toContain('(https://');
+    });
+
+    it('applies hyperlink style with correct URL', () => {
+      const md = '[Click here](https://example.com "Title")';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const linkStyle = requests.find(
+        (r: any) => r.updateTextStyle?.textStyle?.link?.url,
+      );
+      expect(linkStyle).toBeDefined();
+      expect((linkStyle as any).updateTextStyle.textStyle.link.url).toBe(
+        'https://example.com',
+      );
+    });
+
+    it('handles nested bold inside link', () => {
+      const md = '[**Bold link**](https://example.com)';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Should have bold style for the bold text
+      const boldStyles = requests.filter(
+        (r: any) => r.updateTextStyle?.textStyle?.bold === true,
+      );
+      expect(boldStyles.length).toBeGreaterThanOrEqual(1);
+
+      // Should have hyperlink style
+      const linkStyles = requests.filter(
+        (r: any) => r.updateTextStyle?.textStyle?.link?.url,
+      );
+      expect(linkStyles.length).toBe(1);
+    });
+  });
+
+  describe('images', () => {
+    it('inserts alt text as italic placeholder', () => {
+      const md = '![Alt text](image.png "Image Title")';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Should insert "[Alt text]" as italic placeholder
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).toContain('[Alt text]');
+      expect(allText).not.toContain('![');
+      expect(allText).not.toContain('(image.png');
+    });
+
+    it('applies italic to the image placeholder', () => {
+      const md = '![Alt text](image.png)';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const italicStyles = requests.filter(
+        (r: any) => r.updateTextStyle?.textStyle?.italic === true,
+      );
+      expect(italicStyles.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('hard line breaks (br)', () => {
+    it('inserts newline for hard line break', () => {
+      const md = 'Line 1  \nLine 2';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Should have inserts for "Line 1", "\n" (from br), "Line 2", "\n" (paragraph end)
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      expect(insertedTexts).toContain('Line 1');
+      expect(insertedTexts).toContain('Line 2');
+      // Should have at least 3 inserts (text, newline from br, text)
+      expect(insertedTexts.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('tables', () => {
+    it('converts table to tab-separated rows with bold header', () => {
+      const md = '| Name | Age |\n|------|-----|\n| Alice | 30 |\n| Bob | 25 |';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Should have insertText for header row
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      expect(insertedTexts).toContain('Name\tAge\n');
+      expect(insertedTexts).toContain('Alice\t30\n');
+      expect(insertedTexts).toContain('Bob\t25\n');
+
+      // Should have bold style for header row
+      const boldStyles = requests.filter(
+        (r: any) => r.updateTextStyle?.textStyle?.bold === true,
+      );
+      expect(boldStyles.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('handles table with single column', () => {
+      const md = '| Fruit |\n|-------|\n| Apple |\n| Banana |';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      expect(insertedTexts).toContain('Fruit\n');
+      expect(insertedTexts).toContain('Apple\n');
+      expect(insertedTexts).toContain('Banana\n');
+    });
+  });
+
+  describe('HTML', () => {
+    it('strips HTML tags and inserts plain text', () => {
+      const md = '<div>Hello world</div>';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).toContain('Hello world');
+      expect(allText).not.toContain('<div>');
+      expect(allText).not.toContain('</div>');
+    });
+
+    it('strips nested HTML tags', () => {
+      const md = '<p><strong>Bold in HTML</strong></p>';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).toContain('Bold in HTML');
+      expect(allText).not.toContain('<');
+    });
+  });
+
+  describe('horizontal rule (hr)', () => {
+    it('inserts a visual separator line', () => {
+      const md = '---';
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).toContain('────');
+    });
+  });
+
+  describe('full document with all token types', () => {
+    it('handles a comprehensive markdown document without raw syntax', () => {
+      const md = [
+        '# Title',
+        '',
+        'Hello **bold** and *italic* and [link](https://example.com).',
+        '',
+        '| Col1 | Col2 |',
+        '|------|------|',
+        '| A | B |',
+        '',
+        '![img](photo.png)',
+        '',
+        '<p>Raw HTML paragraph</p>',
+        '',
+        '> Quote text',
+        '',
+        '- Item 1',
+        '- Item 2',
+        '',
+        '```js',
+        'const x = 1;',
+        '```',
+      ].join('\n');
+
+      const requests = MarkdownToGoogleDocsConverter.convert(md);
+
+      // Verify no raw markdown syntax in any inserted text
+      const insertedTexts = requests
+        .filter((r: any) => r.insertText)
+        .map((r: any) => r.insertText.text);
+      const allText = insertedTexts.join('');
+      expect(allText).not.toContain('**');
+      expect(allText).not.toContain('![(');
+      expect(allText).not.toContain('```');
+      expect(allText).not.toContain('<p>');
+      expect(allText).not.toContain('</p>');
+      expect(allText).not.toContain('| Col1');
+      expect(allText).not.toContain('|------');
+
+      // Verify all content is present
+      expect(allText).toContain('Title');
+      expect(allText).toContain('bold');
+      expect(allText).toContain('italic');
+      expect(allText).toContain('link');
+      expect(allText).toContain('Col1');
+      expect(allText).toContain('Raw HTML paragraph');
+      expect(allText).toContain('Quote text');
+      expect(allText).toContain('Item 1');
+      expect(allText).toContain('const x = 1;');
+      expect(allText).toContain('[img]'); // Image placeholder
     });
   });
 });

@@ -12,8 +12,10 @@ import type {
  *   3. Track `currentIndex` — every insertText shifts subsequent positions
  *
  * Supported: headings (H1-H6), bold, italic, monospace, inline code,
- *            ordered/unordered lists, code blocks, blockquotes, paragraphs.
- * Unsupported (rendered as plain text): tables, HTML, images, links.
+ *            ordered/unordered lists, code blocks, blockquotes, paragraphs,
+ *            links (with hyperlink), images (alt text placeholder),
+ *            tables (tab-separated), HTML (stripped to plain text),
+ *            hard line breaks (br).
  *
  * Document structure: Google Docs starts with 1 empty paragraph (index 0).
  * First insertText at index 1 (after that empty paragraph).
@@ -58,6 +60,15 @@ const HEADING_STYLES: Record<
   5: { namedStyleType: 'HEADING_5' },
   6: { namedStyleType: 'HEADING_6' },
 };
+
+// ─── HTML tag stripping regex ────────────────────────────────────────────────
+
+const HTML_TAG_REGEX = /<[^>]+>/g;
+
+/** Strip HTML tags from a string, returning plain text. */
+function stripHtmlTags(html: string): string {
+  return html.replace(HTML_TAG_REGEX, '');
+}
 
 // ─── Converter ───────────────────────────────────────────────────────────────
 
@@ -110,7 +121,26 @@ export class MarkdownToGoogleDocsConverter {
         case 'blockquote':
           this.processBlockquote(token as { tokens: any[] });
           break;
-        // 'space', 'hr', 'table', 'html' — intentionally skipped or no-op
+        case 'table':
+          this.processTable(token as { header: any[]; rows: any[][] });
+          break;
+        case 'html':
+          this.processHtml(token as { text: string });
+          break;
+        case 'hr':
+          // Horizontal rule: insert a line of dashes as visual separator.
+          this.insertTextSegment('────────────');
+          this.requests.push({
+            insertText: {
+              location: { index: this.currentIndex },
+              text: '\n',
+            },
+          });
+          this.currentIndex += 1;
+          break;
+        case 'space':
+          // Space tokens are blank lines between block elements — no action needed.
+          break;
         default:
           break;
       }
@@ -126,28 +156,35 @@ export class MarkdownToGoogleDocsConverter {
 
   private processHeading(token: { depth: number; tokens: any[] }): void {
     const depth = Math.min(Math.max(token.depth, 1), 6);
-    const text = this.extractTextFromTokens(token.tokens);
     const start = this.currentIndex;
-    const end = start + text.length;
 
+    // Process inline tokens inside heading (handles nested bold/italic/etc.)
+    for (const inlineToken of token.tokens ?? []) {
+      this.processInlineToken(inlineToken);
+    }
+
+    const textEnd = this.currentIndex;
+
+    // Insert newline after heading text.
     this.requests.push({
       insertText: {
-        location: { index: start },
-        text: text + '\n',
+        location: { index: this.currentIndex },
+        text: '\n',
       },
     });
+
     this.requests.push({
       updateParagraphStyle: {
         range: {
           startIndex: start,
-          endIndex: end + 1, // +1 for newline
+          endIndex: textEnd + 1, // +1 for newline
         },
         paragraphStyle: HEADING_STYLES[depth]!,
         fields: 'namedStyleType',
       },
     });
 
-    this.currentIndex = end + 1;
+    this.currentIndex = textEnd + 1;
   }
 
   // ─── Paragraph (with inline styles) ──────────────────────────────────────
@@ -274,6 +311,66 @@ export class MarkdownToGoogleDocsConverter {
     this.currentIndex += 1;
   }
 
+  // ─── Table ───────────────────────────────────────────────────────────────
+
+  private processTable(token: { header: any[]; rows: any[][] }): void {
+    const { header, rows } = token;
+
+    // Insert header row as tab-separated text (bold).
+    const headerText = header.map((cell: any) => cell.text).join('\t');
+    if (headerText.length > 0) {
+      const headerStart = this.currentIndex;
+      this.requests.push({
+        insertText: {
+          location: { index: headerStart },
+          text: headerText + '\n',
+        },
+      });
+      this.requests.push({
+        updateTextStyle: {
+          range: {
+            startIndex: headerStart,
+            endIndex: headerStart + headerText.length,
+          },
+          textStyle: BOLD_STYLE,
+          fields: 'bold',
+        },
+      });
+      this.currentIndex = headerStart + headerText.length + 1;
+    }
+
+    // Insert data rows as tab-separated text.
+    for (const row of rows ?? []) {
+      const rowText = row.map((cell: any) => cell.text).join('\t');
+      if (rowText.length > 0) {
+        this.requests.push({
+          insertText: {
+            location: { index: this.currentIndex },
+            text: rowText + '\n',
+          },
+        });
+        this.currentIndex += rowText.length + 1;
+      }
+    }
+  }
+
+  // ─── HTML ────────────────────────────────────────────────────────────────
+
+  private processHtml(token: { text: string }): void {
+    const plainText = stripHtmlTags(token.text);
+    if (plainText.length > 0) {
+      this.insertTextSegment(plainText);
+      // Append newline for the paragraph boundary.
+      this.requests.push({
+        insertText: {
+          location: { index: this.currentIndex },
+          text: '\n',
+        },
+      });
+      this.currentIndex += 1;
+    }
+  }
+
   // ─── Inline tokens ───────────────────────────────────────────────────────
 
   private processInlineToken(token: any): void {
@@ -282,20 +379,117 @@ export class MarkdownToGoogleDocsConverter {
         this.insertTextSegment(token.text);
         break;
       case 'strong':
-        this.insertStyledSegment(token.text, BOLD_STYLE, 'bold');
+        this.processStyledInlineTokens(token, BOLD_STYLE, 'bold');
         break;
       case 'em':
-        this.insertStyledSegment(token.text, ITALIC_STYLE, 'italic');
+        this.processStyledInlineTokens(token, ITALIC_STYLE, 'italic');
         break;
       case 'codespan':
         this.insertStyledSegment(token.text, MONOSPACE_STYLE, 'weightedFontFamily');
         break;
+      case 'link':
+        this.processLinkToken(token);
+        break;
+      case 'image':
+        this.processImageToken(token);
+        break;
+      case 'br':
+        this.requests.push({
+          insertText: {
+            location: { index: this.currentIndex },
+            text: '\n',
+          },
+        });
+        this.currentIndex += 1;
+        break;
       default:
-        // Fallback: extract raw text.
-        if (token.text) {
+        // Fallback: extract clean text from token.
+        if (token.tokens) {
+          // Token has children — process them recursively for clean text.
+          for (const child of token.tokens) {
+            this.processInlineToken(child);
+          }
+        } else if (token.text) {
           this.insertTextSegment(token.text);
         }
         break;
+    }
+  }
+
+  /**
+   * Process a styled inline token (strong, em, etc.) by recursively handling
+   * its child tokens, then applying the style to the entire range.
+   *
+   * This avoids inserting raw markdown syntax (e.g., `*asterisks*`) when
+   * there are nested inline tokens inside the styled span.
+   */
+  private processStyledInlineTokens(
+    token: any,
+    style: DocsV1.Schema$TextStyle,
+    fields: string,
+  ): void {
+    const start = this.currentIndex;
+
+    // Process nested tokens (handles cases like **bold *italic* text**)
+    if (token.tokens?.length) {
+      for (const child of token.tokens) {
+        this.processInlineToken(child);
+      }
+    } else {
+      // No nested tokens — use the text directly.
+      this.insertTextSegment(token.text);
+    }
+
+    // Apply style to the entire range.
+    if (this.currentIndex > start) {
+      this.requests.push({
+        updateTextStyle: {
+          range: { startIndex: start, endIndex: this.currentIndex },
+          textStyle: style,
+          fields,
+        },
+      });
+    }
+  }
+
+  /**
+   * Process a link token: insert the link text, then apply hyperlink style.
+   */
+  private processLinkToken(token: any): void {
+    const start = this.currentIndex;
+
+    // Process the link's child tokens for clean text extraction.
+    if (token.tokens?.length) {
+      for (const child of token.tokens) {
+        this.processInlineToken(child);
+      }
+    } else {
+      this.insertTextSegment(token.text);
+    }
+
+    // Apply hyperlink style to the link text range.
+    if (this.currentIndex > start) {
+      this.requests.push({
+        updateTextStyle: {
+          range: { startIndex: start, endIndex: this.currentIndex },
+          textStyle: { link: { url: token.href ?? '' } },
+          fields: 'link',
+        },
+      });
+    }
+  }
+
+  /**
+   * Process an image token: insert alt text as placeholder, styled in italic.
+   */
+  private processImageToken(token: any): void {
+    const altText = token.text || '';
+    if (altText.length > 0) {
+      this.insertStyledSegment(
+        `[${altText}]`,
+        ITALIC_STYLE,
+        'italic',
+      );
     }
   }
 

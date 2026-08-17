@@ -141,7 +141,7 @@ describe('GoogleDriveOAuthService', () => {
         expect.objectContaining({
           access_type: 'offline',
           prompt: 'consent',
-          scope: ['https://www.googleapis.com/auth/drive.file'],
+          scope: ['https://www.googleapis.com/auth/drive.file', 'openid', 'email', 'profile'],
           // M-02: state is now signed format userId:nonce:signature
           state: expect.stringContaining(`${USER_ID}:`),
         }),

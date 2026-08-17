@@ -81,11 +81,15 @@ describe('GoogleDriveController', () => {
   });
 
   describe('handleCallback', () => {
-    const mockReply = {
-      redirect: jest.fn(),
+    const mockReply: any = {
+      code: jest.fn().mockReturnThis(),
+      header: jest.fn().mockReturnThis(),
+      send: jest.fn().mockReturnThis(),
     };
     beforeEach(() => {
-      mockReply.redirect.mockClear();
+      mockReply.code.mockClear();
+      mockReply.header.mockClear();
+      mockReply.send.mockClear();
     });
 
     it('validates signed state, exchanges code, saves token, redirects to frontend with gdrive=connected', async () => {
@@ -108,10 +112,12 @@ describe('GoogleDriveController', () => {
         'auth-code-123',
         MOCK_USER.sub,
       );
-      // Fastify redirect(url) — single arg.
-      expect(mockReply.redirect).toHaveBeenCalledWith(
+      expect(mockReply.code).toHaveBeenCalledWith(302);
+      expect(mockReply.header).toHaveBeenCalledWith(
+        'Location',
         'http://localhost:5173/market-analysis-workflow?gdrive=connected',
       );
+      expect(mockReply.send).toHaveBeenCalled();
     });
 
     it('redirects with error when code is missing', async () => {
@@ -121,9 +127,12 @@ describe('GoogleDriveController', () => {
         mockReply as any,
       );
 
-      expect(mockReply.redirect).toHaveBeenCalledWith(
+      expect(mockReply.code).toHaveBeenCalledWith(302);
+      expect(mockReply.header).toHaveBeenCalledWith(
+        'Location',
         expect.stringContaining('gdrive=error'),
       );
+      expect(mockReply.send).toHaveBeenCalled();
     });
 
     it('redirects with error when state validation fails (CSRF)', async () => {
@@ -137,9 +146,12 @@ describe('GoogleDriveController', () => {
         mockReply as any,
       );
 
-      expect(mockReply.redirect).toHaveBeenCalledWith(
+      expect(mockReply.code).toHaveBeenCalledWith(302);
+      expect(mockReply.header).toHaveBeenCalledWith(
+        'Location',
         expect.stringContaining('gdrive=error'),
       );
+      expect(mockReply.send).toHaveBeenCalled();
     });
 
     it('redirects with error message on exchange failure', async () => {
@@ -154,9 +166,12 @@ describe('GoogleDriveController', () => {
         mockReply as any,
       );
 
-      expect(mockReply.redirect).toHaveBeenCalledWith(
+      expect(mockReply.code).toHaveBeenCalledWith(302);
+      expect(mockReply.header).toHaveBeenCalledWith(
+        'Location',
         expect.stringContaining('gdrive=error'),
       );
+      expect(mockReply.send).toHaveBeenCalled();
     });
   });
 

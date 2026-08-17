@@ -29,7 +29,7 @@ export class GoogleDriveOAuthService {
     private readonly configService: ConfigService,
     @InjectModel(GoogleDriveToken.name)
     private readonly tokenModel: Model<GoogleDriveTokenDocument>,
-  ) {}
+  ) { }
 
   /**
    * Tạo OAuth2 URL để frontend redirect user sang Google consent screen.
@@ -44,7 +44,7 @@ export class GoogleDriveOAuthService {
     return oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
-      scope: ['https://www.googleapis.com/auth/drive.file'],
+      scope: ['https://www.googleapis.com/auth/drive.file', 'openid', 'email', 'profile'],
       state,
     });
   }
@@ -92,7 +92,16 @@ export class GoogleDriveOAuthService {
   }> {
     const oauth2Client = this.createBaseOAuth2Client();
 
-    const { tokens } = await oauth2Client.getToken(code);
+
+    let tokens;
+    try {
+      const result = await oauth2Client.getToken(code);
+
+      tokens = result.tokens;
+    } catch (tokenErr: any) {
+
+      throw tokenErr;
+    }
     if (!tokens.access_token || !tokens.refresh_token) {
       throw new UnauthorizedException(
         'Failed to obtain tokens from Google. Please try again.',
