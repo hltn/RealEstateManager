@@ -75,6 +75,7 @@
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "@types/turndown": "^5.0.6",
+    "chokidar": "^5.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -109,5 +110,14 @@
     "transformIgnorePatterns": [
       "node_modules/(?!marked)"
     ]
+  },
+  "allowScripts": {
+    "@google/genai@2.13.0": true,
+    "@nestjs/core@11.1.19": true,
+    "@scarf/scarf@1.4.0": true,
+    "@swc/core@1.16.0": true,
+    "argon2@0.45.1": true,
+    "protobufjs@7.6.5": true,
+    "unrs-resolver@1.11.1": true
   }
 }
