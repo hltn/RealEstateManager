@@ -19,6 +19,8 @@ import { PipelineService } from './services/pipeline.service';
 import { NlCronService } from './services/nl-cron.service';
 import { CategoryRotationService } from './services/category-rotation.service';
 import { NewsFireCrawlManagerModule } from '../news-fire-crawl-manager/news-fire-crawl-manager.module';
+import { SharedModule } from '../../shared/shared.module';
+
 
 @Module({
   imports: [
@@ -28,6 +30,7 @@ import { NewsFireCrawlManagerModule } from '../news-fire-crawl-manager/news-fire
     ]),
     // Import NewsArticle model + exported IdempotencyService + AuditLogService.
     NewsFireCrawlManagerModule,
+    SharedModule,
   ],
   controllers: [KnowledgeArticlesController],
   providers: [

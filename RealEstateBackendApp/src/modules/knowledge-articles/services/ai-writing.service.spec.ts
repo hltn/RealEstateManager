@@ -1,15 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AiWritingService } from './ai-writing.service';
 import { KnowledgeConfigService } from './knowledge-config.service';
+import { UnifiedAiService } from '../../../shared/ai-provider/unified-ai.service';
 
 describe('AiWritingService', () => {
   let service: AiWritingService;
+  let unifiedAiService: UnifiedAiService;
 
   const mockAiWritingConfig = {
     promptTemplate:
       'Viết bài về {{topic}} trong danh mục {{category}}: {{topicDescription}}',
     model: 'google/gemini-2.5-flash',
-    provider: 'OpenRouter',
+    provider: 'Must1c',
     maxTokens: 4096,
     temperature: 0.7,
     topics: [
@@ -23,7 +25,7 @@ describe('AiWritingService', () => {
   };
 
   beforeEach(async () => {
-    process.env.OPENROUTER_API_KEY = 'test-api-key';
+    process.env.MUST1C_API_KEY = 'test-must1c-key';
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -34,14 +36,27 @@ describe('AiWritingService', () => {
             getAiWritingConfig: jest.fn().mockResolvedValue(mockAiWritingConfig),
           },
         },
+        {
+          provide: UnifiedAiService,
+          useValue: {
+            resolveFromConfig: jest.fn().mockReturnValue({
+              name: 'Must1c',
+              url: 'https://htmustc.id.vn/v1/chat/completions',
+              apiKey: 'test-must1c-key',
+              model: 'google/gemini-2.5-flash',
+            }),
+            callChatCompletion: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<AiWritingService>(AiWritingService);
+    unifiedAiService = module.get<UnifiedAiService>(UnifiedAiService);
   });
 
   afterEach(() => {
-    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.MUST1C_API_KEY;
   });
 
   it('should be defined', () => {
@@ -49,7 +64,7 @@ describe('AiWritingService', () => {
   });
 
   describe('generateContent', () => {
-    it('should generate content successfully from OpenRouter', async () => {
+    it('should generate content successfully from Must1c', async () => {
       const aiResponse = {
         title: 'Thị trường BĐS Hà Nội 2026',
         content: '# Thị trường BĐS Hà Nội\n\nNội dung bài viết...',
@@ -58,8 +73,7 @@ describe('AiWritingService', () => {
         tags: ['bđs', 'hà nội', 'thị trường'],
       };
 
-      const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockResolvedValue({
+      unifiedAiService.callChatCompletion = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           choices: [
@@ -81,8 +95,6 @@ describe('AiWritingService', () => {
       expect(result.title).toBe('Thị trường BĐS Hà Nội 2026');
       expect(result.content).toContain('Thị trường BĐS Hà Nội');
       expect(result.tags).toEqual(['bđs', 'hà nội', 'thị trường']);
-
-      global.fetch = originalFetch;
     });
 
     it('should throw when prompt template is missing', async () => {
@@ -94,9 +106,21 @@ describe('AiWritingService', () => {
             useValue: {
               getAiWritingConfig: jest.fn().mockResolvedValue({
                 promptTemplate: '',
-                provider: 'OpenRouter',
+                provider: 'Must1c',
                 model: 'test',
               }),
+            },
+          },
+          {
+            provide: UnifiedAiService,
+            useValue: {
+              resolveFromConfig: jest.fn().mockReturnValue({
+                name: 'Must1c',
+                url: 'https://htmustc.id.vn/v1/chat/completions',
+                apiKey: 'test-must1c-key',
+                model: 'test',
+              }),
+              callChatCompletion: jest.fn(),
             },
           },
         ],

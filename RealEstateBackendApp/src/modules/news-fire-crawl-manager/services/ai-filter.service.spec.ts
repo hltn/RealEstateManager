@@ -10,8 +10,7 @@ import { BadRequestException } from '@nestjs/common';
 import * as fs from 'fs';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
-import { ConfigService } from '@nestjs/config';
-import { ExternalLogService } from '../../external-log/services/external-log.service';
+import { UnifiedAiService } from '../../../shared/ai-provider/unified-ai.service';
 
 /**
  * Unit test cho AIFilterService — service gọi AI (OpenRouter/Must1c/Gemini).
@@ -113,7 +112,7 @@ describe('AIFilterService', () => {
         .mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
       // Phase 2 (ExternalLogModule): service gọi res.clone().text() để log body
       // mà không tiêu thụ stream của caller (res.text()/res.json()).
-      clone: jest.fn(() => res),
+      clone: jest.fn(() => mockFetchResponse(ok, body, status)),
       headers: new Headers({ 'content-type': 'application/json' }),
     };
     return res as Response;
@@ -184,12 +183,11 @@ describe('AIFilterService', () => {
 
     it('should call Must1c when platform=Must1c and key present', async () => {
       mockConfigService.get.mockImplementation((key: string) => {
-        const cfg: Record<string, string> = {
+        const cfg: Record<string, string | undefined> = {
           ACTIVE_AI_PLATFORM: 'Must1c',
           MUST1C_API_KEY: 'm1c-key',
           MUST1C_MODEL: 'gemini-3.6-flash',
           MUST1C_API_URL: 'https://htmustc.id.vn/v1/chat/completions',
-          OPENROUTER_API_KEY: undefined,
         };
         return cfg[key];
       });

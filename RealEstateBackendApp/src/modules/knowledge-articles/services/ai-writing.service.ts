@@ -4,13 +4,13 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { KnowledgeConfigService } from './knowledge-config.service';
+import { UnifiedAiService, AiProviderConfig } from '../../../shared/ai-provider/unified-ai.service';
 
 /**
- * AI content generation service.
- * Calls an abstracted AI API — provider/model/endpoint configured via
- * the ai_writing config in KnowledgeConfigService.
+ * AI content generation service using UnifiedAiService.
+ * Uses database-configured provider settings (no hard-coded agentgw.cloud).
  *
- * Supports: OpenRouter, Must1c, 9Router (any OpenAI-compatible endpoint).
+ * Supports: Must1c, 9Router (any OpenAI-compatible endpoint).
  */
 @Injectable()
 export class AiWritingService {
@@ -18,6 +18,7 @@ export class AiWritingService {
 
   constructor(
     private readonly configService: KnowledgeConfigService,
+    private readonly unifiedAiService: UnifiedAiService,
   ) {}
 
   // ── Retry wrapper ───────────────────────────────────────
@@ -67,93 +68,6 @@ export class AiWritingService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // ── Provider resolution ─────────────────────────────────
-
-  private async getProviderEndpoint(): Promise<{
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    headers: Record<string, string>;
-  }> {
-    const config = await this.configService.getAiWritingConfig();
-    const provider = (config.provider as string) || 'OpenRouter';
-    const model = (config.model as string) || 'google/gemini-2.5-flash';
-
-    switch (provider.toLowerCase()) {
-      case 'openrouter': {
-        const apiKey =
-          process.env.OPENROUTER_API_KEY ||
-          (await this.getEnvKey('OPENROUTER_API_KEY'));
-        if (!apiKey) {
-          throw new InternalServerErrorException(
-            'OpenRouter API key not configured',
-          );
-        }
-        return {
-          baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
-          apiKey,
-          model,
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'HTTP-Referer': 'http://localhost:3000',
-            'X-Title': 'RealEstateManager-Knowledge',
-            'Content-Type': 'application/json',
-          },
-        };
-      }
-      case 'must1c': {
-        const apiKey =
-          process.env.MUST1C_API_KEY ||
-          (await this.getEnvKey('MUST1C_API_KEY'));
-        if (!apiKey) {
-          throw new InternalServerErrorException(
-            'Must1c API key not configured',
-          );
-        }
-        return {
-          baseUrl: 'https://api.must1c.com/v1/chat/completions',
-          apiKey,
-          model: (config.must1cModel as string) || model,
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-        };
-      }
-      case '9router': {
-        const baseUrl =
-          (config.nineRouterBaseUrl as string) ||
-          process.env.NINEROUTER_BASE_URL ||
-          'http://127.0.0.1:20128/v1';
-        const apiKey =
-          process.env.NINEROUTER_API_KEY ||
-          (await this.getEnvKey('NINEROUTER_API_KEY'));
-        if (!apiKey) {
-          throw new InternalServerErrorException(
-            '9Router API key not configured',
-          );
-        }
-        return {
-          baseUrl: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
-          apiKey,
-          model: (config.nineRouterModel as string) || model,
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-        };
-      }
-      default:
-        throw new InternalServerErrorException(
-          `Unknown AI provider: ${provider}. Supported: OpenRouter, Must1c, 9Router`,
-        );
-    }
-  }
-
-  private async getEnvKey(key: string): Promise<string | undefined> {
-    return process.env[key] || undefined;
-  }
-
   // ── Core generation ─────────────────────────────────────
 
   /**
@@ -184,11 +98,14 @@ export class AiWritingService {
 
     // Interpolate template placeholders
     const prompt = promptTemplate
-      .replace(/\{\{topic\}\}/g, params.topic)
-      .replace(/\{\{category\}\}/g, params.category)
-      .replace(/\{\{topicDescription\}\}/g, params.topicDescription);
+      .replace(/{{topic}}/g, params.topic)
+      .replace(/{{category}}/g, params.category)
+      .replace(/{{topicDescription}}/g, params.topicDescription);
 
-    const endpoint = await this.getProviderEndpoint();
+    const providerConfig = this.unifiedAiService.resolveFromConfig({
+      provider: (config.provider as string) || 'Must1c',
+      model: (config.model as string) || undefined,
+    });
 
     const systemPrompt = `You are a professional real estate content writer for the Vietnamese market. 
 Write high-quality, informative articles in Vietnamese.
@@ -202,29 +119,33 @@ Always return a JSON object with these fields:
 Return ONLY the JSON object, no preamble or explanation.`;
 
     const result = await this.withRetry(async () => {
-      const response = await fetch(endpoint.baseUrl, {
-        method: 'POST',
-        headers: endpoint.headers,
-        body: JSON.stringify({
-          model: endpoint.model,
+      const abortController = new AbortController();
+      const signal = abortController.signal;
+      
+      const res = await this.unifiedAiService.callChatCompletion(
+        {
+          model: providerConfig.model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt },
           ],
-          max_tokens: maxTokens,
-          temperature,
-          response_format: { type: 'json_object' },
-        }),
-      });
+        },
+        {
+          provider: providerConfig,
+          contextLabel: 'generateContent',
+          prompt: `${systemPrompt}\n${prompt}`,
+          signal,
+        },
+      );
 
-      if (!response.ok) {
-        const errorBody = await response.text();
+      if (!res.ok) {
+        const errorBody = await res.text();
         throw new Error(
-          `HTTP ${response.status}: ${errorBody.substring(0, 200)}`,
+          `HTTP ${res.status}: ${errorBody.substring(0, 200)}`,
         );
       }
 
-      return response.json();
+      return res.json();
     }, `generateContent(${params.topic})`);
 
     // Parse AI response
