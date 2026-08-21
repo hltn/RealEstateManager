@@ -575,7 +575,7 @@ export class CustomCrawlerService {
     const endDate = endOfDayUtc(date);
     return this.rawArticleModel
       .find({
-        createdAt: { $gte: startDate, $lte: endDate },
+        publishedAt: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
       })
       .lean()
       .exec();

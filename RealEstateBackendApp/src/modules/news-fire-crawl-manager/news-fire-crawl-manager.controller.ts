@@ -1111,6 +1111,7 @@ export class NewsFireCrawlManagerController {
       updateStep(2, { status: 'running' });
       const allArticles =
         await this.customCrawlerService.getRawArticlesByDate(date);
+      this.logger.log(`agentgw.cloud 2: found ${allArticles.length} raw articles for date ${date}`);
       if (!allArticles || allArticles.length === 0) {
         const emptyResult: WorkflowJobState = {
           currentStep: 5,
