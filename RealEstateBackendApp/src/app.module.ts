@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { NewsFireCrawlManagerModule } from './modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
+import { ExternalLogModule } from './modules/external-log/external-log.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -14,6 +15,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { GoogleDriveExportModule } from './modules/google-drive-export/google-drive-export.module';
 import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-articles.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-
       rootPath: join(__dirname, '..', '..', 'RealEstateAdminApp', 'dist'),
       exclude: ['/api/(.*)'],
     }),
+    ExternalLogModule,
+    SharedModule,
     NewsFireCrawlManagerModule,
     SettingsModule,
     HealthModule,

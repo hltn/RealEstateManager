@@ -23,6 +23,8 @@ import {
 } from './schemas/market-analysis-history.schema';
 import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
 import { ExternalLogModule } from '../external-log/external-log.module';
+import { SharedModule } from '../../shared/shared.module';
+
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { ExternalLogModule } from '../external-log/external-log.module';
     ]),
     // ExternalLogModule: log tập trung outgoing request (crawl + AI) — §9.5 spec.
     ExternalLogModule,
+    SharedModule,
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],
   providers: [
