@@ -437,11 +437,25 @@ describe('NewsFireCrawlManagerController', () => {
   });
 
   describe('getArticles — Response Format phân trang', () => {
-    it('trả { data, meta } với totalPages đúng', async () => {
-      newsArticleService.getSavedArticles.mockResolvedValue({ data: [{ _id: 'a' }], total: 31 });
-      const result = await controller.getArticles({ page: 2, limit: 10 } as any);
-      expect(newsArticleService.getSavedArticles).toHaveBeenCalledWith(undefined, 2, 10);
-      expect(result.meta).toEqual({ total: 31, page: 2, limit: 10, totalPages: 4 });
+    it('truyền date/status xuống service và trả 10 record ở trang 2 khi toàn bộ tập đã lọc có 30 record', async () => {
+      const pageRecords = Array.from({ length: 10 }, (_, index) => ({ _id: `article-${index + 21}` }));
+      newsArticleService.getSavedArticles.mockResolvedValue({ data: pageRecords, total: 30 });
+
+      const result = await controller.getArticles({
+        date: '2026-08-05',
+        status: 'POSTED_WP',
+        page: 2,
+        limit: 20,
+      } as any);
+
+      expect(newsArticleService.getSavedArticles).toHaveBeenCalledWith(
+        '2026-08-05',
+        'POSTED_WP',
+        2,
+        20,
+      );
+      expect(result.data).toHaveLength(10);
+      expect(result.meta).toEqual({ total: 30, page: 2, limit: 20, totalPages: 2 });
     });
   });
 

@@ -59,12 +59,13 @@ describe('CronjobService', () => {
       expect(schedulerRegistry.addCronJob).not.toHaveBeenCalled();
     });
 
-    it('loads isActive=true and frequency from .env and starts cron', () => {
+    it('loads isActive=true and frequency from the mounted .env file and starts cron', () => {
       configService.get.mockImplementation((key: string) => {
-        if (key === 'DAILY_CRAWLER_ACTIVE') return 'true';
-        if (key === 'DAILY_CRAWLER_FREQUENCY') return '0 12 * * *';
+        if (key === 'CRON_CONFIG_FILE') return '/mounted/.env';
         return undefined;
       });
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.readFileSync as jest.Mock).mockReturnValue('DAILY_CRAWLER_ACTIVE=true\nDAILY_CRAWLER_FREQUENCY=0 12 * * *\n');
 
       service.onApplicationBootstrap();
       

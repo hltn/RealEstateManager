@@ -575,7 +575,7 @@ export class CustomCrawlerService {
     const endDate = endOfDayUtc(date);
     return this.rawArticleModel
       .find({
-        createdAt: { $gte: startDate, $lte: endDate },
+        publishedAt: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
       })
       .lean()
       .exec();
@@ -599,6 +599,10 @@ export class CustomCrawlerService {
 
   async deleteRawArticle(id: string): Promise<void> {
     await this.rawArticleModel.findByIdAndDelete(id).exec();
+  }
+
+  async updateRawArticle(id: string, update: Record<string, any>): Promise<void> {
+    await this.rawArticleModel.updateOne({ _id: id }, { $set: update }).exec();
   }
 
   async deleteRawArticlesBulk(ids: string[]): Promise<void> {

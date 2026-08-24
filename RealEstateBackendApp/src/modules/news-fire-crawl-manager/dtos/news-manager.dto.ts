@@ -96,12 +96,22 @@ export class GetRawArticlesQueryDto extends PaginationQueryDto {
   endDate?: string;
 }
 
-/** Query cho GET articles: phân trang dùng chung + filter theo 1 ngày cụ thể */
+/** Query cho GET articles: phân trang dùng chung + filter server-side. */
 export class GetArticlesQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Lọc theo ngày, định dạng YYYY-MM-DD' })
   @IsOptional()
   @IsString()
   date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Lọc theo trạng thái WordPress/crawl; pending là bài chưa có trạng thái',
+    enum: ['pending', 'CRAWLED', 'POSTED_WP', 'ERROR'],
+  })
+  @IsOptional()
+  @IsIn(['pending', 'CRAWLED', 'POSTED_WP', 'ERROR'], {
+    message: 'status chỉ nhận pending, CRAWLED, POSTED_WP hoặc ERROR',
+  })
+  status?: 'pending' | 'CRAWLED' | 'POSTED_WP' | 'ERROR';
 }
 
 /** Cursor pagination for market-analysis history (fixed at 10 records). */

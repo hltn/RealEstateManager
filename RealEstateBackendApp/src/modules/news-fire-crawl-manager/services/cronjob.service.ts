@@ -25,9 +25,9 @@ export class CronjobService implements OnApplicationBootstrap {
    * Khởi tạo cấu hình từ .env hoặc fallback giá trị mặc định khi start app.
    */
   onApplicationBootstrap() {
-    // Đọc từ biến môi trường
-    const envActive = this.configService.get<string>('DAILY_CRAWLER_ACTIVE');
-    const envFreq = this.configService.get<string>('DAILY_CRAWLER_FREQUENCY');
+    const envFileConfig = this.loadConfigFromEnvFile();
+    const envActive = envFileConfig.isActive ?? this.configService.get<string>('DAILY_CRAWLER_ACTIVE');
+    const envFreq = envFileConfig.frequency ?? this.configService.get<string>('DAILY_CRAWLER_FREQUENCY');
 
     this.isActive = envActive === 'true';
     if (envFreq && envFreq.trim() !== '') {
@@ -37,7 +37,27 @@ export class CronjobService implements OnApplicationBootstrap {
     if (this.isActive) {
       this.startCron();
     } else {
-      this.logger.log('Cronjob is currently disabled from .env.');
+      this.logger.log('Cronjob is currently disabled from persistent env configuration.');
+    }
+  }
+
+  private getCronConfigFilePath(): string {
+    return this.configService.get<string>('CRON_CONFIG_FILE') || path.resolve(process.cwd(), '.env');
+  }
+
+  /** Đọc trực tiếp file bind-mount vì process.env không đổi sau khi runtime sửa .env. */
+  private loadConfigFromEnvFile(): { isActive?: string; frequency?: string } {
+    try {
+      const envPath = this.getCronConfigFilePath();
+      if (!fs.existsSync(envPath)) return {};
+      const content = fs.readFileSync(envPath, 'utf8');
+      return {
+        isActive: content.match(/^DAILY_CRAWLER_ACTIVE=(.*)$/m)?.[1]?.trim(),
+        frequency: content.match(/^DAILY_CRAWLER_FREQUENCY=(.*)$/m)?.[1]?.trim(),
+      };
+    } catch (error: any) {
+      this.logger.error('Failed to load persistent cron configuration', error?.stack);
+      return {};
     }
   }
 
@@ -100,7 +120,7 @@ export class CronjobService implements OnApplicationBootstrap {
    */
   private saveConfigToEnv(isActive: boolean, frequency: string) {
     try {
-      const envPath = path.resolve(process.cwd(), '.env');
+      const envPath = this.getCronConfigFilePath();
       let envContent = '';
 
       if (fs.existsSync(envPath)) {

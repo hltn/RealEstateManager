@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Database, Trash2, Eye, Search, Play } from "lucide-react";
+import { AlertCircle, Database, Trash2, Eye, Search, Play, X, ExternalLink, AlertTriangle, Ban } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAnalyzeJob } from "../context/AnalyzeJobContext";
 import { useManualCrawlJob } from "../context/ManualCrawlJobContext";
@@ -24,6 +24,23 @@ interface RawArticle {
   url?: string;
   thumbnailUrl?: string;
   publishedAt?: string;
+  // Dedup fields
+  isDuplicate?: boolean;
+  duplicateOfArticleId?: string | null;
+  duplicateScore?: number | null;
+  savedArticleId?: string | null;
+}
+
+/** Bài viết đã qua xử lý AI (collection NewsArticle) — hiển thị trong modal "Xem bài gốc". */
+interface NewsArticleDetail {
+  _id: string;
+  title: string;
+  summary?: string;
+  source?: string;
+  publishDate?: string;
+  url?: string;
+  thumbnailUrl?: string;
+  content?: string;
 }
 
 type SortOrder = "newest" | "oldest";
@@ -84,6 +101,10 @@ export default function RawArticlesScreen() {
   const [dateRange, setDateRange] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+
+  // === DEDUP UI STATE ===
+  const [viewingArticleId, setViewingArticleId] = useState<string | null>(null);
+  const [viewingRawArticleId, setViewingRawArticleId] = useState<string | null>(null);
 
   // Khi job crawl nền xong → thông báo count (provider đã invalidate raw-articles).
   useEffect(() => {
@@ -317,6 +338,38 @@ export default function RawArticlesScreen() {
   });
 
   const isAnalyzeJobRunning = analyzeJobStatus === "pending";
+
+  // === DEDUP: Fetch original NewsArticle when "Xem bài gốc" is clicked ===
+  const {
+    data: originalArticle,
+    isLoading: isOriginalLoading,
+  } = useQuery<NewsArticleDetail | null>({
+    queryKey: ["news-article-detail", viewingArticleId],
+    queryFn: async ({ signal }) => {
+      if (!viewingArticleId) return null;
+      const { data: res } = await apiAxios.get<{ data: NewsArticleDetail }>(
+        `/news-manager/articles/${viewingArticleId}`,
+        { signal },
+      );
+      return res?.data ?? null;
+    },
+    enabled: !!viewingArticleId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // === DEDUP: Override duplicate flag ===
+  const overrideMutation = useMutation<void, Error, string>({
+    mutationFn: async (rawArticleId) => {
+      await apiAxios.patch(`/news-manager/raw-articles/${rawArticleId}/override-duplicate`);
+    },
+    onSuccess: async () => {
+      setSuccess("Đã bỏ đánh dấu trùng lặp thành công.");
+      setViewingArticleId(null);
+      setViewingRawArticleId(null);
+      await invalidateList();
+    },
+    onError: (err) => setError(err.message || "Không thể bỏ đánh dấu trùng lặp"),
+  });
   const isBusy =
     isFetching ||
     crawlMutation.isPending ||
@@ -324,7 +377,8 @@ export default function RawArticlesScreen() {
     analyzeMutation.isPending ||
     analyzeAllMutation.isPending ||
     isAnalyzeJobRunning ||
-    bulkMutation.isPending;
+    bulkMutation.isPending ||
+    overrideMutation.isPending;
 
   const handleDeleteSingle = (id: string) => {
     if (!window.confirm("Bạn có chắc chắn muốn xóa bài viết này?")) return;
@@ -593,15 +647,16 @@ export default function RawArticlesScreen() {
                   <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Nguồn</th>
                   <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Ngày đăng</th>
                   <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Link</th>
+                  <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-left uppercase">Trạng thái</th>
                   <th className="px-5 py-3 text-theme-xs font-medium text-gray-500 dark:text-gray-400 text-right uppercase">Hành động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {isLoading ? (
-                  <TableSkeletonRows columnCount={9} rowCount={5} />
+                  <TableSkeletonRows columnCount={10} rowCount={5} />
                 ) : articles.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-5 py-20 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={10} className="px-5 py-20 text-center text-gray-500 dark:text-gray-400">
                       Không có dữ liệu.
                     </td>
                   </tr>
@@ -669,8 +724,42 @@ export default function RawArticlesScreen() {
                           Link gốc
                         </a>
                       </td>
+                      <td className="px-5 py-4 text-theme-sm whitespace-nowrap">
+                        {item.isDuplicate ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400">
+                            <AlertTriangle size={12} />
+                            Trùng lặp
+                            {item.duplicateScore != null && (
+                              <span className="opacity-70">
+                                ({(item.duplicateScore * 100).toFixed(0)}%)
+                              </span>
+                            )}
+                          </span>
+                        ) : item.savedArticleId ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+                            Đã lưu
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-500/15 dark:text-gray-400">
+                            Chờ xử lý
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {item.isDuplicate && item.duplicateOfArticleId && (
+                            <button
+                              title="Xem bài gốc"
+                              aria-label="Xem bài gốc bị trùng lặp"
+                              onClick={() => {
+                              setViewingArticleId(item.duplicateOfArticleId!);
+                              setViewingRawArticleId(item._id);
+                            }}
+                              className="p-2 text-gray-500 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-colors"
+                            >
+                              <Eye size={18} />
+                            </button>
+                          )}
                           <button
                             title="Xem chi tiết"
                             aria-label="Xem chi tiết bài viết"
@@ -705,6 +794,114 @@ export default function RawArticlesScreen() {
           itemLabel="bài"
         />
       </div>
+
+      {/* === MODAL: Xem bài gốc bị trùng lặp === */}
+      {viewingArticleId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setViewingArticleId(null);
+              setViewingRawArticleId(null);
+            }
+          }}
+        >
+          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/[0.08] shadow-2xl">
+            {/* Header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-white/[0.05] bg-white dark:bg-gray-900">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+                Bài gốc (trùng lặp)
+              </h3>
+              <button
+                onClick={() => {
+                  setViewingArticleId(null);
+                  setViewingRawArticleId(null);
+                }}
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.05] rounded-lg transition-colors"
+                aria-label="Đóng"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              {isOriginalLoading ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
+                  <div className="h-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+              ) : originalArticle ? (
+                <>
+                  <div>
+                    <h4 className="text-base font-semibold text-gray-800 dark:text-white/90 leading-relaxed">
+                      {originalArticle.title}
+                    </h4>
+                  </div>
+
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
+                    {originalArticle.source && (
+                      <span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300">Nguồn:</span>{" "}
+                        {originalArticle.source}
+                      </span>
+                    )}
+                    {originalArticle.publishDate && (
+                      <span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300">Ngày đăng:</span>{" "}
+                        {new Date(originalArticle.publishDate).toLocaleDateString("vi-VN", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        })}
+                      </span>
+                    )}
+                  </div>
+
+                  {originalArticle.summary && (
+                    <div className="p-4 rounded-lg bg-gray-50 dark:bg-white/[0.03] border border-gray-100 dark:border-white/[0.05]">
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tóm tắt:</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-line">
+                        {originalArticle.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 pt-2">
+                    {originalArticle.url && (
+                      <a
+                        href={originalArticle.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-brand-600 bg-brand-50 hover:bg-brand-100 dark:text-brand-400 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 rounded-lg transition-colors"
+                      >
+                        <ExternalLink size={16} />
+                        Đi tới bài viết
+                      </a>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (viewingRawArticleId) overrideMutation.mutate(viewingRawArticleId);
+                      }}
+                      disabled={overrideMutation.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-white/[0.05] dark:hover:bg-white/[0.08] rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <Ban size={16} />
+                      {overrideMutation.isPending ? "Đang xử lý..." : "Bỏ đánh dấu trùng lặp"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Không tìm thấy bài gốc.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

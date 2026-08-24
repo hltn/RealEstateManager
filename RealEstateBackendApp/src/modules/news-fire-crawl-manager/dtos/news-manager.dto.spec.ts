@@ -183,9 +183,17 @@ describe('GetArticlesQueryDto', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('page hợp lệ kế thừa từ PaginationQueryDto → pass', async () => {
-    const errors = await validate(plainToInstance(GetArticlesQueryDto, { page: 3, limit: 50 }));
+  it('status hợp lệ và pagination kế thừa → pass', async () => {
+    const errors = await validate(
+      plainToInstance(GetArticlesQueryDto, { status: 'POSTED_WP', page: 2, limit: 20 }),
+    );
     expect(errors).toHaveLength(0);
+  });
+
+  it('status không hỗ trợ → fail IsIn', async () => {
+    const errors = await validate(plainToInstance(GetArticlesQueryDto, { status: 'all' }));
+    expect(errors.length).toBeGreaterThan(0);
+    expect(messages(errors).some((m) => /pending|POSTED_WP/i.test(m))).toBe(true);
   });
 });
 

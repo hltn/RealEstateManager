@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { NewsFireCrawlManagerModule } from './modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
+import { ExternalLogModule } from './modules/external-log/external-log.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -12,6 +13,9 @@ import { HealthModule } from './health.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { GoogleDriveExportModule } from './modules/google-drive-export/google-drive-export.module';
+import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-articles.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -31,12 +35,18 @@ import { UsersModule } from './modules/users/users.module';
       rootPath: join(__dirname, '..', '..', 'RealEstateAdminApp', 'dist'),
       exclude: ['/api/(.*)'],
     }),
+    ExternalLogModule,
+    SharedModule,
     NewsFireCrawlManagerModule,
     SettingsModule,
     HealthModule,
     // Auth + Users: bật global JwtAuthGuard/RolesGuard/ThrottlerGuard.
     AuthModule,
     UsersModule,
+    // Google Drive Export (OAuth2 flow + Export).
+    GoogleDriveExportModule,
+    // Knowledge Articles (auto-write, auto-publish pipeline).
+    KnowledgeArticlesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

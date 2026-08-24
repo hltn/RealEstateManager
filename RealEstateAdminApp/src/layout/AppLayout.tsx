@@ -5,6 +5,7 @@ import { MarketAnalysisWorkflowJobProvider } from "../context/MarketAnalysisWork
 import { ManageWpStatusProvider } from "../context/ManageWpStatusContext";
 import { BulkCrawlJobProvider } from "../context/BulkCrawlJobContext";
 import { ManualCrawlJobProvider } from "../context/ManualCrawlJobContext";
+import { GoogleDriveAuthProvider } from "../context/GoogleDriveAuthContext";
 import { Outlet } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
@@ -42,7 +43,9 @@ const AppLayout: React.FC = () => {
             <MarketAnalysisWorkflowJobProvider>
               <BulkCrawlJobProvider>
                 <ManualCrawlJobProvider>
-                  <LayoutContent />
+                  <GoogleDriveAuthProvider>
+                    <LayoutContent />
+                  </GoogleDriveAuthProvider>
                 </ManualCrawlJobProvider>
               </BulkCrawlJobProvider>
             </MarketAnalysisWorkflowJobProvider>

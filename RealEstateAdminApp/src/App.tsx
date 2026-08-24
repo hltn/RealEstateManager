@@ -8,6 +8,9 @@ import RawArticlesScreen from './screens/RawArticlesScreen';
 import MarketAnalysisWorkflowScreen from './screens/MarketAnalysisWorkflowScreen';
 import AiConfigScreen from './screens/AiConfigScreen';
 import AiPromptConfigScreen from './screens/AiPromptConfigScreen';
+import KnowledgeArticlesScreen from './screens/KnowledgeArticlesScreen';
+import KnowledgeConfigScreen from './screens/KnowledgeConfigScreen';
+import KnowledgeCronScreen from './screens/KnowledgeCronScreen';
 import NewsDetailScreen from './screens/NewsDetailScreen';
 import LoginScreen from './screens/LoginScreen';
 import UserManagementScreen from './screens/UserManagementScreen';
@@ -82,6 +85,52 @@ function App() {
                   }
                 >
                   <CronjobScreen />
+                </RoleGuard>
+              }
+            />
+            {/* Knowledge Articles — ADMIN only */}
+            <Route
+              path="knowledge-articles"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <KnowledgeArticlesScreen />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="knowledge-config"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <KnowledgeConfigScreen />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="knowledge-cron"
+              element={
+                <RoleGuard
+                  allowedRoles={[UserRole.ADMIN]}
+                  fallback={
+                    <div className="flex min-h-[60vh] items-center justify-center text-gray-500">
+                      Bạn không có quyền truy cập trang này.
+                    </div>
+                  }
+                >
+                  <KnowledgeCronScreen />
                 </RoleGuard>
               }
             />

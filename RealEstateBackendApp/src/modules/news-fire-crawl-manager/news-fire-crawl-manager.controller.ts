@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   Param,
   Query,
@@ -570,6 +571,7 @@ export class NewsFireCrawlManagerController {
 
     const { data, total } = await this.newsArticleService.getSavedArticles(
       query.date,
+      query.status,
       page,
       limit,
     );
@@ -1109,6 +1111,7 @@ export class NewsFireCrawlManagerController {
       updateStep(2, { status: 'running' });
       const allArticles =
         await this.customCrawlerService.getRawArticlesByDate(date);
+      this.logger.log(`agentgw.cloud 2: found ${allArticles.length} raw articles for date ${date}`);
       if (!allArticles || allArticles.length === 0) {
         const emptyResult: WorkflowJobState = {
           currentStep: 5,
@@ -1533,6 +1536,65 @@ export class NewsFireCrawlManagerController {
     const result = await this.newsArticleService.cleanArticle(id);
     return {
       message: 'Article cleaned successfully',
+      data: result,
+    };
+  }
+
+  // ── DEDUP ENDPOINTS ──
+
+  @ApiOperation({
+    summary: 'Override duplicate flag on a raw article',
+    description:
+      'Bo danh dau trung lap: dat isDuplicate=false, xoa duplicateOfArticleId. ' +
+      'Dung khi admin quyet dinh bai bi danh nham la duplicate.',
+  })
+  @ApiParam({ name: 'id', description: 'Raw article ID' })
+  @Patch('raw-articles/:id/override-duplicate')
+  async overrideDuplicate(@Param('id') id: string) {
+    const rawArticle = await this.customCrawlerService.getRawArticlesByIds([id]);
+    if (!rawArticle || rawArticle.length === 0) {
+      throw new NotFoundException(`Raw article with ID ${id} not found`);
+    }
+
+    await this.customCrawlerService.updateRawArticle(id, {
+      isDuplicate: false,
+      duplicateOfArticleId: null,
+      duplicateScore: null,
+    });
+
+    return {
+      message: 'Duplicate flag cleared successfully',
+      data: { id, isDuplicate: false },
+    };
+  }
+
+  @ApiOperation({
+    summary: 'Backfill embeddings for articles without them',
+    description:
+      'Tao embedding cho cac bai chua co embedding. batchSize mac dinh 50, ' +
+      'rate limit 100ms giua moi request API.',
+  })
+  @Post('articles/backfill-embeddings')
+  async backfillEmbeddings(@Body() body: { batchSize?: number }) {
+    const result = await this.newsArticleService.backfillEmbeddings(
+      body.batchSize || 50,
+    );
+    return {
+      message: 'Backfill embeddings completed',
+      data: result,
+    };
+  }
+
+  @ApiOperation({
+    summary: 'Retroactive dedup scan',
+    description:
+      'Scan toan bo bai co embedding, so sanh pair-wise, danh dau duplicate.',
+  })
+  @Post('articles/retroactive-dedup-scan')
+  async retroactiveDedupScan() {
+    const result = await this.newsArticleService.retroactiveDedupScan();
+    return {
+      message: 'Retroactive dedup scan completed',
       data: result,
     };
   }
