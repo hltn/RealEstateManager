@@ -1,27 +1,37 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import { AiPromptConfigService } from './ai-prompt-config.service';
-import { ExternalLogService } from '../../external-log/services/external-log.service';
+import { UnifiedAiService } from '../../../shared/ai-provider/unified-ai.service';
 
+/**
+ * AI filtering service — uses UnifiedAiService for all AI API calls.
+ *
+ * This service is responsible for:
+ * - Filtering and ranking news articles via AI
+ * - Filtering raw articles by relevance
+ * - Cleaning markdown content
+ * - Generic AI completion calls
+ *
+ * All HTTP calls to AI providers go through UnifiedAiService.callChatCompletion(),
+ * which provides ExternalLogService integration, error logging, and timeout handling.
+ */
 @Injectable()
 export class AIFilterService {
   private readonly logger = new Logger(AIFilterService.name);
 
   constructor(
-    private configService: ConfigService,
-    private aiPromptConfigService: AiPromptConfigService,
-    private externalLogService: ExternalLogService,
+    private readonly unifiedAiService: UnifiedAiService,
+    private readonly aiPromptConfigService: AiPromptConfigService,
   ) {}
 
+  // ── JSON parsing utilities ──────────────────────────────
+
   /**
-   * Validate & ép giá trị parsed về dạng mảng article.
-   * - Nếu đã là mảng → trả về nguyên.
-   * - Nếu là object wrapper (VD: `{ data: [...] }`, `{ articles: [...] }`)
-   *   → trả về giá trị mảng đầu tiên tìm được bên trong.
-   * - Nếu là primitive hoặc object không chứa mảng con → throw Error rõ ràng
-   *   (fail-fast) kèm contextLabel + 200 ký tự raw để caller biết contract bị
-   *   vi phạm, KHÔNG fallback bọc `[parsed]` gây silent data corruption.
+   * Validate & extract array from parsed AI response.
+   * - If already an array → return as-is.
+   * - If object wrapper (e.g. `{ data: [...] }`, `{ articles: [...] }`)
+   *   → return the first array value found.
+   * - If primitive or no nested array → throw Error with context.
    */
   private extractArray(
     parsed: any,
@@ -39,9 +49,9 @@ export class AIFilterService {
   }
 
   /**
-   * Extract & parse a JSON array từ text response của AI, chịu được
-   * preamble/văn dẫn nhập bao quanh. Tìm '[' đầu tiên và ']' cuối cùng,
-   * parse slice đó. Throw Error có message rõ ràng nếu không parse được.
+   * Extract & parse a JSON array from AI text response, tolerating
+   * preamble/markdown wrappers. Finds first '[' and last ']', parses
+   * the slice. Throws Error with clear message on parse failure.
    */
   private parseJsonArrayResponse(rawText: string, contextLabel: string): any[] {
     const cleaned = rawText
@@ -49,8 +59,6 @@ export class AIFilterService {
       .replace(/```/gi, '')
       .trim();
 
-    // Parse JSON: thử trực tiếp trước, nếu lỗi thì fallback trích slice
-    // từ '[' đầu tiên đến ']' cuối cùng.
     let parsed: any;
     try {
       parsed = JSON.parse(cleaned);
@@ -72,33 +80,58 @@ export class AIFilterService {
       }
     }
 
-    // Validate & ép về mảng (fail-fast nếu contract bị vi phạm).
     return this.extractArray(parsed, contextLabel, cleaned);
   }
+
+  // ── Error classification ────────────────────────────────
+
+  /**
+   * Map HTTP status code to a human-readable error description.
+   */
+  httpErrorDescription(status: number): string {
+    return this.unifiedAiService.httpErrorDescription(status);
+  }
+
+  // ── Helper: extract result text from AI response ────────
+
+  /**
+   * Extract the content text from a chat completion response.
+   * Parses error bodies and maps status codes to readable messages.
+   */
+  private async extractResultFromResponse(
+    res: Response,
+    providerName: string,
+  ): Promise<string> {
+    if (!res.ok) {
+      const errBody = await res.text();
+      let errorMessage = errBody;
+      try {
+        const parsed = JSON.parse(errBody);
+        errorMessage = parsed.error?.message || errBody;
+      } catch {
+        // non-json error body
+      }
+      throw new Error(
+        `${providerName} API error: ${res.status} - ${this.httpErrorDescription(res.status)}. Details: ${errorMessage}`,
+      );
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
+  // ── Public API methods ──────────────────────────────────
 
   async filterAndRank(filePath: string): Promise<any[]> {
     this.logger.log(`Starting Job 2: AI Filter & Ranking on file ${filePath}`);
 
-    const openRouterApiKey =
-      this.configService.get<string>('OPENROUTER_API_KEY') ||
-      process.env.OPENROUTER_API_KEY;
-    const model =
-      this.configService.get<string>('OPENROUTER_AI_MODEL') ||
-      process.env.OPENROUTER_AI_MODEL ||
-      'google/gemini-2.5-flash';
-
-    if (!openRouterApiKey) {
-      this.logger.error('No valid AI API Key found (OpenRouter key missing).');
-      throw new BadRequestException('AI API Key is not set or invalid.');
-    }
+    const provider = this.unifiedAiService.resolveProvider();
 
     try {
-      // Đọc + parse file tạm BÊN TRONG try-catch để lỗi (file missing/JSON sai)
-      // được bọc trong BadRequestException thay vì ném Error/SyntaxError gốc.
       const rawData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
       this.logger.log(
-        `Sending data to AI API for filtering and ranking (Model: ${model})`,
+        `Sending data to AI API for filtering and ranking (Model: ${provider.model}, Provider: ${provider.name})`,
       );
 
       const contentToAnalyze = rawData
@@ -110,35 +143,37 @@ export class AIFilterService {
 
       const prompt = `${this.aiPromptConfigService.getPromptByName('FILTER_AND_RANK_PROMPT')}${contentToAnalyze}`;
 
-      let resultText = '[]';
-
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000);
 
       try {
-        this.logger.log('Using OpenRouter API');
-        const res = await this.callChatCompletion(
+        this.logger.log(`Using ${provider.name} API`);
+        const res = await this.unifiedAiService.callChatCompletion(
           {
-            model,
+            model: provider.model,
             messages: [{ role: 'user', content: prompt }],
           },
           {
-            provider: 'OpenRouter',
-            url: 'https://openrouter.ai/api/v1/chat/completions',
-            apiKey: openRouterApiKey,
+            provider,
             contextLabel: 'filterAndRank',
             prompt,
             signal: controller.signal,
           },
         );
 
-        if (!res.ok) {
-          const errBody = await res.text();
-          throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
-        }
+        const resultText = await this.extractResultFromResponse(
+          res,
+          provider.name,
+        );
 
-        const data = await res.json();
-        resultText = data.choices?.[0]?.message?.content || '[]';
+        const finalTop5 = this.parseJsonArrayResponse(
+          resultText,
+          'filterAndRank',
+        );
+        this.logger.log(
+          `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
+        );
+        return finalTop5;
       } catch (err: any) {
         if (err.name === 'AbortError') {
           throw new Error('AI API request timed out after 300 seconds');
@@ -147,16 +182,6 @@ export class AIFilterService {
       } finally {
         clearTimeout(timeoutId);
       }
-
-      // Parse phòng thủ: chịu được văn dẫn nhập/markdown wrapper quanh JSON
-      const finalTop5 = this.parseJsonArrayResponse(
-        resultText,
-        'filterAndRank',
-      );
-      this.logger.log(
-        `Job 2 completed. Extracted ${finalTop5.length} articles via AI.`,
-      );
-      return finalTop5;
     } catch (error: any) {
       this.logger.error(`Error in AI filtering: ${error.message}`, error.stack);
       throw new BadRequestException(`Error in AI filtering: ${error.message}`);
@@ -167,10 +192,7 @@ export class AIFilterService {
     this.logger.log(`Starting AI Filter Raw Articles`);
     if (!articles || articles.length === 0) return [];
 
-    const activePlatform =
-      this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
-      process.env.ACTIVE_AI_PLATFORM ||
-      'OpenRouter';
+    const provider = this.unifiedAiService.resolveProvider();
 
     const contentToAnalyze = articles
       .map(
@@ -178,139 +200,43 @@ export class AIFilterService {
           `urlHash: ${d.urlHash || d._id}\nTitle: ${d.title}\nDescription: ${d.description || ''}`,
       )
       .join('\n\n---\n\n')
-      .substring(0, 60000); // chunk if needed
+      .substring(0, 60000);
 
-    this.logger.log(`Sending raw articles to AI for filtering`);
-
+    this.logger.log(
+      `Sending raw articles to AI for filtering (Provider: ${provider.name})`,
+    );
     const prompt = `${this.aiPromptConfigService.getPromptByName('RAW_ARTICLES_PROMPT')}\n\nHere are the raw articles to analyze:\n${contentToAnalyze}`;
 
-    let resultText = '[]';
-
-    const openRouterApiKey =
-      this.configService.get<string>('OPENROUTER_API_KEY') ||
-      process.env.OPENROUTER_API_KEY;
-    const openRouterModel =
-      this.configService.get<string>('OPENROUTER_AI_MODEL') ||
-      process.env.OPENROUTER_AI_MODEL ||
-      'google/gemini-2.5-flash';
-
-    const must1cApiKey =
-      this.configService.get<string>('MUST1C_API_KEY') ||
-      process.env.MUST1C_API_KEY;
-    const must1cModel =
-      this.configService.get<string>('MUST1C_MODEL') ||
-      process.env.MUST1C_MODEL;
-    const must1cApiUrl =
-      this.configService.get<string>('MUST1C_API_URL') ||
-      process.env.MUST1C_API_URL ||
-      'https://htmustc.id.vn/v1/chat/completions';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes for raw article filtering
-
-      try {
-        if (activePlatform === 'Must1c' && must1cApiKey) {
-          this.logger.log('Using Must1c API');
-          const res = await this.callChatCompletion(
-            {
-              model: must1cModel || 'gemini-3.6-flash',
-              messages: [{ role: 'user', content: prompt }],
-            },
-            {
-              provider: 'Must1c',
-              url: must1cApiUrl,
-              apiKey: must1cApiKey,
-              contextLabel: 'filterRawArticles',
-              prompt,
-              signal: controller.signal,
-            },
-          );
-
-          if (!res.ok) {
-            const errBody = await res.text();
-            let errorMessage = errBody;
-            try {
-              const parsed = JSON.parse(errBody);
-              errorMessage = parsed.error?.message || errBody;
-            } catch {
-              // ignore non-json error body
-            }
-
-            let errorDesc = 'Unknown error';
-            switch (res.status) {
-              case 400:
-                errorDesc =
-                  'Invalid request or missing parameter (invalid_request_error)';
-                break;
-              case 401:
-                errorDesc = 'Invalid API key (authentication_error)';
-                break;
-              case 402:
-                errorDesc = 'Insufficient wallet balance (insufficient_quota)';
-                break;
-              case 403:
-                errorDesc = 'Key lacks permission (permission_error)';
-                break;
-              case 429:
-                errorDesc = 'Rate limit exceeded (rate_limit_error)';
-                break;
-              case 500:
-              case 502:
-                errorDesc = 'Internal gateway/upstream error (api_error)';
-                break;
-            }
-            throw new Error(
-              `Must1c API error: ${res.status} - ${errorDesc}. Details: ${errorMessage}`,
-            );
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '[]';
-        } else if (openRouterApiKey) {
-          this.logger.log('Using OpenRouter API');
-          const res = await this.callChatCompletion(
-            {
-              model: openRouterModel,
-              messages: [{ role: 'user', content: prompt }],
-            },
-            {
-              provider: 'OpenRouter',
-              url: 'https://openrouter.ai/api/v1/chat/completions',
-              apiKey: openRouterApiKey,
-              contextLabel: 'filterRawArticles',
-              prompt,
-              signal: controller.signal,
-            },
-          );
-
-          if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '[]';
-        } else {
-          throw new BadRequestException('No AI platform configured');
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 300 seconds');
-        }
-        throw err;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      // Parse phòng thủ: chịu được văn dẫn nhập/markdown wrapper quanh JSON
-      return this.parseJsonArrayResponse(resultText, 'filterRawArticles');
-    } catch (error: any) {
-      this.logger.error(
-        `Error in filterRawArticles: ${error.message}`,
-        error.stack,
+      this.logger.log(`Using ${provider.name} API`);
+      const res = await this.unifiedAiService.callChatCompletion(
+        {
+          model: provider.model,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        {
+          provider,
+          contextLabel: 'filterRawArticles',
+          prompt,
+          signal: controller.signal,
+        },
       );
-      throw new BadRequestException(`Error in AI filter: ${error.message}`);
+
+      const resultText = await this.extractResultFromResponse(
+        res,
+        provider.name,
+      );
+      return this.parseJsonArrayResponse(resultText, 'filterRawArticles');
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error('AI API request timed out after 300 seconds');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -318,121 +244,55 @@ export class AIFilterService {
     this.logger.log(`Starting AI Markdown Cleaning`);
     if (!markdown || markdown.trim() === '') return '';
 
-    const activePlatform =
-      this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
-      process.env.ACTIVE_AI_PLATFORM ||
-      'OpenRouter';
+    const provider = this.unifiedAiService.resolveProvider();
 
-    this.logger.log(`Cleaning markdown content via AI`);
-
+    this.logger.log(
+      `Cleaning markdown content via AI (Provider: ${provider.name})`,
+    );
     const prompt = `${this.aiPromptConfigService.getPromptByName('CLEAN_ARTICLE_PROMPT')}\n${markdown}`;
 
-    let resultText = '';
-
-    const openRouterApiKey =
-      this.configService.get<string>('OPENROUTER_API_KEY') ||
-      process.env.OPENROUTER_API_KEY;
-    const openRouterModel =
-      this.configService.get<string>('OPENROUTER_AI_MODEL') ||
-      process.env.OPENROUTER_AI_MODEL ||
-      'google/gemini-2.5-flash';
-
-    const must1cApiKey =
-      this.configService.get<string>('MUST1C_API_KEY') ||
-      process.env.MUST1C_API_KEY;
-    const must1cModel =
-      this.configService.get<string>('MUST1C_MODEL') ||
-      process.env.MUST1C_MODEL;
-    const must1cApiUrl =
-      this.configService.get<string>('MUST1C_API_URL') ||
-      process.env.MUST1C_API_URL ||
-      'https://htmustc.id.vn/v1/chat/completions';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000);
+      this.logger.log(`Using ${provider.name} API for cleaning`);
+      const res = await this.unifiedAiService.callChatCompletion(
+        {
+          model: provider.model,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        {
+          provider,
+          contextLabel: 'cleanMarkdownContentWithAI',
+          prompt,
+          signal: controller.signal,
+        },
+      );
 
-      try {
-        if (activePlatform === 'Must1c' && must1cApiKey) {
-          this.logger.log('Using Must1c API for cleaning');
-          const res = await this.callChatCompletion(
-            {
-              model: must1cModel || 'gemini-3.6-flash',
-              messages: [{ role: 'user', content: prompt }],
-            },
-            {
-              provider: 'Must1c',
-              url: must1cApiUrl,
-              apiKey: must1cApiKey,
-              contextLabel: 'cleanMarkdownContentWithAI',
-              prompt,
-              signal: controller.signal,
-            },
-          );
-
-          if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`Must1c API error: ${res.status} - ${errBody}`);
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '';
-        } else if (openRouterApiKey) {
-          this.logger.log('Using OpenRouter API for cleaning');
-          const res = await this.callChatCompletion(
-            {
-              model: openRouterModel,
-              messages: [{ role: 'user', content: prompt }],
-            },
-            {
-              provider: 'OpenRouter',
-              url: 'https://openrouter.ai/api/v1/chat/completions',
-              apiKey: openRouterApiKey,
-              contextLabel: 'cleanMarkdownContentWithAI',
-              prompt,
-              signal: controller.signal,
-            },
-          );
-
-          if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '';
-        } else {
-          throw new BadRequestException('No AI platform configured');
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 300 seconds');
-        }
-        throw err;
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const resultText = await this.extractResultFromResponse(
+        res,
+        provider.name,
+      );
 
       // Cleanup potential markdown wrappers
-      resultText = resultText
+      return resultText
         .replace(/^```[a-z]*\n/i, '')
         .replace(/\n```$/i, '')
         .trim();
-
-      return resultText;
-    } catch (error: any) {
-      this.logger.error(
-        `Error in cleanMarkdownContentWithAI: ${error.message}`,
-        error.stack,
-      );
-      throw new BadRequestException(
-        `Error in AI markdown cleaning: ${error.message}`,
-      );
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error('AI API request timed out after 300 seconds');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
-  // Hàm generic gọi AI completion, nhận systemPrompt + contentData và trả về text.
-  // contextLabel dùng để log phân biệt ngữ cảnh gọi (extract listings / market trends / ...).
+  /**
+   * Generic AI completion — accepts systemPrompt + contentData, returns text.
+   * contextLabel distinguishes the calling context for logging.
+   */
   async callAiCompletion(
     systemPrompt: string,
     contentData: string,
@@ -445,239 +305,46 @@ export class AIFilterService {
       `Input size [${contextLabel}]: ${contentData.length} chars (~${Math.ceil(contentData.length / 3)} tokens estimated)`,
     );
 
-    const activePlatform =
-      this.configService.get<string>('ACTIVE_AI_PLATFORM') ||
-      process.env.ACTIVE_AI_PLATFORM ||
-      'OpenRouter';
+    const provider = this.unifiedAiService.resolveProvider();
 
-    let resultText = '';
-
-    const openRouterApiKey =
-      this.configService.get<string>('OPENROUTER_API_KEY') ||
-      process.env.OPENROUTER_API_KEY;
-    const openRouterModel =
-      this.configService.get<string>('OPENROUTER_AI_MODEL') ||
-      process.env.OPENROUTER_AI_MODEL ||
-      'google/gemini-2.5-flash';
-
-    const must1cApiKey =
-      this.configService.get<string>('MUST1C_API_KEY') ||
-      process.env.MUST1C_API_KEY;
-    const must1cModel =
-      this.configService.get<string>('MUST1C_MODEL') ||
-      process.env.MUST1C_MODEL;
-    const must1cApiUrl =
-      this.configService.get<string>('MUST1C_API_URL') ||
-      process.env.MUST1C_API_URL ||
-      'https://htmustc.id.vn/v1/chat/completions';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes for large data
+      this.logger.log(`Using ${provider.name} API for analysis`);
+      const res = await this.unifiedAiService.callChatCompletion(
+        {
+          model: provider.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: contentData },
+          ],
+        },
+        {
+          provider,
+          contextLabel,
+          prompt: `${systemPrompt}\n${contentData}`,
+          signal: controller.signal,
+        },
+      );
 
-      try {
-        if (activePlatform === 'Must1c' && must1cApiKey) {
-          this.logger.log('Using Must1c API for analysis');
-          const res = await this.callChatCompletion(
-            {
-              model: must1cModel || 'gemini-3.6-flash',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: contentData },
-              ],
-            },
-            {
-              provider: 'Must1c',
-              url: must1cApiUrl,
-              apiKey: must1cApiKey,
-              contextLabel,
-              prompt: `${systemPrompt}\n${contentData}`,
-              signal: controller.signal,
-            },
-          );
+      const resultText = await this.extractResultFromResponse(
+        res,
+        provider.name,
+      );
 
-          if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`Must1c API error: ${res.status} - ${errBody}`);
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '';
-          this.logger.log(
-            `Must1c usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`,
-          );
-        } else if (openRouterApiKey) {
-          this.logger.log('Using OpenRouter API for analysis');
-          const res = await this.callChatCompletion(
-            {
-              model: openRouterModel,
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: contentData },
-              ],
-            },
-            {
-              provider: 'OpenRouter',
-              url: 'https://openrouter.ai/api/v1/chat/completions',
-              apiKey: openRouterApiKey,
-              contextLabel,
-              prompt: `${systemPrompt}\n${contentData}`,
-              signal: controller.signal,
-            },
-          );
-
-          if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`OpenRouter API error: ${res.status} - ${errBody}`);
-          }
-
-          const data = await res.json();
-          resultText = data.choices?.[0]?.message?.content || '';
-          this.logger.log(
-            `OpenRouter usage: prompt=${data.usage?.prompt_tokens ?? 'n/a'}, completion=${data.usage?.completion_tokens ?? 'n/a'}`,
-          );
-        } else {
-          throw new BadRequestException('No AI platform configured');
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          throw new Error('AI API request timed out after 300 seconds');
-        }
-        throw err;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      // Cleanup potential markdown wrappers just in case it wraps everything in markdown block
-      resultText = resultText
+      // Cleanup potential markdown wrappers
+      return resultText
         .replace(/^```[a-z]*\n/i, '')
         .replace(/\n```$/i, '')
         .trim();
-
-      return resultText;
-    } catch (error: any) {
-      this.logger.error(
-        `Error in callAiCompletion [${contextLabel}]: ${error.message}`,
-        error.stack,
-      );
-      throw new BadRequestException(`Error in AI analysis: ${error.message}`);
-    }
-  }
-
-  /**
-   * Choke point AI (§9.2 Option A): 1 hàm private duy nhất chịu trách nhiệm
-   * fetch → đo thời gian → map usage (snake_case → camelCase ở logger) → logAi().
-   *
-   * Tất cả 4 điểm gọi HTTP ra AI provider (filterAndRank, filterRawArticles,
-   * cleanMarkdownContentWithAI, callAiCompletion) đều đi qua đây — log tự động
-   * bao phủ 100% AI outgoing request, không trùng lặp.
-   *
-   * - Trả về Response gốc để caller giữ nguyên logic res.ok / res.json() như cũ.
-   * - Body được đọc 1 lần qua clone() để log; caller vẫn đọc lại bình thường.
-   * - res.ok → response.body lưu dạng object JSON (kèm usage); !res.ok →
-   *   response.body lưu error body text (theo §9.2).
-   * - AbortError (timeout) → error.code = 'AbortError' + message chuẩn.
-   * - Ghi log fire-and-forget — KHÔNG bao giờ throw từ logger, không ảnh hưởng
-   *   response trả về cho caller.
-   */
-  private async callChatCompletion(
-    payload: {
-      model: string;
-      messages: Array<{ role: string; content: string }>;
-    },
-    providerConfig: {
-      /** 'OpenRouter' | 'Must1c' — → targetService. */
-      provider: string;
-      url: string;
-      apiKey: string;
-      /** Ngữ cảnh gọi (filterAndRank / filterRawArticles / ...) → metadata.contextLabel. */
-      contextLabel: string;
-      /** Prompt đầy đủ (system + content đã ghép) → request.prompt. */
-      prompt: string;
-      signal: AbortSignal;
-    },
-  ): Promise<Response> {
-    const startTime = Date.now();
-    const requestBody = {
-      model: payload.model,
-      messages: payload.messages,
-    };
-    const headers = {
-      Authorization: `Bearer ${providerConfig.apiKey}`,
-      'Content-Type': 'application/json',
-    };
-
-    try {
-      const res = await fetch(providerConfig.url, {
-        method: 'POST',
-        headers,
-        signal: providerConfig.signal,
-        body: JSON.stringify(requestBody),
-      });
-
-      // Đọc body 1 lần qua clone để log; caller vẫn dùng res.text()/res.json().
-      let responseBody: any;
-      let usage: any;
-      const rawBody = await res.clone().text();
-      if (res.ok) {
-        try {
-          const parsed = JSON.parse(rawBody);
-          usage = parsed.usage;
-          responseBody = parsed;
-        } catch {
-          responseBody = rawBody;
-        }
-      } else {
-        // !res.ok → error body text (§9.2).
-        responseBody = rawBody;
-      }
-
-      this.externalLogService.logAi({
-        provider: providerConfig.provider,
-        model: payload.model,
-        url: providerConfig.url,
-        method: 'POST',
-        statusCode: res.status,
-        durationMs: Date.now() - startTime,
-        prompt: providerConfig.prompt,
-        requestHeaders: headers,
-        requestBody,
-        responseHeaders: this.headersToRecord(res.headers),
-        responseBody,
-        usage,
-        metadata: { contextLabel: providerConfig.contextLabel },
-      });
-      return res;
     } catch (err: any) {
-      const isAbort = err.name === 'AbortError';
-      this.externalLogService.logAi({
-        provider: providerConfig.provider,
-        model: payload.model,
-        url: providerConfig.url,
-        method: 'POST',
-        durationMs: Date.now() - startTime,
-        prompt: providerConfig.prompt,
-        requestHeaders: headers,
-        requestBody,
-        error: {
-          message: isAbort
-            ? 'AI API request timed out after 300 seconds'
-            : err.message,
-          code: isAbort ? 'AbortError' : (err.code ?? err.name),
-          stack: err.stack,
-        },
-        metadata: { contextLabel: providerConfig.contextLabel },
-      });
+      if (err.name === 'AbortError') {
+        throw new Error('AI API request timed out after 300 seconds');
+      }
       throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-  }
-
-  /** Chuyển Headers (fetch API) thành Record<string, any> để log. */
-  private headersToRecord(headers: Headers): Record<string, any> {
-    const record: Record<string, any> = {};
-    headers.forEach((value, key) => {
-      record[key] = value;
-    });
-    return record;
   }
 }

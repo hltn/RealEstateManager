@@ -3,11 +3,12 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
+    "builder": "swc",
     "deleteOutDir": true,
     "assets": [
       {
         "include": "modules/news-fire-crawl-manager/constants/*.json",
-        "outDir": "dist/src"
+        "outDir": "dist"
       }
     ]
   }

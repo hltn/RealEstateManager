@@ -14,6 +14,7 @@ import {
   UserCircleIcon,
   UserIcon,
   DocsIcon,
+  FileIcon,
 } from "../icons";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
@@ -70,6 +71,15 @@ const adminItems: NavItem[] = [
     icon: <PlugInIcon />,
     name: "AI Config",
     path: "/ai-config",
+  },
+  {
+    icon: <FileIcon />,
+    name: "Knowledge Articles",
+    subItems: [
+      { name: "Articles", path: "/knowledge-articles" },
+      { name: "Config", path: "/knowledge-config" },
+      { name: "Cron & Logs", path: "/knowledge-cron" },
+    ],
   },
   {
     icon: <DocsIcon />,
