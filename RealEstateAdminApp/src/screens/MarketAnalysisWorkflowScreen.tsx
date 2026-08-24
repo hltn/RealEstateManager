@@ -286,6 +286,9 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
       if (!lastPage?.meta) return undefined;
       return lastPage.meta.hasMore ? lastPage.meta.nextCursor : undefined;
     },
+    // TanStack Query v5: placeholderData ensures pages is always an array
+    // internally, preventing "Cannot read properties of undefined (reading 'length')"
+    placeholderData: { pages: [], pageParams: [] },
   });
 
   // Helper function to safely extract history from paginated data
