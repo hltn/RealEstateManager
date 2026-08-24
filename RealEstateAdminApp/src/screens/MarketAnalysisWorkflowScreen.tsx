@@ -239,6 +239,7 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
   const historyLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const isFetchingHistoryPageRef = useRef(false);
 
+
   const steps = jobState?.steps ?? DEFAULT_STEPS;
   const isError = jobState?.status === "error";
   const isDone = jobState?.status === "done";
@@ -254,21 +255,48 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
     isFetchingNextPage,
     refetch: refetchHistory,
   } = useInfiniteQuery({
+    // Initial state protection
+    enabled: true,
+    retry: 1,
     queryKey: ["market-analysis-history"],
     initialPageParam: null as string | null,
-    queryFn: async ({ signal, pageParam }) => {
-      const { data } = await apiAxios.get<MarketAnalysisHistoryPage>(
-        "/news-manager/articles/market-analysis-history",
-        { signal, params: pageParam ? { cursor: pageParam } : undefined },
-      );
-      return {
-        data: data.data ?? [],
-        meta: data.meta ?? { hasMore: false, nextCursor: null },
-      };
+    queryFn: async ({ pageParam, signal }) => {
+      try {
+        // Handle null/undefined pageParam for first page
+        const params = pageParam ? { cursor: pageParam } : {};
+        const { data } = await apiAxios.get<MarketAnalysisHistoryPage>(
+          "/news-manager/articles/market-analysis-history",
+          { signal, params }
+        );
+
+        // Ensure we return the correct structure
+        return {
+          data: Array.isArray(data?.data) ? data.data : [],
+          meta: data?.meta || { hasMore: false, nextCursor: null }
+        };
+      } catch (error) {
+        console.error("Query error:", error);
+        return {
+          data: [],
+          meta: { hasMore: false, nextCursor: null }
+        };
+      }
     },
-    getNextPageParam: (lastPage) => lastPage.meta.hasMore ? lastPage.meta.nextCursor : undefined,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage?.meta) return undefined;
+      return lastPage.meta.hasMore ? lastPage.meta.nextCursor : undefined;
+    },
   });
-  const history = historyData?.pages.flatMap((page) => page.data) ?? [];
+
+  // Helper function to safely extract history from paginated data
+  const getHistoryFromPages = (pages: unknown) => {
+    if (!Array.isArray(pages)) return [];
+    return pages.flatMap((page: unknown) =>
+      Array.isArray((page as any)?.data) ? (page as any).data.filter((item: any) => item && item._id && item.createdAt) : []
+    );
+  };
+
+  const history = historyData ? getHistoryFromPages(historyData.pages) : [];
   const loadMoreHistory = useCallback(() => {
     if (!hasNextPage || isFetchingNextPage || isFetchingHistoryPageRef.current) return;
     isFetchingHistoryPageRef.current = true;
@@ -413,45 +441,47 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
               Thử lại
             </button>
           </div>
-        ) : history.length === 0 ? (
+        ) : !history || history.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2">
             <History className="w-10 h-10 text-gray-300 dark:text-gray-600" />
             <p className="text-sm text-gray-500 dark:text-gray-400">Chưa có lịch sử phân tích.</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {history.map((item, index) => (
-              <div
-                key={item._id}
-                className="flex gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30"
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedHistoryContent(item.content)}
-                  className="min-w-0 flex-1 text-left rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                  aria-label={`Mở chi tiết phân tích ${index + 1}`}
+            {history.map((item: MarketAnalysisHistoryItem, index: number) => (
+              item && (
+                <div
+                  key={item._id}
+                  className="flex gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30"
                 >
-                  <div className="font-semibold text-gray-900 dark:text-white text-sm mb-1">
-                    {index + 1}. {formatHistoryTimestamp(item.createdAt)}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                    {item.content.slice(0, 100)}
-                    {item.content.length > 100 ? "..." : ""}
-                  </div>
-                </button>
-                <div className="shrink-0 flex items-center gap-2">
-                  <ExportButton historyId={item._id} />
                   <button
                     type="button"
                     onClick={() => setSelectedHistoryContent(item.content)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-brand-700 dark:text-brand-300 bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/10 dark:hover:bg-brand-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-colors"
-                    aria-label={`Xem chi tiết phân tích ${index + 1}`}
+                    className="min-w-0 flex-1 text-left rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    aria-label={`Mở chi tiết phân tích ${index + 1}`}
                   >
-                    <Eye className="w-4 h-4" aria-hidden="true" />
-                    Xem
+                    <div className="font-semibold text-gray-900 dark:text-white text-sm mb-1">
+                      {index + 1}. {formatHistoryTimestamp(item.createdAt)}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                      {item.content?.slice(0, 100)}
+                      {item.content && item.content.length > 100 ? "..." : ""}
+                    </div>
                   </button>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {item._id && <ExportButton historyId={item._id} />}
+                    <button
+                      type="button"
+                      onClick={() => item.content && setSelectedHistoryContent(item.content)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-brand-700 dark:text-brand-300 bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/10 dark:hover:bg-brand-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-colors"
+                      aria-label={`Xem chi tiết phân tích ${index + 1}`}
+                    >
+                      <Eye className="w-4 h-4" aria-hidden="true" />
+                      Xem
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )
             ))}
             <div ref={historyLoadMoreRef} aria-live="polite" className="py-2 text-center">
               {isFetchingNextPage ? (
@@ -498,4 +528,16 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
   );
 };
 
-export default MarketAnalysisWorkflowScreen;
+// Wrap with error boundary for debugging
+export default function MarketAnalysisWorkflowScreenWrapper() {
+  try {
+    return <MarketAnalysisWorkflowScreen />;
+  } catch (error) {
+    console.error("Component error:", error);
+    return (
+      <div className="p-8 text-center">
+        <p>Component error occurred. Check console for details.</p>
+      </div>
+    );
+  }
+}
