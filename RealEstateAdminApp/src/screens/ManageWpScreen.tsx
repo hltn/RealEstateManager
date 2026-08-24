@@ -154,16 +154,25 @@ interface MarketAnalysisHistoryItem {
 }
 
 const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
-  const { data: historyData, isLoading: loading } = useQuery<MarketAnalysisHistoryItem[]>({
-    queryKey: ['market-analysis-history'],
-    queryFn: async ({ signal }) => {
-      const { data } = await apiAxios.get<{ data?: MarketAnalysisHistoryItem[] }>('/news-manager/articles/market-analysis-history', { signal });
-      return data.data ?? [];
+  const { data: historyData, isLoading: loading, isFetching } = useQuery<MarketAnalysisHistoryItem[]>(
+    {
+      queryKey: ['market-analysis-history'],
+      queryFn: async ({ signal }) => {
+        console.log('🔍 [DEBUG] Starting API call for market-analysis-history');
+        const { data } = await apiAxios.get<{ message?: string; data?: MarketAnalysisHistoryItem[]; meta?: any }>('/news-manager/articles/market-analysis-history', { signal });
+        console.log('🔍 [DEBUG] API Response:', data);
+        const result = Array.isArray(data?.data) ? data.data : [];
+        console.log('🔍 [DEBUG] Parsed result:', result);
+        return result;
+      },
+      enabled: isOpen,
+      refetchOnWindowFocus: false,
+      staleTime: 0,
     },
-    enabled: isOpen,
-  });
+  );
 
-  const history = historyData ?? [];
+  const history = Array.isArray(historyData) ? historyData : [];
+  console.log('🔍 [DEBUG] Final history array:', history, 'Length:', history.length);
 
   if (!isOpen) return null;
 
@@ -189,27 +198,29 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
           ) : (
             <div className="space-y-4">
               {history.map((item, index) => (
-                <div key={item._id || index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                      <div className="font-semibold text-gray-900 dark:text-white mb-1">
-                        Phân tích lúc {new Date(item.createdAt).toLocaleString('vi-VN')}
+                item && (
+                  <div key={item._id || index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-brand-500 dark:hover:border-brand-500 transition-colors bg-gray-50 dark:bg-gray-800/30">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <div className="font-semibold text-gray-900 dark:text-white mb-1">
+                          Phân tích lúc {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : 'N/A'}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                          Từ {item.articleIds?.length || 0} bài viết
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                        Từ {item.articleIds?.length || 0} bài viết
-                      </div>
+                      <button
+                        onClick={() => {
+                          item.content && onShowDetail(item.content);
+                        }}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shrink-0 shadow-sm"
+                      >
+                        <Eye size={16} />
+                        Xem chi tiết
+                      </button>
                     </div>
-                    <button
-                      onClick={() => {
-                        onShowDetail(item.content);
-                      }}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shrink-0 shadow-sm"
-                    >
-                      <Eye size={16} />
-                      Xem chi tiết
-                    </button>
                   </div>
-                </div>
+                )
               ))}
             </div>
           )}
