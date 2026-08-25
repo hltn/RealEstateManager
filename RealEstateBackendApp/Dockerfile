@@ -24,4 +24,4 @@ COPY --from=deps    --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist         ./dist
 USER node
 EXPOSE 3000
-CMD ["node", "dist/src/main"]
+CMD ["node", "dist/main"]
