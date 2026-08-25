@@ -161,7 +161,7 @@ describe('ManageWpScreen AnalysisHistoryModal', () => {
 
     const client = new QueryClient({
       defaultOptions: {
-        queries: { retry: false, notifyOnNetworkError: true }
+        queries: { retry: false }
       }
     });
 
@@ -235,7 +235,7 @@ describe('ManageWpScreen AnalysisHistoryModal', () => {
 
     const client = new QueryClient({
       defaultOptions: {
-        queries: { retry: false, notifyOnNetworkError: false }
+        queries: { retry: false }
       }
     });
 
@@ -255,9 +255,7 @@ describe('ManageWpScreen AnalysisHistoryModal', () => {
   });
 
   it('should call onShowDetail when "Xem chi tiết" button is clicked', async () => {
-    const onShowDetailMock = vi.fn();
-
-    const { container } = render(
+    render(
       <MemoryRouter>
         <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
           <ManageWpScreen />
