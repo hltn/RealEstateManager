@@ -394,7 +394,7 @@ const PipelineLogsSection = () => {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
               {isLoading ? (
-                <TableSkeletonRows cols={8} rows={5} />
+                <TableSkeletonRows columnCount={8} rowCount={5} />
               ) : logs.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">

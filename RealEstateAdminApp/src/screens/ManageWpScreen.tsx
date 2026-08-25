@@ -154,7 +154,7 @@ interface MarketAnalysisHistoryItem {
 }
 
 const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
-  const { data: historyData, isLoading: loading, isFetching } = useQuery<MarketAnalysisHistoryItem[]>(
+  const { data: historyData, isLoading: loading } = useQuery<MarketAnalysisHistoryItem[]>(
     {
       queryKey: ['market-analysis-history'],
       queryFn: async ({ signal }) => {

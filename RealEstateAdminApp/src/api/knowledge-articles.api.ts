@@ -3,16 +3,19 @@ import type { PaginatedResponse } from '../types/pagination';
 
 // ── Knowledge Article State ──────────────────────────────
 
-export enum KnowledgeArticleState {
-  PENDING = 'pending',
-  GENERATING_CONTENT = 'generating_content',
-  CONTENT_READY = 'content_ready',
-  GENERATING_IMAGE = 'generating_image',
-  READY = 'ready',
-  PUBLISHING = 'publishing',
-  PUBLISHED = 'published',
-  FAILED = 'failed',
-}
+export const KnowledgeArticleState = {
+  PENDING: 'pending',
+  GENERATING_CONTENT: 'generating_content',
+  CONTENT_READY: 'content_ready',
+  GENERATING_IMAGE: 'generating_image',
+  READY: 'ready',
+  PUBLISHING: 'publishing',
+  PUBLISHED: 'published',
+  FAILED: 'failed',
+} as const;
+
+export type KnowledgeArticleState =
+  (typeof KnowledgeArticleState)[keyof typeof KnowledgeArticleState];
 
 // ── Knowledge Article ────────────────────────────────────
 
@@ -98,12 +101,15 @@ export interface KnowledgeCronConfig {
 
 // ── Pipeline Types ───────────────────────────────────────
 
-export enum PipelineRunStatus {
-  RUNNING = 'running',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  PARTIAL = 'partial',
-}
+export const PipelineRunStatus = {
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  PARTIAL: 'partial',
+} as const;
+
+export type PipelineRunStatus =
+  (typeof PipelineRunStatus)[keyof typeof PipelineRunStatus];
 
 export interface ArticleResult {
   articleId: string;
