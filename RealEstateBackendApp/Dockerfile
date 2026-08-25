@@ -1,12 +1,12 @@
 # ── Stage 1: Production deps ──────────────────────────────────────────────────
-FROM node:24.14.0-slim AS deps
+FROM node:24.18.1-slim AS deps
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────────
-FROM node:24.14.0-slim AS builder
+FROM node:24.18.1-slim AS builder
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package*.json ./
@@ -15,7 +15,7 @@ COPY . .
 RUN npm run build
 
 # ── Stage 3: Production runtime ───────────────────────────────────────────────
-FROM node:24.14.0-slim AS production
+FROM node:24.18.1-slim AS production
 WORKDIR /app
 # Tạo trước thư mục logs owned bởi user node (app chạy USER node, không thể tự
 # tạo /app/logs vì /app thuộc root). daily-rotate-file sẽ ghi vào đây.
