@@ -19,6 +19,7 @@ const mockOAuth2Instance: any = {
   on: jest.fn(),
   once: jest.fn(),
   revokeCredentials: jest.fn(),
+  getAccessToken: jest.fn(),
 };
 
 jest.mock('googleapis', () => ({
@@ -56,7 +57,10 @@ import { getModelToken } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import { GoogleDriveOAuthService } from './google-drive-oauth.service';
-import { GoogleDriveToken } from '../schemas/google-drive-token.schema';
+import {
+  GoogleDriveToken,
+  GoogleDriveTokenSchema,
+} from '../schemas/google-drive-token.schema';
 
 function chainable(finalValue: unknown = undefined): any {
   const chain: any = {};
@@ -73,7 +77,8 @@ const TOKEN_DOC = {
   userId: USER_ID,
   accessToken: 'ya29.access-token',
   refreshToken: '1//0.refresh-token',
-  expiresAt: new Date('2026-08-16T10:00:00.000Z'),
+  // Access token còn hạn (1h tới) — không trigger proactive refresh.
+  expiresAt: new Date(Date.now() + 3600_000),
   email: 'user@gmail.com',
   scope: 'https://www.googleapis.com/auth/drive.file',
   createdAt: new Date('2026-08-15T10:00:00.000Z'),
@@ -82,6 +87,28 @@ const TOKEN_DOC = {
 describe('GoogleDriveOAuthService', () => {
   let service: GoogleDriveOAuthService;
   let tokenModel: any;
+
+  // Token document with valid refresh token but expired access token (after 1h)
+  const EXPIRED_TOKEN_DOC = {
+    userId: USER_ID,
+    accessToken: 'ya29.expired-access',
+    refreshToken: '1//0.refresh-token',
+    expiresAt: new Date(Date.now() - 3600000), // expired 1h ago
+    email: 'user@gmail.com',
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    createdAt: new Date('2026-08-15T10:00:00.000Z'),
+  };
+
+  // Token document with both access and refresh tokens expired (invalid_grant case)
+  const INVALID_GRANT_TOKEN_DOC = {
+    userId: USER_ID,
+    accessToken: 'ya29.invalid-access',
+    refreshToken: '1//0.invalid-refresh',
+    expiresAt: new Date(Date.now() - 7200000), // expired 2h ago
+    email: 'user@gmail.com',
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    createdAt: new Date('2026-08-15T10:00:00.000Z'),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -94,6 +121,7 @@ describe('GoogleDriveOAuthService', () => {
     mockOAuth2Instance.on.mockReset();
     mockOAuth2Instance.once.mockReset();
     mockOAuth2Instance.revokeCredentials.mockReset();
+    mockOAuth2Instance.getAccessToken.mockReset();
 
     tokenModel = {
       findOne: jest.fn(),
@@ -347,6 +375,113 @@ describe('GoogleDriveOAuthService', () => {
       expect(tokenModel.findOne().select).toHaveBeenCalledWith(
         'email createdAt',
       );
+    });
+  });
+
+  // ─── New test cases for TTL index fix ───────────────────────────────────────
+
+  describe('getOAuth2Client - TTL Index Fix', () => {
+    it('refreshes expired access token using refresh token (happy path)', async () => {
+      tokenModel.findOne.mockReturnValue(chainable(EXPIRED_TOKEN_DOC));
+
+      // Mock getAccessToken to simulate refresh with refresh_token
+      const mockRefreshedTokens = {
+        access_token: 'ya29.new-access',
+        refresh_token: '1//0.refresh-token',
+        expiry_date: Date.now() + 3600_000,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+      };
+
+      mockOAuth2Instance.getAccessToken.mockResolvedValue(mockRefreshedTokens);
+      tokenModel.findOneAndUpdate.mockReturnValue(chainable({ userId: USER_ID }));
+
+      const client = await service.getOAuth2Client(USER_ID);
+
+      // Verify refresh was called
+      expect(mockOAuth2Instance.getAccessToken).toHaveBeenCalled();
+
+      // Verify auto-save updated the tokens
+      expect(tokenModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { userId: USER_ID },
+        {
+          $set: {
+            accessToken: 'ya29.new-access',
+            refreshToken: '1//0.refresh-token',
+            expiresAt: expect.any(Date),
+          },
+        },
+        { upsert: true, new: true },
+      );
+    });
+
+    it('throws when refresh token returns invalid_grant (OAuth API error)', async () => {
+      tokenModel.findOne.mockReturnValue(chainable(INVALID_GRANT_TOKEN_DOC));
+
+      // Mock getAccessToken to throw error with invalid_grant
+      const invalidGrantError = Object.assign(new Error('invalid_grant'), {
+        code: 'invalid_grant',
+      });
+      mockOAuth2Instance.getAccessToken.mockRejectedValue(invalidGrantError);
+
+      tokenModel.deleteOne.mockReturnValue(chainable(undefined));
+
+      await expect(service.getOAuth2Client(USER_ID)).rejects.toThrow(
+        'Google Drive token expired or revoked. Please reconnect.'
+      );
+
+      // Verify token was deleted from DB when invalid_grant
+      expect(tokenModel.deleteOne).toHaveBeenCalledWith({
+        userId: USER_ID,
+      });
+    });
+
+    it('throws when refresh fails with non-invalid_grant error', async () => {
+      tokenModel.findOne.mockReturnValue(chainable(EXPIRED_TOKEN_DOC));
+
+      const refreshError = new Error('token_expired');
+      mockOAuth2Instance.getAccessToken.mockRejectedValue(refreshError);
+
+      await expect(service.getOAuth2Client(USER_ID)).rejects.toThrow(
+        'token_expired'
+      );
+
+      // Verify token was NOT deleted for non-invalid_grant errors
+      expect(tokenModel.deleteOne).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── Migration test case: TTL index removal verification ───────────────────
+
+  describe('TTL Index Migration', () => {
+    it('schema does NOT have TTL index on expiresAt (bug fix)', () => {
+      // BUG FIX: TTL index expireAfterSeconds:0 trên expiresAt đã xoá toàn bộ
+      // document (gồm refreshToken sống dài hạn) sau ~1h khi access token hết hạn.
+      // Trạng thái mong muốn: KHÔNG còn TTL index nào trên expiresAt.
+      const indexes = GoogleDriveTokenSchema.indexes();
+      const hasTtlOnExpiresAt = indexes.some(([fields, options]) => {
+        const fieldKeys = Object.keys(fields ?? {});
+        const isExpiresAt = fieldKeys.includes('expiresAt');
+        const isTtl =
+          typeof (options as { expireAfterSeconds?: unknown })
+            ?.expireAfterSeconds === 'number';
+        return isExpiresAt && isTtl;
+      });
+
+      expect(hasTtlOnExpiresAt).toBe(false);
+    });
+
+    it('schema still keeps unique index on userId (1 user = 1 token)', () => {
+      // Đảm bảo việc bỏ TTL không làm mất unique index trên userId.
+      const indexes = GoogleDriveTokenSchema.indexes();
+      const hasUniqueUserId = indexes.some(([fields, options]) => {
+        const fieldKeys = Object.keys(fields ?? {});
+        return (
+          fieldKeys.includes('userId') &&
+          (options as { unique?: boolean })?.unique === true
+        );
+      });
+
+      expect(hasUniqueUserId).toBe(true);
     });
   });
 });
