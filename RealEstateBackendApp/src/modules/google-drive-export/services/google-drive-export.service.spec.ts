@@ -76,6 +76,7 @@ describe('GoogleDriveExportService', () => {
 
     historyModel = {
       findById: jest.fn(),
+      findByIdAndUpdate: jest.fn(),
     };
 
     oauthService = {
@@ -311,6 +312,46 @@ describe('GoogleDriveExportService', () => {
       expect(mockDriveFilesGet).toHaveBeenCalledWith(
         expect.objectContaining({ fileId: 'folder-id-abc' }),
       );
+    });
+
+    it('updates history record with Google Drive export details after successful export', async () => {
+      historyModel.findById.mockReturnValue(chainable(MOCK_HISTORY));
+      oauthService.getOAuth2Client.mockResolvedValue({});
+
+      await service.exportAnalysis(USER_ID, HISTORY_ID);
+
+      // Verify findByIdAndUpdate was called with correct Google Drive export info
+      expect(historyModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        HISTORY_ID,
+        expect.objectContaining({
+          googleDriveExport: expect.objectContaining({
+            documentId: DOCUMENT_ID,
+            documentUrl: `https://docs.google.com/document/d/${DOCUMENT_ID}/edit`,
+            title: expect.stringContaining('Báo cáo phân tích thị trường'),
+            exportedAt: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('returns export result even if history update fails', async () => {
+      historyModel.findById.mockReturnValue(chainable(MOCK_HISTORY));
+      oauthService.getOAuth2Client.mockResolvedValue({});
+
+      // Mock findByIdAndUpdate to throw error
+      historyModel.findByIdAndUpdate.mockRejectedValue(new Error('Database error'));
+
+      const result = await service.exportAnalysis(USER_ID, HISTORY_ID);
+
+      // Verify export still returns successfully despite update failure
+      expect(result).toEqual({
+        documentId: DOCUMENT_ID,
+        documentUrl: `https://docs.google.com/document/d/${DOCUMENT_ID}/edit`,
+        title: expect.stringContaining('Báo cáo phân tích thị trường'),
+        folderUrl: undefined,
+      });
+
+      // Verify the error was logged (can't test console.log directly in Jest)
     });
   });
 });

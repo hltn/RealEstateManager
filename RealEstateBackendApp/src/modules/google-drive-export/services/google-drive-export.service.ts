@@ -11,6 +11,7 @@ import {
   MarketAnalysisHistory,
   MarketAnalysisHistoryDocument,
 } from '../../news-fire-crawl-manager/schemas/market-analysis-history.schema';
+import { GoogleDriveExport } from '../../news-fire-crawl-manager/schemas/market-analysis-history.schema';
 import { GoogleDriveOAuthService } from './google-drive-oauth.service';
 import { MarkdownToGoogleDocsConverter } from './markdown-to-docs.converter';
 
@@ -147,6 +148,24 @@ export class GoogleDriveExportService {
 
     // 9. Build result.
     const documentUrl = `https://docs.google.com/document/d/${documentId}/edit`;
+
+    // 10. Update history record with export details.
+    try {
+      await this.historyModel.findByIdAndUpdate(historyId, {
+        googleDriveExport: {
+          documentId,
+          documentUrl,
+          title,
+          exportedAt: new Date(),
+        },
+      });
+      this.logger.log(`Updated history record ${historyId} with Google Drive export info`);
+    } catch (err) {
+      // Log warn but don't throw — Google Doc already created successfully
+      this.logger.warn(
+        `Failed to update history record ${historyId} after export: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
+    }
 
     return {
       documentId,
