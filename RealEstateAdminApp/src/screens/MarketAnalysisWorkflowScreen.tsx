@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye, ChevronDown, ChevronUp, ClipboardCopy } from "lucide-react";
 import { DatePicker } from "../components/ui/DatePicker";
 import GoogleDriveStatusBadge from "../components/google-drive/GoogleDriveStatusBadge";
 import ExportButton from "../components/google-drive/ExportButton";
@@ -19,6 +20,12 @@ interface MarketAnalysisHistoryItem {
   content: string;
   articleIds: string[];
   createdAt: string;
+  googleDriveExport?: {
+    documentId: string;
+    documentUrl: string;
+    title: string;
+    exportedAt: string; // String từ API response
+  } | null;
 }
 
 interface MarketAnalysisHistoryPage {
@@ -234,8 +241,10 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
     retryError,
     resetJob,
   } = useMarketAnalysisWorkflowJob();
+  const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string>(getTodayVNString());
   const [selectedHistoryContent, setSelectedHistoryContent] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
   const historyLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const isFetchingHistoryPageRef = useRef(false);
 
@@ -332,6 +341,25 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
       await startJob(selectedDate);
     } catch {
       // startError đã được set trong context — không cần xử lý thêm ở đây.
+    }
+  };
+
+  // Hàm copy nội dung markdown
+  const handleCopyContent = async () => {
+    if (!selectedHistoryContent) return;
+
+    try {
+      // Format lại nội dung để copy (giữ nguyên markdown)
+      const contentToCopy = selectedHistoryContent.replace(/\\\\n/g, "\n");
+      await navigator.clipboard.writeText(contentToCopy);
+      setIsCopied(true);
+      toast.success("Đã sao chép nội dung vào clipboard!");
+
+      // Reset trạng thái sau 2 giây
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy content:", error);
+      toast.error("Không thể sao chép nội dung. Vui lòng thử lại.");
     }
   };
 
@@ -472,7 +500,41 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
                     </div>
                   </button>
                   <div className="shrink-0 flex items-center gap-2">
-                    {item._id && <ExportButton historyId={item._id} />}
+                    {item._id && (
+                      <ExportButton
+                        historyId={item._id}
+                        googleDriveExport={item.googleDriveExport}
+                        onExportSuccess={(result) => {
+                          // Update the item's googleDriveExport in the history list
+                          queryClient.setQueryData(["market-analysis-history"], (oldData: any) => {
+                            if (!oldData?.pages) return oldData;
+
+                            const updatedPages = oldData.pages.map((page: any) => {
+                              if (page?.data) {
+                                const updatedData = page.data.map((item: any) => {
+                                  if (item._id === historyId) {
+                                    return {
+                                      ...item,
+                                      googleDriveExport: {
+                                        documentId: result.data.documentId,
+                                        documentUrl: result.data.documentUrl,
+                                        title: result.data.title,
+                                        exportedAt: new Date().toISOString(),
+                                      },
+                                    };
+                                  }
+                                  return item;
+                                });
+                                return { ...page, data: updatedData };
+                              }
+                              return page;
+                            });
+
+                            return { ...oldData, pages: updatedPages };
+                          });
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => item.content && setSelectedHistoryContent(item.content)}
@@ -513,13 +575,35 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800">
             <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Chi tiết phân tích</h3>
-              <button
-                type="button"
-                onClick={() => setSelectedHistoryContent(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyContent}
+                  disabled={isCopied}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Sao chép nội dung"
+                >
+                  {isCopied ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Đã sao chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardCopy className="w-4 h-4" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryContent(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  title="Đóng"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
               <ReactMarkdown>{selectedHistoryContent.replace(/\\\\n/g, "\n")}</ReactMarkdown>
