@@ -7,7 +7,7 @@
  * cài → cùng cảnh báo, backend sở hữu việc cài package.
  *
  * Contract đối chiếu:
- *   - AUTH_MODULE_ARCHITECTURE.md mục 8 (Guards & Decorators — JwtAuthGuard, Fastify note)
+ *   - docs/02_Module_Auth/02_Auth_Module_Architecture.md mục 8 (Guards & Decorators — JwtAuthGuard, Fastify note)
  *   - mục 5.1 + 16.2 (payload claims: { sub, email, role, iat, exp }, sub là ObjectId string)
  *   - mục 6.3 (error exact: "Missing or invalid access token")
  *   - mục 16.8 (FastifyRequest mock shape)

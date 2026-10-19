@@ -6,7 +6,7 @@
  * (đúng kỳ vọng test-first, KHÔNG tạo stub impl).
  *
  * Contract đối chiếu:
- *   - AUTH_MODULE_ARCHITECTURE.md mục 8 (Guards & Decorators — RolesGuard)
+ *   - docs/02_Module_Auth/02_Auth_Module_Architecture.md mục 8 (Guards & Decorators — RolesGuard)
  *   - mục 6.3 (error message exact: "Insufficient role")
  *   - mục 11 (RBAC matrix: EDITOR ❌ / ADMIN ✅ cho user endpoints)
  *   - mục 16.8 (FastifyRequest mock shape)
