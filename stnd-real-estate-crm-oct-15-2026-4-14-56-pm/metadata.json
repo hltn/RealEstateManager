@@ -1,0 +1,6 @@
+{
+  "name": "STND Real Estate CRM",
+  "description": "Hệ thống quản lý khách hàng, lịch hẹn, nhắc việc và báo cáo phân tích bất động sản STND.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
