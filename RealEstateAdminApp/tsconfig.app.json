@@ -16,6 +16,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* [Prototype] Module CRM alias */
+    "baseUrl": ".",
+    "paths": {
+      "@crm/*": ["./src/modules/crm/*"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,

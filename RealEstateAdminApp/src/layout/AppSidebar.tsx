@@ -15,7 +15,11 @@ import {
   UserIcon,
   DocsIcon,
   FileIcon,
+  GroupIcon,
 } from "../icons";
+// [Prototype] Submenu module Quản lý khách hàng (CRM)
+import { CRM_SIDEBAR_SUB_ITEMS } from "@crm/navigation";
+import { CRM_BASE_PATH } from "@crm/routes";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
 const HorizontaLDotsAny = HorizontaLDots as any;
@@ -33,6 +37,12 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  // [Prototype] Module CRM — mục đầu menu, submenu trỏ các route /crm/*
+  {
+    icon: <GroupIcon />,
+    name: "Quản lý khách hàng",
+    subItems: CRM_SIDEBAR_SUB_ITEMS,
+  },
   {
     icon: <ListIcon />,
     name: "Raw Articles",
@@ -116,8 +126,16 @@ const AppSidebar: React.FC = () => {
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // const isActive = (path: string) => location.pathname === path;
+  // [Prototype] Hỗ trợ submenu CRM: route con /crm/customers/:id cũng sáng mục /crm/customers
   const isActive = useCallback(
-    (path: string) => location.pathname === path,
+    (path: string) => {
+      if (location.pathname === path) return true;
+      // CRM submenu: sáng cả khi ở màn con (vd /crm/customers/:id -> /crm/customers)
+      if (path.startsWith(CRM_BASE_PATH)) {
+        return location.pathname.startsWith(path);
+      }
+      return false;
+    },
     [location.pathname]
   );
 

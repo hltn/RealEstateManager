@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './layout/AppLayout';
 import ManageWpScreen from './screens/ManageWpScreen';
 import CronjobScreen from './screens/CronjobScreen';
@@ -18,6 +18,20 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import RoleGuard from './components/auth/RoleGuard';
 import AuthInitializer from './components/auth/AuthInitializer';
 import { UserRole } from './types/user';
+// [Prototype] Module Quản lý khách hàng (CRM) — xem src/modules/crm
+import CrmLayout from '@crm/CrmLayout';
+import { CRM_CHILD_ROUTES, CRM_DEFAULT_PATH } from '@crm/routes';
+import { DailyTasksScreen } from '@crm/screens/DailyTasks';
+import { CustomersScreen } from '@crm/screens/Customers';
+import { CreateCustomerScreen } from '@crm/screens/CreateCustomer';
+import { CustomerDetailScreen } from '@crm/screens/CustomerDetail';
+import { EditPersonaScreen } from '@crm/screens/EditPersona';
+import { EditInvestmentScreen } from '@crm/screens/EditInvestment';
+import { AppointmentsScreen } from '@crm/screens/Appointments';
+import { CreateAppointmentScreen } from '@crm/screens/CreateAppointment';
+import { ReportsScreen } from '@crm/screens/Reports';
+import { ProjectsScreen } from '@crm/screens/Projects';
+import { CrmAiConfigScreen } from '@crm/screens/CrmAiConfig';
 
 function App() {
   return (
@@ -37,7 +51,26 @@ function App() {
               </ProtectedRoute>
             }
           >
+            {/* [Prototype] Mặc định mở Raw Articles; thêm route /crm/* cho module CRM */}
             <Route index element={<RawArticlesScreen />} />
+
+            {/* [Prototype] Module Quản lý khách hàng — CrmLayout bọc CrmProvider + bottom nav mobile */}
+            <Route path="crm" element={<CrmLayout />}>
+              <Route index element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
+              <Route path={CRM_CHILD_ROUTES.today} element={<DailyTasksScreen />} />
+              <Route path={CRM_CHILD_ROUTES.customers} element={<CustomersScreen />} />
+              <Route path={CRM_CHILD_ROUTES.createCustomer} element={<CreateCustomerScreen />} />
+              <Route path={CRM_CHILD_ROUTES.customerDetail} element={<CustomerDetailScreen />} />
+              <Route path={CRM_CHILD_ROUTES.editPersona} element={<EditPersonaScreen />} />
+              <Route path={CRM_CHILD_ROUTES.editInvestment} element={<EditInvestmentScreen />} />
+              <Route path={CRM_CHILD_ROUTES.appointments} element={<AppointmentsScreen />} />
+              <Route path={CRM_CHILD_ROUTES.createAppointment} element={<CreateAppointmentScreen />} />
+              <Route path={CRM_CHILD_ROUTES.reports} element={<ReportsScreen />} />
+              <Route path={CRM_CHILD_ROUTES.projects} element={<ProjectsScreen />} />
+              <Route path={CRM_CHILD_ROUTES.aiConfig} element={<CrmAiConfigScreen />} />
+              <Route path="*" element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
+            </Route>
+
             <Route path="manage-wp" element={<ManageWpScreen />} />
             <Route path="market-analysis-workflow" element={<MarketAnalysisWorkflowScreen />} />
             <Route path="news-detail/:id" element={<NewsDetailScreen />} />

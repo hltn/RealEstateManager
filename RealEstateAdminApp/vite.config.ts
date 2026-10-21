@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -15,6 +16,12 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: {
+    alias: {
+      // [Prototype] Module CRM alias
+      '@crm': fileURLToPath(new URL('./src/modules/crm', import.meta.url)),
+    },
+  },
   server: {
     proxy: {
       '/api': {
