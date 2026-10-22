@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, Download, MapPin } from 'lucide-react';
+import { ArrowRight, Building2, MapPin } from 'lucide-react';
 import type { Project } from '@crm/types/crm';
 import { CARD_CLASS } from '@crm/lib/uiClasses';
 import { getProjectStatusTone, type ProjectStatusTone } from './projectCatalog';
@@ -13,13 +13,12 @@ const STATUS_CHIP_CLASS: Record<ProjectStatusTone, { chip: string; dot: string }
 interface ProjectCardProps {
   project: Project;
   interestedCount: number;
-  onDownloadBrochure: (project: Project) => void;
   onBookVisit: (project: Project) => void;
 }
 
 /** Thẻ dự án (Stitch dùng khối gradient slate/indigo; ở đây theo mẫu "Thẻ" Admin + ô số liệu). */
-export const ProjectCard = ({ project, interestedCount, onDownloadBrochure, onBookVisit }: ProjectCardProps) => {
-  const status = STATUS_CHIP_CLASS[getProjectStatusTone(project.status)];
+export const ProjectCard = ({ project, interestedCount, onBookVisit }: ProjectCardProps) => {
+  const status = STATUS_CHIP_CLASS[getProjectStatusTone(project.statusLabel)];
 
   return (
     <article className={`${CARD_CLASS} flex h-full flex-col p-4 transition-colors hover:border-brand-300 sm:p-5 dark:hover:border-brand-500/30`}>
@@ -28,28 +27,32 @@ export const ProjectCard = ({ project, interestedCount, onDownloadBrochure, onBo
           <Building2 size={24} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold leading-tight text-gray-800 dark:text-white/90">{project.fullName}</h3>
+          <h3 className="text-lg font-semibold leading-tight text-gray-800 dark:text-white/90">{project.fullName || project.name}</h3>
           <p className="mt-1 flex items-center gap-1 text-theme-sm text-gray-500 dark:text-gray-400">
             <MapPin size={14} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">{project.location}</span>
+            <span className="truncate">{project.location || 'Chưa có địa chỉ'}</span>
           </p>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          {project.segment}
-        </span>
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${status.chip}`}>
-          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-          {project.status}
-        </span>
+        {project.segment && (
+          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            {project.segment}
+          </span>
+        )}
+        {project.statusLabel && (
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${status.chip}`}>
+            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+            {project.statusLabel}
+          </span>
+        )}
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-white/[0.05] dark:bg-white/[0.02]">
           <dt className="text-theme-xs text-gray-500 dark:text-gray-400">Khoảng giá</dt>
-          <dd className="mt-0.5 text-sm font-semibold text-brand-600 dark:text-brand-400">{project.price}</dd>
+          <dd className="mt-0.5 text-sm font-semibold text-brand-600 dark:text-brand-400">{project.priceText || 'Chưa cập nhật'}</dd>
         </div>
         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-white/[0.05] dark:bg-white/[0.02]">
           <dt className="text-theme-xs text-gray-500 dark:text-gray-400">Khách quan tâm</dt>
@@ -59,15 +62,7 @@ export const ProjectCard = ({ project, interestedCount, onDownloadBrochure, onBo
 
       {/* mt-auto: dồn hàng nút xuống đáy để các thẻ cùng hàng thẳng nhau */}
       <div className="mt-auto pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-4 dark:border-white/[0.05]">
-          <button
-            type="button"
-            onClick={() => onDownloadBrochure(project)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-brand-500 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-brand-400"
-          >
-            <Download size={16} aria-hidden="true" />
-            Brochure &amp; Bảng giá
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 pt-4 dark:border-white/[0.05]">
           <button
             type="button"
             onClick={() => onBookVisit(project)}

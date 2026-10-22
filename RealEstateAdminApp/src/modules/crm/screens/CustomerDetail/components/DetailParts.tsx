@@ -1,26 +1,23 @@
 // Mảnh giao diện dùng chung giữa 2 biến thể desktop/mobile của màn "Chi tiết khách hàng".
-// Phần Admin có sẵn: `Dropdown`/`DropdownItem` (components/ui/dropdown), mẫu chip/thẻ/thông báo trong trang (tài liệu 03 mục 5).
-// Phần Admin chưa có (vẽ mới theo bố cục Stitch, dùng token Admin): avatar chồng, thanh tiến độ C4, khay ảnh đính kèm.
-import { useCallback, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, Sparkles, Star, X, type LucideIcon } from 'lucide-react';
+// Phần Admin có sẵn: `Dropdown`/`DropdownItem`, `Modal`; phần mới (avatar chồng, thanh tiến độ, khay ảnh) vẽ bằng token Admin.
+import { useCallback, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Check, ChevronDown, Eye, EyeOff, ImagePlus, Lightbulb, ShieldCheck, Star, X, type LucideIcon } from 'lucide-react';
 import { Dropdown } from '../../../../../components/ui/dropdown/Dropdown';
 import { DropdownItem } from '../../../../../components/ui/dropdown/DropdownItem';
-import { CUSTOMER_STATUSES, type CustomerStatus, type GalleryImage } from '@crm/types/crm';
+import { useCatalogs, useCrmApi, useNationalIdViews, type CareTeamMemberView, type CustomerDetail } from '@crm/api';
+import { useCrmActions } from '@crm/store';
+import { ConfirmDialog } from '@crm/components/ConfirmDialog';
+import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
+import { isDroppedStatus } from '@crm/lib/customerRules';
+import { formatVnDateTime } from '@crm/lib/dateTime';
+import { formatPhoneDisplay, maskPhoneDisplay } from '@crm/lib/phone';
 import { getInitials } from '@crm/lib/staff';
+import { BUTTON_LINK_CLASS, CARD_TITLE_CLASS, CHIP_CLASS, CHIP_TONE_CLASS, DIVIDER_CLASS, INFO_LABEL_CLASS, INFO_VALUE_CLASS } from '@crm/lib/uiClasses';
+import type { CustomerStatusItem, GalleryImage } from '@crm/types/crm';
 import { useCustomerDetailActions } from '../useCustomerDetailActions';
-import { CUSTOMER_STATUS_STYLE } from '@crm/components/CustomerStatusChip';
-import {
-  CARD_TITLE_CLASS,
-  CHIP_CLASS,
-  CHIP_TONE_CLASS,
-  DIVIDER_CLASS,
-  INFO_LABEL_CLASS,
-  INFO_VALUE_CLASS,
-  VIP_CHIP_CLASS,
-} from '@crm/lib/uiClasses';
 
 // ---------------------------------------------------------------------------
-// Tiêu đề thẻ: icon lucide trong ô brand + tiêu đề + mô tả + nút phải
+// Tiêu đề thẻ + ô thông tin chỉ đọc
 // ---------------------------------------------------------------------------
 
 interface CardHeadingProps {
@@ -28,7 +25,6 @@ interface CardHeadingProps {
   title: string;
   description?: string;
   trailing?: ReactNode;
-  /** Cấp tiêu đề; mặc định h2. */
   as?: 'h2' | 'h3';
 }
 
@@ -47,10 +43,6 @@ export const CardHeading = ({ icon: Icon, title, description, trailing, as: Head
   </div>
 );
 
-// ---------------------------------------------------------------------------
-// Ô thông tin chỉ đọc: nhãn trên, giá trị dưới
-// ---------------------------------------------------------------------------
-
 interface InfoFieldProps {
   label: string;
   children: ReactNode;
@@ -66,33 +58,34 @@ export const InfoField = ({ label, children, className = '', valueClassName = IN
 );
 
 // ---------------------------------------------------------------------------
-// Chip VIP
-// ---------------------------------------------------------------------------
-
-export const VipChip = ({ label }: { label: string }) => (
-  <span className={VIP_CHIP_CLASS}>
-    <Star size={12} fill="currentColor" aria-hidden="true" />
-    {label}
-  </span>
-);
-
-// ---------------------------------------------------------------------------
-// Chip trạng thái + Dropdown đổi trạng thái (Admin `Dropdown` + chip mục 5)
+// Dropdown đổi tình trạng: sang nhóm "Bỏ" phải xác nhận + có Hoàn tác (02 §5)
 // ---------------------------------------------------------------------------
 
 interface StatusDropdownProps {
-  customerId: string;
-  status: CustomerStatus;
-  /** Phía mở menu: 'left' = canh trái chip (desktop), 'right' = canh phải (mobile, chip nằm sát mép phải). */
+  customer: CustomerDetail;
+  /** 'left' = canh trái chip (desktop), 'right' = canh phải (mobile). */
   align?: 'left' | 'right';
 }
 
-export const StatusDropdown = ({ customerId, status, align = 'left' }: StatusDropdownProps) => {
-  const { changeStatus } = useCustomerDetailActions(customerId);
+export const StatusDropdown = ({ customer, align = 'left' }: StatusDropdownProps) => {
+  const { changeStatus } = useCustomerDetailActions(customer);
+  const { catalogs } = useCatalogs();
   const [isOpen, setIsOpen] = useState(false);
+  const [pendingDrop, setPendingDrop] = useState<CustomerStatusItem | null>(null);
   // `Dropdown` gắn listener theo `onClose` -> giữ tham chiếu ổn định.
   const closeMenu = useCallback(() => setIsOpen(false), []);
-  const { tone, dotClassName } = CUSTOMER_STATUS_STYLE[status];
+  const statuses = catalogs.statuses.filter((status) => status.isActive).sort((a, b) => a.order - b.order);
+  const { chipClass, dotClass } = STATUS_TONE_STYLES[customer.status.tone];
+
+  const selectStatus = (status: CustomerStatusItem) => {
+    closeMenu();
+    if (status.id === customer.status.id) return;
+    if (isDroppedStatus(status)) {
+      setPendingDrop(status);
+      return;
+    }
+    changeStatus(status.id);
+  };
 
   return (
     <div className="relative inline-block">
@@ -100,36 +93,31 @@ export const StatusDropdown = ({ customerId, status, align = 'left' }: StatusDro
         type="button"
         aria-haspopup="true"
         aria-expanded={isOpen}
-        aria-label={`Trạng thái: ${status}. Bấm để đổi`}
+        aria-label={`Tình trạng: ${customer.status.label}. Bấm để đổi`}
         onClick={() => setIsOpen((isMenuOpen) => !isMenuOpen)}
-        // `dropdown-toggle`: Dropdown của Admin bỏ qua click trên nút này khi xét "bấm ra ngoài".
-        className={`dropdown-toggle ${CHIP_CLASS} ${CHIP_TONE_CLASS[tone]} transition hover:opacity-90`}
+        className={`dropdown-toggle ${CHIP_CLASS} ${chipClass} transition hover:opacity-90`}
       >
-        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${dotClassName}`} />
-        {status}
+        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        {customer.status.label}
         <ChevronDown size={14} aria-hidden="true" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       <Dropdown isOpen={isOpen} onClose={closeMenu} className={`w-52 p-1.5 ${align === 'left' ? 'left-0' : ''}`}>
-        <ul aria-label="Chọn trạng thái khách hàng" className="space-y-0.5">
-          {CUSTOMER_STATUSES.map((option) => {
-            const isCurrent = option === status;
+        <ul aria-label="Chọn tình trạng khách hàng" className="space-y-0.5">
+          {statuses.map((option) => {
+            const isCurrent = option.id === customer.status.id;
             return (
-              <li key={option}>
-                {/* `DropdownItem` của Admin (đã có cặp dark: + type="button"); mục đang chọn tô brand. */}
+              <li key={option.id}>
                 <DropdownItem
                   className={`rounded-lg ${isCurrent ? 'bg-brand-50 dark:bg-brand-500/[0.12]' : ''}`}
-                  onItemClick={() => {
-                    if (!isCurrent) changeStatus(option);
-                    closeMenu();
-                  }}
+                  onItemClick={() => selectStatus(option)}
                 >
                   <span
                     aria-current={isCurrent ? 'true' : undefined}
                     className={`flex items-center gap-2 ${isCurrent ? 'font-medium text-brand-600 dark:text-brand-400' : ''}`}
                   >
-                    <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${CUSTOMER_STATUS_STYLE[option].dotClassName}`} />
-                    <span className="flex-1">{option}</span>
+                    <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${STATUS_TONE_STYLES[option.tone].dotClass}`} />
+                    <span className="flex-1">{option.label}</span>
                     {isCurrent && <Check size={14} aria-hidden="true" />}
                   </span>
                 </DropdownItem>
@@ -138,99 +126,197 @@ export const StatusDropdown = ({ customerId, status, align = 'left' }: StatusDro
           })}
         </ul>
       </Dropdown>
+
+      <ConfirmDialog
+        isOpen={pendingDrop !== null}
+        title={`Chuyển ${customer.fullName} sang "${pendingDrop?.label ?? 'Bỏ'}"?`}
+        description="Khách sẽ chuyển sang danh sách Bỏ. Hồ sơ, nhật ký và lịch sử được giữ nguyên; bạn có thể hoàn tác ngay sau khi chuyển."
+        confirmLabel="Chuyển sang Bỏ"
+        tone="danger"
+        onCancel={() => setPendingDrop(null)}
+        onConfirm={() => {
+          if (pendingDrop) changeStatus(pendingDrop.id, { shouldOfferUndo: true });
+          setPendingDrop(null);
+        }}
+      />
     </div>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Avatar chồng nhau của nhóm chăm sóc (C8) — Admin chưa có, vẽ theo Stitch
+// SĐT + CCCD che theo quyền (C9)
 // ---------------------------------------------------------------------------
 
-/** Màu xoay vòng cho người hỗ trợ (token Admin thay blue/emerald/purple của Stitch). */
-const SUPPORT_AVATAR_TONES = [CHIP_TONE_CLASS.brand, CHIP_TONE_CLASS.success, CHIP_TONE_CLASS.purple];
-const AVATAR_BASE_CLASS =
-  'flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ring-2 ring-white dark:ring-gray-900';
-
-interface CareTeamAvatarsProps {
-  staffLead: string;
-  staffSupport: string[];
-  /** Ảnh của người phụ trách chính (nếu có); không có -> avatar chữ. */
-  leadAvatarUrl?: string;
-}
-
-export const CareTeamAvatars = ({ staffLead, staffSupport, leadAvatarUrl }: CareTeamAvatarsProps) => (
-  <div className="flex shrink-0 items-center -space-x-2">
-    {staffLead && (
-      <div className="relative" title={`${staffLead} (Chính)`}>
-        {leadAvatarUrl ? (
-          <img src={leadAvatarUrl} alt={`${staffLead} (Chính)`} className={`${AVATAR_BASE_CLASS} object-cover`} />
-        ) : (
-          <span className={`${AVATAR_BASE_CLASS} ${CHIP_TONE_CLASS.warning}`} aria-label={`${staffLead} (Chính)`}>
-            {getInitials(staffLead)}
-          </span>
-        )}
-        <span
-          aria-hidden="true"
-          className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning-500 text-white ring-2 ring-white dark:ring-gray-900"
-        >
-          <Star size={8} fill="currentColor" strokeWidth={0} />
-        </span>
-      </div>
-    )}
-    {staffSupport.map((staffName, index) => (
-      <span
-        key={`${staffName}-${index}`}
-        title={staffName}
-        aria-label={staffName}
-        className={`${AVATAR_BASE_CLASS} ${SUPPORT_AVATAR_TONES[index % SUPPORT_AVATAR_TONES.length]}`}
-      >
-        {getInitials(staffName)}
+/** SĐT che 3 số cuối; nút "Hiện số" chỉ có với Quản trị/Quản lý/phụ trách chính (cùng quy tắc CCCD). */
+export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerDetail; className?: string }) => {
+  const api = useCrmApi();
+  const { showToast } = useCrmActions();
+  const [revealedPhone, setRevealedPhone] = useState<string | null>(null);
+  const isVisible = revealedPhone !== null;
+  const ToggleIcon = isVisible ? EyeOff : Eye;
+  const canReveal = customer.permissions.canRevealPhone && !customer.isPhoneMasked;
+  // "Hiện số" = gọi API có ghi log (như CCCD) trong handler, không trong updater của setState.
+  const toggle = () => {
+    if (isVisible) {
+      setRevealedPhone(null);
+      return;
+    }
+    const result = api.createPhoneView(customer.id);
+    if (!result.ok) {
+      showToast({ type: 'error', title: result.error.message });
+      return;
+    }
+    setRevealedPhone(result.data.phone);
+  };
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+      <span className="font-medium tracking-wide tabular-nums text-gray-800 dark:text-white/90">
+        {revealedPhone ? formatPhoneDisplay(revealedPhone) : maskPhoneDisplay(customer.phone)}
       </span>
-    ))}
+      {canReveal && (
+        <button type="button" onClick={toggle} className={BUTTON_LINK_CLASS} aria-pressed={isVisible}>
+          <ToggleIcon size={14} aria-hidden="true" />
+          {isVisible ? 'Ẩn số' : 'Hiện số'}
+        </button>
+      )}
+    </span>
+  );
+};
+
+/**
+ * CCCD chỉ hiện 4 số cuối; "Hiện" chỉ với người được phép, MỖI lần bấm gọi `POST national-id-views` (có ghi log).
+ */
+export const NationalIdField = ({ customer }: { customer: CustomerDetail }) => {
+  const { revealNationalId } = useCustomerDetailActions(customer);
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const { data: viewLog } = useNationalIdViews(customer.id);
+  const ToggleIcon = revealed ? EyeOff : Eye;
+
+  if (!customer.hasNationalId) return <span className={INFO_VALUE_CLASS}>Chưa cập nhật</span>;
+
+  return (
+    <span className="flex flex-wrap items-center justify-between gap-2">
+      <span className={`${INFO_VALUE_CLASS} font-mono tracking-wider`}>{revealed ?? customer.nationalIdMasked}</span>
+      {customer.permissions.canRevealNationalId && (
+        <button
+          type="button"
+          onClick={() => {
+            // Gọi API (có ghi log) trong handler, KHÔNG trong updater của setState (StrictMode chạy updater 2 lần).
+            if (revealed) setRevealed(null);
+            else setRevealed(revealNationalId());
+          }}
+          aria-pressed={Boolean(revealed)}
+          title="Mỗi lần xem CCCD đầy đủ đều được ghi lại"
+          className={BUTTON_LINK_CLASS}
+        >
+          <ToggleIcon size={14} aria-hidden="true" />
+          {revealed ? 'Ẩn' : 'Hiện'}
+        </button>
+      )}
+      {revealed && (
+        <span className="inline-flex w-full items-center gap-1 text-theme-xs text-gray-500 dark:text-gray-400">
+          <ShieldCheck size={12} aria-hidden="true" />
+          Lần xem này đã được ghi vào nhật ký xem CCCD.
+        </span>
+      )}
+      {viewLog.length > 0 && (
+        <details className="w-full text-theme-xs text-gray-500 dark:text-gray-400">
+          <summary className="cursor-pointer select-none">Nhật ký xem CCCD ({viewLog.length})</summary>
+          <ul className="mt-1 space-y-0.5">
+            {viewLog.slice(0, 10).map((entry) => (
+              <li key={`${entry.viewer.id}-${entry.viewedAt}`}>
+                {entry.viewer.displayName} — {formatVnDateTime(entry.viewedAt)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </span>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Avatar chồng nhau của nhóm chăm sóc (★ = phụ trách chính)
+// ---------------------------------------------------------------------------
+
+const MEMBER_AVATAR_TONES = [CHIP_TONE_CLASS.brand, CHIP_TONE_CLASS.success, CHIP_TONE_CLASS.purple];
+const AVATAR_BASE_CLASS = 'flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ring-2 ring-white dark:ring-gray-900';
+
+export const CareTeamAvatars = ({ members }: { members: CareTeamMemberView[] }) => (
+  <div className="flex shrink-0 items-center -space-x-2">
+    {members.map((member, index) => {
+      const isPrimary = member.role === 'PRIMARY';
+      const title = `${member.user.fullName}${isPrimary ? ' (phụ trách chính)' : ''}`;
+      return (
+        <div key={member.user.id} className="relative" title={title}>
+          {member.user.avatarUrl ? (
+            <img src={member.user.avatarUrl} alt={title} className={`${AVATAR_BASE_CLASS} object-cover`} />
+          ) : (
+            <span aria-label={title} className={`${AVATAR_BASE_CLASS} ${isPrimary ? CHIP_TONE_CLASS.warning : MEMBER_AVATAR_TONES[index % MEMBER_AVATAR_TONES.length]}`}>
+              {getInitials(member.user.fullName)}
+            </span>
+          )}
+          {isPrimary && (
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning-500 text-white ring-2 ring-white dark:ring-gray-900"
+            >
+              <Star size={8} fill="currentColor" strokeWidth={0} />
+            </span>
+          )}
+        </div>
+      );
+    })}
   </div>
 );
 
 // ---------------------------------------------------------------------------
-// Gợi ý STND AI — mẫu "thông báo trong trang" của Admin (ExternalLogsScreen.tsx:194-199), tông brand
+// Gợi ý tiếp theo — CHỈ hiện khi có dữ liệu thật (không câu mặc định, không gắn nhãn AI)
 // ---------------------------------------------------------------------------
 
-export const AiSuggestionNotice = ({ suggestion }: { suggestion: string }) => (
-  <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 dark:border-brand-500/25 dark:bg-brand-500/15">
-    <Sparkles size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
-    <div className="min-w-0 space-y-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-gray-800 dark:text-white/90">Gợi ý bước tiếp theo</span>
-        <span className={`${CHIP_CLASS} px-2 py-0.5 ${CHIP_TONE_CLASS.purple}`}>STND AI</span>
+export const NextStepNotice = ({ suggestions }: { suggestions: string[] }) => {
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 dark:border-brand-500/25 dark:bg-brand-500/15">
+      <Lightbulb size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
+      <div className="min-w-0 space-y-1">
+        <span className="text-sm font-semibold text-gray-800 dark:text-white/90">Gợi ý tiếp theo</span>
+        <ul className="space-y-0.5 text-theme-sm leading-relaxed text-gray-700 dark:text-gray-300">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion}>{suggestion}</li>
+          ))}
+        </ul>
       </div>
-      <p className="text-theme-sm leading-relaxed text-gray-700 dark:text-gray-300">{suggestion}</p>
     </div>
-  </div>
-);
+  );
+};
 
 // ---------------------------------------------------------------------------
-// Thanh tiến độ C4 — Admin chưa có (tham khảo StepCard), vẽ theo Stitch
+// Thanh tiến độ (4 tiêu chí / độ đầy đủ chân dung)
 // ---------------------------------------------------------------------------
 
-interface C4ProgressBarProps {
+interface ProgressBarProps {
   percent: number;
+  label: string;
   className?: string;
+  fillClassName?: string;
 }
 
-export const C4ProgressBar = ({ percent, className = 'h-2' }: C4ProgressBarProps) => (
+export const ProgressBar = ({ percent, label, className = 'h-2', fillClassName = 'bg-brand-500' }: ProgressBarProps) => (
   <div
     role="progressbar"
-    aria-label="Mức độ đạt chuẩn C4"
+    aria-label={label}
     aria-valuemin={0}
     aria-valuemax={100}
     aria-valuenow={percent}
     className={`w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800 ${className}`}
   >
-    <div className="h-full rounded-full bg-brand-500 transition-all duration-300" style={{ width: `${percent}%` }} />
+    <div className={`h-full rounded-full transition-all duration-300 ${fillClassName}`} style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
   </div>
 );
 
 // ---------------------------------------------------------------------------
-// Khay ảnh đính kèm cuộn ngang — Admin chưa có, vẽ theo Stitch
+// Ảnh đính kèm nhật ký (tính năng đang chờ quyết định giữ/bỏ; mặc định rỗng)
 // ---------------------------------------------------------------------------
 
 interface AttachedPhotoTrayProps {
@@ -243,10 +329,7 @@ export const AttachedPhotoTray = ({ photos, onRemove }: AttachedPhotoTrayProps) 
   return (
     <ul className="custom-scrollbar flex items-center gap-2 overflow-x-auto pb-1" aria-label="Ảnh đã đính kèm">
       {photos.map((photo, index) => (
-        <li
-          key={`${photo.src}-${index}`}
-          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
-        >
+        <li key={`${photo.src.slice(-24)}-${index}`} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
           <img src={photo.src} alt={photo.caption} className="h-full w-full object-cover" />
           <button
             type="button"
@@ -260,5 +343,33 @@ export const AttachedPhotoTray = ({ photos, onRemove }: AttachedPhotoTrayProps) 
         </li>
       ))}
     </ul>
+  );
+};
+
+interface PhotoPickerButtonProps {
+  /** Nhận file đã chọn; trả về số file bị bỏ qua để báo người dùng. */
+  onPick: (files: FileList) => Promise<number>;
+  onSkipped?: (skippedCount: number) => void;
+  className: string;
+  label?: string;
+}
+
+/** Nút chọn ảnh (input file thật, ẩn). */
+export const PhotoPickerButton = ({ onPick, onSkipped, className, label = 'Đính kèm ảnh' }: PhotoPickerButtonProps) => {
+  const handleChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const { files } = event.target;
+    if (files && files.length > 0) {
+      const skippedCount = await onPick(files);
+      if (skippedCount > 0) onSkipped?.(skippedCount);
+    }
+    event.target.value = '';
+  };
+
+  return (
+    <label className={`${className} cursor-pointer`}>
+      <ImagePlus size={14} aria-hidden="true" />
+      {label}
+      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={handleChange} />
+    </label>
   );
 };

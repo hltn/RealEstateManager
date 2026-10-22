@@ -3,41 +3,33 @@
  * (nguồn Stitch: popup tự viết). Có ô tìm theo tên/SĐT vì danh sách khách có thể dài.
  */
 import { Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Dropdown } from '../../../../../components/ui/dropdown/Dropdown';
 import { getInitials } from '@crm/lib/staff';
-import type { Customer } from '@crm/types/crm';
-import { getCustomerStatusToneClass } from '@crm/components/CustomerStatusChip';
-import { CHIP_SMALL_CLASS } from '@crm/lib/uiClasses';
+import type { CustomerDetail, CustomerListItem } from '@crm/api';
+import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
+import { formatProjectSummary } from '@crm/lib/customerAdapters';
+import { maskPhoneDisplay } from '@crm/lib/phone';
 
 interface CustomerPickerProps {
   id: string;
-  customers: Customer[];
-  selectedCustomer: Customer | null;
+  customers: CustomerListItem[];
+  /** Tổng số khách khớp từ khoá (có thể nhiều hơn số đang hiển thị). */
+  total: number;
+  onSearch: (keyword: string) => void;
+  selectedCustomer: CustomerDetail | null;
   hasError: boolean;
   onChange: (customerId: string) => void;
 }
 
-const normalize = (value: string): string => value.trim().toLowerCase();
-
-export const CustomerPicker = ({ id, customers, selectedCustomer, hasError, onChange }: CustomerPickerProps) => {
+export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustomer, hasError, onChange }: CustomerPickerProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
-
-  const matchedCustomers = useMemo(() => {
-    const normalizedKeyword = normalize(keyword);
-    const keywordDigits = keyword.replace(/\D/g, '');
-    if (!normalizedKeyword) return customers;
-    return customers.filter(
-      (customer) =>
-        normalize(customer.name).includes(normalizedKeyword) ||
-        (keywordDigits.length > 0 && customer.phone.replace(/\D/g, '').includes(keywordDigits)),
-    );
-  }, [customers, keyword]);
 
   const closePicker = () => {
     setIsOpen(false);
     setKeyword('');
+    onSearch('');
   };
 
   return (
@@ -51,16 +43,16 @@ export const CustomerPicker = ({ id, customers, selectedCustomer, hasError, onCh
       {selectedCustomer ? (
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-500 text-sm font-semibold text-white">
-            {getInitials(selectedCustomer.name)}
+            {getInitials(selectedCustomer.fullName)}
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-sm font-semibold text-gray-800 dark:text-white/90">{selectedCustomer.name}</span>
-              <span className="text-theme-xs text-gray-500 dark:text-gray-400">— {selectedCustomer.phone}</span>
-              <span className={`${CHIP_SMALL_CLASS} ${getCustomerStatusToneClass(selectedCustomer.status)}`}>{selectedCustomer.status}</span>
+              <span className="text-sm font-semibold text-gray-800 dark:text-white/90">{selectedCustomer.fullName}</span>
+              <span className="text-theme-xs text-gray-500 dark:text-gray-400">— {maskPhoneDisplay(selectedCustomer.phone)}</span>
+              <CustomerStatusChip status={selectedCustomer.status} size="small" />
             </div>
             <p className="mt-0.5 truncate text-theme-xs text-gray-500 dark:text-gray-400">
-              Nhu cầu: {selectedCustomer.bedroomType || 'Chưa rõ'} • {selectedCustomer.interestedProjects.join(', ') || 'Chưa chọn dự án'}
+              Dự án: {formatProjectSummary(selectedCustomer.projects) || 'Chưa chọn dự án'}
             </p>
           </div>
         </div>
@@ -86,17 +78,20 @@ export const CustomerPicker = ({ id, customers, selectedCustomer, hasError, onCh
               type="search"
               value={keyword}
               autoFocus
-              onChange={(event) => setKeyword(event.target.value)}
+              onChange={(event) => {
+                setKeyword(event.target.value);
+                onSearch(event.target.value);
+              }}
               placeholder="Tìm tên hoặc SĐT..."
               aria-label="Tìm khách hàng"
               className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-white/[0.1] dark:bg-gray-900 dark:text-white/90"
             />
           </div>
           <ul role="listbox" aria-label="Danh sách khách hàng" className="max-h-60 space-y-0.5 overflow-y-auto">
-            {matchedCustomers.length === 0 && (
+            {customers.length === 0 && (
               <li className="px-2 py-3 text-center text-theme-xs text-gray-500 dark:text-gray-400">Không tìm thấy khách phù hợp.</li>
             )}
-            {matchedCustomers.map((customer) => {
+            {customers.map((customer) => {
               const isSelected = customer.id === selectedCustomer?.id;
               return (
                 <li key={customer.id} role="option" aria-selected={isSelected}>
@@ -110,15 +105,18 @@ export const CustomerPicker = ({ id, customers, selectedCustomer, hasError, onCh
                       isSelected ? 'bg-brand-50 dark:bg-brand-500/15' : 'hover:bg-gray-100 dark:hover:bg-white/5'
                     }`}
                   >
-                    <span className="block text-sm font-medium text-gray-800 dark:text-white/90">{customer.name}</span>
+                    <span className="block text-sm font-medium text-gray-800 dark:text-white/90">{customer.fullName}</span>
                     <span className="block text-theme-xs text-gray-500 dark:text-gray-400">
-                      {customer.phone} • {customer.status}
+                      {maskPhoneDisplay(customer.phone)} • {customer.status.label}
                     </span>
                   </button>
                 </li>
               );
             })}
           </ul>
+          {total > customers.length && (
+            <p className="px-2 pt-2 text-center text-theme-xs text-gray-500 dark:text-gray-400">Còn {total - customers.length} khách nữa — gõ tên hoặc SĐT để thu hẹp.</p>
+          )}
         </Dropdown>
       </div>
     </div>

@@ -2,28 +2,24 @@
 // theo phong cách Admin App (tài liệu 03): đầu trang + breadcrumb, thẻ/ô nhập/select/DatePicker/Dropdown/công tắc Admin,
 // icon lucide, cặp `dark:`. Thẻ chọn loại kiểu radio + thanh hành động dính đáy vẽ theo Stitch.
 // Validate trường bắt buộc rồi gọi `addAppointment` (store tự điều hướng về Lịch hẹn + toast).
-import { BellRing, CalendarCheck, type LucideIcon, Sparkles, UsersRound } from 'lucide-react';
+import { BellRing, CalendarCheck, type LucideIcon, UsersRound } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { FormActionBar } from '@crm/components/form/FormActionBar';
 import { FormPageHeader } from '@crm/components/form/FormPageHeader';
 import { SectionCard } from '@crm/components/form/SectionCard';
 import { buildCrmPath } from '@crm/routes';
-import { useCrmActions } from '@crm/store';
 import { CARD_CLASS, CHIP_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
-import { STAFF_OPTIONS, getFieldId } from './createAppointmentForm';
+import { getFieldId } from './createAppointmentForm';
 import { AppointmentTypePicker } from './components/AppointmentTypePicker';
 import {
-  CustomerProjectFields,
-  DetailsField,
+  AssigneeField,
+  CustomerFields,
+  NoteField,
   ReminderFields,
   ScheduleFields,
-  StaffFields,
   SyncNotice,
 } from './components/AppointmentFormFields';
 import { useCreateAppointmentForm } from './useCreateAppointmentForm';
-
-/** Gợi ý chuẩn bị nhanh (nguồn Admin Stitch) — bấm để chèn vào nội dung trao đổi. */
-const QUICK_PREP_TIPS = ['Kiểm tra căn còn trống', 'In phiếu tính dòng tiền', 'Đăng ký xe đón khách'] as const;
 
 interface SideCardProps {
   title: string;
@@ -43,16 +39,8 @@ const SideCard = ({ title, icon: Icon, children }: SideCardProps) => (
 
 export const CreateAppointmentDesktop = () => {
   const form = useCreateAppointmentForm();
-  const { showToast } = useCrmActions();
   const { values, setField, handleSubmit, cancel, pendingRequiredCount } = form;
-  const leadStaff = STAFF_OPTIONS.find((staff) => staff.id === values.leadStaffId);
-  const leadName = leadStaff?.name ?? '';
-
-  const addPrepTip = (tip: string) => {
-    const nextDetails = values.details.trim() ? `${values.details.trim()}\n- ${tip}` : `- ${tip}`;
-    setField('details', nextDetails);
-    showToast({ title: `Đã thêm "${tip}" vào nội dung chuẩn bị`, type: 'info' });
-  };
+  const leadName = form.selectedCustomer?.careTeam.find((member) => member.user.id === values.assigneeId)?.user.displayName ?? '';
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex w-full flex-col gap-6">
@@ -78,8 +66,8 @@ export const CreateAppointmentDesktop = () => {
       {/* 2. Lưới 2 cột (≥1280) / 1 cột (768–1279) */}
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
         <div className="min-w-0 space-y-6 xl:col-span-8">
-          <SectionCard step={1} title="Khách hàng & Dự án liên quan">
-            <CustomerProjectFields form={form} customerControl="picker" />
+          <SectionCard step={1} title="Khách hàng">
+            <CustomerFields form={form} customerControl="picker" />
           </SectionCard>
 
           <SectionCard step={2} title="Loại cuộc hẹn & Mục đích làm việc">
@@ -90,42 +78,23 @@ export const CreateAppointmentDesktop = () => {
             <ScheduleFields form={form} />
           </SectionCard>
 
-          <SectionCard step={4} title="Nội dung trao đổi & Chuẩn bị tài liệu">
-            <DetailsField form={form} />
+          <SectionCard step={4} title="Ghi chú & chuẩn bị">
+            <NoteField form={form} />
           </SectionCard>
         </div>
 
         <div className="grid min-w-0 grid-cols-1 items-start gap-6 md:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
-          <SideCard title="Nhân sự phụ trách" icon={UsersRound}>
-            <StaffFields form={form} />
+          <SideCard title="Người thực hiện" icon={UsersRound}>
+            <AssigneeField form={form} />
           </SideCard>
 
           <SideCard title="Nhắc nhở & Tự động" icon={BellRing}>
             <ReminderFields form={form} />
           </SideCard>
 
-          <section aria-label="STND Smart Assistant" className={`${CARD_CLASS} space-y-4 p-6 md:col-span-2 xl:col-span-1`}>
-            <h3 className="flex items-center gap-2 border-b border-gray-100 pb-3 text-lg font-semibold text-gray-800 dark:border-white/[0.05] dark:text-white/90">
-              <Sparkles size={20} aria-hidden="true" className="text-brand-500 dark:text-brand-400" />
-              STND Smart Assistant
-            </h3>
-            <SyncNotice leadName={leadName} />
-            <div>
-              <p className="mb-2 text-theme-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Gợi ý chuẩn bị nhanh</p>
-              <div className="flex flex-wrap gap-2">
-                {QUICK_PREP_TIPS.map((tip) => (
-                  <button
-                    key={tip}
-                    type="button"
-                    onClick={() => addPrepTip(tip)}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    + {tip}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
+          <div className="md:col-span-2 xl:col-span-1">
+            <SyncNotice assigneeName={leadName} />
+          </div>
         </div>
       </div>
 

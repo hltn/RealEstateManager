@@ -4,14 +4,14 @@
  * Tablet (768–1279px): cột chiếm hết chiều ngang, thẻ xếp 2 cột; ≥ 1280px: 3 cột cạnh nhau, thẻ xếp dọc.
  */
 import type { ReactNode } from 'react';
-import type { TaskWithCustomer } from '@crm/store';
-import type { TaskCategory } from '@crm/types/crm';
+import type { DailyTask } from '@crm/api';
+import type { DailyTaskGroup } from '@crm/types/crm';
 import { TASK_CATEGORY_META } from '../taskCategoryMeta';
 import { TaskCard } from './TaskCard';
 
 interface TaskKanbanColumnProps {
-  category: TaskCategory;
-  tasks: TaskWithCustomer[];
+  category: DailyTaskGroup;
+  tasks: DailyTask[];
   /** Nội dung thêm ở cuối cột (vd nút "Xem thêm"). */
   footer?: ReactNode;
 }
@@ -37,7 +37,7 @@ export const TaskKanbanColumn = ({ category, tasks, footer }: TaskKanbanColumnPr
       {tasks.length > 0 ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
           {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} hasWideActions />
+            <TaskCard key={task.id} task={task} />
           ))}
         </div>
       ) : (

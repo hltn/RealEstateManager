@@ -2,7 +2,8 @@
  * Thanh tab module CRM nằm ngang (Việc hôm nay / Khách hàng / Lịch hẹn / Báo cáo).
  * Tách từ mẫu tab gạch chân của Admin: `RealEstateAdminApp/src/screens/KnowledgeConfigScreen.tsx:672-689`
  * (nav.flex.gap-1 trong border-b; nút border-b-2, chọn brand-500/600, thường gray-500).
- * Khác bản gốc: mỗi tab là một route (`<Link>`), có chip số đếm lấy từ store CRM, cuộn ngang khi hẹp.
+ * Khác bản gốc: mỗi tab là một route (`<Link>`), có chip số đếm lấy từ lớp dữ liệu CRM, cuộn ngang khi hẹp.
+ * Tab hiển thị theo vai trò (Báo cáo chỉ Quản lý/Quản trị).
  *
  * Quy ước responsive: chỉ hiện từ `md` (768px). Dưới `md` các màn tab chính đã có `CrmBottomNav` làm đúng việc này,
  * nên thanh tab ẩn hẳn để không lặp 2 lớp điều hướng.
@@ -16,15 +17,19 @@ import {
   TAB_BASE_CLASS,
   TAB_INACTIVE_CLASS,
 } from '@crm/lib/uiClasses';
-import { MODULE_TAB_ITEMS } from '@crm/navigation';
+import { useAppointments, useDailyTasks, useListCounts } from '@crm/api';
+import { useModuleTabItems } from '@crm/navigation';
 import { buildCrmPath } from '@crm/routes';
-import { useCrmState, useCurrentView, usePendingTaskCount } from '@crm/store';
+import { useCurrentView } from '@crm/store';
 import type { MainTab } from '@crm/types/app';
 
 export const CrmModuleTabs = () => {
   const currentView = useCurrentView();
-  const { customers, appointments } = useCrmState();
-  const pendingTaskCount = usePendingTaskCount();
+  const tabItems = useModuleTabItems();
+  const { data: counts } = useListCounts({});
+  const { data: tasks } = useDailyTasks();
+  const { data: appointments } = useAppointments({ status: 'SCHEDULED' });
+  const pendingTaskCount = tasks.filter((task) => task.group !== 'UPCOMING').length;
   const navRef = useRef<HTMLElement>(null);
   const activeTabRef = useRef<HTMLAnchorElement>(null);
 
@@ -39,14 +44,14 @@ export const CrmModuleTabs = () => {
 
   const countByTab: Partial<Record<MainTab, number>> = {
     today: pendingTaskCount,
-    customers: customers.length,
+    customers: counts.ALL,
     appointments: appointments.length,
   };
 
   return (
     <div className="hidden border-b border-gray-200 md:block dark:border-white/[0.05]">
       <nav ref={navRef} className="no-scrollbar relative flex gap-1 overflow-x-auto" aria-label="Phân hệ quản lý khách hàng">
-        {MODULE_TAB_ITEMS.map(({ view, label, icon: Icon }) => {
+        {tabItems.map(({ view, label, icon: Icon }) => {
           const isActive = currentView === view;
           const count = countByTab[view];
           return (

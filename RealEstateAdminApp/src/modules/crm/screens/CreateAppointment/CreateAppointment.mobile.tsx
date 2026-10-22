@@ -2,17 +2,18 @@
 // Mobile: KHÔNG vẽ top app bar (header/drawer là của Admin) -> hàng "← Quay lại" + tiêu đề trong nội dung;
 // màn form không có CrmBottomNav nên tự vẽ thanh hành động dính đáy (sticky, không fixed để khỏi đè drawer Admin).
 import { CalendarCheck } from 'lucide-react';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { FormActionBar } from '@crm/components/form/FormActionBar';
 import { FormPageHeader } from '@crm/components/form/FormPageHeader';
 import { CHIP_SMALL_CLASS } from '@crm/lib/uiClasses';
-import { STAFF_OPTIONS, getFieldId } from './createAppointmentForm';
+import { getFieldId } from './createAppointmentForm';
 import { AppointmentTypePicker } from './components/AppointmentTypePicker';
 import {
-  CustomerProjectFields,
-  DetailsField,
+  AssigneeField,
+  CustomerFields,
+  NoteField,
   ReminderFields,
   ScheduleFields,
-  StaffFields,
   SyncNotice,
 } from './components/AppointmentFormFields';
 import { SectionCard } from '@crm/components/form/SectionCard';
@@ -21,8 +22,7 @@ import { useCreateAppointmentForm } from './useCreateAppointmentForm';
 export const CreateAppointmentMobile = () => {
   const form = useCreateAppointmentForm();
   const { values, setField, handleSubmit, cancel, pendingRequiredCount } = form;
-  const leadStaff = STAFF_OPTIONS.find((staff) => staff.id === values.leadStaffId);
-  const leadName = leadStaff?.name ?? '';
+  const leadName = form.selectedCustomer?.careTeam.find((member) => member.user.id === values.assigneeId)?.user.displayName ?? '';
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex w-full flex-col gap-4">
@@ -37,8 +37,8 @@ export const CreateAppointmentMobile = () => {
         <span className="text-theme-xs text-gray-400 dark:text-gray-500">* bắt buộc</span>
       </div>
 
-      <SectionCard step={1} title="Khách hàng & Dự án">
-        <CustomerProjectFields form={form} customerControl="select" />
+      <SectionCard step={1} title="Khách hàng">
+        <CustomerFields form={form} customerControl="select" />
       </SectionCard>
 
       <SectionCard
@@ -52,29 +52,28 @@ export const CreateAppointmentMobile = () => {
       <SectionCard
         step={3}
         title="Thời gian & Địa điểm"
-        aside={<span className={`${CHIP_SMALL_CLASS} bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400`}>Lịch tự động</span>}
       >
         <ScheduleFields form={form} />
       </SectionCard>
 
-      <SectionCard step={4} title="Nhân sự phụ trách">
-        <StaffFields form={form} />
+      <SectionCard step={4} title="Người thực hiện">
+        <AssigneeField form={form} />
       </SectionCard>
 
       <SectionCard
         step={5}
         title="Nhắc nhở & Chuẩn bị"
         aside={
-          values.smsZnsAuto || values.calendarSync ? (
+          CRM_FEATURE_FLAGS.isAppointmentNotifySyncEnabled && (values.smsZnsAuto || values.calendarSync) ? (
             <span className={`${CHIP_SMALL_CLASS} bg-success-50 text-success-600 dark:bg-success-500/10 dark:text-success-500`}>Bật thông báo</span>
           ) : undefined
         }
       >
         <ReminderFields form={form} />
-        <DetailsField form={form} />
+        <NoteField form={form} />
       </SectionCard>
 
-      <SyncNotice leadName={leadName} />
+      <SyncNotice assigneeName={leadName} />
 
       <FormActionBar
         variant="mobile"

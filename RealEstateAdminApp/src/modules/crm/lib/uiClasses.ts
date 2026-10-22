@@ -73,7 +73,6 @@ export const BUTTON_OUTLINE_LG_CLASS = `${BUTTON_OUTLINE_BASE_CLASS} ${BUTTON_SI
 /** Nút nhạt cùng tông brand, chưa có padding/cỡ chữ — `RawArticlesScreen.tsx:479`. */
 export const BUTTON_SOFT_BASE_CLASS =
   'inline-flex items-center justify-center gap-2 rounded-lg border border-brand-100 bg-brand-50 font-medium text-brand-500 transition-colors hover:bg-brand-100 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400 dark:hover:bg-brand-500/25';
-export const BUTTON_SOFT_CLASS = `${BUTTON_SOFT_BASE_CLASS} ${BUTTON_SIZE_MD}`;
 /** Nút nhạt cỡ nhỏ (trong đầu thẻ). */
 export const BUTTON_SOFT_SM_CLASS = `${BUTTON_SOFT_BASE_CLASS} shrink-0 gap-1 px-2.5 py-1.5 text-xs`;
 
@@ -118,14 +117,11 @@ export const CHIP_TONE_CLASS = {
   success: 'bg-success-50 text-success-600 dark:bg-success-500/10 dark:text-success-500',
   warning: 'bg-warning-50 text-warning-700 dark:bg-warning-500/10 dark:text-warning-500',
   error: 'bg-error-50 text-error-600 dark:bg-error-500/10 dark:text-error-500',
-  /** Chip "AI" (Admin dùng tông tím — `ExternalLogsScreen.tsx:76`). */
+  /** Tông tím (mục đích mua, avatar phụ). */
   purple: 'bg-theme-purple-500/10 text-theme-purple-500',
 } as const;
 
 export type ChipTone = keyof typeof CHIP_TONE_CLASS;
-
-/** Chip VIP: token warning (vàng) thay `amber-*` của Stitch; tím để dành cho nhãn AI. */
-export const VIP_CHIP_CLASS = `${CHIP_CLASS} ${CHIP_TONE_CLASS.warning}`;
 
 /** Chip loại / mã (dự án) — `ExternalLogsScreen.tsx:66-98`, tông brand. */
 export const PROJECT_CHIP_CLASS =
@@ -135,8 +131,8 @@ export const PROJECT_CHIP_CLASS =
 export const BRAND_SOFT_CHIP_CLASS =
   'border border-brand-100 bg-brand-50 text-brand-600 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400';
 
-/** Hộp gợi ý AI — "thông báo trong trang" (`ExternalLogsScreen.tsx:194`) với tông warning. */
-export const AI_HINT_CLASS =
+/** Hộp gợi ý bước tiếp theo — "thông báo trong trang" (`ExternalLogsScreen.tsx:194`) với tông warning. */
+export const NEXT_STEP_HINT_CLASS =
   'flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-2.5 text-xs text-warning-700 dark:border-warning-500/25 dark:bg-warning-500/10 dark:text-warning-400';
 
 // ---------------------------------------------------------------------------

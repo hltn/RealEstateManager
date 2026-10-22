@@ -4,7 +4,10 @@
  */
 import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
-import { useCrmActions, useCrmState } from '@crm/store';
+import { useAppointments } from '@crm/api';
+import { formatProjectSummary } from '@crm/lib/customerAdapters';
+import { getAppointmentDateKey, getAppointmentTime } from '@crm/lib/appointmentAdapters';
+import { useCrmActions } from '@crm/store';
 import { formatShortWeekdayDate, getUpcomingAppointments, getWeekDates } from '../appointmentSchedule';
 import { APPOINTMENT_TYPE_STYLES } from '../appointmentTypeStyles';
 import { CAPTION_CLASS, CARD_CLASS, ICON_BUTTON_CLASS } from '@crm/lib/uiClasses';
@@ -14,7 +17,7 @@ interface UpcomingAppointmentsCardProps {
 }
 
 export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardProps) => {
-  const { appointments } = useCrmState();
+  const { data: appointments } = useAppointments({ status: 'SCHEDULED' });
   const { selectCustomer } = useCrmActions();
   const [isShowingAll, setIsShowingAll] = useState(false);
 
@@ -46,19 +49,19 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-theme-xs font-semibold text-gray-700 dark:text-gray-300">
-                      {formatShortWeekdayDate(appointment.date)} • {appointment.time}
+                      {formatShortWeekdayDate(getAppointmentDateKey(appointment))} • {getAppointmentTime(appointment)}
                     </span>
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${style.chipClass}`}>{style.shortLabel}</span>
                   </div>
-                  <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{appointment.customerName}</p>
+                  <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</p>
                   <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">
-                    Dự án {appointment.projectName} • Phụ trách: {appointment.leadStaffName}
+                    Dự án {formatProjectSummary(appointment.customer.projects)} • Phụ trách: {appointment.assignee.displayName}
                   </p>
                 </div>
                 <button
                   type="button"
-                  aria-label={`Mở hồ sơ ${appointment.customerName}`}
-                  onClick={() => selectCustomer(appointment.customerId)}
+                  aria-label={`Mở hồ sơ ${appointment.customer.fullName}`}
+                  onClick={() => selectCustomer(appointment.customer.id)}
                   className={`${ICON_BUTTON_CLASS} shrink-0`}
                 >
                   <ChevronRight size={18} aria-hidden="true" />

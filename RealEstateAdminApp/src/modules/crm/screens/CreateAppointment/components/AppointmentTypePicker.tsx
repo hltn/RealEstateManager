@@ -28,7 +28,7 @@ export const AppointmentTypePicker = ({ id, value, onChange, variant }: Appointm
         {APPOINTMENT_TYPE_OPTIONS.map((option, index) => {
           const isSelected = value === option.type;
           const { icon: Icon, iconBoxClass } = APPOINTMENT_TYPE_STYLES[option.type];
-          const isOther = option.type === 'khac';
+          const isOther = option.type === 'OTHER';
           return (
             <label
               key={option.type}

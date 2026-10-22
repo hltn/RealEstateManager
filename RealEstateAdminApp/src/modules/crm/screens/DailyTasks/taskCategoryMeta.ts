@@ -4,7 +4,7 @@
  * quá hạn = error, hôm nay = brand, sắp tới = gray (thay rose/amber/gray của Stitch).
  */
 import { CalendarCheck, CalendarDays, TriangleAlert, type LucideIcon } from 'lucide-react';
-import type { TaskCategory } from '@crm/types/crm';
+import type { DailyTaskGroup } from '@crm/types/crm';
 
 export interface TaskCategoryMeta {
   label: string;
@@ -26,10 +26,10 @@ export interface TaskCategoryMeta {
   pillActiveClass: string;
 }
 
-export const TASK_CATEGORY_ORDER: TaskCategory[] = ['overdue', 'today', 'upcoming'];
+export const TASK_CATEGORY_ORDER: DailyTaskGroup[] = ['OVERDUE', 'TODAY', 'UPCOMING'];
 
-export const TASK_CATEGORY_META: Record<TaskCategory, TaskCategoryMeta> = {
-  overdue: {
+export const TASK_CATEGORY_META: Record<DailyTaskGroup, TaskCategoryMeta> = {
+  OVERDUE: {
     label: 'Quá hạn',
     hint: 'Cần xử lý gấp',
     icon: TriangleAlert,
@@ -42,7 +42,7 @@ export const TASK_CATEGORY_META: Record<TaskCategory, TaskCategoryMeta> = {
       'border-error-100 bg-error-50 text-error-600 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-500',
     pillActiveClass: 'border-error-500 bg-error-500 text-white',
   },
-  today: {
+  TODAY: {
     label: 'Hôm nay',
     hint: 'Lịch & việc trong ngày',
     icon: CalendarCheck,
@@ -55,9 +55,9 @@ export const TASK_CATEGORY_META: Record<TaskCategory, TaskCategoryMeta> = {
       'border-brand-100 bg-brand-50 text-brand-500 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400',
     pillActiveClass: 'border-brand-500 bg-brand-500 text-white',
   },
-  upcoming: {
+  UPCOMING: {
     label: 'Sắp tới',
-    hint: 'Trong tuần',
+    hint: 'Trong 7 ngày tới',
     icon: CalendarDays,
     dotClass: 'bg-gray-400',
     titleClass: 'text-gray-700 dark:text-gray-300',

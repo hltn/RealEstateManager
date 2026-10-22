@@ -27,7 +27,7 @@ const STATIC_PATH_BY_VIEW: Record<Exclude<ViewId, CustomerScopedView>, string> =
   create_appointment: `${CRM_BASE_PATH}/appointments/new`,
   reports: `${CRM_BASE_PATH}/reports`,
   projects: `${CRM_BASE_PATH}/projects`,
-  ai_config: `${CRM_BASE_PATH}/ai-config`,
+  settings: `${CRM_BASE_PATH}/settings`,
 };
 
 const isCustomerScopedView = (view: ViewId): view is CustomerScopedView => view in CUSTOMER_SCOPED_SUFFIX;
@@ -79,5 +79,5 @@ export const CRM_CHILD_ROUTES = {
   createAppointment: 'appointments/new',
   reports: 'reports',
   projects: 'projects',
-  aiConfig: 'ai-config',
+  settings: 'settings',
 } as const;

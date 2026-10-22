@@ -1,107 +1,122 @@
 /**
- * Thẻ 1 việc (Admin Stitch `DailyTasksView` + Mobile `TodayTasksView`). Admin không có kanban/thẻ việc
- * (tài liệu 03 mục 10) → bố cục Stitch, token Admin:
- * - đầy đủ (quá hạn / hôm nay): tên + chip tình trạng, dự án, chip thời hạn, nội dung, gợi ý AI, 4 nút liên hệ;
- * - gọn (sắp tới): tên, dự án, ngày, nội dung 2 dòng, người phụ trách + "Chi tiết".
+ * Thẻ 1 việc (02 §4.1): tên khách + tình trạng, dự án, thời hạn (tính theo ngày thực), việc cần làm,
+ * lần liên hệ gần nhất, gợi ý bước tiếp theo (CHỈ khi có dữ liệu thật) và nút hành động.
+ * Việc "Bước tiếp theo" có nút "Đã xong"; việc "Lịch hẹn" có nút "Hoàn thành".
  */
-import { Building, ChevronRight, Sparkles } from 'lucide-react';
+import { Building, CircleCheck, Clock, Lightbulb } from 'lucide-react';
+import { useCrmApi, type DailyTask } from '@crm/api';
 import { ContactActionGrid } from '@crm/components/ContactActionGrid';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
-import { AI_HINT_CLASS } from '@crm/lib/uiClasses';
-import { useCrmActions, type TaskWithCustomer } from '@crm/store';
+import { formatProjectSummary } from '@crm/lib/customerAdapters';
+import { formatVnRelative } from '@crm/lib/dateTime';
+import { NEXT_STEP_HINT_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
+import { useCrmActions } from '@crm/store';
 import { TASK_CATEGORY_META } from '../taskCategoryMeta';
-import { TaskDueChip } from './TaskDueChip';
+import { getTaskDueText, TASK_KIND_LABELS } from '../taskFilters';
 
 const CARD_BASE_CLASS = 'rounded-xl border bg-white p-4 dark:bg-white/[0.03]';
 
-interface TaskCardProps {
-  task: TaskWithCustomer;
-  /** Lưới nút liên hệ 4 cột ở màn rất rộng (cột kanban web ≥ 1536px). */
-  hasWideActions?: boolean;
-}
+export const TaskDueChip = ({ task }: { task: DailyTask }) => (
+  <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${TASK_CATEGORY_META[task.group].dueChipClass}`}>
+    {task.group === 'TODAY' && <Clock size={12} aria-hidden="true" />}
+    {getTaskDueText(task)}
+  </span>
+);
 
-export const TaskCard = ({ task, hasWideActions = false }: TaskCardProps) => {
-  const { selectCustomer } = useCrmActions();
-  const customerName = task.customer?.name ?? task.customerName;
-  const customerStatus = task.customer?.status ?? task.statusTag;
-  const meta = TASK_CATEGORY_META[task.category];
-  const handleOpenDetail = () => selectCustomer(task.customerId);
-
-  const nameButton = (
+/** Nút đóng việc: bước tiếp theo -> "Đã xong"; lịch hẹn -> "Hoàn thành". Việc khác (dịp, lâu chưa chăm sóc) tự hết khi có nhật ký/ qua ngày. */
+export const TaskDoneButton = ({ task }: { task: DailyTask }) => {
+  const api = useCrmApi();
+  const { showToast } = useCrmActions();
+  if (task.kind !== 'FOLLOW_UP' && task.kind !== 'APPOINTMENT') return null;
+  const complete = () => {
+    const result =
+      task.kind === 'FOLLOW_UP' && task.careLogId
+        ? api.completeFollowUp(task.careLogId)
+        : task.appointmentId
+          ? api.updateAppointmentStatus(task.appointmentId, 'DONE')
+          : null;
+    if (!result) return;
+    showToast(result.ok ? { title: task.kind === 'FOLLOW_UP' ? 'Đã đánh dấu xong bước tiếp theo' : 'Đã hoàn thành lịch hẹn' } : { type: 'error', title: result.error.message });
+  };
+  return (
     <button
       type="button"
-      onClick={handleOpenDetail}
-      className="text-left text-theme-sm font-semibold text-gray-800 transition-colors hover:text-brand-500 dark:text-white/90 dark:hover:text-brand-400"
+      onClick={(event) => {
+        event.stopPropagation();
+        complete();
+      }}
+      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-success-600 transition-colors hover:bg-success-50 dark:text-success-500 dark:hover:bg-success-500/10"
     >
-      {customerName}
+      <CircleCheck size={14} aria-hidden="true" />
+      {task.kind === 'FOLLOW_UP' ? 'Đã xong' : 'Hoàn thành'}
     </button>
   );
+};
 
-  const projectLine = (
-    <p className="mt-1 flex min-w-0 items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
-      <Building size={13} className="shrink-0" aria-hidden="true" />
-      <span className="truncate">
-        Dự án: <span className="font-medium text-gray-700 dark:text-gray-300">{task.projectName}</span>
-      </span>
-    </p>
-  );
+interface TaskCardProps {
+  task: DailyTask;
+}
 
-  if (task.category === 'upcoming') {
-    return (
-      <article className={`${CARD_BASE_CLASS} ${meta.cardBorderClass} space-y-2.5`}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            {nameButton}
-            {projectLine}
-          </div>
-          <TaskDueChip task={task} />
-        </div>
-        <p className="line-clamp-2 text-theme-xs leading-relaxed text-gray-600 dark:text-gray-400">{task.content}</p>
-        <div className="flex items-center justify-between gap-2 border-t border-gray-100 pt-2.5 text-theme-xs dark:border-white/[0.05]">
-          <span className="truncate text-gray-400 dark:text-gray-500">
-            Phụ trách: <span className="font-medium text-gray-700 dark:text-gray-300">{task.assignee}</span>
-          </span>
-          <button
-            type="button"
-            onClick={handleOpenDetail}
-            className="inline-flex shrink-0 items-center gap-0.5 font-medium text-brand-500 hover:text-brand-600 dark:text-brand-400"
-          >
-            Chi tiết
-            <ChevronRight size={14} aria-hidden="true" />
-          </button>
-        </div>
-      </article>
-    );
-  }
+export const TaskCard = ({ task }: TaskCardProps) => {
+  const { selectCustomer } = useCrmActions();
+  const meta = TASK_CATEGORY_META[task.group];
+  const projectSummary = formatProjectSummary(task.customer.projects);
 
   return (
     <article className={`${CARD_BASE_CLASS} ${meta.cardBorderClass} space-y-3`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {nameButton}
-            <CustomerStatusChip status={customerStatus} />
+            <button
+              type="button"
+              onClick={() => selectCustomer(task.customer.id)}
+              className="text-left text-theme-sm font-semibold text-gray-800 transition-colors hover:text-brand-500 dark:text-white/90 dark:hover:text-brand-400"
+            >
+              {task.customer.fullName}
+            </button>
+            <CustomerStatusChip status={task.customer.status} size="small" />
           </div>
-          {projectLine}
+          {projectSummary && (
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+              <Building size={13} className="shrink-0" aria-hidden="true" />
+              <span className="truncate">{projectSummary}</span>
+            </p>
+          )}
         </div>
         <TaskDueChip task={task} />
       </div>
 
-      <p className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-theme-xs leading-relaxed text-gray-700 dark:border-white/[0.05] dark:bg-white/[0.03] dark:text-gray-300">
-        {task.content}
-      </p>
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <p className="flex flex-wrap items-center gap-1.5 text-theme-xs text-gray-700 dark:text-gray-300">
+          <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>{TASK_KIND_LABELS[task.kind]}</span>
+          <span className="font-medium">{task.title}</span>
+        </p>
+        {task.lastCareLog && (
+          <p className="mt-1.5 line-clamp-2 text-theme-xs text-gray-500 dark:text-gray-400">
+            Gần nhất ({formatVnRelative(task.lastCareLog.occurredAt)}): {task.lastCareLog.excerpt}
+          </p>
+        )}
+      </div>
 
-      {task.aiSuggestion && (
-        <div className={AI_HINT_CLASS}>
-          <Sparkles size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+      {task.suggestion && task.suggestion !== task.title && (
+        <div className={NEXT_STEP_HINT_CLASS}>
+          <Lightbulb size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
           <p>
-            <span className="font-semibold">Gợi ý STND AI: </span>
-            <span className="text-gray-700 dark:text-gray-300">{task.aiSuggestion}</span>
+            <span className="font-semibold">Gợi ý tiếp theo: </span>
+            <span className="text-gray-700 dark:text-gray-300">{task.suggestion}</span>
           </p>
         </div>
       )}
 
-      <ContactActionGrid customerId={task.customerId} className={hasWideActions ? '2xl:grid-cols-4' : ''} />
+      <div className="flex items-center justify-between gap-2 text-theme-xs text-gray-500 dark:text-gray-400">
+        <span>
+          Thực hiện: <span className="font-medium text-gray-700 dark:text-gray-300">{task.assignee?.displayName ?? '—'}</span>
+          {task.isPrimary && ' (phụ trách chính)'}
+        </span>
+        <TaskDoneButton task={task} />
+      </div>
+
+      <ContactActionGrid customerId={task.customer.id} isPhoneMasked={task.customer.isPhoneMasked} />
     </article>
   );
 };

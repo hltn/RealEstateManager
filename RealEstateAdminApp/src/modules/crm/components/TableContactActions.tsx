@@ -14,9 +14,11 @@ const TABLE_ACTION_BUTTON_CLASS =
 interface TableContactActionsProps {
   customerId: string;
   customerName: string;
+  /** SĐT đã che (không có quyền xem số): khoá nút Gọi/Zalo. */
+  isPhoneMasked?: boolean;
 }
 
-export const TableContactActions = ({ customerId, customerName }: TableContactActionsProps) => {
+export const TableContactActions = ({ customerId, customerName, isPhoneMasked = false }: TableContactActionsProps) => {
   const { callCustomer, messageZalo, openQuickNote } = useContactActions();
 
   return (
@@ -24,8 +26,9 @@ export const TableContactActions = ({ customerId, customerName }: TableContactAc
       <button
         type="button"
         onClick={() => callCustomer(customerId)}
-        title="Gọi điện"
-        className={`${TABLE_ACTION_BUTTON_CLASS} border-brand-100 bg-brand-50 text-brand-500 hover:bg-brand-100 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400 dark:hover:bg-brand-500/25`}
+        disabled={isPhoneMasked}
+        title={isPhoneMasked ? 'Bạn không có quyền xem số điện thoại của khách này' : 'Gọi điện'}
+        className={`disabled:cursor-not-allowed disabled:opacity-50 ${TABLE_ACTION_BUTTON_CLASS} border-brand-100 bg-brand-50 text-brand-500 hover:bg-brand-100 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400 dark:hover:bg-brand-500/25`}
       >
         <Phone size={14} aria-hidden="true" />
         <span>Gọi</span>
@@ -33,8 +36,9 @@ export const TableContactActions = ({ customerId, customerName }: TableContactAc
       <button
         type="button"
         onClick={() => messageZalo(customerId)}
-        title="Nhắn Zalo"
-        className={`${TABLE_ACTION_BUTTON_CLASS} border-success-100 bg-success-50 text-success-600 hover:bg-success-100 dark:border-success-500/25 dark:bg-success-500/15 dark:text-success-500 dark:hover:bg-success-500/25`}
+        disabled={isPhoneMasked}
+        title={isPhoneMasked ? 'Bạn không có quyền xem số điện thoại của khách này' : 'Nhắn Zalo'}
+        className={`disabled:cursor-not-allowed disabled:opacity-50 ${TABLE_ACTION_BUTTON_CLASS} border-success-100 bg-success-50 text-success-600 hover:bg-success-100 dark:border-success-500/25 dark:bg-success-500/15 dark:text-success-500 dark:hover:bg-success-500/25`}
       >
         <MessageCircle size={14} aria-hidden="true" />
         <span>Zalo</span>

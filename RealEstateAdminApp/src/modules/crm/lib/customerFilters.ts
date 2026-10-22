@@ -1,47 +1,27 @@
-import type { Customer, FilterOptions, StaffMember } from '@crm/types/crm';
-import { toLeadStatus } from './customerAdapters';
-import { isSameStaffName } from './staff';
-
-const normalizeText = (value: string): string => value.trim().toLowerCase();
-const digitsOnly = (value: string): string => value.replace(/\D/g, '');
-
 /**
- * Lọc danh sách khách theo FilterOptions (logic của Mobile CustomerListView, mở rộng):
- * trạng thái -> từ khoá (tên / SĐT / dự án / mã) -> dự án đơn -> nhiều dự án -> nhân viên.
+ * Tiện ích bộ lọc danh sách khách phía giao diện (đếm bộ lọc đang bật, tuỳ chọn tiến độ).
+ * Logic so khớp nằm ở lớp dữ liệu (`api/queries.ts` — `matchesCustomerFilters`) để giống query backend.
  */
-export const filterCustomers = (
-  customers: Customer[],
-  filters: FilterOptions,
-  staffList: StaffMember[] = [],
-): Customer[] => {
-  const keyword = normalizeText(filters.search);
-  const keywordDigits = digitsOnly(filters.search);
-  const staffMember = staffList.find((staff) => staff.id === filters.staff);
+import type { CustomerFilters } from '@crm/types/app';
+import { PROGRESS_VALUES } from './customerRules';
 
+/** Trường "bộ lọc nâng cao" (ngoài ô tìm kiếm + tab danh sách). */
+export type AdvancedFilterKey = Exclude<keyof CustomerFilters, 'q' | 'listGroup'>;
 
-  return customers.filter((customer) => {
-    if (filters.status !== 'all' && toLeadStatus(customer.status) !== filters.status) return false;
-
-    if (keyword) {
-      const isNameMatch = normalizeText(customer.name).includes(keyword);
-      const isPhoneMatch = keywordDigits.length > 0 && digitsOnly(customer.phone).includes(keywordDigits);
-      const isProjectMatch = customer.interestedProjects.some((project) => normalizeText(project).includes(keyword));
-      const isCodeMatch = normalizeText(customer.code).includes(keyword);
-      if (!isNameMatch && !isPhoneMatch && !isProjectMatch && !isCodeMatch) return false;
-    }
-
-    if (filters.project !== 'all' && !customer.interestedProjects.includes(filters.project)) return false;
-
-    if (
-      filters.projectsSelected.length > 0 &&
-      !customer.interestedProjects.some((project) => filters.projectsSelected.includes(project))
-    ) {
-      return false;
-    }
-
-    // `staffLead` lưu họ tên đầy đủ như `STAFF_LIST` -> so khớp nguyên tên.
-    if (staffMember && !isSameStaffName(customer.staffLead, staffMember.name)) return false;
-
-    return true;
-  });
+/** Số nhóm bộ lọc nâng cao đang bật (hiện trên nút "Bộ lọc nâng cao"). Khoảng ngày cập nhật tính 1 nhóm. */
+export const countActiveAdvancedFilters = (filters: CustomerFilters): number => {
+  const arrayKeys: AdvancedFilterKey[] = ['statusIds', 'sourceIds', 'projectIds', 'areaIds', 'assigneeIds', 'primaryAssigneeIds', 'progress', 'tagIds'];
+  const arrayCount = arrayKeys.filter((key) => (filters[key] as unknown[]).length > 0).length;
+  const dateCount = filters.updatedFrom || filters.updatedTo ? 1 : 0;
+  const occupationCount = filters.occupation.trim() ? 1 : 0;
+  return arrayCount + dateCount + occupationCount;
 };
+
+export const PROGRESS_FILTER_OPTIONS: readonly { value: number; label: string }[] = PROGRESS_VALUES.map((value) => ({
+  value,
+  label: `${value}% (${value / 25}/4)`,
+}));
+
+/** Bật/tắt 1 giá trị trong mảng bộ lọc. */
+export const toggleValue = <T>(values: readonly T[], value: T): T[] =>
+  values.includes(value) ? values.filter((item) => item !== value) : [...values, value];

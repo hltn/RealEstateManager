@@ -1,66 +1,26 @@
 /**
- * Thân form "Thêm khách hàng mới" dùng chung cho 2 biến thể (desktop/tablet + mobile).
- * Bố cục: desktop >= 1280px chia 8/4 cột; hẹp hơn xếp 1 cột, trường đôi co về 2 cột từ `sm`.
+ * Thân form "Thêm khách hàng mới" dùng chung 2 biến thể (desktop/tablet + mobile) — C1.
+ * Chỉ Họ tên + SĐT bắt buộc; danh mục (khu vực, nguồn, dự án, tình trạng, người dùng) đọc từ store (X7).
+ * Bố cục: desktop >= 1280px chia 8/4 cột; hẹp hơn xếp 1 cột.
  */
-import {
-  Building2,
-  CircleCheck,
-  IdCard,
-  Lock,
-  Mail,
-  MapPin,
-  Megaphone,
-  Phone,
-  RefreshCw,
-  Target,
-  TriangleAlert,
-  User,
-  UserCheck,
-  UserPlus,
-  UserRound,
-  Users,
-} from 'lucide-react';
-import type { CustomerStatus } from '@crm/types/crm';
-import {
-  CREATE_FORM_PROJECTS,
-  INITIAL_STATUS_OPTIONS,
-  LEAD_SOURCE_OPTIONS,
-  RESIDENCE_OPTIONS,
-  STAFF_OPTIONS,
-} from './createCustomerForm';
-import { isValidVnPhone, withCurrentOption } from './customerFormRules';
-import type { CreateCustomerFormApi } from './useCreateCustomerForm';
-import { BudgetRangeInput } from '@crm/components/form/BudgetRangeInput';
+import { Building2, CircleCheck, IdCard, Lock, Mail, MapPin, Megaphone, Phone, RefreshCw, Target, TriangleAlert, User, UserCheck, UserRound, Users } from 'lucide-react';
+import { useAssignableUsers, useCatalogs } from '@crm/api';
 import { ChipMultiSelect, ChoiceGroup, type ChoiceOption } from '@crm/components/form/ChoiceGroup';
-import { DuplicatePhoneBanner } from './components/DuplicatePhoneBanner';
 import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
 import { MaskedIdInput } from '@crm/components/form/MaskedIdInput';
 import { SectionCard } from '@crm/components/form/SectionCard';
-import { CUSTOMER_STATUS_STYLE } from '@crm/components/CustomerStatusChip';
 import { SelectInput } from '@crm/components/form/SelectInput';
-import { CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
 import { TextInput } from '@crm/components/form/TextInput';
+import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
+import { isValidPhone } from '@crm/lib/phone';
+import { CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
+import { DuplicatePhoneBanner } from './components/DuplicatePhoneBanner';
+import type { CreateCustomerFormApi } from './useCreateCustomerForm';
 
-const STATUS_CHOICES: ChoiceOption<CustomerStatus>[] = INITIAL_STATUS_OPTIONS.map((status) => ({
-  value: status,
-  label: status,
-  dotClass: CUSTOMER_STATUS_STYLE[status].dotClassName,
-}));
+const REQUIRED_CHIP = <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Bắt buộc: họ tên, SĐT</span>;
 
-const SUPPORT_STAFF_OPTIONS = [{ value: '', label: '— Không chọn cộng sự —' }, ...STAFF_OPTIONS];
-
-const REQUIRED_CHIP = (
-  <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Bắt buộc</span>
-);
-
-interface PhoneStatusChipProps {
-  isDuplicate: boolean;
-  isReady: boolean;
-}
-
-/** Chip trạng thái đối soát SĐT cạnh nhãn (mẫu chip trạng thái Admin). */
-const PhoneStatusChip = ({ isDuplicate, isReady }: PhoneStatusChipProps) => {
+const PhoneStatusChip = ({ isDuplicate, isReady }: { isDuplicate: boolean; isReady: boolean }) => {
   if (isDuplicate) {
     return (
       <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.error}`}>
@@ -73,14 +33,14 @@ const PhoneStatusChip = ({ isDuplicate, isReady }: PhoneStatusChipProps) => {
     return (
       <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.success}`}>
         <CircleCheck size={12} aria-hidden="true" />
-        Sẵn sàng tiếp nhận
+        Chưa có, tạo được
       </span>
     );
   }
   return (
     <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>
       <RefreshCw size={12} aria-hidden="true" />
-      Nhập để đối soát…
+      Nhập để kiểm tra trùng…
     </span>
   );
 };
@@ -91,24 +51,34 @@ interface CreateCustomerFormBodyProps {
 }
 
 export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBodyProps) => {
-  const { values, errors, duplicateCustomer, setField, toggleProject, openDuplicateCustomer } = form;
+  const { values, errors, phoneLookup, isPrimaryLocked, setField, toggleProject, toggleMember, requestJoin } = form;
+  const { catalogs, users } = useCatalogs();
+  const { data: assignableUsers } = useAssignableUsers();
   const isDesktop = variant === 'desktop';
-  const isPhoneReady = !duplicateCustomer && isValidVnPhone(values.phone);
-  const idPrefix = `cc-${variant}`;
-  const fieldId = (name: string) => `${idPrefix}-${name}`;
+  const isDuplicate = Boolean(phoneLookup?.exists);
+  const fieldId = (name: string) => `cc-${variant}-${name}`;
+
+  const statusChoices: ChoiceOption<string>[] = catalogs.statuses
+    .filter((status) => status.isActive)
+    .sort((a, b) => a.order - b.order)
+    .map((status) => ({ value: status.id, label: status.label, dotClass: STATUS_TONE_STYLES[status.tone].dotClass }));
+  const primaryOptions = isPrimaryLocked
+    ? users.filter((user) => user.id === values.primaryUserId).map((user) => ({ value: user.id, label: user.fullName }))
+    : assignableUsers.map((user) => ({ value: user.id, label: `${user.fullName}${user.team ? ` — ${user.team.label}` : ''}` }));
 
   const basicInfoSection = (
-    <SectionCard icon={UserRound} title="Thông tin cơ bản" description="Định danh và thông tin liên lạc" aside={REQUIRED_CHIP}>
-      <FormField inputId={fieldId('name')} label="Họ và tên khách hàng" isRequired error={errors.name}>
+    <SectionCard icon={UserRound} title="Thông tin cơ bản" description="Định danh và liên lạc" aside={REQUIRED_CHIP}>
+      <FormField inputId={fieldId('name')} label="Họ và tên khách hàng" isRequired error={errors.fullName}>
         <TextInput
           id={fieldId('name')}
           icon={User}
           autoComplete="off"
-          value={values.name}
-          onChange={(event) => setField('name', event.target.value)}
+          maxLength={150}
+          value={values.fullName}
+          onChange={(event) => setField('fullName', event.target.value)}
           placeholder="Ví dụ: Nguyễn Văn A"
-          hasError={Boolean(errors.name)}
-          {...getFieldA11yProps(getErrorId(fieldId('name')), errors.name)}
+          hasError={Boolean(errors.fullName)}
+          {...getFieldA11yProps(getErrorId(fieldId('name')), errors.fullName)}
         />
       </FormField>
 
@@ -117,8 +87,8 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
         label="Số điện thoại"
         isRequired
         error={errors.phone}
-        hint="Di động 10 số (03/05/07/08/09) hoặc máy bàn 02x."
-        labelAddon={<PhoneStatusChip isDuplicate={Boolean(duplicateCustomer)} isReady={isPhoneReady} />}
+        hint="Di động 10 số, máy bàn 02x, hoặc số nước ngoài dạng +..."
+        labelAddon={<PhoneStatusChip isDuplicate={isDuplicate} isReady={!isDuplicate && isValidPhone(values.phone)} />}
       >
         <TextInput
           id={fieldId('phone')}
@@ -129,130 +99,113 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
           value={values.phone}
           onChange={(event) => setField('phone', event.target.value)}
           placeholder="0912 345 678"
-          hasError={Boolean(errors.phone) || Boolean(duplicateCustomer)}
+          hasError={Boolean(errors.phone) || isDuplicate}
           className="font-mono"
           {...getFieldA11yProps(getErrorId(fieldId('phone')), errors.phone)}
         />
       </FormField>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <FormField inputId={fieldId('email')} label="Email cá nhân" error={errors.email}>
+        <FormField inputId={fieldId('email')} label="Email" error={errors.email}>
           <TextInput
             id={fieldId('email')}
             type="email"
             icon={Mail}
             value={values.email}
             onChange={(event) => setField('email', event.target.value)}
-            placeholder="khachhang@stnd.vn (tùy chọn)"
+            placeholder="Không bắt buộc"
             hasError={Boolean(errors.email)}
             {...getFieldA11yProps(getErrorId(fieldId('email')), errors.email)}
           />
         </FormField>
-
         <FormField
-          inputId={fieldId('id-number')}
-          label="Số CCCD / Định danh"
-          error={errors.idNumber}
+          inputId={fieldId('national-id')}
+          label="Số CCCD"
+          error={errors.nationalId}
           labelAddon={
             <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
               <Lock size={12} aria-hidden="true" />
-              Che khi không sửa
+              Chỉ lưu hiển thị 4 số cuối
             </span>
           }
         >
           <MaskedIdInput
-            id={fieldId('id-number')}
+            id={fieldId('national-id')}
             icon={IdCard}
-            value={values.idNumber}
-            onValueChange={(value) => setField('idNumber', value)}
-            placeholder="12 số (dùng cho hợp đồng cọc)"
-            hasError={Boolean(errors.idNumber)}
-            {...getFieldA11yProps(getErrorId(fieldId('id-number')), errors.idNumber)}
+            value={values.nationalId}
+            onValueChange={(value) => setField('nationalId', value)}
+            placeholder="12 số (không bắt buộc)"
+            hasError={Boolean(errors.nationalId)}
+            {...getFieldA11yProps(getErrorId(fieldId('national-id')), errors.nationalId)}
           />
         </FormField>
       </div>
 
-      <FormField inputId={fieldId('residence')} label="Khu vực nơi ở / Địa chỉ">
+      <FormField inputId={fieldId('area')} label="Khu vực (nơi khách đang ở)">
         <SelectInput
-          id={fieldId('residence')}
+          id={fieldId('area')}
           icon={MapPin}
-          options={withCurrentOption(RESIDENCE_OPTIONS, values.currentResidence)}
-          value={values.currentResidence}
-          onChange={(event) => setField('currentResidence', event.target.value)}
+          emptyLabel="Chọn khu vực"
+          options={catalogs.areas.filter((area) => area.isActive).map((area) => ({ value: area.id, label: area.name }))}
+          value={values.areaId}
+          onChange={(event) => setField('areaId', event.target.value)}
         />
       </FormField>
     </SectionCard>
   );
 
   const demandSection = (
-    <SectionCard icon={Target} title="Nhu cầu & Dự án quan tâm" description="Khảo sát ban đầu để phân loại khách">
+    <SectionCard icon={Target} title="Dự án & Tình trạng" description="Phân loại ban đầu">
       <ChipMultiSelect
-        legend="Dự án quan tâm"
+        legend="Dự án quan tâm (chọn được nhiều)"
         icon={Building2}
-        options={CREATE_FORM_PROJECTS}
-        selected={values.interestedProjects}
+        options={catalogs.projects.filter((project) => project.isActive).map((project) => ({ value: project.id, label: project.name }))}
+        selected={values.interestedProjectIds}
         onToggle={toggleProject}
       />
-
-      <ChoiceGroup
-        legend="Tình trạng ban đầu"
-        options={STATUS_CHOICES}
-        value={values.status}
-        onChange={(status) => setField('status', status)}
-        gridClass="grid-cols-1 min-[420px]:grid-cols-3"
-      />
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <FormField inputId={fieldId('source')} label="Nguồn khách">
-          <SelectInput
-            id={fieldId('source')}
-            icon={Megaphone}
-            options={withCurrentOption(LEAD_SOURCE_OPTIONS, values.leadSource)}
-            value={values.leadSource}
-            onChange={(event) => setField('leadSource', event.target.value)}
-          />
-        </FormField>
-
-        <BudgetRangeInput
-          idPrefix={idPrefix}
-          budgetMin={values.budgetMin}
-          budgetMax={values.budgetMax}
-          onChangeMin={(value) => setField('budgetMin', value)}
-          onChangeMax={(value) => setField('budgetMax', value)}
-          errorMin={errors.budgetMin}
-          errorMax={errors.budgetMax}
+      <ChoiceGroup legend="Tình trạng" options={statusChoices} value={values.statusId} onChange={(statusId) => setField('statusId', statusId)} gridClass="grid-cols-2 sm:grid-cols-4" />
+      <FormField inputId={fieldId('source')} label="Nguồn khách">
+        <SelectInput
+          id={fieldId('source')}
+          icon={Megaphone}
+          emptyLabel="Chọn nguồn khách"
+          options={catalogs.leadSources.filter((source) => source.isActive).map((source) => ({ value: source.id, label: source.label }))}
+          value={values.sourceId}
+          onChange={(event) => setField('sourceId', event.target.value)}
         />
-      </div>
+      </FormField>
     </SectionCard>
   );
 
   const staffSection = (
-    <SectionCard icon={Users} title="Phân bổ nhân sự" description="Người chịu trách nhiệm chăm sóc">
-      <FormField inputId={fieldId('staff-lead')} label="Nhân viên phụ trách chính" isRequired error={errors.staffLead}>
+    <SectionCard icon={Users} title="Nhóm chăm sóc" description="Người phụ trách chính và người cùng chăm sóc">
+      <FormField
+        inputId={fieldId('primary')}
+        label="Người phụ trách chính"
+        error={errors.primaryUserId}
+        hint={isPrimaryLocked ? 'Nhân viên tạo khách thì tự là người phụ trách chính.' : 'Để "Chưa phân" nếu chưa giao cho ai.'}
+      >
         <SelectInput
-          id={fieldId('staff-lead')}
+          id={fieldId('primary')}
           icon={UserCheck}
-          options={STAFF_OPTIONS}
-          value={values.staffLead}
-          onChange={(event) => setField('staffLead', event.target.value)}
-          hasError={Boolean(errors.staffLead)}
+          disabled={isPrimaryLocked}
+          emptyLabel={isPrimaryLocked ? undefined : 'Chưa phân'}
+          options={primaryOptions}
+          value={values.primaryUserId}
+          onChange={(event) => setField('primaryUserId', event.target.value)}
+          hasError={Boolean(errors.primaryUserId)}
         />
       </FormField>
-      <FormField inputId={fieldId('staff-support')} label="Nhân viên hỗ trợ" hint="Tùy chọn — cộng sự chăm sóc chéo.">
-        <SelectInput
-          id={fieldId('staff-support')}
-          icon={UserPlus}
-          options={SUPPORT_STAFF_OPTIONS.filter((option) => option.value !== values.staffLead)}
-          value={values.staffSupport}
-          onChange={(event) => setField('staffSupport', event.target.value)}
-        />
-      </FormField>
+      <ChipMultiSelect
+        legend="Người cùng chăm sóc (tuỳ chọn)"
+        options={assignableUsers.filter((user) => user.id !== values.primaryUserId).map((user) => ({ value: user.id, label: user.displayName }))}
+        selected={values.memberIds}
+        onToggle={toggleMember}
+      />
     </SectionCard>
   );
 
-  const banner = (
-    <DuplicatePhoneBanner duplicateCustomer={duplicateCustomer} onOpenDuplicate={openDuplicateCustomer} variant={variant} />
-  );
+  const banner = <DuplicatePhoneBanner lookup={phoneLookup} onRequestJoin={requestJoin} variant={variant} />;
 
   if (!isDesktop) {
     return (

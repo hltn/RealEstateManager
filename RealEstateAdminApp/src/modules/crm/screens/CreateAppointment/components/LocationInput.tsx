@@ -6,19 +6,18 @@ import { LocateFixed, MapPin } from 'lucide-react';
 import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { getErrorId } from '@crm/components/form/FormField';
 import { getInputClass, INPUT_ICON_CLASS } from '@crm/lib/uiClasses';
-import { getProjectOfficeLocation } from '../createAppointmentForm';
 
 interface LocationInputProps {
   id: string;
   value: string;
-  projectName: string;
+  /** Địa chỉ văn phòng bán hàng của dự án khách quan tâm ('' = không có). */
+  officeLocation: string;
   /** Thông báo lỗi (nếu có) — viền đỏ + `aria-describedby` tới dòng lỗi của `FormField`. */
   error?: string;
   onChange: (location: string) => void;
 }
 
-export const LocationInput = ({ id, value, projectName, error, onChange }: LocationInputProps) => {
-  const officeLocation = getProjectOfficeLocation(projectName);
+export const LocationInput = ({ id, value, officeLocation, error, onChange }: LocationInputProps) => {
   return (
     <div className="relative">
       <MapPin size={18} aria-hidden="true" className={INPUT_ICON_CLASS} />

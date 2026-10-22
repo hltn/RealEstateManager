@@ -1,13 +1,4 @@
-/**
- * Hàm thuần về danh tính nhân viên. Mọi trường tên nhân viên trong dữ liệu CRM (`Customer.staffLead/staffSupport`,
- * `Appointment.leadStaffName/supportStaff`, `DailyTask.assignee`, `StaffPerformance.name`) dùng CÙNG một dạng:
- * họ tên đầy đủ trong `STAFF_LIST` (vd "Trần Mỹ Hạnh") -> so khớp bằng `isSameStaffName`, không cắt tên ngắn.
- */
-
-const normalizeName = (value: string): string => value.trim().replace(/\s+/g, ' ').toLowerCase();
-
-/** So khớp 2 tên nhân viên (bỏ khác biệt hoa/thường, khoảng trắng). */
-export const isSameStaffName = (first: string, second: string): boolean => normalizeName(first) === normalizeName(second);
+/** Hàm thuần về danh tính người dùng (avatar chữ). */
 
 /** "Trần Mỹ Hạnh" -> "TH" (chữ cái đầu của từ đầu và từ cuối) — avatar chữ của nhân viên / khách. */
 export const getInitials = (fullName: string): string => {

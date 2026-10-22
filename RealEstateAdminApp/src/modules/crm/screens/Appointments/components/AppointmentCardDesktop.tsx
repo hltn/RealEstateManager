@@ -3,7 +3,6 @@
  * (timeline theo buổi — Admin App không có), vỏ thẻ/chip/nút theo mẫu Admin + cặp `dark:`.
  */
 import {
-  Banknote,
   Building,
   CircleCheck,
   Eye,
@@ -19,10 +18,12 @@ import {
 import type { ReactNode } from 'react';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { APPOINTMENT_TYPE_LABELS, getAppointmentTitle } from '@crm/lib/appointmentAdapters';
+import { maskPhoneDisplay } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
-import type { Appointment } from '@crm/types/crm';
+import { useAppointmentActions } from '../useAppointmentActions';
+import type { AppointmentView as Appointment } from '@crm/api';
 import { APPOINTMENT_TYPE_STYLES, getAppointmentActionVariant } from '../appointmentTypeStyles';
-import { getCustomerStatusToneClass } from '@crm/components/CustomerStatusChip';
+import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { CARD_CLASS, CHIP_CLASS } from '@crm/lib/uiClasses';
 import { AppointmentMoreMenu } from './AppointmentMoreMenu';
 
@@ -56,16 +57,17 @@ const InfoRow = ({ icon, children, className = '' }: InfoRowProps) => (
 );
 
 export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopProps) => {
-  const { selectCustomer, toggleAppointmentCompleted } = useCrmActions();
+  const { selectCustomer } = useCrmActions();
+  const { toggleCompleted } = useAppointmentActions();
   const { callCustomer, openQuickNote } = useContactActions();
   const style = APPOINTMENT_TYPE_STYLES[appointment.type];
   const TypeIcon = style.icon;
   const actionVariant = getAppointmentActionVariant(appointment.type);
-  const { isCompleted } = appointment;
+  const isCompleted = appointment.status === 'DONE';
   const title = getAppointmentTitle(appointment);
 
-  const openProfile = () => selectCustomer(appointment.customerId);
-  const toggleCompleted = () => toggleAppointmentCompleted(appointment.id);
+  const openProfile = () => selectCustomer(appointment.customer.id);
+  const handleToggleCompleted = () => toggleCompleted(appointment);
 
   return (
     <article
@@ -90,23 +92,21 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           <div className="grid grid-cols-1 gap-x-4 gap-y-2 pt-1 text-theme-sm text-gray-600 sm:grid-cols-2 dark:text-gray-400">
             <InfoRow icon={<UserRound size={16} />}>
-              <span className="truncate font-medium text-gray-800 dark:text-white/90">{appointment.customerName}</span>
-              <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${getCustomerStatusToneClass(appointment.customerTag)}`}>
-                {appointment.customerTag}
-              </span>
+              <span className="truncate font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</span>
+              <CustomerStatusChip status={appointment.customer.status} size="small" />
             </InfoRow>
             <InfoRow icon={<Phone size={16} />}>
               <span className="truncate">
-                SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customerPhone}</strong>
+                SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{maskPhoneDisplay(appointment.customer.phone)}</strong>
               </span>
             </InfoRow>
 
             {actionVariant === 'reminder' ? (
-              appointment.details && (
+              appointment.note && (
                 <div className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 sm:col-span-2 dark:border-white/[0.05] dark:bg-white/[0.02]">
                   <StickyNote size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
                   <span className="text-theme-xs leading-relaxed text-gray-700 dark:text-gray-300">
-                    <strong className="font-semibold">Ghi chú:</strong> {appointment.details}
+                    <strong className="font-semibold">Ghi chú:</strong> {appointment.note}
                   </span>
                 </div>
               )
@@ -117,20 +117,11 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
                     {actionVariant === 'deposit' ? `Địa điểm: ${appointment.location}` : appointment.location}
                   </span>
                 </InfoRow>
-                {actionVariant === 'deposit' && appointment.unitCode ? (
-                  <InfoRow icon={<Banknote size={16} />}>
-                    <span className="truncate">
-                      <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.unitCode}</strong>
-                      {appointment.unitPrice && <> • Giá: {appointment.unitPrice}</>}
-                    </span>
-                  </InfoRow>
-                ) : (
-                  <InfoRow icon={<IdCard size={16} />}>
-                    <span className="truncate">
-                      Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{appointment.leadStaffName}</strong>
-                    </span>
-                  </InfoRow>
-                )}
+                <InfoRow icon={<IdCard size={16} />}>
+                  <span className="truncate">
+                    Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{appointment.assignee.displayName}</strong>
+                  </span>
+                </InfoRow>
               </>
             )}
           </div>
@@ -139,7 +130,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
         <div className="flex shrink-0 flex-col gap-2 border-t border-gray-100 pt-3 md:w-44 md:border-t-0 md:pt-0 dark:border-white/[0.05]">
           {actionVariant === 'visit' && (
             <>
-              <button type="button" onClick={() => callCustomer(appointment.customerId)} className={ACTION_SOFT_CLASS}>
+              <button type="button" onClick={() => callCustomer(appointment.customer.id)} disabled={appointment.customer.isPhoneMasked} className={`${ACTION_SOFT_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
                 <PhoneCall size={14} aria-hidden="true" />
                 Gọi nhanh
               </button>
@@ -154,12 +145,12 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           {actionVariant === 'deposit' && (
             <>
-              <button type="button" aria-pressed={isCompleted} onClick={toggleCompleted} className={isCompleted ? ACTION_OUTLINE_CLASS : ACTION_SUCCESS_CLASS}>
+              <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={isCompleted ? ACTION_OUTLINE_CLASS : ACTION_SUCCESS_CLASS}>
                 {isCompleted ? <Undo2 size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}
                 {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
               </button>
               <div className="flex items-center gap-1.5">
-                <button type="button" onClick={() => openQuickNote(appointment.customerId)} className={ACTION_OUTLINE_CLASS}>
+                <button type="button" onClick={() => openQuickNote(appointment.customer.id)} className={ACTION_OUTLINE_CLASS}>
                   <NotebookPen size={14} aria-hidden="true" />
                   Ghi chú cọc
                 </button>
@@ -172,12 +163,12 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           {actionVariant === 'reminder' && (
             <>
-              <button type="button" onClick={() => callCustomer(appointment.customerId)} className={ACTION_PRIMARY_CLASS}>
+              <button type="button" onClick={() => callCustomer(appointment.customer.id)} disabled={appointment.customer.isPhoneMasked} className={`${ACTION_PRIMARY_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
                 <PhoneCall size={14} aria-hidden="true" />
                 Gọi ngay cho khách
               </button>
               <div className="flex items-center gap-1.5">
-                <button type="button" aria-pressed={isCompleted} onClick={toggleCompleted} className={ACTION_OUTLINE_CLASS}>
+                <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
                   {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}
                 </button>
                 <button type="button" title="Xem hồ sơ" aria-label="Xem hồ sơ" onClick={openProfile} className={ACTION_ICON_OUTLINE_CLASS}>

@@ -16,8 +16,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* [Prototype] Module CRM alias */
-    "baseUrl": ".",
+    /* [Prototype] Module CRM alias (TS 6: `paths` tự tính tương đối theo file tsconfig, không cần `baseUrl` đã deprecated) */
     "paths": {
       "@crm/*": ["./src/modules/crm/*"]
     },

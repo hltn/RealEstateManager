@@ -7,23 +7,26 @@
  * Chỉ CrmLayout render component này (route `/crm/*`), và ẩn trên màn chi tiết/form (mobile chrome = fullscreen).
  */
 import { Link } from 'react-router-dom';
-import { MODULE_TAB_ITEMS } from '@crm/navigation';
+import { useDailyTasks } from '@crm/api';
+import { useModuleTabItems } from '@crm/navigation';
 import { buildCrmPath } from '@crm/routes';
-import { useCurrentView, usePendingTaskCount } from '@crm/store';
+import { useCurrentView } from '@crm/store';
 
 /** Chiều cao thanh (h-16 = 64px) — CrmLayout chừa padding đáy tương ứng để nội dung không bị che. */
 export const CRM_BOTTOM_NAV_HEIGHT_CLASS = 'h-16';
 
 export const CrmBottomNav = () => {
   const currentView = useCurrentView();
-  const pendingTaskCount = usePendingTaskCount();
+  const tabItems = useModuleTabItems();
+  const { data: tasks } = useDailyTasks();
+  const pendingTaskCount = tasks.filter((task) => task.group !== 'UPCOMING').length;
 
   return (
     <nav
       aria-label="Điều hướng module khách hàng"
       className={`fixed inset-x-0 bottom-0 z-40 flex ${CRM_BOTTOM_NAV_HEIGHT_CLASS} items-center justify-around border-t border-gray-200 bg-white px-1 pb-[env(safe-area-inset-bottom)] shadow-theme-lg md:hidden dark:border-gray-800 dark:bg-gray-900`}
     >
-      {MODULE_TAB_ITEMS.map(({ view, label, icon: Icon }) => {
+      {tabItems.map(({ view, label, icon: Icon }) => {
         const isActive = currentView === view;
         const hasBadge = view === 'today' && pendingTaskCount > 0;
         return (

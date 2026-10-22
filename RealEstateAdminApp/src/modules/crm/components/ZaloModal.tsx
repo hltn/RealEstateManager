@@ -7,9 +7,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CircleCheck, Paperclip, Send, X } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
-import { CURRENT_USER } from '@crm/data/mockData';
-import type { ZaloMessageInput } from '@crm/store';
-import type { Customer } from '@crm/types/crm';
 import { BUTTON_OUTLINE_CLASS, FORM_LABEL_CLASS, ICON_BUTTON_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
 
 export const ZALO_SEND_DELAY_MS = 1200;
@@ -17,10 +14,10 @@ export const ZALO_SEND_DELAY_MS = 1200;
 const TITLE_ID = 'crm-zalo-modal-title';
 
 /** Mẫu tin nhắn theo cách xưng hô ưu tiên của khách (fallback "anh <tên>"). */
-export const buildZaloTemplates = (customer: Customer): string[] => {
+export const buildZaloTemplates = (customer: ContactTarget): string[] => {
   const salutation = customer.preferredSalutation || `anh ${customer.name}`;
   const projectName = customer.interestedProjects[0] ?? "Q'Terra";
-  const staffName = 'Hạnh';
+  const staffName = customer.staffName ?? 'em';
   return [
     `Chào ${salutation}, em ${staffName} bên BĐS STND xin gửi bảng tính dòng tiền và phương án vay hỗ trợ 40% cho căn hộ dự án ${projectName}. ${salutation} xem qua và báo em nếu cần hỗ trợ thêm nhé ạ!`,
     `Dạ ${salutation}, cuối tuần này bên em có chương trình trải nghiệm sa bàn và căn hộ mẫu ${projectName}. Em xin phép gửi vé mời ${salutation} và gia đình ghé tham quan ạ!`,
@@ -28,10 +25,23 @@ export const buildZaloTemplates = (customer: Customer): string[] => {
   ];
 };
 
+/** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
+export interface ContactTarget {
+  name: string;
+  phone: string;
+  preferredSalutation: string;
+  interestedProjects: string[];
+  staffName?: string;
+}
+
+export interface ZaloMessageInput {
+  message: string;
+}
+
 interface ZaloModalProps {
-  customer: Customer;
+  customer: ContactTarget;
   onClose: () => void;
-  onSent: (input: Omit<ZaloMessageInput, 'customerId'>) => void;
+  onSent: (input: ZaloMessageInput) => void;
 }
 
 export const ZaloModal = ({ customer, onClose, onSent }: ZaloModalProps) => {
@@ -134,7 +144,7 @@ export const ZaloModal = ({ customer, onClose, onSent }: ZaloModalProps) => {
           </div>
 
           <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-theme-xs text-gray-400 dark:text-gray-500">Người gửi: {CURRENT_USER.displayName}</span>
+            <span className="text-theme-xs text-gray-400 dark:text-gray-500">Người gửi: {(customer.staffName ?? 'em')}</span>
             <div className="flex items-center gap-3">
               <button type="button" onClick={onClose} className={`${BUTTON_OUTLINE_CLASS} flex-1 sm:flex-none`}>
                 Hủy bỏ

@@ -17,7 +17,8 @@ import { Dropdown } from '../../../../../components/ui/dropdown/Dropdown';
 import { DropdownItem } from '../../../../../components/ui/dropdown/DropdownItem';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { useCrmActions } from '@crm/store';
-import type { Appointment } from '@crm/types/crm';
+import { useAppointmentActions } from '../useAppointmentActions';
+import type { AppointmentView as Appointment } from '@crm/api';
 import { ICON_BUTTON_CLASS } from '@crm/lib/uiClasses';
 
 interface AppointmentMoreMenuProps {
@@ -34,19 +35,20 @@ interface MenuItem {
 
 export const AppointmentMoreMenu = ({ appointment, orientation = 'horizontal' }: AppointmentMoreMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { selectCustomer, toggleAppointmentCompleted } = useCrmActions();
+  const { selectCustomer } = useCrmActions();
+  const { toggleCompleted } = useAppointmentActions();
   const { messageZalo, openQuickNote } = useContactActions();
   const TriggerIcon = orientation === 'vertical' ? EllipsisVertical : Ellipsis;
   const closeMenu = () => setIsOpen(false);
 
   const items: MenuItem[] = [
-    { label: 'Xem hồ sơ khách', icon: UserRound, onSelect: () => selectCustomer(appointment.customerId) },
-    { label: 'Ghi chú nhanh', icon: NotebookPen, onSelect: () => openQuickNote(appointment.customerId) },
-    { label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customerId) },
+    { label: 'Xem hồ sơ khách', icon: UserRound, onSelect: () => selectCustomer(appointment.customer.id) },
+    { label: 'Ghi chú nhanh', icon: NotebookPen, onSelect: () => openQuickNote(appointment.customer.id) },
+    { label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customer.id) },
     {
-      label: appointment.isCompleted ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
-      icon: appointment.isCompleted ? Undo2 : CircleCheck,
-      onSelect: () => toggleAppointmentCompleted(appointment.id),
+      label: appointment.status === 'DONE' ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
+      icon: appointment.status === 'DONE' ? Undo2 : CircleCheck,
+      onSelect: () => toggleCompleted(appointment),
     },
   ];
 

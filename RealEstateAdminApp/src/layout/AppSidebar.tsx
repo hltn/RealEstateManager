@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Logo from "../images/logo/logo.png";
 
@@ -18,7 +18,8 @@ import {
   GroupIcon,
 } from "../icons";
 // [Prototype] Submenu module Quản lý khách hàng (CRM)
-import { CRM_SIDEBAR_SUB_ITEMS } from "@crm/navigation";
+import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
+import { useCrmSidebarSubItems, withCrmMenu } from "@crm/navigation";
 import { CRM_BASE_PATH } from "@crm/routes";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
@@ -41,7 +42,8 @@ const navItems: NavItem[] = [
   {
     icon: <GroupIcon />,
     name: "Quản lý khách hàng",
-    subItems: CRM_SIDEBAR_SUB_ITEMS,
+    // Mục con CRM tính theo vai trò người dùng CRM hiện tại (xem `mainItems` trong component).
+    subItems: [],
   },
   {
     icon: <ListIcon />,
@@ -113,6 +115,9 @@ const AppSidebar: React.FC = () => {
   const location = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === UserRole.ADMIN;
+  // [Prototype] Submenu CRM ẩn mục không đủ quyền (Báo cáo: Quản lý/Quản trị; Dự án, Cài đặt: Quản trị).
+  const crmSubItems = useCrmSidebarSubItems();
+  const mainItems = useMemo(() => withCrmMenu(navItems, crmSubItems, CRM_FEATURE_FLAGS.isPrototypeEnabled), [crmSubItems]);
   const canManagePrompts =
     user?.role === UserRole.ADMIN || user?.role === UserRole.EDITOR;
 
@@ -142,7 +147,7 @@ const AppSidebar: React.FC = () => {
   useEffect(() => {
     let submenuMatched = false;
     ["main", "others"].forEach((menuType) => {
-      const items = menuType === "main" ? navItems : othersItems;
+      const items = menuType === "main" ? mainItems : othersItems;
       items.forEach((nav, index) => {
         if (nav.subItems) {
           nav.subItems.forEach((subItem) => {
@@ -161,7 +166,7 @@ const AppSidebar: React.FC = () => {
     if (!submenuMatched) {
       setOpenSubmenu(null);
     }
-  }, [location, isActive]);
+  }, [location, isActive, mainItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -369,7 +374,7 @@ const AppSidebar: React.FC = () => {
                   <HorizontaLDotsAny className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(navItems, "main")}
+              {renderMenuItems(mainItems, "main")}
               {canManagePrompts && (
                 <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
                   {renderMenuItems(promptConfigItems, "main")}

@@ -3,11 +3,15 @@
  * Màn hình KHÔNG tự render các modal này - chỉ gọi action mở modal:
  *   openQuickNote(id), openLightbox(images, index), openAdvancedFilter(),
  *   hoặc useContactActions().callCustomer(id) / messageZalo(id).
+ * CallModal / ZaloModal chỉ render khi bật cờ tương ứng trong `config/featureFlags.ts` (mặc định tắt).
  */
+import { useCrmApi, useCustomerDetail, useCustomerPersona } from '@crm/api';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { useIsMobile } from '@crm/hooks/useIsMobile';
-import { useCrmActions, useCrmState, useCustomer } from '@crm/store';
+import { getPersonaText } from '@crm/lib/customerRules';
+import { useCrmActions, useCrmState, useCurrentUser } from '@crm/store';
 import { AdvancedFilterModal } from './AdvancedFilterModal';
-import { CallModal } from './CallModal';
+import { CallModal, type ContactTarget } from './CallModal';
 import { LightboxModal } from './LightboxModal';
 import { QuickNoteModal } from './QuickNoteModal';
 import { ZaloModal } from './ZaloModal';
@@ -15,41 +19,55 @@ import { ZaloModal } from './ZaloModal';
 export const GlobalModals = () => {
   const { activeModal, filters } = useCrmState();
   const actions = useCrmActions();
+  const api = useCrmApi();
+  const currentUser = useCurrentUser();
   const isMobile = useIsMobile();
-  const modalCustomer = useCustomer(activeModal && 'customerId' in activeModal ? activeModal.customerId : null);
+  const modalCustomerId = activeModal && 'customerId' in activeModal ? activeModal.customerId : null;
+  const { data: customer } = useCustomerDetail(modalCustomerId);
+  const { data: persona } = useCustomerPersona(modalCustomerId);
 
   if (!activeModal) return null;
 
+  const contactTarget: ContactTarget | null = customer
+    ? {
+        name: customer.fullName,
+        phone: customer.phone,
+        preferredSalutation: getPersonaText(persona?.values ?? [], 'salutation'),
+        interestedProjects: customer.projects.map((project) => project.label),
+        staffName: currentUser.displayName,
+      }
+    : null;
+
+  const logContact = (contactChannel: 'CALL' | 'ZALO', content: string, title: string) => {
+    if (!customer) return;
+    const result = api.createCareLog(customer.id, { content, contactChannel });
+    actions.showToast(result.ok ? { title } : { type: 'error', title: result.error.message });
+  };
+
   switch (activeModal.kind) {
     case 'call':
-      return modalCustomer ? (
+      return CRM_FEATURE_FLAGS.isInAppCallEnabled && contactTarget ? (
         <CallModal
-          key={modalCustomer.id}
-          customer={modalCustomer}
+          key={modalCustomerId}
+          customer={contactTarget}
           onClose={actions.closeModal}
-          onSaveLog={(input) => actions.logCallResult({ customerId: modalCustomer.id, ...input })}
+          onSaveLog={({ note, callOutcome }) => logContact('CALL', `${callOutcome}: ${note}`, 'Đã lưu cuộc gọi vào nhật ký chăm sóc')}
         />
       ) : null;
 
     case 'zalo':
-      return modalCustomer ? (
+      return CRM_FEATURE_FLAGS.isZaloZnsEnabled && contactTarget ? (
         <ZaloModal
-          key={modalCustomer.id}
-          customer={modalCustomer}
+          key={modalCustomerId}
+          customer={contactTarget}
           onClose={actions.closeModal}
-          onSent={(input) => actions.logZaloMessage({ customerId: modalCustomer.id, ...input })}
+          onSent={({ message }) => logContact('ZALO', `[Zalo ZNS đã gửi]: "${message}"`, `Đã gửi Zalo cho ${contactTarget.name}`)}
         />
       ) : null;
 
     case 'quick_note':
-      return modalCustomer ? (
-        <QuickNoteModal
-          key={modalCustomer.id}
-          customer={modalCustomer}
-          variant={isMobile ? 'sheet' : 'dialog'}
-          onClose={actions.closeModal}
-          onSave={(input) => actions.saveQuickNote({ customerId: modalCustomer.id, ...input })}
-        />
+      return customer ? (
+        <QuickNoteModal key={customer.id} customer={customer} variant={isMobile ? 'sheet' : 'dialog'} onClose={actions.closeModal} />
       ) : null;
 
     case 'lightbox':
@@ -71,11 +89,11 @@ export const GlobalModals = () => {
           onClose={actions.closeModal}
           onApply={(nextFilters) => {
             actions.setFilters(nextFilters);
-            actions.showToast({ title: 'Đã áp dụng bộ lọc nâng cao!' });
+            actions.showToast({ title: 'Đã áp dụng bộ lọc nâng cao' });
           }}
           onReset={() => {
-            actions.resetAdvancedFilters();
-            actions.showToast({ title: 'Đã đặt lại bộ lọc mặc định' });
+            actions.resetFilters();
+            actions.showToast({ title: 'Đã đặt lại bộ lọc' });
           }}
         />
       );

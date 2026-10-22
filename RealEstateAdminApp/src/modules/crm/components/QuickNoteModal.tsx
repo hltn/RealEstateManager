@@ -1,6 +1,6 @@
 /**
  * Ghi chú nhanh - hợp nhất Admin `QuickNoteModal.tsx` (modal giữa màn) và
- * Mobile `QuickNoteModal.tsx` (bottom sheet, thêm "Tình trạng phản hồi" + "Hẹn lịch nhắc lại").
+ * Mobile `QuickNoteModal.tsx` (bottom sheet): nội dung + kết quả liên hệ + hẹn nhắc lại (sinh việc ở "Việc hôm nay").
  * Lấy bộ trường đầy đủ của Mobile cho cả 2 biến thể.
  * - Web: vỏ `components/ui/modal` của Admin (`max-w-lg p-6`, Esc/khoá cuộn do Modal lo).
  * - App: `BottomSheet` (vẽ theo Stitch bằng token Admin).
@@ -8,9 +8,11 @@
 import { useState, type FormEvent } from 'react';
 import { NotebookPen, Save } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
-import type { QuickNoteInput } from '@crm/store';
-import type { Customer } from '@crm/types/crm';
+import { useCatalogs, useCrmApi } from '@crm/api';
+import { formatPhoneDisplay } from '@crm/lib/phone';
+import { useCrmActions } from '@crm/store';
 import { BottomSheet } from './BottomSheet';
+import { getSuggestedFollowUpIso } from '@crm/screens/CustomerDetail/customerDetailUtils';
 import {
   BUTTON_OUTLINE_CLASS,
   BUTTON_PRIMARY_CLASS,
@@ -19,19 +21,14 @@ import {
   SOLID_INPUT_CLASS,
 } from '@crm/lib/uiClasses';
 
-export const RESPONSE_STATUS_OPTIONS = [
-  'Khách quan tâm giá / Cần gửi bảng tính',
-  'Đang so sánh dự án khác',
-  'Hẹn tham quan nhà mẫu',
-  'Khách từ chối / Không đúng nhu cầu',
-] as const;
-
-export const REMINDER_OPTIONS = [
-  'Hẹn gọi lại sau 2 ngày',
-  'Hẹn chiều mai (15:00)',
-  'Nhắc gửi brochure vào sáng thứ Hai',
-  'Không cần nhắc hẹn',
-] as const;
+/** Mốc nhắc lại nhanh (số ngày; null = không nhắc). Mốc thật tính theo ngày VN lúc lưu. */
+const REMINDER_OPTIONS: { value: string; label: string; days: number | null }[] = [
+  { value: 'suggested', label: 'Theo kết quả liên hệ', days: null },
+  { value: '1', label: 'Ngày mai 09:00', days: 1 },
+  { value: '2', label: 'Sau 2 ngày 09:00', days: 2 },
+  { value: '7', label: 'Sau 1 tuần 09:00', days: 7 },
+  { value: 'none', label: 'Không cần nhắc', days: null },
+];
 
 export type QuickNoteVariant = 'dialog' | 'sheet';
 
@@ -39,17 +36,21 @@ const FORM_ID = 'crm-quick-note-form';
 const TITLE_ID = 'crm-quick-note-title';
 
 interface QuickNoteModalProps {
-  customer: Customer;
+  customer: { id: string; fullName: string; phone: string };
   /** 'dialog' = modal giữa màn (web), 'sheet' = trượt từ đáy (app). */
   variant: QuickNoteVariant;
   onClose: () => void;
-  onSave: (input: Omit<QuickNoteInput, 'customerId'>) => void;
 }
 
-export const QuickNoteModal = ({ customer, variant, onClose, onSave }: QuickNoteModalProps) => {
+/** Ghi chú nhanh -> `POST /crm/customers/:id/care-logs` (tác giả = người dùng hiện tại, có nhắc việc tiếp theo). */
+export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalProps) => {
+  const api = useCrmApi();
+  const { showToast } = useCrmActions();
+  const { catalogs } = useCatalogs();
+  const contactResults = catalogs.contactResults.filter((item) => item.isActive).sort((a, b) => a.order - b.order);
   const [content, setContent] = useState('');
-  const [responseStatus, setResponseStatus] = useState<string>(RESPONSE_STATUS_OPTIONS[0]);
-  const [reminder, setReminder] = useState<string>(REMINDER_OPTIONS[0]);
+  const [contactResultId, setContactResultId] = useState('');
+  const [reminder, setReminder] = useState('suggested');
   const isSheet = variant === 'sheet';
   const trimmedContent = content.trim();
   const hasContent = trimmedContent.length > 0;
@@ -57,7 +58,21 @@ export const QuickNoteModal = ({ customer, variant, onClose, onSave }: QuickNote
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!hasContent) return;
-    onSave({ content: trimmedContent, responseStatus, reminder });
+    const result = contactResults.find((item) => item.id === contactResultId);
+    const option = REMINDER_OPTIONS.find((item) => item.value === reminder);
+    const days = reminder === 'suggested' ? (result?.suggestedFollowUpDays ?? null) : (option?.days ?? null);
+    const dueAt = reminder === 'none' ? '' : getSuggestedFollowUpIso(days);
+    const saved = api.createCareLog(customer.id, {
+      content: trimmedContent,
+      contactChannel: 'CALL',
+      contactResultId: contactResultId || null,
+      nextAction: dueAt || result?.suggestionText ? { suggestion: result?.suggestionText ?? '', dueAt: dueAt || null } : undefined,
+    });
+    if (!saved.ok) {
+      showToast({ type: 'error', title: saved.error.message });
+      return;
+    }
+    showToast({ title: `Đã ghi nhận tương tác cho ${customer.fullName}` });
     onClose();
   };
 
@@ -100,17 +115,18 @@ export const QuickNoteModal = ({ customer, variant, onClose, onSave }: QuickNote
       <div className={isSheet ? 'space-y-4' : 'grid grid-cols-2 gap-4'}>
         <div>
           <label htmlFor="quick-note-status" className={FORM_LABEL_CLASS}>
-            Tình trạng phản hồi
+            Kết quả liên hệ
           </label>
           <select
             id="quick-note-status"
-            value={responseStatus}
-            onChange={(event) => setResponseStatus(event.target.value)}
+            value={contactResultId}
+            onChange={(event) => setContactResultId(event.target.value)}
             className={SOLID_INPUT_CLASS}
           >
-            {RESPONSE_STATUS_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            <option value="">— Chưa chọn —</option>
+            {contactResults.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -126,8 +142,8 @@ export const QuickNoteModal = ({ customer, variant, onClose, onSave }: QuickNote
             className={SOLID_INPUT_CLASS}
           >
             {REMINDER_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -141,7 +157,7 @@ export const QuickNoteModal = ({ customer, variant, onClose, onSave }: QuickNote
       <BottomSheet
         titleId={TITLE_ID}
         title="Ghi chú & Nhắc việc"
-        subtitle={`${customer.name} · ${customer.phone}`}
+        subtitle={`${customer.fullName} · ${formatPhoneDisplay(customer.phone)}`}
         onClose={onClose}
         footer={actionButtons}
       >
@@ -160,9 +176,9 @@ export const QuickNoteModal = ({ customer, variant, onClose, onSave }: QuickNote
           </span>
           <div className="min-w-0">
             <h3 id={TITLE_ID} className="text-lg font-semibold text-gray-800 dark:text-white/90">
-              Ghi chú nhanh — {customer.name}
+              Ghi chú nhanh — {customer.fullName}
             </h3>
-            <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {customer.phone}</p>
+            <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {formatPhoneDisplay(customer.phone)}</p>
           </div>
         </div>
         {form}

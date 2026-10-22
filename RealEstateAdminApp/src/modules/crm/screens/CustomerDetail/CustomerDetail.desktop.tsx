@@ -1,52 +1,82 @@
-// Port từ stnd-admin-real-estate-manager-crm-oct-16-2026-1-51-45-pm/src/components/CustomerDetailView.tsx,
-// phong cách Admin App (tài liệu 03): thẻ rounded-2xl viền, tab gạch chân, lucide-react, cặp `dark:` đầy đủ.
-// Quy ước: không nhận props - đọc/ghi dữ liệu qua hook trong `@crm/store`, liên hệ khách qua `useContactActions`.
-// Bố cục theo vùng nội dung Admin (`p-4 md:p-6`, max-w 1536): xếp chồng/2 cột ở md..lg, 3 vùng ở xl.
+// Chi tiết khách — bố cục 3 vùng theo tài liệu 02 §4.3 (máy tính); máy tính bảng 2 vùng (02 §7):
+// THÔNG TIN + CHÂN DUNG | NHẬT KÝ CHĂM SÓC (ô ghi chú nhanh ở đầu) / LỊCH SỬ THAY ĐỔI | TIẾN ĐỘ + NHÓM CHĂM SÓC + GỢI Ý.
+// Dữ liệu qua lớp `@crm/api` (khách ngoài phạm vi quyền = không tìm thấy).
 import { useState } from 'react';
+import { useCareLogs, useCustomerDetail } from '@crm/api';
 import { CustomerNotFound } from '@crm/components/CustomerNotFound';
-import { useCustomerCareLogs, useSelectedCustomer } from '@crm/store';
-import { DesktopCareLogForm } from './components/DesktopCareLogForm';
-import { DesktopCareTimeline } from './components/DesktopCareTimeline';
-import { DesktopCriteriaPanel } from './components/DesktopCriteriaPanel';
-import { DesktopDetailTabs, type DesktopDetailTab } from './components/DesktopDetailTabs';
-import { DesktopHeaderCard } from './components/DesktopHeaderCard';
-import { DesktopInfoPanel } from './components/DesktopInfoPanel';
+import { TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
+import { useCrmState } from '@crm/store';
+import { CareLogForm } from './components/CareLogForm';
+import { CareTeamCard } from './components/CareTeamCard';
+import { CareTimeline } from './components/CareTimeline';
+import { CriteriaBoard } from './components/CriteriaBoard';
+import { CustomerHeader } from './components/CustomerHeader';
+import { CustomerInfoCard } from './components/CustomerInfoCard';
+import { NextStepNotice } from './components/DetailParts';
+import { HistoryList } from './components/HistoryList';
+import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
+
+type CenterTab = 'logs' | 'history';
+
+const CENTER_TABS: { id: CenterTab; label: string }[] = [
+  { id: 'logs', label: 'Nhật ký chăm sóc' },
+  { id: 'history', label: 'Lịch sử thay đổi' },
+];
 
 export const CustomerDetailDesktop = () => {
-  const customer = useSelectedCustomer();
-  const careLogs = useCustomerCareLogs(customer?.id);
-  const [activeTab, setActiveTab] = useState<DesktopDetailTab>('info');
+  const { selectedCustomerId } = useCrmState();
+  const { data: customer } = useCustomerDetail(selectedCustomerId);
+  const { data: careLogs } = useCareLogs(selectedCustomerId);
+  const [centerTab, setCenterTab] = useState<CenterTab>('logs');
 
-  if (!customer) {
-    return <CustomerNotFound variant="desktop" title="Chi tiết khách hàng" />;
-  }
+  if (!customer) return <CustomerNotFound variant="desktop" title="Chi tiết khách hàng" />;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="customer-detail-desktop">
-      <DesktopHeaderCard customer={customer} />
+      <CustomerHeader customer={customer} variant="desktop" />
 
-      <DesktopDetailTabs
-        activeTab={activeTab}
-        onChange={setActiveTab}
-        progressPercentage={customer.progressPercentage}
-        careLogCount={careLogs.length}
-      />
-
-      {activeTab === 'info' && <DesktopInfoPanel customer={customer} careLogs={careLogs} onOpenTab={setActiveTab} />}
-
-      {activeTab === 'criteria' && <DesktopCriteriaPanel customer={customer} />}
-
-      {activeTab === 'logs' && (
-        <div
-          role="tabpanel"
-          id="customer-detail-panel-logs"
-          aria-labelledby="customer-detail-tab-logs"
-          className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12"
-        >
-          <DesktopCareLogForm key={customer.id} customer={customer} />
-          <DesktopCareTimeline customerId={customer.id} careLogs={careLogs} />
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(0,21rem)_minmax(0,1fr)_minmax(0,21rem)]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <CustomerInfoCard customer={customer} />
+          <PersonaCard customer={customer} />
+          <RealEstateNeedsCard customer={customer} />
         </div>
-      )}
+
+        <div className="flex min-w-0 flex-col gap-4 lg:row-span-2 xl:row-span-1">
+          <div role="tablist" aria-label="Nhật ký và lịch sử" className="flex gap-1 border-b border-gray-200 dark:border-white/[0.05]">
+            {CENTER_TABS.map((tab) => {
+              const isActive = centerTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setCenterTab(tab.id)}
+                  className={`${TAB_BASE_CLASS} px-4 ${isActive ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS}`}
+                >
+                  {tab.label}
+                  {tab.id === 'logs' && <span className="text-theme-xs text-gray-400">({careLogs.length})</span>}
+                </button>
+              );
+            })}
+          </div>
+          {centerTab === 'logs' ? (
+            <>
+              <CareLogForm key={customer.id} customer={customer} variant="desktop" />
+              <CareTimeline careLogs={careLogs} />
+            </>
+          ) : (
+            <HistoryList customerId={customer.id} />
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-6">
+          <CriteriaBoard customer={customer} />
+          <CareTeamCard customer={customer} />
+          <NextStepNotice suggestions={customer.nextActionSuggestions} />
+        </div>
+      </div>
     </div>
   );
 };

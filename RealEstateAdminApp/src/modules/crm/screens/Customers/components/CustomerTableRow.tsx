@@ -1,105 +1,84 @@
 /**
- * 1 dòng bảng khách hàng (Admin Stitch `CustomerListView`) theo mẫu bảng Admin:
- * `tr.hover:bg-gray-50.dark:hover:bg-white/[0.02]`, `td.px-5.py-4.text-theme-sm` (tài liệu 03 mục 5).
- * Responsive (khớp `CUSTOMER_TABLE_COLUMNS` ở màn): cột "Dự án" ẩn < 1536px (chip dự án hiện dưới tên),
- * "Nhóm phụ trách" và "Hẹn tiếp theo" ẩn < 1280px → bảng không tràn ở 768–1279px.
- * Ô thao tác: `TableContactActions` dùng chung (Gọi / Zalo / Ghi chú nhanh).
+ * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + SĐT che + mã), tình trạng, dự án, nguồn,
+ * khu vực, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú).
+ * Cột phụ ẩn dần ở màn hẹp (khớp `CUSTOMER_TABLE_COLUMNS` ở màn), còn chật thì cuộn ngang trong vỏ bảng.
  */
 import type { MouseEvent } from 'react';
 import { Star } from 'lucide-react';
+import type { CustomerListItem } from '@crm/api';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
-import { PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
+import { ProgressDots } from '@crm/components/ProgressDots';
 import { TableContactActions } from '@crm/components/TableContactActions';
-import { getPrimaryProject } from '@crm/lib/customerAdapters';
-import { TODAY_LABEL } from '@crm/lib/dateTime';
+import { formatProjectSummary } from '@crm/lib/customerAdapters';
+import { formatVnDate, formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
+import { maskPhoneDisplay } from '@crm/lib/phone';
+import { CHECKBOX_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
-import type { Customer } from '@crm/types/crm';
-import { DealProgressDots } from './DealProgressDots';
 
 interface CustomerTableRowProps {
-  customer: Customer;
+  customer: CustomerListItem;
+  isSelected: boolean;
+  onToggleSelect: (customerId: string) => void;
 }
 
-export const CustomerTableRow = ({ customer }: CustomerTableRowProps) => {
-  const { selectCustomer } = useCrmActions();
-  const primaryProject = getPrimaryProject(customer);
-  const isAppointmentToday = customer.nextAppointmentDate === TODAY_LABEL;
+const TEXT_MUTED = 'text-theme-xs text-gray-500 dark:text-gray-400';
 
-  const handleOpenDetail = () => selectCustomer(customer.id);
-  const handleNameClick = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    handleOpenDetail();
-  };
+export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: CustomerTableRowProps) => {
+  const { selectCustomer } = useCrmActions();
+  const openDetail = () => selectCustomer(customer.id);
+  const stop = (event: MouseEvent) => event.stopPropagation();
+  const projectSummary = formatProjectSummary(customer.projects);
 
   return (
-    <tr onClick={handleOpenDetail} className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-      {/* KHÁCH HÀNG */}
-      <td className="px-5 py-4">
+    <tr onClick={openDetail} className={`cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] ${isSelected ? 'bg-brand-25 dark:bg-brand-500/[0.06]' : ''}`}>
+      <td className="w-10 px-4 py-4" onClick={stop}>
+        <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(customer.id)} aria-label={`Chọn ${customer.fullName}`} className={CHECKBOX_CLASS} />
+      </td>
+      <td className="px-4 py-4">
         <button
           type="button"
-          onClick={handleNameClick}
+          onClick={(event) => {
+            stop(event);
+            openDetail();
+          }}
           className="text-left text-theme-sm font-medium text-gray-800 transition-colors hover:text-brand-500 dark:text-white/90 dark:hover:text-brand-400"
         >
-          {customer.name}
+          {customer.fullName}
         </button>
-        <p className="text-theme-xs text-gray-500 dark:text-gray-400">
-          <span className="font-mono">{customer.code}</span> · {customer.phone}
+        <p className={TEXT_MUTED}>
+          <span className="tabular-nums">{maskPhoneDisplay(customer.phone)}</span>
+          {customer.code && <span className="font-mono"> · {customer.code}</span>}
         </p>
-        <div className="pt-1.5 2xl:hidden">
-          <span className={PROJECT_CHIP_CLASS}>{primaryProject || 'Chưa chọn dự án'}</span>
-        </div>
+        <div className="pt-1.5 2xl:hidden">{projectSummary && <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span>}</div>
       </td>
-
-      {/* TÌNH TRẠNG */}
-      <td className="px-5 py-4">
+      <td className="px-4 py-4">
         <CustomerStatusChip status={customer.status} />
       </td>
-
-      {/* DỰ ÁN QUAN TÂM */}
-      <td className="hidden px-5 py-4 2xl:table-cell">
-        <span className={PROJECT_CHIP_CLASS}>{primaryProject || 'Chưa chọn dự án'}</span>
-        {customer.interestedProjects.length > 1 && (
-          <span className="ml-1 text-theme-xs text-gray-400 dark:text-gray-500">+{customer.interestedProjects.length - 1}</span>
-        )}
+      <td className="hidden px-4 py-4 2xl:table-cell">{projectSummary ? <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span> : <span className={TEXT_MUTED}>—</span>}</td>
+      <td className={`hidden px-4 py-4 xl:table-cell ${TEXT_MUTED}`}>{customer.source?.label ?? '—'}</td>
+      <td className={`hidden px-4 py-4 xl:table-cell ${TEXT_MUTED}`}>{customer.area?.label ?? '—'}</td>
+      <td className="px-4 py-4">
+        <ProgressDots progress={customer.progress} criteriaDone={customer.criteriaDone} />
       </td>
-
-      {/* TIẾN ĐỘ CHỐT DEAL */}
-      <td className="px-5 py-4">
-        <DealProgressDots progressPercentage={customer.progressPercentage} progressStep={customer.progressStep} />
-      </td>
-
-      {/* NHÓM PHỤ TRÁCH */}
-      <td className="hidden px-5 py-4 xl:table-cell">
-        <div className="flex items-center gap-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">
-          <span>{customer.staffLead}</span>
-          <Star size={12} className="fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
-        </div>
-        {customer.staffSupport.length > 0 && (
-          <p className="text-theme-xs text-gray-500 dark:text-gray-400">Hỗ trợ: {customer.staffSupport.join(', ')}</p>
-        )}
-      </td>
-
-      {/* HẸN TIẾP THEO */}
-      <td className="hidden px-5 py-4 xl:table-cell">
-        {isAppointmentToday ? (
-          <p className="flex items-center gap-1.5 text-theme-xs font-semibold text-brand-500 dark:text-brand-400">
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-            {TODAY_LABEL} · {customer.nextAppointmentTime}
-          </p>
+      <td className="hidden px-4 py-4 lg:table-cell">
+        {customer.primaryAssignee ? (
+          <span className="flex items-center gap-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">
+            <Star size={12} className="fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
+            {customer.primaryAssignee.displayName}
+            {customer.careTeamSize > 1 && <span className={TEXT_MUTED}>+{customer.careTeamSize - 1}</span>}
+          </span>
         ) : (
-          <p className="text-theme-xs font-medium text-gray-800 dark:text-white/90">
-            {customer.nextAppointmentDate || 'Chờ lên lịch'}
-            {customer.nextAppointmentTime && <span className="text-gray-500 dark:text-gray-400"> · {customer.nextAppointmentTime}</span>}
-          </p>
-        )}
-        {customer.nextAppointmentNote && (
-          <p className="mt-0.5 line-clamp-1 text-theme-xs text-gray-500 dark:text-gray-400">{customer.nextAppointmentNote}</p>
+          <span className={TEXT_MUTED}>Chưa phân</span>
         )}
       </td>
-
-      {/* THAO TÁC */}
-      <td className="px-5 py-4">
-        <TableContactActions customerId={customer.id} customerName={customer.name} />
+      <td className="hidden whitespace-nowrap px-4 py-4 xl:table-cell" title={formatVnDateTime(customer.nextAppointmentAt)}>
+        <span className="text-theme-xs font-medium text-gray-800 dark:text-white/90">{customer.nextAppointmentAt ? formatVnRelative(customer.nextAppointmentAt) : '—'}</span>
+      </td>
+      <td className={`hidden whitespace-nowrap px-4 py-4 2xl:table-cell ${TEXT_MUTED}`} title={formatVnDateTime(customer.lastUpdatedAt)}>
+        {formatVnDate(customer.lastUpdatedAt)}
+      </td>
+      <td className="px-4 py-4">
+        <TableContactActions customerId={customer.id} customerName={customer.fullName} isPhoneMasked={customer.isPhoneMasked} />
       </td>
     </tr>
   );

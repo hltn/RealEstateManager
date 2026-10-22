@@ -2,22 +2,25 @@
 // Khung mobile là của Admin (AppHeader + drawer, vùng nội dung đã có `p-4`) + CrmBottomNav của CrmLayout:
 // không vẽ top app bar, không padding ngang thêm, không ModuleNavTabs (thanh đáy đã có 4 tab).
 // Viên thuốc lọc + mục Quá hạn / Hôm nay / Sắp tới vẽ theo Stitch bằng token Admin.
-// Dữ liệu: useTaskGroups() (DailyTask của store thay cho Customer.category của Mobile cũ).
+// Dữ liệu: `useDailyTasks()` — việc tính theo ngày thực (giờ VN) ở lớp dữ liệu.
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { BUTTON_PRIMARY_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_MOBILE_CLASS } from '@crm/lib/uiClasses';
-import { useCrmActions, useTaskGroups } from '@crm/store';
-import type { TaskCategory } from '@crm/types/crm';
+import { useDailyTasks } from '@crm/api';
+import { useCrmActions } from '@crm/store';
+import type { DailyTaskGroup } from '@crm/types/crm';
 import { TaskCard } from './components/TaskCard';
 import { TASK_CATEGORY_META, TASK_CATEGORY_ORDER } from './taskCategoryMeta';
+import { groupTasks } from './taskFilters';
 
-type CategoryFilter = 'all' | TaskCategory;
+type CategoryFilter = 'all' | DailyTaskGroup;
 
 const PILL_BASE_CLASS =
   'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-95';
 
 export const DailyTasksMobile = () => {
-  const taskGroups = useTaskGroups();
+  const { data: tasks } = useDailyTasks();
+  const taskGroups = groupTasks(tasks);
   const { navigate } = useCrmActions();
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const visibleCategories = TASK_CATEGORY_ORDER.filter(
@@ -29,7 +32,7 @@ export const DailyTasksMobile = () => {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className={PAGE_TITLE_MOBILE_CLASS}>Việc hôm nay</h2>
-          <p className={`${PAGE_DESCRIPTION_CLASS} mt-0.5`}>Nhắc việc, lịch hẹn và gợi ý chăm sóc khách.</p>
+          <p className={`${PAGE_DESCRIPTION_CLASS} mt-0.5`}>Lịch hẹn, bước tiếp theo và nhắc chăm sóc khách.</p>
         </div>
         <button type="button" onClick={() => navigate('create_customer')} className={`${BUTTON_PRIMARY_CLASS} h-10 shrink-0`}>
           <Plus size={18} aria-hidden="true" />

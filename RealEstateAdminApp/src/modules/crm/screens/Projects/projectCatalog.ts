@@ -1,32 +1,29 @@
 /**
- * Hàm thuần cho màn "Quản lý dự án": phân khúc, màu chip trạng thái, đếm khách quan tâm theo dự án.
+ * Hàm thuần cho màn "Dự án" (catalog — đọc CHUNG danh mục `catalogs.projects` với form khách/Cài đặt).
  */
-import type { Customer, Project } from '@crm/types/crm';
+import type { BreakdownItem } from '@crm/api';
+import type { Project } from '@crm/types/crm';
 
 export const ALL_SEGMENTS = 'all';
 
-/** Phân khúc lấy từ dữ liệu (giữ thứ tự xuất hiện) — nguồn Stitch liệt kê cứng và thiếu "Đô thị sinh thái". */
+/** Phân khúc lấy từ dữ liệu (giữ thứ tự xuất hiện, bỏ trống). */
 export const getProjectSegments = (projects: readonly Project[]): string[] =>
-  Array.from(new Set(projects.map((project) => project.segment)));
+  Array.from(new Set(projects.map((project) => project.segment.trim()).filter(Boolean)));
 
 export const filterProjectsBySegment = (projects: readonly Project[], segment: string): Project[] =>
-  segment === ALL_SEGMENTS ? [...projects] : projects.filter((project) => project.segment === segment);
+  segment === ALL_SEGMENTS ? [...projects] : projects.filter((project) => project.segment.trim() === segment);
 
 export type ProjectStatusTone = 'success' | 'warning' | 'neutral';
 
-/** "Đang mở bán…" -> success, "Sắp…" -> warning, còn lại (vận hành, bàn giao…) -> neutral. */
-export const getProjectStatusTone = (status: string): ProjectStatusTone => {
-  const normalized = status.toLowerCase();
-  if (normalized.includes('mở bán')) return 'success';
+/** "Đang mở bán…" -> success, "Sắp…" -> warning, còn lại (vận hành, bàn giao, trống…) -> neutral. */
+export const getProjectStatusTone = (statusLabel: string): ProjectStatusTone => {
+  const normalized = statusLabel.trim().toLowerCase();
+  // "Sắp mở bán" cũng chứa "mở bán" -> xét "sắp" trước.
   if (normalized.startsWith('sắp')) return 'warning';
+  if (normalized.includes('mở bán')) return 'success';
   return 'neutral';
 };
 
-/** Số khách đang quan tâm từng dự án (theo tên ngắn `Project.name`). */
-export const countInterestedCustomers = (customers: readonly Pick<Customer, 'interestedProjects'>[]): Map<string, number> => {
-  const counts = new Map<string, number>();
-  customers.forEach((customer) =>
-    customer.interestedProjects.forEach((projectName) => counts.set(projectName, (counts.get(projectName) ?? 0) + 1)),
-  );
-  return counts;
-};
+/** Số khách đang quan tâm theo id dự án — lấy từ phân bổ dashboard theo dự án (đã áp phạm vi quyền). */
+export const toInterestedCounts = (byProject: readonly BreakdownItem[]): Map<string, number> =>
+  new Map(byProject.map((item) => [item.key.id, item.count]));

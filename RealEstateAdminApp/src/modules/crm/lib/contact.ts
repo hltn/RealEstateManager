@@ -1,17 +1,24 @@
+import { toLocalDigits } from './phone';
+
 /** "0912 345 678" -> "tel:0912345678". */
 export const toTelHref = (phone: string): string => `tel:${phone.replace(/[^\d+]/g, '')}`;
 
-/** Mở trình gọi điện của thiết bị (hành vi bản Mobile). */
+/** Mở trình gọi điện của thiết bị. */
 export const openTelLink = (phone: string): void => {
   if (typeof window === 'undefined') return;
   window.location.href = toTelHref(phone);
 };
 
-/** "0912 345 678" / "0912345678" -> "0912 *** 678" (che SĐT trên thẻ/hồ sơ mobile). Số không đủ 10 chữ số giữ nguyên. */
-export const maskPhone = (phone: string): string => {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length !== 10) return phone;
-  return `${digits.slice(0, 4)} *** ${digits.slice(-3)}`;
+/**
+ * Link mở nhanh cuộc trò chuyện Zalo theo SĐT (Z1): "+84 912 345 678" / "0912 345 678" -> "https://zalo.me/0912345678".
+ * Zalo nhận số nội địa bắt đầu bằng 0; số nước ngoài giữ nguyên chữ số.
+ */
+export const toZaloHref = (phone: string): string => `https://zalo.me/${toLocalDigits(phone)}`;
+
+/** Mở Zalo ở tab mới (không gửi dữ liệu khách ra ngoài ngoài SĐT trên URL của chính Zalo). */
+export const openZaloChat = (phone: string): void => {
+  if (typeof window === 'undefined') return;
+  window.open(toZaloHref(phone), '_blank', 'noopener,noreferrer');
 };
 
 const VISIBLE_ID_DIGITS = 4;

@@ -1,144 +1,149 @@
 /**
- * Mô hình form "Cập nhật Chân dung khách hàng" (C10/C11) dùng chung cho 2 biến thể.
- * Giá trị theo dạng chuẩn `Customer` (nhãn Admin); biến thể Mobile đổi mã qua adapter khi hiển thị.
+ * Mô hình form sửa hồ sơ + chân dung khách (C1, C10, C11, QT9) — hàm thuần, dùng chung desktop/mobile.
+ * - Thông tin cơ bản: chỉ Họ tên + SĐT bắt buộc.
+ * - Chân dung: form động theo cấu hình `PERSONA_FIELDS` (X10); bản nháp theo `fieldKey`, mọi trường không bắt buộc.
+ * - Ngân sách nhập theo TỶ trên form, lưu VNĐ (04 §3.2.2).
  */
-import { stripHashtag } from '@crm/lib/customerAdapters';
-import type { CustomerChanges } from '@crm/store';
-import type { ContactMethod, Customer, DecisionMaker } from '@crm/types/crm';
-import {
-  formatVnPhone,
-  getPhoneError,
-  isValidBirthDate,
-  isValidIdNumber,
-  isValidOptionalEmail,
-  type FormErrors,
-} from '../CreateCustomer/customerFormRules';
+import type { CustomerDetail, PersonaValueInput, UpdateCustomerInput } from '@crm/api';
+import { billionToVnd, findPersonaValue, isValidNationalId, vndToBillion } from '@crm/lib/customerRules';
+import type { PersonaFieldDefinition, PersonaGroupCode, PersonaSource, PersonaValue } from '@crm/types/crm';
+import { getFullNameError, getPhoneFormatError, isValidOptionalEmail, type FormErrors } from '../CreateCustomer/customerFormRules';
 
-export interface PersonaFormValues {
-  name: string;
+// ---------------------------------------------------------------------------
+// Thông tin cơ bản
+// ---------------------------------------------------------------------------
+
+export interface BasicInfoValues {
+  fullName: string;
   phone: string;
   email: string;
-  idNumber: string;
-  birthDate: string;
-  remindBirthday: boolean;
-  hometown: string;
-  maritalStatus: string;
-  children: string;
-  occupation: string;
-  businessField: string;
-  decisionMaker: DecisionMaker;
-  /** Không có dấu '#'. */
-  lifestyleTags: string[];
-  isVip: boolean;
-  preferredContactMethod: ContactMethod;
-  freeTimeSlot: string;
-  preferredSalutation: string;
+  /** Rỗng = giữ nguyên CCCD hiện có (chỉ nhập khi muốn thay). */
+  nationalId: string;
+  areaId: string;
+  sourceId: string;
+  interestedProjectIds: string[];
+  tagIds: string[];
   notes: string;
 }
 
-export type PersonaField = keyof PersonaFormValues;
+export type BasicInfoField = keyof BasicInfoValues;
 
-export const PERSONA_FIELD_ORDER: readonly PersonaField[] = [
-  'name',
-  'phone',
-  'email',
-  'idNumber',
-  'birthDate',
-  'occupation',
-];
+export const BASIC_FIELD_ORDER: readonly BasicInfoField[] = ['fullName', 'phone', 'email', 'nationalId'];
 
-export const MARITAL_STATUS_OPTIONS = ['Đã kết hôn', 'Độc thân', 'Ly hôn / Khác'] as const;
-
-/** Gợi ý sở thích phổ biến (gộp 2 nguồn, lưu không có '#'). */
-export const LIFESTYLE_TAG_SUGGESTIONS: readonly string[] = [
-  'Du lịch nghỉ dưỡng',
-  'Nuôi thú cưng',
-  'Xe sang',
-  'Đầu tư dài hạn',
-  'Nhà thông minh',
-];
-
-const DMY_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/;
-const ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/** "15/03/1985" -> "1985-03-15" cho DatePicker (flatpickr `Y-m-d`); chuỗi lạ -> ''. */
-export const birthDateToIso = (birthDate: string): string => {
-  const match = DMY_PATTERN.exec(birthDate.trim());
-  return match ? `${match[3]}-${match[2]}-${match[1]}` : '';
-};
-
-/** "1985-03-15" -> "15/03/1985" (định dạng lưu của dữ liệu CRM); chuỗi lạ giữ nguyên. */
-export const isoToBirthDate = (isoDate: string): string => {
-  const match = ISO_PATTERN.exec(isoDate.trim());
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : isoDate;
-};
-
-export const toPersonaFormValues = (customer: Customer): PersonaFormValues => ({
-  name: customer.name,
+export const toBasicInfoValues = (customer: CustomerDetail): BasicInfoValues => ({
+  fullName: customer.fullName,
   phone: customer.phone,
   email: customer.email,
-  idNumber: customer.idNumber,
-  birthDate: customer.birthDate,
-  // Cả 2 nguồn mặc định bật nhắc sinh nhật khi khách chưa có thiết lập.
-  remindBirthday: customer.remindBirthday ?? true,
-  hometown: customer.hometown,
-  maritalStatus: customer.maritalStatus,
-  children: customer.children,
-  occupation: customer.occupation,
-  businessField: customer.businessField,
-  decisionMaker: customer.decisionMaker,
-  lifestyleTags: customer.lifestyleTags.map(stripHashtag).filter(Boolean),
-  isVip: customer.isVip,
-  preferredContactMethod: customer.preferredContactMethod,
-  freeTimeSlot: customer.freeTimeSlot,
-  preferredSalutation: customer.preferredSalutation,
+  nationalId: '',
+  areaId: customer.area?.id ?? '',
+  sourceId: customer.source?.id ?? '',
+  interestedProjectIds: customer.projects.map((project) => project.id),
+  tagIds: customer.tags.map((tag) => tag.id),
   notes: customer.notes,
 });
 
-/** Kiểm tra form chân dung; SĐT không được trùng khách KHÁC. */
-export const validatePersona = (
-  values: PersonaFormValues,
-  customers: readonly Customer[],
-  customerId: string,
-): FormErrors<PersonaField> => {
-  const errors: FormErrors<PersonaField> = {};
-  if (!values.name.trim()) errors.name = 'Vui lòng nhập họ và tên khách hàng.';
-  const phoneError = getPhoneError(values.phone, customers, customerId);
+/** `isPhoneLocked`: người sửa không có quyền xem số (SĐT đã che) -> không kiểm/không gửi SĐT. */
+export const validateBasicInfo = (values: BasicInfoValues, isPhoneLocked = false): FormErrors<BasicInfoField> => {
+  const errors: FormErrors<BasicInfoField> = {};
+  const fullNameError = getFullNameError(values.fullName);
+  if (fullNameError) errors.fullName = fullNameError;
+  const phoneError = isPhoneLocked ? null : getPhoneFormatError(values.phone);
   if (phoneError) errors.phone = phoneError;
   if (!isValidOptionalEmail(values.email)) errors.email = 'Email không hợp lệ (VD: khachhang@stnd.vn).';
-  if (!isValidIdNumber(values.idNumber)) errors.idNumber = 'Số CCCD gồm 12 chữ số (hoặc CMND 9 chữ số).';
-  if (!values.birthDate.trim()) errors.birthDate = 'Vui lòng nhập ngày sinh (dd/mm/yyyy).';
-  else if (!isValidBirthDate(values.birthDate)) errors.birthDate = 'Ngày sinh không hợp lệ (định dạng dd/mm/yyyy).';
-  if (!values.occupation.trim()) errors.occupation = 'Vui lòng nhập nghề nghiệp / chức vụ.';
+  if (!isValidNationalId(values.nationalId)) errors.nationalId = 'Số CCCD gồm 12 chữ số (hoặc CMND 9 chữ số).';
   return errors;
 };
 
-/** "#Golf " -> thêm "Golf" nếu chưa có (so sánh không phân biệt hoa thường). */
-export const addLifestyleTag = (tags: readonly string[], rawTag: string): string[] => {
-  const tag = stripHashtag(rawTag);
-  if (!tag || tags.some((existing) => existing.toLowerCase() === tag.toLowerCase())) return [...tags];
-  return [...tags, tag];
-};
-
-/** Chuyển form hợp lệ thành thay đổi cho `updateCustomer` (trim, chuẩn hoá SĐT, hạng VIP). */
-export const toPersonaChanges = (values: PersonaFormValues, customer: Pick<Customer, 'vipTier'>): CustomerChanges => ({
-  name: values.name.trim(),
-  phone: formatVnPhone(values.phone),
-  email: values.email.trim(),
-  idNumber: values.idNumber.trim(),
-  birthDate: values.birthDate.trim(),
-  remindBirthday: values.remindBirthday,
-  hometown: values.hometown.trim(),
-  maritalStatus: values.maritalStatus,
-  children: values.children.trim(),
-  occupation: values.occupation.trim(),
-  businessField: values.businessField.trim(),
-  decisionMaker: values.decisionMaker,
-  lifestyleTags: [...values.lifestyleTags],
-  isVip: values.isVip,
-  vipTier: values.isVip ? (customer.vipTier ?? 'VIP') : undefined,
-  preferredContactMethod: values.preferredContactMethod,
-  freeTimeSlot: values.freeTimeSlot.trim(),
-  preferredSalutation: values.preferredSalutation.trim(),
+/** Body `PATCH /crm/customers/:id` (khu vực = nơi ở, sửa được sau khi tạo — C1). */
+export const toUpdateCustomerInput = (values: BasicInfoValues, version: number, isPhoneLocked = false): UpdateCustomerInput => ({
+  version,
+  fullName: values.fullName,
+  phone: isPhoneLocked ? undefined : values.phone,
+  email: values.email,
+  areaId: values.areaId || null,
+  sourceId: values.sourceId || null,
+  interestedProjectIds: values.interestedProjectIds,
+  tagIds: values.tagIds,
   notes: values.notes,
 });
+
+// ---------------------------------------------------------------------------
+// Chân dung động
+// ---------------------------------------------------------------------------
+
+/** Giá trị nháp của 1 trường (đơn vị form: ngân sách = tỷ). */
+export interface PersonaDraftValue {
+  text: string;
+  date: string;
+  options: string[];
+  isOn: boolean;
+  from: number;
+  to: number;
+}
+
+export type PersonaDraft = Record<string, PersonaDraftValue>;
+
+const emptyDraftValue = (): PersonaDraftValue => ({ text: '', date: '', options: [], isOn: false, from: 0, to: 0 });
+
+export const fieldsOfGroups = (fields: readonly PersonaFieldDefinition[], groupCodes: readonly PersonaGroupCode[]): PersonaFieldDefinition[] =>
+  fields.filter((field) => field.isActive && groupCodes.includes(field.groupCode));
+
+/** PersonaValue[] -> bản nháp form cho các trường được chỉ định. */
+export const toPersonaDraft = (persona: readonly PersonaValue[], fields: readonly PersonaFieldDefinition[]): PersonaDraft =>
+  Object.fromEntries(
+    fields.map((field) => {
+      const value = findPersonaValue(persona, field.key);
+      return [
+        field.key,
+        {
+          text: value?.valueText ?? '',
+          date: value?.valueDate ?? '',
+          options: value?.valueOptions ?? [],
+          isOn: value?.valueBoolean ?? false,
+          from: value?.valueNumber ? vndToBillion(value.valueNumber) : 0,
+          to: value?.valueNumberTo ? vndToBillion(value.valueNumberTo) : 0,
+        },
+      ];
+    }),
+  );
+
+export const getDraftValue = (draft: PersonaDraft, fieldKey: string): PersonaDraftValue => draft[fieldKey] ?? emptyDraftValue();
+
+/** Lỗi trường chân dung (chỉ kiểm định dạng; không có trường bắt buộc — QT9). */
+export const validatePersonaDraft = (draft: PersonaDraft, fields: readonly PersonaFieldDefinition[]): Record<string, string> => {
+  const errors: Record<string, string> = {};
+  fields.forEach((field) => {
+    const value = getDraftValue(draft, field.key);
+    if (field.type === 'NUMBER_RANGE') {
+      if (value.from < 0 || value.to < 0 || !Number.isFinite(value.from) || !Number.isFinite(value.to)) errors[field.key] = 'Số tiền không hợp lệ.';
+      else if (value.from > 0 && value.to > 0 && value.from > value.to) errors[field.key] = 'Mức tối đa phải lớn hơn hoặc bằng mức tối thiểu.';
+    }
+  });
+  return errors;
+};
+
+/** Bản nháp -> body `PATCH persona` (`value: null` = xoá). Lớp dữ liệu chỉ ghi metadata cho trường thật sự đổi. */
+export const toPersonaInputs = (
+  draft: PersonaDraft,
+  fields: readonly PersonaFieldDefinition[],
+  source: Exclude<PersonaSource, 'IMPORTED'>,
+): PersonaValueInput[] =>
+  fields.map((field) => {
+    const value = getDraftValue(draft, field.key);
+    switch (field.type) {
+      case 'DATE':
+        return { fieldKey: field.key, source, value: value.date ? { valueDate: value.date } : null };
+      case 'MULTI_SELECT':
+        return { fieldKey: field.key, source, value: value.options.length > 0 ? { valueOptions: value.options } : null };
+      case 'BOOLEAN':
+        return { fieldKey: field.key, source, value: value.isOn ? { valueBoolean: true } : null };
+      case 'NUMBER_RANGE':
+        return {
+          fieldKey: field.key,
+          source,
+          value: value.from > 0 || value.to > 0 ? { valueNumber: billionToVnd(value.from), valueNumberTo: billionToVnd(value.to) } : null,
+        };
+      default:
+        return { fieldKey: field.key, source, value: value.text.trim() ? { valueText: value.text.trim() } : null };
+    }
+  });

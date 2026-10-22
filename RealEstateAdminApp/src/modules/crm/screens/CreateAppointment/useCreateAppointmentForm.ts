@@ -1,86 +1,102 @@
 /**
- * State + hành vi form "Tạo lịch hẹn mới" dùng chung cho desktop/mobile.
- * Luồng: sửa trường -> (nếu đã bấm lưu 1 lần) validate lại ngay -> submit hợp lệ gọi `addAppointment`
- * (store tự điều hướng về /crm/appointments + toast). Không hợp lệ: toast lỗi + focus trường lỗi đầu tiên.
+ * State + hành vi form "Tạo lịch hẹn mới" dùng chung desktop/mobile.
+ * Luồng: sửa trường -> (sau lần bấm lưu đầu) validate ngay -> `POST /crm/appointments` (cập nhật `nextAppointmentAt` của khách)
+ * -> về danh sách lịch hẹn. Không hợp lệ: toast lỗi + focus trường lỗi đầu tiên.
  */
 import { useMemo, useState, type FormEvent } from 'react';
-import { toIsoDate } from '@crm/lib/dateTime';
-import { useCrmActions, useCrmState, useSelectedCustomer } from '@crm/store';
-import type { Customer } from '@crm/types/crm';
+import { useCrmApi, useCustomerDetail, useCustomerList, type CustomerDetail, type CustomerListItem } from '@crm/api';
+import { useDebouncedValue } from '@crm/hooks/useDebouncedValue';
+import { getVnTodayKey } from '@crm/lib/dateTime';
+import { useCrmActions, useCrmState, useCurrentUser } from '@crm/store';
 import {
   CALL_LOCATION,
   createInitialValues,
   FIELD_ORDER,
-  getDefaultProjectName,
+  getDefaultAssigneeId,
   getFieldId,
-  toNewAppointmentInput,
+  toCreateAppointmentInput,
   validateAppointmentForm,
   type AppointmentFormErrors,
   type AppointmentFormValues,
 } from './createAppointmentForm';
 
+/** Số khách tối đa trả về mỗi lần tìm (thay giới hạn cứng 100 khách đầu tiên). */
+export const CUSTOMER_PICKER_LIMIT = 50;
+
 export interface CreateAppointmentForm {
   values: AppointmentFormValues;
   errors: AppointmentFormErrors;
-  customers: Customer[];
-  selectedCustomer: Customer | null;
-  /** Số trường bắt buộc còn lỗi (hiển thị ở thanh hành động). */
+  /** Kết quả tìm khách trong phạm vi quyền (tối đa `CUSTOMER_PICKER_LIMIT`; gõ từ khoá để thu hẹp). */
+  customers: CustomerListItem[];
+  /** Tổng số khách khớp từ khoá (để báo "còn N khách nữa"). */
+  customerTotal: number;
+  setCustomerSearch: (keyword: string) => void;
+  selectedCustomer: CustomerDetail | null;
   pendingRequiredCount: number;
   setField: <K extends keyof AppointmentFormValues>(field: K, value: AppointmentFormValues[K]) => void;
-  /** Đổi khách -> tự đổi dự án theo dự án quan tâm đầu tiên của khách. */
   changeCustomer: (customerId: string) => void;
   handleSubmit: (event?: FormEvent) => void;
   cancel: () => void;
 }
 
 export const useCreateAppointmentForm = (): CreateAppointmentForm => {
-  const { customers } = useCrmState();
-  const preselectedCustomer = useSelectedCustomer();
-  const { addAppointment, goBack, showToast } = useCrmActions();
-  const [values, setValues] = useState<AppointmentFormValues>(() =>
-    createInitialValues(preselectedCustomer, toIsoDate(new Date())),
-  );
+  const api = useCrmApi();
+  const currentUser = useCurrentUser();
+  const { selectedCustomerId } = useCrmState();
+  const { data: preselected } = useCustomerDetail(selectedCustomerId);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(customerSearch.trim(), 250);
+  // Tìm qua lớp dữ liệu (không dấu, theo tên/SĐT) thay vì chỉ lọc 100 khách đầu tiên ở client.
+  const { data: customerPage } = useCustomerList({ listGroup: 'ALL', q: debouncedSearch, limit: CUSTOMER_PICKER_LIMIT, sort: 'fullName' });
+  const { navigate, goBack, showToast } = useCrmActions();
+  const [draft, setValues] = useState<AppointmentFormValues>(() => createInitialValues(preselected, getVnTodayKey(), currentUser.id));
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const { data: selectedCustomer } = useCustomerDetail(draft.customerId);
+  // Đổi khách thì người thực hiện về mặc định theo nhóm chăm sóc của khách mới (assigneeId '' = chưa chọn tay).
+  const values = useMemo(
+    () => (draft.assigneeId ? draft : { ...draft, assigneeId: getDefaultAssigneeId(selectedCustomer, currentUser.id) }),
+    [draft, selectedCustomer, currentUser.id],
+  );
 
-  const currentErrors = useMemo(() => validateAppointmentForm(values, customers), [values, customers]);
-  // Chỉ hiện lỗi sau lần bấm lưu đầu tiên để không "mắng" người dùng khi vừa mở form.
+  const currentErrors = useMemo(() => validateAppointmentForm(values, selectedCustomer), [values, selectedCustomer]);
+  // Chỉ hiện lỗi sau lần bấm lưu đầu tiên.
   const errors = hasSubmitted ? currentErrors : {};
-  const selectedCustomer = customers.find((customer) => customer.id === values.customerId) ?? null;
 
   const setField: CreateAppointmentForm['setField'] = (field, value) =>
     setValues((previous) => {
       const next = { ...previous, [field]: value };
-      // Chọn "Nhắc gọi" khi chưa có địa điểm -> điền sẵn kênh gọi (lịch không gặp mặt).
-      if (field === 'type' && value === 'nhac_goi' && !previous.location.trim()) next.location = CALL_LOCATION;
+      // Chọn "Nhắc gọi lại" khi chưa có địa điểm -> điền sẵn kênh gọi.
+      if (field === 'type' && value === 'CALLBACK' && !previous.location.trim()) next.location = CALL_LOCATION;
       return next;
     });
-
-  const changeCustomer = (customerId: string) => {
-    const customer = customers.find((item) => item.id === customerId) ?? null;
-    setValues((previous) => ({ ...previous, customerId, projectName: getDefaultProjectName(customer) }));
-  };
-
-  const handleSubmit = (event?: FormEvent) => {
-    event?.preventDefault();
-    setHasSubmitted(true);
-    const firstInvalidField = FIELD_ORDER.find((field) => currentErrors[field]);
-    if (firstInvalidField) {
-      showToast({ title: 'Chưa thể tạo lịch hẹn', message: 'Vui lòng kiểm tra các trường được đánh dấu.', type: 'error' });
-      document.getElementById(getFieldId(firstInvalidField))?.focus();
-      return;
-    }
-    addAppointment(toNewAppointmentInput(values));
-  };
 
   return {
     values,
     errors,
-    customers,
+    customers: customerPage.data,
+    customerTotal: customerPage.meta.total,
+    setCustomerSearch,
     selectedCustomer,
     pendingRequiredCount: Object.keys(currentErrors).length,
     setField,
-    changeCustomer,
-    handleSubmit,
+    changeCustomer: (customerId) => setValues((previous) => ({ ...previous, customerId, assigneeId: '' })),
+    handleSubmit: (event) => {
+      event?.preventDefault();
+      setHasSubmitted(true);
+      const firstInvalidField = FIELD_ORDER.find((field) => currentErrors[field]);
+      if (firstInvalidField) {
+        showToast({ title: 'Chưa thể tạo lịch hẹn', message: currentErrors[firstInvalidField], type: 'error' });
+        document.getElementById(getFieldId(firstInvalidField))?.focus();
+        return;
+      }
+      const result = api.createAppointment(toCreateAppointmentInput(values));
+      if (!result.ok) {
+        showToast({ type: 'error', title: result.error.message });
+        return;
+      }
+      showToast({ title: 'Tạo lịch hẹn thành công', message: `Lịch hẹn với ${selectedCustomer?.fullName ?? 'khách'} đã được lưu.` });
+      navigate('appointments', { shouldReplace: true });
+    },
     cancel: goBack,
   };
 };

@@ -1,61 +1,49 @@
 /**
  * Nhóm trường của form Tạo lịch hẹn, dùng chung desktop + mobile (mỗi biến thể tự xếp vào khối/cột của mình).
- * Ô nhập/select/DatePicker/công tắc đều theo mẫu Admin; DatePicker = `components/ui/DatePicker` (flatpickr).
+ * Ô nhập/select/DatePicker/công tắc theo mẫu Admin; DatePicker = `components/ui/DatePicker` (flatpickr).
  */
-import { BellRing, Building, Clock, Info, UserRound } from 'lucide-react';
-import { PROJECTS } from '@crm/data/mockData';
+import { BellRing, Clock, Info, Type, UserRound } from 'lucide-react';
+import { useCatalogs } from '@crm/api';
 import { DatePicker } from '../../../../../components/ui/DatePicker';
-import {
-  DETAILS_MAX_LENGTH,
-  formatLongDateVi,
-  getFieldId,
-  REMINDER_OPTIONS,
-  STAFF_OPTIONS,
-} from '../createAppointmentForm';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
+import { REMINDER_OPTIONS } from '@crm/lib/appointmentAdapters';
+import { formatPhoneDisplay } from '@crm/lib/phone';
 import { getDatePickerInputClass, getTextareaClass } from '@crm/lib/uiClasses';
+import { formatLongDateVi, getFieldId, getProjectOfficeLocation, NOTE_MAX_LENGTH } from '../createAppointmentForm';
 import type { CreateAppointmentForm } from '../useCreateAppointmentForm';
 import { CustomerPicker } from './CustomerPicker';
 import { LocationInput } from './LocationInput';
-import { ProjectInfoLine } from './ProjectInfoLine';
 
 interface FieldGroupProps {
   form: CreateAppointmentForm;
 }
 
-interface CustomerProjectFieldsProps extends FieldGroupProps {
+interface CustomerFieldsProps extends FieldGroupProps {
   /** `picker` = thẻ khách + Dropdown (desktop), `select` = select gốc (mobile). */
   customerControl: 'picker' | 'select';
 }
 
-export const CustomerProjectFields = ({ form, customerControl }: CustomerProjectFieldsProps) => {
-  const { values, errors, customers, selectedCustomer, setField, changeCustomer } = form;
+export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) => {
+  const { values, errors, customers, customerTotal, setCustomerSearch, selectedCustomer, changeCustomer, setField } = form;
   const customerId = getFieldId('customerId');
-  const projectId = getFieldId('projectName');
+  const titleId = getFieldId('title');
 
   return (
     <div className="space-y-4">
       <FormField
         inputId={customerId}
-        label="Khách hàng quan tâm"
+        label="Khách hàng"
         isRequired
         error={errors.customerId}
-        hint={
-          customerControl === 'select' && selectedCustomer ? `Phụ trách hiện tại: ${selectedCustomer.staffLead} • ${selectedCustomer.teamGroup}` : undefined
-        }
+        hint={selectedCustomer?.primaryAssignee ? `Phụ trách chính: ${selectedCustomer.primaryAssignee.displayName}` : undefined}
       >
         {customerControl === 'picker' ? (
-          <CustomerPicker
-            id={customerId}
-            customers={customers}
-            selectedCustomer={selectedCustomer}
-            hasError={Boolean(errors.customerId)}
-            onChange={changeCustomer}
-          />
+          <CustomerPicker id={customerId} customers={customers} total={customerTotal} onSearch={setCustomerSearch} selectedCustomer={selectedCustomer} hasError={Boolean(errors.customerId)} onChange={changeCustomer} />
         ) : (
           <SelectInput
             id={customerId}
@@ -64,49 +52,37 @@ export const CustomerProjectFields = ({ form, customerControl }: CustomerProject
             icon={UserRound}
             hasError={Boolean(errors.customerId)}
             emptyLabel="Chọn khách hàng"
-            options={customers.map((customer) => ({
-              value: customer.id,
-              label: `${customer.name} — ${customer.phone} (${customer.status})`,
-            }))}
+            options={[
+              // Khách đang chọn luôn có trong danh sách dù ngoài trang đầu.
+              ...(selectedCustomer && !customers.some((customer) => customer.id === selectedCustomer.id) ? [selectedCustomer] : []),
+              ...customers,
+            ].map((customer) => ({ value: customer.id, label: `${customer.fullName} — ${formatPhoneDisplay(customer.phone)}` }))}
             {...getFieldA11yProps(getErrorId(customerId), errors.customerId)}
           />
         )}
       </FormField>
-
-      <FormField inputId={projectId} label="Dự án liên quan" isRequired error={errors.projectName} hint={<ProjectInfoLine projectName={values.projectName} />}>
-        <SelectInput
-          id={projectId}
-          value={values.projectName}
-          onChange={(event) => setField('projectName', event.target.value)}
-          icon={Building}
-          hasError={Boolean(errors.projectName)}
-          emptyLabel="Chọn dự án"
-          options={PROJECTS.map((project) => ({ value: project.name, label: `${project.fullName} (${project.location})` }))}
-          {...getFieldA11yProps(getErrorId(projectId), errors.projectName)}
-        />
+      <FormField inputId={titleId} label="Tiêu đề (tuỳ chọn)" hint="Bỏ trống = dùng tên loại lịch hẹn">
+        <TextInput id={titleId} icon={Type} value={values.title} maxLength={120} onChange={(event) => setField('title', event.target.value)} placeholder="VD: Xem căn tầng 15" />
       </FormField>
     </div>
   );
 };
 
 export const ScheduleFields = ({ form }: FieldGroupProps) => {
-  const { values, errors, setField } = form;
+  const { values, errors, setField, selectedCustomer } = form;
+  const { catalogs } = useCatalogs();
   const dateId = getFieldId('date');
   const timeId = getFieldId('time');
   const locationId = getFieldId('location');
+  const firstProject = catalogs.projects.find((project) => project.id === selectedCustomer?.projects[0]?.id);
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField inputId={dateId} label="Ngày diễn ra" isRequired error={errors.date} hint={formatLongDateVi(values.date)}>
-          <DatePicker
-            value={values.date}
-            onChange={(date) => setField('date', date)}
-            placeholder="Chọn ngày"
-            inputClassName={getDatePickerInputClass(Boolean(errors.date))}
-          />
+          <DatePicker value={values.date} onChange={(date) => setField('date', date)} placeholder="Chọn ngày" inputClassName={getDatePickerInputClass(Boolean(errors.date))} />
         </FormField>
-        <FormField inputId={timeId} label="Thời gian diễn ra" isRequired error={errors.time} hint="Giờ hẹn gặp trực tiếp với khách hàng">
+        <FormField inputId={timeId} label="Giờ (giờ Việt Nam)" isRequired error={errors.time}>
           <TextInput
             id={timeId}
             type="time"
@@ -119,82 +95,70 @@ export const ScheduleFields = ({ form }: FieldGroupProps) => {
           />
         </FormField>
       </div>
-      <FormField inputId={locationId} label="Địa điểm gặp mặt" isRequired error={errors.location} hint="Bấm biểu tượng định vị để dùng văn phòng bán hàng của dự án">
-        <LocationInput
-          id={locationId}
-          value={values.location}
-          projectName={values.projectName}
-          error={errors.location}
-          onChange={(location) => setField('location', location)}
-        />
+      <FormField inputId={locationId} label="Địa điểm" isRequired={values.type !== 'CALLBACK'} error={errors.location} hint="Bấm biểu tượng định vị để dùng văn phòng bán hàng của dự án khách quan tâm">
+        <LocationInput id={locationId} value={values.location} officeLocation={getProjectOfficeLocation(firstProject)} error={errors.location} onChange={(location) => setField('location', location)} />
       </FormField>
     </div>
   );
 };
 
-export const DetailsField = ({ form }: FieldGroupProps) => {
+export const NoteField = ({ form }: FieldGroupProps) => {
   const { values, errors, setField } = form;
-  const detailsId = getFieldId('details');
-  const isOtherPurpose = values.type === 'khac';
+  const noteId = getFieldId('note');
+  const isOtherPurpose = values.type === 'OTHER';
 
   return (
     <FormField
-      inputId={detailsId}
-      label="Chi tiết trao đổi & nhiệm vụ chuẩn bị"
+      inputId={noteId}
+      label="Ghi chú / chuẩn bị"
       isRequired={isOtherPurpose}
-      error={errors.details}
+      error={errors.note}
       hint={
         <span className="flex items-center justify-between gap-2">
-          <span>{isOtherPurpose ? 'Ghi rõ mục đích buổi hẹn' : 'Ghi chú nội bộ cho chuyên viên tư vấn và quản lý'}</span>
+          <span>{isOtherPurpose ? 'Ghi rõ mục đích buổi hẹn' : 'Ghi chú nội bộ cho người thực hiện'}</span>
           <span className="shrink-0 font-medium tabular-nums">
-            {values.details.length} / {DETAILS_MAX_LENGTH}
+            {values.note.length} / {NOTE_MAX_LENGTH}
           </span>
         </span>
       }
     >
       <textarea
-        id={detailsId}
+        id={noteId}
         rows={4}
-        value={values.details}
-        maxLength={DETAILS_MAX_LENGTH}
-        onChange={(event) => setField('details', event.target.value)}
-        placeholder="VD: Khách quan tâm tầng cao view hồ. Chuẩn bị bảng tính dòng tiền, brochure và 02 bản thỏa thuận đặt cọc."
-        className={getTextareaClass(Boolean(errors.details))}
-        {...getFieldA11yProps(getErrorId(detailsId), errors.details)}
+        value={values.note}
+        maxLength={NOTE_MAX_LENGTH}
+        onChange={(event) => setField('note', event.target.value)}
+        placeholder="VD: Khách quan tâm tầng cao view hồ, cần chuẩn bị bảng tính dòng tiền."
+        className={getTextareaClass(Boolean(errors.note))}
+        {...getFieldA11yProps(getErrorId(noteId), errors.note)}
       />
     </FormField>
   );
 };
 
-export const StaffFields = ({ form }: FieldGroupProps) => {
-  const { values, errors, setField } = form;
-  const leadId = getFieldId('leadStaffId');
-  const supportId = getFieldId('supportStaffId');
+/** Người thực hiện: chọn trong nhóm chăm sóc của khách (04 §3.5 `assigneeId`). */
+export const AssigneeField = ({ form }: FieldGroupProps) => {
+  const { values, errors, setField, selectedCustomer } = form;
+  const assigneeId = getFieldId('assigneeId');
+  const members = selectedCustomer?.careTeam ?? [];
 
   return (
-    <div className="space-y-4">
-      <FormField inputId={leadId} label="Người phụ trách chính" isRequired error={errors.leadStaffId}>
-        <SelectInput
-          id={leadId}
-          value={values.leadStaffId}
-          onChange={(event) => setField('leadStaffId', event.target.value)}
-          icon={UserRound}
-          hasError={Boolean(errors.leadStaffId)}
-          options={STAFF_OPTIONS.map((staff) => ({ value: staff.id, label: staff.name }))}
-          {...getFieldA11yProps(getErrorId(leadId), errors.leadStaffId)}
-        />
-      </FormField>
-      <FormField inputId={supportId} label="Cộng sự / quản lý hỗ trợ (tùy chọn)">
-        <SelectInput
-          id={supportId}
-          value={values.supportStaffId}
-          onChange={(event) => setField('supportStaffId', event.target.value)}
-          icon={UserRound}
-          emptyLabel="Không có người hỗ trợ"
-          options={STAFF_OPTIONS.filter((staff) => staff.id !== values.leadStaffId).map((staff) => ({ value: staff.id, label: staff.name }))}
-        />
-      </FormField>
-    </div>
+    <FormField inputId={assigneeId} label="Người thực hiện" isRequired error={errors.assigneeId} hint={members.length === 0 ? 'Khách chưa có nhóm chăm sóc: lịch giao cho bạn.' : 'Chỉ chọn trong nhóm chăm sóc của khách.'}>
+      <SelectInput
+        id={assigneeId}
+        value={values.assigneeId}
+        onChange={(event) => setField('assigneeId', event.target.value)}
+        icon={UserRound}
+        disabled={members.length === 0}
+        hasError={Boolean(errors.assigneeId)}
+        options={
+          members.length > 0
+            ? members.map((member) => ({ value: member.user.id, label: `${member.user.fullName}${member.role === 'PRIMARY' ? ' (phụ trách chính)' : ''}` }))
+            : [{ value: values.assigneeId, label: 'Tôi' }]
+        }
+        {...getFieldA11yProps(getErrorId(assigneeId), errors.assigneeId)}
+      />
+    </FormField>
   );
 };
 
@@ -217,46 +181,37 @@ const ToggleRow = ({ title, description, isChecked, onChange }: ToggleRowProps) 
 
 export const ReminderFields = ({ form }: FieldGroupProps) => {
   const { values, setField } = form;
-  const reminderId = getFieldId('reminderBefore');
+  const reminderId = getFieldId('remindBeforeMinutes');
 
   return (
     <div className="space-y-3">
-      <FormField inputId={reminderId} label="Thông báo nhắc trước">
+      <FormField inputId={reminderId} label="Nhắc trước">
         <SelectInput
           id={reminderId}
-          value={values.reminderBefore}
-          onChange={(event) => setField('reminderBefore', event.target.value)}
+          value={String(values.remindBeforeMinutes)}
+          onChange={(event) => setField('remindBeforeMinutes', Number(event.target.value))}
           icon={BellRing}
-          options={REMINDER_OPTIONS}
+          options={REMINDER_OPTIONS.map((option) => ({ value: String(option.minutes), label: option.label }))}
         />
       </FormField>
-      <ToggleRow
-        title="Tự động gửi SMS / Zalo ZNS"
-        description="Gửi thiệp mời xác nhận lịch đến khách"
-        isChecked={values.smsZnsAuto}
-        onChange={(isChecked) => setField('smsZnsAuto', isChecked)}
-      />
-      <ToggleRow
-        title="Đồng bộ Google & Outlook"
-        description="Tạo sự kiện trong Calendar chuyên viên"
-        isChecked={values.calendarSync}
-        onChange={(isChecked) => setField('calendarSync', isChecked)}
-      />
+      {/* Gửi SMS/ZNS + đồng bộ lịch: tính năng giai đoạn sau, ẩn sau cờ (mặc định tắt). */}
+      {CRM_FEATURE_FLAGS.isAppointmentNotifySyncEnabled && (
+        <>
+          <ToggleRow title="Tự động gửi SMS / Zalo ZNS" description="Gửi tin xác nhận lịch đến khách" isChecked={values.smsZnsAuto} onChange={(isChecked) => setField('smsZnsAuto', isChecked)} />
+          <ToggleRow title="Đồng bộ Google & Outlook" description="Tạo sự kiện trong lịch của người thực hiện" isChecked={values.calendarSync} onChange={(isChecked) => setField('calendarSync', isChecked)} />
+        </>
+      )}
     </div>
   );
 };
 
-/** Thông báo trong trang (mẫu Admin `ExternalLogsScreen.tsx:194-199`, tông brand) về luồng đồng bộ sau khi tạo. */
-interface SyncNoticeProps {
-  leadName: string;
-}
-
-export const SyncNotice = ({ leadName }: SyncNoticeProps) => (
+/** Thông báo trong trang về nơi lịch hẹn sẽ xuất hiện sau khi tạo. */
+export const SyncNotice = ({ assigneeName }: { assigneeName: string }) => (
   <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 text-brand-600 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400">
     <Info size={20} aria-hidden="true" className="mt-0.5 shrink-0" />
     <p className="text-theme-sm leading-relaxed text-gray-700 dark:text-gray-300">
-      Lịch hẹn sau khi tạo sẽ tự động đồng bộ vào mục <strong className="font-semibold">“Việc hôm nay”</strong> của {leadName || 'người phụ trách'} và
-      gửi lời nhắc trên lịch di động của ban quản lý STND.
+      Lịch hẹn sau khi tạo sẽ hiện trong mục <strong className="font-semibold">“Việc hôm nay”</strong> của {assigneeName || 'người thực hiện'} vào đúng ngày hẹn
+      và cập nhật cột "Hẹn" của khách.
     </p>
   </div>
 );

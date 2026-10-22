@@ -1,773 +1,345 @@
 /**
- * Bộ mock hợp nhất (Admin + Mobile) theo mô hình `src/types/crm.ts`.
+ * Dữ liệu mẫu của prototype CRM — dựng theo mô hình tài liệu 04 (`types/crm.ts`).
  *
- * - Khách trùng giữa 2 bản (An, Bích, Nam, Trang) được gộp về id Admin `CUST-00x`,
- *   bổ sung trường Mobile (code, aiSuggestion, notesSummary, remindBirthday).
- * - Khách chỉ có ở Mobile (Lê Hoàng Long, Đặng Quốc Huy) và khách chỉ được nhắc trong
- *   việc/lịch hẹn của Admin (Hoàng Minh Đức, Phạm Thanh Mai, Bùi Minh Phương) được tạo đủ hồ sơ.
- * - Lịch hẹn & việc lấy tên/SĐT từ hồ sơ khách (snapshot) -> không còn lệch id/tên như bản gốc.
+ * Nhất quán với quy tắc nghiệp vụ: tiến độ KHÔNG lưu (suy ra từ 4 tiêu chí), tình trạng tham chiếu danh mục
+ * (4 giá trị đúng tên), phân công theo userId với đúng 1 phụ trách chính, SĐT E.164, mọi thời điểm là ISO có năm.
+ * Thời điểm được dựng TƯƠNG ĐỐI theo ngày tạo dữ liệu (`now`) để màn "Việc hôm nay" luôn có việc quá hạn / hôm nay / sắp tới.
  */
-import { getAppointmentCustomerSnapshot } from '@crm/lib/appointmentAdapters';
-import { createEmptyCustomer } from '@crm/lib/customerFactory';
-import { getInitials } from '@crm/lib/staff';
-import type {
-  Appointment,
-  CareLog,
-  Customer,
-  DailyTask,
-  FilterOptions,
-  GalleryImage,
-  Project,
-  StaffMember,
-  StaffPerformance,
-} from '@crm/types/crm';
+import { addDaysToDateKey, getVnTodayKey, vnDateTimeToIso } from '@crm/lib/dateTime';
+import {
+  buildCareTeam,
+  buildSearchText,
+  computeOccasions,
+  computePersonaCompleteness,
+  createEmptyCriteria,
+  getPrimaryUserId,
+} from '@crm/lib/customerRules';
+import type { Appointment, CareLog, CriterionKey, Customer, PersonaValue } from '@crm/types/crm';
+import { PERSONA_FIELDS } from './personaFields';
+import { SEED_USERS } from './seedCatalogs';
 
-// ---------------------------------------------------------------------------
-// Hằng số hình ảnh / người dùng hiện tại
-// ---------------------------------------------------------------------------
+type PersonaSeed = Record<string, string | string[] | boolean | [number, number]>;
 
-export const AVATAR_HANH =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuA2Zz1nL2b3K4FBt4QXBuj-n4XiOg7EJLfGN7z8_mzfiAdGIlP-DxXRSGnWNc0sq4PloLCiSRxcMEI98r_MEuY1HthNmlQqIp1BNPVVYwkZ5XieEReWvpex7xOmnB_XgEUBubQ-grYomRU1CKlyYqiolieM2AagTFnCy4tmSizNeuMcWxZ3uDrhqgBJYMbArUi0RqbJIHC7gGzYFafAncu3AygEbezOJVhJZ4994WXoeyrUeMS6Lh3k';
+interface CustomerSeed {
+  id: string;
+  code: string;
+  fullName: string;
+  phone: string;
+  email?: string;
+  statusId: string;
+  sourceId?: string;
+  projectIds?: string[];
+  areaId?: string;
+  tagIds?: string[];
+  nationalId?: string;
+  primaryId: string;
+  memberIds?: string[];
+  doneCriteria?: CriterionKey[];
+  criteriaText?: Partial<Record<CriterionKey, string>>;
+  persona?: PersonaSeed;
+  notes?: string;
+  createdDaysAgo: number;
+}
 
-/** Người dùng đang đăng nhập (dùng làm tác giả nhật ký mới). */
-export const CURRENT_USER = {
-  displayName: 'Hạnh ★ (Chính)',
-  fullName: 'Trần Mỹ Hạnh',
-  initials: 'TH',
-  role: 'Trưởng nhóm kinh doanh',
-  email: 'admin@stnd.vn',
-  team: 'Nhóm C8',
-  avatarUrl: AVATAR_HANH,
-} as const;
+type AtFn = (dayOffset: number, time: string) => string;
 
-/** Ảnh thực tế dự án (Admin INITIAL_GALLERY_IMAGES). */
-export const GALLERY_IMAGES: GalleryImage[] = [
-  {
-    src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC5InvsZp7ETa2o4XFSOxeaNbrAiNM7v1xkwsAMFDwkVpetCEIFV_BNm5FNHdLdTPsWYUUzNRDXVXd-kqS_JC8M-BnLMfMXpfMsU5QzIS1G2VtjbImom2DmCDqVRE53iZKuzNgGKQn_on5iKcpD_jhI3M0zLgnDNERwv1qj5_sAKOZ6FC796IJg1-TlsKlJfxIt3W2nh564a17HRsL_VmGuaEUyCV6soPJ0r7lU0D0R3O8IpHwAEjuh',
-    caption: "Sa bàn thực tế dự án Q'Terra tại Sales Gallery",
-  },
-  {
-    src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBAcmtLpb1k5S75xv79QbAMYlLgZWefyqbUzHoOdw6YqVwdqX1zpRpSqOu5vBHDHd9FnXhKAJ0kVY_k5SQylyJ7MMITeh-Gxd4dGjPd_XFF8zniPcxoimGVx-hleCZHMWsRm0SntdIywcy47JsRuFt3etUxx26lgHZxAP6xpBKB-djkYajB-OD87C64B3qeuBsJw0tdjQUYK7zOM2uhfq1U_eiTgJ_YHeethna7Jgvz4olSb1-fJYeG',
-    caption: 'Phòng khách căn hộ mẫu 3 Phòng ngủ (3PN)',
-  },
-  {
-    src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD4rCtwxz26QAjIjGRJKH9SspIqrOcP0EqrNt8pPPkJp4maR2b22z1QEoexgNT-264Oave_EUWhxV2RNZlphXPE6OY5LGF3gpbtAuzW8oll1WDDAVLHKvMa4wy1MVkmGhedNOkOwt5T7RhJwMDNmtlJglimkFjN5wryEFTNOz7BbN5SZb-T0IMlkWSpEZbQY4aI6rWKaRtGSvi2nhNtRGt8gnylc0BRQBUufiHtvCukwB1pjijKBUyX',
-    caption: 'Ban công căn hộ view sông Nam Sài Gòn',
-  },
-  {
-    src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC3nyHvTUFF-CfhjyIoPLcnTVPK1CR8KnOHZ9BsZQI_OwVNtZspX-WSxv_63cp231YR4pNgE36oHsPLJksGGtE3HzQzdxDy6NRNBsRNwhQ3Guc5Y1cKj_03X5sqWUIPkvVR15EUO_S5ZOgd4KndLONf2XvMfF31nPO9EU12eCt8Mm1FHYWXIiR2QPhPxWxkb1KWD3M99Be6kFcskR0iiJRGroC5WjJP9FEAkQpgRi8SJhaV-7Hgf_mJ',
-    caption: 'Mặt bằng tổng thể công viên ven sông',
-  },
-  {
-    src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDUSCl_2pIJKaIqC8KTTroN5GGz9Qmorv3RdLM4l7b6tyZGowa-etca7xZyux0Bm4XfF_2PcvCDTq5Mns88axMHyrkLylc_ZV66ntlB5svpT0mVSvMG48wAdY2VR-L2ahvbMYW6ahJLx3iKzvx5iQOUsH7uOVF29nVWY3YkvpIaD4PgSDuqrnU-WzTPHzCAmodfIEBYvoBsxgWnvVdKqmyCckAS8qT0oo5M_DFI1jkS0tMwwETGGxIo',
-    caption: 'Phòng ngủ Master hoàn thiện nội thất tiêu chuẩn quốc tế',
-  },
-];
+/** Giá trị seed -> PersonaValue theo kiểu trường (DATE nhận "YYYY-MM-DD", NUMBER_RANGE nhận [từ, đến] tỷ). */
+const toPersonaValues = (seed: PersonaSeed, updatedBy: string, updatedAt: string): PersonaValue[] =>
+  Object.entries(seed).map(([fieldKey, raw]) => {
+    const definition = PERSONA_FIELDS.find((field) => field.key === fieldKey);
+    const base = { fieldKey, source: 'CUSTOMER_SHARED' as const, updatedBy, updatedAt };
+    switch (definition?.type) {
+      case 'DATE':
+        return { ...base, valueDate: String(raw) };
+      case 'NUMBER_RANGE': {
+        const [from, to] = raw as [number, number];
+        return { ...base, valueNumber: from * 1_000_000_000, valueNumberTo: to * 1_000_000_000 };
+      }
+      case 'MULTI_SELECT':
+        return { ...base, valueOptions: raw as string[] };
+      case 'BOOLEAN':
+        return { ...base, valueBoolean: Boolean(raw) };
+      default:
+        return { ...base, valueText: String(raw) };
+    }
+  });
 
-/** Ảnh bổ sung từ timeline bản Mobile. */
-const MOBILE_EXTRA_IMAGES: GalleryImage[] = [
-  {
-    src: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80',
-    caption: 'Phòng ngủ Master view thoáng',
-  },
-  {
-    src: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=600&q=80',
-    caption: 'Khu vực bếp & bàn ăn cao cấp',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Danh mục dự án / nhân viên
-// ---------------------------------------------------------------------------
-
-export const PROJECTS: Project[] = [
-  { id: 'proj-1', name: "Q'Terra", fullName: "Q'Terra Residential Suites", location: 'Thủ Đức, TP.HCM', price: '95 - 130 triệu/m²', status: 'Đang mở bán Giai đoạn 2', segment: 'Cao cấp' },
-  { id: 'proj-2', name: 'The Privia', fullName: 'The Privia', location: 'Bình Tân, TP.HCM', price: '48 - 55 triệu/m²', status: 'Sắp bàn giao', segment: 'Trung cao cấp' },
-  { id: 'proj-3', name: 'Ecopark Grand', fullName: 'Ecopark Grand', location: 'Văn Giang, Hưng Yên', price: '120 - 180 triệu/m²', status: 'Mở bán Vịnh Đảo', segment: 'Hạng sang' },
-  { id: 'proj-4', name: 'Vinhomes Ocean Park', fullName: 'Vinhomes Ocean Park', location: 'Gia Lâm, Hà Nội', price: '45 - 90 triệu/m²', status: 'Đang vận hành', segment: 'Đại đô thị' },
-  { id: 'proj-5', name: 'Lumiere Riverside', fullName: 'Lumiere Riverside', location: 'Thảo Điền, TP.HCM', price: '110 - 150 triệu/m²', status: 'Bàn giao hoàn thiện', segment: 'Hạng sang' },
-  { id: 'proj-6', name: 'Masteri Centre Point', fullName: 'Masteri Centre Point', location: 'Thủ Đức, TP.HCM', price: '65 - 85 triệu/m²', status: 'Đã nhận nhà', segment: 'Cao cấp' },
-  { id: 'proj-7', name: 'Aqua City Waterfront', fullName: 'Aqua City Waterfront', location: 'Biên Hòa, Đồng Nai', price: '60 - 95 triệu/m²', status: 'Đang mở bán', segment: 'Đô thị sinh thái' },
-  { id: 'proj-8', name: 'Vinhomes Grand Park', fullName: 'Vinhomes Grand Park', location: 'Thủ Đức, TP.HCM', price: '50 - 75 triệu/m²', status: 'Đang vận hành', segment: 'Đại đô thị' },
-];
-
-/** Danh sách tên dự án (Mobile AVAILABLE_PROJECTS dạng string[]). */
-export const PROJECT_NAMES: string[] = PROJECTS.map((project) => project.name);
-
-/**
- * Danh sách nhân viên — NGUỒN DUY NHẤT cho tên nhân viên trong mock: `Customer.staffLead/staffSupport`,
- * `Appointment.leadStaffName/supportStaff`, `DailyTask.assignee`, `StaffPerformance.name` đều lấy họ tên đầy đủ ở đây
- * (qua `staffName(id)`). Người dùng đăng nhập (`CURRENT_USER`, tài khoản "Admin" của prototype) = nhân viên `hanh`.
- */
-export const STAFF_LIST: StaffMember[] = [
-  { id: 'hanh', name: CURRENT_USER.fullName, role: 'Trưởng nhóm kinh doanh' },
-  { id: 'thao', name: 'Phan Thu Thảo', role: 'Chuyên viên kinh doanh' },
-  { id: 'tuan', name: 'Nguyễn Anh Tuấn', role: 'Chuyên viên tư vấn' },
-  { id: 'minh', name: 'Lê Quang Minh', role: 'Chuyên viên tư vấn dự án Privia' },
-  { id: 'tung', name: 'Vũ Thanh Tùng', role: 'Chuyên viên tư vấn' },
-  { id: 'trang', name: 'Nguyễn Thu Trang', role: 'Chuyên viên tư vấn' },
-  { id: 'vy', name: 'Đỗ Hà Vy', role: 'Chuyên viên hỗ trợ' },
-  { id: 'quan', name: 'Trần Hoàng Quân', role: 'Thực tập sinh kinh doanh' },
-];
-
-type StaffId = 'hanh' | 'thao' | 'tuan' | 'minh' | 'tung' | 'trang' | 'vy' | 'quan';
-
-/** Họ tên chuẩn theo id nhân viên (ném lỗi nếu gõ sai id trong mock). */
-const staffName = (staffId: StaffId): string => {
-  const staff = STAFF_LIST.find((member) => member.id === staffId);
-  if (!staff) throw new Error(`[mockData] Không có nhân viên "${staffId}" trong STAFF_LIST`);
-  return staff.name;
-};
-
-/** Hiệu suất nhân sự (số liệu mẫu cho màn Báo cáo) — tên + chữ viết tắt lấy từ STAFF_LIST. */
-const buildStaffPerformance = (staffId: StaffId, row: Omit<StaffPerformance, 'name' | 'avatarText'>): StaffPerformance => ({
-  ...row,
-  name: staffName(staffId),
-  avatarText: getInitials(staffName(staffId)),
-});
-
-export const INITIAL_STAFF_PERFORMANCE: StaffPerformance[] = [
-  buildStaffPerformance('hanh', { rank: 1, role: 'Trưởng nhóm kinh doanh (Leader)', avatarBg: 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-400', customersHandled: 48, hotLeads: 6, appointmentsCompleted: 15, salesOrDeposits: '2 cọc thành công', projectName: 'Dự án Diamond Riverside', kpiRate: 100 }),
-  buildStaffPerformance('thao', { rank: 2, role: 'Chuyên viên kinh doanh', avatarBg: 'bg-theme-purple-500/10 text-theme-purple-500', customersHandled: 35, hotLeads: 4, appointmentsCompleted: 11, salesOrDeposits: '1 cọc thành công', projectName: 'Biệt thự Park Villa', kpiRate: 85 }),
-  buildStaffPerformance('tuan', { rank: 3, role: 'Chuyên viên tư vấn', avatarBg: 'bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-500', customersHandled: 28, hotLeads: 2, appointmentsCompleted: 8, salesOrDeposits: 'Chờ duyệt hợp đồng', projectName: 'Shophouse Center', kpiRate: 70 }),
-  buildStaffPerformance('minh', { rank: 4, role: 'Chuyên viên tư vấn dự án Privia', avatarBg: 'bg-blue-light-50 text-blue-light-600 dark:bg-blue-light-500/15 dark:text-blue-light-500', customersHandled: 22, hotLeads: 2, appointmentsCompleted: 4, salesOrDeposits: 'Đang chăm sóc nóng', projectName: 'Grand View Suite', kpiRate: 52 }),
-];
-
-/** Bộ lọc mặc định (theo bản Mobile). */
-export const DEFAULT_FILTERS: FilterOptions = {
-  search: '',
-  status: 'caring',
-  project: 'all',
-  projectsSelected: ["Q'Terra", 'The Privia'],
-  staff: 'all',
-  timeRange: 'month',
-};
-
-// ---------------------------------------------------------------------------
-// Khách hàng
-// ---------------------------------------------------------------------------
-
-export const INITIAL_CUSTOMERS: Customer[] = [
-  createEmptyCustomer({
-    id: 'CUST-001',
-    code: '#01',
-    name: 'Nguyễn Văn An',
-    phone: '0912 345 678',
-    email: 'nguyen.vanan@example.com',
-    idNumber: '0790 9200 1234',
-    isVip: true,
-    vipTier: 'VIP Platinum',
-    status: 'Có quan tâm',
-    progressPercentage: 50,
-    progressStep: 'Đã đi xem dự án',
-    currentResidence: 'Quận 7, TP. Hồ Chí Minh',
-    hometown: 'Hà Nội',
-    birthDate: '15/11/1984',
-    remindBirthday: true,
-    maritalStatus: 'Đã kết hôn',
-    children: '2 con nhỏ, học trường quốc tế',
-    occupation: 'Doanh nhân / Giám đốc công ty XNK Logistics',
-    businessField: 'Xuất nhập khẩu & Vận tải',
-    decisionMaker: 'Vợ chồng cùng duyệt',
-    lifestyleTags: ['Căn hộ view sông', 'Golf', 'Thích tầng cao', 'Thanh toán linh hoạt'],
-    freeTimeSlot: '19:00 - 20:30 (Ưu tiên liên hệ qua Zalo)',
-    preferredContactMethod: 'Zalo',
-    preferredSalutation: 'Anh An',
-    staffLead: staffName('hanh'),
-    staffSupport: [staffName('thao')],
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ["Q'Terra", 'The Privia'],
-    budgetMin: 5,
-    budgetMax: 7,
-    equityRatio: '60% (Cần vay 40%)',
-    loanIncentive: true,
-    propertyType: 'Căn hộ chung cư',
-    bedroomType: '3PN (85-115m²)',
-    purchasePurposes: ['Đầu tư lâu dài & Cho thuê', 'Tích sản cho con'],
-    criteriaPriorities: ['View sông / Công viên', 'Tầng cao thoáng', 'Gần trường quốc tế'],
-    searchArea: 'Quận 7, TP.HCM',
-    specificLocation: 'Khu vực Phú Mỹ Hưng, ven sông Nam Sài Gòn',
-    leadSource: "Facebook Ads - Chiến dịch Q'Terra",
-    targetPurchaseTime: 'Quý 4/2026 (Khi ra hàng đợt 2)',
-    notes: 'Khách hàng muốn nhận thông tin dự án qua Zalo trước 20:00. Ưu tiên hướng Đông Nam và tầng trên 15.',
-    aiSuggestion: 'Gửi thông tin mới của dự án, thử gọi lại vào buổi tối (sau 19h)',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Căn hộ 3PN cao cấp, view sông, mục đích ở & đầu tư lâu dài.' },
-      motivation: { achieved: false, percent: 25, text: 'Lý do đổi nhà / chuyển về gần trường quốc tế cho con học kỳ tới đang chờ gia đình thống nhất.' },
-      finance: { achieved: true, percent: 25, text: 'Ngân sách 5 - 7 tỷ, sẵn vốn tự có 60%, cần hỗ trợ vay 40% ân hạn nợ gốc.' },
-      timing: { achieved: false, percent: 25, text: 'Dự kiến chốt trong Quý 4/2026 khi ra hàng đợt 2 kèm bảng tính giá chi tiết.' },
-    },
-    nextAppointmentDate: '09/10/2026',
-    nextAppointmentTime: '15:30 Chiều',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-002',
-    code: '#02',
-    name: 'Trần Thị Bích',
-    phone: '0988 333 112',
-    email: 'bich.tran@investor.vn',
-    idNumber: '0240 8800 8721',
-    isVip: true,
-    vipTier: 'VIP',
-    status: 'Khách net',
-    progressPercentage: 75,
-    progressStep: 'Duyệt bảng giá CĐT',
-    currentResidence: 'Nam Từ Liêm, Hà Nội',
-    hometown: 'Nam Định',
-    birthDate: '22/04/1988',
-    remindBirthday: false,
-    maritalStatus: 'Đã kết hôn',
-    children: '1 bé 4 tuổi',
-    occupation: 'Trưởng phòng Tài chính Tập đoàn Bán lẻ',
-    businessField: 'Tài chính thương mại',
-    decisionMaker: 'Khách tự quyết',
-    lifestyleTags: ['Căn hộ 2PN', 'Gần tàu điện', 'Thanh toán sớm'],
-    freeTimeSlot: '14:00 - 16:00',
-    preferredContactMethod: 'Điện thoại',
-    preferredSalutation: 'Chị Bích',
-    staffLead: staffName('minh'),
-    staffSupport: [],
-    teamGroup: 'Nhóm C2',
-    interestedProjects: ['The Privia', "Q'Terra"],
-    budgetMin: 3.2,
-    budgetMax: 3.8,
-    equityRatio: '100% Tiền mặt',
-    loanIncentive: false,
-    propertyType: 'Căn hộ chung cư',
-    bedroomType: '2PN (65-78m²)',
-    purchasePurposes: ['Đầu tư giữ tiền', 'Cho thuê expat'],
-    criteriaPriorities: ['Tầng trung', 'Nội thất chuẩn', 'Gần siêu thị'],
-    searchArea: 'Quận Bình Tân, TP.HCM',
-    specificLocation: 'Mặt tiền An Dương Vương',
-    leadSource: 'Website STND',
-    targetPurchaseTime: 'Tháng 10/2026',
-    notes: 'Khách quan tâm căn 2PN-B08 The Privia giá 3.42 tỷ, chuẩn bị ký thỏa thuận đặt cọc.',
-    aiSuggestion: 'Chuẩn bị sẵn 02 phương án chiết khấu thanh toán sớm 95% và phương án vay 0% lãi suất',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Căn 2PN The Privia cho thuê.' },
-      motivation: { achieved: true, percent: 25, text: 'Dòng tiền nhàn rỗi giải ngân trước quý 4.' },
-      finance: { achieved: true, percent: 25, text: '100% tiền mặt sẵn sàng tài khoản.' },
-      timing: { achieved: false, percent: 25, text: 'Đang đợi kiểm tra điều khoản bảo lãnh tiến độ.' },
-    },
-    nextAppointmentDate: '12/10/2026',
-    nextAppointmentTime: '10:00 Sáng',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-003',
-    code: '#03',
-    name: 'Lê Hoàng Nam',
-    phone: '0912 888 921',
-    email: 'hoangnam.le@holding.vn',
-    idNumber: '0010 8500 5589',
-    isVip: true,
-    vipTier: 'VIP',
-    status: 'Có quan tâm',
-    progressPercentage: 25,
-    progressStep: 'Mới gửi layout căn hộ',
-    currentResidence: 'Thủ Đức, TP. Hồ Chí Minh',
-    hometown: 'Đà Nẵng',
-    birthDate: '08/09/1980',
-    maritalStatus: 'Đã kết hôn',
-    children: '2 con',
-    occupation: 'Chủ chuỗi nhà hàng ẩm thực',
-    businessField: 'F&B & Dịch vụ',
-    decisionMaker: 'Vợ chồng cùng duyệt',
-    lifestyleTags: ['Penthouse', 'View panorama', 'Golf'],
-    freeTimeSlot: '15:00 - 17:30',
-    preferredContactMethod: 'Gặp mặt',
-    preferredSalutation: 'Anh Nam',
-    staffLead: staffName('tung'),
-    staffSupport: [staffName('vy')],
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ["Q'Terra"],
-    budgetMin: 8,
-    budgetMax: 12,
-    equityRatio: '60% (Cần vay 40%)',
-    loanIncentive: true,
-    propertyType: 'Căn hộ chung cư',
-    bedroomType: '3PN (85-115m²)',
-    purchasePurposes: ['Ở thực cao cấp', 'Tích sản'],
-    criteriaPriorities: ['Căn góc view sông', 'Trần cao', 'Thang máy riêng'],
-    searchArea: 'Thủ Đức, TP.HCM',
-    specificLocation: 'Khu vực Thảo Điền / An Phú',
-    leadSource: 'Sự kiện mở bán đợt 1',
-    targetPurchaseTime: 'Tháng 11/2026',
-    notes: 'Đã tương tác 4 cuộc gọi gần nhất. Cần xem bản vẽ kỹ thuật tháp Aview và phụ lục nội thất bàn giao.',
-    notesSummary: 'Quan tâm phân khu tháp Sapphire, đang so sánh với Eaton Park.',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Căn 3PN Tháp Aview view sông.' },
-      motivation: { achieved: true, percent: 25, text: 'Chuyển nhà để con học BIS Thảo Điền.' },
-      finance: { achieved: true, percent: 25, text: 'Tài chính 10 tỷ rất vững.' },
-      timing: { achieved: false, percent: 25, text: 'Chờ mở bán chính thức giai đoạn 2.' },
-    },
-    nextAppointmentDate: '15/10/2026',
-    nextAppointmentTime: '09:15 Sáng',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-004',
-    code: '#04',
-    name: 'Phạm Quỳnh Trang',
-    phone: '0977 555 562',
-    email: 'quynhtrang@gmail.com',
-    idNumber: '0791 9500 4412',
-    isVip: false,
-    status: 'Có quan tâm',
-    progressPercentage: 100,
-    progressStep: 'Chuẩn bị cọc giữ chỗ',
-    currentResidence: 'Quận 1, TP.HCM',
-    hometown: 'Hải Phòng',
-    birthDate: '19/02/1993',
-    remindBirthday: true,
-    maritalStatus: 'Độc thân',
-    children: 'Chưa có',
-    occupation: 'Chuyên gia Marketing Fintech',
-    businessField: 'Công nghệ thông tin',
-    decisionMaker: 'Khách tự quyết',
-    lifestyleTags: ['Studio', 'Gym', 'Smart home'],
-    freeTimeSlot: '18:00 - 21:00',
-    preferredContactMethod: 'Zalo',
-    preferredSalutation: 'Chị Trang',
-    staffLead: staffName('hanh'),
-    staffSupport: [],
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ['The Privia'],
-    budgetMin: 2.8,
-    budgetMax: 3.5,
-    equityRatio: '50% (Cần vay 50%)',
-    loanIncentive: true,
-    propertyType: 'Căn hộ chung cư',
-    bedroomType: '2PN (65-78m²)',
-    purchasePurposes: ['Ở một mình & làm việc', 'Tích lũy tài sản'],
-    criteriaPriorities: ['Ban công thoáng', 'An ninh 24/7'],
-    searchArea: 'Khu Tây TP.HCM',
-    specificLocation: 'Gần công viên Phú Lâm',
-    leadSource: 'Facebook Ads',
-    targetPurchaseTime: 'Ngay trong tuần',
-    notes: 'Rất ưng căn 2PN tầng 12, đã nộp phiếu nguyện vọng.',
-    notesSummary: 'Chuẩn bị hoàn tất hợp đồng mua bán, hẹn kiểm tra đối chiếu phụ lục hoàn thiện.',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Căn 2PN hoàn thiện cơ bản.' },
-      motivation: { achieved: true, percent: 25, text: 'Ra ở riêng, tự chủ tài chính.' },
-      finance: { achieved: true, percent: 25, text: 'Đã duyệt sơ bộ hạn mức vay Vietcombank.' },
-      timing: { achieved: true, percent: 25, text: 'Chốt cọc ngay khi rổ hàng ra căn 12.06.' },
-    },
-    nextAppointmentDate: 'Hôm nay',
-    nextAppointmentTime: '16:00',
-    nextAppointmentNote: 'Ký phiếu nguyện vọng',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-005',
-    code: '#05',
-    name: 'Đặng Tuấn Kiệt',
-    phone: '0934 771 650',
-    email: 'tuankiet.dang@vinametal.com',
-    idNumber: '0010 7900 6650',
-    isVip: true,
-    vipTier: 'VIP',
-    status: 'Khách net',
-    progressPercentage: 75,
-    progressStep: 'Chờ duyệt gói vay bank',
-    currentResidence: 'Gia Lâm, Hà Nội',
-    hometown: 'Bắc Ninh',
-    birthDate: '10/06/1979',
-    maritalStatus: 'Đã kết hôn',
-    children: '3 con',
-    occupation: 'Giám đốc nhà máy cơ khí chính xác',
-    businessField: 'Sản xuất công nghiệp',
-    decisionMaker: 'Tham khảo gia đình',
-    lifestyleTags: ['Biệt thự vườn', 'Không gian xanh', 'Hồ điều hòa'],
-    freeTimeSlot: '11:30 - 13:30',
-    preferredContactMethod: 'Điện thoại',
-    preferredSalutation: 'Anh Kiệt',
-    staffLead: staffName('quan'),
-    staffSupport: [],
-    teamGroup: 'Nhóm C1',
-    interestedProjects: ['Vinhomes Ocean Park'],
-    budgetMin: 14,
-    budgetMax: 18,
-    equityRatio: '60% (Cần vay 40%)',
-    loanIncentive: true,
-    propertyType: 'Biệt thự / Villa',
-    bedroomType: 'Duplex / Penthouse',
-    purchasePurposes: ['Nghỉ dưỡng cuối tuần', 'Tài sản truyền đời'],
-    criteriaPriorities: ['Mặt hồ', 'Sân vườn rộng'],
-    searchArea: 'Gia Lâm, Hà Nội',
-    specificLocation: 'Phân khu Ngọc Trai',
-    leadSource: 'Giới thiệu từ khách VIP cũ',
-    targetPurchaseTime: 'Tháng 10/2026',
-    notes: 'Khách có nhu cầu chuyển nhượng suất mua sớm, cần gặp trực tiếp trưởng phòng kinh doanh.',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Biệt thự song lập phân khu Ngọc Trai.' },
-      motivation: { achieved: true, percent: 25, text: 'Nâng cấp không gian sống cho gia đình 3 thế hệ.' },
-      finance: { achieved: true, percent: 25, text: 'Vốn tự có 10 tỷ, vay ưu đãi 6 tỷ.' },
-      timing: { achieved: false, percent: 25, text: 'Đợi ngân hàng thẩm định tài sản thế chấp.' },
-    },
-    nextAppointmentDate: '11/10/2026',
-    nextAppointmentTime: '14:00 Chiều',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-006',
-    code: '#06',
-    name: 'Vũ Đình Quân',
-    phone: '0918 654 319',
-    email: 'quan.vudinh@logistics.vn',
-    idNumber: '0310 8200 3319',
-    isVip: false,
-    status: 'Có quan tâm',
-    progressPercentage: 50,
-    progressStep: 'Thăm sa bàn dự án',
-    currentResidence: 'Văn Giang, Hưng Yên',
-    hometown: 'Hải Dương',
-    birthDate: '03/12/1986',
-    maritalStatus: 'Đã kết hôn',
-    children: '2 con',
-    occupation: 'Kinh doanh phụ tùng ô tô',
-    businessField: 'Bán lẻ & Thương mại',
-    decisionMaker: 'Vợ chồng cùng duyệt',
-    lifestyleTags: ['Shophouse', 'Gần trường đại học', 'Kinh doanh'],
-    freeTimeSlot: '09:00 - 11:00',
-    preferredContactMethod: 'Gặp mặt',
-    preferredSalutation: 'Anh Quân',
-    staffLead: staffName('hanh'),
-    staffSupport: [],
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ['Ecopark Grand'],
-    budgetMin: 6,
-    budgetMax: 9,
-    equityRatio: '50% (Cần vay 50%)',
-    loanIncentive: true,
-    propertyType: 'Nhà phố / Shophouse',
-    bedroomType: '3PN (85-115m²)',
-    purchasePurposes: ['Vừa ở vừa kinh doanh'],
-    criteriaPriorities: ['Mặt tiền đường lớn', 'Chỗ đỗ xe rộng'],
-    searchArea: 'Văn Giang & TP.HCM',
-    specificLocation: 'Mặt đường vịnh đảo',
-    leadSource: 'Website STND',
-    targetPurchaseTime: 'Quý 4/2026',
-    notes: 'Hẹn dẫn khách xem thực tế nhà mẫu block B, kết hợp trao đổi hợp đồng cọc.',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Nhà phố thương mại kinh doanh cafe/spa.' },
-      motivation: { achieved: false, percent: 25, text: 'Đang khảo sát lưu lượng khách vãng lai.' },
-      finance: { achieved: true, percent: 25, text: 'Sẵn tiền mặt 4 tỷ, dòng tiền kinh doanh tốt.' },
-      timing: { achieved: false, percent: 25, text: 'Dự kiến chốt khi mở bán đợt cuối năm.' },
-    },
-    nextAppointmentDate: '14/10/2026',
-    nextAppointmentTime: '15:00 Chiều',
-  }),
-  // ----- Khách chỉ có ở bản Mobile (kh-05) -----
-  createEmptyCustomer({
-    id: 'CUST-007',
-    code: '#07',
-    name: 'Lê Hoàng Long',
-    phone: '0903 568 921',
-    email: 'long.le@holding.vn',
-    isVip: true,
-    vipTier: 'VIP Diamond',
-    status: 'Có quan tâm',
-    progressPercentage: 50,
-    progressStep: 'Hẹn xem nhà mẫu',
-    currentResidence: 'Phú Mỹ Hưng, Quận 7, TP.HCM',
-    hometown: 'Hà Nội',
-    birthDate: '19/09/1982',
-    maritalStatus: 'Đã kết hôn',
-    children: '3 con',
-    occupation: 'Tổng giám đốc công ty đầu tư tài chính',
-    businessField: 'Tài chính & Chứng khoán',
-    decisionMaker: 'Vợ chồng cùng duyệt',
-    lifestyleTags: ['Biệt thự đảo', 'Không gian xanh', 'Du thuyền & Sân golf'],
-    freeTimeSlot: '15:00 - 17:30 Chiều',
-    preferredContactMethod: 'Gặp mặt',
-    preferredSalutation: 'Anh Long',
-    staffLead: staffName('hanh'),
-    staffSupport: [staffName('minh')],
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ['Ecopark Grand', "Q'Terra"],
-    budgetMin: 15,
-    budgetMax: 28,
-    equityRatio: '100% Tiền mặt',
-    loanIncentive: false,
-    propertyType: 'Biệt thự / Villa',
-    bedroomType: '4PN',
-    purchasePurposes: ['Nghỉ dưỡng cuối tuần & Tích sản truyền đời'],
-    criteriaPriorities: ['Mặt nước ôm quanh', 'An ninh đa lớp 24/7', 'Bến đỗ du thuyền'],
-    searchArea: 'Khu Đông TP.HCM / Vùng ven sinh thái',
-    specificLocation: 'Khu biệt thự đảo sinh thái',
-    leadSource: 'Website STND',
-    targetPurchaseTime: 'Quý 4/2026',
-    notesSummary: 'Lịch hẹn xem nhà mẫu 15:30 chiều nay tại văn phòng bán hàng',
-    aiSuggestion: 'Chuẩn bị bộ brochure tài liệu tiến độ & quà tặng trải nghiệm',
-    c4Criteria: {
-      demand: { achieved: true, percent: 25, text: 'Biệt thự song lập view sông/hồ thoáng đãng.' },
-      motivation: { achieved: true, percent: 25, text: 'Tìm không gian sống trong lành tách biệt cho bố mẹ và con nhỏ.' },
-      finance: { achieved: true, percent: 25, text: 'Năng lực tài chính xuất sắc, chuẩn bị giải ngân tiền mặt.' },
-      timing: { achieved: false, percent: 25, text: 'Hẹn xem thực tế nhà mẫu chiều nay trước khi chọn căn đẹp.' },
-    },
-    nextAppointmentDate: 'Hôm nay',
-    nextAppointmentTime: '15:30',
-  }),
-  // ----- Khách chỉ có ở bản Mobile (kh-06) -----
-  createEmptyCustomer({
-    id: 'CUST-008',
-    code: '#08',
-    name: 'Đặng Quốc Huy',
-    phone: '0933 221 199',
-    email: 'huy.dang@fmcg.com',
-    status: 'Bỏ / Không nhu cầu',
-    progressPercentage: 25,
-    progressStep: 'Đã dừng chăm sóc',
-    currentResidence: 'TP. Thủ Dầu Một',
-    hometown: 'Bình Dương',
-    birthDate: '10/03/1985',
-    maritalStatus: 'Đã kết hôn',
-    occupation: 'Chủ xưởng cơ khí khuôn mẫu',
-    businessField: 'Cơ khí & Chế tạo',
-    decisionMaker: 'Khách tự quyết',
-    lifestyleTags: ['Đất nền', 'Kho bãi'],
-    freeTimeSlot: 'Sau 18:00',
-    preferredContactMethod: 'Điện thoại',
-    preferredSalutation: 'Anh Huy',
-    staffLead: staffName('tuan'),
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ['Masteri Centre Point'],
-    notesSummary: 'Khách đổi kế hoạch kinh doanh, chuyển tiền vào mở rộng xưởng sản xuất tại Bình Dương.',
-    nextAppointmentDate: '28/09/2026',
-  }),
-  // ----- Khách chỉ được nhắc trong việc hôm nay của Admin -----
-  createEmptyCustomer({
-    id: 'CUST-009',
-    code: '#09',
-    name: 'Hoàng Minh Đức',
-    phone: '0943 112 899',
-    email: 'duc.hoangminh@example.com',
-    status: 'Khách net',
-    progressPercentage: 75,
-    progressStep: 'Tư vấn chính sách thanh toán',
-    currentResidence: 'Long Biên, Hà Nội',
-    hometown: 'Hà Nội',
-    decisionMaker: 'Vợ chồng cùng duyệt',
-    lifestyleTags: ['Thanh toán sớm', 'Đại đô thị'],
-    preferredContactMethod: 'Điện thoại',
-    preferredSalutation: 'Anh Đức',
-    staffLead: staffName('quan'),
-    teamGroup: 'Nhóm C1',
-    interestedProjects: ['Vinhomes Ocean Park'],
-    budgetMin: 4,
-    budgetMax: 5,
-    equityRatio: '100% Tiền mặt',
-    bedroomType: '2PN (65-78m²)',
-    purchasePurposes: ['Ở thực'],
-    leadSource: 'Website STND',
-    targetPurchaseTime: 'Tháng 11/2026',
-    nextAppointmentDate: 'Hôm nay',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-010',
-    code: '#10',
-    name: 'Phạm Thanh Mai',
-    phone: '0909 432 178',
-    email: 'mai.pham@example.com',
-    status: 'Có quan tâm',
-    progressPercentage: 25,
-    progressStep: 'Tư vấn qua video call',
-    currentResidence: 'Quận 2, TP.HCM',
-    hometown: 'Huế',
-    decisionMaker: 'Khách tự quyết',
-    lifestyleTags: ['Hướng Đông Nam', '2PN'],
-    preferredContactMethod: 'Zalo',
-    preferredSalutation: 'Chị Mai',
-    staffLead: staffName('trang'),
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ['Masteri Centre Point'],
-    budgetMin: 4.5,
-    budgetMax: 5.5,
-    equityRatio: '70% (Cần vay 30%)',
-    loanIncentive: true,
-    bedroomType: '2PN (65-78m²)',
-    purchasePurposes: ['Ở thực'],
-    leadSource: 'Facebook Ads',
-    targetPurchaseTime: 'Quý 1/2027',
-    nextAppointmentDate: 'Hôm nay',
-    nextAppointmentTime: '17:00',
-  }),
-  createEmptyCustomer({
-    id: 'CUST-011',
-    code: '#11',
-    name: 'Bùi Minh Phương',
-    phone: '0983 221 445',
-    email: 'phuong.bui@example.com',
-    status: 'Chưa tiếp cận',
-    progressPercentage: 25,
-    progressStep: 'Mới tiếp nhận',
-    currentResidence: 'Gia Lâm, Hà Nội',
-    preferredContactMethod: 'Điện thoại',
-    preferredSalutation: 'Anh Phương',
-    staffLead: staffName('hanh'),
-    teamGroup: 'Nhóm C8',
-    interestedProjects: ['Ecopark Grand'],
-    budgetMin: 7,
-    budgetMax: 10,
-    leadSource: 'Website STND',
-    targetPurchaseTime: 'Chưa xác định',
-  }),
-];
-
-const findSeedCustomer = (customerId: string): Customer => {
-  const customer = INITIAL_CUSTOMERS.find((item) => item.id === customerId);
-  if (!customer) throw new Error(`Mock data: không tìm thấy khách ${customerId}`);
-  return customer;
-};
-
-// ---------------------------------------------------------------------------
-// Nhật ký chăm sóc (mới nhất trước)
-// ---------------------------------------------------------------------------
-
-export const INITIAL_CARE_LOGS: CareLog[] = [
-  { id: 'LOG-001', customerId: 'CUST-001', author: 'Hạnh ★ (Chính)', authorRole: 'Trưởng nhóm kinh doanh', date: '06/10', time: '14:15', tag: 'Mới nhất', content: "Khách gọi hỏi thêm thông tin chính sách vay và tiến độ đóng đợt 2 của dự án Q'Terra, hẹn tuần tới đi xem thực tế sa bàn và nhà mẫu.", images: [...GALLERY_IMAGES.slice(0, 4), ...MOBILE_EXTRA_IMAGES] },
-  { id: 'LOG-002', customerId: 'CUST-001', author: 'Hạnh ★ (Chính)', authorRole: 'Trưởng nhóm kinh doanh', date: '05/10', time: '15:30', contactMethod: 'Điện thoại', callResult: 'Chưa liên hệ được / Máy bận', content: 'Gọi điện, khách đang bận việc công ty, hẹn gọi lại sau 19h tối.' },
-  { id: 'LOG-003', customerId: 'CUST-001', author: 'Thảo (Cộng sự)', authorRole: 'Chuyên viên tư vấn', date: '04/10', time: '09:30', contactMethod: 'Nhắn Zalo', tag: 'Đã đọc tin', content: 'Nhắn tin qua Zalo gửi bảng tính dòng tiền và phương án vay ngân hàng hỗ trợ 40%, ân hạn gốc lãi. Khách đã xem và phản hồi đang bàn với gia đình.' },
-  { id: 'LOG-004', customerId: 'CUST-001', author: 'Hạnh ★ (Chính)', authorRole: 'Trưởng nhóm kinh doanh', date: '01/10', time: '16:00', contactMethod: 'Gặp trực tiếp', tag: 'Tiềm năng cao', content: "Gặp trực tiếp tại VP sa bàn Q'Terra, khách đi cùng vợ. Rất ưng căn 3PN tầng cao view sông Nam Sài Gòn, ưu tiên hướng Đông Nam thoáng mát." },
-  { id: 'LOG-005', customerId: 'CUST-001', author: 'Tuấn', authorRole: 'Chuyên viên tư vấn', date: '28/09', time: '10:20', content: 'Hỗ trợ kiểm tra tình trạng quy hoạch và mặt bằng căn 3PN view sông.' },
-  { id: 'LOG-006', customerId: 'CUST-001', author: 'Hệ thống STND', authorRole: 'Tự động', date: '28/09', time: '10:15', contactMethod: 'Website Lead', tag: 'Tiếp nhận mới', content: "Tiếp nhận khách hàng từ Form đăng ký nhận bảng giá chiến dịch Q'Terra trên Website STND. Phân bổ tự động cho chuyên viên Hạnh phụ trách nhóm C8." },
-  { id: 'LOG-007', customerId: 'CUST-002', author: 'Minh ★', authorRole: 'Chuyên viên tư vấn', date: '08/10', time: '11:40', tag: 'Mới nhất', content: 'Chị Bích đã đồng ý căn Privia tháp B tầng 18. Hẹn chiều 14:30 ghé trụ sở ký phiếu đặt cọc.' },
-  { id: 'LOG-008', customerId: 'CUST-002', author: 'Minh ★', authorRole: 'Chuyên viên tư vấn', date: '06/10', time: '16:00', contactMethod: 'Nhắn Zalo', content: 'Gửi bảng tính dòng tiền cho thuê dự kiến 14 triệu/tháng sau khi trừ phí quản lý.' },
-  { id: 'LOG-009', customerId: 'CUST-003', author: 'Tùng ★', authorRole: 'Chuyên viên tư vấn', date: '07/10', time: '10:00', contactMethod: 'Nhắn Zalo', content: "Gửi video flycam tiến độ thi công móng cọc Q'Terra, khách đã thả tim trên Zalo." },
-  { id: 'LOG-010', customerId: 'CUST-004', author: 'Hạnh ★ (Chính)', authorRole: 'Trưởng nhóm kinh doanh', date: 'Hôm nay', time: '08:45', content: 'Đã chuẩn bị sẵn file in màu phụ lục trang thiết bị bàn giao The Privia để chị Trang đối chiếu.' },
-  { id: 'LOG-011', customerId: 'CUST-007', author: 'Hạnh ★ (Chính)', authorRole: 'Trưởng nhóm kinh doanh', date: 'Hôm nay', time: '09:15', contactMethod: 'Nhắn Zalo', content: 'Nhắn tin xác nhận xe đưa đón đón anh Long lúc 14:45 sang văn phòng trải nghiệm sa bàn.' },
-];
-
-// ---------------------------------------------------------------------------
-// Lịch hẹn
-// ---------------------------------------------------------------------------
-
-type AppointmentSeed = Omit<Appointment, 'customerName' | 'customerPhone' | 'customerTag'> &
-  Partial<Pick<Appointment, 'customerTag'>>;
-
-const buildAppointment = (seed: AppointmentSeed): Appointment => {
-  const snapshot = getAppointmentCustomerSnapshot(findSeedCustomer(seed.customerId));
-  return { ...snapshot, ...seed, customerTag: seed.customerTag ?? snapshot.customerTag };
-};
-
-export const INITIAL_APPOINTMENTS: Appointment[] = [
-  buildAppointment({
-    id: 'APT-001',
-    customerId: 'CUST-007',
-    projectName: "Q'Terra",
-    type: 'xem_nha',
-    title: "09:30 - Xem nhà mẫu Q'Terra",
-    date: '2026-10-21',
-    time: '09:30',
-    location: "Văn phòng bán hàng dự án Q'Terra Central, Số 2 đường Mai Chí Thọ, P. An Phú, TP. Thủ Đức",
-    details: 'Khách hàng quan tâm tầng cao view hồ phân khu Vịnh Tây. Chuẩn bị bảng tính dòng tiền đợt 2, brochure in màu và 02 bản thỏa thuận đặt cọc tiêu chuẩn.',
-    leadStaffInitials: getInitials(staffName('hanh')),
-    leadStaffName: staffName('hanh'),
-    supportStaff: staffName('minh'),
-    reminderBefore: 'Trước 1 tiếng (Khuyến nghị)',
-    smsZnsAuto: true,
-    calendarSync: true,
-    isCompleted: false,
-  }),
-  buildAppointment({
-    id: 'APT-002',
-    customerId: 'CUST-002',
-    projectName: 'The Privia',
-    type: 'ky_coc',
-    title: '14:30 - Hẹn ký hợp đồng cọc',
-    date: '2026-10-21',
-    time: '14:30',
-    location: 'Trụ sở STND (Tầng 5 tòa nhà STND Tower, Quận 1)',
-    details: 'Ký thỏa thuận đặt cọc căn hộ 2PN-B08 The Privia, chuẩn bị phiếu thu tiền cọc và hợp đồng dịch vụ tư vấn.',
-    leadStaffInitials: getInitials(staffName('minh')),
-    leadStaffName: staffName('minh'),
-    supportStaff: staffName('hanh'),
-    reminderBefore: 'Trước 2 tiếng',
-    smsZnsAuto: true,
-    calendarSync: true,
-    isCompleted: false,
-    unitCode: 'Căn 2PN-B08',
-    unitPrice: '3.42 tỷ',
-  }),
-  buildAppointment({
-    id: 'APT-003',
-    customerId: 'CUST-001',
-    customerTag: 'Chờ gọi lại',
-    projectName: "Q'Terra",
-    type: 'nhac_goi',
-    title: '16:00 - Nhắc gọi lại tư vấn gói vay',
-    date: '2026-10-21',
-    time: '16:00',
-    location: 'Cuộc gọi điện thoại & Zalo',
-    details: 'Gọi sau 16h khách rảnh, tư vấn gói hỗ trợ lãi suất 0% trong 24 tháng & lịch giải ngân Vietcombank.',
-    leadStaffInitials: getInitials(staffName('hanh')),
-    leadStaffName: staffName('hanh'),
-    supportStaff: staffName('thao'),
-    reminderBefore: 'Trước 30 phút',
-    smsZnsAuto: false,
-    calendarSync: true,
-    isCompleted: false,
-  }),
-  buildAppointment({
-    id: 'APT-004',
-    customerId: 'CUST-006',
-    projectName: 'Ecopark Grand',
-    type: 'gap_truc_tiep',
-    date: '2026-10-22',
-    time: '10:00',
-    location: 'VP Ecopark Grand Marina',
-    details: 'Phân tích bảng so sánh lãi vay Techcombank và tiến độ thanh toán giãn 3 năm.',
-    leadStaffInitials: getInitials(staffName('thao')),
-    leadStaffName: staffName('thao'),
-    supportStaff: staffName('hanh'),
-    reminderBefore: 'Trước 1 tiếng',
-    smsZnsAuto: true,
-    calendarSync: true,
-    isCompleted: false,
-  }),
-  buildAppointment({
-    id: 'APT-005',
-    customerId: 'CUST-004',
-    projectName: 'The Privia',
-    type: 'xem_nha',
-    date: '2026-10-23',
-    time: '15:30',
-    location: 'Nhà mẫu The Privia, Bình Tân',
-    details: 'Dẫn khách cùng bố mẹ xem căn 2PN mẫu và tiện ích hồ bơi vô cực.',
-    leadStaffInitials: getInitials(staffName('hanh')),
-    leadStaffName: staffName('hanh'),
-    supportStaff: staffName('tuan'),
-    reminderBefore: 'Trước 1 tiếng',
-    smsZnsAuto: true,
-    calendarSync: true,
-    isCompleted: false,
-  }),
-];
-
-// ---------------------------------------------------------------------------
-// Việc hôm nay
-// ---------------------------------------------------------------------------
-
-type TaskSeed = Omit<DailyTask, 'customerName' | 'customerPhone' | 'statusTag' | 'projectName'> &
-  Partial<Pick<DailyTask, 'projectName'>>;
-
-const buildTask = (seed: TaskSeed): DailyTask => {
-  const customer = findSeedCustomer(seed.customerId);
+const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
+  const createdAt = at(-seed.createdDaysAgo, '09:00');
+  const careTeam = buildCareTeam(seed.primaryId, seed.memberIds ?? [], seed.primaryId, createdAt);
+  const criteria = createEmptyCriteria();
+  (Object.keys(criteria) as CriterionKey[]).forEach((key) => {
+    const isDone = seed.doneCriteria?.includes(key) ?? false;
+    const description = seed.criteriaText?.[key] ?? '';
+    const isTouched = isDone || Boolean(description);
+    criteria[key] = { isDone, description, updatedAt: isTouched ? createdAt : null, updatedBy: isTouched ? seed.primaryId : null };
+  });
+  const persona = toPersonaValues(seed.persona ?? {}, seed.primaryId, createdAt);
   return {
-    customerName: customer.name,
-    customerPhone: customer.phone,
-    statusTag: customer.status,
-    projectName: customer.interestedProjects[0] ?? '',
-    ...seed,
+    id: seed.id,
+    code: seed.code,
+    fullName: seed.fullName,
+    phone: seed.phone,
+    email: seed.email ?? '',
+    statusId: seed.statusId,
+    statusChangedAt: createdAt,
+    sourceId: seed.sourceId ?? null,
+    interestedProjectIds: seed.projectIds ?? [],
+    areaId: seed.areaId ?? null,
+    tagIds: seed.tagIds ?? [],
+    nationalIdLast4: seed.nationalId ? seed.nationalId.slice(-4) : null,
+    hasNationalId: Boolean(seed.nationalId),
+    criteria,
+    careTeam,
+    primaryAssigneeId: getPrimaryUserId(careTeam),
+    persona,
+    occasions: computeOccasions(persona, PERSONA_FIELDS),
+    personaCompleteness: computePersonaCompleteness(persona, PERSONA_FIELDS),
+    shouldRemindOccasions: true,
+    notes: seed.notes ?? '',
+    lastCareLogAt: null,
+    nextAppointmentAt: null,
+    searchText: buildSearchText({ fullName: seed.fullName, phone: seed.phone, code: seed.code, email: seed.email }),
+    createdAt,
+    createdBy: seed.primaryId,
+    createdVia: 'WEB',
+    lastUpdatedAt: createdAt,
+    lastUpdatedBy: seed.primaryId,
+    version: 1,
   };
 };
 
-export const INITIAL_DAILY_TASKS: DailyTask[] = [
-  buildTask({ id: 'TASK-001', customerId: 'CUST-001', category: 'overdue', overdueText: 'Trễ 2 ngày', content: 'Đã nhắn Zalo 05/10, chưa phản hồi (lần 3)', aiSuggestion: 'Gửi thông tin mới của dự án, thử gọi lại vào buổi tối (sau 19h).', assignee: staffName('hanh') }),
-  buildTask({ id: 'TASK-002', customerId: 'CUST-002', category: 'overdue', overdueText: 'Trễ 1 ngày', content: 'Hẹn gửi bảng tính thanh toán đợt 2 trước 14:00 hôm qua', aiSuggestion: 'Gọi điện xin lỗi chậm trễ và gửi file PDF qua Zalo.', assignee: staffName('hanh') }),
-  buildTask({ id: 'TASK-003', customerId: 'CUST-007', category: 'today', timeText: '15:30', content: 'Lịch hẹn lúc 15:30 chiều nay tại văn phòng bán hàng dự án', aiSuggestion: 'Chuẩn bị bộ brochure tài liệu tiến độ & quà tặng trải nghiệm.', assignee: staffName('hanh') }),
-  buildTask({ id: 'TASK-004', customerId: 'CUST-009', category: 'today', timeText: 'Hôm nay', content: 'Gọi tư vấn chính sách thanh toán sớm chiết khấu 8%', aiSuggestion: 'Nhấn mạnh gói ưu đãi tài chính lãi suất 0% trong 24 tháng.', assignee: staffName('quan') }),
-  buildTask({ id: 'TASK-005', customerId: 'CUST-010', category: 'today', timeText: '17:00', content: 'Hẹn tư vấn căn 2 phòng ngủ hướng Đông Nam qua cuộc gọi video', aiSuggestion: 'Gửi video 3D thực tế trước cuộc gọi để khách xem trước.', assignee: staffName('trang') }),
-  buildTask({ id: 'TASK-006', customerId: 'CUST-004', category: 'today', timeText: '10:00', content: 'Kiểm tra đối chiếu phụ lục hoàn thiện, chuẩn bị hoàn tất hợp đồng mua bán', assignee: staffName('hanh') }),
-  buildTask({ id: 'TASK-007', customerId: 'CUST-006', category: 'upcoming', dateText: 'Ngày mai, 09:00', content: 'Hẹn dẫn khách xem thực tế nhà mẫu block B, kết hợp trao đổi hợp đồng cọc.', assignee: staffName('hanh') }),
-  buildTask({ id: 'TASK-008', customerId: 'CUST-011', category: 'upcoming', dateText: 'Thứ 6, 14:00', content: 'Gửi thư ngỏ ký hợp đồng bảo chứng ngân hàng và các chính sách bàn giao hoàn thiện nội thất.', assignee: staffName('hanh') }),
-  buildTask({ id: 'TASK-009', customerId: 'CUST-005', category: 'upcoming', dateText: '12/10, 10:30', content: 'Khách có nhu cầu chuyển nhượng suất mua sớm, cần gặp trực tiếp trưởng phòng kinh doanh.', assignee: staffName('quan') }),
-  buildTask({ id: 'TASK-010', customerId: 'CUST-003', category: 'upcoming', dateText: '15/10, 09:15', content: 'Quan tâm phân khu tháp Sapphire, đang so sánh với Eaton Park - gửi bảng so sánh 2 dự án.', assignee: staffName('tung') }),
-];
+const userName = (userId: string): string => SEED_USERS.find((user) => user.id === userId)?.displayName ?? 'Hệ thống';
+
+export interface SeedData {
+  customers: Customer[];
+  careLogs: CareLog[];
+  appointments: Appointment[];
+  /** CCCD đầy đủ của dữ liệu mẫu -> nạp vào kho mô phỏng (không lưu trong hồ sơ). */
+  nationalIds: Record<string, string>;
+}
+
+/** Dựng toàn bộ dữ liệu mẫu theo thời điểm `now`. */
+export const buildSeedData = (now: Date = new Date()): SeedData => {
+  const todayKey = getVnTodayKey(now);
+  const at: AtFn = (dayOffset, time) => vnDateTimeToIso(addDaysToDateKey(todayKey, dayOffset), time);
+  // Sinh nhật rơi vào 2 ngày tới để minh hoạ nhắc dịp đặc biệt (C13).
+  const birthdaySoon = `1993-${addDaysToDateKey(todayKey, 2).slice(5)}`;
+
+  const seeds: CustomerSeed[] = [
+    {
+      id: 'CUST-001', code: '#01', fullName: 'Nguyễn Văn An', phone: '+84912345678', email: 'nguyen.vanan@example.com',
+      statusId: 'st-interested', sourceId: 'src-facebook', projectIds: ['proj-1', 'proj-2'], areaId: 'area-q7', tagIds: ['tag-golf', 'tag-business-owner'],
+      nationalId: '079092001234', primaryId: 'hanh', memberIds: ['thao'], doneCriteria: ['demand', 'finance'], createdDaysAgo: 25,
+      criteriaText: {
+        demand: 'Căn hộ 3PN, view sông, để ở và đầu tư lâu dài.',
+        motivation: 'Đổi nhà để gần trường quốc tế cho con, đang chờ gia đình thống nhất.',
+        finance: 'Ngân sách 5 - 7 tỷ, vốn tự có 60%, cần vay 40%.',
+        timing: 'Dự kiến quyết định trong Quý 4/2026.',
+      },
+      persona: {
+        birthday: '1984-11-15', hometown: 'Hà Nội', marital_status: 'Đã kết hôn', children: '2 con nhỏ, học trường quốc tế',
+        occupation: 'Giám đốc công ty xuất nhập khẩu', business_field: 'Xuất nhập khẩu & Vận tải', decision_maker: 'Vợ chồng cùng duyệt',
+        free_time_slot: '19:00 - 20:30', preferred_channel: 'Zalo', salutation: 'Anh An',
+        property_type: 'Căn hộ chung cư', bedroom_type: '3PN (85-115m²)', purchase_purposes: ['Đầu tư lâu dài', 'Mua cho con'], budget: [5, 7],
+        equity_ratio: '60% (cần vay 40%)', loan_support: true, expected_purchase_time: 'Quý 4/2026',
+        criteria_priorities: ['View sông / công viên', 'Tầng cao', 'Gần trường quốc tế'], search_area: 'Quận 7, TP.HCM', specific_location: 'Phú Mỹ Hưng, ven sông',
+      },
+      notes: 'Muốn nhận thông tin dự án qua Zalo trước 20:00. Ưu tiên hướng Đông Nam, tầng trên 15.',
+    },
+    {
+      id: 'CUST-002', code: '#02', fullName: 'Trần Thị Bích', phone: '+84988333112', email: 'bich.tran@investor.vn',
+      statusId: 'st-net', sourceId: 'src-website', projectIds: ['proj-2', 'proj-1'], areaId: 'area-nam-tu-liem', tagIds: ['tag-finance'],
+      nationalId: '024088008721', primaryId: 'minh', doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 40,
+      criteriaText: { demand: 'Căn 2PN The Privia để cho thuê.', motivation: 'Có dòng tiền nhàn rỗi cần giải ngân trước quý 4.', finance: '100% tiền mặt.', timing: 'Đang chờ kiểm tra điều khoản bảo lãnh tiến độ.' },
+      persona: {
+        birthday: '1988-04-22', hometown: 'Nam Định', marital_status: 'Đã kết hôn', children: '1 bé 4 tuổi',
+        occupation: 'Trưởng phòng Tài chính tập đoàn bán lẻ', business_field: 'Tài chính thương mại', decision_maker: 'Khách tự quyết',
+        free_time_slot: '14:00 - 16:00', preferred_channel: 'Điện thoại', salutation: 'Chị Bích',
+        property_type: 'Căn hộ chung cư', bedroom_type: '2PN (65-78m²)', purchase_purposes: ['Đầu tư cho thuê'], budget: [3.2, 3.8],
+        equity_ratio: '100% tiền mặt', expected_purchase_time: 'Tháng 10/2026',
+      },
+    },
+    {
+      id: 'CUST-003', code: '#03', fullName: 'Lê Hoàng Nam', phone: '+84912888921', email: 'hoangnam.le@holding.vn',
+      statusId: 'st-interested', sourceId: 'src-event', projectIds: ['proj-1'], areaId: 'area-thu-duc', tagIds: ['tag-golf', 'tag-food'],
+      nationalId: '001085005589', primaryId: 'tung', memberIds: ['vy'], doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 18,
+      criteriaText: { demand: 'Căn 3PN view sông.', motivation: 'Chuyển nhà để con học gần trường.', finance: 'Tài chính khoảng 10 tỷ.', timing: 'Chờ mở bán chính thức giai đoạn 2.' },
+      persona: {
+        birthday: '1980-09-08', hometown: 'Đà Nẵng', marital_status: 'Đã kết hôn', children: '2 con',
+        occupation: 'Chủ chuỗi nhà hàng', business_field: 'F&B & Dịch vụ', decision_maker: 'Vợ chồng cùng duyệt',
+        free_time_slot: '15:00 - 17:30', preferred_channel: 'Gặp mặt', salutation: 'Anh Nam',
+        property_type: 'Căn hộ chung cư', bedroom_type: '3PN (85-115m²)', budget: [8, 12], expected_purchase_time: 'Tháng 11/2026', search_area: 'Thảo Điền / An Phú',
+      },
+    },
+    {
+      id: 'CUST-004', code: '#04', fullName: 'Phạm Quỳnh Trang', phone: '+84977555562', email: 'quynhtrang@gmail.com',
+      statusId: 'st-interested', sourceId: 'src-facebook', projectIds: ['proj-2'], areaId: 'area-q1', tagIds: ['tag-gym', 'tag-smarthome', 'tag-tech'],
+      nationalId: '079195004412', primaryId: 'hanh', doneCriteria: ['demand', 'motivation', 'finance', 'timing'], createdDaysAgo: 12,
+      criteriaText: { demand: 'Căn 2PN hoàn thiện cơ bản.', motivation: 'Ra ở riêng.', finance: 'Đã được duyệt sơ bộ hạn mức vay.', timing: 'Muốn chốt ngay khi có căn tầng 12.' },
+      persona: {
+        birthday: birthdaySoon, hometown: 'Hải Phòng', marital_status: 'Độc thân', occupation: 'Chuyên gia Marketing Fintech', business_field: 'Công nghệ thông tin',
+        decision_maker: 'Khách tự quyết', free_time_slot: '18:00 - 21:00', preferred_channel: 'Zalo', salutation: 'Chị Trang',
+        property_type: 'Căn hộ chung cư', bedroom_type: '2PN (65-78m²)', purchase_purposes: ['Ở thực'], budget: [2.8, 3.5], loan_support: true, expected_purchase_time: 'Trong tháng này',
+      },
+    },
+    {
+      id: 'CUST-005', code: '#05', fullName: 'Đặng Tuấn Kiệt', phone: '+84934771650', email: 'tuankiet.dang@vinametal.com',
+      statusId: 'st-net', sourceId: 'src-referral', projectIds: ['proj-4'], areaId: 'area-gia-lam', tagIds: ['tag-nature', 'tag-manufacturing'],
+      nationalId: '001079006650', primaryId: 'quan', doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 33,
+      criteriaText: { demand: 'Biệt thự song lập.', motivation: 'Nâng cấp không gian sống cho gia đình 3 thế hệ.', finance: 'Vốn tự có 10 tỷ, vay thêm 6 tỷ.', timing: 'Đợi ngân hàng thẩm định tài sản thế chấp.' },
+      persona: {
+        birthday: '1979-06-10', hometown: 'Bắc Ninh', marital_status: 'Đã kết hôn', children: '3 con', occupation: 'Giám đốc nhà máy cơ khí',
+        decision_maker: 'Tham khảo gia đình', preferred_channel: 'Điện thoại', salutation: 'Anh Kiệt',
+        property_type: 'Biệt thự / Villa', purchase_purposes: ['Nghỉ dưỡng'], budget: [14, 18], loan_support: true,
+      },
+    },
+    {
+      id: 'CUST-006', code: '#06', fullName: 'Vũ Đình Quân', phone: '+84918654319', email: 'quan.vudinh@logistics.vn',
+      statusId: 'st-interested', sourceId: 'src-website', projectIds: ['proj-3'], areaId: 'area-van-giang', tagIds: ['tag-trading'],
+      primaryId: 'hanh', doneCriteria: ['demand', 'finance'], createdDaysAgo: 30,
+      criteriaText: { demand: 'Nhà phố để kinh doanh cà phê.', motivation: 'Đang khảo sát lượng khách qua lại.', finance: 'Sẵn 4 tỷ tiền mặt.' },
+      persona: { occupation: 'Kinh doanh phụ tùng ô tô', decision_maker: 'Vợ chồng cùng duyệt', preferred_channel: 'Gặp mặt', salutation: 'Anh Quân', property_type: 'Nhà phố / Shophouse', budget: [6, 9] },
+    },
+    {
+      id: 'CUST-007', code: '#07', fullName: 'Lê Hoàng Long', phone: '+84903568921', email: 'long.le@holding.vn',
+      statusId: 'st-interested', sourceId: 'src-website', projectIds: ['proj-3', 'proj-1'], areaId: 'area-q7', tagIds: ['tag-yacht', 'tag-golf', 'tag-nature', 'tag-finance'],
+      primaryId: 'hanh', memberIds: ['minh'], doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 20,
+      criteriaText: { demand: 'Biệt thự song lập view hồ.', motivation: 'Không gian sống yên tĩnh cho bố mẹ và con nhỏ.', finance: 'Thanh toán bằng tiền mặt.', timing: 'Xem nhà mẫu trước khi chọn căn.' },
+      persona: {
+        birthday: '1982-09-19', hometown: 'Hà Nội', marital_status: 'Đã kết hôn', children: '3 con', occupation: 'Tổng giám đốc công ty đầu tư tài chính',
+        decision_maker: 'Vợ chồng cùng duyệt', free_time_slot: '15:00 - 17:30', preferred_channel: 'Gặp mặt', salutation: 'Anh Long',
+        property_type: 'Biệt thự / Villa', bedroom_type: '4PN', budget: [15, 28], expected_purchase_time: 'Quý 4/2026',
+      },
+    },
+    {
+      id: 'CUST-008', code: '#08', fullName: 'Đặng Quốc Huy', phone: '+84933221199', email: 'huy.dang@fmcg.com',
+      statusId: 'st-dropped', sourceId: 'src-telesales', projectIds: ['proj-6'], areaId: 'area-thu-dau-mot',
+      primaryId: 'tuan', doneCriteria: ['demand'], createdDaysAgo: 45,
+      criteriaText: { demand: 'Đất nền làm kho bãi.' },
+      persona: { occupation: 'Chủ xưởng cơ khí khuôn mẫu', preferred_channel: 'Điện thoại', salutation: 'Anh Huy' },
+      notes: 'Khách đổi kế hoạch, dồn vốn mở rộng xưởng sản xuất.',
+    },
+    {
+      id: 'CUST-009', code: '#09', fullName: 'Hoàng Minh Đức', phone: '+84943112899', email: 'duc.hoangminh@example.com',
+      statusId: 'st-net', sourceId: 'src-website', projectIds: ['proj-4'], areaId: 'area-long-bien',
+      primaryId: 'quan', doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 28,
+      persona: { decision_maker: 'Vợ chồng cùng duyệt', preferred_channel: 'Điện thoại', salutation: 'Anh Đức', bedroom_type: '2PN (65-78m²)', budget: [4, 5], purchase_purposes: ['Ở thực'] },
+    },
+    {
+      id: 'CUST-010', code: '#10', fullName: 'Phạm Thanh Mai', phone: '+84909432178', email: 'mai.pham@example.com',
+      statusId: 'st-interested', sourceId: 'src-facebook', projectIds: ['proj-6'], areaId: 'area-thu-duc', tagIds: ['tag-pets'],
+      primaryId: 'trang', doneCriteria: ['demand'], createdDaysAgo: 9,
+      persona: { decision_maker: 'Khách tự quyết', preferred_channel: 'Zalo', salutation: 'Chị Mai', bedroom_type: '2PN (65-78m²)', budget: [4.5, 5.5], expected_purchase_time: 'Quý 1/2027' },
+    },
+    {
+      id: 'CUST-011', code: '#11', fullName: 'Bùi Minh Phương', phone: '+84983221445', email: 'phuong.bui@example.com',
+      statusId: 'st-not-contacted', sourceId: 'src-website', projectIds: ['proj-3'], areaId: 'area-gia-lam',
+      primaryId: 'hanh', createdDaysAgo: 2,
+    },
+  ];
+
+  const customers = seeds.map((seed) => buildCustomer(seed, at));
+  const nationalIds = Object.fromEntries(seeds.filter((seed) => seed.nationalId).map((seed) => [seed.id, seed.nationalId as string]));
+
+  const log = (
+    id: string,
+    customerId: string,
+    authorId: string,
+    occurredAt: string,
+    contactChannel: CareLog['contactChannel'],
+    content: string,
+    extra: Partial<CareLog> = {},
+  ): CareLog => ({
+    id,
+    customerId,
+    authorId,
+    authorName: userName(authorId),
+    occurredAt,
+    content,
+    contactChannel,
+    contactResultId: null,
+    nextAction: null,
+    source: 'MANUAL',
+    ...extra,
+  });
+
+  // Mới nhất trước.
+  const careLogs: CareLog[] = [
+    log('LOG-011', 'CUST-007', 'hanh', at(0, '09:15'), 'ZALO', 'Nhắn Zalo xác nhận xe đón anh Long lúc 14:45 sang văn phòng xem sa bàn.'),
+    log('LOG-010', 'CUST-004', 'hanh', at(0, '08:45'), 'OTHER', 'Đã chuẩn bị file phụ lục trang thiết bị bàn giao The Privia để chị Trang đối chiếu.', {
+      nextAction: { suggestion: 'Hẹn chị Trang đối chiếu phụ lục hoàn thiện', dueAt: at(0, '16:00'), appointmentId: null },
+    }),
+    log('LOG-009', 'CUST-003', 'tung', at(-1, '10:00'), 'ZALO', "Gửi video flycam tiến độ thi công móng Q'Terra, khách đã xem.", {
+      contactResultId: 'cr-comparing',
+      nextAction: { suggestion: 'Gửi bảng so sánh 2 dự án khách đang cân nhắc', dueAt: at(5, '09:15'), appointmentId: null },
+    }),
+    log('LOG-001', 'CUST-001', 'hanh', at(-1, '14:15'), 'CALL', "Khách gọi hỏi thêm chính sách vay và tiến độ đóng tiền đợt 2 của Q'Terra, hẹn tuần tới đi xem sa bàn và nhà mẫu.", {
+      contactResultId: 'cr-loan',
+    }),
+    log('LOG-012', 'CUST-009', 'quan', at(-2, '16:20'), 'CALL', 'Tư vấn sơ bộ chính sách thanh toán, khách muốn nghe kỹ phương án thanh toán sớm.', {
+      nextAction: { suggestion: 'Gọi tư vấn chính sách thanh toán sớm', dueAt: at(0, '10:00'), appointmentId: null },
+    }),
+    log('LOG-014', 'CUST-011', 'system', at(-2, '09:05'), 'OTHER', 'Tiếp nhận khách từ form đăng ký nhận bảng giá trên website, phân cho Hạnh phụ trách.', {
+      source: 'SYSTEM',
+      nextAction: { suggestion: 'Gọi giới thiệu lần đầu và hỏi nhu cầu', dueAt: at(2, '14:00'), appointmentId: null },
+    }),
+    log('LOG-008', 'CUST-002', 'minh', at(-3, '16:00'), 'ZALO', 'Gửi bảng tính dòng tiền cho thuê dự kiến 14 triệu/tháng sau khi trừ phí quản lý.', {
+      nextAction: { suggestion: 'Gửi bảng tính thanh toán đợt 2 (PDF qua Zalo) và gọi xác nhận', dueAt: at(-1, '14:00'), appointmentId: null },
+    }),
+    log('LOG-013', 'CUST-005', 'quan', at(-4, '11:30'), 'CALL', 'Khách muốn chuyển nhượng suất mua sớm, cần gặp trưởng phòng kinh doanh.', {
+      nextAction: { suggestion: 'Sắp xếp buổi gặp với trưởng phòng kinh doanh', dueAt: at(3, '10:30'), appointmentId: null },
+    }),
+    log('LOG-003', 'CUST-001', 'thao', at(-5, '09:30'), 'ZALO', 'Nhắn Zalo gửi bảng tính dòng tiền và phương án vay hỗ trợ 40%. Khách đã xem, đang bàn với gia đình.', {
+      contactResultId: 'cr-price',
+      nextAction: { suggestion: 'Gửi thông tin mới của dự án, thử gọi lại buổi tối (sau 19h)', dueAt: at(-2, '19:00'), appointmentId: null },
+    }),
+    log('LOG-002', 'CUST-001', 'hanh', at(-6, '15:30'), 'CALL', 'Gọi điện, khách đang bận việc công ty, hẹn gọi lại sau 19h.', { contactResultId: 'cr-busy' }),
+    log('LOG-004', 'CUST-001', 'hanh', at(-10, '16:00'), 'MEETING', "Gặp trực tiếp tại văn phòng Q'Terra, khách đi cùng vợ, thích căn 3PN tầng cao view sông.", { contactResultId: 'cr-site-visit' }),
+    log('LOG-015', 'CUST-008', 'tuan', at(-20, '10:00'), 'CALL', 'Khách báo dừng kế hoạch mua, chuyển vốn mở rộng xưởng.', { contactResultId: 'cr-declined' }),
+    log('LOG-005', 'CUST-001', 'tuan', at(-22, '10:20'), 'OTHER', 'Kiểm tra tình trạng quy hoạch và mặt bằng căn 3PN view sông giúp khách.'),
+  ];
+
+  type AppointmentSeed = Pick<Appointment, 'id' | 'customerId' | 'type' | 'title' | 'startAt' | 'location' | 'note' | 'assigneeId' | 'status'> &
+    Partial<Appointment>;
+  const appointment = (seed: AppointmentSeed): Appointment => ({
+    endAt: null,
+    remindBeforeMinutes: [60],
+    completedAt: null,
+    createdBy: seed.assigneeId,
+    sourceCareLogId: null,
+    smsZnsAuto: false,
+    calendarSync: false,
+    ...seed,
+  });
+
+  const appointments: Appointment[] = [
+    appointment({ id: 'APT-001', customerId: 'CUST-007', type: 'SITE_VISIT', title: "Xem nhà mẫu Q'Terra", startAt: at(0, '15:30'), location: "Văn phòng bán hàng Q'Terra, đường Mai Chí Thọ, TP. Thủ Đức", note: 'Khách quan tâm tầng cao view hồ. Chuẩn bị bảng tính dòng tiền đợt 2.', assigneeId: 'hanh', status: 'SCHEDULED' }),
+    appointment({ id: 'APT-002', customerId: 'CUST-002', type: 'DEPOSIT', title: 'Ký thỏa thuận đặt cọc', startAt: at(0, '14:30'), location: 'Văn phòng STND, Quận 1', note: 'Chuẩn bị phiếu thu và thỏa thuận đặt cọc.', assigneeId: 'minh', status: 'SCHEDULED', remindBeforeMinutes: [120] }),
+    appointment({ id: 'APT-003', customerId: 'CUST-001', type: 'CALLBACK', title: 'Gọi lại tư vấn gói vay', startAt: at(0, '16:00'), location: 'Gọi điện / Zalo', note: 'Khách rảnh sau 16h, tư vấn gói hỗ trợ lãi suất.', assigneeId: 'hanh', status: 'SCHEDULED', remindBeforeMinutes: [30] }),
+    appointment({ id: 'APT-004', customerId: 'CUST-006', type: 'SITE_VISIT', title: 'Dẫn khách xem nhà mẫu block B', startAt: at(1, '09:00'), location: 'Văn phòng Ecopark Grand', note: 'Trao đổi thêm phương án thanh toán giãn tiến độ.', assigneeId: 'hanh', status: 'SCHEDULED' }),
+    appointment({ id: 'APT-005', customerId: 'CUST-004', type: 'SITE_VISIT', title: 'Xem căn mẫu cùng bố mẹ khách', startAt: at(2, '15:30'), location: 'Nhà mẫu The Privia, Bình Tân', note: 'Dẫn khách cùng bố mẹ xem căn 2PN mẫu và tiện ích.', assigneeId: 'hanh', status: 'SCHEDULED' }),
+    appointment({ id: 'APT-006', customerId: 'CUST-010', type: 'MEETING', title: 'Tư vấn căn 2PN qua video call', startAt: at(0, '17:00'), location: 'Gọi video Zalo', note: 'Gửi video 3D trước để khách xem.', assigneeId: 'trang', status: 'SCHEDULED' }),
+    appointment({ id: 'APT-007', customerId: 'CUST-003', type: 'MEETING', title: 'Gặp tư vấn phương án tài chính', startAt: at(-3, '10:00'), location: "Văn phòng Q'Terra", note: '', assigneeId: 'tung', status: 'DONE', completedAt: at(-3, '11:00') }),
+  ];
+
+  // Phi chuẩn hoá giống backend: lần chăm sóc gần nhất + lịch hẹn sắp tới gần nhất + ngày cập nhật cuối.
+  const nowValue = now.toISOString();
+  const enrichedCustomers = customers.map((customer) => {
+    const lastLog = careLogs.filter((item) => item.customerId === customer.id).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0];
+    const nextAppointment = appointments
+      .filter((item) => item.customerId === customer.id && item.status === 'SCHEDULED' && item.startAt >= nowValue)
+      .sort((a, b) => a.startAt.localeCompare(b.startAt))[0];
+    const lastLogAt = lastLog?.occurredAt ?? null;
+    const isLogNewer = lastLogAt !== null && lastLogAt > customer.lastUpdatedAt;
+    return {
+      ...customer,
+      lastCareLogAt: lastLogAt,
+      nextAppointmentAt: nextAppointment?.startAt ?? null,
+      lastUpdatedAt: isLogNewer ? lastLogAt : customer.lastUpdatedAt,
+      lastUpdatedBy: isLogNewer ? lastLog.authorId : customer.lastUpdatedBy,
+    };
+  });
+
+  return { customers: enrichedCustomers, careLogs, appointments, nationalIds };
+};

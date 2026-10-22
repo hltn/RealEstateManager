@@ -1,10 +1,16 @@
 /**
  * Hàm thuần cho màn Lịch hẹn: tính tuần/tháng, lọc lịch theo ngày/khoảng, KPI.
- * Ngày luôn ở dạng ISO "YYYY-MM-DD" (so sánh chuỗi = so sánh thời gian).
+ * Ngày lịch = khoá ngày giờ VN "YYYY-MM-DD" suy từ `startAt` (so sánh chuỗi = so sánh thời gian).
  */
-import { getAppointmentPeriod } from '@crm/lib/appointmentAdapters';
+import type { AppointmentView } from '@crm/api';
+import { getAppointmentDateKey, getAppointmentPeriod } from '@crm/lib/appointmentAdapters';
 import { getIsoDateParts, toIsoDate } from '@crm/lib/dateTime';
-import type { Appointment, AppointmentType, DayPeriod } from '@crm/types/crm';
+import type { AppointmentType, DayPeriod } from '@crm/types/crm';
+
+type Appointment = AppointmentView;
+
+const dateOf = (appointment: Appointment): string => getAppointmentDateKey(appointment);
+const isDone = (appointment: Appointment): boolean => appointment.status === 'DONE';
 
 const DAYS_PER_WEEK = 7;
 /** Tiêu đề cột lịch (tuần bắt đầu thứ Hai). */
@@ -76,19 +82,18 @@ export const getMonthGrid = (year: number, monthIndex: number): CalendarDay[] =>
   });
 };
 
-const compareByDateTime = (first: Appointment, second: Appointment): number =>
-  first.date === second.date ? first.time.localeCompare(second.time) : first.date.localeCompare(second.date);
+const compareByDateTime = (first: Appointment, second: Appointment): number => first.startAt.localeCompare(second.startAt);
 
 export const sortAppointmentsByDateTime = (appointments: Appointment[]): Appointment[] =>
   [...appointments].sort(compareByDateTime);
 
 export const getAppointmentsOnDate = (appointments: Appointment[], isoDate: string): Appointment[] =>
-  sortAppointmentsByDateTime(appointments.filter((appointment) => appointment.date === isoDate));
+  sortAppointmentsByDateTime(appointments.filter((appointment) => dateOf(appointment) === isoDate));
 
 /** Lịch hẹn trong khoảng [startIso, endIso] (bao gồm 2 đầu). */
 export const getAppointmentsInRange = (appointments: Appointment[], startIso: string, endIso: string): Appointment[] =>
   sortAppointmentsByDateTime(
-    appointments.filter((appointment) => appointment.date >= startIso && appointment.date <= endIso),
+    appointments.filter((appointment) => dateOf(appointment) >= startIso && dateOf(appointment) <= endIso),
   );
 
 /** Lịch sắp tới: sau `todayIso`, chưa hoàn thành, (tuỳ chọn) không quá `untilIso`. */
@@ -96,7 +101,7 @@ export const getUpcomingAppointments = (appointments: Appointment[], todayIso: s
   sortAppointmentsByDateTime(
     appointments.filter(
       (appointment) =>
-        appointment.date > todayIso && !appointment.isCompleted && (untilIso === undefined || appointment.date <= untilIso),
+        dateOf(appointment) > todayIso && !isDone(appointment) && (untilIso === undefined || dateOf(appointment) <= untilIso),
     ),
   );
 
@@ -110,16 +115,17 @@ export const groupAppointmentsByPeriod = (appointments: Appointment[]): Record<D
 export const groupAppointmentsByDate = (appointments: Appointment[]): { isoDate: string; appointments: Appointment[] }[] => {
   const groups: { isoDate: string; appointments: Appointment[] }[] = [];
   appointments.forEach((appointment) => {
-    const group = groups.find((item) => item.isoDate === appointment.date);
+    const isoDate = dateOf(appointment);
+    const group = groups.find((item) => item.isoDate === isoDate);
     if (group) group.appointments.push(appointment);
-    else groups.push({ isoDate: appointment.date, appointments: [appointment] });
+    else groups.push({ isoDate, appointments: [appointment] });
   });
   return groups;
 };
 
 export const countAppointmentsByDate = (appointments: Appointment[]): Record<string, number> =>
   appointments.reduce<Record<string, number>>((counts, appointment) => {
-    counts[appointment.date] = (counts[appointment.date] ?? 0) + 1;
+    counts[dateOf(appointment)] = (counts[dateOf(appointment)] ?? 0) + 1;
     return counts;
   }, {});
 
@@ -138,14 +144,14 @@ export const formatMonthYearVi = (year: number, monthIndex: number): string => `
 
 /** Nhãn ngắn dùng cho dòng tóm tắt "1 xem mẫu • 1 ký cọc • 1 gọi điện" (Admin KPI "Hôm nay"). */
 const TYPE_SUMMARY_LABELS: Record<AppointmentType, string> = {
-  xem_nha: 'xem mẫu',
-  ky_coc: 'ký cọc',
-  gap_truc_tiep: 'tư vấn',
-  nhac_goi: 'gọi điện',
-  khac: 'khác',
+  SITE_VISIT: 'xem mẫu',
+  DEPOSIT: 'ký cọc',
+  MEETING: 'tư vấn',
+  CALLBACK: 'gọi điện',
+  OTHER: 'khác',
 };
 
-const TYPE_ORDER: AppointmentType[] = ['xem_nha', 'ky_coc', 'gap_truc_tiep', 'nhac_goi', 'khac'];
+const TYPE_ORDER: AppointmentType[] = ['SITE_VISIT', 'DEPOSIT', 'MEETING', 'CALLBACK', 'OTHER'];
 
 export const summarizeAppointmentTypes = (appointments: Appointment[]): string =>
   TYPE_ORDER.map((type) => {
@@ -164,30 +170,24 @@ export interface AppointmentStats {
   todayPendingCount: number;
   /** Lịch sau hôm nay đến hết Chủ nhật tuần này, chưa hoàn thành. */
   upcomingWeekCount: number;
-  /** % lịch sắp tới trong tuần đã bật gửi thiệp xác nhận SMS/ZNS. */
-  upcomingConfirmedPercent: number;
   monthCompletedCount: number;
   monthCompletionPercent: number;
 }
 
 /** KPI của màn Lịch hẹn, tính theo ngày `todayIso`. */
 export const getAppointmentStats = (appointments: Appointment[], todayIso: string): AppointmentStats => {
-  const todayAppointments = appointments.filter((appointment) => appointment.date === todayIso);
+  const todayAppointments = appointments.filter((appointment) => dateOf(appointment) === todayIso);
   const weekDates = getWeekDates(todayIso);
   const upcomingWeek = getUpcomingAppointments(appointments, todayIso, weekDates[weekDates.length - 1]);
   const monthPrefix = todayIso.slice(0, 7);
-  const monthAppointments = appointments.filter((appointment) => appointment.date.startsWith(monthPrefix));
-  const monthCompletedCount = monthAppointments.filter((appointment) => appointment.isCompleted).length;
+  const monthAppointments = appointments.filter((appointment) => dateOf(appointment).startsWith(monthPrefix));
+  const monthCompletedCount = monthAppointments.filter(isDone).length;
 
   return {
     total: appointments.length,
     todayCount: todayAppointments.length,
-    todayPendingCount: todayAppointments.filter((appointment) => !appointment.isCompleted).length,
+    todayPendingCount: todayAppointments.filter((appointment) => !isDone(appointment)).length,
     upcomingWeekCount: upcomingWeek.length,
-    upcomingConfirmedPercent: toPercent(
-      upcomingWeek.filter((appointment) => appointment.smsZnsAuto).length,
-      upcomingWeek.length,
-    ),
     monthCompletedCount,
     monthCompletionPercent: toPercent(monthCompletedCount, monthAppointments.length),
   };
