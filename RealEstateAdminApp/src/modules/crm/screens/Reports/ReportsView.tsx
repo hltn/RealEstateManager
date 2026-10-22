@@ -2,8 +2,9 @@
  * Màn Báo cáo (X6) dùng chung desktop + mobile — bố cục co giãn bằng Tailwind (mobile-first).
  * Mọi số liệu tính từ dữ liệu khách thật (`useReportData`); không hiển thị chỉ số giả (tăng trưởng, CPL, KPI mẫu...).
  */
-import { ChartPie, Download, FolderKanban, MapPin, Megaphone, RotateCcw, UserCheck, UserMinus, Users, UserRoundCheck } from 'lucide-react';
+import { ChartPie, Download, FolderKanban, MapPin, Megaphone, RotateCcw, UserCheck, UserMinus, UserRound, UserRoundCheck, Users } from 'lucide-react';
 import type { DashboardDateField } from '@crm/api';
+import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import {
   BUTTON_OUTLINE_CLASS,
@@ -141,21 +142,30 @@ export const ReportsView = ({ variant }: ReportsViewProps) => {
         </button>
       </section>
 
-      <section aria-label="Chỉ số chính" className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">
+      <section aria-label="Chỉ số chính" className="grid grid-cols-2 gap-3 xl:grid-cols-5 xl:gap-4">
         <ReportKpiCard
           label="Tổng khách"
+          className="col-span-2 xl:col-span-1"
           value={summary.totalCustomers}
           icon={Users}
           iconBoxClass="bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-400"
-          footnote={`Tiến độ trung bình ${summary.averageProgress.toLocaleString('vi-VN')}%`}
+          footnote={`Tiến độ TB ${summary.averageProgress.toLocaleString('vi-VN')}% · ${summary.staleCustomers} khách lâu chưa chăm sóc`}
           density={isDesktop ? 'default' : 'compact'}
         />
         <ReportKpiCard
-          label="Đang chăm sóc"
-          value={summary.byListGroup.CARING}
+          label={LIST_GROUP_LABELS.NOT_CONTACTED}
+          value={summary.byListGroup.NOT_CONTACTED}
+          icon={UserRound}
+          iconBoxClass="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+          footnote="Danh sách Chưa tiếp cận"
+          density={isDesktop ? 'default' : 'compact'}
+        />
+        <ReportKpiCard
+          label={LIST_GROUP_LABELS.INTERESTED}
+          value={summary.byListGroup.INTERESTED}
           icon={UserRoundCheck}
           iconBoxClass="bg-success-50 text-success-600 dark:bg-success-500/10 dark:text-success-500"
-          footnote={`Chưa tiếp cận + Có quan tâm · ${summary.staleCustomers} khách lâu chưa chăm sóc`}
+          footnote="Danh sách Có quan tâm"
           density={isDesktop ? 'default' : 'compact'}
         />
         <ReportKpiCard

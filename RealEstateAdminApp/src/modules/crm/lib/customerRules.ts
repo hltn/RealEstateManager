@@ -56,7 +56,8 @@ export const PROGRESS_VALUES = [0, 25, 50, 75, 100] as const;
 // ---------------------------------------------------------------------------
 
 export const LIST_GROUP_LABELS: Record<ListGroup, string> = {
-  CARING: 'Đang chăm sóc',
+  NOT_CONTACTED: 'Chưa tiếp cận',
+  INTERESTED: 'Có quan tâm',
   NET: 'Khách net',
   DROPPED: 'Bỏ',
 };
@@ -69,7 +70,7 @@ export const getDefaultStatus = (statuses: readonly CustomerStatusItem[]): Custo
   statuses.find((status) => status.isDefault && status.isActive) ?? statuses.find((status) => status.isActive);
 
 export const getListGroupOfStatus = (statuses: readonly CustomerStatusItem[], statusId: string): ListGroup =>
-  findStatus(statuses, statusId)?.listGroup ?? 'CARING';
+  findStatus(statuses, statusId)?.listGroup ?? 'NOT_CONTACTED';
 
 /** Tình trạng có mã DROPPED (hoặc nhóm DROPPED) -> cần hộp xác nhận + Hoàn tác (02 §5). */
 export const isDroppedStatus = (status: Pick<CustomerStatusItem, 'listGroup'> | undefined): boolean =>
@@ -93,13 +94,16 @@ export const isCareTeamValid = (careTeam: readonly CareTeamMember[]): boolean =>
 export const getIdleDays = (customer: { lastCareLogAt: string | null; createdAt: string }, now: Date = new Date()): number =>
   diffDateKeys(toVnDateKey(customer.lastCareLogAt ?? customer.createdAt), getVnTodayKey(now));
 
-/** "Khách lâu chưa chăm sóc": nhóm CARING và quá `staleDays` ngày (giờ VN). MỘT định nghĩa dùng cho dashboard + Việc hôm nay (TB7). */
+/** "Khách lâu chưa chăm sóc": nhóm NOT_CONTACTED hoặc INTERESTED và quá `staleDays` ngày (giờ VN). MỘT định nghĩa dùng cho dashboard + Việc hôm nay (TB7). */
 export const isStaleCustomer = (
   customer: Pick<Customer, 'lastCareLogAt' | 'createdAt' | 'statusId'>,
   statuses: readonly CustomerStatusItem[],
   staleDays: number,
   now: Date = new Date(),
-): boolean => getListGroupOfStatus(statuses, customer.statusId) === 'CARING' && getIdleDays(customer, now) >= staleDays;
+): boolean => {
+  const listGroup = getListGroupOfStatus(statuses, customer.statusId);
+  return (listGroup === 'NOT_CONTACTED' || listGroup === 'INTERESTED') && getIdleDays(customer, now) >= staleDays;
+};
 
 /** Id người KHÔNG thể được phân chăm sóc: không tồn tại, đã khoá hoặc là Quản trị (QT6: Quản trị chỉ xem/quản lý, không chăm sóc). */
 export const findNonAssignableUserIds = (users: readonly Pick<CrmUser, 'id' | 'isActive' | 'role'>[], userIds: readonly string[]): string[] =>
@@ -244,9 +248,9 @@ export const computeOccasions = (
 // Tìm kiếm + hiển thị
 // ---------------------------------------------------------------------------
 
-/** `searchText` (04 §3.2): họ tên bỏ dấu + mã KH + các biến thể SĐT. */
-export const buildSearchText = (input: { fullName: string; phone: string; code?: string; email?: string }): string =>
-  [normalizeVietnamese(input.fullName), normalizeVietnamese(input.code ?? ''), ...getPhoneSearchVariants(input.phone), input.email?.toLowerCase() ?? '']
+/** `searchText` (04 §3.2): họ tên bỏ dấu + các biến thể SĐT + email. */
+export const buildSearchText = (input: { fullName: string; phone: string; email?: string }): string =>
+  [normalizeVietnamese(input.fullName), ...getPhoneSearchVariants(input.phone), input.email?.toLowerCase() ?? '']
     .filter(Boolean)
     .join(' ');
 

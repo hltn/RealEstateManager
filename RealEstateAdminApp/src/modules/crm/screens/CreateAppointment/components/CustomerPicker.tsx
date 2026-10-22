@@ -9,7 +9,6 @@ import { getInitials } from '@crm/lib/staff';
 import type { CustomerDetail, CustomerListItem } from '@crm/api';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
-import { maskPhoneDisplay } from '@crm/lib/phone';
 
 interface CustomerPickerProps {
   id: string;
@@ -48,7 +47,7 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-sm font-semibold text-gray-800 dark:text-white/90">{selectedCustomer.fullName}</span>
-              <span className="text-theme-xs text-gray-500 dark:text-gray-400">— {maskPhoneDisplay(selectedCustomer.phone)}</span>
+              <span className="text-theme-xs text-gray-500 dark:text-gray-400">— {selectedCustomer.phoneMasked}</span>
               <CustomerStatusChip status={selectedCustomer.status} size="small" />
             </div>
             <p className="mt-0.5 truncate text-theme-xs text-gray-500 dark:text-gray-400">
@@ -107,7 +106,7 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
                   >
                     <span className="block text-sm font-medium text-gray-800 dark:text-white/90">{customer.fullName}</span>
                     <span className="block text-theme-xs text-gray-500 dark:text-gray-400">
-                      {maskPhoneDisplay(customer.phone)} • {customer.status.label}
+                      {customer.phoneMasked} • {customer.status.label}
                     </span>
                   </button>
                 </li>

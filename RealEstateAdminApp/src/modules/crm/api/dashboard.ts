@@ -2,8 +2,9 @@
  * Thống kê Dashboard (X6 — 05 §2.13 `GET /crm/dashboard/summary | breakdowns | assignee-stats`), tính THẬT từ dữ liệu
  * khách trong phạm vi quyền. Bộ lọc thời gian áp cho dữ liệu khách theo ngày tạo hoặc ngày cập nhật cuối (giờ VN).
  */
-import { getListGroupOfStatus, getProgressPercent, isInCareTeam, isStaleCustomer } from '@crm/lib/customerRules';
+import { getListGroupOfStatus, getProgressPercent, isInCareTeam, isStaleCustomer, LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { toVnDateKey } from '@crm/lib/dateTime';
+import { toProjectLabel } from '@crm/lib/projectRules';
 import type { CrmDataState } from '@crm/store/crmReducer';
 import type { Customer, ListGroup, Ref, StatusTone } from '@crm/types/crm';
 import type { CrmActor } from './access';
@@ -70,7 +71,7 @@ export const queryDashboardCustomers = (state: CrmDataState, actor: CrmActor, qu
 export const getDashboardSummary = (state: CrmDataState, actor: CrmActor, query: DashboardQuery = {}, staleDays = state.settings.staleCustomerDays, now: Date = new Date()): DashboardSummary => {
   const customers = queryDashboardCustomers(state, actor, query);
   const ids = new Set(customers.map((customer) => customer.id));
-  const byListGroup: Record<ListGroup, number> = { CARING: 0, NET: 0, DROPPED: 0 };
+  const byListGroup: Record<ListGroup, number> = { NOT_CONTACTED: 0, INTERESTED: 0, NET: 0, DROPPED: 0 };
   customers.forEach((customer) => {
     byListGroup[getListGroupOfStatus(state.catalogs.statuses, customer.statusId)] += 1;
   });
@@ -99,7 +100,7 @@ const keysOf = (state: CrmDataState, customer: Customer, dimension: BreakdownDim
       return area ? [{ id: area.id, label: area.name }] : [];
     }
     case 'project':
-      return customer.interestedProjectIds.map((id) => ({ id, label: catalogs.projects.find((project) => project.id === id)?.name ?? 'Dự án đã ngừng' }));
+      return customer.interestedProjectIds.map((id) => ({ id, label: toProjectLabel(catalogs.projects, id) }));
     case 'tag':
       return customer.tagIds.flatMap((id) => {
         const tag = catalogs.tags.find((item) => item.id === id);
@@ -214,7 +215,8 @@ export const buildDashboardReportRows = (report: DashboardReport, periodLabel: s
     ['Báo cáo khách hàng CRM', periodLabel],
     [],
     ['Tổng khách', String(report.summary.totalCustomers)],
-    ['Đang chăm sóc', String(report.summary.byListGroup.CARING)],
+    [LIST_GROUP_LABELS.NOT_CONTACTED, String(report.summary.byListGroup.NOT_CONTACTED)],
+    [LIST_GROUP_LABELS.INTERESTED, String(report.summary.byListGroup.INTERESTED)],
     ['Khách net', String(report.summary.byListGroup.NET)],
     ['Bỏ', String(report.summary.byListGroup.DROPPED)],
     ['Tiến độ trung bình (%)', String(report.summary.averageProgress)],

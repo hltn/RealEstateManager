@@ -32,20 +32,17 @@ export const useContactActions = (): ContactActions => {
     };
     return {
       callCustomer: (customerId) => {
-        if (CRM_FEATURE_FLAGS.isInAppCallEnabled && !isMobile) {
-          actions.openCallModal(customerId);
-          return;
-        }
+        // Xem số = lấy qua `createPhoneView` (kiểm phạm vi + ghi log) TRONG handler (không trong render/effect -> không trùng log do StrictMode).
         const phone = requirePhone(customerId);
-        if (phone) openTelLink(phone);
+        if (!phone) return;
+        if (CRM_FEATURE_FLAGS.isInAppCallEnabled && !isMobile) actions.openCallModal(customerId, phone);
+        else openTelLink(phone);
       },
       messageZalo: (customerId) => {
-        if (CRM_FEATURE_FLAGS.isZaloZnsEnabled && !isMobile) {
-          actions.openZaloModal(customerId);
-          return;
-        }
         const phone = requirePhone(customerId);
-        if (phone) openZaloChat(phone);
+        if (!phone) return;
+        if (CRM_FEATURE_FLAGS.isZaloZnsEnabled && !isMobile) actions.openZaloModal(customerId, phone);
+        else openZaloChat(phone);
       },
       openQuickNote: (customerId) => actions.openQuickNote(customerId),
     };

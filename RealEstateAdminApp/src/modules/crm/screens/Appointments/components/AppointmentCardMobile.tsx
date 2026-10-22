@@ -97,7 +97,7 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
       <div className="flex items-center gap-2">
         {actionVariant === 'visit' && (
           <>
-            <button type="button" onClick={() => callCustomer(appointment.customer.id)} disabled={appointment.customer.isPhoneMasked} className={`${ACTION_SOFT_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+            <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
               <PhoneCall size={16} aria-hidden="true" />
               Gọi nhanh
             </button>
@@ -128,7 +128,7 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
 
         {actionVariant === 'reminder' && (
           <>
-            <button type="button" onClick={() => callCustomer(appointment.customer.id)} disabled={appointment.customer.isPhoneMasked} className={`${ACTION_PRIMARY_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+            <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_PRIMARY_CLASS}>
               <PhoneCall size={16} aria-hidden="true" />
               Gọi ngay cho khách
             </button>

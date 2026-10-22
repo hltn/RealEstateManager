@@ -59,7 +59,7 @@ const COMMON_ALIASES: Record<ImportTarget, string[]> = {
 };
 
 export const IMPORT_PRESETS: ImportPreset[] = [
-  { code: 'DSKH', name: 'DSKH (đang chăm sóc)', defaultStatusCode: 'NOT_CONTACTED', aliases: COMMON_ALIASES, isAssumed: true },
+  { code: 'DSKH', name: 'DSKH (danh sách chính)', defaultStatusCode: 'NOT_CONTACTED', aliases: COMMON_ALIASES, isAssumed: true },
   { code: 'DSKH_NET', name: 'DSKH_NET (khách net)', defaultStatusCode: 'NET', aliases: COMMON_ALIASES, isAssumed: true },
   { code: 'DSKH_DROP', name: 'DSKH_DROP (khách bỏ)', defaultStatusCode: 'DROPPED', aliases: COMMON_ALIASES, isAssumed: true },
   { code: 'CUSTOM', name: 'Tự map cột', defaultStatusCode: 'NOT_CONTACTED', aliases: COMMON_ALIASES, isAssumed: false },
@@ -95,7 +95,8 @@ interface ValidationContext {
   catalogs: CrmCatalogs;
   users: readonly CrmUser[];
   /** SĐT (E.164) đã có trong hệ thống. */
-  existingPhones: ReadonlySet<string>;
+  /** SĐT (đã chuẩn hoá E.164) đã có trong hệ thống? Do lớp dữ liệu trả lời (không đưa danh sách SĐT khách ra UI). */
+  isPhoneTaken: (normalizedPhone: string) => boolean;
   preset: ImportPreset;
 }
 
@@ -119,7 +120,7 @@ const lookupActive = <T extends { isActive: boolean }>(items: readonly T[], valu
  * (tình trạng, nguồn, dự án, khu vực, nhân viên). Dòng có lỗi -> `data = null` (không nhập).
  */
 export const validateImportRows = (rows: readonly (readonly string[])[], mapping: ImportMapping, context: ValidationContext): ImportRowResult[] => {
-  const { catalogs, users, existingPhones, preset } = context;
+  const { catalogs, users, isPhoneTaken, preset } = context;
   const seenPhones = new Map<string, number>();
   const defaultStatus = catalogs.statuses.find((status) => status.code === preset.defaultStatusCode && status.isActive);
   const cell = (row: readonly string[], target: ImportTarget): string => (mapping[target] >= 0 ? (row[mapping[target]] ?? '').trim() : '');
@@ -137,7 +138,7 @@ export const validateImportRows = (rows: readonly (readonly string[])[], mapping
       if (!normalized) errors.push(`SĐT không hợp lệ: "${rawPhone}"`);
       else {
         phone = normalized;
-        if (existingPhones.has(normalized)) errors.push('SĐT đã có trong hệ thống (trùng)');
+        if (isPhoneTaken(normalized)) errors.push('SĐT đã có trong hệ thống (trùng)');
         const firstRow = seenPhones.get(normalized);
         if (firstRow) errors.push(`SĐT trùng với dòng ${firstRow} trong file`);
         else seenPhones.set(normalized, rowNumber);

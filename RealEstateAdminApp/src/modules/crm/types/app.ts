@@ -35,13 +35,14 @@ export interface ToastInput {
 
 /** Modal toàn cục (chỉ 1 modal mở tại 1 thời điểm). */
 export type ActiveModal =
-  | { kind: 'call'; customerId: string }
-  | { kind: 'zalo'; customerId: string }
+  /** `phone` = số đầy đủ đã lấy qua `createPhoneView` (đã ghi log) khi mở modal. */
+  | { kind: 'call'; customerId: string; phone: string }
+  | { kind: 'zalo'; customerId: string; phone: string }
   | { kind: 'quick_note'; customerId: string }
   | { kind: 'lightbox'; images: GalleryImage[]; startIndex: number; title?: string }
   | { kind: 'advanced_filter' };
 
-/** Tab danh sách khách: 3 nhóm danh sách (C6) + "Tất cả" (đang chờ quyết định giữ/bỏ). */
+/** Tab danh sách khách: 4 nhóm danh sách (C6) + "Tất cả". */
 export type CustomerListTab = ListGroup | 'ALL';
 
 /**

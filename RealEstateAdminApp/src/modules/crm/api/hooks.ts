@@ -3,16 +3,17 @@
  * Hiện chạy trên store mock (đồng bộ). Khi có backend: thay thân hook bằng React Query (`useQuery`/`useMutation`)
  * gọi `httpCrmApi`, giữ nguyên chữ ký `{ data, isLoading }` + các hàm của `useCrmApi()` -> UI không sửa.
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { CatalogKind } from '@crm/store/crmReducer';
 import { useCrmRawState, useCrmStore } from '@crm/store/hooks';
 import { selectCurrentUser } from '@crm/store/selectors';
 import { isValidPhone } from '@crm/lib/phone';
+import { listProjectFilterOptions, type ProjectFilterOption } from '@crm/lib/projectRules';
 import { buildActor, type CrmActor } from './access';
 import { countCatalogUsage } from './catalogAdmin';
 import { getDashboardReport, type DashboardQuery } from './dashboard';
 import { listDailyTasks } from './dailyTasks';
-import { buildCustomerExport } from './exports';
+import type { CustomerExportFile } from './exports';
 import { createMockCrmApi, type CrmApi } from './mockCrmApi';
 import {
   getCustomer,
@@ -27,7 +28,7 @@ import {
   listNationalIdViews,
   lookupPhone,
 } from './queries';
-import type { AppointmentListQuery, CustomerListQuery, DailyTaskQuery } from './types';
+import type { ApiResult, AppointmentListQuery, CustomerListQuery, DailyTaskQuery } from './types';
 
 export interface QueryState<T> {
   data: T;
@@ -62,6 +63,24 @@ export const useCrmActor = (): CrmActor => {
 export const useCatalogs = () => {
   const state = useCrmRawState();
   return { catalogs: state.catalogs, users: state.users, teams: state.teams, settings: state.settings };
+};
+
+/**
+ * Lựa chọn dự án cho ô lọc: dự án đang hoạt động + dự án đã ngừng nhưng còn khách gắn (đánh dấu "ngừng"); loại dự án xoá mềm.
+ */
+export const useProjectFilterOptions = (): ProjectFilterOption[] => {
+  const { catalogs, customers } = useCrmRawState();
+  return useMemo(() => {
+    const referenced = new Set(customers.flatMap((customer) => customer.interestedProjectIds));
+    return listProjectFilterOptions(catalogs.projects, referenced);
+  }, [catalogs.projects, customers]);
+};
+
+/** Hàm kiểm "SĐT này đã có khách?" (qua `lookupPhone`, không lộ danh sách SĐT) — dùng khi kiểm file nhập. */
+export const usePhoneExists = (): ((phone: string) => boolean) => {
+  const state = useCrmRawState();
+  const actor = useCrmActor();
+  return useCallback((phone: string) => lookupPhone(state, actor, phone)?.exists ?? false, [state, actor]);
 };
 
 /** `POST /crm/customers/phone-lookups` (X2) dạng truy vấn phản ứng theo state: tự cập nhật khi đề nghị tham gia đổi. */
@@ -134,8 +153,8 @@ export const useAppointments = (query: AppointmentListQuery = {}) => {
 export const useDailyTasks = (query: DailyTaskQuery = {}) => {
   const state = useCrmRawState();
   const actor = useCrmActor();
-  const scope = query.scope;
-  return useMemo(() => done(listDailyTasks(state, actor, { scope })), [state, actor, scope]);
+  const { scope, q } = query;
+  return useMemo(() => done(listDailyTasks(state, actor, { scope, q })), [state, actor, scope, q]);
 };
 
 /** `GET /crm/care-team-requests` */
@@ -154,14 +173,8 @@ export const useAssignableUsers = () => {
 
 /** `POST /crm/customer-exports` (mô phỏng): dựng CSV theo bộ lọc + phạm vi quyền hiện tại tại thời điểm gọi. */
 export const useCustomerExport = () => {
-  const store = useCrmStore();
-  return useMemo(
-    () => (query: CustomerListQuery) => {
-      const { state } = store.getState();
-      return buildCustomerExport(state, buildActor(selectCurrentUser(state), state.teams), query);
-    },
-    [store],
-  );
+  const api = useCrmApi();
+  return useCallback((query: CustomerListQuery): ApiResult<CustomerExportFile> => api.createCustomerExport(query), [api]);
 };
 
 /** `GET /crm/dashboard/*` — số liệu báo cáo theo phạm vi quyền + bộ lọc. */

@@ -34,8 +34,8 @@
 
 | Tab | Nội dung | Ai thấy |
 |---|---|---|
-| Việc hôm nay | Trang mặc định khi vào module | Tất cả |
-| Khách hàng | Danh sách; ba tab con Đang chăm sóc / Khách net / Bỏ | Tất cả (theo quyền) |
+| Việc hôm nay | Trang mặc định khi vào module; xem dạng **Kanban 3 cột** (Quá hạn / Hôm nay / Sắp tới) hoặc danh sách | Tất cả |
+| Khách hàng | Danh sách; các tab con **Tất cả (mặc định) / Chưa tiếp cận / Có quan tâm / Khách net / Bỏ** | Tất cả (theo quyền) |
 | Lịch hẹn | Lịch tuần/tháng các cuộc hẹn và nhắc việc | Tất cả |
 | Báo cáo | Thống kê | Quản lý, Quản trị |
 | Cài đặt | Danh mục, danh sách dự án, trường chân dung | Quản trị |
@@ -59,7 +59,7 @@ Quản lý người dùng vẫn dùng "Quản lý tài khoản" của app; modul
 ## 4. Các màn hình
 
 ### 4.1 Việc hôm nay
-Chia nhóm **Quá hạn → Hôm nay → Sắp tới**. Mỗi thẻ có: tên khách, tình trạng, dự án, lần liên hệ gần nhất, **gợi ý bước tiếp theo** và nút hành động. Thẻ dùng cùng kiểu bo góc, đường kẻ nhạt như bảng của app.
+Chia nhóm **Quá hạn → Hôm nay → Sắp tới**; có nút chuyển **Kanban (3 cột)** hoặc danh sách (lựa chọn được nhớ). Kanban chỉ áp dụng cho Việc hôm nay; Kanban theo tình trạng ở danh sách khách là ý tưởng giai đoạn sau. Mỗi thẻ có: tên khách, tình trạng, dự án, lần liên hệ gần nhất, **gợi ý bước tiếp theo** và nút hành động. Thẻ dùng cùng kiểu bo góc, đường kẻ nhạt như bảng của app.
 
 ```
 QUÁ HẠN (2)
@@ -77,8 +77,8 @@ HÔM NAY (5)   SẮP TỚI (8)
 ```
 Hành động hàng loạt: [Chọn ▾] [Áp dụng]  🔍 Tìm trong trang…
 [Cập nhật mới nhất ▾] [Tình trạng ▾] [Dự án ▾] [Khu vực ▾] [Phụ trách ▾]
-[Đang chăm sóc 128] [Khách net 14] [Bỏ 32]
-Hiển thị 1–20 / 128 khách · Trang 1/7
+[Tất cả 190] [Chưa tiếp cận 40] [Có quan tâm 88] [Khách net 14] [Bỏ 32]
+Hiển thị 1–20 / 190 khách · Trang 1/10
 ┌────────────────────────────────────────────────────────────────┐
 │☐ STT KHÁCH           TÌNH TRẠNG   DỰ ÁN    TIẾN ĐỘ  HẸN   THAO TÁC │
 │☐ 1   Nguyễn Văn A    [Quan tâm]   Q'Terra  ●●○○    09/10  [Gọi][Zalo]│
@@ -86,6 +86,8 @@ Hiển thị 1–20 / 128 khách · Trang 1/7
 └────────────────────────────────────────────────────────────────┘
 ```
 
+- Tab mặc định khi mở danh sách là **Tất cả**; mỗi tab hiện số khách.
+- Danh sách hiện SĐT dạng che (`0912 xxx xxx`). **Mọi thành viên nhóm chăm sóc** bấm "Gọi" hoặc "Hiện số" để xem/gọi số đầy đủ; mỗi lần ghi nhật ký (`PHONE_VIEWED`).
 - Ô **Hành động hàng loạt** chứa: phân người chăm sóc, đổi tình trạng, gắn thẻ.
 - Nhóm nút thao tác giữ **bố cục 2 hàng × 2 nút** như app: hàng trên Gọi (xanh dương) và Zalo (xanh lá), hàng dưới Ghi chú và Xem (nền xám nhạt).
 - Chip tình trạng dùng cùng hình dạng chip "Đã crawl" (bo tròn, viền xám), thêm màu nhẹ.
@@ -110,7 +112,10 @@ Mở thành trang riêng, có đường dẫn "Quản lý khách hàng › Nguy�
 └────────────────┴─────────────────────────────┴───────────────────────┘
 ```
 
-- **Ô ghi chú nhanh luôn ở đầu nhật ký**; chọn "kết quả liên hệ" thì hệ thống gợi ý mốc hẹn nhắc.
+- **Ô ghi chú nhanh luôn ở đầu nhật ký**; chọn "kết quả liên hệ" thì hệ thống gợi ý mốc hẹn nhắc. Có nút **đính kèm ảnh** (tối đa 5 ảnh/ghi chú, jpeg/png/webp, ≤ 5 MB); ảnh hiện dạng hình thu nhỏ trong dòng thời gian, bấm để xem lớn.
+- Khối **Thông tin** có thêm **Email** (không bắt buộc). Hồ sơ không có mã khách hàng.
+- Lịch hẹn có loại **Ký cọc / HĐMB** bên cạnh xem nhà, gặp mặt, gọi lại, khác.
+- Mục **Lịch sử thay đổi** hiện SĐT cũ → mới đầy đủ cho người xem được khách.
 - **CCCD** chỉ hiện 4 số cuối; nút "Hiện" chỉ có với người được cấp quyền và ghi lại mỗi lần xem.
 - Tiến độ là **4 chấm**, thay cho thanh ký tự █░ của Sheets.
 
@@ -118,6 +123,8 @@ Mở thành trang riêng, có đường dẫn "Quản lý khách hàng › Nguy�
 - **Lịch hẹn:** lịch tuần/tháng; bấm vào cuộc hẹn mở nhanh hồ sơ khách.
 - **Báo cáo:** thẻ số liệu và biểu đồ theo tình trạng, nguồn khách, dự án, khu vực, người phụ trách; bộ lọc theo thời gian.
 - **Cài đặt:** danh mục (tình trạng, nguồn, khu vực), **danh sách dự án**, **trường chân dung** (thêm/sửa/bớt).
+- **Màn Dự án (Quản trị, CRUD đầy đủ):** bảng dự án (mã, tên, chủ đầu tư, vị trí, khoảng giá, trạng thái, số khách quan tâm). Nút **Thêm dự án**, **Sửa**, **Ngừng hoạt động / Kích hoạt lại**, **Xóa** (xóa mềm). Mã dự án bắt buộc (chữ, số, `-`, `_`, tối đa 20 ký tự). Trạng thái chọn từ danh sách: Sắp mở bán / Đang bán / Hết hàng. Dự án đang có khách quan tâm: nút Xóa bị thay bằng gợi ý "Ngừng hoạt động"; dự án ngừng hiện nhãn "đã ngừng" ở khách cũ và ẩn khỏi ô chọn mới. Có bộ lọc xem dự án đã xóa và nút **Khôi phục**.
+- **Xuất file (Quản trị, Quản lý):** file Excel/CSV chứa SĐT đầy đủ, không chứa CCCD đầy đủ; mỗi lần xuất được ghi nhật ký.
 
 ### 4.5 Giai đoạn sau: ghi âm và văn bản cuộc gọi
 Thẻ **Cuộc gọi** trong dòng thời gian: người gọi, thời lượng, tóm tắt, nút nghe lại (người có quyền), văn bản mở rộng, biểu tượng cho biết **khách đã đồng ý ghi âm**.
@@ -129,7 +136,10 @@ Chỉ thêm những gì app hiện chưa có, vẽ bằng **cùng màu, chữ, g
 | Thành phần | Mô tả |
 |---|---|
 | Thanh tab trong trang | Tab ngang, gạch chân xanh ở tab đang chọn |
-| Chip tình trạng có màu | Có quan tâm (xanh lá nhạt), Chưa tiếp cận (xám), Khách net (cam nhạt), Bỏ (đỏ nhạt); luôn kèm chữ **[Đề xuất]** |
+| Chip tình trạng có màu | Có quan tâm (xanh lá nhạt), Chưa tiếp cận (xám), Khách net (cam nhạt), Bỏ (đỏ nhạt); luôn kèm chữ **[Đề xuất]**. Tab "Tất cả" không có chip riêng |
+| Chuyển chế độ Kanban / danh sách | Nút đổi dạng xem ở Việc hôm nay |
+| Ảnh đính kèm | Nút chọn ảnh trong ô ghi chú, hình thu nhỏ, khung xem lớn |
+| Bảng và biểu mẫu Dự án | Thêm/sửa dự án, chip trạng thái dự án, khôi phục dự án đã xóa |
 | Thanh tiến độ 4 bước | 4 chấm tương ứng 4 tiêu chí |
 | Nhóm chăm sóc | Ảnh đại diện chồng nhau, người phụ trách chính có ★ |
 | Chip dự án / sở thích | Chọn nhiều, xóa bằng ×, gợi ý khi gõ |

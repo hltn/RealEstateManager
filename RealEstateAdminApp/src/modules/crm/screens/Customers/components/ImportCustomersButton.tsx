@@ -6,12 +6,11 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { CircleAlert, FileUp, Upload } from 'lucide-react';
 import { Modal } from '../../../../../components/ui/modal';
-import { canImportCustomers, useCatalogs, useCrmActor, useCrmApi } from '@crm/api';
+import { canImportCustomers, useCatalogs, useCrmActor, useCrmApi, usePhoneExists } from '@crm/api';
 import { parseCsv } from '@crm/lib/csv';
 import { autoMapColumns, checkImportLimits, IMPORT_PRESETS, IMPORT_TARGET_LABELS, IMPORT_TARGETS, validateImportRows, type ImportMapping, type ImportTarget } from '@crm/lib/importCustomers';
-import { normalizePhone } from '@crm/lib/phone';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, FORM_LABEL_CLASS, SOLID_INPUT_CLASS } from '@crm/lib/uiClasses';
-import { useCrmActions, useCrmRawState } from '@crm/store';
+import { useCrmActions } from '@crm/store';
 
 const PREVIEW_LIMIT = 50;
 
@@ -24,7 +23,7 @@ interface ParsedFile {
 const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
   const api = useCrmApi();
   const { catalogs, users } = useCatalogs();
-  const { customers } = useCrmRawState();
+  const isPhoneTaken = usePhoneExists();
   const { showToast } = useCrmActions();
   const [presetCode, setPresetCode] = useState(IMPORT_PRESETS[0].code);
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
@@ -34,9 +33,8 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
 
   const results = useMemo(() => {
     if (!parsed || !mapping) return [];
-    const existingPhones = new Set(customers.map((customer) => normalizePhone(customer.phone) ?? customer.phone));
-    return validateImportRows(parsed.rows, mapping, { catalogs, users, existingPhones, preset });
-  }, [parsed, mapping, customers, catalogs, users, preset]);
+    return validateImportRows(parsed.rows, mapping, { catalogs, users, isPhoneTaken, preset });
+  }, [parsed, mapping, isPhoneTaken, catalogs, users, preset]);
   const validCount = results.filter((result) => result.data).length;
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {

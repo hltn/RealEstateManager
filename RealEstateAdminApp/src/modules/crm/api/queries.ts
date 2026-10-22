@@ -15,12 +15,13 @@ import {
   maskNationalId,
 } from '@crm/lib/customerRules';
 import { toVnDateKey } from '@crm/lib/dateTime';
-import { getPhoneSearchVariants, normalizePhone } from '@crm/lib/phone';
+import { toProjectLabel } from '@crm/lib/projectRules';
+import { getPhoneSearchVariants, maskPhoneDisplay, normalizePhone } from '@crm/lib/phone';
 import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmDataState } from '@crm/store/crmReducer';
 import type { CustomerFilters } from '@crm/types/app';
 import type { Appointment, CareLog, CriterionKey, CrmCatalogs, CrmUser, Customer, PersonaGroupCode, Ref, StatusRef, UserRef } from '@crm/types/crm';
-import { canAccessCustomer, getCustomerPermissions, getPhoneView, type CrmActor } from './access';
+import { canAccessCustomer, getCustomerPermissions, type CrmActor } from './access';
 import type {
   AppointmentListQuery,
   AppointmentView,
@@ -59,21 +60,20 @@ export const toStatusRef = (catalogs: CrmCatalogs, statusId: string): StatusRef 
   const status = catalogs.statuses.find((item) => item.id === statusId);
   return status
     ? { id: status.id, label: status.label, code: status.code, listGroup: status.listGroup, tone: status.tone }
-    : { id: statusId, label: 'Không rõ', code: 'UNKNOWN', listGroup: 'CARING', tone: 'gray' };
+    : { id: statusId, label: 'Không rõ', code: 'UNKNOWN', listGroup: 'NOT_CONTACTED', tone: 'gray' };
 };
 
 const toProjectRefs = (catalogs: CrmCatalogs, projectIds: readonly string[]): Ref[] =>
-  projectIds.map((id) => ({ id, label: catalogs.projects.find((project) => project.id === id)?.name ?? 'Dự án đã ngừng' }));
+  projectIds.map((id) => ({ id, label: toProjectLabel(catalogs.projects, id) }));
 
-const toListItem = (state: CrmDataState, actor: CrmActor, customer: Customer): CustomerListItem => {
+const toListItem = (state: CrmDataState, customer: Customer): CustomerListItem => {
   const { catalogs, users } = state;
   const source = customer.sourceId ? catalogs.leadSources.find((item) => item.id === customer.sourceId) : undefined;
   const area = customer.areaId ? catalogs.areas.find((item) => item.id === customer.areaId) : undefined;
   return {
     id: customer.id,
-    code: customer.code,
     fullName: customer.fullName,
-    ...getPhoneView(actor, customer),
+    phoneMasked: maskPhoneDisplay(customer.phone),
     status: toStatusRef(catalogs, customer.statusId),
     source: source ? { id: source.id, label: source.label } : null,
     projects: toProjectRefs(catalogs, customer.interestedProjectIds),
@@ -191,7 +191,7 @@ export const listCustomers = (state: CrmDataState, actor: CrmActor, query: Custo
   const totalPages = Math.max(1, Math.ceil(matched.length / limit));
   const page = Math.min(totalPages, Math.max(1, query.page ?? 1));
   return {
-    data: matched.slice((page - 1) * limit, page * limit).map((customer) => toListItem(state, actor, customer)),
+    data: matched.slice((page - 1) * limit, page * limit).map((customer) => toListItem(state, customer)),
     meta: { total: matched.length, page, limit, totalPages },
   };
 };
@@ -199,7 +199,7 @@ export const listCustomers = (state: CrmDataState, actor: CrmActor, query: Custo
 /** `GET /crm/customers/list-counts` — cùng bộ lọc trừ `listGroup` -> số trên tab khớp số dòng. */
 export const getListCounts = (state: CrmDataState, actor: CrmActor, query: CustomerListQuery = {}): ListCounts => {
   const matched = queryCustomers(state, actor, { ...query, listGroup: 'ALL' });
-  const counts: ListCounts = { CARING: 0, NET: 0, DROPPED: 0, ALL: matched.length, byStatus: [] };
+  const counts: ListCounts = { NOT_CONTACTED: 0, INTERESTED: 0, NET: 0, DROPPED: 0, ALL: matched.length, byStatus: [] };
   const byStatus = new Map<string, number>();
   matched.forEach((customer) => {
     counts[getListGroupOfStatus(state.catalogs.statuses, customer.statusId)] += 1;
@@ -230,7 +230,7 @@ export const getCustomer = (state: CrmDataState, actor: CrmActor, customerId: st
   if (!customer) return null;
   const { users } = state;
   return {
-    ...toListItem(state, actor, customer),
+    ...toListItem(state, customer),
     email: customer.email,
     criteria: Object.fromEntries(
       CRITERIA_KEYS.map((key) => [key, { ...customer.criteria[key], updatedBy: toUserRef(users, customer.criteria[key].updatedBy) }]),
@@ -327,12 +327,12 @@ export const listCareLogs = (state: CrmDataState, actor: CrmActor, customerId: s
     .map((log) => toCareLogView(state, log, primaryUserId));
 };
 
-export const toAppointmentView = (state: CrmDataState, actor: CrmActor, appointment: Appointment, customer: Customer): AppointmentView => ({
+export const toAppointmentView = (state: CrmDataState, appointment: Appointment, customer: Customer): AppointmentView => ({
   id: appointment.id,
   customer: {
     id: customer.id,
     fullName: customer.fullName,
-    ...getPhoneView(actor, customer),
+    phoneMasked: maskPhoneDisplay(customer.phone),
     status: toStatusRef(state.catalogs, customer.statusId),
     projects: toProjectRefs(state.catalogs, customer.interestedProjectIds),
   },
@@ -366,7 +366,7 @@ export const listAppointments = (state: CrmDataState, actor: CrmActor, query: Ap
       return true;
     })
     .sort((a, b) => a.startAt.localeCompare(b.startAt))
-    .map((appointment) => toAppointmentView(state, actor, appointment, customersById.get(appointment.customerId) as Customer));
+    .map((appointment) => toAppointmentView(state, appointment, customersById.get(appointment.customerId) as Customer));
 };
 
 /** `GET /crm/customers/:id/histories` — mục xem CCCD chỉ trả cho Quản trị/Quản lý. */

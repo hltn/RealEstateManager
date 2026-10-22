@@ -42,7 +42,7 @@ describe('importCustomers', () => {
     const results = validateImportRows(rows, mapping, {
       catalogs: SEED_CATALOGS,
       users: SEED_USERS,
-      existingPhones: new Set(['+84912345678']),
+      isPhoneTaken: (phone) => phone === '+84912345678',
       preset: DSKH,
     });
     expect(results[0]).toMatchObject({ rowNumber: 2, errors: [], data: { phone: '+84900111001', sourceId: 'src-website', interestedProjectIds: ['proj-1', 'proj-2'], areaId: 'area-q7', primaryUserId: 'hanh', statusId: 'st-not-contacted' } });
@@ -61,7 +61,7 @@ describe('importCustomers', () => {
 
   it('preset DSKH_DROP gán tình trạng mặc định "Bỏ" khi file không có cột tình trạng', () => {
     const mapping = autoMapColumns(['Họ tên', 'SĐT'], DROP);
-    const [result] = validateImportRows([['An', '0900111222']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, existingPhones: new Set(), preset: DROP });
+    const [result] = validateImportRows([['An', '0900111222']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DROP });
     expect(result.data?.statusId).toBe('st-dropped');
   });
 });
@@ -69,7 +69,7 @@ describe('importCustomers', () => {
 describe('C4 / N3 import: giới hạn, mục đã ẩn, nhân viên không hợp lệ', () => {
   const headers = ['Họ tên', 'SĐT', 'Nguồn', 'Dự án', 'Khu vực', 'Tình trạng', 'NV chăm sóc'];
   const mapping = autoMapColumns(headers, DSKH);
-  const base = { catalogs: SEED_CATALOGS, users: SEED_USERS, existingPhones: new Set<string>(), preset: DSKH };
+  const base = { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH };
   const run = (row: string[], overrides: Partial<typeof base> = {}) => validateImportRows([row], mapping, { ...base, ...overrides })[0];
 
   it('checkImportLimits: quá 5 MB hoặc quá 5.000 dòng bị từ chối', () => {

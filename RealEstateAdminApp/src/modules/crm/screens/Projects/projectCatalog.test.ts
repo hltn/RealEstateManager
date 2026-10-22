@@ -22,10 +22,10 @@ describe('projectCatalog', () => {
   });
 
   it('màu trạng thái dự án', () => {
-    expect(getProjectStatusTone('Đang mở bán đợt 2')).toBe('success');
-    expect(getProjectStatusTone('Sắp mở bán')).toBe('warning');
-    expect(getProjectStatusTone('Đã bàn giao')).toBe('neutral');
-    expect(getProjectStatusTone('')).toBe('neutral');
+    expect(getProjectStatusTone('SELLING')).toBe('success');
+    expect(getProjectStatusTone('UPCOMING')).toBe('warning');
+    expect(getProjectStatusTone('SOLD_OUT')).toBe('neutral');
+    expect(getProjectStatusTone(null)).toBe('neutral');
   });
 
   it('số khách quan tâm theo id dự án', () => {

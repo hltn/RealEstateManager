@@ -96,7 +96,16 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
           <TextInput id={fieldId('name')} icon={User} maxLength={150} value={basic.fullName} onChange={(event) => form.setBasicField('fullName', event.target.value)} hasError={Boolean(basicErrors.fullName)} {...getFieldA11yProps(getErrorId(fieldId('name')), basicErrors.fullName)} />
         </FormField>
         <FormField inputId={fieldId('phone')} label="Số điện thoại" isRequired error={basicErrors.phone}>
-          <TextInput id={fieldId('phone')} type="tel" icon={Phone} value={basic.phone} disabled={form.isPhoneLocked} title={form.isPhoneLocked ? 'Bạn không có quyền xem/sửa số điện thoại của khách này' : undefined} onChange={(event) => form.setBasicField('phone', event.target.value)} hasError={Boolean(basicErrors.phone)} className="font-mono" {...getFieldA11yProps(getErrorId(fieldId('phone')), basicErrors.phone)} />
+          {form.isPhoneLocked ? (
+            <div className="flex items-center gap-2">
+              <TextInput id={fieldId('phone')} type="tel" icon={Phone} value={form.phoneMasked} readOnly className="font-mono" wrapperClassName="flex-1" />
+              <button type="button" onClick={form.revealPhone} title="Lần xem số đầy đủ sẽ được ghi lại" className={`${BUTTON_SOFT_SM_CLASS} shrink-0`}>
+                Sửa số
+              </button>
+            </div>
+          ) : (
+            <TextInput id={fieldId('phone')} type="tel" icon={Phone} value={basic.phone} onChange={(event) => form.setBasicField('phone', event.target.value)} hasError={Boolean(basicErrors.phone)} className="font-mono" {...getFieldA11yProps(getErrorId(fieldId('phone')), basicErrors.phone)} />
+          )}
         </FormField>
         <FormField inputId={fieldId('email')} label="Email" error={basicErrors.email}>
           <TextInput id={fieldId('email')} type="email" icon={Mail} value={basic.email} onChange={(event) => form.setBasicField('email', event.target.value)} hasError={Boolean(basicErrors.email)} />

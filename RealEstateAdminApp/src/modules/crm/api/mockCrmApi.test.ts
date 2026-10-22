@@ -12,13 +12,15 @@ beforeEach(() => {
 
 describe('createCustomer (C1, X2, QT3, QT4)', () => {
   it('chỉ bắt buộc họ tên + SĐT; khách mới tiến độ 0%, tình trạng mặc định "Chưa tiếp cận", SĐT lưu E.164', () => {
-    const { api } = createTestHarness('hanh');
+    const harness = createTestHarness('hanh');
+    const { api } = harness;
     const result = api.createCustomer({ fullName: 'Khách Mới', phone: '0900 111 222' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.progress).toBe(0);
     expect(result.data.status.code).toBe('NOT_CONTACTED');
-    expect(result.data.phone).toBe('+84900111222');
+    expect(result.data.phoneMasked).toBe('0900 111 •••');
+    expect(harness.getState().customers.find((customer) => customer.id === result.data.id)?.phone).toBe('+84900111222');
     expect(result.data.primaryAssignee).toBeNull();
   });
 

@@ -129,6 +129,8 @@ describe('C2 bulk CHANGE_STATUS', () => {
     expect(code(harness.api.bulkOperation({ type: 'CHANGE_STATUS', customerIds: ['CUST-001'], statusId: 'st-ghost' }))).toBe('STATUS_NOT_FOUND');
     harness.switchUser('admin');
     const interested = harness.getState().catalogs.statuses.find((status) => status.id === 'st-interested')!;
+    // Danh sách "Có quan tâm" phải còn ít nhất 1 tình trạng đang dùng -> thêm tình trạng thay thế trước khi ẩn.
+    expect(harness.api.upsertCatalogItem('statuses', { ...interested, id: 'st-interested-2', code: 'INTERESTED_2', label: 'Quan tâm cao', isSystem: false }).ok).toBe(true);
     expect(harness.api.upsertCatalogItem('statuses', { ...interested, isActive: false }).ok).toBe(true);
     harness.switchUser('hanh');
     expect(code(harness.api.bulkOperation({ type: 'CHANGE_STATUS', customerIds: ['CUST-001'], statusId: 'st-interested' }))).toBe('STATUS_NOT_FOUND');

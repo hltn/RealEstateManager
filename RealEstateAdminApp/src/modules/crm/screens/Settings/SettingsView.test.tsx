@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
@@ -41,8 +41,18 @@ describe('SettingsView (X7) — dựng với store + API mock thật', () => {
     expect(store.getState().state.catalogs.areas).toHaveLength(before);
   });
 
-  it('ẩn tình trạng "Có quan tâm" giữ nguyên số khách đang dùng', () => {
+  it('không ẩn được tình trạng duy nhất của danh sách "Có quan tâm"', () => {
     const store = renderWithStore(<SettingsView variant="desktop" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ẩn Có quan tâm' }));
+    expect(store.getState().state.catalogs.statuses.find((status) => status.id === 'st-interested')?.isActive).toBe(true);
+  });
+
+  it('ẩn tình trạng "Có quan tâm" (khi còn tình trạng khác cùng danh sách) giữ nguyên số khách đang dùng', () => {
+    const store = renderWithStore(<SettingsView variant="desktop" />);
+    const interested = store.getState().state.catalogs.statuses.find((status) => status.id === 'st-interested')!;
+    act(() => {
+      store.getState().dispatch({ type: 'catalogs/upsert', kind: 'statuses', item: { ...interested, id: 'st-spare', code: 'SPARE', label: 'Quan tâm cao', isSystem: false } });
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Ẩn Có quan tâm' }));
     expect(store.getState().state.catalogs.statuses.find((status) => status.id === 'st-interested')?.isActive).toBe(false);
     expect(store.getState().state.customers.filter((customer) => customer.statusId === 'st-interested').length).toBeGreaterThan(0);

@@ -6,6 +6,7 @@ import { formatVnDate, formatVnDateTime, getVnTodayKey } from '@crm/lib/dateTime
 import { getProgressPercent, maskNationalId } from '@crm/lib/customerRules';
 import { formatPhoneDisplay, normalizePhone } from '@crm/lib/phone';
 import { toCsv } from '@crm/lib/csv';
+import { toProjectLabel } from '@crm/lib/projectRules';
 import type { CrmDataState } from '@crm/store/crmReducer';
 import type { CrmActor } from './access';
 import { queryCustomers, toStatusRef, toUserRef } from './queries';
@@ -21,8 +22,13 @@ export const formatPhoneForExport = (phone: string): string => {
   return normalized.startsWith('+84') ? formatPhoneDisplay(normalized) : `00${normalized.slice(1)}`;
 };
 
+export interface CustomerExportFile {
+  fileName: string;
+  content: string;
+  rowCount: number;
+}
+
 export const EXPORT_COLUMNS = [
-  'Mã KH',
   'Họ tên',
   'Số điện thoại',
   'Tình trạng',
@@ -46,15 +52,14 @@ export const buildCustomerExport = (
   actor: CrmActor,
   query: CustomerListQuery,
   now: Date = new Date(),
-): { fileName: string; content: string; rowCount: number } => {
+): CustomerExportFile => {
   const customers = queryCustomers(state, actor, query);
   const rows = customers.map((customer) => [
-    customer.code,
     customer.fullName,
     formatPhoneForExport(customer.phone),
     toStatusRef(state.catalogs, customer.statusId).label,
     state.catalogs.leadSources.find((source) => source.id === customer.sourceId)?.label ?? '',
-    customer.interestedProjectIds.map((id) => state.catalogs.projects.find((project) => project.id === id)?.name ?? '').filter(Boolean).join('; '),
+    customer.interestedProjectIds.map((id) => toProjectLabel(state.catalogs.projects, id)).join('; '),
     state.catalogs.areas.find((area) => area.id === customer.areaId)?.name ?? '',
     customer.tagIds.map((id) => state.catalogs.tags.find((tag) => tag.id === id)?.name ?? '').filter(Boolean).join('; '),
     String(getProgressPercent(customer.criteria)),

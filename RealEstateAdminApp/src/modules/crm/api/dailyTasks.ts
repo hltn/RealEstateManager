@@ -4,17 +4,20 @@
  * - APPOINTMENT: lịch hẹn SCHEDULED.
  * - FOLLOW_UP: bước tiếp theo (`nextAction.dueAt`) của nhật ký MỚI NHẤT có bước tiếp theo, chưa đánh dấu xong.
  * - OCCASION: sinh nhật/kỷ niệm trong N ngày tới (N = `settings.occasionLeadDays`), khách bật nhắc dịp.
- * - STALE_CUSTOMER: khách nhóm CARING quá `settings.staleCustomerDays` ngày chưa có nhật ký.
+ * - STALE_CUSTOMER: khách nhóm Chưa tiếp cận / Có quan tâm quá `settings.staleCustomerDays` ngày chưa có nhật ký.
  *
  * Phân nhóm: dueAt trước hôm nay -> Quá hạn; trong hôm nay -> Hôm nay; trong `upcomingDays` ngày tới -> Sắp tới.
  */
 import { PERSONA_FIELDS } from '@crm/data/personaFields';
 import { getIdleDays, getListGroupOfStatus, getPrimaryUserId, isInCareTeam, isStaleCustomer } from '@crm/lib/customerRules';
+import { maskPhoneDisplay } from '@crm/lib/phone';
+import { toProjectLabel } from '@crm/lib/projectRules';
+import { includesVietnamese } from '@crm/lib/text';
 import { addDaysToDateKey, diffDateKeys, getVnTodayKey, toVnDateKey, vnDateTimeToIso } from '@crm/lib/dateTime';
 import type { CrmDataState } from '@crm/store/crmReducer';
 import type { Customer, DailyTaskGroup } from '@crm/types/crm';
-import { getPhoneView, type CrmActor } from './access';
-import { getAccessibleCustomers, toStatusRef, toUserRef } from './queries';
+import type { CrmActor } from './access';
+import { getAccessibleCustomers, matchesCustomerFilters, toStatusRef, toUserRef } from './queries';
 import type { DailyTask, DailyTaskQuery } from './types';
 
 const EXCERPT_LENGTH = 90;
@@ -51,12 +54,12 @@ export const getNextOccurrenceKey = (month: number, day: number, todayKey: strin
   return thisYear >= todayKey ? thisYear : build(year + 1);
 };
 
-const toTaskCustomer = (state: CrmDataState, actor: CrmActor, customer: Customer): DailyTask['customer'] => ({
+const toTaskCustomer = (state: CrmDataState, customer: Customer): DailyTask['customer'] => ({
   id: customer.id,
   fullName: customer.fullName,
-  ...getPhoneView(actor, customer),
+  phoneMasked: maskPhoneDisplay(customer.phone),
   status: toStatusRef(state.catalogs, customer.statusId),
-  projects: customer.interestedProjectIds.map((id) => ({ id, label: state.catalogs.projects.find((project) => project.id === id)?.name ?? '' })),
+  projects: customer.interestedProjectIds.map((id) => ({ id, label: toProjectLabel(state.catalogs.projects, id) })),
 });
 
 const getLastCareLog = (state: CrmDataState, customerId: string): DailyTask['lastCareLog'] => {
@@ -81,13 +84,16 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
   const customersById = new Map(customers.map((customer) => [customer.id, customer]));
   const tasks: DailyTask[] = [];
 
+  const keyword = query.q?.trim() ?? '';
   const pushTask = (customer: Customer, task: Omit<DailyTask, 'customer' | 'group' | 'lastCareLog' | 'isPrimary'>) => {
     const group = getTaskGroup(task.dueAt, todayKey, upcomingDays);
     if (!group) return;
+    // Tìm kiếm phía dữ liệu (05 `q`): tên/nội dung việc không dấu, hoặc như tìm khách (tên, SĐT các biến thể, email).
+    if (keyword && !includesVietnamese(`${customer.fullName} ${task.title} ${task.suggestion}`, keyword) && !matchesCustomerFilters(customer, { q: keyword })) return;
     tasks.push({
       ...task,
       group,
-      customer: toTaskCustomer(state, actor, customer),
+      customer: toTaskCustomer(state, customer),
       lastCareLog: getLastCareLog(state, customer.id),
       isPrimary: getPrimaryUserId(customer.careTeam) === actor.userId,
     });
@@ -150,7 +156,7 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
     });
   });
 
-  // 4. Khách lâu chưa chăm sóc (chỉ nhóm CARING) — phụ trách chính nhận ưu tiên.
+  // 4. Khách lâu chưa chăm sóc (chỉ nhóm Chưa tiếp cận / Có quan tâm) — phụ trách chính nhận ưu tiên.
   customers.forEach((customer) => {
     if (!isStaleCustomer(customer, state.catalogs.statuses, staleCustomerDays, now)) return;
     const primaryId = getPrimaryUserId(customer.careTeam);

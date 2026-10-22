@@ -1,5 +1,5 @@
 /**
- * Tab danh sách dạng viên thuốc có số đếm (C6): Đang chăm sóc / Khách net / Bỏ / Tất cả.
+ * Tab danh sách dạng viên thuốc có số đếm (C6): Chưa tiếp cận / Có quan tâm / Khách net / Bỏ / Tất cả.
  * Số đếm lấy từ `GET /crm/customers/list-counts` với CÙNG bộ lọc (trừ tab) -> luôn khớp số dòng của tab.
  */
 import type { ListCounts } from '@crm/api';

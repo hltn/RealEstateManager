@@ -49,7 +49,7 @@ export const useReportData = (): ReportData => {
     projects: useMemo(() => toBreakdownRows(report.byProject), [report.byProject]),
     areas: useMemo(() => toBreakdownRows(report.byArea), [report.byArea]),
     assigneeRows: report.assignees,
-    projectOptions: catalogs.projects,
+    projectOptions: catalogs.projects.filter((project) => !project.deletedAt),
     assigneeOptions: users.filter((user) => user.role !== 'ADMIN' && user.isActive).map((user) => ({ id: user.id, label: user.fullName })),
     exportCsv: () => downloadCsv(`BaoCao_KhachHang_${todayKey}.csv`, toCsv(buildDashboardReportRows(report, getPeriodLabel(filters, query)))),
   };

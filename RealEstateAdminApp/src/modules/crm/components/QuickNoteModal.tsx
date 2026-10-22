@@ -9,7 +9,6 @@ import { useState, type FormEvent } from 'react';
 import { NotebookPen, Save } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
 import { useCatalogs, useCrmApi } from '@crm/api';
-import { formatPhoneDisplay } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import { BottomSheet } from './BottomSheet';
 import { getSuggestedFollowUpIso } from '@crm/screens/CustomerDetail/customerDetailUtils';
@@ -36,7 +35,7 @@ const FORM_ID = 'crm-quick-note-form';
 const TITLE_ID = 'crm-quick-note-title';
 
 interface QuickNoteModalProps {
-  customer: { id: string; fullName: string; phone: string };
+  customer: { id: string; fullName: string; phoneMasked: string };
   /** 'dialog' = modal giữa màn (web), 'sheet' = trượt từ đáy (app). */
   variant: QuickNoteVariant;
   onClose: () => void;
@@ -157,7 +156,7 @@ export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalPro
       <BottomSheet
         titleId={TITLE_ID}
         title="Ghi chú & Nhắc việc"
-        subtitle={`${customer.fullName} · ${formatPhoneDisplay(customer.phone)}`}
+        subtitle={`${customer.fullName} · ${customer.phoneMasked}`}
         onClose={onClose}
         footer={actionButtons}
       >
@@ -178,7 +177,7 @@ export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalPro
             <h3 id={TITLE_ID} className="text-lg font-semibold text-gray-800 dark:text-white/90">
               Ghi chú nhanh — {customer.fullName}
             </h3>
-            <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {formatPhoneDisplay(customer.phone)}</p>
+            <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {customer.phoneMasked}</p>
           </div>
         </div>
         {form}

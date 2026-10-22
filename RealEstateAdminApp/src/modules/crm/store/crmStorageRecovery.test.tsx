@@ -64,10 +64,12 @@ describe('changeLogs lệch cấu trúc không làm UI vỡ', () => {
     expect(loadCrmData()?.changeLogs).toHaveLength(data.changeLogs.length);
   });
 
-  it('đề nghị tham gia thiếu trường bắt buộc -> dữ liệu bị coi là hỏng', () => {
+  it('đề nghị tham gia thiếu trường bắt buộc -> chỉ loại riêng đề nghị đó, giữ phần còn lại', () => {
     const data = seed();
     stored({ ...data, careTeamRequests: [{ id: 'R1', customerId: 'CUST-001' }] });
-    expect(loadCrmData()).toBeNull();
+    const loaded = loadCrmData();
+    expect(loaded?.careTeamRequests).toHaveLength(0);
+    expect(loaded?.customers).toHaveLength(data.customers.length);
   });
 });
 

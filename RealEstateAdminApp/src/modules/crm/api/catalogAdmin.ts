@@ -2,6 +2,8 @@
  * Quy tắc quản trị danh mục / người dùng / cài đặt (X7 — 05 §2.2, §2.8, §2.14). Hàm thuần, dùng chung cho mock API và UI.
  * KHÔNG xoá cứng: mục đang/đã dùng chỉ được ẩn (`isActive = false`) để dữ liệu cũ vẫn hiển thị đúng.
  */
+import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
+import { getFirstProjectError, getProjectErrors } from '@crm/lib/projectRules';
 import { normalizeVietnamese } from '@crm/lib/text';
 import type { CatalogKind, CrmDataState } from '@crm/store/crmReducer';
 import type { CrmCatalogs, CrmSettings, CrmUser } from '@crm/types/crm';
@@ -35,6 +37,8 @@ export const countCatalogUsage = (state: CrmDataState, kind: CatalogKind, itemId
 
 /** Lỗi nghiệp vụ khi lưu 1 mục danh mục; null = hợp lệ. */
 export const validateCatalogItem = (catalogs: CrmCatalogs, kind: CatalogKind, item: AnyCatalogItem): string | null => {
+  // Dự án: quy tắc riêng theo từng trường (tên + mã bắt buộc, không trùng) — dùng chung với dialog ở màn Dự án.
+  if (kind === 'projects' && 'code' in item && 'fullName' in item) return getFirstProjectError(getProjectErrors(catalogs.projects, item));
   const name = getCatalogItemName(item).trim();
   if (!name) return 'Vui lòng nhập tên.';
   if (name.length > CATALOG_NAME_MAX_LENGTH) return `Tên tối đa ${CATALOG_NAME_MAX_LENGTH} ký tự.`;
@@ -43,16 +47,12 @@ export const validateCatalogItem = (catalogs: CrmCatalogs, kind: CatalogKind, it
     (other) => other.id !== item.id && normalizeVietnamese(getCatalogItemName(other).trim()) === normalizeVietnamese(name),
   );
   if (isDuplicate) return `Đã có mục "${name}" trong danh mục.`;
-  if (kind === 'statuses' && 'listGroup' in item && item.isDefault && item.listGroup !== 'CARING') return 'Tình trạng mặc định phải thuộc danh sách "Đang chăm sóc".';
+  if (kind === 'statuses' && 'listGroup' in item && item.isDefault && item.listGroup !== 'NOT_CONTACTED') return `Tình trạng mặc định phải thuộc danh sách "${LIST_GROUP_LABELS.NOT_CONTACTED}".`;
   if (kind === 'statuses' && 'listGroup' in item && !item.isActive) {
     if (item.isDefault) return 'Không thể ẩn tình trạng mặc định cho khách mới.';
     const previous = catalogs.statuses.find((status) => status.id === item.id);
     const remainingInGroup = catalogs.statuses.filter((status) => status.id !== item.id && status.isActive && status.listGroup === item.listGroup);
-    if (previous?.isActive && remainingInGroup.length === 0) return 'Mỗi danh sách (Đang chăm sóc / Khách net / Bỏ) cần ít nhất 1 tình trạng đang dùng.';
-  }
-  if (kind === 'projects' && 'code' in item && item.code.trim()) {
-    const code = item.code.trim().toUpperCase();
-    if (catalogs.projects.some((project) => project.id !== item.id && project.code.trim().toUpperCase() === code)) return `Mã dự án "${code}" đã tồn tại.`;
+    if (previous?.isActive && remainingInGroup.length === 0) return `Mỗi danh sách (${Object.values(LIST_GROUP_LABELS).join(' / ')}) cần ít nhất 1 tình trạng đang dùng.`;
   }
   return null;
 };

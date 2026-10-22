@@ -80,7 +80,7 @@ export const CustomerDetailMobile = () => {
         </>
       )}
 
-      <MobileContactFooter customerId={customer.id} isPhoneMasked={customer.isPhoneMasked} />
+      <MobileContactFooter customerId={customer.id} />
     </div>
   );
 };

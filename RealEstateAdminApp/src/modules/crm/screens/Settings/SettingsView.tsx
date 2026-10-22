@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import { PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS, PAGE_TITLE_MOBILE_CLASS, TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
+import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { CatalogSection } from './components/CatalogSection';
 import { ReminderSettingsSection } from './components/ReminderSettingsSection';
 import { UsersSection } from './components/UsersSection';
@@ -12,7 +13,7 @@ import { SETTINGS_TABS, type SettingsTab } from './settingsForms';
 
 const CATALOG_DESCRIPTIONS: Record<Exclude<SettingsTab, 'users' | 'reminders'>, string> = {
   statuses:
-    'Tình trạng khách và danh sách tương ứng (Đang chăm sóc / Khách net / Bỏ). Tình trạng hệ thống không ẩn được nếu là mặc định hoặc là tình trạng cuối của 1 danh sách.',
+    `Tình trạng khách và danh sách tương ứng (${Object.values(LIST_GROUP_LABELS).join(' / ')}). Tình trạng hệ thống không ẩn được nếu là mặc định hoặc là tình trạng cuối của 1 danh sách.`,
   leadSources: 'Nguồn khách dùng khi tạo khách, lọc danh sách và báo cáo.',
   areas: 'Khu vực khách đang sinh sống (prototype: danh sách phẳng).',
   projects: 'Danh mục dự án dùng chung cho hồ sơ khách, lịch hẹn, màn Dự án và báo cáo.',

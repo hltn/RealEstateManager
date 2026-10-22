@@ -32,8 +32,9 @@ export interface CrmActions {
   resetFilters: () => void;
   showToast: (input: ToastInput) => string;
   openModal: (modal: ActiveModal) => void;
-  openCallModal: (customerId: string) => void;
-  openZaloModal: (customerId: string) => void;
+  /** `phone` phải là số đầy đủ lấy từ `createPhoneView` (để việc xem số có log). */
+  openCallModal: (customerId: string, phone: string) => void;
+  openZaloModal: (customerId: string, phone: string) => void;
   openQuickNote: (customerId: string) => void;
   openLightbox: (images: GalleryImage[], startIndex?: number, title?: string) => void;
   openAdvancedFilter: () => void;
@@ -98,8 +99,8 @@ export const createCrmActions = ({ dispatch, getState, router }: CrmActionDepend
     resetFilters: () => dispatch({ type: 'filters/reset' }),
     showToast,
     openModal,
-    openCallModal: (customerId) => openModal({ kind: 'call', customerId }),
-    openZaloModal: (customerId) => openModal({ kind: 'zalo', customerId }),
+    openCallModal: (customerId, phone) => openModal({ kind: 'call', customerId, phone }),
+    openZaloModal: (customerId, phone) => openModal({ kind: 'zalo', customerId, phone }),
     openQuickNote: (customerId) => openModal({ kind: 'quick_note', customerId }),
     openLightbox: (images, startIndex = 0, title) => {
       if (images.length === 0) return;

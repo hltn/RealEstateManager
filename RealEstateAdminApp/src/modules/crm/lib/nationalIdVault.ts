@@ -96,6 +96,19 @@ export const seedNationalIds = (entries: Record<string, string>): void => {
   if (hasChanged) persist();
 };
 
+/** Dọn kho theo tập id khách còn sống (khi khách hỏng bị loại khỏi CSDL, không để lại CCCD mồ côi). */
+export const pruneNationalIds = (aliveCustomerIds: ReadonlySet<string>): void => {
+  hydrate();
+  let hasChanged = false;
+  [...memoryVault.keys()].forEach((customerId) => {
+    if (!aliveCustomerIds.has(customerId)) {
+      memoryVault.delete(customerId);
+      hasChanged = true;
+    }
+  });
+  if (hasChanged) persist();
+};
+
 /** Dùng trong test. */
 export const resetNationalIdVaultForTest = (): void => {
   memoryVault.clear();

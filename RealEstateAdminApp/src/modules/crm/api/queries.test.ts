@@ -43,20 +43,21 @@ describe('danh sách + bộ lọc (C6, X3)', () => {
     expect(listCustomers(state, actor, { listGroup: 'ALL', q: 'dang quoc huy' }).data.map((item) => item.id)).toEqual(['CUST-008']);
   });
 
-  it('Đang chăm sóc = Chưa tiếp cận + Có quan tâm; số đếm tab khớp số dòng', () => {
+  it('Chưa tiếp cận và Có quan tâm là 2 tab riêng; số đếm tab khớp số dòng', () => {
     const counts = getListCounts(state, actor, {});
-    (['CARING', 'NET', 'DROPPED'] as const).forEach((listGroup) => {
+    (['NOT_CONTACTED', 'INTERESTED', 'NET', 'DROPPED'] as const).forEach((listGroup) => {
       expect(listCustomers(state, actor, { listGroup, limit: 100 }).meta.total).toBe(counts[listGroup]);
     });
-    expect(counts.CARING + counts.NET + counts.DROPPED).toBe(counts.ALL);
-    const caringStatuses = new Set(listCustomers(state, actor, { listGroup: 'CARING', limit: 100 }).data.map((item) => item.status.code));
-    expect([...caringStatuses].sort()).toEqual(['INTERESTED', 'NOT_CONTACTED']);
+    expect(counts.NOT_CONTACTED + counts.INTERESTED + counts.NET + counts.DROPPED).toBe(counts.ALL);
+    const codesOf = (listGroup: 'NOT_CONTACTED' | 'INTERESTED') => [...new Set(listCustomers(state, actor, { listGroup, limit: 100 }).data.map((item) => item.status.code))];
+    expect(codesOf('NOT_CONTACTED')).toEqual(['NOT_CONTACTED']);
+    expect(codesOf('INTERESTED')).toEqual(['INTERESTED']);
   });
 
   it('số đếm tab áp cùng bộ lọc (trừ tab)', () => {
     const counts = getListCounts(state, actor, { projectIds: ['proj-4'] });
     expect(counts.NET).toBe(2);
-    expect(counts.CARING).toBe(0);
+    expect(counts.NOT_CONTACTED + counts.INTERESTED).toBe(0);
   });
 
   it('lọc theo nguồn, khu vực, tiến độ, người chăm sóc (cả người hỗ trợ), nghề nghiệp, thẻ', () => {

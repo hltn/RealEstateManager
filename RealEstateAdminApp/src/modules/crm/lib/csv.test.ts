@@ -6,7 +6,7 @@ describe('toCsv', () => {
     expect(toCsv([['a,b', 'x"y']])).toBe(`${UTF8_BOM}"a,b","x""y"`);
   });
 
-  it.each([['=HYPERLINK("http://x")'], ['+SUM(A1)'], ['-2+3'], ['@cmd'], ['\tTAB'], ['\rCR']])(
+  it.each([['=HYPERLINK("http://x")'], ['+SUM(A1)'], ['-2+3'], ['@cmd'], ['\tTAB'], ['\rCR'], ['\nLF']])(
     'N2 hồi quy: chặn formula injection %j bằng tiền tố nháy đơn',
     (value) => {
       const raw = toCsv([[value]]).slice(1); // bỏ BOM

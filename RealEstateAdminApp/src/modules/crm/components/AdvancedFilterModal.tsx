@@ -7,7 +7,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Check, ListFilter, RotateCcw, Search } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
-import { useCatalogs } from '@crm/api';
+import { useCatalogs, useProjectFilterOptions } from '@crm/api';
 import { PROGRESS_FILTER_OPTIONS, toggleValue } from '@crm/lib/customerFilters';
 import { includesVietnamese } from '@crm/lib/text';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CAPTION_CLASS, MODAL_INPUT_CLASS, PILL_ACTIVE_CLASS, PILL_IDLE_CLASS } from '@crm/lib/uiClasses';
@@ -77,10 +77,8 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
   const toggle = <K extends 'statusIds' | 'sourceIds' | 'projectIds' | 'areaIds' | 'assigneeIds' | 'primaryAssigneeIds' | 'tagIds'>(key: K, value: string) =>
     setDraft((current) => ({ ...current, [key]: toggleValue(current[key], value) }));
 
-  const visibleProjects = useMemo(
-    () => catalogs.projects.filter((project) => project.isActive && includesVietnamese(`${project.name} ${project.fullName}`, projectKeyword)),
-    [catalogs.projects, projectKeyword],
-  );
+  const projectOptions = useProjectFilterOptions();
+  const visibleProjects = useMemo(() => projectOptions.filter((project) => includesVietnamese(project.searchText, projectKeyword)), [projectOptions, projectKeyword]);
   const staffOptions = users.filter((user) => user.isActive && user.role !== 'ADMIN').map((user) => ({ value: user.id, label: user.fullName }));
 
   const handleApply = () => {
@@ -120,7 +118,7 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
       />
       <ChipGroup
         title="Dự án quan tâm"
-        options={visibleProjects.map((project) => ({ value: project.id, label: project.name }))}
+        options={visibleProjects.map(({ value, label }) => ({ value, label }))}
         selected={draft.projectIds}
         onToggle={(value) => toggle('projectIds', value)}
       >

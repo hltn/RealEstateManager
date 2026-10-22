@@ -10,6 +10,7 @@ import { formatPhoneDisplay } from './phone';
 
 const EMPTY = '(trống)';
 
+
 const orEmpty = (value: string): string => (value.trim() ? value : EMPTY);
 
 const labelOf = <T extends { id: string }>(items: readonly T[], id: string | null, getLabel: (item: T) => string): string => {
@@ -51,6 +52,7 @@ export const diffCustomer = (
   };
 
   push('Họ tên', orEmpty(before.fullName), orEmpty(after.fullName));
+  // Lịch sử hiển thị SĐT cũ -> mới ĐẦY ĐỦ cho người xem được khách (Oniichan đồng ý; cùng quyền với danh sách/chi tiết).
   push('Số điện thoại', formatPhoneDisplay(before.phone), formatPhoneDisplay(after.phone));
   push('Email', orEmpty(before.email), orEmpty(after.email));
   push(

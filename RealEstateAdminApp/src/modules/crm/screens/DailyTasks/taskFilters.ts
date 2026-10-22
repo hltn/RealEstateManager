@@ -4,7 +4,6 @@
  */
 import type { DailyTask } from '@crm/api';
 import { diffDateKeys, formatVnDate, formatVnRelative, getVnTodayKey, toVnDateKey, toVnTime } from '@crm/lib/dateTime';
-import { includesVietnamese } from '@crm/lib/text';
 import type { DailyTaskGroup, DailyTaskKind } from '@crm/types/crm';
 
 export const TASK_KIND_LABELS: Record<DailyTaskKind, string> = {
@@ -25,16 +24,11 @@ export interface TaskFilterState {
 
 export const DEFAULT_TASK_FILTERS: TaskFilterState = { search: '', projectId: 'all', assigneeId: 'all', kind: 'all' };
 
-/** Từ khoá (không dấu) khớp tên khách / SĐT / nội dung việc; rồi dự án, người thực hiện, loại việc. */
+/**
+ * Lọc cục bộ theo dự án, người thực hiện, loại việc. Từ khoá `search` (tên/nội dung/SĐT) được xử lý ở LỚP DỮ LIỆU
+ * (`useDailyTasks({ q })`), không lọc lại ở đây để số điện thoại không phải đi kèm trong payload.
+ */
 export const matchesTaskFilter = (task: DailyTask, filters: TaskFilterState): boolean => {
-  const keyword = filters.search.trim();
-  if (keyword) {
-    const keywordDigits = keyword.replace(/\D/g, '');
-    const isMatch =
-      includesVietnamese(`${task.customer.fullName} ${task.title} ${task.suggestion}`, keyword) ||
-      (keywordDigits.length >= 3 && task.customer.phone.replace(/\D/g, '').includes(keywordDigits.replace(/^0/, '')));
-    if (!isMatch) return false;
-  }
   if (filters.projectId !== 'all' && !task.customer.projects.some((project) => project.id === filters.projectId)) return false;
   if (filters.assigneeId !== 'all' && task.assignee?.id !== filters.assigneeId) return false;
   if (filters.kind !== 'all' && task.kind !== filters.kind) return false;

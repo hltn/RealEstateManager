@@ -32,6 +32,7 @@ export const createSeedDataState = (now: Date = new Date()): CrmDataState => {
     changeLogs: [],
     nationalIdViews: [],
     careTeamRequests: [],
+    auditLogs: [],
   };
 };
 
@@ -64,6 +65,7 @@ const pickData = (state: CrmState): CrmDataState => ({
   changeLogs: state.changeLogs,
   nationalIdViews: state.nationalIdViews,
   careTeamRequests: state.careTeamRequests,
+  auditLogs: state.auditLogs,
 });
 
 export const createCrmStore = ({ initialData, initialSession, shouldPersist = true, onPersistError }: CreateCrmStoreOptions = {}): CrmStore => {

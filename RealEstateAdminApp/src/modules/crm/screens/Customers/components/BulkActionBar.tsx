@@ -83,7 +83,12 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
   const apply = () => {
     if (!kind || (needsValue && !value)) return;
     if (kind === 'EXPORT') {
-      const file = exportCustomers({ listGroup: 'ALL', customerIds: selectedIds, limit: selectedIds.length });
+      const result = exportCustomers({ listGroup: 'ALL', customerIds: selectedIds, limit: selectedIds.length });
+      if (!result.ok) {
+        showToast({ type: 'error', title: result.error.message });
+        return;
+      }
+      const file = result.data;
       downloadCsv(file.fileName, file.content);
       showToast({ title: `Đã xuất ${file.rowCount} khách ra CSV`, message: 'CCCD chỉ ghi 4 số cuối.' });
       return;

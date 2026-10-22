@@ -32,7 +32,8 @@ export const BASIC_FIELD_ORDER: readonly BasicInfoField[] = ['fullName', 'phone'
 
 export const toBasicInfoValues = (customer: CustomerDetail): BasicInfoValues => ({
   fullName: customer.fullName,
-  phone: customer.phone,
+  // Số đầy đủ KHÔNG nằm trong dữ liệu khách; chỉ lấy khi bấm "Sửa số" (qua createPhoneView, có log) — xem `usePersonaForm`.
+  phone: '',
   email: customer.email,
   nationalId: '',
   areaId: customer.area?.id ?? '',
@@ -42,12 +43,12 @@ export const toBasicInfoValues = (customer: CustomerDetail): BasicInfoValues => 
   notes: customer.notes,
 });
 
-/** `isPhoneLocked`: người sửa không có quyền xem số (SĐT đã che) -> không kiểm/không gửi SĐT. */
+/** `isPhoneLocked`: chưa lấy số đầy đủ (chưa bấm "Sửa số") -> không kiểm/không gửi SĐT. */
 export const validateBasicInfo = (values: BasicInfoValues, isPhoneLocked = false): FormErrors<BasicInfoField> => {
   const errors: FormErrors<BasicInfoField> = {};
   const fullNameError = getFullNameError(values.fullName);
   if (fullNameError) errors.fullName = fullNameError;
-  const phoneError = isPhoneLocked ? null : getPhoneFormatError(values.phone);
+  const phoneError = isPhoneLocked ? undefined : getPhoneFormatError(values.phone);
   if (phoneError) errors.phone = phoneError;
   if (!isValidOptionalEmail(values.email)) errors.email = 'Email không hợp lệ (VD: khachhang@stnd.vn).';
   if (!isValidNationalId(values.nationalId)) errors.nationalId = 'Số CCCD gồm 12 chữ số (hoặc CMND 9 chữ số).';

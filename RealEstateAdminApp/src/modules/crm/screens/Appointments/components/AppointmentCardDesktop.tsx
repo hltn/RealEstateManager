@@ -18,7 +18,6 @@ import {
 import type { ReactNode } from 'react';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { APPOINTMENT_TYPE_LABELS, getAppointmentTitle } from '@crm/lib/appointmentAdapters';
-import { maskPhoneDisplay } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import { useAppointmentActions } from '../useAppointmentActions';
 import type { AppointmentView as Appointment } from '@crm/api';
@@ -97,7 +96,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
             </InfoRow>
             <InfoRow icon={<Phone size={16} />}>
               <span className="truncate">
-                SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{maskPhoneDisplay(appointment.customer.phone)}</strong>
+                SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customer.phoneMasked}</strong>
               </span>
             </InfoRow>
 
@@ -130,7 +129,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
         <div className="flex shrink-0 flex-col gap-2 border-t border-gray-100 pt-3 md:w-44 md:border-t-0 md:pt-0 dark:border-white/[0.05]">
           {actionVariant === 'visit' && (
             <>
-              <button type="button" onClick={() => callCustomer(appointment.customer.id)} disabled={appointment.customer.isPhoneMasked} className={`${ACTION_SOFT_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+              <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
                 <PhoneCall size={14} aria-hidden="true" />
                 Gọi nhanh
               </button>
@@ -163,7 +162,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           {actionVariant === 'reminder' && (
             <>
-              <button type="button" onClick={() => callCustomer(appointment.customer.id)} disabled={appointment.customer.isPhoneMasked} className={`${ACTION_PRIMARY_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+              <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_PRIMARY_CLASS}>
                 <PhoneCall size={14} aria-hidden="true" />
                 Gọi ngay cho khách
               </button>

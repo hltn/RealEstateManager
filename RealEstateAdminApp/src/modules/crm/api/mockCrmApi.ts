@@ -19,6 +19,8 @@ import {
 } from '@crm/lib/customerRules';
 import { getVnTodayKey, toVnDateKey } from '@crm/lib/dateTime';
 import { createId } from '@crm/lib/id';
+import { createEmptyProject, diffProject, getFirstProjectError, getProjectErrors, isProjectCodeTaken, isValidProjectCode, normalizeProject } from '@crm/lib/projectRules';
+import { INVALID_EMAIL_MESSAGE, isValidEmail } from '@crm/lib/email';
 import { checkImportLimits } from '@crm/lib/importCustomers';
 import { getNationalIdLast4, revealNationalId, storeNationalId } from '@crm/lib/nationalIdVault';
 import { normalizePhone } from '@crm/lib/phone';
@@ -28,6 +30,8 @@ import { selectCurrentUser } from '@crm/store/selectors';
 import type {
   Appointment,
   AppointmentStatus,
+  AuditAction,
+  AuditLog,
   CareLog,
   CareTeamMember,
   CareTeamRequest,
@@ -36,12 +40,15 @@ import type {
   CrmSettings,
   CrmUser,
   Customer,
+  FieldChange,
   NextAction,
+  Project,
   Tag,
 } from '@crm/types/crm';
 import { assertAssignableUsers } from './assignable';
-import { validateCatalogItem, validateSettings, validateUser } from './catalogAdmin';
-import { buildActor, canAccessCustomer, canBulkAssign, canImportCustomers, getCustomerPermissions, type CrmActor } from './access';
+import { countCatalogUsage, validateCatalogItem, validateSettings, validateUser } from './catalogAdmin';
+import { buildActor, canAccessCustomer, canBulkAssign, canExportCustomers, canImportCustomers, canManageProjects, getCustomerPermissions, type CrmActor } from './access';
+import { buildCustomerExport, type CustomerExportFile } from './exports';
 import { findAccessibleCustomer, getCustomer, listAssignableUsers, listCareLogs, lookupPhone, resolveJoinRef, toStatusRef } from './queries';
 import type {
   ApiError,
@@ -52,6 +59,7 @@ import type {
   CreateCustomerInput,
   CriteriaPatch,
   CustomerDetail,
+  CustomerListQuery,
   PersonaValueInput,
   PhoneLookupResult,
   UpdateCustomerInput,
@@ -109,6 +117,13 @@ const findInvalidCatalogRef = (
   return null;
 };
 
+/** Trường nhập của dự án (không gồm id). */
+export type ProjectInput = Omit<Project, 'id' | 'isActive' | 'deletedAt'> & { isActive?: boolean };
+
+/** Khu vực của dự án (nếu chọn) phải tồn tại và đang dùng. */
+const findInvalidProjectArea = (catalogs: CrmCatalogs, project: Project): string | null =>
+  project.areaId && !catalogs.areas.some((area) => area.id === project.areaId && area.isActive) ? 'Khu vực không tồn tại hoặc đã ngừng dùng.' : null;
+
 const NOT_FOUND = 'Không tìm thấy khách hàng hoặc bạn không có quyền xem khách này.';
 const MAX_NAME_LENGTH = 150;
 const MAX_CONTENT_LENGTH = 5000;
@@ -148,10 +163,6 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
 
   const detailOf = (customerId: string): CustomerDetail => getCustomer(getState(), getActor(), customerId) as CustomerDetail;
 
-  const nextCustomerCode = (customers: readonly Customer[]): string => {
-    const max = customers.reduce((current, customer) => Math.max(current, Number(customer.code.replace(/\D/g, '')) || 0), 0);
-    return `#${String(max + 1).padStart(2, '0')}`;
-  };
 
   const duplicateError = <T>(lookup: PhoneLookupResult): ApiResult<T> =>
     fail(
@@ -164,6 +175,105 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
   const updateCareTeam = (customer: Customer, careTeam: CareTeamMember[], action: ChangeAction): ApiResult<CustomerDetail> => {
     update(customer.id, { careTeam }, action);
     return ok(detailOf(customer.id));
+  };
+
+
+  /** Ghi audit log cho thao tác không thuộc riêng 1 khách (dự án, xuất danh sách). */
+  const audit = (action: AuditAction, entityType: AuditLog['entityType'], entityId: string | null, changes: FieldChange[], reason?: string) => {
+    const actor = getActor();
+    const user = getState().users.find((item) => item.id === actor.userId);
+    dispatch({
+      type: 'auditLogs/add',
+      log: { id: generateId('AUD'), action, entityType, entityId, actorId: actor.userId, actorName: user?.displayName ?? 'Hệ thống', actorRole: actor.role, changes, reason, createdAt: now().toISOString() },
+    });
+  };
+
+  // ------------------------------------------------------------------ Dự án (chỉ Quản trị)
+
+  /** Bỏ key `undefined` của input (JSON không có undefined) để không đè giá trị hiện có bằng undefined rồi ném TypeError. */
+  const withoutUndefined = <T extends object>(input: T | null | undefined): T =>
+    Object.fromEntries(Object.entries(input ?? {}).filter(([, value]) => value !== undefined)) as T;
+
+  /**
+   * Kiểm dự án trước khi lưu: lỗi nhập -> 400 `VALIDATION_FAILED`; mã trùng dự án khác (kể cả đã ngừng/xoá mềm, không phân biệt hoa
+   * thường) -> 409 `PROJECT_CODE_DUPLICATED` (05 §2.8). Lỗi nhập được báo trước lỗi trùng mã.
+   */
+  const rejectInvalidProject = <T,>(project: Project): ApiResult<T> | null => {
+    const projects = getState().catalogs.projects;
+    const errors = getProjectErrors(projects, project);
+    const isCodeDuplicated = isValidProjectCode(project.code) && isProjectCodeTaken(projects, project);
+    const { code: codeError, ...otherErrors } = errors;
+    const firstError = getFirstProjectError(isCodeDuplicated ? otherErrors : errors);
+    if (firstError) return fail(400, 'VALIDATION_FAILED', firstError);
+    if (isCodeDuplicated) return fail(409, 'PROJECT_CODE_DUPLICATED', codeError ?? 'Mã dự án đã tồn tại.', { code: project.code });
+    return null;
+  };
+
+  /** `POST /crm/projects` — tên + mã bắt buộc, mã không trùng (kể cả dự án đã ngừng hoặc đã xoá mềm). */
+  const createProject = (rawInput: Partial<ProjectInput>): ApiResult<Project> => {
+    if (!canManageProjects(getActor().role)) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản trị được thêm dự án.');
+    // `id`/`deletedAt` luôn do hệ thống quyết định: bỏ giá trị client gửi (tránh ghi đè dự án có sẵn) và ép lại SAU khi gộp input.
+    const { id: _clientId, deletedAt: _clientDeletedAt, ...safeInput } = withoutUndefined(rawInput as Partial<Project>);
+    const id = generateId('proj');
+    const project = normalizeProject({ ...createEmptyProject(id), ...safeInput, id, isActive: safeInput.isActive ?? true, deletedAt: null });
+    const rejected = rejectInvalidProject<Project>(project);
+    if (rejected) return rejected;
+    const refError = findInvalidProjectArea(getState().catalogs, project);
+    if (refError) return fail(400, 'INVALID_CATALOG_REF', refError);
+    dispatch({ type: 'catalogs/upsert', kind: 'projects', item: project });
+    audit('PROJECT_CREATED', 'PROJECT', id, [
+      { field: 'Tên dự án', from: '', to: project.name },
+      { field: 'Mã dự án', from: '', to: project.code },
+    ]);
+    return ok(project);
+  };
+
+  /** `PATCH /crm/projects/:id` — sửa từng phần; `isActive` để ngừng/dùng lại. Dự án đã xoá mềm = không tồn tại (khôi phục trước). */
+  const updateProject = (projectId: string, rawInput: Partial<ProjectInput>): ApiResult<Project> => {
+    if (!canManageProjects(getActor().role)) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản trị được sửa dự án.');
+    const current = getState().catalogs.projects.find((item) => item.id === projectId);
+    if (!current || current.deletedAt) return fail(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy dự án.');
+    const { id: _clientId, deletedAt: _clientDeletedAt, ...safeInput } = withoutUndefined(rawInput as Partial<Project>);
+    const project = normalizeProject({ ...current, ...safeInput, id: current.id, deletedAt: null });
+    const rejected = rejectInvalidProject<Project>(project);
+    if (rejected) return rejected;
+    // Khu vực đã gắn từ trước (kể cả đã ẩn) được giữ nguyên; chỉ kiểm khu vực MỚI chọn.
+    const refError = project.areaId !== current.areaId ? findInvalidProjectArea(getState().catalogs, project) : null;
+    if (refError) return fail(400, 'INVALID_CATALOG_REF', refError);
+    const changes = diffProject(current, project, getState().catalogs.areas);
+    if (changes.length === 0) return ok(current);
+    dispatch({ type: 'catalogs/upsert', kind: 'projects', item: project });
+    audit(current.isActive && !project.isActive ? 'PROJECT_DEACTIVATED' : 'PROJECT_UPDATED', 'PROJECT', projectId, changes);
+    return ok(project);
+  };
+
+  /**
+   * `DELETE /crm/projects/:id` — XOÁ MỀM (`deletedAt`, khôi phục được). Dự án còn khách quan tâm KHÔNG xoá được:
+   * 409 `PROJECT_IN_USE { customerCount }` — Quản trị chuyển sang ngừng hoạt động bằng `updateProject(id, { isActive: false })`.
+   */
+  const deleteProject = (projectId: string): ApiResult<{ id: string }> => {
+    if (!canManageProjects(getActor().role)) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản trị được xoá dự án.');
+    const state = getState();
+    const project = state.catalogs.projects.find((item) => item.id === projectId);
+    if (!project || project.deletedAt) return fail(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy dự án.');
+    const customerCount = countCatalogUsage(state, 'projects', projectId);
+    if (customerCount > 0) {
+      return fail(409, 'PROJECT_IN_USE', `Dự án đang có ${customerCount} khách quan tâm nên không thể xoá. Hãy chuyển sang ngừng hoạt động.`, { customerCount });
+    }
+    dispatch({ type: 'catalogs/upsert', kind: 'projects', item: { ...project, isActive: false, deletedAt: now().toISOString() } });
+    audit('PROJECT_DELETED', 'PROJECT', projectId, [{ field: 'Dự án', from: project.name, to: '(đã xoá)' }]);
+    return ok({ id: projectId });
+  };
+
+  /** `POST /crm/project-restorations` — khôi phục dự án đã xoá mềm (đang hoạt động trở lại). */
+  const restoreProject = (projectId: string, reason?: string): ApiResult<Project> => {
+    if (!canManageProjects(getActor().role)) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản trị được khôi phục dự án.');
+    const project = getState().catalogs.projects.find((item) => item.id === projectId);
+    if (!project?.deletedAt) return fail(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy dự án đã xoá.');
+    const restored: Project = { ...project, deletedAt: null, isActive: true };
+    dispatch({ type: 'catalogs/upsert', kind: 'projects', item: restored });
+    audit('PROJECT_RESTORED', 'PROJECT', projectId, [{ field: 'Dự án', from: '(đã xoá)', to: project.name }], reason);
+    return ok(restored);
   };
 
   return {
@@ -186,6 +296,7 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
       const lookup = lookupPhone(state, actor, phone);
       if (lookup?.exists) return duplicateError(lookup);
       if (input.nationalId && !isValidNationalId(input.nationalId)) return fail(400, 'VALIDATION_FAILED', 'Số CCCD gồm 12 chữ số (hoặc CMND 9 chữ số).');
+      if (input.email !== undefined && !isValidEmail(input.email)) return fail(400, 'VALIDATION_FAILED', INVALID_EMAIL_MESSAGE);
 
       const memberIds = input.careTeam?.memberIds ?? [];
       const requestedPrimary = input.careTeam?.primaryUserId || null;
@@ -199,13 +310,11 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
 
       const mutationMeta = meta(undefined, input.createdVia === 'IMPORT' ? 'IMPORT' : 'WEB');
       const id = generateId('CUST');
-      const code = nextCustomerCode(state.customers);
       const last4 = input.nationalId ? getNationalIdLast4(input.nationalId) : null;
       const status = (input.statusId && state.catalogs.statuses.find((item) => item.id === input.statusId && item.isActive)) || getDefaultStatus(state.catalogs.statuses);
       const careTeam = buildCareTeam(primaryUserId, memberIds, actor.userId, mutationMeta.now);
       const customer: Customer = {
         id,
-        code,
         fullName,
         phone,
         email: input.email?.trim() ?? '',
@@ -227,7 +336,7 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
         notes: input.notes?.trim() ?? '',
         lastCareLogAt: null,
         nextAppointmentAt: null,
-        searchText: buildSearchText({ fullName, phone, code, email: input.email }),
+        searchText: buildSearchText({ fullName, phone, email: input.email }),
         createdAt: mutationMeta.now,
         createdBy: actor.userId,
         createdVia: input.createdVia ?? 'WEB',
@@ -264,7 +373,10 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
         if (lookup?.exists) return duplicateError(lookup);
         patch.phone = phone;
       }
-      if (input.email !== undefined) patch.email = input.email.trim();
+      if (input.email !== undefined) {
+        if (!isValidEmail(input.email)) return fail(400, 'VALIDATION_FAILED', INVALID_EMAIL_MESSAGE);
+        patch.email = input.email.trim();
+      }
       if (input.sourceId !== undefined) patch.sourceId = input.sourceId;
       if (input.interestedProjectIds !== undefined) patch.interestedProjectIds = [...new Set(input.interestedProjectIds)];
       if (input.areaId !== undefined) patch.areaId = input.areaId;
@@ -382,7 +494,10 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
         if (lookup?.exists) return duplicateError(lookup);
         patch.phone = phone;
       }
-      if (profile.email !== undefined) patch.email = profile.email.trim();
+      if (profile.email !== undefined) {
+        if (!isValidEmail(profile.email)) return fail(400, 'VALIDATION_FAILED', INVALID_EMAIL_MESSAGE);
+        patch.email = profile.email.trim();
+      }
       if (profile.sourceId !== undefined) patch.sourceId = profile.sourceId;
       if (profile.interestedProjectIds !== undefined) patch.interestedProjectIds = [...new Set(profile.interestedProjectIds)];
       if (profile.areaId !== undefined) patch.areaId = profile.areaId;
@@ -417,14 +532,12 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
     },
 
     /**
-     * `POST /crm/customers/:id/phone-views` — "Hiện số"/gọi/Zalo: kiểm quyền xem số + GHI LOG (như CCCD) rồi mới trả số đầy đủ.
+     * `POST /crm/customers/:id/phone-views` — "Hiện số"/gọi/Zalo: mọi người xem được khách (kể cả thành viên nhóm) đều được xem số;
+     * MỖI lần gọi ghi 1 log PHONE_VIEWED (như CCCD) rồi trả số đầy đủ. Khách ngoài phạm vi -> 404.
      */
     createPhoneView: (customerId: string): ApiResult<{ phone: string }> => {
       const loaded = loadForUpdate(customerId);
       if (!loaded.ok) return loaded;
-      if (!getCustomerPermissions(getActor(), loaded.data).canRevealPhone) {
-        return fail(403, 'PHONE_FORBIDDEN', 'Bạn không có quyền xem số điện thoại đầy đủ của khách này.');
-      }
       dispatch({ type: 'phones/viewed', customerId, meta: meta() });
       return ok({ phone: loaded.data.phone });
     },
@@ -827,6 +940,12 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
 
     upsertCatalogItem: <K extends CatalogKind>(kind: K, item: CrmCatalogs[K][number]): ApiResult<CrmCatalogs[K][number]> => {
       if (getActor().role !== 'ADMIN') return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản trị được sửa danh mục.');
+      if (kind === 'projects') {
+        // Dự án có luồng riêng (id do hệ thống sinh, audit log, trường mới) — Cài đặt và màn Dự án dùng chung.
+        const project = item as Project;
+        const isExisting = getState().catalogs.projects.some((candidate) => candidate.id === project.id && !candidate.deletedAt);
+        return (isExisting ? updateProject(project.id, project) : createProject(project)) as ApiResult<CrmCatalogs[K][number]>;
+      }
       const error = validateCatalogItem(getState().catalogs, kind, item);
       if (error) return fail(400, 'VALIDATION_FAILED', error);
       // Chỉ 1 tình trạng mặc định cho khách mới: đặt mặc định mới thì gỡ cờ ở tình trạng cũ.
@@ -837,6 +956,27 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
       }
       dispatch({ type: 'catalogs/upsert', kind, item });
       return ok(item);
+    },
+
+    // --- Dự án (05 §2.8 `POST/PATCH/DELETE /crm/projects`, `POST /crm/project-restorations`) — chỉ Quản trị
+
+    createProject,
+    updateProject,
+    deleteProject,
+    restoreProject,
+
+    // --- Xuất danh sách khách (05 §2.12 `POST /crm/customer-exports`)
+
+    /** Chỉ Quản trị/Quản lý (kiểm ở lớp dữ liệu, không chỉ ẩn nút); áp bộ lọc + phạm vi quyền; MỖI lần xuất ghi 1 audit `CUSTOMER_EXPORTED`. */
+    createCustomerExport: (query: CustomerListQuery): ApiResult<CustomerExportFile> => {
+      const actor = getActor();
+      if (!canExportCustomers(actor.role)) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản trị/Quản lý được xuất danh sách khách.');
+      const file = buildCustomerExport(getState(), actor, query, now());
+      audit('CUSTOMER_EXPORTED', 'CUSTOMER_EXPORT', null, [
+        { field: 'Số khách xuất', from: '', to: String(file.rowCount) },
+        { field: 'Tệp', from: '', to: file.fileName },
+      ]);
+      return ok(file);
     },
 
     upsertUser: (user: CrmUser): ApiResult<CrmUser> => {

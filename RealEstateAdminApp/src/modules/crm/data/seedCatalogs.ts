@@ -26,8 +26,8 @@ export const DEFAULT_CURRENT_USER_ID = 'hanh';
 
 export const SEED_CATALOGS: CrmCatalogs = {
   statuses: [
-    { id: 'st-not-contacted', code: 'NOT_CONTACTED', label: 'Chưa tiếp cận', listGroup: 'CARING', tone: 'gray', order: 1, isDefault: true, isSystem: true, isActive: true },
-    { id: 'st-interested', code: 'INTERESTED', label: 'Có quan tâm', listGroup: 'CARING', tone: 'success', order: 2, isDefault: false, isSystem: true, isActive: true },
+    { id: 'st-not-contacted', code: 'NOT_CONTACTED', label: 'Chưa tiếp cận', listGroup: 'NOT_CONTACTED', tone: 'gray', order: 1, isDefault: true, isSystem: true, isActive: true },
+    { id: 'st-interested', code: 'INTERESTED', label: 'Có quan tâm', listGroup: 'INTERESTED', tone: 'success', order: 2, isDefault: false, isSystem: true, isActive: true },
     { id: 'st-net', code: 'NET', label: 'Khách net', listGroup: 'NET', tone: 'warning', order: 3, isDefault: false, isSystem: true, isActive: true },
     { id: 'st-dropped', code: 'DROPPED', label: 'Bỏ', listGroup: 'DROPPED', tone: 'error', order: 4, isDefault: false, isSystem: true, isActive: true },
   ],
@@ -53,14 +53,14 @@ export const SEED_CATALOGS: CrmCatalogs = {
     { id: 'area-overseas', name: 'Nước ngoài', order: 11, isActive: true },
   ],
   projects: [
-    { id: 'proj-1', code: 'QTERRA', name: "Q'Terra", fullName: "Q'Terra Residential Suites", location: 'Thủ Đức, TP.HCM', areaId: 'area-thu-duc', priceText: '95 - 130 triệu/m²', statusLabel: 'Đang mở bán Giai đoạn 2', segment: 'Cao cấp', isActive: true },
-    { id: 'proj-2', code: 'PRIVIA', name: 'The Privia', fullName: 'The Privia', location: 'Bình Tân, TP.HCM', areaId: null, priceText: '48 - 55 triệu/m²', statusLabel: 'Sắp bàn giao', segment: 'Trung cao cấp', isActive: true },
-    { id: 'proj-3', code: 'ECOPARK', name: 'Ecopark Grand', fullName: 'Ecopark Grand', location: 'Văn Giang, Hưng Yên', areaId: 'area-van-giang', priceText: '120 - 180 triệu/m²', statusLabel: 'Mở bán Vịnh Đảo', segment: 'Hạng sang', isActive: true },
-    { id: 'proj-4', code: 'VHOP', name: 'Vinhomes Ocean Park', fullName: 'Vinhomes Ocean Park', location: 'Gia Lâm, Hà Nội', areaId: 'area-gia-lam', priceText: '45 - 90 triệu/m²', statusLabel: 'Đang vận hành', segment: 'Đại đô thị', isActive: true },
-    { id: 'proj-5', code: 'LUMIERE', name: 'Lumiere Riverside', fullName: 'Lumiere Riverside', location: 'Thảo Điền, TP.HCM', areaId: 'area-thu-duc', priceText: '110 - 150 triệu/m²', statusLabel: 'Bàn giao hoàn thiện', segment: 'Hạng sang', isActive: true },
-    { id: 'proj-6', code: 'MASTERI', name: 'Masteri Centre Point', fullName: 'Masteri Centre Point', location: 'Thủ Đức, TP.HCM', areaId: 'area-thu-duc', priceText: '65 - 85 triệu/m²', statusLabel: 'Đã nhận nhà', segment: 'Cao cấp', isActive: true },
-    { id: 'proj-7', code: 'AQUA', name: 'Aqua City Waterfront', fullName: 'Aqua City Waterfront', location: 'Biên Hòa, Đồng Nai', areaId: null, priceText: '60 - 95 triệu/m²', statusLabel: 'Đang mở bán', segment: 'Đô thị sinh thái', isActive: true },
-    { id: 'proj-8', code: 'VHGP', name: 'Vinhomes Grand Park', fullName: 'Vinhomes Grand Park', location: 'Thủ Đức, TP.HCM', areaId: 'area-thu-duc', priceText: '50 - 75 triệu/m²', statusLabel: 'Đang vận hành', segment: 'Đại đô thị', isActive: true },
+    { id: 'proj-1', code: 'QTERRA', name: "Q'Terra", fullName: "Q'Terra Residential Suites", developer: 'STND Group', location: 'Thủ Đức, TP.HCM', areaId: 'area-thu-duc', propertyTypes: ['Căn hộ'], priceFrom: 95_000_000, priceTo: 130_000_000, priceUnit: 'PER_SQM', status: 'SELLING', segment: 'Cao cấp', isActive: true, deletedAt: null },
+    { id: 'proj-2', code: 'PRIVIA', name: 'The Privia', fullName: 'The Privia', developer: 'Khang Điền', location: 'Bình Tân, TP.HCM', areaId: null, propertyTypes: ['Căn hộ'], priceFrom: 48_000_000, priceTo: 55_000_000, priceUnit: 'PER_SQM', status: 'SOLD_OUT', segment: 'Trung cao cấp', isActive: true, deletedAt: null },
+    { id: 'proj-3', code: 'ECOPARK', name: 'Ecopark Grand', fullName: 'Ecopark Grand', developer: 'Ecopark Corp', location: 'Văn Giang, Hưng Yên', areaId: 'area-van-giang', propertyTypes: ['Biệt thự', 'Nhà phố'], priceFrom: 120_000_000, priceTo: 180_000_000, priceUnit: 'PER_SQM', status: 'SELLING', segment: 'Hạng sang', isActive: true, deletedAt: null },
+    { id: 'proj-4', code: 'VHOP', name: 'Vinhomes Ocean Park', fullName: 'Vinhomes Ocean Park', developer: 'Vinhomes', location: 'Gia Lâm, Hà Nội', areaId: 'area-gia-lam', propertyTypes: ['Căn hộ', 'Shophouse'], priceFrom: 45_000_000, priceTo: 90_000_000, priceUnit: 'PER_SQM', status: 'SOLD_OUT', segment: 'Đại đô thị', isActive: true, deletedAt: null },
+    { id: 'proj-5', code: 'LUMIERE', name: 'Lumiere Riverside', fullName: 'Lumiere Riverside', developer: 'An Gia', location: 'Thảo Điền, TP.HCM', areaId: 'area-thu-duc', propertyTypes: ['Căn hộ'], priceFrom: 110_000_000, priceTo: 150_000_000, priceUnit: 'PER_SQM', status: 'SOLD_OUT', segment: 'Hạng sang', isActive: true, deletedAt: null },
+    { id: 'proj-6', code: 'MASTERI', name: 'Masteri Centre Point', fullName: 'Masteri Centre Point', developer: 'Masterise Homes', location: 'Thủ Đức, TP.HCM', areaId: 'area-thu-duc', propertyTypes: ['Căn hộ'], priceFrom: 65_000_000, priceTo: 85_000_000, priceUnit: 'PER_SQM', status: 'SOLD_OUT', segment: 'Cao cấp', isActive: true, deletedAt: null },
+    { id: 'proj-7', code: 'AQUA', name: 'Aqua City Waterfront', fullName: 'Aqua City Waterfront', developer: 'Nova Land', location: 'Biên Hòa, Đồng Nai', areaId: null, propertyTypes: ['Nhà phố', 'Biệt thự'], priceFrom: 60_000_000, priceTo: 95_000_000, priceUnit: 'PER_SQM', status: 'SELLING', segment: 'Đô thị sinh thái', isActive: true, deletedAt: null },
+    { id: 'proj-8', code: 'VHGP', name: 'Vinhomes Grand Park', fullName: 'Vinhomes Grand Park', developer: 'Vinhomes', location: 'Thủ Đức, TP.HCM', areaId: 'area-thu-duc', propertyTypes: ['Căn hộ', 'Shophouse'], priceFrom: 50_000_000, priceTo: 75_000_000, priceUnit: 'PER_SQM', status: 'SOLD_OUT', segment: 'Đại đô thị', isActive: true, deletedAt: null },
   ],
   tags: [
     { id: 'tag-golf', name: 'Golf', category: 'INTEREST', isActive: true },

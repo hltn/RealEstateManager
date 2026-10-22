@@ -71,11 +71,9 @@ export interface CustomerListQuery extends Partial<CustomerFilters> {
 
 export interface CustomerListItem {
   id: string;
-  code: string;
   fullName: string;
-  /** E.164 khi có quyền xem số; ngược lại đã che (xem `isPhoneMasked`). */
-  phone: string;
-  isPhoneMasked: boolean;
+  /** SĐT đã che ("0912 345 •••"). Số đầy đủ CHỈ lấy qua `createPhoneView` (kiểm phạm vi + ghi log PHONE_VIEWED). */
+  phoneMasked: string;
   status: StatusRef;
   source: Ref | null;
   projects: Ref[];
@@ -115,8 +113,6 @@ export interface CustomerPermissions {
   canDelete: boolean;
   /** Xem CCCD đầy đủ (giả định D2: Quản trị, Quản lý, phụ trách chính). */
   canRevealNationalId: boolean;
-  /** Hiện SĐT đầy đủ — cùng quy tắc với CCCD. */
-  canRevealPhone: boolean;
   /** Duyệt đề nghị tham gia nhóm chăm sóc: Quản trị, Quản lý, phụ trách chính. */
   canReviewJoinRequests: boolean;
 }
@@ -139,7 +135,8 @@ export interface CustomerDetail extends CustomerListItem {
 }
 
 export interface ListCounts {
-  CARING: number;
+  NOT_CONTACTED: number;
+  INTERESTED: number;
   NET: number;
   DROPPED: number;
   ALL: number;
@@ -262,7 +259,7 @@ export interface CreateCareLogInput {
 
 export interface AppointmentView {
   id: string;
-  customer: { id: string; fullName: string; phone: string; isPhoneMasked: boolean; status: StatusRef; projects: Ref[] };
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects: Ref[] };
   type: AppointmentType;
   title: string;
   startAt: string;
@@ -305,7 +302,7 @@ export interface DailyTask {
   kind: DailyTaskKind;
   dueAt: string;
   group: DailyTaskGroup;
-  customer: { id: string; fullName: string; phone: string; isPhoneMasked: boolean; status: StatusRef; projects: Ref[] };
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects: Ref[] };
   title: string;
   lastCareLog: { occurredAt: string; excerpt: string } | null;
   suggestion: string;
@@ -320,6 +317,8 @@ export type DailyTaskScope = 'mine' | 'team';
 
 export interface DailyTaskQuery {
   scope?: DailyTaskScope;
+  /** Từ khoá tìm (không dấu): tên khách, nội dung việc, SĐT (≥ 3 chữ số, như tìm khách), email. */
+  q?: string;
 }
 
 // ---------------------------------------------------------------------------

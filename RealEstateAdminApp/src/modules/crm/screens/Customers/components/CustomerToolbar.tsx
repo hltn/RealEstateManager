@@ -3,7 +3,7 @@
  * Ô chọn nhanh ghi 1 giá trị vào mảng bộ lọc tương ứng; chọn nhiều giá trị/tiêu chí khác ở "Bộ lọc nâng cao".
  */
 import { Search, SlidersHorizontal } from 'lucide-react';
-import { useCatalogs } from '@crm/api';
+import { useCatalogs, useProjectFilterOptions } from '@crm/api';
 import { countActiveAdvancedFilters } from '@crm/lib/customerFilters';
 import { BUTTON_OUTLINE_BASE_CLASS, BUTTON_SOFT_BASE_CLASS, CAPTION_CLASS, FILTER_INPUT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
@@ -51,6 +51,7 @@ const QuickSelect = ({ id, label, values, options, onChange }: QuickSelectProps)
 export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
   const { filters, sort, setSort, updateFilters } = screen;
   const { catalogs, users } = useCatalogs();
+  const projectOptions = useProjectFilterOptions();
   const { openAdvancedFilter } = useCrmActions();
   const advancedCount = countActiveAdvancedFilters(filters);
   const set = (changes: Partial<CustomerFilters>) => updateFilters(changes);
@@ -91,7 +92,7 @@ export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
         id="customer-project"
         label="Dự án"
         values={filters.projectIds}
-        options={catalogs.projects.filter((project) => project.isActive).map((project) => ({ value: project.id, label: project.name }))}
+        options={projectOptions.map(({ value, label }) => ({ value, label }))}
         onChange={(projectIds) => set({ projectIds })}
       />
       <QuickSelect

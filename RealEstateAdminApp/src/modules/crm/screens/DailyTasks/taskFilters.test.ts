@@ -9,7 +9,7 @@ const task = (overrides: Partial<DailyTask>): DailyTask => ({
   kind: 'FOLLOW_UP',
   dueAt: '2026-10-22T08:30:00.000Z',
   group: 'TODAY',
-  customer: { id: 'C1', fullName: 'Nguyễn Văn An', phone: '+84912345678', isPhoneMasked: false, status: { id: 's', label: 'Có quan tâm', code: 'INTERESTED', listGroup: 'CARING', tone: 'success' }, projects: [{ id: 'proj-1', label: "Q'Terra" }] },
+  customer: { id: 'C1', fullName: 'Nguyễn Văn An', phoneMasked: '0912 345 •••', status: { id: 's', label: 'Có quan tâm', code: 'INTERESTED', listGroup: 'INTERESTED', tone: 'success' }, projects: [{ id: 'proj-1', label: "Q'Terra" }] },
   title: 'Gọi lại báo giá',
   lastCareLog: null,
   suggestion: '',
@@ -19,10 +19,9 @@ const task = (overrides: Partial<DailyTask>): DailyTask => ({
 });
 
 describe('taskFilters', () => {
-  it('tìm không dấu theo tên/nội dung, theo SĐT; lọc dự án/người/loại', () => {
-    expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, search: 'nguyen van' })).toBe(true);
-    expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, search: '0912345' })).toBe(true);
-    expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, search: 'khong co' })).toBe(false);
+  it('lọc cục bộ theo dự án/người/loại (từ khoá tìm do lớp dữ liệu xử lý, không lọc lại ở đây)', () => {
+    expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, search: 'khong co' })).toBe(true);
+    expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, projectId: 'proj-1' })).toBe(true);
     expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, projectId: 'proj-2' })).toBe(false);
     expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, assigneeId: 'thao' })).toBe(false);
     expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, kind: 'APPOINTMENT' })).toBe(false);

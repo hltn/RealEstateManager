@@ -16,11 +16,9 @@ interface ContactActionGridProps {
   /** 2 = lưới 2x2 (mobile), 4 = 1 hàng 4 nút (thẻ kanban desktop). */
   columns?: 2 | 4;
   className?: string;
-  /** SĐT đã che (không có quyền xem số): khoá nút Gọi/Zalo. */
-  isPhoneMasked?: boolean;
 }
 
-export const ContactActionGrid = ({ customerId, columns = 2, className = '', isPhoneMasked = false }: ContactActionGridProps) => {
+export const ContactActionGrid = ({ customerId, columns = 2, className = '' }: ContactActionGridProps) => {
   const { callCustomer, messageZalo, openQuickNote } = useContactActions();
   const { selectCustomer } = useCrmActions();
 
@@ -29,9 +27,7 @@ export const ContactActionGrid = ({ customerId, columns = 2, className = '', isP
       <button
         type="button"
         onClick={() => callCustomer(customerId)}
-        disabled={isPhoneMasked}
-        title={isPhoneMasked ? 'Bạn không có quyền xem số điện thoại của khách này' : undefined}
-        className={`disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-500 text-white transition-colors hover:bg-brand-600 active:scale-[0.98] dark:bg-brand-600 dark:hover:bg-brand-700 ${ACTION_BUTTON_SIZE_CLASS}`}
+        className={`inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-500 text-white transition-colors hover:bg-brand-600 active:scale-[0.98] dark:bg-brand-600 dark:hover:bg-brand-700 ${ACTION_BUTTON_SIZE_CLASS}`}
       >
         <Phone size={15} aria-hidden="true" />
         <span>Gọi</span>
@@ -39,9 +35,7 @@ export const ContactActionGrid = ({ customerId, columns = 2, className = '', isP
       <button
         type="button"
         onClick={() => messageZalo(customerId)}
-        disabled={isPhoneMasked}
-        title={isPhoneMasked ? 'Bạn không có quyền xem số điện thoại của khách này' : undefined}
-        className={`disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center gap-1.5 rounded-lg bg-success-600 text-white transition-colors hover:bg-success-700 active:scale-[0.98] dark:bg-success-700 dark:hover:bg-success-800 ${ACTION_BUTTON_SIZE_CLASS}`}
+        className={`inline-flex items-center justify-center gap-1.5 rounded-lg bg-success-600 text-white transition-colors hover:bg-success-700 active:scale-[0.98] dark:bg-success-700 dark:hover:bg-success-800 ${ACTION_BUTTON_SIZE_CLASS}`}
       >
         <MessageCircle size={15} aria-hidden="true" />
         <span>Zalo</span>

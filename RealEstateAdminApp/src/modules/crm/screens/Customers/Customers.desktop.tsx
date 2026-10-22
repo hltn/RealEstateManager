@@ -47,7 +47,12 @@ export const CustomersDesktop = () => {
     setSelectedIds((current) => (isPageSelected ? current.filter((id) => !pageIds.includes(id)) : [...new Set([...current, ...pageIds])]));
 
   const exportFiltered = () => {
-    const file = exportCustomers({ ...query, page: 1, limit: list.meta.total });
+    const result = exportCustomers({ ...query, page: 1, limit: list.meta.total });
+    if (!result.ok) {
+      showToast({ type: 'error', title: result.error.message });
+      return;
+    }
+    const file = result.data;
     downloadCsv(file.fileName, file.content);
     showToast({ title: `Đã xuất ${file.rowCount} khách theo bộ lọc hiện tại`, message: 'File CSV (UTF-8) mở được bằng Excel. CCCD chỉ ghi 4 số cuối.' });
   };

@@ -11,7 +11,6 @@ import { ProgressDots } from '@crm/components/ProgressDots';
 import { TableContactActions } from '@crm/components/TableContactActions';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { formatVnDate, formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
-import { maskPhoneDisplay } from '@crm/lib/phone';
 import { CHECKBOX_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 
@@ -46,8 +45,7 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
           {customer.fullName}
         </button>
         <p className={TEXT_MUTED}>
-          <span className="tabular-nums">{maskPhoneDisplay(customer.phone)}</span>
-          {customer.code && <span className="font-mono"> · {customer.code}</span>}
+          <span className="tabular-nums">{customer.phoneMasked}</span>
         </p>
         <div className="pt-1.5 2xl:hidden">{projectSummary && <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span>}</div>
       </td>
@@ -78,7 +76,7 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
         {formatVnDate(customer.lastUpdatedAt)}
       </td>
       <td className="px-4 py-4">
-        <TableContactActions customerId={customer.id} customerName={customer.fullName} isPhoneMasked={customer.isPhoneMasked} />
+        <TableContactActions customerId={customer.id} customerName={customer.fullName} />
       </td>
     </tr>
   );

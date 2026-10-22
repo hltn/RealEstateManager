@@ -20,7 +20,10 @@ describe('validateCatalogItem', () => {
     const dropped = catalogs.statuses.find((status) => status.listGroup === 'DROPPED')!;
     expect(validateCatalogItem(catalogs, 'statuses', { ...dropped, isActive: false })).toContain('ít nhất 1');
     const interested = catalogs.statuses.find((status) => status.id === 'st-interested')!;
-    expect(validateCatalogItem(catalogs, 'statuses', { ...interested, isActive: false })).toBeNull();
+    // "Có quan tâm" giờ là danh sách riêng: ẩn tình trạng duy nhất của nó bị chặn; còn tình trạng khác cùng danh sách thì được ẩn.
+    expect(validateCatalogItem(catalogs, 'statuses', { ...interested, isActive: false })).toContain('ít nhất 1');
+    const withSpare = { ...catalogs, statuses: [...catalogs.statuses, { ...interested, id: 'st-spare', code: 'SPARE', label: 'Dự phòng', isSystem: false }] };
+    expect(validateCatalogItem(withSpare, 'statuses', { ...interested, isActive: false })).toBeNull();
   });
 
   it('mã dự án không trùng', () => {
@@ -74,13 +77,15 @@ describe('mock API quản trị', () => {
     expect(harness.getState().teams.find((team) => team.id === thao.teamId)?.managerIds).not.toContain('thao');
   });
 
-  it('đặt tình trạng mặc định mới gỡ cờ ở tình trạng cũ; mặc định phải thuộc Đang chăm sóc', () => {
+  it('đặt tình trạng mặc định mới gỡ cờ ở tình trạng cũ; mặc định phải thuộc Chưa tiếp cận', () => {
     const harness = createTestHarness('admin');
     const interested = harness.getState().catalogs.statuses.find((status) => status.id === 'st-interested')!;
-    const net = harness.getState().catalogs.statuses.find((status) => status.id === 'st-net')!;
-    expect(harness.api.upsertCatalogItem('statuses', { ...net, isDefault: true }).ok).toBe(false);
-    expect(harness.api.upsertCatalogItem('statuses', { ...interested, isDefault: true }).ok).toBe(true);
-    expect(harness.getState().catalogs.statuses.filter((status) => status.isDefault).map((status) => status.id)).toEqual(['st-interested']);
+    const extra = { ...interested, id: 'st-extra', code: 'EXTRA', label: 'Mới nhập', listGroup: 'NOT_CONTACTED' as const, isDefault: false, isSystem: false };
+    expect(harness.api.upsertCatalogItem('statuses', extra).ok).toBe(true);
+    // Mặc định phải thuộc "Chưa tiếp cận": "Có quan tâm" hay "Khách net" đều bị từ chối.
+    expect(harness.api.upsertCatalogItem('statuses', { ...interested, isDefault: true }).ok).toBe(false);
+    expect(harness.api.upsertCatalogItem('statuses', { ...extra, isDefault: true }).ok).toBe(true);
+    expect(harness.getState().catalogs.statuses.filter((status) => status.isDefault).map((status) => status.id)).toEqual(['st-extra']);
   });
 
   it('cài đặt sai giới hạn bị từ chối, đúng thì lưu', () => {

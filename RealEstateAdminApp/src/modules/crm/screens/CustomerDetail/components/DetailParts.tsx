@@ -10,11 +10,12 @@ import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
 import { isDroppedStatus } from '@crm/lib/customerRules';
 import { formatVnDateTime } from '@crm/lib/dateTime';
-import { formatPhoneDisplay, maskPhoneDisplay } from '@crm/lib/phone';
+import { formatPhoneDisplay } from '@crm/lib/phone';
 import { getInitials } from '@crm/lib/staff';
 import { BUTTON_LINK_CLASS, CARD_TITLE_CLASS, CHIP_CLASS, CHIP_TONE_CLASS, DIVIDER_CLASS, INFO_LABEL_CLASS, INFO_VALUE_CLASS } from '@crm/lib/uiClasses';
 import type { CustomerStatusItem, GalleryImage } from '@crm/types/crm';
 import { useCustomerDetailActions } from '../useCustomerDetailActions';
+import { useRevealedValue } from '../useRevealedValue';
 
 // ---------------------------------------------------------------------------
 // Tiêu đề thẻ + ô thông tin chỉ đọc
@@ -147,14 +148,13 @@ export const StatusDropdown = ({ customer, align = 'left' }: StatusDropdownProps
 // SĐT + CCCD che theo quyền (C9)
 // ---------------------------------------------------------------------------
 
-/** SĐT che 3 số cuối; nút "Hiện số" chỉ có với Quản trị/Quản lý/phụ trách chính (cùng quy tắc CCCD). */
+/** SĐT che 3 số cuối; "Hiện số" dành cho mọi người xem được khách (kể cả thành viên nhóm), MỖI lần hiện ghi log PHONE_VIEWED. */
 export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerDetail; className?: string }) => {
   const api = useCrmApi();
   const { showToast } = useCrmActions();
-  const [revealedPhone, setRevealedPhone] = useState<string | null>(null);
+  const [revealedPhone, setRevealedPhone] = useRevealedValue(customer.id);
   const isVisible = revealedPhone !== null;
   const ToggleIcon = isVisible ? EyeOff : Eye;
-  const canReveal = customer.permissions.canRevealPhone && !customer.isPhoneMasked;
   // "Hiện số" = gọi API có ghi log (như CCCD) trong handler, không trong updater của setState.
   const toggle = () => {
     if (isVisible) {
@@ -171,14 +171,12 @@ export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerD
   return (
     <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
       <span className="font-medium tracking-wide tabular-nums text-gray-800 dark:text-white/90">
-        {revealedPhone ? formatPhoneDisplay(revealedPhone) : maskPhoneDisplay(customer.phone)}
+        {revealedPhone ? formatPhoneDisplay(revealedPhone) : customer.phoneMasked}
       </span>
-      {canReveal && (
-        <button type="button" onClick={toggle} className={BUTTON_LINK_CLASS} aria-pressed={isVisible}>
-          <ToggleIcon size={14} aria-hidden="true" />
-          {isVisible ? 'Ẩn số' : 'Hiện số'}
-        </button>
-      )}
+      <button type="button" onClick={toggle} className={BUTTON_LINK_CLASS} aria-pressed={isVisible} title="Mỗi lần xem số đầy đủ đều được ghi lại">
+        <ToggleIcon size={14} aria-hidden="true" />
+        {isVisible ? 'Ẩn số' : 'Hiện số'}
+      </button>
     </span>
   );
 };
@@ -188,7 +186,7 @@ export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerD
  */
 export const NationalIdField = ({ customer }: { customer: CustomerDetail }) => {
   const { revealNationalId } = useCustomerDetailActions(customer);
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealed, setRevealed] = useRevealedValue(customer.id);
   const { data: viewLog } = useNationalIdViews(customer.id);
   const ToggleIcon = revealed ? EyeOff : Eye;
 

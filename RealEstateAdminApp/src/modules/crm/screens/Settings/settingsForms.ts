@@ -4,6 +4,7 @@
 import type { AdminCatalogKind } from '@crm/api';
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { ROLE_LABELS } from '@crm/lib/roles';
+import { createEmptyProject, normalizeProject } from '@crm/lib/projectRules';
 import { toSlug } from '@crm/lib/text';
 import type { Area, CatalogItem, CrmUser, CustomerStatusItem, ListGroup, Project, StatusTone, UserRole } from '@crm/types/crm';
 
@@ -46,13 +47,13 @@ export const createEmptyCatalogItem = (kind: AdminCatalogKind, items: readonly A
   const order = getNextOrder(items);
   switch (kind) {
     case 'statuses':
-      return { id, code: '', label: '', listGroup: 'CARING', tone: 'brand', order, isDefault: false, isSystem: false, isActive: true };
+      return { id, code: '', label: '', listGroup: 'INTERESTED', tone: 'brand', order, isDefault: false, isSystem: false, isActive: true };
     case 'leadSources':
       return { id, label: '', order, isActive: true };
     case 'areas':
       return { id, name: '', order, isActive: true };
     default:
-      return { id, code: '', name: '', fullName: '', location: '', areaId: null, priceText: '', statusLabel: '', segment: '', isActive: true };
+      return createEmptyProject(id);
   }
 };
 
@@ -63,17 +64,7 @@ export const normalizeCatalogItem = (kind: AdminCatalogKind, item: AdminCatalogI
     return { ...item, label, code: item.code || toSlug(label).toUpperCase() };
   }
   if (kind === 'projects' && 'fullName' in item) {
-    const name = item.name.trim();
-    return {
-      ...item,
-      name,
-      code: item.code.trim().toUpperCase(),
-      fullName: item.fullName.trim() || name,
-      location: item.location.trim(),
-      priceText: item.priceText.trim(),
-      statusLabel: item.statusLabel.trim(),
-      segment: item.segment.trim(),
-    };
+    return normalizeProject(item);
   }
   if ('label' in item) return { ...item, label: item.label.trim() };
   return { ...item, name: item.name.trim() };

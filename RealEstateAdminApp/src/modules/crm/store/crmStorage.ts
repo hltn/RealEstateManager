@@ -1,16 +1,25 @@
 /**
  * Lưu/đọc dữ liệu CRM prototype trong localStorage, CÓ version schema + migration an toàn.
  *
- * - Schema hiện tại: v3 (mô hình tài liệu 04: statusId/careTeam/persona[]/changeLogs...).
- * - Dữ liệu cũ (khoá `stnd_crm_unified_v2`, mô hình phẳng "status: 'Có quan tâm'", "staffLead"...) KHÔNG tương thích:
- *   bị xoá và nạp lại dữ liệu mẫu mới — không cố chuyển đổi để tránh dữ liệu nửa vời.
- * - Payload sai cấu trúc / JSON hỏng / thiếu trường bắt buộc -> trả null để store nạp seed (không crash).
+ * - Schema hiện tại: v5.
+ *   - v3 -> v4: bỏ `customer.code` (+ dựng lại searchText), tách listGroup CARING -> NOT_CONTACTED | INTERESTED.
+ *   - v4 -> v5: dự án có `deletedAt`, `priceFrom/priceTo/priceUnit` (thay `priceText`), `status` enum (thay `statusLabel`), mã hợp lệ
+ *     (sinh mã gợi ý cho mã rỗng/sai mẫu); thêm `auditLogs`.
+ * - Trước khi ghi đè bản cũ luôn giữ 1 bản sao nguyên văn dưới khoá `stnd_crm_data_backup_v<version>`.
+ * - Một khách hỏng KHÔNG làm mất cả CSDL: khách hỏng bị loại riêng (kèm dữ liệu con), bản gốc lưu ở `stnd_crm_data_corrupt_<timestamp>`.
+ * - v2 và cũ hơn / payload hỏng nặng: không tương thích, xoá và nạp lại seed.
  */
+import { buildSearchText } from '@crm/lib/customerRules';
+import { pruneNationalIds } from '@crm/lib/nationalIdVault';
+import { isValidProjectCode, normalizePropertyTypes, parseLegacyPriceText, parseLegacyProjectStatus, PROJECT_NAME_MAX_LENGTH, suggestProjectCode } from '@crm/lib/projectRules';
+import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmDataState, CrmSession } from './crmReducer';
 
-export const CRM_SCHEMA_VERSION = 3;
+export const CRM_SCHEMA_VERSION = 5;
 export const CRM_STORAGE_KEY = 'stnd_crm_data';
 export const CRM_SESSION_STORAGE_KEY = 'stnd_crm_session_v1';
+/** Tiền tố khoá bản sao dữ liệu cũ trước khi migration ghi đè (`<prefix><version>`). */
+export const CRM_BACKUP_KEY_PREFIX = 'stnd_crm_data_backup_v';
 /** Khoá của các schema cũ cần dọn khi nâng cấp. */
 export const LEGACY_STORAGE_KEYS = ['stnd_crm_unified_v2', 'stnd_crm_unified_v1', 'stnd_customers', 'stnd_appointments'] as const;
 
@@ -38,6 +47,7 @@ const DATA_ARRAY_KEYS: (keyof CrmDataState)[] = [
   'changeLogs',
   'nationalIdViews',
   'careTeamRequests',
+  'auditLogs',
 ];
 
 const CATALOG_KEYS = ['statuses', 'leadSources', 'areas', 'projects', 'tags', 'contactResults'] as const;
@@ -48,7 +58,7 @@ const isStringArray = (value: unknown): boolean => Array.isArray(value) && value
 const isArrayOf = (value: unknown, check: (item: unknown) => boolean): boolean => Array.isArray(value) && value.every(check);
 
 const ROLES = ['ADMIN', 'MANAGER', 'STAFF'];
-const LIST_GROUPS = ['CARING', 'NET', 'DROPPED'];
+const LIST_GROUPS = ['NOT_CONTACTED', 'INTERESTED', 'NET', 'DROPPED'];
 const CRITERIA_FIELDS = ['demand', 'motivation', 'finance', 'timing'];
 
 const isCriteria = (value: unknown): boolean =>
@@ -56,7 +66,7 @@ const isCriteria = (value: unknown): boolean =>
 
 const isCareTeamMember = (value: unknown): boolean => isRecord(value) && isString(value.userId) && (value.role === 'PRIMARY' || value.role === 'MEMBER');
 
-/** Kiểm tra đủ sâu 1 khách v3: mọi trường mà selector/UI truy cập trực tiếp (criteria, careTeam, persona...). */
+/** Kiểm tra đủ sâu 1 khách v4: mọi trường mà selector/UI truy cập trực tiếp (criteria, careTeam, persona...). */
 const isCustomerV3 = (value: unknown): boolean =>
   isRecord(value) &&
   isString(value.id) &&
@@ -122,7 +132,8 @@ export const isCrmDataState = (value: unknown): value is CrmDataState => {
   const catalogs = value.catalogs;
   if (!isRecord(catalogs) || !CATALOG_KEYS.every((key) => Array.isArray(catalogs[key]))) return false;
   if (!isArrayOf(catalogs.statuses, isStatusV3)) return false;
-  if (!(['leadSources', 'areas', 'projects', 'tags', 'contactResults'] as const).every((key) => isArrayOf(catalogs[key], hasId))) return false;
+  if (!(['leadSources', 'areas', 'tags', 'contactResults'] as const).every((key) => isArrayOf(catalogs[key], hasId))) return false;
+  if (!isArrayOf(catalogs.projects, isProjectEntry)) return false;
   if (!isSettingsV3(value.settings)) return false;
   return (
     isArrayOf(value.users, isUserV3) &&
@@ -132,7 +143,8 @@ export const isCrmDataState = (value: unknown): value is CrmDataState => {
     isArrayOf(value.appointments, isAppointmentV3) &&
     isArrayOf(value.changeLogs, isChangeLogV3) &&
     isArrayOf(value.nationalIdViews, isRecord) &&
-    isArrayOf(value.careTeamRequests, isCareTeamRequestV3)
+    isArrayOf(value.careTeamRequests, isCareTeamRequestV3) &&
+    isArrayOf(value.auditLogs, hasId)
   );
 };
 
@@ -190,7 +202,90 @@ const normalizeCrmData = (value: unknown): unknown => {
     customers: Array.isArray(value.customers) ? value.customers.map(normalizeCustomer) : value.customers,
     careLogs: Array.isArray(value.careLogs) ? value.careLogs.map(normalizeCareLog) : value.careLogs,
     changeLogs: normalizeChangeLogs(value.changeLogs),
+    auditLogs: Array.isArray(value.auditLogs) ? value.auditLogs : [],
   };
+};
+
+/**
+ * Migration v3 -> v4 (chỉ gọi cho payload v3; không crash với dữ liệu thiếu/sai kiểu — phần còn lại do `isCrmDataState` kiểm):
+ * - Bỏ field `code` (mã khách) khỏi từng khách và dựng lại `searchText` (không còn chứa mã, dù mã nằm ở biến thể nào).
+ * - Tình trạng thuộc nhóm cũ CARING: mã (hoặc id seed) INTERESTED -> nhóm INTERESTED, còn lại -> NOT_CONTACTED (kể cả tình trạng
+ *   không có `code`); tình trạng mặc định luôn thuộc NOT_CONTACTED.
+ */
+const migrateV3ToV4 = (data: unknown): unknown => {
+  if (!isRecord(data)) return data;
+  const customers = Array.isArray(data.customers)
+    ? data.customers.map((customer) => {
+        if (!isRecord(customer)) return customer;
+        const { code: _legacyCode, ...rest } = customer;
+        const searchText =
+          isString(rest.fullName) && isString(rest.phone)
+            ? buildSearchText({ fullName: rest.fullName, phone: rest.phone, email: isString(rest.email) ? rest.email : '' })
+            : rest.searchText;
+        return { ...rest, searchText };
+      })
+    : data.customers;
+  const catalogs = data.catalogs;
+  if (!isRecord(catalogs)) return { ...data, customers };
+  const statuses = Array.isArray(catalogs.statuses)
+    ? catalogs.statuses.map((status) => {
+        if (!isRecord(status) || status.listGroup !== 'CARING') return status;
+        const isInterested = (status.code === 'INTERESTED' || status.id === 'st-interested') && status.isDefault !== true;
+        return { ...status, listGroup: isInterested ? 'INTERESTED' : 'NOT_CONTACTED' };
+      })
+    : catalogs.statuses;
+  return { ...data, customers, catalogs: { ...catalogs, statuses } };
+};
+
+/** 1 dự án v4 -> v5: giá/trạng thái dạng chữ -> số/enum (không parse được thì để trống), loại hình chuỗi -> mảng, thêm `deletedAt`. */
+const migrateProjectToV5 = (project: Record<string, unknown>): Record<string, unknown> => {
+  const { priceText, statusLabel, propertyType, ...rest } = project;
+  const isLegacy = 'priceText' in project || 'statusLabel' in project;
+  const price = isLegacy ? parseLegacyPriceText(priceText) : { priceFrom: rest.priceFrom, priceTo: rest.priceTo, priceUnit: rest.priceUnit };
+  const isFiniteNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
+  return {
+    ...rest,
+    developer: withDefault(rest.developer, isString, ''),
+    // Loại hình: mảng có sẵn giữ nguyên (đã chuẩn hoá); chuỗi cũ -> mảng 1 phần tử.
+    propertyTypes: Array.isArray(rest.propertyTypes) ? normalizePropertyTypes(rest.propertyTypes) : normalizePropertyTypes([propertyType]),
+    priceFrom: withDefault(price.priceFrom, isFiniteNumber, null),
+    priceTo: withDefault(price.priceTo, isFiniteNumber, null),
+    priceUnit: price.priceUnit === 'PER_SQM' ? 'PER_SQM' : 'TOTAL',
+    status: isLegacy ? parseLegacyProjectStatus(statusLabel) : withDefault(rest.status, (value) => value === 'UPCOMING' || value === 'SELLING' || value === 'SOLD_OUT', null),
+    deletedAt: withDefault(rest.deletedAt, isString, null),
+  };
+};
+
+/**
+ * Migration v4 -> v5: dự án (xem `migrateProjectToV5`) + VÁ dữ liệu cũ để `updateProject` không bị khoá: tên rỗng/quá 80 ký tự được vá,
+ * tên trùng (không dấu) thêm hậu tố " (2)"…, mã chuẩn hoá CHỮ HOA, mã rỗng/sai mẫu/trùng -> mã gợi ý sinh từ tên (theo thứ tự: dự án
+ * đứng trước giữ mã, dự án sau bị đổi). Thêm `auditLogs` rỗng.
+ */
+const migrateV4ToV5 = (data: unknown): unknown => {
+  if (!isRecord(data)) return data;
+  const catalogs = data.catalogs;
+  const auditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : [];
+  if (!isRecord(catalogs) || !Array.isArray(catalogs.projects)) return { ...data, auditLogs };
+  const takenCodes = new Set<string>();
+  const takenNames = new Set<string>();
+  const projects = catalogs.projects.map((entry) => {
+    if (!isRecord(entry)) return entry;
+    const project = migrateProjectToV5(entry);
+    const fullName = isString(project.fullName) ? project.fullName.trim() : '';
+    const legacyCode = isString(project.code) ? project.code.trim() : '';
+    const name = ((isString(project.name) ? project.name.trim() : '') || fullName || legacyCode || 'Dự án').slice(0, PROJECT_NAME_MAX_LENGTH);
+    let uniqueName = name;
+    for (let suffix = 2; takenNames.has(normalizeVietnamese(uniqueName)); suffix += 1) {
+      const tail = ` (${suffix})`;
+      uniqueName = `${name.slice(0, PROJECT_NAME_MAX_LENGTH - tail.length)}${tail}`;
+    }
+    takenNames.add(normalizeVietnamese(uniqueName));
+    let code = legacyCode.toUpperCase();
+    if (!isValidProjectCode(code) || takenCodes.has(code)) code = suggestProjectCode(uniqueName, takenCodes);
+    takenCodes.add(code);
+    return { ...project, name: uniqueName, code };
+  });
+  return { ...data, auditLogs, catalogs: { ...catalogs, projects } };
 };
 
 // ---------------------------------------------------------------------------
@@ -199,24 +294,59 @@ const normalizeCrmData = (value: unknown): unknown => {
 
 export const MAX_CORRUPT_BACKUPS = 3;
 
+const CORRUPT_KEY_PREFIX = `${CRM_STORAGE_KEY}_corrupt_`;
+
+const keysWithPrefix = (storage: Storage, prefix: string): string[] => {
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith(prefix)) keys.push(key);
+  }
+  return keys;
+};
+
+/** Xoá mọi bản sao (backup theo version + _corrupt_) để giải phóng dung lượng. */
+const removeAllBackups = (storage: Storage): void => {
+  [...keysWithPrefix(storage, CRM_BACKUP_KEY_PREFIX), ...keysWithPrefix(storage, CORRUPT_KEY_PREFIX)].forEach((key) => {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Bỏ qua.
+    }
+  });
+};
+
+/**
+ * `setItem` có xử lý hết dung lượng: lỗi (QUOTA...) -> xoá MỌI bản sao rồi thử lại 1 lần (dữ liệu chính quan trọng hơn bản sao).
+ * Trả true nếu ghi được.
+ */
+const setItemWithQuotaRetry = (storage: Storage, key: string, value: string): boolean => {
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    removeAllBackups(storage);
+    try {
+      storage.setItem(key, value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
 /** Lưu bản sao `<key>_corrupt_<timestamp>` (giữ tối đa 3 bản mới nhất) để có thể cứu dữ liệu thủ công. */
 const backupCorruptPayload = (storage: Storage, raw: string): void => {
   try {
-    const prefix = `${CRM_STORAGE_KEY}_corrupt_`;
     let stamp = Date.now();
-    while (storage.getItem(`${prefix}${stamp}`) !== null) stamp += 1;
-    storage.setItem(`${prefix}${stamp}`, raw);
-    const keys: string[] = [];
-    for (let index = 0; index < storage.length; index += 1) {
-      const key = storage.key(index);
-      if (key?.startsWith(prefix)) keys.push(key);
-    }
-    keys
-      .sort((first, second) => Number(first.slice(prefix.length)) - Number(second.slice(prefix.length)))
-      .slice(0, Math.max(0, keys.length - MAX_CORRUPT_BACKUPS))
+    while (storage.getItem(`${CORRUPT_KEY_PREFIX}${stamp}`) !== null) stamp += 1;
+    if (!setItemWithQuotaRetry(storage, `${CORRUPT_KEY_PREFIX}${stamp}`, raw)) return;
+    keysWithPrefix(storage, CORRUPT_KEY_PREFIX)
+      .sort((first, second) => Number(first.slice(CORRUPT_KEY_PREFIX.length)) - Number(second.slice(CORRUPT_KEY_PREFIX.length)))
+      .slice(0, Math.max(0, keysWithPrefix(storage, CORRUPT_KEY_PREFIX).length - MAX_CORRUPT_BACKUPS))
       .forEach((key) => storage.removeItem(key));
   } catch {
-    // Hết dung lượng: bỏ qua sao lưu, vẫn nạp seed.
+    // Không sao lưu được: vẫn nạp seed.
   }
 };
 
@@ -233,9 +363,53 @@ export const clearLegacyData = (): void => {
   });
 };
 
+/** Giữ bản sao nguyên văn dữ liệu cũ trước khi migration ghi đè — CHỈ 1 bản (xoá bản của version khác). Hết dung lượng: xem `setItemWithQuotaRetry`. */
+const backupBeforeOverwrite = (storage: Storage, raw: string, version: unknown): void => {
+  keysWithPrefix(storage, CRM_BACKUP_KEY_PREFIX).forEach((key) => storage.removeItem(key));
+  setItemWithQuotaRetry(storage, `${CRM_BACKUP_KEY_PREFIX}${String(version)}`, raw);
+};
+
+const isProjectEntry = (value: unknown): boolean => isRecord(value) && isString(value.id) && isString(value.name) && isString(value.code);
+
 /**
- * Đọc dữ liệu đã lưu. Trả null (để nạp seed) nếu: chưa có, JSON hỏng, sai version, sai cấu trúc.
- * Luôn dọn khoá schema cũ.
+ * Dữ liệu hợp lệ -> trả nguyên. Có bản ghi hỏng nhưng phần còn lại lành -> loại RIÊNG từng bản ghi hỏng (khách hỏng kéo theo dữ liệu con
+ * trỏ tới họ; nhật ký/lịch hẹn/lịch sử/đề nghị/dự án hỏng cũng loại riêng), giữ phần lành. Không còn khách lành nào (trong khi có khách)
+ * hoặc hỏng ở phần khác (người dùng, danh mục, cài đặt) -> null (nạp seed). `droppedCount` > 0 nghĩa là đã vá.
+ */
+const salvageCrmData = (data: unknown): { data: CrmDataState; droppedCount: number } | null => {
+  if (isCrmDataState(data)) return { data, droppedCount: 0 };
+  if (!isRecord(data) || !Array.isArray(data.customers)) return null;
+  const healthy = data.customers.filter(isCustomerV3);
+  if (data.customers.length > 0 && healthy.length === 0) return null;
+  const ids = new Set(healthy.map((customer) => (customer as Record<string, unknown>).id));
+  const isLinkedToHealthyCustomer = (item: unknown): boolean => isRecord(item) && (item.customerId === '' || ids.has(item.customerId));
+  const keepOnly = (list: unknown, check: (item: unknown) => boolean): unknown => (Array.isArray(list) ? list.filter((item) => check(item) && isLinkedToHealthyCustomer(item)) : list);
+  const catalogs = data.catalogs;
+  const candidate = {
+    ...data,
+    customers: healthy,
+    careLogs: keepOnly(data.careLogs, isCareLogV3),
+    appointments: keepOnly(data.appointments, isAppointmentV3),
+    changeLogs: keepOnly(data.changeLogs, isChangeLogV3),
+    nationalIdViews: keepOnly(data.nationalIdViews, isRecord),
+    careTeamRequests: keepOnly(data.careTeamRequests, isCareTeamRequestV3),
+    auditLogs: Array.isArray(data.auditLogs) ? data.auditLogs.filter(hasId) : data.auditLogs,
+    catalogs: isRecord(catalogs) && Array.isArray(catalogs.projects) ? { ...catalogs, projects: catalogs.projects.filter(isProjectEntry) } : catalogs,
+  };
+  if (!isCrmDataState(candidate)) return null;
+  const count = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+  const projectCount = (value: unknown): number => (isRecord(value) ? count(value.projects) : 0);
+  const droppedCount =
+    count(data.customers) - healthy.length +
+    (['careLogs', 'appointments', 'changeLogs', 'nationalIdViews', 'careTeamRequests', 'auditLogs'] as const).reduce((sum, key) => sum + count(data[key]) - count(candidate[key]), 0) +
+    projectCount(catalogs) - projectCount(candidate.catalogs);
+  return droppedCount > 0 ? { data: candidate, droppedCount } : null;
+};
+
+/**
+ * Đọc dữ liệu đã lưu. Trả null (để nạp seed) nếu: chưa có, JSON hỏng, version không hỗ trợ, hỏng nặng.
+ * Luôn dọn khoá schema cũ. Tự migrate v3 -> v4 -> v5 (giữ 1 bản sao dưới khoá backup) và vá bản ghi hỏng (bản gốc ở khoá _corrupt_ khi
+ * KHÔNG migrate — khi migrate thì bản backup đã là bản gốc, không ghi trùng); khách bị loại cũng được dọn khỏi kho CCCD mô phỏng.
  */
 export const loadCrmData = (): CrmDataState | null => {
   const storage = getStorage();
@@ -246,9 +420,30 @@ export const loadCrmData = (): CrmDataState | null => {
     raw = storage.getItem(CRM_STORAGE_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    if (isRecord(parsed) && parsed.schemaVersion === CRM_SCHEMA_VERSION) {
-      const data = normalizeCrmData(parsed.data);
-      if (isCrmDataState(data)) return data;
+    if (isRecord(parsed)) {
+      const storedVersion = parsed.schemaVersion;
+      let data: unknown = parsed.data;
+      let version = storedVersion;
+      if (version === 3) {
+        data = migrateV3ToV4(data);
+        version = 4;
+      }
+      if (version === 4) {
+        data = migrateV4ToV5(data);
+        version = 5;
+      }
+      if (version === CRM_SCHEMA_VERSION) {
+        const result = salvageCrmData(normalizeCrmData(data));
+        if (result) {
+          const isMigrated = storedVersion !== CRM_SCHEMA_VERSION;
+          const isPatched = result.droppedCount > 0;
+          if (isMigrated) backupBeforeOverwrite(storage, raw, storedVersion);
+          else if (isPatched) backupCorruptPayload(storage, raw);
+          if (isPatched) pruneNationalIds(new Set(result.data.customers.map((customer) => customer.id)));
+          if (isMigrated || isPatched) setItemWithQuotaRetry(storage, CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: CRM_SCHEMA_VERSION, data: result.data }));
+          return result.data;
+        }
+      }
     }
   } catch {
     // JSON hỏng: rơi xuống nhánh sao lưu + nạp seed.

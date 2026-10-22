@@ -1,12 +1,11 @@
 // Khối "THÔNG TIN" (02 §4.3, C1): Khu vực (nơi ở), Nguồn khách, Dự án (chip), Thẻ, CCCD che, liên hệ, ngày tạo.
 import { Info, Pencil } from 'lucide-react';
 import type { CustomerDetail } from '@crm/api';
-import { formatPhoneDisplay } from '@crm/lib/phone';
 import { formatVnDateTime } from '@crm/lib/dateTime';
 import { BUTTON_SOFT_SM_CLASS, CARD_CLASS, CHIP_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import { orEmptyText } from '../customerDetailUtils';
-import { CardHeading, InfoField, NationalIdField } from './DetailParts';
+import { CardHeading, InfoField, NationalIdField, PhoneDisplay } from './DetailParts';
 
 interface CustomerInfoCardProps {
   customer: CustomerDetail;
@@ -58,9 +57,8 @@ export const CustomerInfoCard = ({ customer }: CustomerInfoCardProps) => {
         <InfoField label="CCCD">
           <NationalIdField customer={customer} />
         </InfoField>
-        <InfoField label="Số điện thoại">{customer.permissions.canRevealPhone ? formatPhoneDisplay(customer.phone) : 'Đã che (không đủ quyền xem)'}</InfoField>
+        <InfoField label="Số điện thoại"><PhoneDisplay customer={customer} /></InfoField>
         <InfoField label="Email">{orEmptyText(customer.email)}</InfoField>
-        <InfoField label="Mã khách">{orEmptyText(customer.code)}</InfoField>
         <InfoField label="Tạo lúc">
           {formatVnDateTime(customer.createdAt)} · {customer.createdBy.displayName}
         </InfoField>

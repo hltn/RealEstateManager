@@ -2,7 +2,7 @@
  * Hàm thuần cho màn "Dự án" (catalog — đọc CHUNG danh mục `catalogs.projects` với form khách/Cài đặt).
  */
 import type { BreakdownItem } from '@crm/api';
-import type { Project } from '@crm/types/crm';
+import type { Project, ProjectStatus } from '@crm/types/crm';
 
 export const ALL_SEGMENTS = 'all';
 
@@ -15,12 +15,10 @@ export const filterProjectsBySegment = (projects: readonly Project[], segment: s
 
 export type ProjectStatusTone = 'success' | 'warning' | 'neutral';
 
-/** "Đang mở bán…" -> success, "Sắp…" -> warning, còn lại (vận hành, bàn giao, trống…) -> neutral. */
-export const getProjectStatusTone = (statusLabel: string): ProjectStatusTone => {
-  const normalized = statusLabel.trim().toLowerCase();
-  // "Sắp mở bán" cũng chứa "mở bán" -> xét "sắp" trước.
-  if (normalized.startsWith('sắp')) return 'warning';
-  if (normalized.includes('mở bán')) return 'success';
+/** Trạng thái bán hàng -> tông chip: đang mở bán = success, sắp mở bán = warning, hết hàng / chưa cập nhật = neutral. */
+export const getProjectStatusTone = (status: ProjectStatus | null): ProjectStatusTone => {
+  if (status === 'SELLING') return 'success';
+  if (status === 'UPCOMING') return 'warning';
   return 'neutral';
 };
 

@@ -1,4 +1,4 @@
-/** Hồi quy TB1: SĐT che ở lớp dữ liệu khi không có quyền; "Hiện số"/gọi/Zalo ghi log; fallback tel:/zalo.me khi tắt cờ. */
+/** SĐT: mọi người xem được khách (kể cả thành viên nhóm) xem/gọi được; MỖI lần "Hiện số"/gọi/Zalo ghi 1 log PHONE_VIEWED; ngoài phạm vi = 404. */
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,32 +17,71 @@ const actorOf = (userId: string) => {
   return { state, actor: buildActor(selectCurrentUser(state), state.teams) };
 };
 
-describe('TB1 lớp dữ liệu che SĐT khi không có quyền', () => {
-  it('thành viên không phải phụ trách chính: danh sách/chi tiết/việc/lịch hẹn chỉ có số đã che', () => {
-    const { state, actor } = actorOf('thao'); // thao là MEMBER của CUST-001
-    const item = listCustomers(state, actor, { listGroup: 'ALL' }).data.find((row) => row.id === 'CUST-001')!;
-    expect(item).toMatchObject({ phone: '0912 345 •••', isPhoneMasked: true });
-    expect(getCustomer(state, actor, 'CUST-001')).toMatchObject({ phone: '0912 345 •••', isPhoneMasked: true });
-    const task = listDailyTasks(state, actor, { scope: 'mine' }, FIXED_NOW).find((row) => row.customer.id === 'CUST-001');
-    if (task) expect(task.customer).toMatchObject({ phone: '0912 345 •••', isPhoneMasked: true });
-    const appointment = listAppointments(state, actor).find((row) => row.customer.id === 'CUST-001');
-    if (appointment) expect(appointment.customer).toMatchObject({ phone: '0912 345 •••', isPhoneMasked: true });
-    expect(JSON.stringify([item, task, appointment])).not.toContain('912345678');
+const FULL_DIGITS = '912345678';
+
+describe('contract: list/chi tiết/lịch hẹn/việc hôm nay CHỈ mang số đã che (phoneMasked)', () => {
+  it.each(['thao', 'hanh', 'admin'])('%s: không có số đầy đủ ở bất kỳ response nào, kể cả phụ trách chính/quản lý', (userId) => {
+    const { state, actor } = actorOf(userId);
+    const item = listCustomers(state, actor, { listGroup: 'ALL', limit: 100 }).data.find((row) => row.id === 'CUST-001')!;
+    const detail = getCustomer(state, actor, 'CUST-001')!;
+    expect(item.phoneMasked).toBe('0912 345 •••');
+    expect(detail.phoneMasked).toBe('0912 345 •••');
+    expect(item).not.toHaveProperty('phone');
+    expect(detail).not.toHaveProperty('phone');
+    expect(JSON.stringify([item, detail])).not.toContain(FULL_DIGITS);
   });
 
-  it('phụ trách chính / quản lý nhận số đầy đủ', () => {
-    const { state, actor } = actorOf('hanh');
-    const item = listCustomers(state, actor, { listGroup: 'ALL' }).data.find((row) => row.id === 'CUST-001')!;
-    expect(item).toMatchObject({ phone: '+84912345678', isPhoneMasked: false });
+  it('thành viên nhóm (thao): việc hôm nay và lịch hẹn của CUST-001 tồn tại và chỉ có số che', () => {
+    const { state, actor } = actorOf('thao'); // thao là MEMBER của CUST-001
+    const tasks = listDailyTasks(state, actor, { scope: 'mine' }, FIXED_NOW).filter((row) => row.customer.id === 'CUST-001');
+    const appointments = listAppointments(state, actor).filter((row) => row.customer.id === 'CUST-001');
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(appointments.length).toBeGreaterThan(0);
+    [...tasks, ...appointments].forEach((row) => {
+      expect(row.customer.phoneMasked).toBe('0912 345 •••');
+      expect(row.customer).not.toHaveProperty('phone');
+    });
+    // Payload KHÔNG mang searchText/số đầy đủ (ô tìm xử lý ở lớp dữ liệu qua tham số q).
+    expect(JSON.stringify(tasks)).not.toContain('searchText');
+    expect(JSON.stringify(tasks)).not.toContain(FULL_DIGITS);
+  });
+
+  it('ô tìm "Việc hôm nay" xử lý ở API (q): tìm theo tên không dấu, nội dung việc, SĐT (≥ 3 chữ số, các biến thể) như tìm khách', () => {
+    const { state, actor } = actorOf('thao');
+    const all = listDailyTasks(state, actor, { scope: 'mine' }, FIXED_NOW).filter((row) => row.customer.id === 'CUST-001');
+    expect(all.length).toBeGreaterThan(0);
+    const found = (q: string) => listDailyTasks(state, actor, { scope: 'mine', q }, FIXED_NOW).filter((row) => row.customer.id === 'CUST-001').length;
+    ['nguyen van an', 'NGUYEN', '0912345678', '912345678', '+84912345678', '0912 345', 'nguyen.vanan@example.com'].forEach((q) => expect(found(q)).toBe(all.length));
+    ['0999999999', 'khong ton tai', '912399'].forEach((q) => expect(found(q)).toBe(0));
+    // Khoảng trắng đầu/cuối không phải từ khoá; từ khoá rỗng = không lọc.
+    expect(found('   ')).toBe(all.length);
+    // Khách ngoài phạm vi vẫn không lọt vào kể cả khi tìm đúng SĐT của họ.
+    expect(listDailyTasks(state, actor, { scope: 'mine', q: '0988333112' }, FIXED_NOW)).toHaveLength(0);
+  });
+
+  it('khách ngoài phạm vi không lộ gì (không tồn tại với người xem)', () => {
+    const { state, actor } = actorOf('thao');
+    expect(getCustomer(state, actor, 'CUST-002')).toBeNull();
+    expect(JSON.stringify(listCustomers(state, actor, { listGroup: 'ALL', limit: 100 }))).not.toContain('988333112');
   });
 });
 
 describe('createPhoneView — kiểm quyền + ghi log', () => {
-  it('thành viên thường: 403 và KHÔNG có log', () => {
+  it('thành viên nhóm: nhận số và mỗi lần xem ghi đúng 1 log PHONE_VIEWED kèm người xem', () => {
     const harness = createTestHarness('thao');
     const logsBefore = harness.getState().changeLogs.length;
     const result = harness.api.createPhoneView('CUST-001');
-    expect(!result.ok && result.error.errorCode).toBe('PHONE_FORBIDDEN');
+    expect(result.ok && result.data.phone).toBe('+84912345678');
+    const added = harness.getState().changeLogs.slice(0, harness.getState().changeLogs.length - logsBefore);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ action: 'PHONE_VIEWED', customerId: 'CUST-001', actorId: 'thao' });
+  });
+
+  it('khách ngoài phạm vi: 404 và KHÔNG có log', () => {
+    const harness = createTestHarness('thao');
+    const logsBefore = harness.getState().changeLogs.length;
+    const result = harness.api.createPhoneView('CUST-002');
+    expect(!result.ok && result.error.statusCode).toBe(404);
     expect(harness.getState().changeLogs).toHaveLength(logsBefore);
   });
 
@@ -92,12 +131,21 @@ describe('useContactActions: cờ tắt -> tel: / zalo.me, qua lớp dữ liệu
     expect(store.getState().state.activeModal).toBeNull();
   });
 
-  it('không có quyền xem số: không mở tel:/zalo.me', () => {
-    const { wrapper, location, open } = setup('thao');
+  it('thành viên nhóm cũng gọi được và mỗi lần gọi ghi 1 log PHONE_VIEWED', () => {
+    const { store, wrapper, location } = setup('thao');
     const { result } = renderHook(() => useContactActions(), { wrapper });
     result.current.callCustomer('CUST-001');
-    result.current.messageZalo('CUST-001');
+    expect(location.href).toBe('tel:+84912345678');
+    expect(store.getState().state.changeLogs.filter((log) => log.action === 'PHONE_VIEWED' && log.actorId === 'thao')).toHaveLength(1);
+  });
+
+  it('khách ngoài phạm vi: không mở tel:/zalo.me và không ghi log', () => {
+    const { store, wrapper, location, open } = setup('thao');
+    const { result } = renderHook(() => useContactActions(), { wrapper });
+    result.current.callCustomer('CUST-002');
+    result.current.messageZalo('CUST-002');
     expect(location.href).toBe('');
     expect(open).not.toHaveBeenCalled();
+    expect(store.getState().state.changeLogs.filter((log) => log.action === 'PHONE_VIEWED')).toHaveLength(0);
   });
 });

@@ -21,6 +21,7 @@ import type {
   Appointment,
   AppointmentStatus,
   Area,
+  AuditLog,
   CareLog,
   CareTeamRequest,
   CatalogItem,
@@ -51,6 +52,8 @@ export interface CrmDataState {
   changeLogs: ChangeLog[];
   nationalIdViews: NationalIdView[];
   careTeamRequests: CareTeamRequest[];
+  /** Nhật ký thao tác không thuộc riêng 1 khách: dự án, xuất danh sách (04 §3.7). Mới nhất trước. */
+  auditLogs: AuditLog[];
 }
 
 export interface CrmSession {
@@ -99,6 +102,7 @@ export type CrmAction =
   | { type: 'careTeamRequests/add'; request: CareTeamRequest; meta: MutationMeta }
   | { type: 'careTeamRequests/resolve'; requestId: string; status: CareTeamRequest['status']; meta: MutationMeta }
   | { type: 'catalogs/upsert'; kind: CatalogKind; item: CatalogItemOf<CatalogKind> }
+  | { type: 'auditLogs/add'; log: AuditLog }
   | { type: 'users/upsert'; user: CrmUser }
   | { type: 'settings/update'; changes: Partial<CrmSettings> }
   | { type: 'filters/set'; changes: Partial<CustomerFilters> }
@@ -106,9 +110,13 @@ export type CrmAction =
   | { type: 'modal/open'; modal: ActiveModal }
   | { type: 'modal/close' };
 
+/** Giới hạn log trong localStorage (PROTOTYPE: backend dùng collection riêng + TTL/lưu trữ): giữ mục mới nhất. */
+export const MAX_AUDIT_LOGS = 1000;
+export const MAX_PHONE_VIEW_LOGS = 1000;
+
 export const DEFAULT_FILTERS: CustomerFilters = {
   q: '',
-  listGroup: 'CARING',
+  listGroup: 'ALL',
   statusIds: [],
   sourceIds: [],
   projectIds: [],
@@ -256,6 +264,12 @@ const applyCustomerUpdate = (
   };
 };
 
+/** Chỉ giữ MAX_PHONE_VIEW_LOGS log xem SĐT mới nhất (các loại log khác không bị đụng). Mới nhất đứng đầu mảng. */
+const capPhoneViewLogs = (changeLogs: ChangeLog[]): ChangeLog[] => {
+  let remaining = MAX_PHONE_VIEW_LOGS;
+  return changeLogs.filter((log) => log.action !== 'PHONE_VIEWED' || (remaining-- > 0));
+};
+
 const upsertById = <T extends { id: string }>(items: readonly T[], item: T): T[] =>
   items.some((candidate) => candidate.id === item.id)
     ? items.map((candidate) => (candidate.id === item.id ? item : candidate))
@@ -373,10 +387,11 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
       );
     }
 
-    case 'phones/viewed':
-      return state.customers.some((customer) => customer.id === action.customerId)
-        ? { ...state, changeLogs: [createChangeLog(state, action.customerId, 'PHONE_VIEWED', [], action.meta), ...state.changeLogs] }
-        : state;
+    case 'phones/viewed': {
+      if (!state.customers.some((customer) => customer.id === action.customerId)) return state;
+      const changeLogs = [createChangeLog(state, action.customerId, 'PHONE_VIEWED', [], action.meta), ...state.changeLogs];
+      return { ...state, changeLogs: capPhoneViewLogs(changeLogs) };
+    }
 
     case 'nationalIds/viewed':
       return {
@@ -415,6 +430,9 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
 
     case 'catalogs/upsert':
       return { ...state, catalogs: upsertCatalog(state.catalogs, action.kind, action.item) };
+
+    case 'auditLogs/add':
+      return { ...state, auditLogs: [action.log, ...state.auditLogs].slice(0, MAX_AUDIT_LOGS) };
 
     case 'users/upsert': {
       // Đồng bộ quản lý nhóm theo vai trò: Quản lý của nhóm `teamId` (phạm vi QT6 dựa trên `teams.managerIds`).

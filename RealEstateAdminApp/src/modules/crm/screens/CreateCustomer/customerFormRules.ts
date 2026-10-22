@@ -3,12 +3,11 @@
  * QT3/QT9: chỉ Họ tên + SĐT bắt buộc; mọi trường khác tuỳ chọn (chỉ kiểm định dạng khi có nhập).
  * Trùng SĐT kiểm ở lớp dữ liệu (`lookupPhone`), không so khớp danh sách khách ở UI để không lộ thông tin (X2).
  */
+import { isValidEmail } from '@crm/lib/email';
 import { isValidPhone } from '@crm/lib/phone';
 
 /** Lỗi theo tên trường; trường hợp lệ không có khoá. */
 export type FormErrors<TField extends string = string> = Partial<Record<TField, string>>;
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const MAX_FULL_NAME_LENGTH = 150;
 
@@ -27,8 +26,8 @@ export const getPhoneFormatError = (phone: string): string | undefined => {
   return undefined;
 };
 
-/** Email tuỳ chọn: rỗng = hợp lệ. */
-export const isValidOptionalEmail = (email: string): boolean => !email.trim() || EMAIL_PATTERN.test(email.trim());
+/** Email tuỳ chọn: rỗng = hợp lệ. Cùng quy tắc với lớp dữ liệu (`lib/email`). */
+export const isValidOptionalEmail = isValidEmail;
 
 /** Thêm phần tử (đã trim) nếu chưa có; giữ nguyên mảng nếu rỗng/trùng. */
 export const addUniqueItem = (items: readonly string[], value: string): string[] => {

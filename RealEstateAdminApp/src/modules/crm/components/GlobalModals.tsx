@@ -28,10 +28,11 @@ export const GlobalModals = () => {
 
   if (!activeModal) return null;
 
+  const modalPhone = activeModal.kind === 'call' || activeModal.kind === 'zalo' ? activeModal.phone : '';
   const contactTarget: ContactTarget | null = customer
     ? {
         name: customer.fullName,
-        phone: customer.phone,
+        phone: modalPhone,
         preferredSalutation: getPersonaText(persona?.values ?? [], 'salutation'),
         interestedProjects: customer.projects.map((project) => project.label),
         staffName: currentUser.displayName,

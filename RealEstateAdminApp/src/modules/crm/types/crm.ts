@@ -42,7 +42,8 @@ export interface UserRef {
 // Danh mục (X7, 04 §3.3)
 // ---------------------------------------------------------------------------
 
-export type ListGroup = 'CARING' | 'NET' | 'DROPPED';
+/** 4 nhóm danh sách khách (C6): Chưa tiếp cận, Có quan tâm, Khách net, Bỏ. */
+export type ListGroup = 'NOT_CONTACTED' | 'INTERESTED' | 'NET' | 'DROPPED';
 
 /** Mã 4 tình trạng hệ thống (seed). Quản trị thêm tình trạng mới thì `code` là chuỗi tuỳ ý. */
 export type SystemStatusCode = 'NOT_CONTACTED' | 'INTERESTED' | 'NET' | 'DROPPED';
@@ -84,14 +85,28 @@ export interface Project {
   name: string;
   /** Tên đầy đủ ở trang Dự án. */
   fullName: string;
+  /** Chủ đầu tư (không bắt buộc). */
+  developer: string;
   location: string;
   areaId: string | null;
-  /** Khoảng giá dạng chữ (prototype; backend lưu `priceFrom/priceTo`). */
-  priceText: string;
-  statusLabel: string;
+  /** Loại hình sản phẩm, vd ["Căn hộ", "Shophouse"] (không bắt buộc; 04 §3.3 `propertyTypes[]`). */
+  propertyTypes: string[];
+  /** Khoảng giá (VNĐ, theo `priceUnit`); null = chưa nhập. Khi có cả hai thì `priceFrom <= priceTo`. */
+  priceFrom: number | null;
+  priceTo: number | null;
+  /** `TOTAL` = giá cả căn/lô; `PER_SQM` = giá mỗi m² (mở rộng prototype, thêm field = tương thích ngược). */
+  priceUnit: ProjectPriceUnit;
+  /** Trạng thái bán hàng (04 §3.3); null = chưa cập nhật. */
+  status: ProjectStatus | null;
   segment: string;
+  /** Ngừng hoạt động = ẩn khỏi ô chọn mới, khách cũ giữ liên kết. Xoá mềm luôn kéo theo `isActive = false`. */
   isActive: boolean;
+  /** Xoá mềm (ISO); null = chưa xoá. Khôi phục = đặt lại null (chỉ Quản trị). */
+  deletedAt: string | null;
 }
+
+export type ProjectStatus = 'UPCOMING' | 'SELLING' | 'SOLD_OUT';
+export type ProjectPriceUnit = 'TOTAL' | 'PER_SQM';
 
 export type TagCategory = 'INTEREST' | 'OCCUPATION' | 'OTHER';
 
@@ -217,12 +232,10 @@ export type CreatedVia = 'WEB' | 'MOBILE' | 'IMPORT';
 
 export interface Customer {
   id: string;
-  /** Mã hiển thị "#01" — chờ Oniichan quyết định giữ hay bỏ (không có trong tài liệu 04). */
-  code: string;
   fullName: string;
   /** E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). Duy nhất toàn hệ thống. */
   phone: string;
-  /** Chờ quyết định giữ/bỏ (không có trong tài liệu 04). */
+  /** Không bắt buộc; nếu có nhập thì phải đúng định dạng email. */
   email: string;
   statusId: string;
   statusChangedAt: string;
@@ -279,7 +292,7 @@ export interface NextAction {
   completedAt?: string | null;
 }
 
-/** Ảnh đính kèm nhật ký — chờ quyết định giữ/bỏ. */
+/** Ảnh đính kèm nhật ký. */
 export interface GalleryImage {
   src: string;
   caption: string;
@@ -349,6 +362,23 @@ export interface NationalIdView {
   viewedAt: string;
 }
 
+/** Hành động ghi vào `auditLogs` (không gắn với 1 khách): thao tác dự án, xuất danh sách khách (04 §3.7). */
+export type AuditAction = 'PROJECT_CREATED' | 'PROJECT_UPDATED' | 'PROJECT_DEACTIVATED' | 'PROJECT_DELETED' | 'PROJECT_RESTORED' | 'CUSTOMER_EXPORTED';
+
+/** `crm_audit_logs` cho thao tác không thuộc riêng 1 khách (ai làm, lúc nào, đổi gì). */
+export interface AuditLog {
+  id: string;
+  action: AuditAction;
+  entityType: 'PROJECT' | 'CUSTOMER_EXPORT';
+  entityId: string | null;
+  actorId: string;
+  actorName: string;
+  actorRole: UserRole;
+  changes: FieldChange[];
+  reason?: string;
+  createdAt: string;
+}
+
 export type ChangeAction =
   | 'CUSTOMER_CREATED'
   | 'CUSTOMER_UPDATED'
@@ -392,7 +422,7 @@ export interface ChangeLog {
 
 /** Cấu hình CRM (04 §3.7 `crm_settings`) — prototype giữ các ngưỡng dùng ở client. */
 export interface CrmSettings {
-  /** Khách nhóm CARING quá N ngày chưa có nhật ký -> việc "khách lâu chưa chăm sóc". */
+  /** Khách nhóm "Chưa tiếp cận" / "Có quan tâm" quá N ngày chưa có nhật ký -> việc "khách lâu chưa chăm sóc". */
   staleCustomerDays: number;
   /** Nhắc dịp đặc biệt trước N ngày (C13). */
   occasionLeadDays: number;

@@ -80,11 +80,11 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
 
         {/* 1 nút brand duy nhất (Gọi) theo quy tắc màu Admin: Gọi xanh dương, Zalo xanh lá. */}
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <button type="button" onClick={() => callCustomer(customer.id)} disabled={customer.isPhoneMasked} title={customer.isPhoneMasked ? 'Bạn không có quyền xem số điện thoại của khách này' : undefined} className={`${BUTTON_PRIMARY_LG_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+          <button type="button" onClick={() => callCustomer(customer.id)} className={BUTTON_PRIMARY_LG_CLASS}>
             <Phone size={18} aria-hidden="true" />
             Gọi
           </button>
-          <button type="button" onClick={() => messageZalo(customer.id)} disabled={customer.isPhoneMasked} title={customer.isPhoneMasked ? 'Bạn không có quyền xem số điện thoại của khách này' : undefined} className={`${BUTTON_SUCCESS_LG_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+          <button type="button" onClick={() => messageZalo(customer.id)} className={BUTTON_SUCCESS_LG_CLASS}>
             <MessageCircle size={18} aria-hidden="true" />
             Zalo
           </button>

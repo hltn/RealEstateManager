@@ -6,9 +6,10 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useCrmApi, useCustomerPersona, usePhoneLookup, type CustomerDetail, type PhoneLookupResult } from '@crm/api';
 import { PERSONA_FIELDS } from '@crm/data/personaFields';
-import { normalizePhone } from '@crm/lib/phone';
+import { formatPhoneDisplay, normalizePhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import type { PersonaGroupCode, PersonaSource, TagCategory } from '@crm/types/crm';
+import { useRevealedValue } from '../CustomerDetail/useRevealedValue';
 import { getFirstError, toggleItem, type FormErrors } from '../CreateCustomer/customerFormRules';
 import {
   BASIC_FIELD_ORDER,
@@ -45,9 +46,11 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
   const [basicErrors, setBasicErrors] = useState<FormErrors<BasicInfoField>>({});
   const [personaErrors, setPersonaErrors] = useState<Record<string, string>>({});
 
-  const isPhoneLocked = customer.isPhoneMasked;
-  const isPhoneChanged = hasBasicInfo && !isPhoneLocked && normalizePhone(basic.phone) !== customer.phone;
-  const lookup = usePhoneLookup(basic.phone, customer.id);
+  /** Số đầy đủ chỉ có sau khi bấm "Sửa số" (createPhoneView ghi log); trước đó ô SĐT khoá và không gửi SĐT khi lưu. */
+  const [revealedPhone, setRevealedPhone] = useRevealedValue(customer.id);
+  const isPhoneLocked = revealedPhone === null;
+  const isPhoneChanged = hasBasicInfo && !isPhoneLocked && normalizePhone(basic.phone) !== revealedPhone;
+  const lookup = usePhoneLookup(isPhoneLocked ? '' : basic.phone, customer.id);
   const phoneLookup: PhoneLookupResult | null = isPhoneChanged ? lookup : null;
 
   const submit = (event?: FormEvent) => {
@@ -88,8 +91,19 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
     source,
     shouldRemindOccasions,
     phoneLookup,
-    hasNationalId: customer.hasNationalId,
     isPhoneLocked,
+    phoneMasked: customer.phoneMasked,
+    /** Bấm "Sửa số": lấy số đầy đủ qua `createPhoneView` (kiểm phạm vi + ghi 1 log) rồi mở khoá ô SĐT. Gọi trong handler. */
+    revealPhone: () => {
+      const result = api.createPhoneView(customer.id);
+      if (!result.ok) {
+        showToast({ type: 'error', title: result.error.message });
+        return;
+      }
+      setRevealedPhone(result.data.phone);
+      setBasic((current) => ({ ...current, phone: formatPhoneDisplay(result.data.phone) }));
+    },
+    hasNationalId: customer.hasNationalId,
     setBasicField: <K extends BasicInfoField>(field: K, value: BasicInfoValues[K]) => {
       setBasic((current) => ({ ...current, [field]: value }));
       setBasicErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));

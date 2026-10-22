@@ -8,6 +8,7 @@ import { useCatalogs, useCatalogUsage, useCrmApi, type AdminCatalogKind } from '
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
 import { createId } from '@crm/lib/id';
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
+import { PROJECT_STATUS_LABELS } from '@crm/lib/projectRules';
 import { BUTTON_PRIMARY_CLASS, BUTTON_SOFT_SM_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import type { CrmCatalogs } from '@crm/types/crm';
@@ -41,7 +42,7 @@ const ItemMeta = ({ item, areaName }: { item: AdminCatalogItem; areaName?: strin
     );
   }
   if ('fullName' in item) {
-    const parts = [item.code, item.segment, item.statusLabel, areaName].filter(Boolean);
+    const parts = [item.code, item.segment, item.status ? PROJECT_STATUS_LABELS[item.status] : '', areaName].filter(Boolean);
     return parts.length > 0 ? <span className="text-theme-xs text-gray-500 dark:text-gray-400">{parts.join(' · ')}</span> : null;
   }
   return null;
@@ -53,7 +54,8 @@ export const CatalogSection = ({ kind, description }: CatalogSectionProps) => {
   const api = useCrmApi();
   const { showToast } = useCrmActions();
   const [editing, setEditing] = useState<EditingState | null>(null);
-  const items = catalogs[kind] as readonly AdminCatalogItem[];
+  // Dự án đã xoá mềm không hiện ở đây (khôi phục ở màn Dự án).
+  const items = (catalogs[kind] as readonly AdminCatalogItem[]).filter((item) => !('deletedAt' in item && item.deletedAt));
   const sortedItems = sortCatalogItems(items);
 
   const save = (item: AdminCatalogItem, successTitle: string): boolean => {

@@ -29,7 +29,7 @@ describe('settingsForms', () => {
 
   it('tình trạng mới: không hệ thống, không mặc định; code sinh từ tên khi lưu', () => {
     const draft = createEmptyCatalogItem('statuses', SEED_CATALOGS.statuses, 'st-x') as CustomerStatusItem;
-    expect(draft).toMatchObject({ isSystem: false, isDefault: false, isActive: true, listGroup: 'CARING' });
+    expect(draft).toMatchObject({ isSystem: false, isDefault: false, isActive: true, listGroup: 'INTERESTED' });
     const saved = normalizeCatalogItem('statuses', { ...draft, label: '  Đã đặt cọc ' }) as CustomerStatusItem;
     expect(saved).toMatchObject({ label: 'Đã đặt cọc', code: 'DA_DAT_COC' });
   });

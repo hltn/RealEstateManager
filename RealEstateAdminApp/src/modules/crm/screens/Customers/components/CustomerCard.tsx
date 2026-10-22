@@ -9,7 +9,6 @@ import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { ProgressDots } from '@crm/components/ProgressDots';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { formatVnDate, formatVnRelative } from '@crm/lib/dateTime';
-import { maskPhoneDisplay } from '@crm/lib/phone';
 import { CARD_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 
@@ -28,12 +27,11 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <button type="button" onClick={() => selectCustomer(customer.id)} className="flex min-w-0 items-baseline gap-1.5 text-left">
-            {customer.code && <span className="font-mono text-theme-xs text-gray-400 dark:text-gray-500">{customer.code}</span>}
             <span className="truncate text-base font-semibold text-gray-800 transition-colors hover:text-brand-500 dark:text-white/90 dark:hover:text-brand-400">
               {customer.fullName}
             </span>
           </button>
-          <p className="font-mono text-theme-xs text-gray-500 dark:text-gray-400">{maskPhoneDisplay(customer.phone)}</p>
+          <p className="font-mono text-theme-xs text-gray-500 dark:text-gray-400">{customer.phoneMasked}</p>
         </div>
         <CustomerStatusChip status={customer.status} />
       </div>
@@ -81,7 +79,7 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
         </div>
       </dl>
 
-      <ContactActionGrid customerId={customer.id} isPhoneMasked={customer.isPhoneMasked} />
+      <ContactActionGrid customerId={customer.id} />
     </article>
   );
 };

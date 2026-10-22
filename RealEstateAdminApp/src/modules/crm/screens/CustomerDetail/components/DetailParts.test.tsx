@@ -60,7 +60,7 @@ const PhoneHarness = ({ customerId }: { customerId: string }) => {
   return customer ? <PhoneDisplay customer={customer} /> : <span>không thấy</span>;
 };
 
-describe('TB1 PhoneDisplay theo quyền', () => {
+describe('PhoneDisplay (mọi người xem được khách)', () => {
   it('có quyền xem số: mặc định che, bấm "Hiện số" mới thấy đầy đủ', () => {
     renderWithStore(<PhoneHarness customerId="CUST-001" />, 'hanh');
     expect(screen.queryByText('0912 345 678')).toBeNull();
@@ -68,11 +68,56 @@ describe('TB1 PhoneDisplay theo quyền', () => {
     expect(screen.getByText('0912 345 678')).toBeInTheDocument();
   });
 
-  it('thành viên không có quyền xem số: chỉ thấy số che, không có liên kết tel:', () => {
-    renderWithStore(<PhoneHarness customerId="CUST-001" />, 'thao');
-    expect(screen.queryByText('0912 345 678')).toBeNull();
+  it('thành viên nhóm: mặc định che, bấm "Hiện số" thấy số đầy đủ và ghi đúng 1 log PHONE_VIEWED (kể cả StrictMode)', () => {
+    const store = renderWithStore(<PhoneHarness customerId="CUST-001" />, 'thao');
+    const countLogs = () => store.getState().state.changeLogs.filter((log) => log.action === 'PHONE_VIEWED').length;
+    const before = countLogs();
     expect(screen.getByText(/0912 345 •••/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Hiện số/ })).toBeNull();
-    expect(document.querySelector('a[href^="tel:"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Hiện số/ }));
+    expect(screen.getByText('0912 345 678')).toBeInTheDocument();
+    expect(countLogs()).toBe(before + 1);
+    fireEvent.click(screen.getByRole('button', { name: /Ẩn số/ }));
+    expect(countLogs()).toBe(before + 1);
+  });
+});
+
+describe('đổi khách trên cùng component: không giữ số đã hiện của khách cũ', () => {
+  const renderSwitchable = (userId: string, render_: (customerId: string) => ReactElement) => {
+    const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), initialSession: { currentUserId: userId }, shouldPersist: false });
+    const tree = (customerId: string) => (
+      <StrictMode>
+        <MemoryRouter>
+          <CrmProvider store={store}>{render_(customerId)}</CrmProvider>
+        </MemoryRouter>
+      </StrictMode>
+    );
+    const view = render(tree('CUST-001'));
+    return { store, switchTo: (customerId: string) => view.rerender(tree(customerId)) };
+  };
+
+  it('PhoneDisplay: hiện số khách A, rerender sang khách B -> chỉ còn số che của B (không lộ số A, không lộ số B)', () => {
+    const { store, switchTo } = renderSwitchable('admin', (id) => <PhoneHarness customerId={id} />);
+    fireEvent.click(screen.getByRole('button', { name: /Hiện số/ }));
+    expect(screen.getByText('0912 345 678')).toBeInTheDocument();
+    const logsBefore = store.getState().state.changeLogs.length;
+    switchTo('CUST-002');
+    expect(screen.queryByText('0912 345 678')).toBeNull();
+    expect(screen.queryByText('0988 333 112')).toBeNull();
+    expect(screen.getByText('0988 333 •••')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Hiện số/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(store.getState().state.changeLogs).toHaveLength(logsBefore);
+    // Hiện số khách B ghi log cho B, không phải A.
+    fireEvent.click(screen.getByRole('button', { name: /Hiện số/ }));
+    expect(screen.getByText('0988 333 112')).toBeInTheDocument();
+    expect(store.getState().state.changeLogs[0]).toMatchObject({ action: 'PHONE_VIEWED', customerId: 'CUST-002' });
+  });
+
+  it('NationalIdField: CCCD khách A không hiện sang khách B', () => {
+    const { switchTo } = renderSwitchable('hanh', (id) => <IdHarness customerId={id} />);
+    fireEvent.click(screen.getByRole('button', { name: /Hiện/ }));
+    expect(screen.getByText('079092001234')).toBeInTheDocument();
+    switchTo('CUST-004');
+    expect(screen.queryByText('079092001234')).toBeNull();
+    expect(screen.getByRole('button', { name: /Hiện/ })).toHaveAttribute('aria-pressed', 'false');
   });
 });

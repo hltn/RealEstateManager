@@ -5,6 +5,7 @@ import type { FormEvent } from 'react';
 import type { AdminCatalogKind } from '@crm/api';
 import { useCatalogs } from '@crm/api';
 import { FieldError } from '@crm/components/form/FieldError';
+import { ProjectFormFields } from '@crm/components/form/ProjectFormFields';
 import { FormField } from '@crm/components/form/FormField';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
@@ -88,44 +89,14 @@ export const CatalogItemEditor = ({ kind, item, isNew, error, onChange, onSave, 
           </FormField>
         )}
 
-        {'fullName' in item && (
-          <>
-            <FormField inputId={fieldId('code')} label="Mã dự án" hint="Không bắt buộc; viết hoa, không trùng">
-              <TextInput id={fieldId('code')} value={item.code} maxLength={20} onChange={(event) => onChange({ ...item, code: event.target.value })} />
-            </FormField>
-            <FormField inputId={fieldId('full-name')} label="Tên đầy đủ" hint="Bỏ trống = dùng tên ngắn">
-              <TextInput id={fieldId('full-name')} value={item.fullName} maxLength={160} onChange={(event) => onChange({ ...item, fullName: event.target.value })} />
-            </FormField>
-            <FormField inputId={fieldId('location')} label="Địa chỉ / văn phòng bán hàng">
-              <TextInput id={fieldId('location')} value={item.location} maxLength={200} onChange={(event) => onChange({ ...item, location: event.target.value })} />
-            </FormField>
-            <FormField inputId={fieldId('area')} label="Khu vực">
-              <SelectInput
-                id={fieldId('area')}
-                value={item.areaId ?? ''}
-                emptyLabel="Chưa chọn"
-                options={catalogs.areas.map((area) => ({ value: area.id, label: area.isActive ? area.name : `${area.name} (đã ẩn)` }))}
-                onChange={(event) => onChange({ ...item, areaId: event.target.value || null })}
-              />
-            </FormField>
-            <FormField inputId={fieldId('price')} label="Khoảng giá" hint="VD: 3,5 – 6 tỷ">
-              <TextInput id={fieldId('price')} value={item.priceText} maxLength={60} onChange={(event) => onChange({ ...item, priceText: event.target.value })} />
-            </FormField>
-            <FormField inputId={fieldId('status')} label="Trạng thái bán hàng" hint='VD: "Đang mở bán", "Sắp mở bán"'>
-              <TextInput id={fieldId('status')} value={item.statusLabel} maxLength={60} onChange={(event) => onChange({ ...item, statusLabel: event.target.value })} />
-            </FormField>
-            <FormField inputId={fieldId('segment')} label="Phân khúc">
-              <TextInput id={fieldId('segment')} value={item.segment} maxLength={60} onChange={(event) => onChange({ ...item, segment: event.target.value })} />
-            </FormField>
-          </>
-        )}
+        {'fullName' in item && <ProjectFormFields project={item} areas={catalogs.areas} idPrefix="settings-project" onChange={onChange} />}
       </div>
 
       <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-white/[0.05]">
         {'isDefault' in item && (
           <SwitchRow
             label="Mặc định cho khách mới"
-            description="Chỉ 1 tình trạng; phải thuộc danh sách Đang chăm sóc"
+            description="Chỉ 1 tình trạng; phải thuộc danh sách Chưa tiếp cận"
             isChecked={item.isDefault}
             onChange={(isDefault) => onChange({ ...item, isDefault })}
           />

@@ -14,7 +14,8 @@ describe('dashboard (X6)', () => {
     const { state, actor } = setup();
     const summary = getDashboardSummary(state, actor, {}, 14, FIXED_NOW);
     expect(summary.totalCustomers).toBe(11);
-    expect(summary.byListGroup).toEqual({ CARING: 7, NET: 3, DROPPED: 1 });
+    expect(summary.byListGroup).toEqual({ NOT_CONTACTED: 1, INTERESTED: 6, NET: 3, DROPPED: 1 });
+    expect(Object.values(summary.byListGroup).reduce((sum, count) => sum + count, 0)).toBe(summary.totalCustomers);
     // Tiến độ các khách: 50,75,75,100,75,50,75,25,75,25,0 -> 625/11 = 56.8
     expect(summary.averageProgress).toBe(56.8);
     expect(summary.appointmentsDone).toBe(1);

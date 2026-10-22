@@ -4,7 +4,6 @@
  * Khách ngoài phạm vi được coi như không tồn tại (backend trả 404 `CUSTOMER_NOT_FOUND`).
  */
 import { getPrimaryUserId, isInCareTeam } from '@crm/lib/customerRules';
-import { maskPhoneDisplay } from '@crm/lib/phone';
 import type { CrmUser, Customer, Team, UserRole } from '@crm/types/crm';
 import type { CustomerPermissions } from './types';
 
@@ -59,15 +58,6 @@ export const canAccessCustomer = (actor: CrmActor, customer: Pick<Customer, 'car
   return false;
 };
 
-/**
- * SĐT trả ra khỏi lớp dữ liệu: đầy đủ CHỈ khi có quyền xem số (Quản trị/Quản lý/phụ trách chính); ngược lại đã che
- * ("0912 345 •••") và `isPhoneMasked = true` (UI không cho gọi/Zalo/hiện số). Một kiểu che duy nhất: `maskPhoneDisplay`.
- */
-export const getPhoneView = (actor: CrmActor, customer: Pick<Customer, 'careTeam' | 'phone'>): { phone: string; isPhoneMasked: boolean } => {
-  const canReveal = getCustomerPermissions(actor, customer).canRevealPhone;
-  return canReveal ? { phone: customer.phone, isPhoneMasked: false } : { phone: maskPhoneDisplay(customer.phone), isPhoneMasked: true };
-};
-
 /** Quyền thao tác trên 1 khách (ma trận 04 §4.2) — chỉ gọi khi đã `canAccessCustomer`. */
 export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer, 'careTeam'>): CustomerPermissions => {
   const isAdminOrManager = actor.role === 'ADMIN' || actor.role === 'MANAGER';
@@ -78,7 +68,6 @@ export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer,
     canChangePrimary: isAdminOrManager,
     canDelete: isAdminOrManager,
     canRevealNationalId: isAdminOrManager || isPrimary,
-    canRevealPhone: isAdminOrManager || isPrimary,
     canReviewJoinRequests: isAdminOrManager || isPrimary,
   };
 };
@@ -87,6 +76,8 @@ export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer,
 export const canViewReports = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';
 export const canViewSettings = (role: UserRole): boolean => role === 'ADMIN';
 export const canViewProjectCatalog = (role: UserRole): boolean => role === 'ADMIN';
+/** Thêm/sửa/xoá dự án (04 §4.2, X7): chỉ Quản trị. */
+export const canManageProjects = (role: UserRole): boolean => role === 'ADMIN';
 /** Xuất danh sách (X8, 04 §4.2): Quản trị, Quản lý. */
 export const canExportCustomers = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';
 /** Nhập dữ liệu (X8): chỉ Quản trị. */

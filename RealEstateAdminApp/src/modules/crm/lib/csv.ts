@@ -7,8 +7,8 @@
 
 export const UTF8_BOM = String.fromCharCode(0xfeff);
 
-/** Ô bắt đầu bằng = + - @ tab CR bị Excel hiểu là công thức (CSV injection) -> thêm tiền tố nháy đơn. */
-const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+/** Ô bắt đầu bằng = + - @ tab CR LF bị Excel hiểu là công thức (CSV injection) -> thêm tiền tố nháy đơn. */
+const FORMULA_TRIGGER = /^[=+\-@\t\r\n]/;
 
 /** Nhập lại: bỏ đúng 1 nháy đơn do `toCsv` thêm (chỉ khi ký tự kế tiếp là ký tự công thức). */
 const unescapeFormula = (value: string): string => (value.startsWith("'") && FORMULA_TRIGGER.test(value.slice(1)) ? value.slice(1) : value);

@@ -8,12 +8,13 @@ export {
   canBulkAssign,
   canExportCustomers,
   canImportCustomers,
+  canManageProjects,
   canViewProjectCatalog,
   canViewReports,
   canViewSettings,
   type CrmActor,
 } from './access';
-export type { BulkOperation, CrmApi, ImportCustomerRow } from './mockCrmApi';
+export type { BulkOperation, CrmApi, ImportCustomerRow, ProjectInput } from './mockCrmApi';
 export type { AssigneeStat, BreakdownItem, DashboardDateField, DashboardQuery, DashboardReport, DashboardSummary } from './dashboard';
 export { buildDashboardReportRows } from './dashboard';
 export type { AdminCatalogKind } from './catalogAdmin';
