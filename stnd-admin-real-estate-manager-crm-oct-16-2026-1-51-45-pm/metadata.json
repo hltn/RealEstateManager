@@ -1,6 +1,0 @@
-{
-  "name": "STND Admin - Real Estate Manager CRM",
-  "description": "Nền tảng quản lý khách hàng, lịch hẹn tư vấn, tiến độ chốt deal và phân tích thị trường bất động sản STND CRM.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
