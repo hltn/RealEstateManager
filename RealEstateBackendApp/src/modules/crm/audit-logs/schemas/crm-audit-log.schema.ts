@@ -63,6 +63,13 @@ export class CrmAuditLog {
   @Prop({ type: String, default: 'unknown' })
   requestId: string;
 
+  /** Địa chỉ IP và User-Agent của request gây ra thay đổi (tài liệu 04 mục 3.7); field mới, tùy chọn. */
+  @Prop({ type: String, default: null })
+  ip: string | null;
+
+  @Prop({ type: String, default: null })
+  userAgent: string | null;
+
   createdAt: Date;
 }
 

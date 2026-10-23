@@ -22,6 +22,7 @@ import {
   CrmAuditEntityType,
 } from '../crm/audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
+import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
 import { toUserPublicProfile, UserPublicProfile } from './user-public-profile';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UpdateUserStatusDto } from './dtos/update-user-status.dto';
@@ -53,6 +54,7 @@ export class UsersService {
     @InjectModel(Team.name) private readonly teamModel: Model<TeamDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly audit: CrmAuditLogService,
+    private readonly teamSync: CustomerTeamSyncService,
   ) {}
 
   /** Dựng filter Mongo từ bộ lọc (chỉ các khóa có giá trị); `q` tìm theo tên hiển thị hoặc email, đã escape regex. */
@@ -286,6 +288,11 @@ export class UsersService {
             { session },
           )
           .exec();
+      }
+
+      // Mất nhóm do đổi vai trò (ADMIN/EDITOR không thuộc nhóm) cũng đổi phạm vi khách của Quản lý.
+      if (String(before.teamId ?? '') !== String(after.teamId ?? '')) {
+        await this.teamSync.syncForUser(userId, session);
       }
 
       await this.audit.record(

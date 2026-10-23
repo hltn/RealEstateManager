@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { AsyncLocalStorage } from 'async_hooks';
 
-interface RequestContext {
+export interface RequestContext {
   requestId: string;
+  /** IP kết nối trực tiếp và User-Agent (đã cắt ngắn) — chỉ để ghi audit, không dùng để ra quyết định. */
+  ip?: string;
+  userAgent?: string;
 }
 
 /**

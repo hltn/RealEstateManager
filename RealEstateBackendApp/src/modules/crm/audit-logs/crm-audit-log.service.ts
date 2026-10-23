@@ -26,6 +26,8 @@ export interface CrmAuditEntry {
    * thao tác (role trong JWT chỉ là bản chụp lúc cấp token, có thể đã cũ).
    */
   actor: Pick<JwtPayload, 'sub'>;
+  /** Khách liên quan (M2 trở đi) — để tra lịch sử theo khách. */
+  customerId?: string | Types.ObjectId | null;
   changes?: CrmAuditChange[];
   reason?: string | null;
   source?: CrmAuditSource;
@@ -64,6 +66,9 @@ export class CrmAuditLogService {
           entityType: entry.entityType,
           entityId: new Types.ObjectId(String(entry.entityId)),
           entitySubtype: entry.entitySubtype ?? null,
+          customerId: entry.customerId
+            ? new Types.ObjectId(String(entry.customerId))
+            : null,
           action: entry.action,
           actorId,
           actorName: actor?.displayName ?? UNKNOWN_ACTOR_NAME,
@@ -72,6 +77,8 @@ export class CrmAuditLogService {
           reason: entry.reason ?? null,
           source: entry.source ?? 'WEB',
           requestId: requestContextStorage.getStore()?.requestId ?? 'unknown',
+          ip: requestContextStorage.getStore()?.ip ?? null,
+          userAgent: requestContextStorage.getStore()?.userAgent ?? null,
         },
       ],
       { session },

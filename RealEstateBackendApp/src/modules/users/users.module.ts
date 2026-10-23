@@ -4,6 +4,7 @@ import { User, UserSchema } from './schemas/user.schema';
 import { Team, TeamSchema } from '../teams/schemas/team.schema';
 import { CrmAuditLogModule } from '../crm/audit-logs/crm-audit-log.module';
 import { CrmCommonModule } from '../crm/common/crm-common.module';
+import { CustomerTeamSyncModule } from '../crm/customers/customer-team-sync.module';
 import { TeamsModule } from '../teams/teams.module';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
@@ -19,6 +20,7 @@ import { UsersController } from './users.controller';
     // ActiveAdminGuard (CrmActorService) + audit đổi vai trò/trạng thái.
     CrmCommonModule,
     CrmAuditLogModule,
+    CustomerTeamSyncModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],

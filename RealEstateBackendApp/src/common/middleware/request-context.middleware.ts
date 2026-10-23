@@ -2,6 +2,8 @@ import { Injectable, NestMiddleware } from '@nestjs/common';
 import { IncomingMessage, ServerResponse } from 'http';
 import { requestContextStorage } from '../services/request-context.service';
 
+const MAX_USER_AGENT_LENGTH = 300;
+
 /**
  * Middleware gắn X-Request-ID vào mỗi request để hỗ trợ trace xuyên service.
  *
@@ -27,6 +29,17 @@ export class RequestContextMiddleware implements NestMiddleware {
     res.setHeader('x-request-id', requestId);
 
     // Chạy toàn bộ async chain (handlers, services...) trong cùng một ALS context
-    requestContextStorage.run({ requestId }, () => next());
+    const userAgent = req.headers['user-agent'];
+    requestContextStorage.run(
+      {
+        requestId,
+        ip: req.socket?.remoteAddress,
+        userAgent:
+          typeof userAgent === 'string'
+            ? userAgent.slice(0, MAX_USER_AGENT_LENGTH)
+            : undefined,
+      },
+      () => next(),
+    );
   }
 }

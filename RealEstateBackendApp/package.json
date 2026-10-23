@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:integration": "jest --testRegex \".*\\.integration\\.spec\\.ts$\" --testPathIgnorePatterns \"/node_modules/\" --runInBand"
+    "test:integration": "jest --testRegex \".*\\.integration\\.spec\\.ts$\" --testPathIgnorePatterns \"/node_modules/\" \"crm-m2-perf\" --runInBand",
+    "test:perf": "jest --testRegex \"crm-m2-perf[.]integration[.]spec[.]ts$\" --testPathIgnorePatterns \"/node_modules/\" --runInBand"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1155.0",
@@ -52,6 +53,7 @@
     "googleapis": "^174.0.1",
     "ioredis": "^6.0.0",
     "jsdom": "^29.1.1",
+    "libphonenumber-js": "^1.13.15",
     "marked": "^18.0.9",
     "mdast-util-to-string": "^2.0.0",
     "mongoose": "^9.5.0",

@@ -106,6 +106,9 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
   beforeAll(async () => {
     process.env[FLAG] = 'true';
+    // M2: CrmModule kéo theo PiiCryptoService (cần khóa CCCD) và Redis (rate limit/idempotency, tiền tố riêng).
+    process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
+    process.env.REDIS_KEY_PREFIX = 'it-m1-' + Date.now() + ':';
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
 
     const moduleRef = await Test.createTestingModule({
@@ -164,6 +167,8 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
   afterAll(async () => {
     delete process.env[FLAG];
+    delete process.env.CRM_PII_ENCRYPTION_KEY;
+    delete process.env.REDIS_KEY_PREFIX;
     await app?.close();
     await replSet?.stop();
   });
@@ -747,16 +752,19 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       await customers.insertMany([
         {
           fullName: 'Khách 1',
+          phone: '+84900000001',
           interestedProjectIds: [projectId],
           deletedAt: null,
         },
         {
           fullName: 'Khách 2',
+          phone: '+84900000002',
           interestedProjectIds: [projectId, new Types.ObjectId()],
           deletedAt: null,
         },
         {
           fullName: 'Khách đã xóa',
+          phone: '+84900000003',
           interestedProjectIds: [projectId],
           deletedAt: new Date(),
         },
@@ -1069,6 +1077,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
     it('xóa tình trạng đang có khách => 409 CATALOG_IN_USE { usageCount }; không còn khách => 204 và ghi audit', async () => {
       await connection.collection('customers').insertOne({
         fullName: 'Khách có tình trạng',
+        phone: '+84900000004',
         statusId: new Types.ObjectId(ids.st_FIRST_CALL),
         deletedAt: null,
       });
@@ -1170,6 +1179,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
       await connection.collection('customers').insertOne({
         fullName: 'Khách nguồn',
+        phone: '+84900000005',
         sourceId: new Types.ObjectId(ids.zalo),
         deletedAt: null,
       });
@@ -1454,6 +1464,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
       await connection.collection('customers').insertOne({
         fullName: 'Khách khu vực',
+        phone: '+84900000006',
         areaId: new Types.ObjectId(ids.tWard),
         deletedAt: null,
       });

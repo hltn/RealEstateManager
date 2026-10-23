@@ -100,6 +100,9 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
 
   beforeAll(async () => {
     process.env[FLAG] = 'true';
+    // M2: CrmModule kéo theo PiiCryptoService (cần khóa CCCD) và Redis (rate limit/idempotency, tiền tố riêng).
+    process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
+    process.env.REDIS_KEY_PREFIX = 'it-m1-' + Date.now() + ':';
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -148,6 +151,8 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
 
   afterAll(async () => {
     delete process.env[FLAG];
+    delete process.env.CRM_PII_ENCRYPTION_KEY;
+    delete process.env.REDIS_KEY_PREFIX;
     await app?.close();
     await replSet?.stop();
   });

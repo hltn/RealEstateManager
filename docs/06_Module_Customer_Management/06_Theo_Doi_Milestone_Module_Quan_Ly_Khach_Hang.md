@@ -1,6 +1,6 @@
 # Theo dõi milestone: Module Quản lý & chăm sóc khách hàng (CRM)
 
-> Cập nhật lần cuối: **2026-10-22 (chiều)**. Thiết kế chi tiết từng milestone ở [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) mục 10; quyết định đã chốt ở mục 11 của tài liệu 04; API ở [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) (116 endpoint).
+> Cập nhật lần cuối: **2026-10-23 (M2 xong, QA đạt)**. Thiết kế chi tiết từng milestone ở [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) mục 10; quyết định đã chốt ở mục 11 của tài liệu 04; API ở [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) (116 endpoint).
 > Ký hiệu trạng thái: `[ ]` Chưa làm · `[~]` Đang làm · `[x]` Xong.
 
 ## 1. Chia giai đoạn
@@ -20,7 +20,7 @@ Hạ tầng đã chốt (D5): MongoDB Replica Set, **Redis + BullMQ**, MinIO/S3.
 |---|---|---|---|---|---|---|---|---|---|
 | M0 | 1 | Nền tảng: Replica Set, Redis + BullMQ, MinIO + `FileStorageService`, `PiiCryptoService` + khóa mã hóa CCCD, Idempotency sang Redis, mở rộng `GlobalExceptionFilter`, Helmet, feature flag, health liveness/readiness | devops-agent, coder-backend-agent | — | Health readiness xanh; transaction chạy trong test | [x] Xong (dev) | 2026-10-23 | 2026-10-23 | QA vòng 2 đạt: build OK, 975 test pass (20 fail có sẵn ở 3 suite AI cũ), 31/31 integration. Compose dev `RealEstateBackendApp/docker-compose.dev.yml` (Redis + MinIO; Mongo dùng container `mongodb` có sẵn, `directConnection=true`). **Stack deploy gốc chưa có Redis/S3/Replica Set: xem M10, không deploy trước khi xong.** Việc nhỏ còn theo dõi: Throttler lưu Redis, sanitize NoSQL injection, Winston che PII (M1–M2); AAD bắt buộc cho CCCD từ M2; idempotency key scope theo user từ M2 |
 | M1 | 1 | Người dùng, nhóm, danh mục, dự án: enum `MANAGER`/`STAFF`, `teams`, `assignable-users`, `customer-statuses` (4 listGroup), nguồn, kết quả liên hệ, khu vực, dự án (CRUD đầy đủ + ngừng hoạt động + khôi phục) + seed | coder-backend-agent | M0 | CRUD + Swagger + unit test | [x] Xong (dev) | 2026-10-23 | 2026-10-23 | QA đạt vòng 2 (build OK, 1059 test pass + 20 fail cũ ở 3 suite AI, integration 126/126 gồm M0 31/31). Đã sửa B1 (`RolesGuard` default-deny, `@AnyRole()`), `@AdminOnly()` đọc DB, `seedKey`, khóa chống race, audit đổi role/status, chặn ADMIN cuối cùng. Việc để lại: route ADMIN-only ngoài CRM (knowledge-articles, settings, external-log, cron) còn tin role trong JWT (tối đa 15 phút); GET danh mục CRM còn dựa JWT; `POST /users` trùng email đồng thời có thể 500; bản seed cũ đổi tên trước khi có `seedKey` có thể seed trùng 1 lần; chạy migration 004 `--apply` và bật `FEATURE_CRM_ENABLED` khi deploy |
-| M2 | 1 | Khách hàng lõi: `CustomerScope`, CRUD (có email), phone-lookups, **phone-views (`PHONE_VIEWED`)**, list 5 tab, đổi tình trạng, tiêu chí, CCCD, consent, soft delete/restore/anonymize, audit + histories | coder-backend-agent → qa-agent | M1 | E2E ma trận quyền; p95 danh sách đạt trên 10k seed | [ ] Chưa làm | | | Kiểm tải sơ bộ nằm ở đây |
+| M2 | 1 | Khách hàng lõi: `CustomerScope`, CRUD (có email), phone-lookups, **phone-views (`PHONE_VIEWED`)**, list 5 tab, đổi tình trạng, tiêu chí, CCCD, consent, soft delete/restore/anonymize, audit + histories | coder-backend-agent → qa-agent | M1 | E2E ma trận quyền; p95 danh sách đạt trên 10k seed | [x] Xong (dev) | 2026-10-23 | 2026-10-23 | QA vòng 3 đạt (không còn blocker; 195 test tích hợp pass). `test:perf` là suite riêng, đo trên máy rảnh. 20 endpoint khách lõi (không gồm bulk, thuộc M3); đồng bộ `customers.teamIds` khi đổi nhóm/vai trò; kiểm tải 10k khách đạt ngưỡng (script `crm-m2-perf.integration.spec.ts`: danh sách p95 ≤ 0,2 s, counts ≤ 0,04 s, chi tiết ≤ 0,02 s); thêm mã lỗi `CUSTOMER_ANONYMIZED`. Chưa có: lọc/gắn thẻ và chân dung (M4), bulk (M3), thông báo cảnh báo bất thường cho Quản trị (M5; hiện chỉ ghi audit) |
 | M3 | 1 | Chăm sóc: care-team, care-team-requests, nhật ký + ảnh đính kèm, bulk operations | coder-backend-agent → qa-agent | M2 | Đúng 1 PRIMARY có test; NV bị gỡ ⇒ 404; ảnh gắn đúng ghi chú | [ ] Chưa làm | | | |
 | M4 | 1 | Chân dung & thẻ: persona-fields + seed (gồm nhóm REAL_ESTATE), persona khách, completeness + job recompute, tags | coder-backend-agent → qa-agent | M2 | Đổi cấu hình trường không mất dữ liệu cũ | [ ] Chưa làm | | | |
 | M5 | 1 | Lịch hẹn (có loại ký cọc / HĐMB), daily-tasks, nhắc việc BullMQ, hộp thông báo trong app, notification-preferences, `NoopPushProvider` | coder-backend-agent → qa-agent | M3 | Nhắc đúng hạn, không trùng khi restart | [ ] Chưa làm | | | Không gồm push FCM, không gồm `device_tokens` |
@@ -75,6 +75,10 @@ Hạ tầng đã chốt (D5): MongoDB Replica Set, **Redis + BullMQ**, MinIO/S3.
 |---|---|
 | Trường bổ sung của Dự án | Hiện bộ trường tối thiểu; thêm sau là tương thích ngược |
 | Mẫu cột 3 sheet cũ (D7) | Cần file mẫu thật, làm ở M11 |
+
+### 6.2b Rủi ro theo dõi (hiệu năng tìm kiếm)
+
+- Tìm kiếm khách là regex trên `searchText`, quét toàn phạm vi của người gọi: ADMIN với 10k khách khoảng 200-300 ms (sát mục tiêu p95 300 ms của doc 04 mục 7.1). Khi từ ≥ 50k khách cần text index hoặc Atlas Search; chốt ở M10 (k6). Test kiểm tải M2 (`npm run test:perf`, tách khỏi `test:integration`) assert theo ngưỡng thật, có thể nới bằng `PERF_ASSERT_FACTOR=2` khi máy tải; lần chạy cuối trên máy bận có 3/7 đỏ, cần đo lại trên máy rảnh.
 
 ### 6.3 Ý tưởng giai đoạn sau
 

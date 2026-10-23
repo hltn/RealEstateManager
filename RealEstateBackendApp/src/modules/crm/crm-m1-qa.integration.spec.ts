@@ -96,6 +96,9 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
 
   beforeAll(async () => {
     process.env[FLAG] = 'true';
+    // M2: CrmModule kéo theo PiiCryptoService (cần khóa CCCD) và Redis (rate limit/idempotency, tiền tố riêng).
+    process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
+    process.env.REDIS_KEY_PREFIX = 'it-m1-' + Date.now() + ':';
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -144,6 +147,8 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
 
   afterAll(async () => {
     delete process.env[FLAG];
+    delete process.env.CRM_PII_ENCRYPTION_KEY;
+    delete process.env.REDIS_KEY_PREFIX;
     await app?.close();
     await replSet?.stop();
   });
@@ -281,11 +286,17 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
           .filter((verb) => ['get', 'post', 'patch', 'delete'].includes(verb))
           .map((verb) => `${verb.toUpperCase()} ${route}`),
       );
+      // Route khách hàng lõi thuộc M2 (crm-m2.integration.spec.ts), không tính vào bộ đếm M1.
+      const isM2Route = (op: string) =>
+        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|audit-logs)/.test(
+          op,
+        );
       const crmOps = ops.filter(
         (op) =>
-          op.includes('/crm/') ||
-          op.includes('/teams') ||
-          op.includes('/users/{id}/team'),
+          (op.includes('/crm/') ||
+            op.includes('/teams') ||
+            op.includes('/users/{id}/team')) &&
+          !isM2Route(op),
       );
       // teams 4 + users/:id/team 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 30
       expect(crmOps).toHaveLength(30);

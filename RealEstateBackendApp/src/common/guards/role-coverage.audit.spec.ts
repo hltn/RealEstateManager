@@ -115,7 +115,7 @@ describe('RolesGuard default-deny — vai trò MANAGER/STAFF không lọt vào r
   it('các controller CRM/nhóm/người dùng đều khai báo @Roles (hoặc @Public/@AnyRole) tường minh trên mọi handler', () => {
     const offenders = handlers
       .filter((handler) =>
-        /^(Teams|Areas|LeadSources|ContactResults|CustomerStatuses|Projects|AssignableUsers|CrmSettings|Users)Controller\./.test(
+        /^(Teams|Areas|LeadSources|ContactResults|CustomerStatuses|Projects|AssignableUsers|CrmSettings|Users|Customers|CustomerSensitiveData|CustomerLifecycle|CustomerHistories)Controller\./.test(
           handler.label,
         ),
       )

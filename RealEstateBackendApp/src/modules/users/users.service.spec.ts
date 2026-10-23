@@ -26,6 +26,7 @@ import { UsersService } from './users.service';
 import { User } from './schemas/user.schema';
 import { Team } from '../teams/schemas/team.schema';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
+import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import type { CreateUserDto } from './dtos/create-user.dto';
@@ -115,6 +116,11 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         { provide: getModelToken(Team.name), useValue: teamModel },
         { provide: getConnectionToken(), useValue: connection },
         { provide: CrmAuditLogService, useValue: audit },
+        // Đồng bộ customers.teamIds được kiểm bằng integration thật (crm-m2.integration.spec.ts).
+        {
+          provide: CustomerTeamSyncService,
+          useValue: { syncForUser: jest.fn().mockResolvedValue(0) },
+        },
       ],
     }).compile();
 

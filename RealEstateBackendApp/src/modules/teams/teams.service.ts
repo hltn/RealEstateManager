@@ -22,6 +22,7 @@ import { diffFields } from '../crm/audit-logs/audit-diff.util';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { resolveVisibleTeamIds } from '../crm/common/access/crm-actor';
 import { CrmActorService } from '../crm/common/access/crm-actor.service';
+import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import {
   toUserPublicProfile,
@@ -50,6 +51,7 @@ export class TeamsService {
     @InjectConnection() private readonly connection: Connection,
     private readonly actors: CrmActorService,
     private readonly audit: CrmAuditLogService,
+    private readonly teamSync: CustomerTeamSyncService,
   ) {}
 
   /** Danh sách nhóm: ADMIN thấy tất cả; MANAGER chỉ nhóm mình quản lý hoặc thuộc về. */
@@ -236,7 +238,7 @@ export class TeamsService {
    * Gán người dùng vào nhóm (hoặc gỡ khỏi nhóm khi `teamId = null`) — `PATCH /users/:id/team`.
    * Chỉ Quản lý/Nhân viên mới thuộc nhóm; nhóm đích phải còn tồn tại và đang hoạt động.
    * Ghi audit USER_TEAM_CHANGED cùng transaction vì thay đổi này đổi phạm vi khách của người đó.
-   * (Đồng bộ `customers.teamIds` là việc của M2 khi collection khách tồn tại.)
+   * Đồng bộ `customers.teamIds` (phạm vi Quản lý) cùng transaction qua `CustomerTeamSyncService` (M2).
    */
   async assignUserToTeam(
     jwt: JwtPayload,
@@ -300,6 +302,8 @@ export class TeamsService {
           },
           session,
         );
+        // Đổi nhóm làm đổi phạm vi khách của Quản lý: tính lại `customers.teamIds` NGAY trong cùng transaction.
+        await this.teamSync.syncForUser(userObjectId, session);
       }
       return after;
     });
