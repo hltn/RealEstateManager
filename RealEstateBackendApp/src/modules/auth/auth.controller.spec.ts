@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * AuthController unit spec — contract mục 6.1 / 6.3 / 8 (FastifyRequest shape).
  *
@@ -165,6 +166,8 @@ describe('AuthController — contract mục 6.1/6.3', () => {
         displayName: 'System Admin',
         role: UserRole.ADMIN,
         status: 'ACTIVE' as any,
+        teamId: null,
+        managedTeamIds: [],
       });
 
       const result = await controller.me({

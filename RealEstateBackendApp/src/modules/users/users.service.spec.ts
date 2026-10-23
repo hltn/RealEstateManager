@@ -18,17 +18,18 @@
  */
 jest.mock('argon2');
 import { Test, TestingModule } from '@nestjs/testing';
-import { getModelToken } from '@nestjs/mongoose';
+import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { Types } from 'mongoose';
 import { UsersService } from './users.service';
-import { User, UserDocument } from './schemas/user.schema';
+import { User } from './schemas/user.schema';
+import { Team } from '../teams/schemas/team.schema';
+import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import type { CreateUserDto } from './dtos/create-user.dto';
 import type { UpdateUserStatusDto } from './dtos/update-user-status.dto';
-import type { UpdateUserRoleDto } from './dtos/update-user-role.dto';
 
 /**
  * Tạo chainable Mongoose query mock cho các method `.sort().skip().limit().lean().exec()`,
@@ -46,14 +47,17 @@ function chainable(finalValue: unknown = undefined): any {
     'skip',
     'limit',
     'populate',
+    'session',
   ]) {
     chain[m] = jest.fn(chainFn);
   }
-  chain.exec = jest.fn(async () => finalValue);
+  chain.exec = jest.fn().mockResolvedValue(finalValue);
   return chain;
 }
 
 const USER_ID = '65e1f0a1b2c3d4e5f6a7b8c9';
+/** Session giả do `connection.transaction` mock truyền vào `work`. */
+const SESSION = { id: 'session' };
 const EMAIL = 'editor@example.com';
 
 function buildUserDoc(overrides: Record<string, unknown> = {}) {
@@ -64,6 +68,7 @@ function buildUserDoc(overrides: Record<string, unknown> = {}) {
     displayName: 'Editor One',
     role: UserRole.EDITOR,
     status: UserStatus.ACTIVE,
+    teamId: null,
     deletedAt: null,
     lastLoginAt: null,
     ...overrides,
@@ -73,6 +78,9 @@ function buildUserDoc(overrides: Record<string, unknown> = {}) {
 describe('UsersService (contract mục 6.4/16.6)', () => {
   let service: UsersService;
   let userModel: any;
+  let teamModel: any;
+  let connection: any;
+  let audit: { record: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -83,13 +91,30 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       countDocuments: jest.fn(),
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
+      updateMany: jest.fn(),
       create: jest.fn(),
+    };
+
+    teamModel = {
+      exists: jest.fn(),
+      updateMany: jest.fn(),
+      updateOne: jest.fn(),
+    };
+    audit = { record: jest.fn() };
+    // Transaction giả: chạy `work` ngay với một session giả; phần ghi thật được kiểm ở integration test.
+    connection = {
+      transaction: jest.fn((work: (session: unknown) => unknown) =>
+        Promise.resolve(work(SESSION)),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getModelToken(User.name), useValue: userModel },
+        { provide: getModelToken(Team.name), useValue: teamModel },
+        { provide: getConnectionToken(), useValue: connection },
+        { provide: CrmAuditLogService, useValue: audit },
       ],
     }).compile();
 
@@ -113,6 +138,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
             displayName: 'Editor One',
             role: UserRole.EDITOR,
             status: UserStatus.ACTIVE,
+            teamId: null,
           },
         ],
         meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
@@ -338,6 +364,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         displayName: 'Editor One',
         role: UserRole.EDITOR,
         status: UserStatus.ACTIVE,
+        teamId: null,
       });
       expect((result as any).password).toBeUndefined();
       expect((result as any).deletedAt).toBeUndefined();
@@ -345,89 +372,307 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
     });
   });
 
-  describe('updateStatus (mục 6.4 — block/unblock)', () => {
-    const dto: UpdateUserStatusDto = { status: UserStatus.BLOCKED };
+  describe('updateStatus (block/unblock + audit + chặn khóa ADMIN cuối cùng)', () => {
+    const ADMIN_ACTOR = { sub: '65e1f0a1b2c3d4e5f6a7b8aa' };
+    const blockDto: UpdateUserStatusDto = { status: UserStatus.BLOCKED };
 
-    it('filter `_id + deletedAt: null`, `$set status`, `{ new: true }`', async () => {
-      userModel.findOneAndUpdate.mockReturnValue(
-        chainable(buildUserDoc({ status: UserStatus.BLOCKED })),
-      );
+    it('không tìm thấy user (đã soft delete hoặc id sai) → NotFoundException("User not found"), không ghi gì', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
 
-      await service.updateStatus(USER_ID, dto);
-
-      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
-        {
-          _id: new Types.ObjectId(USER_ID),
-          deletedAt: null,
-        },
-        { $set: { status: UserStatus.BLOCKED } },
-        { new: true },
-      );
+      await expect(
+        service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR),
+      ).rejects.toThrow('User not found');
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('trả doc đã update KHÔNG chứa password', async () => {
-      userModel.findOneAndUpdate.mockReturnValue(
+    it('đặt lại đúng trạng thái hiện có là no-op: không update, không audit', async () => {
+      userModel.findOne.mockReturnValue(
         chainable(buildUserDoc({ status: UserStatus.BLOCKED })),
       );
 
-      const result = await service.updateStatus(USER_ID, dto);
+      const result = await service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR);
 
       expect(result.status).toBe(UserStatus.BLOCKED);
-      expect((result as any).password).toBeUndefined();
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('không tìm thấy user (đã soft delete hoặc id sai) → NotFoundException("User not found")', async () => {
-      userModel.findOneAndUpdate.mockReturnValue(chainable(null));
-
-      await expect(service.updateStatus(USER_ID, dto)).rejects.toThrow(
-        NotFoundException,
+    it('khóa user thường: `$set status` trong transaction + audit USER_STATUS_CHANGED (cũ → mới), không lộ password', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ status: UserStatus.BLOCKED })),
       );
-      await expect(service.updateStatus(USER_ID, dto)).rejects.toThrow(
-        'User not found',
+
+      const result = await service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR);
+
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: new Types.ObjectId(USER_ID) },
+        { $set: { status: UserStatus.BLOCKED } },
+        { returnDocument: 'after', session: SESSION },
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: 'USER',
+          action: 'USER_STATUS_CHANGED',
+          actor: ADMIN_ACTOR,
+          changes: [{ field: 'status', from: 'ACTIVE', to: 'BLOCKED' }],
+        }),
+        SESSION,
+      );
+      expect(result.status).toBe(UserStatus.BLOCKED);
+      expect((result as any).password).toBeUndefined();
+      // User thường: không cần kiểm "ADMIN cuối cùng".
+      expect(userModel.countDocuments).not.toHaveBeenCalled();
+    });
+
+    it('khóa ADMIN đang hoạt động CUỐI CÙNG → 409 LAST_ADMIN_REQUIRED, không update', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.ADMIN })),
+      );
+      userModel.countDocuments.mockReturnValue(chainable(0));
+
+      await expect(
+        service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR),
+      ).rejects.toMatchObject({ errorCode: 'LAST_ADMIN_REQUIRED' });
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('khóa ADMIN khi còn ADMIN khác: cho phép và "chạm" các ADMIN để hai lần khóa chéo nhau xung đột ghi', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.ADMIN })),
+      );
+      userModel.countDocuments.mockReturnValue(chainable(1));
+      userModel.updateMany.mockReturnValue({ exec: jest.fn() });
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(
+          buildUserDoc({ role: UserRole.ADMIN, status: UserStatus.BLOCKED }),
+        ),
+      );
+
+      await service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR);
+
+      expect(userModel.updateMany).toHaveBeenCalledWith(
+        { role: UserRole.ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
+        { $currentDate: { updatedAt: true } },
+        { session: SESSION, timestamps: false },
       );
     });
   });
 
-  describe('updateRole (mục 6.4 — đổi role)', () => {
-    const dto: UpdateUserRoleDto = { role: UserRole.ADMIN };
+  describe('updateRole (đổi role + audit + dọn nhóm + chặn hạ ADMIN cuối cùng)', () => {
+    const ADMIN_ACTOR = { sub: '65e1f0a1b2c3d4e5f6a7b8aa' };
+    const userId = new Types.ObjectId(USER_ID);
 
-    it('filter `_id + deletedAt: null`, `$set role`, `{ new: true }`', async () => {
+    it('không tìm thấy user → NotFoundException("User not found") và KHÔNG đụng teams', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+
+      await expect(
+        service.updateRole(USER_ID, { role: UserRole.ADMIN }, ADMIN_ACTOR),
+      ).rejects.toThrow('User not found');
+      expect(teamModel.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('đặt lại đúng vai trò hiện có là no-op: không update, không audit', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+
+      await service.updateRole(USER_ID, { role: UserRole.EDITOR }, ADMIN_ACTOR);
+
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('đổi sang MANAGER: chỉ `$set role`, KHÔNG đụng teams; ghi audit USER_ROLE_CHANGED', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
       userModel.findOneAndUpdate.mockReturnValue(
-        chainable(buildUserDoc({ role: UserRole.ADMIN })),
+        chainable(buildUserDoc({ role: UserRole.MANAGER })),
       );
 
-      await service.updateRole(USER_ID, dto);
+      await service.updateRole(
+        USER_ID,
+        { role: UserRole.MANAGER },
+        ADMIN_ACTOR,
+      );
 
       expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
-        {
-          _id: new Types.ObjectId(USER_ID),
-          deletedAt: null,
-        },
-        { $set: { role: UserRole.ADMIN } },
-        { new: true },
+        { _id: userId },
+        { $set: { role: UserRole.MANAGER } },
+        { returnDocument: 'after', session: SESSION },
+      );
+      expect(teamModel.updateMany).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'USER_ROLE_CHANGED',
+          changes: [{ field: 'role', from: 'EDITOR', to: 'MANAGER' }],
+        }),
+        SESSION,
       );
     });
 
-    it('trả doc đã update KHÔNG chứa password', async () => {
+    it('đổi sang vai trò không thuộc nhóm (ADMIN): xóa teamId và gỡ khỏi managerIds trong CÙNG transaction', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.STAFF })),
+      );
       userModel.findOneAndUpdate.mockReturnValue(
         chainable(buildUserDoc({ role: UserRole.ADMIN })),
       );
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
 
-      const result = await service.updateRole(USER_ID, dto);
+      const result = await service.updateRole(
+        USER_ID,
+        { role: UserRole.ADMIN },
+        ADMIN_ACTOR,
+      );
 
+      expect(connection.transaction).toHaveBeenCalledTimes(1);
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: userId },
+        { $set: { role: UserRole.ADMIN, teamId: null } },
+        { returnDocument: 'after', session: SESSION },
+      );
+      expect(teamModel.updateMany).toHaveBeenCalledWith(
+        { managerIds: userId },
+        { $pull: { managerIds: userId } },
+        { session: SESSION },
+      );
       expect(result.role).toBe(UserRole.ADMIN);
       expect((result as any).password).toBeUndefined();
     });
 
-    it('không tìm thấy user → NotFoundException("User not found")', async () => {
-      userModel.findOneAndUpdate.mockReturnValue(chainable(null));
+    it('hạ MANAGER xuống STAFF: giữ nhóm của người dùng nhưng vẫn gỡ khỏi managerIds', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.MANAGER })),
+      );
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.STAFF })),
+      );
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
 
-      await expect(service.updateRole(USER_ID, dto)).rejects.toThrow(
-        NotFoundException,
+      await service.updateRole(USER_ID, { role: UserRole.STAFF }, ADMIN_ACTOR);
+
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        expect.anything(),
+        { $set: { role: UserRole.STAFF } },
+        expect.anything(),
       );
-      await expect(service.updateRole(USER_ID, dto)).rejects.toThrow(
-        'User not found',
+      expect(teamModel.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('hạ ADMIN đang hoạt động CUỐI CÙNG → 409 LAST_ADMIN_REQUIRED, không update', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.ADMIN })),
       );
+      userModel.countDocuments.mockReturnValue(chainable(0));
+
+      await expect(
+        service.updateRole(USER_ID, { role: UserRole.STAFF }, ADMIN_ACTOR),
+      ).rejects.toMatchObject({ errorCode: 'LAST_ADMIN_REQUIRED' });
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(teamModel.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('nâng lên ADMIN không cần kiểm "ADMIN cuối cùng"', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.ADMIN })),
+      );
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
+
+      await service.updateRole(USER_ID, { role: UserRole.ADMIN }, ADMIN_ACTOR);
+
+      expect(userModel.countDocuments).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findAll — bộ lọc CRM (tài liệu 05 mục 2.2)', () => {
+    it('lọc theo role/status/teamId và q (escape regex) trên cùng filter cho cả find và count', async () => {
+      userModel.find.mockReturnValue(chainable([]));
+      userModel.countDocuments.mockReturnValue(chainable(0));
+      const teamId = '65e1f0a1b2c3d4e5f6a7b8d1';
+
+      await service.findAll(1, 20, {
+        role: UserRole.STAFF,
+        status: UserStatus.ACTIVE,
+        teamId,
+        q: 'a.b*',
+      });
+
+      const filter = userModel.find.mock.calls[0][0];
+      expect(filter).toMatchObject({
+        deletedAt: null,
+        role: UserRole.STAFF,
+        status: UserStatus.ACTIVE,
+        teamId: new Types.ObjectId(teamId),
+      });
+      // `q` phải bị escape: "a.b*" chỉ khớp đúng chuỗi đó, không khớp "axbb".
+      const [{ displayName }] = filter.$or;
+      expect(displayName.test('xx a.b* yy')).toBe(true);
+      expect(displayName.test('axbb')).toBe(false);
+      expect(userModel.countDocuments).toHaveBeenCalledWith(filter);
+    });
+  });
+
+  describe('create — teamId (CRM)', () => {
+    const baseDto: CreateUserDto = {
+      email: 'staff@example.com',
+      password: 'Staff@123456',
+      displayName: 'Staff One',
+      role: UserRole.STAFF,
+    };
+    const TEAM_ID = '65e1f0a1b2c3d4e5f6a7b8d1';
+
+    it('có nhóm hợp lệ: kiểm nhóm, tăng revision của nhóm ("khóa ghi") và tạo user trong CÙNG transaction', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      teamModel.exists.mockReturnValue(chainable({ _id: TEAM_ID }));
+      teamModel.updateOne.mockReturnValue({ exec: jest.fn() });
+      userModel.create.mockResolvedValue([
+        buildUserDoc({ role: UserRole.STAFF, teamId: TEAM_ID }),
+      ]);
+
+      const result = await service.create({ ...baseDto, teamId: TEAM_ID });
+
+      const teamObjectId = new Types.ObjectId(TEAM_ID);
+      expect(connection.transaction).toHaveBeenCalledTimes(1);
+      expect(teamModel.exists).toHaveBeenCalledWith({
+        _id: teamObjectId,
+        deletedAt: null,
+        isActive: true,
+      });
+      expect(teamModel.updateOne).toHaveBeenCalledWith(
+        { _id: teamObjectId },
+        { $inc: { revision: 1 } },
+        { session: SESSION },
+      );
+      expect(userModel.create).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            teamId: teamObjectId,
+            role: UserRole.STAFF,
+          }),
+        ],
+        { session: SESSION },
+      );
+      expect(result.teamId).toBe(TEAM_ID);
+    });
+
+    it('từ chối teamId với vai trò không thuộc nhóm (EDITOR) bằng 400 VALIDATION_FAILED, không tạo user', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+
+      await expect(
+        service.create({ ...baseDto, role: UserRole.EDITOR, teamId: TEAM_ID }),
+      ).rejects.toMatchObject({ errorCode: 'VALIDATION_FAILED' });
+      expect(userModel.create).not.toHaveBeenCalled();
+      expect(connection.transaction).not.toHaveBeenCalled();
+    });
+
+    it('nhóm không tồn tại/đã ngừng → 404, không tạo user', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      teamModel.exists.mockReturnValue(chainable(null));
+
+      await expect(
+        service.create({ ...baseDto, teamId: TEAM_ID }),
+      ).rejects.toThrow(NotFoundException);
+      expect(userModel.create).not.toHaveBeenCalled();
     });
   });
 });

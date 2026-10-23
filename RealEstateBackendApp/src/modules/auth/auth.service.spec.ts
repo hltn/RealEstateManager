@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * AuthService unit spec — contract mục 16.1 / 7.2.1–7.2.3 / 7.4.1.
  *
@@ -14,17 +15,16 @@
  * `argon2` mock qua `jest.mock('argon2')`. `crypto` (SHA-256, randomUUID) dùng thật.
  */
 jest.mock('argon2');
+import { createHash } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import {
-  ForbiddenException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { AuthService } from './auth.service';
 import { User } from '../users/schemas/user.schema';
+import { Team } from '../teams/schemas/team.schema';
 import { RefreshToken } from './schemas/refresh-token.schema';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
@@ -40,17 +40,10 @@ import { CustomLogger } from '../../common/logger/custom-logger.service';
 function chainable(finalValue: unknown = undefined): any {
   const chain: any = {};
   const chainFn = () => chain;
-  for (const m of [
-    'select',
-    'lean',
-    'sort',
-    'skip',
-    'limit',
-    'populate',
-  ]) {
+  for (const m of ['select', 'lean', 'sort', 'skip', 'limit', 'populate']) {
     chain[m] = jest.fn(chainFn);
   }
-  chain.exec = jest.fn(async () => finalValue);
+  chain.exec = jest.fn().mockResolvedValue(finalValue);
   // Cài sẵn cho `findOne`/`findById`/`find`/`findOneAndUpdate`/`updateOne`/`updateMany`.
   return chain;
 }
@@ -76,6 +69,7 @@ describe('AuthService (contract mục 16.1)', () => {
   let service: AuthService;
   let userModel: any;
   let refreshTokenModel: any;
+  let teamModel: any;
   let jwtService: jest.Mocked<JwtService>;
   let configService: jest.Mocked<ConfigService>;
   let logger: jest.Mocked<CustomLogger>;
@@ -94,6 +88,7 @@ describe('AuthService (contract mục 16.1)', () => {
       updateOne: jest.fn(),
       create: jest.fn(),
     };
+    teamModel = { find: jest.fn() };
     refreshTokenModel = {
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
@@ -102,7 +97,9 @@ describe('AuthService (contract mục 16.1)', () => {
       create: jest.fn(),
     };
 
-    jwtService = { signAsync: jwtSignMock } as unknown as jest.Mocked<JwtService>;
+    jwtService = {
+      signAsync: jwtSignMock,
+    } as unknown as jest.Mocked<JwtService>;
     jwtSignMock.mockResolvedValue('access.jwt.token');
 
     configService = {
@@ -128,6 +125,7 @@ describe('AuthService (contract mục 16.1)', () => {
       providers: [
         AuthService,
         { provide: getModelToken(User.name), useValue: userModel },
+        { provide: getModelToken(Team.name), useValue: teamModel },
         {
           provide: getModelToken(RefreshToken.name),
           useValue: refreshTokenModel,
@@ -163,10 +161,7 @@ describe('AuthService (contract mục 16.1)', () => {
       const result = await service.validateUser(EMAIL, 'wrongpass');
 
       expect(result).toBeNull();
-      expect(argon2.verify).toHaveBeenCalledWith(
-        '$argon2id$hash',
-        'wrongpass',
-      );
+      expect(argon2.verify).toHaveBeenCalledWith('$argon2id$hash', 'wrongpass');
     });
 
     it('đúng password → trả UserDocument (kèm password để login dùng)', async () => {
@@ -262,13 +257,13 @@ describe('AuthService (contract mục 16.1)', () => {
   describe('refresh — 4 nhánh + CAS race (mục 7.2.1 / 16.3)', () => {
     const RAW = 'refresh-token-uuid-1';
     // tokenHash = SHA-256 của RAW (dùng thật crypto)
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const crypto = require('crypto');
-    const tokenHash = crypto.createHash('sha256').update(RAW).digest('hex');
+    const tokenHash = createHash('sha256').update(RAW).digest('hex');
 
     it('nhánh 1: token không tồn tại → 401 "Invalid or expired refresh token", revokeFamily KHÔNG gọi', async () => {
       refreshTokenModel.findOne.mockReturnValue(chainable(null));
-      const updateManySpy = jest.spyOn(service, 'revokeFamily').mockResolvedValue();
+      const updateManySpy = jest
+        .spyOn(service, 'revokeFamily')
+        .mockResolvedValue();
 
       await expect(service.refresh(RAW)).rejects.toThrow(
         'Invalid or expired refresh token',
@@ -286,7 +281,9 @@ describe('AuthService (contract mục 16.1)', () => {
           userId: USER_ID,
         }),
       );
-      const updateManySpy = jest.spyOn(service, 'revokeFamily').mockResolvedValue();
+      const updateManySpy = jest
+        .spyOn(service, 'revokeFamily')
+        .mockResolvedValue();
 
       await expect(service.refresh(RAW)).rejects.toThrow(
         'Invalid or expired refresh token',
@@ -535,6 +532,41 @@ describe('AuthService (contract mục 16.1)', () => {
       await expect(service.seedAdmin()).rejects.toThrow(
         /Failed to hash admin password during seed/,
       );
+    });
+  });
+  describe('getMe — mở rộng CRM (teamId, managedTeamIds)', () => {
+    const TEAM_ID = '65e1f0a1b2c3d4e5f6a7b8d1';
+
+    it('MANAGER: trả teamId và danh sách nhóm đang quản lý (chỉ nhóm chưa xóa mềm)', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.MANAGER, teamId: TEAM_ID })),
+      );
+      teamModel.find.mockReturnValue(
+        chainable([{ _id: TEAM_ID }, { _id: 'team-2' }]),
+      );
+
+      const me = await service.getMe(USER_ID);
+
+      expect(teamModel.find).toHaveBeenCalledWith({
+        managerIds: USER_ID,
+        deletedAt: null,
+      });
+      expect(me).toMatchObject({
+        role: UserRole.MANAGER,
+        teamId: TEAM_ID,
+        managedTeamIds: [TEAM_ID, 'team-2'],
+      });
+      expect((me as any).password).toBeUndefined();
+    });
+
+    it('ADMIN cũ chưa có field teamId: teamId=null, managedTeamIds rỗng và KHÔNG truy vấn teams', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+
+      const me = await service.getMe(USER_ID);
+
+      expect(me.teamId).toBeNull();
+      expect(me.managedTeamIds).toEqual([]);
+      expect(teamModel.find).not.toHaveBeenCalled();
     });
   });
 });

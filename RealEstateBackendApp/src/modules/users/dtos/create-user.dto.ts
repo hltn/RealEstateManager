@@ -1,11 +1,13 @@
 import {
   IsEmail,
   IsEnum,
+  IsMongoId,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../../../common/enums/user-role.enum';
 
 /**
@@ -32,4 +34,12 @@ export class CreateUserDto {
   @ApiProperty({ enum: UserRole, example: UserRole.EDITOR })
   @IsEnum(UserRole)
   role: UserRole;
+
+  @ApiPropertyOptional({
+    description: 'Id nhóm (chỉ với vai trò MANAGER/STAFF của CRM)',
+    example: '66f1a2b3c4d5e6f708192a3b',
+  })
+  @IsOptional()
+  @IsMongoId()
+  teamId?: string;
 }

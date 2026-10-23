@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * UsersController unit spec — contract mục 6.4 / 16.6 (rule "không block chính mình").
  *
@@ -15,6 +16,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { TeamsService } from '../teams/teams.service';
+import { CrmActorService } from '../crm/common/access/crm-actor.service';
+import { FeatureFlagService } from '../../shared/feature-flags/feature-flag.service';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
@@ -22,6 +26,7 @@ import type { JwtPayload } from '../../common/decorators/current-user.decorator'
 describe('UsersController — contract mục 6.4/16.6', () => {
   let controller: UsersController;
   let usersService: jest.Mocked<UsersService>;
+  let teamsService: jest.Mocked<TeamsService>;
 
   beforeEach(async () => {
     usersService = {
@@ -31,15 +36,26 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       updateRole: jest.fn(),
     } as unknown as jest.Mocked<UsersService>;
 
+    teamsService = {
+      assignUserToTeam: jest.fn(),
+    } as unknown as jest.Mocked<TeamsService>;
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
-      providers: [{ provide: UsersService, useValue: usersService }],
+      providers: [
+        { provide: UsersService, useValue: usersService },
+        { provide: TeamsService, useValue: teamsService },
+        // CrmFeatureGuard (gắn ở PATCH /users/:id/team) cần FeatureFlagService để khởi tạo.
+        { provide: FeatureFlagService, useValue: { isEnabled: jest.fn() } },
+        // ActiveAdminGuard (AdminOnly) cần CrmActorService để khởi tạo; guard được kiểm riêng ở active-admin.guard.spec.
+        { provide: CrmActorService, useValue: { resolve: jest.fn() } },
+      ],
     }).compile();
 
     controller = module.get<UsersController>(UsersController);
   });
 
-  it('block chính mình (sub === params.id) → ForbiddenException("Cannot block your own account") TRƯỚC service', async () => {
+  it('block chính mình (sub === params.id) → ForbiddenException("Cannot block your own account") TRƯỚC service', () => {
     const myId = '65e1f0a1b2c3d4e5f6a7b8c9';
     const me: JwtPayload = {
       sub: myId,
@@ -72,17 +88,16 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       displayName: 'Editor',
       role: UserRole.EDITOR,
       status: UserStatus.BLOCKED,
+      teamId: null,
     });
 
-    await controller.updateStatus(
+    await controller.updateStatus(otherId, { status: UserStatus.BLOCKED }, me);
+
+    expect(usersService.updateStatus).toHaveBeenCalledWith(
       otherId,
       { status: UserStatus.BLOCKED },
       me,
     );
-
-    expect(usersService.updateStatus).toHaveBeenCalledWith(otherId, {
-      status: UserStatus.BLOCKED,
-    });
   });
 
   it('so sánh String(sub) === String(id) — ObjectId string dạng chuỗi, không lệch type', () => {
@@ -105,14 +120,22 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       displayName: 'Admin',
       role: UserRole.EDITOR,
       status: UserStatus.ACTIVE,
+      teamId: null,
     });
 
     // Không throw — service được gọi.
-    await controller.updateRole(myId, { role: UserRole.EDITOR });
+    const me: JwtPayload = {
+      sub: myId,
+      email: 'admin@example.com',
+      role: UserRole.ADMIN,
+    };
+    await controller.updateRole(myId, { role: UserRole.EDITOR }, me);
 
-    expect(usersService.updateRole).toHaveBeenCalledWith(myId, {
-      role: UserRole.EDITOR,
-    });
+    expect(usersService.updateRole).toHaveBeenCalledWith(
+      myId,
+      { role: UserRole.EDITOR },
+      me,
+    );
   });
 
   it('GET /users → gọi service.findAll với page/limit', async () => {
@@ -121,9 +144,59 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       meta: { total: 0, page: 1, limit: 20, totalPages: 1 },
     });
 
-    await controller.findAll(1, 20);
+    await controller.findAll({ page: 1, limit: 20 });
 
-    expect(usersService.findAll).toHaveBeenCalledWith(1, 20);
+    expect(usersService.findAll).toHaveBeenCalledWith(1, 20, {
+      role: undefined,
+      teamId: undefined,
+      status: undefined,
+      q: undefined,
+    });
+  });
+
+  it('GET /users chuyển nguyên bộ lọc role/teamId/status/q xuống service', async () => {
+    usersService.findAll.mockResolvedValue({
+      data: [],
+      meta: { total: 0, page: 2, limit: 10, totalPages: 1 },
+    });
+    const filters = {
+      role: UserRole.STAFF,
+      teamId: '65e1f0a1b2c3d4e5f6a7b8c9',
+      status: UserStatus.ACTIVE,
+      q: 'hạnh',
+    };
+
+    await controller.findAll({ page: 2, limit: 10, ...filters });
+
+    expect(usersService.findAll).toHaveBeenCalledWith(2, 10, filters);
+  });
+
+  it('PATCH /users/:id/team → gán nhóm qua TeamsService và bọc { data }', async () => {
+    const me: JwtPayload = {
+      sub: '65e1f0a1b2c3d4e5f6a7b8c9',
+      email: 'admin@example.com',
+      role: UserRole.ADMIN,
+    };
+    const profile = {
+      _id: '65e1f0a1b2c3d4e5f6a7b8d0',
+      email: 'staff@example.com',
+      displayName: 'Thảo',
+      role: UserRole.STAFF,
+      status: UserStatus.ACTIVE,
+      teamId: '65e1f0a1b2c3d4e5f6a7b8d1',
+    };
+    teamsService.assignUserToTeam.mockResolvedValue(profile);
+
+    const result = await controller.updateTeam(me, profile._id, {
+      teamId: profile.teamId,
+    });
+
+    expect(teamsService.assignUserToTeam).toHaveBeenCalledWith(
+      me,
+      profile._id,
+      profile.teamId,
+    );
+    expect(result).toEqual({ data: profile });
   });
 
   it('POST /users → gọi service.create với dto', async () => {
@@ -139,6 +212,7 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       displayName: 'Editor One',
       role: UserRole.EDITOR,
       status: UserStatus.ACTIVE,
+      teamId: null,
     });
 
     await controller.create(dto);

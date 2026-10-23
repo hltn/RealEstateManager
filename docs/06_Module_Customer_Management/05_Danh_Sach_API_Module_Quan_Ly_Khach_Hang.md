@@ -95,7 +95,7 @@
 | POST | `/users` | Tạo tài khoản (có sẵn). Mở rộng: `role` nhận `MANAGER`/`STAFF`, thêm `teamId` | A | body `{ email, password, displayName, role, teamId? }` | `User` | X7 |
 | PATCH | `/users/:id/status` | Khóa/mở khóa (có sẵn) | A | body `{ status }` | `User` | X7 |
 | PATCH | `/users/:id/role` | Đổi vai trò (có sẵn, thêm enum) | A | body `{ role }` | `User` | X1 |
-| PATCH | `/users/:id/team` | **Mới.** Gán nhóm; enqueue job đồng bộ `customers.teamIds` | A | body `{ teamId \| null }` | `{ data: User }` | QT6 |
+| PATCH | `/users/:id/team` | **Mới.** Gán nhóm (chỉ MANAGER/STAFF; ghi audit `USER_TEAM_CHANGED`). **M1 chưa đồng bộ `customers.teamIds`** — việc này (job đồng bộ) thuộc M2 khi có collection `customers` | A | body `{ teamId \| null }` | `{ data: User }` | QT6 |
 | GET | `/teams` | **Mới.** Danh sách nhóm | A, M (nhóm mình) | query `page, limit, q, isActive` | `{ data: Team[], meta }` — `Team { id, name, code, managers: UserRef[], memberCount, isActive }` | QT6 |
 | POST | `/teams` | **Mới.** Tạo nhóm | A | body `{ name, code, managerIds[] }` | `201 { data: Team }` | QT6 |
 | PATCH | `/teams/:id` | **Mới.** Sửa nhóm, đổi quản lý | A | body `{ name?, managerIds?, isActive? }` | `{ data: Team }` | QT6 |
@@ -174,7 +174,7 @@
 
 ### 2.8 Danh mục & dự án (22)
 
-Bốn danh mục dùng chung một mẫu CRUD (4 endpoint mỗi loại). Đọc: A, M, S. Ghi: A. Xóa = xóa mềm; đang được dùng hoặc `isSystem` ⇒ 409 `CATALOG_IN_USE` / `CATALOG_SYSTEM` (gợi ý tắt `isActive`).
+Bốn danh mục dùng chung một mẫu CRUD (4 endpoint mỗi loại). Đọc: A, M, S. Ghi: A. Xóa = xóa mềm; đang được dùng hoặc `isSystem` ⇒ 409 `CATALOG_IN_USE` / `CATALOG_SYSTEM` (gợi ý tắt `isActive`). `code` của danh mục unique **kể cả bản đã xóa mềm**: mã đã xóa không dùng lại được, tạo trùng ⇒ 409 `CATALOG_DUPLICATED`.
 
 | Method | Path | Mô tả | Quyền | Request | Response | ID |
 |---|---|---|---|---|---|---|
@@ -186,15 +186,15 @@ Bốn danh mục dùng chung một mẫu CRUD (4 endpoint mỗi loại). Đọc:
 | POST | `/crm/lead-sources` | Thêm nguồn | A | body `{ code*, label*, order? }` | `201 { data }` | X7 |
 | PATCH | `/crm/lead-sources/:id` | Sửa nguồn | A | body `{ label?, order?, isActive? }` | `{ data }` | X7 |
 | DELETE | `/crm/lead-sources/:id` | Xóa mềm | A | — | `204` | X7 |
-| GET | `/crm/areas` | Khu vực (phẳng hoặc theo cha) | A, M, S | query `parentId, type, q, isActive, includeLegacy, page, limit` | `{ data: [Ref + { type, parentId, path: Ref[], isLegacy }], meta }` | C1, X7 |
+| GET | `/crm/areas` | Khu vực (phẳng hoặc theo cha). `parentId=root` chỉ lấy khu vực gốc; `parentId=<id>` lấy con trực tiếp; `includeLegacy` mặc định `false` (ẩn khu vực hành chính cũ); `q` tìm không dấu | A, M, S | query `parentId, type, q, isActive, includeLegacy, page, limit` | `{ data: [Ref + { name, type, parentId, path: Ref[], adminCode, isLegacy, order, isActive }], meta }` | C1, X7 |
 | POST | `/crm/areas` | Thêm khu vực | A | body `{ name*, type*, parentId?, adminCode?, order? }` | `201 { data }` | X7 |
-| PATCH | `/crm/areas/:id` | Sửa / chuyển cha (job cập nhật `ancestorIds`) | A | body `{ name?, parentId?, isActive?, isLegacy?, order? }` | `{ data }` | X7 |
+| PATCH | `/crm/areas/:id` | Sửa / chuyển cha (`parentId=null` = về gốc). `ancestorIds` của cả nhánh con được cập nhật **đồng bộ trong cùng transaction** (không dùng job nền); chặn chuyển vào chính nó hoặc nhánh con (400); trùng tên trong cùng cha ⇒ 409 `CATALOG_DUPLICATED` | A | body `{ name?, parentId?, isActive?, isLegacy?, order? }` | `{ data }` | X7 |
 | DELETE | `/crm/areas/:id` | Xóa mềm (không xóa khi còn con hoặc đang dùng) | A | — | `204` | X7 |
 | GET | `/crm/contact-results` | Kết quả liên hệ + gợi ý mốc hẹn | A, M, S | query `isActive, page, limit` | `{ data: [Ref + { code, suggestedFollowUpDays, suggestionText }], meta }` | C2, C3 |
 | POST | `/crm/contact-results` | Thêm kết quả liên hệ | A | body `{ code*, label*, suggestedFollowUpDays?, suggestionText?, order? }` | `201 { data }` | C3 |
 | PATCH | `/crm/contact-results/:id` | Sửa | A | body các field POST trừ `code` + `isActive?` | `{ data }` | C3 |
 | DELETE | `/crm/contact-results/:id` | Xóa mềm | A | — | `204` | C3 |
-| GET | `/crm/projects` | Danh sách dự án (ô chọn nhiều khi nhập hồ sơ) | A, M, S | query `q, status, areaId, isActive, isDeleted (chỉ A: xem dự án đã xóa mềm), page, limit, sort ∈ {name, createdAt}` | `{ data: Project[], meta }` — `Project { id, name, code, developer, location, area: Ref\|null, propertyTypes, priceFrom, priceTo, status, isActive, customerCount }` | C1, X7 |
+| GET | `/crm/projects` | Danh sách dự án (ô chọn nhiều khi nhập hồ sơ) | A, M, S | query `q, status, areaId, isActive, isDeleted (chỉ A: xem dự án đã xóa mềm), page, limit (mặc định `limit=100`, quy ước danh mục nhỏ), sort ∈ {name, createdAt}` | `{ data: Project[], meta }` — `Project { id, name, code, developer, location, area: Ref\|null, propertyTypes, priceFrom, priceTo, status, isActive, customerCount, deletedAt }` | C1, X7 |
 | GET | `/crm/projects/:id` | Chi tiết dự án | A, M, S | — | `{ data: Project + { description, customerCount } }` | X7 |
 | POST | `/crm/projects` | Thêm dự án. `code` bắt buộc, regex `^[A-Za-z0-9_-]{1,20}$`, unique không phân biệt hoa thường (kể cả đã xóa mềm). `status` ∈ `UPCOMING`\|`SELLING`\|`SOLD_OUT` (mặc định `UPCOMING`); `priceFrom ≤ priceTo` | A | body `{ name*, code*, developer?, location?, areaId?, propertyTypes?, priceFrom?, priceTo?, status?, description? }` | `201 { data: Project }`; 409 `PROJECT_CODE_DUPLICATED` | X7 |
 | PATCH | `/crm/projects/:id` | Sửa dự án; `isActive=false` = **ngừng hoạt động** (ẩn khỏi ô chọn mới, khách cũ giữ liên kết, hiển thị "đã ngừng") | A | body như POST (tùy chọn) + `isActive?` | `{ data: Project }` | X7 |
@@ -354,6 +354,9 @@ Tất cả nhận query chung: `from, to` (ngày VN, theo `createdAt` hoặc `st
 | 409 | `JOIN_REQUEST_EXISTS` / `ALREADY_IN_CARE_TEAM` / `JOIN_REQUEST_RESOLVED` | Đề nghị tham gia trùng/đã xử lý | — |
 | 409 | `PROJECT_CODE_DUPLICATED` | Mã dự án trùng (kể cả dự án đã xóa mềm) | `{ code }` |
 | 409 | `PROJECT_IN_USE` | Xóa dự án còn khách tham chiếu | `{ customerCount }` |
+| 409 | `CATALOG_DUPLICATED` | Trùng `code` danh mục (kể cả bản đã xóa mềm) hoặc trùng tên khu vực trong cùng khu vực cha | `{ field, value }` |
+| 409 | `TEAM_CODE_DUPLICATED` | Trùng mã nhóm (kể cả nhóm đã xóa mềm) | `{ code }` |
+| 409 | `LAST_ADMIN_REQUIRED` | Khóa hoặc hạ vai trò Quản trị đang hoạt động cuối cùng | — |
 | 409 | `CATALOG_IN_USE` / `CATALOG_SYSTEM` | Xóa danh mục đang dùng / hệ thống | `{ usageCount }` |
 | 409 | `PERSONA_FIELD_TYPE_LOCKED` / `PERSONA_FIELD_SYSTEM` | Đổi kiểu trường đã có dữ liệu / xóa trường hệ thống | `{ valueCount }` |
 | 409 | `TEAM_NOT_EMPTY` | Xóa nhóm còn thành viên | `{ memberCount }` |

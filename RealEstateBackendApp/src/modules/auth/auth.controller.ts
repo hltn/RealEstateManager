@@ -10,6 +10,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Throttle } from '@nestjs/throttler';
+import { AnyRole } from '../../common/decorators/any-role.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
@@ -33,7 +34,9 @@ export class AuthController {
   @Public()
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Login, returns access token + sets refresh cookie' })
+  @ApiOperation({
+    summary: 'Login, returns access token + sets refresh cookie',
+  })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -57,13 +60,13 @@ export class AuthController {
     if (!token) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    const { accessToken, refreshToken } =
-      await this.authService.refresh(token);
+    const { accessToken, refreshToken } = await this.authService.refresh(token);
     this.setRefreshCookie(reply, refreshToken);
     return { accessToken };
   }
 
   @Post('logout')
+  @AnyRole()
   @ApiOperation({ summary: 'Revoke refresh token + clear cookie (idempotent)' })
   async logout(
     @Req() req: FastifyRequest,
@@ -78,6 +81,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @AnyRole()
   @ApiOperation({ summary: 'Get current user profile' })
   async me(@CurrentUser() currentUser: JwtPayload) {
     return this.authService.getMe(String(currentUser?.sub));

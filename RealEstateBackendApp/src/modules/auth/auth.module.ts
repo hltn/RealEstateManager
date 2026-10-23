@@ -5,6 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { Team, TeamSchema } from '../teams/schemas/team.schema';
 import {
   RefreshToken,
   RefreshTokenSchema,
@@ -19,6 +20,7 @@ import { CustomLogger } from '../../common/logger/custom-logger.service';
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
+      { name: Team.name, schema: TeamSchema },
       { name: RefreshToken.name, schema: RefreshTokenSchema },
     ]),
     JwtModule.registerAsync({
@@ -35,9 +37,7 @@ import { CustomLogger } from '../../common/logger/custom-logger.service';
       }),
     }),
     // Throttler mặc định 100 req/phút cho mọi route; login override 5/phút.
-    ThrottlerModule.forRoot([
-      { ttl: 60_000, limit: 100 },
-    ]),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],
   controllers: [AuthController],
   providers: [

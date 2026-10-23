@@ -279,6 +279,8 @@ Khi lưu chân dung, service tính lại trong cùng một lệnh `updateOne`: `
 | `tags` | `name`, `nameNormalized`, `category: 'INTEREST'\|'OCCUPATION'\|'OTHER'`, `color?`, `usageCount`, `createdBy`, `deletedAt` | `{ category: 1, nameNormalized: 1 }` unique partial `deletedAt: null` | Nhân viên tạo thẻ mới khi gắn; Quản trị sửa/xóa/gộp (C11) |
 | `teams` | `name`, `code` (unique), `managerIds: ObjectId[]`, `isActive`, `deletedAt` | `{ code: 1 }` unique; `{ managerIds: 1 }` | Nhóm làm việc cho phạm vi Quản lý |
 
+> **Mã danh mục không dùng lại:** `code` của tình trạng khách, nguồn khách, kết quả liên hệ (cũng như mã nhóm và mã dự án) là unique **kể cả bản đã xóa mềm** — mã đã xóa mềm không tạo lại được (409 `CATALOG_DUPLICATED` / `TEAM_CODE_DUPLICATED` / `PROJECT_CODE_DUPLICATED`). Bản ghi seed có `seedKey` bất biến nên Quản trị đổi tên/mã không làm seed tạo lại bản trùng.
+
 #### Quy ước migration và ràng buộc dự án (QA vòng 2)
 
 | Hạng mục | Quy ước |
@@ -346,7 +348,7 @@ Mặc định bật tất cả, trừ `STALE_CUSTOMER` cho thành viên không p
 
 | Collection | Field chính | Index |
 |---|---|---|
-| `crm_audit_logs` (bất biến, không có API sửa/xóa) | `entityType: 'CUSTOMER'\|'CARE_LOG'\|'ATTACHMENT'\|'APPOINTMENT'\|'CATALOG'\|'PROJECT'\|'PERSONA_FIELD'\|'TEAM'\|'IMPORT'\|'EXPORT'\|'SETTINGS'`, `entityId`, `customerId?`, `action` (3.7.1), `actorId`, `actorName`, `actorRole`, `changes: [{ field, from, to }]` (**lưu giá trị trường**, kể cả SĐT cũ → mới đầy đủ, xem 7.3; CCCD luôn che), `reason?`, `source: 'WEB'\|'MOBILE'\|'IMPORT'\|'SYSTEM'`, `requestId`, `ip?`, `userAgent?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ actorId: 1, createdAt: -1 }`; `{ action: 1, createdAt: -1 }`; `{ entityType: 1, entityId: 1, createdAt: -1 }` |
+| `crm_audit_logs` (bất biến, không có API sửa/xóa) | `entityType: 'CUSTOMER'\|'CARE_LOG'\|'ATTACHMENT'\|'APPOINTMENT'\|'CATALOG'\|'PROJECT'\|'PERSONA_FIELD'\|'TEAM'\|'USER'\|'IMPORT'\|'EXPORT'\|'SETTINGS'`, `entitySubtype?` (vd `CUSTOMER_STATUS`/`LEAD_SOURCE`/`CONTACT_RESULT`/`AREA` khi `entityType = CATALOG`), `entityId`, `customerId?`, `action` (3.7.1), `actorId`, `actorName`, `actorRole`, `changes: [{ field, from, to }]` (**lưu giá trị trường**, kể cả SĐT cũ → mới đầy đủ, xem 7.3; CCCD luôn che), `reason?`, `source: 'WEB'\|'MOBILE'\|'IMPORT'\|'SYSTEM'`, `requestId`, `ip?`, `userAgent?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ actorId: 1, createdAt: -1 }`; `{ action: 1, createdAt: -1 }`; `{ entityType: 1, entityId: 1, createdAt: -1 }` |
 | `import_mapping_templates` | `code` (người dùng tự đặt; **mẫu hệ thống `DSKH`/`DSKH_DROP`/`DSKH_NET` hoãn giai đoạn sau, D7**), `name`, `defaultStatusCode`, `columns: [{ header, aliases[], target, transform? }]`, `isSystem` | `{ code: 1 }` unique |
 | `import_jobs` | `fileKey`, `originalFileName`, `mimeType`, `size`, `sheetName?`, `mappingTemplateId`, `mappingSnapshot`, `options: { duplicatePolicy: 'SKIP'\|'FILL_EMPTY'\|'OVERWRITE', assigneeMapping[], defaultPrimaryUserId?, defaultTeamId? }`, `isDryRun`, `status: 'UPLOADED'\|'VALIDATING'\|'VALIDATED'\|'IMPORTING'\|'COMPLETED'\|'FAILED'\|'CANCELED'`, `progress: { total, processed }`, `summary: { valid, created, updated, skipped, duplicateInFile, duplicateInDb, errors }`, `errorFileKey?`, `createdBy`, `startedAt?`, `finishedAt?` | `{ createdBy: 1, createdAt: -1 }`; `{ status: 1 }` |
 | `import_job_rows` (tạm) | `jobId`, `rowNumber`, `sheet`, `data` (đã map, **CCCD đã mã hóa/che**), `status: 'VALID'\|'ERROR'\|'DUPLICATE_IN_FILE'\|'DUPLICATE_IN_DB'\|'CREATED'\|'UPDATED'\|'SKIPPED'`, `messages[]`, `customerId?` | `{ jobId: 1, rowNumber: 1 }`; `{ jobId: 1, status: 1 }`; TTL 30 ngày |
@@ -355,7 +357,7 @@ Mặc định bật tất cả, trừ `STALE_CUSTOMER` cho thành viên không p
 
 #### 3.7.1 Action audit (X4)
 
-`CUSTOMER_CREATED`, `CUSTOMER_UPDATED`, `STATUS_CHANGED`, `CRITERIA_UPDATED`, `PERSONA_UPDATED`, `CARE_TEAM_MEMBER_ADDED`, `CARE_TEAM_MEMBER_REMOVED`, `PRIMARY_CHANGED`, `NATIONAL_ID_UPDATED`, `NATIONAL_ID_REMOVED`, `NATIONAL_ID_VIEWED`, `PHONE_VIEWED`, `DATA_CONSENT_UPDATED`, `CARE_LOG_CREATED`/`UPDATED`/`DELETED`, `ATTACHMENT_UPLOADED`/`ATTACHMENT_REMOVED`, `APPOINTMENT_*`, `CUSTOMER_DELETED`, `CUSTOMER_RESTORED`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_IMPORTED`, `CUSTOMER_EXPORTED`, `JOIN_REQUEST_*`, `CATALOG_*`, `PROJECT_CREATED`/`UPDATED`/`DEACTIVATED`/`DELETED`/`RESTORED`, `PERSONA_FIELD_*`, `SETTINGS_UPDATED`, `PHONE_LOOKUP` (chỉ ghi khi kết quả là khách ngoài phạm vi — phát hiện dò số).
+`CUSTOMER_CREATED`, `CUSTOMER_UPDATED`, `STATUS_CHANGED`, `CRITERIA_UPDATED`, `PERSONA_UPDATED`, `CARE_TEAM_MEMBER_ADDED`, `CARE_TEAM_MEMBER_REMOVED`, `PRIMARY_CHANGED`, `NATIONAL_ID_UPDATED`, `NATIONAL_ID_REMOVED`, `NATIONAL_ID_VIEWED`, `PHONE_VIEWED`, `DATA_CONSENT_UPDATED`, `CARE_LOG_CREATED`/`UPDATED`/`DELETED`, `ATTACHMENT_UPLOADED`/`ATTACHMENT_REMOVED`, `APPOINTMENT_*`, `CUSTOMER_DELETED`, `CUSTOMER_RESTORED`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_IMPORTED`, `CUSTOMER_EXPORTED`, `JOIN_REQUEST_*`, `CATALOG_*`, `PROJECT_CREATED`/`UPDATED`/`DEACTIVATED`/`DELETED`/`RESTORED`, `TEAM_CREATED`/`UPDATED`/`DELETED`, `USER_TEAM_CHANGED`, `USER_ROLE_CHANGED`, `USER_STATUS_CHANGED` (entity `USER`), `PERSONA_FIELD_*`, `SETTINGS_UPDATED`, `PHONE_LOOKUP` (chỉ ghi khi kết quả là khách ngoài phạm vi — phát hiện dò số).
 
 **`PHONE_VIEWED`** (quyết định #10): ghi mỗi lần người dùng xem số đầy đủ hoặc bấm gọi qua `POST /crm/customers/:id/phone-views`; `changes` rỗng (**riêng bản ghi `PHONE_VIEWED` không lưu số điện thoại**; khác với lịch sử sửa hồ sơ `CUSTOMER_UPDATED` có lưu giá trị SĐT cũ → mới), `reason` = mục đích `VIEW`/`CALL`/`COPY`, kèm `actorId`, `actorRole`, `requestId`, `source`, `ip`. Cho phép mọi thành viên `careTeam` (PRIMARY và MEMBER), Quản lý trong phạm vi và Quản trị; người ngoài phạm vi nhận 404. Quản lý/Quản trị xem lại qua `GET /crm/customers/:id/histories?actions=PHONE_VIEWED`; ngưỡng cảnh báo `phoneViewAlertPerHour`.
 
@@ -365,7 +367,7 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 
 | Collection | Thay đổi | Ảnh hưởng dữ liệu cũ |
 |---|---|---|
-| `users` | Thêm enum `MANAGER`, `STAFF` vào `role`; thêm `teamId: ObjectId \| null` (default `null`), index `{ teamId: 1, status: 1 }` | Không — user cũ giữ `ADMIN`/`EDITOR`, `teamId=null` |
+| `users` | Thêm enum `MANAGER`, `STAFF` vào `role`; thêm `teamId: ObjectId \| null` (default `null`), index `{ teamId: 1, status: 1 }` | Không — user cũ giữ `ADMIN`/`EDITOR`, `teamId=null`. M1 chỉ gán/gỡ nhóm + audit; **đồng bộ `customers.teamIds` khi đổi nhóm thuộc M2** |
 | — | Không đổi kiểu, không xóa field nào | — |
 
 ---
