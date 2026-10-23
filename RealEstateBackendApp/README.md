@@ -31,6 +31,33 @@
 $ npm install
 ```
 
+## Hạ tầng local (Docker)
+
+MongoDB dùng **container có sẵn `mongodb`** (`mongodb-atlas-local`, Replica Set 1 node, cổng 27017, dữ liệu bind `D:\mongodb`) — compose dev KHÔNG tạo Mongo mới. `docker-compose.dev.yml` chỉ dựng Redis (BullMQ, idempotency; throttler dùng Redis là dự kiến, chưa dùng) và MinIO (S3) + 2 bucket `crm-attachments`, `crm-exports` (exports tự xóa sau 7 ngày). Mọi cổng chỉ bind `127.0.0.1`. NestJS vẫn chạy trên máy host (`npm run start:dev`).
+
+```bash
+cp .env.example .env            # lần đầu; rồi điền CRM_PII_ENCRYPTION_KEY (cách sinh ở trong .env.example)
+docker compose -f docker-compose.dev.yml up -d --wait   # chờ redis/minio healthy
+docker compose -f docker-compose.dev.yml ps -a          # minio-init "Exited (0)" là bình thường
+docker compose -f docker-compose.dev.yml down           # dừng, giữ dữ liệu  (thêm -v để XÓA dữ liệu dev)
+```
+
+Kiểm tra nhanh:
+
+```bash
+docker exec mongodb mongosh --quiet --eval "rs.status().members.map(m => m.name + ' ' + m.stateStr)"   # [ '<container-id>:27017 PRIMARY' ]
+docker exec realestate_dev_redis redis-cli ping                                                        # PONG
+curl -i http://127.0.0.1:9000/minio/health/live                                                        # 200 OK
+# MinIO console: http://localhost:9001  (user/password = S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY, mặc định minioadmin)
+```
+
+Lưu ý quan trọng:
+
+- **Luôn dùng `?directConnection=true` trong `MONGODB_URI`** (đã có sẵn trong `.env.example`). Member của replica set trong container `mongodb` có host là container-ID nên máy host Windows không resolve được; `directConnection=true` làm driver nối thẳng `127.0.0.1:27017` và bỏ qua host đó. Transaction (`ClientSession`) vẫn dùng được (đã kiểm chứng).
+- Container `mongodb` phải đang chạy (`docker ps`). Không chạy đồng thời stack deploy `docker-compose.yml` ở gốc repo (cũng chiếm cổng 27017).
+- Image MinIO mặc định là `cgr.dev/chainguard/minio:latest` (image `minio/minio` trên Docker Hub/quay.io không còn pull được). Muốn pin/đổi nguồn: đặt `MINIO_IMAGE` trong `.env`.
+- Bật module để thử local: `FEATURE_CRM_ENABLED=true` trong `.env` (mặc định tắt).
+
 ## Compile and run the project
 
 ```bash

@@ -16,6 +16,11 @@ import { UsersModule } from './modules/users/users.module';
 import { GoogleDriveExportModule } from './modules/google-drive-export/google-drive-export.module';
 import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-articles.module';
 import { SharedModule } from './shared/shared.module';
+import { RedisModule } from './shared/redis/redis.module';
+import { QueueModule } from './shared/queue/queue.module';
+import { StorageModule } from './shared/storage/storage.module';
+import { FeatureFlagModule } from './shared/feature-flags/feature-flag.module';
+import { PiiCryptoModule } from './modules/crm/common/crypto/pii-crypto.module';
 
 @Module({
   imports: [
@@ -35,6 +40,12 @@ import { SharedModule } from './shared/shared.module';
       rootPath: join(__dirname, '..', '..', 'RealEstateAdminApp', 'dist'),
       exclude: ['/api/(.*)'],
     }),
+    // Hạ tầng dùng chung (stateless): Redis, BullMQ, S3/MinIO, feature flag, mã hóa PII.
+    RedisModule,
+    QueueModule,
+    StorageModule,
+    FeatureFlagModule,
+    PiiCryptoModule,
     ExternalLogModule,
     SharedModule,
     NewsFireCrawlManagerModule,

@@ -42,6 +42,7 @@ import { NewsArticleService } from './services/news-article.service';
 import { CronjobService } from './services/cronjob.service';
 import { AiPromptConfigService } from './services/ai-prompt-config.service';
 import { IdempotencyService } from '../../common/services/idempotency.service';
+import { runIdempotent } from '../../common/utils/idempotent-request.util';
 import { AuditAction } from './schemas/audit-log.schema';
 import { AuditLogService } from './services/audit-log.service';
 import { AnalyzeJobService } from './services/analyze-job.service';
@@ -76,7 +77,7 @@ export class NewsFireCrawlManagerController {
   }
 
   /** Daily News Crawler luôn dùng ngày hiện tại UTC+7, không nhận input ngày. */
-  private triggerMarketAnalysisWorkflowForToday(): { jobId: string } {
+  private triggerMarketAnalysisWorkflowForToday(): Promise<{ jobId: string }> {
     return this.startMarketAnalysisWorkflow(this.getTodayVNString(), 'cron');
   }
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
@@ -269,7 +270,7 @@ export class NewsFireCrawlManagerController {
       'Dùng GET /crawl/:jobId để poll trạng thái khi hoàn tất.',
   })
   @Post('crawl')
-  triggerManualCrawl(@Body() body: TriggerManualCrawlDto) {
+  async triggerManualCrawl(@Body() body: TriggerManualCrawlDto) {
     const { days, startDate, endDate } = body;
     this.logger.log(
       `Manual crawl called. Days: ${days || 'none'}, Start: ${startDate || 'none'}, End: ${endDate || 'none'}`,
@@ -279,12 +280,11 @@ export class NewsFireCrawlManagerController {
     // song song (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi và
     // upsert articles đè nhau.
     const LOCK_KEY = 'crawl:global';
-    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+    if (!(await this.idempotencyService.tryMarkInFlight(LOCK_KEY))) {
       throw new ConflictException(
         'Đang có tác vụ thu thập/phân tích đang chạy, vui lòng đợi hoàn tất',
       );
     }
-    this.idempotencyService.markInFlight(LOCK_KEY);
 
     const jobId = this.analyzeJobService.createJob();
 
@@ -463,12 +463,11 @@ export class NewsFireCrawlManagerController {
   async analyzeAllRawArticles() {
     // Khóa global để chống 2 job chạy song song (double-click FE, 2 client)
     const LOCK_KEY = 'analyze-raw-all:global';
-    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+    if (!(await this.idempotencyService.tryMarkInFlight(LOCK_KEY))) {
       throw new ConflictException(
         'Đang có job phân tích toàn bộ đang chạy, vui lòng đợi hoàn tất',
       );
     }
-    this.idempotencyService.markInFlight(LOCK_KEY);
 
     this.logger.log('Analyze All Raw Articles called');
     const jobId = this.analyzeJobService.createJob();
@@ -632,7 +631,7 @@ export class NewsFireCrawlManagerController {
       'chạy nền. Dùng GET /articles/analyze-market-trends/:jobId để lấy kết quả khi hoàn tất.',
   })
   @Post('articles/analyze-market-trends')
-  analyzeMarketTrends(@Body() body: BulkIdsDto) {
+  async analyzeMarketTrends(@Body() body: BulkIdsDto) {
     const { ids } = body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return { message: 'No articles to analyze' };
@@ -641,12 +640,11 @@ export class NewsFireCrawlManagerController {
     // Khóa global để chống 2 job phân tích thị trường chạy song song
     // (double-click FE, 2 tab/client) — tránh tốn API cost gấp đôi và job cũ mất track.
     const LOCK_KEY = 'analyze-market-trends:global';
-    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+    if (!(await this.idempotencyService.tryMarkInFlight(LOCK_KEY))) {
       throw new ConflictException(
         'Đang có job phân tích thị trường khác đang chạy, vui lòng đợi hoàn tất',
       );
     }
-    this.idempotencyService.markInFlight(LOCK_KEY);
 
     const jobId = this.analyzeJobService.createJob();
 
@@ -705,7 +703,7 @@ export class NewsFireCrawlManagerController {
       'Dùng GET /articles/market-analysis-bulk/:jobId để poll kết quả khi hoàn tất.',
   })
   @Post('articles/market-analysis-bulk')
-  analyzeMarketBulk(@Body() body: BulkIdsDto) {
+  async analyzeMarketBulk(@Body() body: BulkIdsDto) {
     const { ids } = body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -716,12 +714,11 @@ export class NewsFireCrawlManagerController {
     // chạy song song (double-click FE, 2 tab/client): tránh tốn API cost gấp đôi
     // và job cũ mất track, giống pattern analyze-market-trends.
     const LOCK_KEY = 'crawl:global';
-    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+    if (!(await this.idempotencyService.tryMarkInFlight(LOCK_KEY))) {
       throw new ConflictException(
         'Đang có tác vụ thu thập/phân tích đang chạy, vui lòng đợi hoàn tất',
       );
     }
-    this.idempotencyService.markInFlight(LOCK_KEY);
 
     const jobId = this.analyzeJobService.createJob();
 
@@ -781,11 +778,11 @@ export class NewsFireCrawlManagerController {
     jobLabel: string,
     work: () => Promise<unknown>,
   ): Promise<void> {
-    return this.runJob(jobId, jobLabel, work).finally(() => {
+    return this.runJob(jobId, jobLabel, work).finally(async () => {
       // Giải phóng lock bất kể thành công hay lỗi, tránh block mọi request tiếp theo.
       // Bọc try/catch để clearInFlight ném lỗi cũng không sinh unhandled rejection.
       try {
-        this.idempotencyService.clearInFlight(lockKey);
+        await this.idempotencyService.clearInFlight(lockKey);
       } catch (err: any) {
         this.logger.error(
           `${jobLabel} ${jobId}: clearInFlight threw — lock có thể stuck`,
@@ -872,19 +869,18 @@ export class NewsFireCrawlManagerController {
   }
 
   /** Khởi tạo workflow dùng chung cho thao tác tay và Daily News Crawler. */
-  private startMarketAnalysisWorkflow(
+  private async startMarketAnalysisWorkflow(
     date: string,
     source: 'manual' | 'cron',
-  ): { message: string; jobId: string } {
+  ): Promise<{ message: string; jobId: string }> {
     this.logger.log(`Market analysis workflow triggered by ${source} for date: ${date}`);
 
     const LOCK_KEY = 'workflow:market-analysis';
-    if (this.idempotencyService.isInFlight(LOCK_KEY)) {
+    if (!(await this.idempotencyService.tryMarkInFlight(LOCK_KEY))) {
       throw new ConflictException(
         'Đang có phân tích thị trường đang chạy, vui lòng đợi hoàn tất',
       );
     }
-    this.idempotencyService.markInFlight(LOCK_KEY);
 
     const jobId = this.analyzeJobService.createJob();
 
@@ -949,7 +945,7 @@ export class NewsFireCrawlManagerController {
   }
 
   @Post('market-analysis-workflow/:jobId/retry')
-  retryMarketAnalysisWorkflow(@Param('jobId') jobId: string) {
+  async retryMarketAnalysisWorkflow(@Param('jobId') jobId: string) {
     const job = this.analyzeJobService.getJob(jobId);
     if (!job) throw new NotFoundException('Không tìm thấy workflow job');
     const state = job.result as WorkflowJobState | undefined;
@@ -961,7 +957,7 @@ export class NewsFireCrawlManagerController {
       throw new BadRequestException('Workflow job có bước lỗi không hợp lệ');
     }
     const lockKey = 'workflow:market-analysis';
-    if (this.idempotencyService.isInFlight(lockKey)) {
+    if (!(await this.idempotencyService.tryMarkInFlight(lockKey))) {
       throw new ConflictException(
         'Đang có phân tích thị trường đang chạy, vui lòng đợi hoàn tất',
       );
@@ -980,10 +976,9 @@ export class NewsFireCrawlManagerController {
       (failedStep === 3 && !step2Result?.filteredRawArticleIds) ||
       (failedStep >= 4 && !step3Result?.newsArticleIds)
     ) {
+      await this.idempotencyService.clearInFlight(lockKey);
       throw new BadRequestException('Workflow job thiếu checkpoint để retry');
     }
-
-    this.idempotencyService.markInFlight(lockKey);
     for (let step = failedStep; step <= 5; step += 1) {
       state.steps[step - 1] = {
         ...state.steps[step - 1],
@@ -1056,7 +1051,7 @@ export class NewsFireCrawlManagerController {
         this.analyzeJobService.updateJob(jobId, { status: 'error', error: errMsg, result: state });
       }
     } finally {
-      try { this.idempotencyService.clearInFlight(lockKey); }
+      try { await this.idempotencyService.clearInFlight(lockKey); }
       catch (err: any) { this.logger.error(`Workflow retry ${jobId}: clearInFlight threw`, err?.stack); }
     }
   }
@@ -1390,7 +1385,7 @@ export class NewsFireCrawlManagerController {
       }
     } finally {
       try {
-        this.idempotencyService.clearInFlight(lockKey);
+        await this.idempotencyService.clearInFlight(lockKey);
       } catch (err: any) {
         this.logger.error(
           `Workflow ${jobId}: clearInFlight threw`,
@@ -1447,41 +1442,36 @@ export class NewsFireCrawlManagerController {
     }
 
     const iKey = idempotencyKey ? `bulk:${idempotencyKey}` : undefined;
-    if (iKey) {
-      const cached = this.idempotencyService.get(iKey);
-      if (cached) return cached;
-      if (this.idempotencyService.isInFlight(iKey)) {
+    return runIdempotent(
+      this.idempotencyService,
+      iKey,
+      async () => {
+        const results = await Promise.all(
+          ids.map((id) => this.newsArticleService.publishToWordPress(id)),
+        );
+
+        // Ghi audit log sau khi publish bulk thành công (fire-and-forget)
+        void this.auditLogService.log(
+          AuditAction.BULK_PUBLISH,
+          'news_articles',
+          ids,
+          'system',
+          { count: ids.length },
+        );
+
+        const response = {
+          message: 'Articles published to WordPress successfully',
+          data: results,
+        };
+
+        return response;
+      },
+      () => {
         throw new ConflictException(
           'Request đang được xử lý, vui lòng thử lại sau',
         );
-      }
-      this.idempotencyService.markInFlight(iKey);
-    }
-
-    try {
-      const results = await Promise.all(
-        ids.map((id) => this.newsArticleService.publishToWordPress(id)),
-      );
-
-      // Ghi audit log sau khi publish bulk thành công (fire-and-forget)
-      void this.auditLogService.log(
-        AuditAction.BULK_PUBLISH,
-        'news_articles',
-        ids,
-        'system',
-        { count: ids.length },
-      );
-
-      const response = {
-        message: 'Articles published to WordPress successfully',
-        data: results,
-      };
-
-      if (iKey) this.idempotencyService.set(iKey, response);
-      return response;
-    } finally {
-      if (iKey) this.idempotencyService.clearInFlight(iKey);
-    }
+      },
+    );
   }
 
   @ApiOperation({ summary: 'Publish article', description: 'Publish article' })
@@ -1497,36 +1487,31 @@ export class NewsFireCrawlManagerController {
     @Headers('x-idempotency-key') idempotencyKey?: string,
   ) {
     const iKey = idempotencyKey ? `single:${idempotencyKey}` : undefined;
-    if (iKey) {
-      const cached = this.idempotencyService.get(iKey);
-      if (cached) return cached;
-      if (this.idempotencyService.isInFlight(iKey)) {
+    return runIdempotent(
+      this.idempotencyService,
+      iKey,
+      async () => {
+        const result = await this.newsArticleService.publishToWordPress(id);
+        // Ghi audit log sau khi publish thành công (fire-and-forget)
+        void this.auditLogService.log(
+          AuditAction.PUBLISH,
+          'news_articles',
+          [id],
+          'system',
+          { wpPostId: result.wpPostId },
+        );
+        const response = {
+          message: 'Article published to WordPress successfully',
+          data: result,
+        };
+        return response;
+      },
+      () => {
         throw new ConflictException(
           'Request đang được xử lý, vui lòng thử lại sau',
         );
-      }
-      this.idempotencyService.markInFlight(iKey);
-    }
-
-    try {
-      const result = await this.newsArticleService.publishToWordPress(id);
-      // Ghi audit log sau khi publish thành công (fire-and-forget)
-      void this.auditLogService.log(
-        AuditAction.PUBLISH,
-        'news_articles',
-        [id],
-        'system',
-        { wpPostId: result.wpPostId },
-      );
-      const response = {
-        message: 'Article published to WordPress successfully',
-        data: result,
-      };
-      if (iKey) this.idempotencyService.set(iKey, response);
-      return response;
-    } finally {
-      if (iKey) this.idempotencyService.clearInFlight(iKey);
-    }
+      },
+    );
   }
 
   @ApiOperation({ summary: 'Clean article', description: 'Clean article' })

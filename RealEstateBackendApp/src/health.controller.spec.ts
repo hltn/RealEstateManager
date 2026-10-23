@@ -1,88 +1,89 @@
 /**
- * HealthController unit spec — contract mục 7.3 (Health Check / Terminus).
+ * HealthController spec — probe Kubernetes/Docker.
  *
- * Bao phủ 2 probe Kubernetes:
- * - GET /health/liveness  → gọi health.check([]) (không kiểm tra dependency).
- * - GET /health/readiness → gọi health.check([mongoose.pingCheck('database')]).
- *
- * Mock HealthCheckService và MongooseHealthIndicator để không chạm DB thật.
+ * Dùng HealthCheckService THẬT của Terminus (chỉ mock các indicator phụ thuộc hạ tầng) để
+ * kiểm tra đúng hành vi tổng hợp: tất cả up thì 200 'ok'; bất kỳ thành phần down thì 503.
  */
-import { Test, TestingModule } from '@nestjs/testing';
-import {
-  HealthCheckService,
-  MongooseHealthIndicator,
-} from '@nestjs/terminus';
+import { ServiceUnavailableException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { MongooseHealthIndicator, TerminusModule } from '@nestjs/terminus';
 import { HealthController } from './health.controller';
+import { RedisHealthIndicator } from './health-indicators/redis.health-indicator';
+import { StorageHealthIndicator } from './health-indicators/storage.health-indicator';
 
-describe('HealthController (contract mục 7.3)', () => {
-  let controller: HealthController;
-  let health: jest.Mocked<HealthCheckService>;
-  let mongoose: jest.Mocked<MongooseHealthIndicator>;
+const UP = (key: string) => Promise.resolve({ [key]: { status: 'up' } });
+const DOWN = (key: string) =>
+  Promise.resolve({ [key]: { status: 'down', message: 'x' } });
 
-  beforeEach(async () => {
-    health = {
-      check: jest.fn(),
-    } as unknown as jest.Mocked<HealthCheckService>;
-    mongoose = {
-      pingCheck: jest.fn(),
-    } as unknown as jest.Mocked<MongooseHealthIndicator>;
+async function createController(overrides: {
+  mongo?: jest.Mock;
+  redis?: jest.Mock;
+  storage?: jest.Mock;
+}) {
+  const mongo = overrides.mongo ?? jest.fn(UP);
+  const redis = overrides.redis ?? jest.fn(UP);
+  const storage = overrides.storage ?? jest.fn(UP);
 
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [HealthController],
-      providers: [
-        { provide: HealthCheckService, useValue: health },
-        { provide: MongooseHealthIndicator, useValue: mongoose },
-      ],
-    }).compile();
+  const module = await Test.createTestingModule({
+    imports: [TerminusModule],
+    controllers: [HealthController],
+    providers: [
+      { provide: MongooseHealthIndicator, useValue: { pingCheck: mongo } },
+      { provide: RedisHealthIndicator, useValue: { isHealthy: redis } },
+      { provide: StorageHealthIndicator, useValue: { isHealthy: storage } },
+    ],
+  }).compile();
 
-    controller = module.get<HealthController>(HealthController);
+  return { controller: module.get(HealthController), mongo, redis, storage };
+}
+
+describe('HealthController', () => {
+  it('liveness: ok và KHÔNG kiểm tra dependency nào (Mongo/Redis chết không làm restart pod)', async () => {
+    const { controller, mongo, redis, storage } = await createController({});
+
+    const result = await controller.checkLiveness();
+
+    expect(result.status).toBe('ok');
+    expect(mongo).not.toHaveBeenCalled();
+    expect(redis).not.toHaveBeenCalled();
+    expect(storage).not.toHaveBeenCalled();
   });
 
-  describe('GET /health/liveness', () => {
-    it('gọi health.check với mảng rỗng (không kiểm tra dependency)', async () => {
-      const expected = { status: 'ok' };
-      health.check.mockResolvedValue(expected);
+  it('readiness: kiểm cả Mongo, Redis và S3/MinIO, tất cả up thì ok', async () => {
+    const { controller, mongo, redis, storage } = await createController({});
 
-      const result = await controller.checkLiveness();
+    const result = await controller.checkReadiness();
 
-      expect(health.check).toHaveBeenCalledWith([]);
-      expect(result).toBe(expected);
-    });
-
-    it('propagate lỗi khi health.check throw (Terminus sẽ trả 503)', async () => {
-      health.check.mockRejectedValue(new Error('service unavailable'));
-      await expect(controller.checkLiveness()).rejects.toThrow(
-        'service unavailable',
-      );
-    });
+    expect(result.status).toBe('ok');
+    expect(Object.keys(result.info ?? {}).sort()).toEqual([
+      'database',
+      'redis',
+      'storage',
+    ]);
+    expect(mongo).toHaveBeenCalledWith(
+      'database',
+      expect.objectContaining({ timeout: 3000 }),
+    );
+    expect(redis).toHaveBeenCalledWith('redis');
+    expect(storage).toHaveBeenCalledWith('storage');
   });
 
-  describe('GET /health/readiness', () => {
-    it('gọi health.check với 1 indicator function wrap mongoose.pingCheck("database")', async () => {
-      const indicatorResult = { database: { status: 'up' } };
-      mongoose.pingCheck.mockResolvedValue(indicatorResult);
-      let capturedIndicators: Array<() => Promise<unknown>> | undefined;
-      health.check.mockImplementation(async (indicators) => {
-        capturedIndicators = indicators;
-        const result = await (indicators[0] as () => Promise<unknown>)();
-        return { status: 'ok', info: result };
-      });
+  it.each([
+    ['Mongo', { mongo: jest.fn(() => DOWN('database')) }, 'database'],
+    ['Redis', { redis: jest.fn(() => DOWN('redis')) }, 'redis'],
+    ['S3/MinIO', { storage: jest.fn(() => DOWN('storage')) }, 'storage'],
+  ])(
+    'readiness: %s down thì 503 và chỉ rõ thành phần lỗi',
+    async (_name, overrides, key) => {
+      const { controller } = await createController(overrides);
 
-      const result = await controller.checkReadiness();
+      const error = await controller.checkReadiness().catch((e: unknown) => e);
 
-      expect(capturedIndicators).toHaveLength(1);
-      expect(mongoose.pingCheck).toHaveBeenCalledWith('database');
-      expect(result).toEqual({ status: 'ok', info: indicatorResult });
-    });
-
-    it('DB chưa sẵn sàng (pingCheck reject) → propagate lỗi để terminus trả 503', async () => {
-      mongoose.pingCheck.mockRejectedValue(new Error('db down'));
-      health.check.mockImplementation(async (indicators) => {
-        await (indicators[0] as () => Promise<unknown>)();
-        return { status: 'ok' };
-      });
-
-      await expect(controller.checkReadiness()).rejects.toThrow('db down');
-    });
-  });
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      const body = (error as ServiceUnavailableException).getResponse() as {
+        error: Record<string, unknown>;
+      };
+      expect(Object.keys(body.error)).toEqual([key]);
+    },
+  );
 });

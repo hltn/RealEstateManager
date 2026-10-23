@@ -15,6 +15,9 @@ import {
 } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
+import { buildHelmetOptions } from './common/security/helmet.config';
+import { FeatureFlagService } from './shared/feature-flags/feature-flag.service';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -27,6 +30,9 @@ async function bootstrap() {
 
   // Set global prefix
   app.setGlobalPrefix('api/v1');
+
+  // Helmet: security headers (HSTS, nosniff, frameguard...). Đăng ký trước mọi route.
+  await app.register(fastifyHelmet, buildHelmetOptions(configService));
 
   // Đăng ký @fastify/cookie để parse httpOnly refresh cookie.
   await app.register(fastifyCookie, {
@@ -64,6 +70,10 @@ async function bootstrap() {
 
   // Graceful Shutdown Hooks
   app.enableShutdownHooks();
+
+  logger.log(
+    `Feature flags: ${JSON.stringify(app.get(FeatureFlagService).snapshot())}`,
+  );
 
   const port = configService.get<number>('PORT') || 3000;
   await app.listen(port, '0.0.0.0'); // Listen on all interfaces

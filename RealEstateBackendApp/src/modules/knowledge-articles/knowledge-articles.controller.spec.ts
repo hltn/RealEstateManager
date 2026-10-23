@@ -90,7 +90,7 @@ describe('KnowledgeArticlesController', () => {
     mockIdempotencyService = {
       get: jest.fn(),
       set: jest.fn(),
-      isInFlight: jest.fn().mockReturnValue(false),
+      tryMarkInFlight: jest.fn().mockResolvedValue(true),
       markInFlight: jest.fn(),
       clearInFlight: jest.fn(),
     } as unknown as jest.Mocked<IdempotencyService>;
@@ -387,7 +387,7 @@ describe('KnowledgeArticlesController', () => {
     });
 
     it('returns in-progress message when idempotency key is in flight', async () => {
-      mockIdempotencyService.isInFlight.mockReturnValue(true);
+      mockIdempotencyService.tryMarkInFlight.mockResolvedValue(false);
 
       const result = await controller.publishArticle('abc', 'key-1');
 

@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hạ tầng DEV cho backend (NestJS chạy trên máy host, hạ tầng chạy trong Docker).
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml ps          # đợi tất cả "healthy"
+#   docker compose -f docker-compose.dev.yml down        # dừng (GIỮ dữ liệu)
+#   docker compose -f docker-compose.dev.yml down -v     # dừng + XÓA dữ liệu dev
+#
+# Gồm: Redis, MinIO + bucket CRM. KHÔNG có MongoDB: dùng container `mongodb` (mongodb-atlas-local,
+# Replica Set 1 node, cổng 27017) đã chạy sẵn trên máy; URI phải có `?directConnection=true`
+# (member host của nó là container-ID nên host Windows không resolve được nếu không ép direct).
+# KHÔNG thay thế /docker-compose.yml ở thư mục gốc repo (stack deploy: backend + frontend +
+# cloudflared + Mongo standalone). Xem README.md mục "Hạ tầng local (Docker)".
+#
+# Mọi cổng chỉ bind 127.0.0.1 (Mongo/Redis dev không bật xác thực).
+# ─────────────────────────────────────────────────────────────────────────────
+name: realestate-dev
+
+services:
+
+  # ── Redis (BullMQ, Idempotency; Throttler storage: dự kiến, chưa dùng) ─────────────────────────
+  # BullMQ yêu cầu maxmemory-policy = noeviction (không để Redis tự xóa key job).
+  # appendonly: job/idempotency key sống qua restart container.
+  redis:
+    image: redis:7-alpine
+    container_name: realestate_dev_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - realestate_dev_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── MinIO (S3-compatible) ──────────────────────────────────────────────────
+  # Console: http://localhost:9001   S3 API: http://127.0.0.1:9000
+  # Root user/password lấy từ S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY trong .env
+  # (compose tự đọc .env cùng thư mục). Mặc định minioadmin/minioadmin CHỈ cho dev.
+  minio:
+    # minio/minio trên Docker Hub & quay.io không còn pull được (MinIO ngừng phát hành
+    # image community), nên dùng image Chainguard (build từ upstream MinIO, đã kèm `mc` + sh).
+    # Chainguard (free tier) chỉ công bố tag `latest` (không có tag version để pin; đã thử, MANIFEST_UNKNOWN),
+    # nên giữ `latest`. Bản đã kiểm chứng: RELEASE.2026-09-22T19-25-18Z. Muốn tái lập tuyệt đối thì ghi
+    # đè MINIO_IMAGE bằng digest (vd cgr.dev/chainguard/minio@sha256:<digest>) hoặc image nội bộ đã pin.
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    container_name: realestate_dev_minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      MC_CONFIG_DIR: /tmp/.mc
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - realestate_dev_net
+    healthcheck:
+      # Image không có curl/wget; dùng `mc ready` (kèm trong image) qua MC_HOST_local.
+      test:
+        - CMD-SHELL
+        - MC_HOST_local="http://$$MINIO_ROOT_USER:$$MINIO_ROOT_PASSWORD@localhost:9000" mc ready local
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  # ── Khởi tạo bucket CRM (chạy 1 lần rồi thoát, idempotent) ──────────────────
+  #   crm-attachments : ảnh đính kèm nhật ký chăm sóc (riêng tư, đọc qua signed URL 15 phút)
+  #   crm-exports     : file export, tự xóa sau 7 ngày (tài liệu 04, mục 2)
+  # Dùng lại image minio (đã có `mc` và sh) nên không cần pull thêm image minio/mc.
+  # Tên bucket khớp S3_BUCKET_ATTACHMENTS / S3_BUCKET_EXPORTS.
+  minio-init:
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    container_name: realestate_dev_minio_init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MC_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      MC_CONFIG_DIR: /tmp/.mc
+      BUCKET_ATTACHMENTS: ${S3_BUCKET_ATTACHMENTS:-crm-attachments}
+      BUCKET_EXPORTS: ${S3_BUCKET_EXPORTS:-crm-exports}
+    networks:
+      - realestate_dev_net
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$MC_USER" "$$MC_PASSWORD"
+        mc mb --ignore-existing "local/$$BUCKET_ATTACHMENTS"
+        mc mb --ignore-existing "local/$$BUCKET_EXPORTS"
+        mc anonymous set none "local/$$BUCKET_ATTACHMENTS"
+        mc anonymous set none "local/$$BUCKET_EXPORTS"
+        # Đặt lại rule hạn 7 ngày cho exports (xóa rule cũ trước để chạy lại không nhân đôi rule).
+        mc ilm rule rm --all --force "local/$$BUCKET_EXPORTS" || true
+        mc ilm rule add --expire-days 7 "local/$$BUCKET_EXPORTS"
+        echo "MinIO buckets ready"
+
+networks:
+  realestate_dev_net:
+    driver: bridge
+
+volumes:
+  redis_data:
+  minio_data:
