@@ -26,6 +26,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1155.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/helmet": "^13.2.0",
+    "@fastify/multipart": "^10.1.6",
     "@fastify/static": "^9.3.0",
     "@google/genai": "^2.13.0",
     "@mendable/firecrawl-js": "^4.30.1",

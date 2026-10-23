@@ -16,6 +16,11 @@ import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CrmAbuseMonitorService } from '../common/security/crm-abuse-monitor.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { CrmSettingsService } from '../crm-settings/crm-settings.service';
+import { CareTeamRequestStatus } from '../care-teams/care-team.constants';
+import {
+  CareTeamRequest,
+  CareTeamRequestDocument,
+} from '../care-teams/schemas/care-team-request.schema';
 import {
   AccessContext,
   CustomerAccessService,
@@ -47,6 +52,8 @@ export class CustomerPhoneService {
   constructor(
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(CareTeamRequest.name)
+    private readonly requestModel: Model<CareTeamRequestDocument>,
     private readonly repo: CustomersRepository,
     private readonly access: CustomerAccessService,
     private readonly rateLimit: CrmRateLimitService,
@@ -218,18 +225,19 @@ export class CustomerPhoneService {
     return user?.displayName ?? null;
   }
 
-  /** `care_team_requests` thuộc M3; chưa có collection thì kết quả là false. */
+  /** Người này đã có đề nghị tham gia nhóm chăm sóc khách này đang chờ duyệt (M3). */
   private async hasPendingJoinRequest(
     customerId: Types.ObjectId,
     requesterId: Types.ObjectId,
   ): Promise<boolean> {
-    const count = await this.connection
-      .collection('care_team_requests')
-      .countDocuments(
-        { customerId, requesterId, status: 'PENDING' },
-        { limit: 1 },
-      );
-    return count > 0;
+    const pending = await this.requestModel
+      .exists({
+        customerId,
+        requesterId,
+        status: CareTeamRequestStatus.PENDING,
+      })
+      .exec();
+    return pending !== null;
   }
 
   /** Ghi `PHONE_LOOKUP` (khách ngoài phạm vi) — không lưu số điện thoại. */

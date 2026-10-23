@@ -11,6 +11,7 @@ import {
 } from '../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CustomerAccessService } from './access/customer-access.service';
+import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
 import { isAdminOrManager } from './access/customer-scope';
 import {
   ANONYMIZED_NAME,
@@ -36,10 +37,14 @@ import {
 /** Trường trong `crm_audit_logs.changes` chứa dữ liệu cá nhân, bị ghi đè khi ẩn danh hóa (04 mục 7.3). */
 const PII_AUDIT_FIELDS = ['fullName', 'phone', 'email', 'nationalId'];
 /**
- * Trường chứa văn bản tự do (có thể có PII) khớp theo MẪU regex — module sau (M3 nhật ký, M4 chân dung) chỉ cần
- * thêm mẫu vào đây. Hiện có: mô tả tiêu chí (`criteria.<key>.description`, tối đa 1000 ký tự).
+ * Trường chứa văn bản tự do (có thể có PII) khớp theo MẪU regex — module sau (M4 chân dung) chỉ cần thêm mẫu vào
+ * đây. Hiện có: mô tả tiêu chí (`criteria.<key>.description`, tối đa 1000 ký tự) và nhật ký chăm sóc
+ * (`careLog.content`, `careLog.nextAction.suggestion`, M3).
  */
-const PII_AUDIT_FIELD_PATTERNS = [String.raw`^criteria\..+\.description$`];
+export const PII_AUDIT_FIELD_PATTERNS = [
+  String.raw`^criteria\..+\.description$`,
+  String.raw`^careLog\.(content|nextAction\.suggestion)$`,
+];
 /** Mục đích xem số là danh sách đóng (VIEW/CALL/COPY) nên là `reason` duy nhất được giữ lại. */
 const KEEP_REASON_ACTIONS = ['PHONE_VIEWED'];
 
@@ -58,6 +63,7 @@ export class CustomerLifecycleService {
     private readonly access: CustomerAccessService,
     private readonly audit: CrmAuditLogService,
     private readonly customers: CustomersService,
+    private readonly careData: CustomerCareAnonymizerService,
   ) {}
 
   async softDelete(
@@ -181,6 +187,7 @@ export class CustomerLifecycleService {
 
         const now = new Date();
         await this.overwriteAuditPii(customerId, session);
+        await this.careData.anonymize(customerId, now, session);
         await this.repo.updateOne(
           ctx.scope,
           customerId,

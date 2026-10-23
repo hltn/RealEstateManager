@@ -16,6 +16,7 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
 import { buildHelmetOptions } from './common/security/helmet.config';
 import { FeatureFlagService } from './shared/feature-flags/feature-flag.service';
 
@@ -37,6 +38,11 @@ async function bootstrap() {
   // Đăng ký @fastify/cookie để parse httpOnly refresh cookie.
   await app.register(fastifyCookie, {
     secret: configService.get<string>('COOKIE_SECRET'),
+  });
+
+  // multipart/form-data cho upload ảnh đính kèm CRM (file ≤ 5 MB, mỗi request 1 file; kiểm loại ở nghiệp vụ).
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 5 },
   });
 
   // CORS: credentials=true cho httpOnly cookie cross-origin (dev).

@@ -15,6 +15,12 @@ export const RATE_LIMITS = {
   NATIONAL_ID_VIEW: { limit: 10, windowMs: 60_000 },
   /** Tìm kiếm danh sách (có từ khóa): 30 lần/phút/người. */
   CUSTOMER_SEARCH: { limit: 30, windowMs: 60_000 },
+  /** Tải ảnh đính kèm nhật ký: 30 lần/phút/người (chống đầy kho lưu trữ). */
+  ATTACHMENT_UPLOAD: { limit: 30, windowMs: 60_000 },
+  /** Thao tác hàng loạt (mỗi lần tới 200 khách): 10 lần/phút/người. */
+  BULK_OPERATION: { limit: 10, windowMs: 60_000 },
+  /** Đề nghị tham gia nhóm chăm sóc: 20 lần/phút/người (chống spam người duyệt). */
+  JOIN_REQUEST: { limit: 20, windowMs: 60_000 },
 } as const;
 
 /** Cửa sổ gộp lượt tìm kiếm trùng từ khóa (list + list-counts + đổi trang). */

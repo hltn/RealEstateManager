@@ -24,6 +24,8 @@ export interface RefsToAssign {
   sourceId?: Types.ObjectId | null;
   areaId?: Types.ObjectId | null;
   projectIds?: Types.ObjectId[];
+  /** Kết quả liên hệ của nhật ký chăm sóc (M3). */
+  contactResultId?: Types.ObjectId | null;
 }
 
 /** Id cần dịch ra nhãn để dựng response/audit. */
@@ -32,6 +34,7 @@ export interface RefIds {
   sourceIds?: Array<Types.ObjectId | null | undefined>;
   areaIds?: Array<Types.ObjectId | null | undefined>;
   projectIds?: Array<Types.ObjectId | null | undefined>;
+  contactResultIds?: Array<Types.ObjectId | null | undefined>;
   userIds?: Array<Types.ObjectId | null | undefined>;
 }
 
@@ -40,6 +43,7 @@ export interface RefMaps {
   sources: Map<string, string>;
   areas: Map<string, string>;
   projects: Map<string, string>;
+  contactResults: Map<string, string>;
   users: Map<string, string>;
 }
 
@@ -117,6 +121,14 @@ export class CustomerRefsService {
     );
     await this.lock('areas', 'areaId', 'Khu vực', refs.areaId, session, {});
     await this.lock(
+      'catalog_items',
+      'contactResultId',
+      'Kết quả liên hệ',
+      refs.contactResultId,
+      session,
+      { type: CatalogItemType.CONTACT_RESULT },
+    );
+    await this.lock(
       'projects',
       'interestedProjectIds',
       'Dự án',
@@ -159,45 +171,54 @@ export class CustomerRefsService {
     const sourceIds = unique(ids.sourceIds);
     const areaIds = unique(ids.areaIds);
     const projectIds = unique(ids.projectIds);
+    const contactResultIds = unique(ids.contactResultIds);
     const userIds = unique(ids.userIds);
 
-    const [statuses, sources, areas, projects, users] = await Promise.all([
-      statusIds.length
-        ? this.statusModel
-            .find({ _id: { $in: statusIds } })
-            .select('code label listGroup color')
-            .lean()
-            .exec()
-        : [],
-      sourceIds.length
-        ? this.catalogModel
-            .find({ _id: { $in: sourceIds } })
-            .select('label')
-            .lean()
-            .exec()
-        : [],
-      areaIds.length
-        ? this.areaModel
-            .find({ _id: { $in: areaIds } })
-            .select('name')
-            .lean()
-            .exec()
-        : [],
-      projectIds.length
-        ? this.projectModel
-            .find({ _id: { $in: projectIds } })
-            .select('name')
-            .lean()
-            .exec()
-        : [],
-      userIds.length
-        ? this.userModel
-            .find({ _id: { $in: userIds } })
-            .select('displayName')
-            .lean()
-            .exec()
-        : [],
-    ]);
+    const [statuses, sources, areas, projects, contactResults, users] =
+      await Promise.all([
+        statusIds.length
+          ? this.statusModel
+              .find({ _id: { $in: statusIds } })
+              .select('code label listGroup color')
+              .lean()
+              .exec()
+          : [],
+        sourceIds.length
+          ? this.catalogModel
+              .find({ _id: { $in: sourceIds } })
+              .select('label')
+              .lean()
+              .exec()
+          : [],
+        areaIds.length
+          ? this.areaModel
+              .find({ _id: { $in: areaIds } })
+              .select('name')
+              .lean()
+              .exec()
+          : [],
+        projectIds.length
+          ? this.projectModel
+              .find({ _id: { $in: projectIds } })
+              .select('name')
+              .lean()
+              .exec()
+          : [],
+        contactResultIds.length
+          ? this.catalogModel
+              .find({ _id: { $in: contactResultIds } })
+              .select('label')
+              .lean()
+              .exec()
+          : [],
+        userIds.length
+          ? this.userModel
+              .find({ _id: { $in: userIds } })
+              .select('displayName')
+              .lean()
+              .exec()
+          : [],
+      ]);
 
     return {
       statuses: new Map<string, StatusRefDto>(
@@ -226,6 +247,11 @@ export class CustomerRefsService {
       projects: toLabelMap(
         projects.map(
           (item) => [item._id, item.name] as [Types.ObjectId, string],
+        ),
+      ),
+      contactResults: toLabelMap(
+        contactResults.map(
+          (item) => [item._id, item.label] as [Types.ObjectId, string],
         ),
       ),
       users: toLabelMap(

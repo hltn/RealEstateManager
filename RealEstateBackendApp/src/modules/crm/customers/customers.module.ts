@@ -8,6 +8,15 @@ import {
   CrmAuditLog,
   CrmAuditLogSchema,
 } from '../audit-logs/schemas/crm-audit-log.schema';
+import { CareLog, CareLogSchema } from '../care-logs/schemas/care-log.schema';
+import {
+  CrmAttachment,
+  CrmAttachmentSchema,
+} from '../care-logs/schemas/crm-attachment.schema';
+import {
+  CareTeamRequest,
+  CareTeamRequestSchema,
+} from '../care-teams/schemas/care-team-request.schema';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { CrmCommonModule } from '../common/crm-common.module';
 import { PiiCryptoModule } from '../common/crypto/pii-crypto.module';
@@ -15,6 +24,7 @@ import { CrmSecurityModule } from '../common/security/crm-security.module';
 import { CrmSettingsModule } from '../crm-settings/crm-settings.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { CustomerAccessService } from './access/customer-access.service';
+import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
 import { CustomerCriteriaService } from './customer-criteria.service';
 import { CustomerHistoriesController } from './customer-histories.controller';
 import { CustomerHistoriesService } from './customer-histories.service';
@@ -39,6 +49,10 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
       { name: CrmAuditLog.name, schema: CrmAuditLogSchema },
+      // Đề nghị tham gia nhóm (`hasPendingRequest`) và dữ liệu chăm sóc cần ẩn danh hóa cùng khách (M3).
+      { name: CareTeamRequest.name, schema: CareTeamRequestSchema },
+      { name: CareLog.name, schema: CareLogSchema },
+      { name: CrmAttachment.name, schema: CrmAttachmentSchema },
     ]),
     // Model danh mục/dự án (CustomerStatus, CatalogItem, Area, Project) để dịch nhãn và khóa ghi.
     CatalogsModule,
@@ -70,7 +84,13 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerNationalIdService,
     CustomerLifecycleService,
     CustomerHistoriesService,
+    CustomerCareAnonymizerService,
   ],
-  exports: [CustomersRepository, CustomerAccessService],
+  exports: [
+    CustomersRepository,
+    CustomerAccessService,
+    CustomerRefsService,
+    CustomerStatusChangeService,
+  ],
 })
 export class CustomersModule {}

@@ -17,6 +17,8 @@ export enum CrmAuditEntityType {
   SETTINGS = 'SETTINGS',
   /** Thêm ở M1: thay đổi nhóm của người dùng (ảnh hưởng phạm vi khách). */
   USER = 'USER',
+  /** Thêm ở M3: đề nghị tham gia nhóm chăm sóc. */
+  CARE_TEAM_REQUEST = 'CARE_TEAM_REQUEST',
 }
 
 /** Hành động audit thuộc phạm vi M1 (danh mục, dự án, nhóm, cài đặt). */
@@ -55,6 +57,17 @@ export enum CrmAuditAction {
   PHONE_SEARCH_ANOMALY = 'PHONE_SEARCH_ANOMALY',
   PHONE_VIEW_ALERT = 'PHONE_VIEW_ALERT',
   NATIONAL_ID_VIEW_ALERT = 'NATIONAL_ID_VIEW_ALERT',
+  // --- M3: chăm sóc (tài liệu 04 mục 3.7.1) ---
+  CARE_TEAM_MEMBER_ADDED = 'CARE_TEAM_MEMBER_ADDED',
+  CARE_TEAM_MEMBER_REMOVED = 'CARE_TEAM_MEMBER_REMOVED',
+  PRIMARY_CHANGED = 'PRIMARY_CHANGED',
+  JOIN_REQUEST_CREATED = 'JOIN_REQUEST_CREATED',
+  JOIN_REQUEST_RESOLVED = 'JOIN_REQUEST_RESOLVED',
+  CARE_LOG_CREATED = 'CARE_LOG_CREATED',
+  CARE_LOG_UPDATED = 'CARE_LOG_UPDATED',
+  CARE_LOG_DELETED = 'CARE_LOG_DELETED',
+  ATTACHMENT_UPLOADED = 'ATTACHMENT_UPLOADED',
+  ATTACHMENT_REMOVED = 'ATTACHMENT_REMOVED',
 }
 
 export type CrmAuditSource = 'WEB' | 'MOBILE' | 'IMPORT' | 'SYSTEM';

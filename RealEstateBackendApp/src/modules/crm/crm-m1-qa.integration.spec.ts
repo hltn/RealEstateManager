@@ -286,9 +286,10 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
           .filter((verb) => ['get', 'post', 'patch', 'delete'].includes(verb))
           .map((verb) => `${verb.toUpperCase()} ${route}`),
       );
-      // Route khách hàng lõi thuộc M2 (crm-m2.integration.spec.ts), không tính vào bộ đếm M1.
+      // Route khách hàng lõi thuộc M2 (crm-m2.integration.spec.ts), chăm sóc/hàng loạt thuộc M3
+      // (crm-m3.integration.spec.ts): không tính vào bộ đếm M1.
       const isM2Route = (op: string) =>
-        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|audit-logs)/.test(
+        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|customer-bulk-operations|care-team-requests|audit-logs)/.test(
           op,
         );
       const crmOps = ops.filter(

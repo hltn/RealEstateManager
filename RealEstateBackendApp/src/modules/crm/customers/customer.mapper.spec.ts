@@ -14,6 +14,7 @@ const refs: RefMaps = {
   sources: new Map(),
   areas: new Map(),
   projects: new Map(),
+  contactResults: new Map(),
   users: new Map(),
 };
 const me = new Types.ObjectId();
