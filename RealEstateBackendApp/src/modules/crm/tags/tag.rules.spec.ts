@@ -22,6 +22,11 @@ describe('chuẩn hóa tên thẻ', () => {
     expect(normalizeTagName('​‍ ⁠')).toBe('');
     expect(normalizeTagName('́')).toBe('');
   });
+
+  it('chữ đệm Hangul và ô Braille trống (không thuộc Cf) cũng cho khóa rỗng, và bị bỏ khỏi tên có chữ thật', () => {
+    expect(normalizeTagName('ᅟᅠㅤﾠ⠀')).toBe('');
+    expect(cleanTagName('Goㅤlf')).toBe('Golf');
+  });
 });
 
 describe('diffTagIds', () => {

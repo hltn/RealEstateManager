@@ -23,6 +23,11 @@ import { CustomerRefsService } from '../customers/customer-refs.service';
 import { computeTeamIds } from '../customers/customer-team-sync.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
+import {
+  NotificationPriority,
+  NotificationType,
+} from '../../notifications/notification.constants';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
 import {
   careTeamLabels,
@@ -72,6 +77,7 @@ export class CareTeamService {
     private readonly refs: CustomerRefsService,
     private readonly assignees: CareTeamAssigneesService,
     private readonly audit: CrmAuditLogService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async get(jwt: JwtPayload, id: string): Promise<CareTeamResponseDto> {
@@ -201,7 +207,7 @@ export class CareTeamService {
   ): Promise<CareTeamResponseDto> {
     const before = await this.repo.findOne(ctx.scope, customerId, {
       session,
-      projection: { careTeam: 1, teamIds: 1, __v: 1 },
+      projection: { careTeam: 1, teamIds: 1, fullName: 1, __v: 1 },
     });
     if (!before) throw customerNotFound();
     const currentTeam = before.careTeam ?? [];
@@ -279,7 +285,46 @@ export class CareTeamService {
       mutation.source,
       session,
     );
+    await this.notifyAssigned(
+      ctx,
+      customerId,
+      before.fullName,
+      change,
+      primary?.userId ?? null,
+      session,
+    );
     return toCareTeamResponse(change.careTeam, maps.users);
+  }
+
+  /** Báo người MỚI được thêm vào nhóm (trừ chính người thực hiện), cùng transaction với việc thêm; phụ trách chính `HIGH`. */
+  private async notifyAssigned(
+    ctx: AccessContext,
+    customerId: string,
+    customerName: string,
+    change: CareTeamChange,
+    primaryId: Types.ObjectId | null,
+    session: ClientSession,
+  ): Promise<void> {
+    const recipients = change.addedUserIds.filter(
+      (userId) => !userId.equals(ctx.actor.userId),
+    );
+    await this.notifications.createMany(
+      recipients.map((userId) => ({
+        userId,
+        type: NotificationType.CUSTOMER_ASSIGNED,
+        title: 'Bạn được phân chăm sóc khách mới',
+        body: `Bạn được phân chăm sóc khách ${customerName}`,
+        priority:
+          primaryId && userId.equals(primaryId)
+            ? NotificationPriority.HIGH
+            : NotificationPriority.NORMAL,
+        data: {
+          customerId: oid(customerId),
+          deepLink: `/crm/customers/${customerId}`,
+        },
+      })),
+      session,
+    );
   }
 
   private async recordAudit(

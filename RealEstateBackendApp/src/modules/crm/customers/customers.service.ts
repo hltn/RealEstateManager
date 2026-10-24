@@ -43,6 +43,11 @@ import { CustomerDetailDto } from './dtos/customer-response.dto';
 import { CareTeamEntry } from './schemas/customer.schema';
 import { diffTagIds } from '../tags/tag.rules';
 import {
+  NotificationPriority,
+  NotificationType,
+} from '../../notifications/notification.constants';
+import { NotificationsService } from '../../notifications/notifications.service';
+import {
   buildProfileChanges,
   EMPTY_PROFILE,
   ProfileSnapshot,
@@ -92,6 +97,7 @@ export class CustomersService {
     private readonly audit: CrmAuditLogService,
     private readonly pii: PiiCryptoService,
     private readonly tags: CustomerTagsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async getById(jwt: JwtPayload, id: string): Promise<CustomerDetailDto> {
@@ -277,6 +283,23 @@ export class CustomersService {
         changes,
         source: auditSource,
       },
+      session,
+    );
+    // Người được phân ngay lúc tạo (trừ chính người tạo) nhận thông báo, cùng transaction.
+    await this.notifications.createMany(
+      plan.careTeam
+        .filter((member) => !member.userId.equals(actorId))
+        .map((member) => ({
+          userId: member.userId,
+          type: NotificationType.CUSTOMER_ASSIGNED,
+          title: 'Bạn được phân chăm sóc khách mới',
+          body: `Bạn được phân chăm sóc khách ${dto.fullName}`,
+          priority:
+            member.role === CareRole.PRIMARY
+              ? NotificationPriority.HIGH
+              : NotificationPriority.NORMAL,
+          data: { customerId: _id, deepLink: `/crm/customers/${String(_id)}` },
+        })),
       session,
     );
     return { ...doc, __v: 0, createdAt: now, updatedAt: now };

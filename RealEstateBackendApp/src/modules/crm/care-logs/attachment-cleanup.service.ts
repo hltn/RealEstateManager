@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -35,8 +34,7 @@ export interface CleanupResult {
 /**
  * Dọn ảnh đính kèm (tài liệu 04 mục 6.6, dữ liệu kỹ thuật tạm): (1) ảnh tải lên nhưng chưa gắn quá 24 giờ => REMOVED;
  * (2) xóa khỏi kho lưu trữ mọi file của ảnh REMOVED chưa có `purgedAt` (kể cả ảnh bị gỡ lúc ẩn danh hóa khách hoặc
- * lần xóa trực tiếp thất bại). Idempotent và an toàn khi nhiều instance cùng chạy. Chạy mỗi giờ; BullMQ repeatable
- * sẽ thay thế khi M5 dựng hạ tầng lịch nhắc.
+ * lần xóa trực tiếp thất bại). Idempotent và an toàn khi nhiều instance cùng chạy. Chạy mỗi giờ bằng job lặp BullMQ `attachments.cleanup` (M5, `CrmSchedulerService`).
  */
 @Injectable()
 export class AttachmentCleanupService {
@@ -49,7 +47,6 @@ export class AttachmentCleanupService {
     private readonly featureFlags: FeatureFlagService,
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
   async runScheduled(): Promise<void> {
     if (
       !this.featureFlags.isEnabled(FeatureFlag.CRM_ENABLED) ||

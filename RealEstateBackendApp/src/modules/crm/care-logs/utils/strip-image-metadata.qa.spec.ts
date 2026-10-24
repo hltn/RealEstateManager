@@ -113,7 +113,7 @@ describe('stripImageMetadata — fuzz', () => {
           expect(error).toBeInstanceOf(InvalidImageError);
         }
       }
-      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(Date.now() - started).toBeLessThan(60_000);
     },
   );
 

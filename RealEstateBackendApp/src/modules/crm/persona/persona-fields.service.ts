@@ -74,6 +74,15 @@ const PATCHABLE_FIELDS = [
   'isActive',
 ] as const;
 
+/** Thuộc tính quyết định "hình dạng" hợp lệ của trường (`findFieldShapeError`): chỉ kiểm lại khi PATCH đụng tới. */
+const SHAPE_FIELDS = [
+  'type',
+  'options',
+  'isFilterable',
+  'isOccasion',
+  'isSensitive',
+] as const;
+
 /** Đổi các thuộc tính này làm lệch độ đầy đủ/token lọc/dịp đặc biệt của khách => phải tính lại. */
 const DERIVED_FIELDS: readonly string[] = [
   'weight',
@@ -268,13 +277,18 @@ export class PersonaFieldsService {
       if (dto.options !== undefined || typeChanged) patch.options = nextOptions;
 
       const next = { ...before, ...patch } as PersonaFieldLean;
-      const shapeError = findFieldShapeError({
-        type: next.type,
-        options: next.options,
-        isFilterable: next.isFilterable,
-        isOccasion: next.isOccasion,
-        isSensitive: next.isSensitive,
-      });
+      // Chỉ kiểm hình dạng khi PATCH đụng vào thuộc tính của nó: trường dữ liệu cũ có tổ hợp không còn hợp lệ
+      // (vd nhạy cảm + lọc được) vẫn phải tắt/đổi nhãn/sắp xếp được mà không bị 400.
+      const touchesShape = SHAPE_FIELDS.some((key) => key in patch);
+      const shapeError = touchesShape
+        ? findFieldShapeError({
+            type: next.type,
+            options: next.options,
+            isFilterable: next.isFilterable,
+            isOccasion: next.isOccasion,
+            isSensitive: next.isSensitive,
+          })
+        : null;
       if (shapeError) throw validationFailed(shapeError, 'type');
       if (dto.groupCode && dto.groupCode !== before.groupCode) {
         await this.assertGroupExists(dto.groupCode, session);

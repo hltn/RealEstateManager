@@ -37,6 +37,12 @@ import {
   CareTeamRequestBox,
   CareTeamRequestStatus,
 } from './care-team.constants';
+import { Team, TeamDocument } from '../../teams/schemas/team.schema';
+import {
+  NotificationPriority,
+  NotificationType,
+} from '../../notifications/notification.constants';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { CareTeamService } from './care-team.service';
 import { careTeamActionForbidden, planAddMembers } from './care-team.rules';
 import {
@@ -84,6 +90,8 @@ export class CareTeamRequestsService {
     private readonly careTeam: CareTeamService,
     private readonly rateLimit: CrmRateLimitService,
     private readonly audit: CrmAuditLogService,
+    private readonly notifications: NotificationsService,
+    @InjectModel(Team.name) private readonly teamModel: Model<TeamDocument>,
   ) {}
 
   async create(
@@ -135,6 +143,13 @@ export class CareTeamRequestsService {
             actor: { sub: String(ctx.actor.userId) },
             source: auditSource,
           },
+          session,
+        );
+        await this.notifyReviewers(
+          ctx,
+          customer,
+          customerId,
+          created._id,
           session,
         );
         return {
@@ -267,6 +282,9 @@ export class CareTeamRequestsService {
           },
           session,
         );
+        if (!isCancel) {
+          await this.notifyRequester(request, dto.status, session);
+        }
         return { row: claimed, customerName };
       },
     );
@@ -275,6 +293,85 @@ export class CareTeamRequestsService {
       userIds: [row.requesterId, row.resolvedBy],
     });
     return this.toItem(row, maps.users, customerName);
+  }
+
+  /**
+   * Báo người có quyền duyệt: phụ trách chính của khách và Quản lý của các nhóm chứa khách (trừ người gửi). Nội dung
+   * KHÔNG nêu tên khách (người gửi chưa được xem khách này).
+   */
+  private async notifyReviewers(
+    ctx: AccessContext,
+    customer: {
+      careTeam?: Array<{ userId: Types.ObjectId; role: CareRole }>;
+      teamIds?: Types.ObjectId[];
+    },
+    customerId: Types.ObjectId,
+    requestId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<void> {
+    const primary = (customer.careTeam ?? []).find(
+      (member) => member.role === CareRole.PRIMARY,
+    );
+    const teams = await this.teamModel
+      .find({ _id: { $in: customer.teamIds ?? [] }, deletedAt: null })
+      .select('managerIds')
+      .session(session)
+      .lean()
+      .exec();
+    const reviewers = new Map<string, Types.ObjectId>();
+    for (const userId of [
+      ...(primary ? [primary.userId] : []),
+      ...teams.flatMap((team) => team.managerIds),
+    ]) {
+      if (!userId.equals(ctx.actor.userId))
+        reviewers.set(String(userId), userId);
+    }
+    await this.notifications.createMany(
+      [...reviewers.values()].map((userId) => ({
+        userId,
+        type: NotificationType.CARE_TEAM_JOIN_REQUESTED,
+        title: 'Có đề nghị tham gia chăm sóc khách',
+        body: `${ctx.actor.displayName} đề nghị tham gia nhóm chăm sóc một khách bạn quản lý`,
+        priority: NotificationPriority.NORMAL,
+        data: {
+          customerId,
+          requestId,
+          deepLink: '/crm/care-team-requests',
+        },
+      })),
+      session,
+    );
+  }
+
+  /** Báo người gửi kết quả duyệt/từ chối (cùng transaction). Chỉ khi được duyệt mới dẫn tới trang khách. */
+  private async notifyRequester(
+    request: RequestRow,
+    status: CareTeamRequestStatus,
+    session: ClientSession,
+  ): Promise<void> {
+    const approved = status === CareTeamRequestStatus.APPROVED;
+    await this.notifications.createMany(
+      [
+        {
+          userId: request.requesterId,
+          type: NotificationType.CARE_TEAM_JOIN_RESOLVED,
+          title: approved
+            ? 'Đề nghị tham gia được duyệt'
+            : 'Đề nghị tham gia bị từ chối',
+          body: approved
+            ? 'Bạn đã được thêm vào nhóm chăm sóc khách theo đề nghị của mình'
+            : 'Đề nghị tham gia nhóm chăm sóc của bạn đã bị từ chối',
+          data: {
+            ...(approved && { customerId: request.customerId }),
+            requestId: request._id,
+            deepLink: approved
+              ? `/crm/customers/${String(request.customerId)}`
+              : '/crm/care-team-requests',
+          },
+        },
+      ],
+      session,
+    );
   }
 
   /** Duyệt = thêm người gửi làm MEMBER (nhóm đang rỗng thì người đó là PRIMARY); đã có trong nhóm thì không thêm lại. */

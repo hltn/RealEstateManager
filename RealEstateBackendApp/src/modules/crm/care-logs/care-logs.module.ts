@@ -5,7 +5,11 @@ import { RedisModule } from '../../../shared/redis/redis.module';
 import { StorageModule } from '../../../shared/storage/storage.module';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
 import { CrmSecurityModule } from '../common/security/crm-security.module';
+import { AppointmentsCoreModule } from '../appointments/appointments-core.module';
+import { CrmSettingsModule } from '../crm-settings/crm-settings.module';
 import { CustomersModule } from '../customers/customers.module';
+import { RemindersCoreModule } from '../reminders/reminders-core.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
 import { AttachmentCleanupService } from './attachment-cleanup.service';
 import { CareLogAttachmentsController } from './care-log-attachments.controller';
 import { CareLogAttachmentsService } from './care-log-attachments.service';
@@ -25,6 +29,10 @@ import {
       { name: CrmAttachment.name, schema: CrmAttachmentSchema },
     ]),
     CustomersModule,
+    AppointmentsCoreModule,
+    RemindersCoreModule,
+    NotificationsModule,
+    CrmSettingsModule,
     CrmAuditLogModule,
     CrmSecurityModule,
     RedisModule,
@@ -37,5 +45,7 @@ import {
     CareLogAttachmentsService,
     AttachmentCleanupService,
   ],
+  // `CareLogsService`: hoàn thành lịch hẹn kèm nhật ký; `AttachmentCleanupService`: job dọn ảnh của scheduler (M5).
+  exports: [CareLogsService, AttachmentCleanupService],
 })
 export class CareLogsModule {}

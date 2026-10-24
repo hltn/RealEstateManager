@@ -3,6 +3,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from '../../users/schemas/user.schema';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
 import { CrmSecurityModule } from '../common/security/crm-security.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
+import { Team, TeamSchema } from '../../teams/schemas/team.schema';
 import { CustomersModule } from '../customers/customers.module';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
 import { CareTeamRequestsController } from './care-team-requests.controller';
@@ -20,8 +22,10 @@ import {
     MongooseModule.forFeature([
       { name: CareTeamRequest.name, schema: CareTeamRequestSchema },
       { name: User.name, schema: UserSchema },
+      { name: Team.name, schema: TeamSchema },
     ]),
     CustomersModule,
+    NotificationsModule,
     CrmAuditLogModule,
     CrmSecurityModule,
   ],

@@ -22,6 +22,12 @@ import { CrmCommonModule } from '../common/crm-common.module';
 import { PiiCryptoModule } from '../common/crypto/pii-crypto.module';
 import { CrmSecurityModule } from '../common/security/crm-security.module';
 import { CrmSettingsModule } from '../crm-settings/crm-settings.module';
+import { RemindersCoreModule } from '../reminders/reminders-core.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
+import {
+  Notification,
+  NotificationSchema,
+} from '../../notifications/schemas/notification.schema';
 import { ProjectsModule } from '../projects/projects.module';
 import { Tag, TagSchema } from '../tags/schemas/tag.schema';
 import { CustomerAccessService } from './access/customer-access.service';
@@ -33,6 +39,7 @@ import { CustomerLifecycleController } from './customer-lifecycle.controller';
 import { CustomerLifecycleService } from './customer-lifecycle.service';
 import { CustomerListService } from './customer-list.service';
 import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
+import { CustomerSchedulingAnonymizerService } from './customer-scheduling-anonymizer.service';
 import { CustomerNationalIdService } from './customer-national-id.service';
 import { CustomerPhoneService } from './customer-phone.service';
 import { CustomerRefsService } from './customer-refs.service';
@@ -58,6 +65,8 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
       { name: CrmAttachment.name, schema: CrmAttachmentSchema },
       // Thẻ gắn cho khách (M4): kiểm thẻ còn hoạt động, dịch nhãn, giữ `usageCount`, dọn khi ẩn danh hóa.
       { name: Tag.name, schema: TagSchema },
+      // Thông báo gắn với khách bị xóa khi ẩn danh hóa (M5).
+      { name: Notification.name, schema: NotificationSchema },
     ]),
     // Model danh mục/dự án (CustomerStatus, CatalogItem, Area, Project) để dịch nhãn và khóa ghi.
     CatalogsModule,
@@ -69,6 +78,9 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     PiiCryptoModule,
     RedisModule,
     CustomerTeamSyncModule,
+    // Hủy/dựng lại nhắc việc khi xóa mềm/khôi phục và ẩn danh hóa khách (M5).
+    RemindersCoreModule,
+    NotificationsModule,
   ],
   controllers: [
     CustomersController,
@@ -92,6 +104,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerCareAnonymizerService,
     CustomerTagsService,
     CustomerPersonaAnonymizerService,
+    CustomerSchedulingAnonymizerService,
   ],
   exports: [
     CustomersRepository,

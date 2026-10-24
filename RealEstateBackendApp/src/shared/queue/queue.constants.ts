@@ -2,6 +2,8 @@
 export const QueueNames = {
   /** Hàng đợi kiểm tra sức khỏe: chứng minh Redis + BullMQ + worker chạy được. */
   HEALTH_PING: 'health-ping',
+  /** Job lặp của CRM: nhịp 1 phút (nhắc việc, quét dịp đặc biệt/khách lâu chưa chăm sóc) và dọn ảnh đính kèm. */
+  CRM_SCHEDULER: 'crm-scheduler',
 } as const;
 
 export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];

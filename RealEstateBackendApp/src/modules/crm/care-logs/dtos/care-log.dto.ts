@@ -3,6 +3,10 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayUnique,
+  IsArray,
+  IsInt,
+  Max,
+  Min,
   IsEnum,
   IsISO8601,
   IsMongoId,
@@ -17,6 +21,12 @@ import { OptionalNotNull } from '../../../../common/decorators/optional-not-null
 import { Trim } from '../../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination-query.dto';
 import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
+import {
+  APPOINTMENT_LOCATION_MAX_LENGTH,
+  APPOINTMENT_MAX_REMIND_MINUTES,
+  APPOINTMENT_MAX_REMINDERS,
+  AppointmentType,
+} from '../../appointments/appointment.constants';
 import { CUSTOMER_REASON_MAX_LENGTH } from '../../customers/customer.constants';
 import {
   CARE_LOG_CONTENT_MAX_LENGTH,
@@ -32,9 +42,36 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_MESSAGE = 'Ngày phải theo định dạng YYYY-MM-DD (giờ Việt Nam)';
 
 /**
- * Bước tiếp theo gợi ý. `appointment` (tạo lịch hẹn ngay từ nhật ký) thuộc M5 nên CHƯA nhận: gửi lên sẽ bị
- * ValidationPipe từ chối thay vì bị bỏ qua âm thầm.
+ * Lịch hẹn tạo kèm nhật ký (M5): bắt đầu đúng `nextAction.dueAt` (bắt buộc khi có `appointment`), người thực hiện là
+ * người ghi nhật ký (Quản trị/Quản lý ngoài nhóm chăm sóc thì phụ trách chính), tiêu đề lấy từ `suggestion`.
  */
+export class CareLogNextActionAppointmentDto {
+  @ApiProperty({ enum: AppointmentType })
+  @IsEnum(AppointmentType)
+  type: AppointmentType;
+
+  @ApiPropertyOptional({ maxLength: APPOINTMENT_LOCATION_MAX_LENGTH })
+  @OptionalNotNull()
+  @Trim()
+  @IsString()
+  @MaxLength(APPOINTMENT_LOCATION_MAX_LENGTH)
+  location?: string;
+
+  @ApiPropertyOptional({
+    type: [Number],
+    description: 'Nhắc trước giờ hẹn (phút); không gửi = mặc định theo cài đặt',
+  })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(APPOINTMENT_MAX_REMINDERS)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(APPOINTMENT_MAX_REMIND_MINUTES, { each: true })
+  remindBeforeMinutes?: number[];
+}
+
+/** Bước tiếp theo gợi ý; `appointment` tạo luôn lịch hẹn tại `dueAt` (M5). */
 export class CareLogNextActionInputDto {
   @ApiPropertyOptional({ maxLength: CARE_LOG_SUGGESTION_MAX_LENGTH })
   @OptionalNotNull()
@@ -47,6 +84,12 @@ export class CareLogNextActionInputDto {
   @OptionalNotNull()
   @IsISO8601({ strict: true })
   dueAt?: string;
+
+  @ApiPropertyOptional({ type: CareLogNextActionAppointmentDto })
+  @OptionalNotNull()
+  @ValidateNested()
+  @Type(() => CareLogNextActionAppointmentDto)
+  appointment?: CareLogNextActionAppointmentDto;
 }
 
 export class CreateCareLogDto {

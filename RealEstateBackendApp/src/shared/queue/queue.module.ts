@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { buildBullPrefix, buildRedisOptions } from '../redis/redis.config';
 import { HealthPingProcessor } from './health-ping.processor';
 import { QueuePingService } from './queue-ping.service';
+import { QueueRuntimeModule } from './queue-runtime.module';
 import { DEFAULT_JOB_OPTIONS, QueueNames } from './queue.constants';
 
 /**
@@ -24,8 +25,9 @@ import { DEFAULT_JOB_OPTIONS, QueueNames } from './queue.constants';
       }),
     }),
     BullModule.registerQueue({ name: QueueNames.HEALTH_PING }),
+    QueueRuntimeModule,
   ],
   providers: [HealthPingProcessor, QueuePingService],
-  exports: [BullModule, QueuePingService],
+  exports: [BullModule, QueuePingService, QueueRuntimeModule],
 })
 export class QueueModule {}

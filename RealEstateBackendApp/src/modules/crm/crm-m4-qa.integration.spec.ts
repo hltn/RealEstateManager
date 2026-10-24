@@ -34,7 +34,10 @@ import { TeamsModule } from '../teams/teams.module';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
 import { CrmModule } from './crm.module';
-import { Customer, CustomerDocument } from './customers/schemas/customer.schema';
+import {
+  Customer,
+  CustomerDocument,
+} from './customers/schemas/customer.schema';
 import {
   PersonaConfigService,
   toFieldDef,
@@ -113,18 +116,24 @@ describe('CRM M4 — QA bổ sung', () => {
     connection.collection('customers').findOne({ _id: new Types.ObjectId(id) });
 
   const setOccupation = async (customerId: string, as: string) => {
-    const version = (await call('GET', `/crm/customers/${customerId}/persona`, as))
-      .body.data.version;
-    const res = await call('PATCH', `/crm/customers/${customerId}/persona`, as, {
-      version,
-      values: [
-        {
-          fieldKey: 'occupation',
-          value: { valueText: 'Kế toán' },
-          source: 'STAFF_OBSERVED',
-        },
-      ],
-    });
+    const version = (
+      await call('GET', `/crm/customers/${customerId}/persona`, as)
+    ).body.data.version;
+    const res = await call(
+      'PATCH',
+      `/crm/customers/${customerId}/persona`,
+      as,
+      {
+        version,
+        values: [
+          {
+            fieldKey: 'occupation',
+            value: { valueText: 'Kế toán' },
+            source: 'STAFF_OBSERVED',
+          },
+        ],
+      },
+    );
     expect(res.status).toBe(200);
   };
 
@@ -194,60 +203,39 @@ describe('CRM M4 — QA bổ sung', () => {
 
   // ---------------------------------------------------------------------------------------------
   // SF-1: không có điều kiện đơn điệu theo phiên bản cấu hình => job chạy trên instance cũ ghi đè kết quả mới.
-  it(
-    'job tính lại với phiên bản cấu hình CŨ không được ghi đè khách đã tính theo phiên bản MỚI (nhiều instance)',
-    async () => {
-      const customer = await createCustomer('staff');
-      await setOccupation(customer, 'staff');
+  it('job tính lại với phiên bản cấu hình CŨ không được ghi đè khách đã tính theo phiên bản MỚI (nhiều instance)', async () => {
+    const customer = await createCustomer('staff');
+    await setOccupation(customer, 'staff');
 
-      // Instance B bắt đầu quét với ảnh chụp cấu hình cũ...
-      const staleVersion = await config.getVersion();
-      const staleFields = (await config.loadActiveFields()).map(toFieldDef);
+    // Instance B bắt đầu quét với ảnh chụp cấu hình cũ...
+    const staleVersion = await config.getVersion();
+    const staleFields = (await config.loadActiveFields()).map(toFieldDef);
 
-      // ...trong lúc instance A xử lý thay đổi cấu hình và tính lại xong.
-      const occupation = await connection
-        .collection('persona_fields')
-        .findOne({ key: 'occupation' });
-      const patched = await call(
-        'PATCH',
-        `/crm/persona-fields/${String(occupation!._id)}`,
-        'admin',
-        { weight: 7 },
-      );
-      expect(patched.status).toBe(200);
-      await recompute.run();
-      const fresh = await customerDoc(customer);
-      const currentVersion = await config.getVersion();
-      expect(fresh!.personaConfigVersion).toBe(currentVersion);
+    // ...trong lúc instance A xử lý thay đổi cấu hình và tính lại xong.
+    const occupation = await connection
+      .collection('persona_fields')
+      .findOne({ key: 'occupation' });
+    const patched = await call(
+      'PATCH',
+      `/crm/persona-fields/${String(occupation!._id)}`,
+      'admin',
+      { weight: 7 },
+    );
+    expect(patched.status).toBe(200);
+    await recompute.run();
+    const fresh = await customerDoc(customer);
+    const currentVersion = await config.getVersion();
+    expect(fresh!.personaConfigVersion).toBe(currentVersion);
 
-      await (recompute as unknown as RecomputeInternals).scan(
-        staleVersion,
-        staleFields,
-      );
+    await (recompute as unknown as RecomputeInternals).scan(
+      staleVersion,
+      staleFields,
+    );
 
-      const after = await customerDoc(customer);
-      expect(after!.personaConfigVersion).toBe(currentVersion);
-      expect(after!.personaCompleteness).toBe(fresh!.personaCompleteness);
-    },
-  );
-
-  // ---------------------------------------------------------------------------------------------
-  // SF-2: trường nhạy cảm vẫn đặt được isFilterable => giá trị nhạy cảm nằm thẳng (dạng slug) trong
-  // `customers.personaFilterKeys` và dò được bằng `personaFilters`.
-  it(
-    'trường isSensitive không được đồng thời isFilterable (token lọc chứa giá trị nhạy cảm)',
-    async () => {
-      const res = await call('POST', '/crm/persona-fields', 'admin', {
-        key: 'health_filterable',
-        label: 'Sức khỏe (lọc được)',
-        groupCode: 'PERSONAL',
-        type: 'TEXT',
-        isSensitive: true,
-        isFilterable: true,
-      });
-      expect(res.status).toBe(400);
-    },
-  );
+    const after = await customerDoc(customer);
+    expect(after!.personaConfigVersion).toBe(currentVersion);
+    expect(after!.personaCompleteness).toBe(fresh!.personaCompleteness);
+  });
 
   // ---------------------------------------------------------------------------------------------
   // Ca biên thiếu ở bộ test của coder: tài liệu 04 mục 3.2.2 khẳng định job "chỉ ghi vào khách khi khách chưa bị sửa

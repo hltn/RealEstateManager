@@ -10,6 +10,11 @@ import {
   CrmAuditEntityType,
 } from '../../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../../audit-logs/crm-audit-log.service';
+import {
+  NotificationPriority,
+  NotificationType,
+} from '../../../notifications/notification.constants';
+import { NotificationsService } from '../../../notifications/notifications.service';
 
 const WINDOW_SECONDS = 3600;
 /** Nhiều truy vấn SĐT KHÁC NHAU trong 1 giờ (dò số qua ô tìm kiếm). */
@@ -33,6 +38,7 @@ export class CrmAbuseMonitorService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @InjectConnection() private readonly connection: Connection,
     private readonly audit: CrmAuditLogService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -150,6 +156,36 @@ export class CrmAbuseMonitorService {
       await this.redis.del(markerKey).catch(() => undefined);
       throw error;
     }
+    await this.notifyAdmins(userId, action, reason);
+  }
+
+  /**
+   * Đẩy cảnh báo vào hộp thông báo của mọi Quản trị đang hoạt động (M5). Chạy SAU khi audit đã commit và không bao giờ
+   * làm hỏng thao tác gốc; `dedupeKey` theo (hành động, người, giờ) nên không báo trùng dù được gọi lại.
+   */
+  private async notifyAdmins(
+    userId: string,
+    action: CrmAuditAction,
+    reason: string,
+  ): Promise<void> {
+    const user = await this.connection
+      .collection('users')
+      .findOne(
+        { _id: new Types.ObjectId(userId) },
+        { projection: { displayName: 1 } },
+      )
+      .catch(() => null);
+    const name = (user?.displayName as string | undefined) ?? 'Một người dùng';
+    await this.notifications.notifyAdmins({
+      type: NotificationType.SECURITY_ALERT,
+      title: 'Cảnh báo truy cập bất thường',
+      body: `${name}: ${reason}`,
+      priority: NotificationPriority.HIGH,
+      data: {
+        deepLink: `/crm/audit-logs?actorId=${userId}&actions=${action}`,
+      },
+      dedupeKey: `ALERT:${action}:${userId}:${Math.floor(Date.now() / (WINDOW_SECONDS * 1000))}`,
+    });
   }
 
   private async safely(

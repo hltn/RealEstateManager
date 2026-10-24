@@ -2,13 +2,14 @@ import { normalizeVietnamese } from '../common/utils/vietnamese-text.util';
 
 /**
  * Làm sạch tên thẻ để hiển thị: NFKC (chữ rộng/biến thể tương thích về dạng chuẩn), bỏ ký tự định dạng vô hình
- * (`\p{Cf}`: zero-width, đánh dấu chiều chữ...) vốn dùng để tạo thẻ "giống hệt" nhưng khác khóa, cắt đầu cuối và
- * gom khoảng trắng thừa; giữ nguyên chữ hoa/dấu.
+ * (`\p{Cf}`: zero-width, đánh dấu chiều chữ...) và các ký tự "trống nhìn thấy" không thuộc `\p{Cf}` (chữ đệm Hangul
+ * U+115F/U+1160/U+3164/U+FFA0, ô Braille trống U+2800) vốn dùng để tạo thẻ "giống hệt" hoặc thẻ nhìn như rỗng,
+ * cắt đầu cuối và gom khoảng trắng thừa; giữ nguyên chữ hoa/dấu.
  */
 export const cleanTagName = (name: string): string =>
   name
     .normalize('NFKC')
-    .replace(/\p{Cf}/gu, '')
+    .replace(/[\p{Cf}ᅟᅠㅤﾠ⠀]/gu, '')
     .trim()
     .replace(/\s+/g, ' ');
 

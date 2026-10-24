@@ -13,6 +13,8 @@ import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CustomerAccessService } from './access/customer-access.service';
 import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
 import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
+import { CustomerSchedulingAnonymizerService } from './customer-scheduling-anonymizer.service';
+import { RemindersWriterService } from '../reminders/reminders-writer.service';
 import { isAdminOrManager } from './access/customer-scope';
 import {
   ANONYMIZED_NAME,
@@ -35,19 +37,22 @@ import {
   CustomerDetailDto,
 } from './dtos/customer-response.dto';
 
+const oid = (id: string): Types.ObjectId => new Types.ObjectId(id);
+
 /** Trường trong `crm_audit_logs.changes` chứa dữ liệu cá nhân, bị ghi đè khi ẩn danh hóa (04 mục 7.3). */
 const PII_AUDIT_FIELDS = ['fullName', 'phone', 'email', 'nationalId'];
 /**
  * Trường chứa văn bản tự do (có thể có PII) khớp theo MẪU regex — module sau (M4 chân dung) chỉ cần thêm mẫu vào
  * đây. Hiện có: mô tả tiêu chí (`criteria.<key>.description`, tối đa 1000 ký tự), nhật ký chăm sóc
  * (`careLog.content`, `careLog.nextAction.suggestion`, M3), giá trị chân dung (`persona.<fieldKey>`, giá trị tự do về
- * nghề nghiệp/gia đình... — M4) và thẻ của khách (`tags`, M4).
+ * nghề nghiệp/gia đình... — M4), thẻ của khách (`tags`, M4) và lịch hẹn (`appointment.title|location|note|outcome`, M5).
  */
 export const PII_AUDIT_FIELD_PATTERNS = [
   String.raw`^criteria\..+\.description$`,
   String.raw`^careLog\.(content|nextAction\.suggestion)$`,
   String.raw`^persona\..+$`,
   String.raw`^tags$`,
+  String.raw`^appointment\.(title|location|note|outcome)$`,
 ];
 /** Mục đích xem số là danh sách đóng (VIEW/CALL/COPY) nên là `reason` duy nhất được giữ lại. */
 const KEEP_REASON_ACTIONS = ['PHONE_VIEWED'];
@@ -57,7 +62,8 @@ const KEEP_REASON_ACTIONS = ['PHONE_VIEWED'];
  * - Xóa mềm: Quản trị và Quản lý (trong phạm vi); khôi phục và ẩn danh hóa: chỉ Quản trị.
  * - Ẩn danh hóa KHÔNG hoàn tác được: ghi đè PII, giữ khung thống kê (tình trạng, nguồn, khu vực, dự án, nhóm chăm
  *   sóc, tiến độ) và tự xóa mềm; đồng thời ghi đè dữ liệu cá nhân trong `changes` của audit CỦA KHÁCH ĐÓ — đây là
- *   thao tác DUY NHẤT được sửa `crm_audit_logs`, thực hiện trong cùng transaction.
+ *   một trong HAI thao tác được sửa `crm_audit_logs` (thao tác kia là `redactPersonaFieldAudit` ở `audit-redaction.util.ts`),
+ *   thực hiện trong cùng transaction.
  */
 @Injectable()
 export class CustomerLifecycleService {
@@ -69,6 +75,8 @@ export class CustomerLifecycleService {
     private readonly customers: CustomersService,
     private readonly careData: CustomerCareAnonymizerService,
     private readonly personaData: CustomerPersonaAnonymizerService,
+    private readonly schedulingData: CustomerSchedulingAnonymizerService,
+    private readonly reminders: RemindersWriterService,
   ) {}
 
   async softDelete(
@@ -103,6 +111,8 @@ export class CustomerLifecycleService {
         },
         { session },
       );
+      // Khách đã xóa mềm thì không nhắc nữa (nhắc chưa gửi bị hủy; khôi phục sẽ dựng lại cho lịch còn hiệu lực).
+      await this.reminders.cancelForCustomer(oid(id), now, session);
       await this.audit.record(
         {
           entityType: CrmAuditEntityType.CUSTOMER,
@@ -151,6 +161,7 @@ export class CustomerLifecycleService {
         },
         { session, deleted: 'only' },
       );
+      await this.reminders.resyncCustomer(oid(dto.customerId), now, session);
       await this.audit.record(
         {
           entityType: CrmAuditEntityType.CUSTOMER,
@@ -194,6 +205,7 @@ export class CustomerLifecycleService {
         await this.overwriteAuditPii(customerId, session);
         await this.careData.anonymize(customerId, now, session);
         await this.personaData.anonymize(customerId, session);
+        await this.schedulingData.anonymize(customerId, now, session);
         await this.repo.updateOne(
           ctx.scope,
           customerId,
@@ -216,6 +228,7 @@ export class CustomerLifecycleService {
                 ? {}
                 : { deletedAt: now, deletedBy: ctx.actor.userId }),
               anonymizedAt: now,
+              nextAppointmentAt: null,
               lastUpdatedAt: now,
               lastUpdatedBy: ctx.actor.userId,
             },

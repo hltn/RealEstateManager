@@ -148,6 +148,47 @@ export class CustomersRepository {
   }
 
   /**
+   * DÀNH RIÊNG CHO WORKER/SCHEDULER (không có người gọi nên không có phạm vi): lấy một lô khách chưa xóa mềm theo
+   * điều kiện, sắp theo `_id`, tiếp từ `afterId` (duyệt cả tập lớn theo lô mà không dùng `skip`). Người nhận kết quả
+   * (thông báo...) vẫn phải được lọc theo nhóm chăm sóc HIỆN TẠI của khách.
+   */
+  findForSystemJobBatch(
+    filter: Record<string, unknown>,
+    options: {
+      projection: ProjectionType<Customer>;
+      afterId?: Types.ObjectId;
+      limit: number;
+    },
+  ): Promise<CustomerLean[]> {
+    return this.model
+      .find(
+        {
+          ...filter,
+          deletedAt: null,
+          ...(options.afterId && { _id: { $gt: options.afterId } }),
+        },
+        options.projection,
+      )
+      .sort({ _id: 1 })
+      .limit(options.limit)
+      .lean()
+      .exec();
+  }
+
+  /** DÀNH RIÊNG CHO WORKER: đọc khách theo id (chỉ khách chưa xóa mềm), không phạm vi. */
+  findForSystemJobById(
+    id: Types.ObjectId,
+    projection: ProjectionType<Customer>,
+    session?: ClientSession,
+  ): Promise<CustomerLean | null> {
+    return this.model
+      .findOne({ _id: id, deletedAt: null }, projection)
+      .session(session ?? null)
+      .lean()
+      .exec();
+  }
+
+  /**
    * NGOẠI LỆ không phạm vi: tra khách theo SĐT chuẩn hóa (kể cả đã xóa mềm) để báo trùng/tra cứu trùng.
    * Chỉ lấy field tối thiểu (không có tên, email, SĐT).
    */
@@ -175,11 +216,11 @@ export class CustomersRepository {
     session?: ClientSession,
   ): Promise<Pick<
     CustomerLean,
-    '_id' | 'careTeam' | 'deletedAt' | 'anonymizedAt'
+    '_id' | 'careTeam' | 'teamIds' | 'deletedAt' | 'anonymizedAt'
   > | null> {
     const query = this.model
       .findOne({ _id: new Types.ObjectId(String(id)) })
-      .select('careTeam deletedAt anonymizedAt');
+      .select('careTeam teamIds deletedAt anonymizedAt');
     if (session) query.session(session);
     return query.lean().exec();
   }

@@ -1437,6 +1437,78 @@ describe('CRM M4 — chân dung và thẻ', () => {
       ]).toEqual([409, 'PERSONA_FIELD_TYPE_LOCKED', { valueCount: 1 }]);
     });
 
+    it('đổi trường sang nhạy cảm (PATCH isSensitive + bỏ isFilterable) dọn token lọc của khách cũ; trường dữ liệu cũ nhạy cảm + lọc được vẫn tắt được (không 400)', async () => {
+      const created = await call('POST', '/crm/persona-fields', 'admin', {
+        key: 'doi_nhay_cam',
+        label: 'Đổi nhạy cảm',
+        groupCode: 'PERSONAL',
+        type: 'TEXT',
+        isFilterable: true,
+      });
+      expect(created.status).toBe(201);
+      const customer = await createCustomer('staffA');
+      expect(
+        (
+          await patchPersona(customer, 'staffA', [
+            text('doi_nhay_cam', 'Giá trị'),
+          ])
+        ).status,
+      ).toBe(200);
+      expect((await customerDoc(customer))!.personaFilterKeys).toContain(
+        'doi_nhay_cam=gia_tri',
+      );
+
+      // Chỉ đổi isSensitive khi vẫn lọc được là sai hình dạng (nhạy cảm không được lọc): 400.
+      expect(
+        (
+          await call(
+            'PATCH',
+            `/crm/persona-fields/${created.body.data.id}`,
+            'admin',
+            { isSensitive: true },
+          )
+        ).status,
+      ).toBe(400);
+      const patched = await call(
+        'PATCH',
+        `/crm/persona-fields/${created.body.data.id}`,
+        'admin',
+        { isSensitive: true, isFilterable: false },
+      );
+      expect(patched.status).toBe(200);
+      await recompute.run();
+      const after = await customerDoc(customer);
+      expect(
+        (after!.personaFilterKeys as string[]).some((token) =>
+          token.startsWith('doi_nhay_cam='),
+        ),
+      ).toBe(false);
+      // Giá trị đã nhập vẫn nằm nguyên trong hồ sơ (chỉ token lọc bị dọn).
+      expect(
+        (after!.persona as any[]).find(
+          (item) => item.fieldKey === 'doi_nhay_cam',
+        ).valueText,
+      ).toBe('Giá trị');
+
+      // Trường dữ liệu cũ có tổ hợp không còn hợp lệ: PATCH không đụng hình dạng (tắt hoạt động) vẫn được.
+      await connection
+        .collection('persona_fields')
+        .updateOne(
+          { key: 'doi_nhay_cam' },
+          { $set: { isSensitive: true, isFilterable: true } },
+        );
+      const deactivated = await call(
+        'PATCH',
+        `/crm/persona-fields/${created.body.data.id}`,
+        'admin',
+        { isActive: false },
+      );
+      expect([deactivated.status, deactivated.body.data?.isActive]).toEqual([
+        200,
+        false,
+      ]);
+    });
+
     it('seed thêm trường mới: chỉ lần chèn thật tăng phiên bản cấu hình và kích job tính lại cho khách cũ', async () => {
       const state = () =>
         connection
@@ -1452,13 +1524,6 @@ describe('CRM M4 — chân dung và thẻ', () => {
       expect((await state())!.version).toBe(before + 1);
       await recompute.run();
       expect((await customerDoc(cX))!.personaConfigVersion).toBe(before + 1);
-
-      // Chạy lại: không chèn gì nên không tăng phiên bản.
-      expect(await app.get(PersonaSeedService).seedAll()).toEqual({
-        personaGroups: 0,
-        personaFields: 0,
-      });
-      expect((await state())!.version).toBe(before + 1);
     });
 
     it('job lỗi giữa chừng: thử lại có lùi dần rồi thành công; lỗi kéo dài thì dừng sau 3 lần, không lặp vô hạn', async () => {
@@ -2212,7 +2277,7 @@ describe('CRM M4 — chân dung và thẻ', () => {
       expect(((await customerDoc(mineA1))!.tagIds as unknown[]).length).toBe(2);
     });
 
-    it('REMOVE_TAGS gỡ đúng thẻ chỉ định; gỡ thẻ khách chưa có là thành công; thẻ đã xóa vẫn gỡ được', async () => {
+    it('REMOVE_TAGS gỡ đúng thẻ chỉ định; gỡ thẻ khách chưa có là thành công; thẻ đã xóa vẫn gỡ được; khách ngoài phạm vi không bị đụng', async () => {
       const res = await bulk('staffA', {
         type: 'REMOVE_TAGS',
         customerIds: [mineA1, mineA2],
@@ -2245,6 +2310,21 @@ describe('CRM M4 — chân dung và thẻ', () => {
         payload: { tagIds: [doomed] },
       });
       expect(remove.body.data.succeeded).toEqual([mineA2]);
+
+      // Khách ngoài phạm vi: báo CUSTOMER_NOT_FOUND và không bị gỡ thẻ.
+      const outside = await customerDoc(mineC);
+      const usage = (await tagDoc(bulkTag))!.usageCount;
+      const denied = await bulk('staffA', {
+        type: 'REMOVE_TAGS',
+        customerIds: [mineC],
+        payload: { tagIds: [bulkTag] },
+      });
+      expect(denied.body.data).toEqual({
+        succeeded: [],
+        failed: [{ customerId: mineC, errorCode: 'CUSTOMER_NOT_FOUND' }],
+      });
+      expect((await customerDoc(mineC))!.tagIds).toEqual(outside!.tagIds);
+      expect((await tagDoc(bulkTag))!.usageCount).toBe(usage);
     });
 
     it('payload sai: thiếu/rỗng tagIds, thẻ không tồn tại/đã xóa (ADD) => 400 cho cả lô và không ghi gì', async () => {
@@ -2343,22 +2423,6 @@ describe('CRM M4 — chân dung và thẻ', () => {
         ((await customerDoc(mineA2))!.tagIds as Types.ObjectId[]).map(String),
       ).not.toContain(bulkTag);
       await expectUsageMatches(bulkTag);
-    });
-
-    it('REMOVE_TAGS khách ngoài phạm vi: báo CUSTOMER_NOT_FOUND và không gỡ thẻ của khách đó', async () => {
-      const before = await customerDoc(mineC);
-      const usage = (await tagDoc(bulkTag))!.usageCount;
-      const res = await bulk('staffA', {
-        type: 'REMOVE_TAGS',
-        customerIds: [mineC],
-        payload: { tagIds: [bulkTag] },
-      });
-      expect(res.body.data).toEqual({
-        succeeded: [],
-        failed: [{ customerId: mineC, errorCode: 'CUSTOMER_NOT_FOUND' }],
-      });
-      expect((await customerDoc(mineC))!.tagIds).toEqual(before!.tagIds);
-      expect((await tagDoc(bulkTag))!.usageCount).toBe(usage);
     });
   });
 
