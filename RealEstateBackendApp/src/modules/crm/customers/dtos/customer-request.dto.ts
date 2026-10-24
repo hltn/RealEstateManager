@@ -28,6 +28,7 @@ import {
   CUSTOMER_REASON_MAX_LENGTH,
   PhoneViewPurpose,
 } from '../customer.constants';
+import { MAX_TAGS_PER_CUSTOMER } from '../../tags/tag.constants';
 
 const MAX_PROJECTS_PER_CUSTOMER = 20;
 const MAX_CARE_MEMBERS_ON_CREATE = 20;
@@ -161,6 +162,16 @@ export class CreateCustomerDto {
   areaId?: string | null;
 
   @ApiPropertyOptional({
+    type: [String],
+    description: 'Thẻ sở thích/nghề nghiệp (id của /crm/tags)',
+  })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_TAGS_PER_CUSTOMER)
+  @IsMongoId({ each: true })
+  tagIds?: string[];
+
+  @ApiPropertyOptional({
     description: 'CCCD 9 hoặc 12 chữ số; được mã hóa AES-256-GCM',
   })
   @IsOptional()
@@ -241,6 +252,17 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsMongoId()
   areaId?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Danh sách thẻ MONG MUỐN (thay thế toàn bộ); vắng mặt = giữ nguyên',
+  })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_TAGS_PER_CUSTOMER)
+  @IsMongoId({ each: true })
+  tagIds?: string[];
 }
 
 export class ChangeStatusDto {

@@ -20,6 +20,7 @@ import {
 import { CrmAbuseMonitorService } from '../common/security/crm-abuse-monitor.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { parseSort } from '../common/utils/sort-parser.util';
+import { buildPersonaFilterConditions } from '../persona/persona.rules';
 import { CustomerAccessService } from './access/customer-access.service';
 import {
   collectRefIds,
@@ -197,7 +198,8 @@ export class CustomerListService {
   }
 
   /**
-   * Dựng điều kiện lọc (chưa gồm phạm vi/xóa mềm — repository gộp). Bộ lọc thẻ/chân dung thuộc M4.
+   * Dựng điều kiện lọc (chưa gồm phạm vi/xóa mềm — repository gộp). Thẻ: khách gắn bất kỳ thẻ nào trong `tagIds`;
+   * chân dung: `occupation` + `personaFilters` (xem `buildPersonaFilterConditions`).
    * `areaIds` gồm cả khu vực con (qua `ancestorIds`).
    */
   private async buildFilter(
@@ -225,6 +227,15 @@ export class CustomerListService {
         areaId: { $in: await this.expandAreas(query.areaIds) },
       });
     }
+    if (query.tagIds?.length) {
+      conditions.push({ tagIds: { $in: toObjectIds(query.tagIds) } });
+    }
+    conditions.push(
+      ...buildPersonaFilterConditions({
+        occupation: query.occupation,
+        personaFilters: query.personaFilters,
+      }),
+    );
     if (query.assigneeIds?.length) {
       conditions.push({
         'careTeam.userId': { $in: toObjectIds(query.assigneeIds) },

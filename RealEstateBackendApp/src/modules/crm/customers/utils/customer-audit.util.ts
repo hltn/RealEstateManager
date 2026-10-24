@@ -10,6 +10,7 @@ export interface ProfileSnapshot {
   sourceId: Types.ObjectId | null;
   areaId: Types.ObjectId | null;
   interestedProjectIds: Types.ObjectId[];
+  tagIds: Types.ObjectId[];
 }
 
 export const EMPTY_PROFILE: ProfileSnapshot = {
@@ -19,6 +20,7 @@ export const EMPTY_PROFILE: ProfileSnapshot = {
   sourceId: null,
   areaId: null,
   interestedProjectIds: [],
+  tagIds: [],
 };
 
 const sameIds = (a: Types.ObjectId[], b: Types.ObjectId[]): boolean =>
@@ -77,6 +79,15 @@ export const buildProfileChanges = (
       field: 'projects',
       from: labels(before.interestedProjectIds),
       to: labels(after.interestedProjectIds),
+    });
+  }
+  if (!sameIds(before.tagIds, after.tagIds)) {
+    const labels = (ids: Types.ObjectId[]) =>
+      ids.map((id) => refs.tags.get(String(id)) ?? String(id));
+    changes.push({
+      field: 'tags',
+      from: labels(before.tagIds),
+      to: labels(after.tagIds),
     });
   }
   return changes;

@@ -22,16 +22,19 @@ import { ToBoolean } from '../../../../common/decorators/to-boolean.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination-query.dto';
 import { CrmAuditEntityType } from '../../audit-logs/crm-audit.constants';
+import { PERSONA_FILTER_MAX_VALUES } from '../../persona/persona.constants';
 import { CUSTOMER_LIST_TABS } from '../customer.constants';
 import type { CustomerListTab } from '../customer.constants';
 
 const MAX_FILTER_VALUES = 50;
+/** `fieldKey:value` — fieldKey là slug trường chân dung, value tối đa 100 ký tự. */
+const PERSONA_FILTER_PATTERN = /^[a-z][a-z0-9_]{0,39}:.{1,100}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_MESSAGE = 'Ngày phải theo định dạng YYYY-MM-DD (giờ Việt Nam)';
 
 /**
  * Bộ lọc chung của danh sách khách và `list-counts` (tài liệu 05 mục 2.3). Lọc nhiều giá trị: chuỗi phân tách
- * dấu phẩy, tối đa 50. Bộ lọc theo thẻ/chân dung (`tagIds`, `occupation`, `personaFilters`) thuộc M4.
+ * dấu phẩy, tối đa 50. Bộ lọc theo thẻ/chân dung: `tagIds`, `occupation`, `personaFilters` (M4).
  */
 export class CustomerFilterQueryDto {
   @ApiPropertyOptional({
@@ -81,6 +84,45 @@ export class CustomerFilterQueryDto {
   @ArrayMaxSize(MAX_FILTER_VALUES)
   @IsMongoId({ each: true })
   areaIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Thẻ (id của /crm/tags): khách gắn BẤT KỲ thẻ nào trong danh sách',
+  })
+  @IsOptional()
+  @CsvList()
+  @IsArray()
+  @ArrayMaxSize(MAX_FILTER_VALUES)
+  @IsMongoId({ each: true })
+  tagIds?: string[];
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    description:
+      'Nghề nghiệp: khớp tiền tố không dấu, không phân biệt hoa thường ("ke toan" ra cả "Kế toán trưởng")',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(100)
+  occupation?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['property_type:APARTMENT', 'loan_support:true'],
+    description:
+      'Lọc theo chân dung `fieldKey:value` (chỉ trường isFilterable): cùng fieldKey là HOẶC, khác fieldKey là VÀ',
+  })
+  @IsOptional()
+  @CsvList()
+  @IsArray()
+  @ArrayMaxSize(PERSONA_FILTER_MAX_VALUES)
+  @Matches(PERSONA_FILTER_PATTERN, {
+    each: true,
+    message: 'personaFilters phải có dạng fieldKey:value',
+  })
+  personaFilters?: string[];
 
   @ApiPropertyOptional({
     type: [String],

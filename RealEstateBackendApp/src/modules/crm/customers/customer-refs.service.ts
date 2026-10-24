@@ -16,6 +16,7 @@ import {
   CustomerStatusDocument,
 } from '../catalogs/schemas/customer-status.schema';
 import { Project, ProjectDocument } from '../projects/schemas/project.schema';
+import { Tag, TagDocument } from '../tags/schemas/tag.schema';
 import { StatusRefDto } from './dtos/customer-response.dto';
 
 /** Các tham chiếu danh mục mà một thao tác muốn GÁN mới cho khách. */
@@ -35,6 +36,8 @@ export interface RefIds {
   areaIds?: Array<Types.ObjectId | null | undefined>;
   projectIds?: Array<Types.ObjectId | null | undefined>;
   contactResultIds?: Array<Types.ObjectId | null | undefined>;
+  /** Thẻ (M4): thẻ đã xóa mềm không có nhãn, mapper bỏ qua. */
+  tagIds?: Array<Types.ObjectId | null | undefined>;
   userIds?: Array<Types.ObjectId | null | undefined>;
 }
 
@@ -44,6 +47,8 @@ export interface RefMaps {
   areas: Map<string, string>;
   projects: Map<string, string>;
   contactResults: Map<string, string>;
+  /** Chỉ chứa thẻ CHƯA xóa mềm. */
+  tags: Map<string, string>;
   users: Map<string, string>;
 }
 
@@ -76,6 +81,7 @@ export class CustomerRefsService {
     @InjectModel(Project.name)
     private readonly projectModel: Model<ProjectDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(Tag.name) private readonly tagModel: Model<TagDocument>,
   ) {}
 
   /** Tình trạng mặc định (isDefault, đang hoạt động) — dùng khi tạo khách không chọn tình trạng. */
@@ -172,9 +178,10 @@ export class CustomerRefsService {
     const areaIds = unique(ids.areaIds);
     const projectIds = unique(ids.projectIds);
     const contactResultIds = unique(ids.contactResultIds);
+    const tagIds = unique(ids.tagIds);
     const userIds = unique(ids.userIds);
 
-    const [statuses, sources, areas, projects, contactResults, users] =
+    const [statuses, sources, areas, projects, contactResults, tags, users] =
       await Promise.all([
         statusIds.length
           ? this.statusModel
@@ -208,6 +215,13 @@ export class CustomerRefsService {
           ? this.catalogModel
               .find({ _id: { $in: contactResultIds } })
               .select('label')
+              .lean()
+              .exec()
+          : [],
+        tagIds.length
+          ? this.tagModel
+              .find({ _id: { $in: tagIds }, deletedAt: null })
+              .select('name')
               .lean()
               .exec()
           : [],
@@ -253,6 +267,9 @@ export class CustomerRefsService {
         contactResults.map(
           (item) => [item._id, item.label] as [Types.ObjectId, string],
         ),
+      ),
+      tags: toLabelMap(
+        tags.map((item) => [item._id, item.name] as [Types.ObjectId, string]),
       ),
       users: toLabelMap(
         users.map(

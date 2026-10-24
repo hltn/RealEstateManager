@@ -64,7 +64,7 @@ export class CustomerListItemDto {
   @ApiProperty({ nullable: true, type: RefDto }) source: RefDto | null;
   @ApiProperty({ type: [RefDto] }) projects: RefDto[];
   @ApiProperty({ nullable: true, type: RefDto }) area: RefDto | null;
-  @ApiProperty({ type: [RefDto], description: 'Thẻ (M4): hiện luôn rỗng' })
+  @ApiProperty({ type: [RefDto], description: 'Thẻ sở thích/nghề nghiệp' })
   tags: RefDto[];
   @ApiProperty({ enum: [0, 25, 50, 75, 100] }) progress: number;
   @ApiProperty({ type: CriteriaDoneDto }) criteriaDone: CriteriaDoneDto;

@@ -6,6 +6,7 @@ import {
   ConsentStatus,
   CreatedVia,
 } from '../customer.constants';
+import { PersonaSource } from '../../persona/persona.constants';
 
 /** Một tiêu chí đánh giá (Nhu cầu / Động cơ / Tài chính / Thời gian). */
 @Schema({ _id: false })
@@ -97,6 +98,57 @@ export class NationalIdCipher {
 }
 const NationalIdCipherSchema = SchemaFactory.createForClass(NationalIdCipher);
 
+/** Một giá trị chân dung của khách (tài liệu 04 mục 3.2.2); chỉ các `value*` hợp với kiểu trường mới có mặt. */
+@Schema({ _id: false })
+export class PersonaValueEmbedded {
+  @Prop({ required: true })
+  fieldKey: string;
+
+  @Prop({ type: String })
+  valueText?: string;
+
+  @Prop({ type: Number })
+  valueNumber?: number;
+
+  @Prop({ type: Number })
+  valueNumberTo?: number;
+
+  @Prop({ type: String })
+  valueDate?: string;
+
+  @Prop({ type: [String], default: undefined })
+  valueOptions?: string[];
+
+  @Prop({ type: Boolean })
+  valueBoolean?: boolean;
+
+  @Prop({ type: String, enum: Object.values(PersonaSource), required: true })
+  source: PersonaSource;
+
+  @Prop({ type: Types.ObjectId, required: true })
+  updatedBy: Types.ObjectId;
+
+  @Prop({ type: Date, required: true })
+  updatedAt: Date;
+}
+const PersonaValueSchema = SchemaFactory.createForClass(PersonaValueEmbedded);
+
+@Schema({ _id: false })
+export class CustomerOccasion {
+  @Prop({ required: true })
+  fieldKey: string;
+
+  @Prop({ required: true })
+  month: number;
+
+  @Prop({ required: true })
+  day: number;
+
+  @Prop({ required: true })
+  year: number;
+}
+const OccasionSchema = SchemaFactory.createForClass(CustomerOccasion);
+
 /**
  * Khách hàng (`customers`, tài liệu 04 mục 3.2) — collection trung tâm của CRM.
  *
@@ -167,9 +219,30 @@ export class Customer {
   @Prop({ type: [Types.ObjectId], default: [] })
   teamIds: Types.ObjectId[];
 
-  /** M4. */
+  /**
+   * Chân dung động (M4, attribute pattern): mỗi phần tử là giá trị của một trường `persona_fields` kèm nguồn,
+   * người và ngày cập nhật (QT9). Giá trị của trường bị tắt/xóa mềm vẫn được giữ nguyên.
+   */
+  @Prop({ type: [PersonaValueSchema], default: [] })
+  persona: PersonaValueEmbedded[];
+
+  /** Token lọc suy ra từ `persona` (chỉ trường `isFilterable` đang hoạt động), vd `occupation=ke_toan`. */
+  @Prop({ type: [String], default: [] })
+  personaFilterKeys: string[];
+
+  /** Dịp đặc biệt suy ra từ trường DATE `isOccasion` (sinh nhật, kỷ niệm) để scheduler M5 quét theo ngày. */
+  @Prop({ type: [OccasionSchema], default: [] })
+  occasions: CustomerOccasion[];
+
   @Prop({ default: 0 })
   personaCompleteness: number;
+
+  /**
+   * Phiên bản cấu hình trường mà `personaCompleteness`/`personaFilterKeys`/`occasions` được tính theo. Nhỏ hơn
+   * phiên bản hiện hành = cần tính lại (job nền của `PersonaRecomputeService` xử lý, kể cả sau khi khởi động lại).
+   */
+  @Prop({ default: 0 })
+  personaConfigVersion: number;
 
   @Prop({ type: DataConsentSchema, default: () => ({}) })
   dataConsent: DataConsent;
@@ -236,6 +309,16 @@ CustomerSchema.index({ primaryAssigneeId: 1, statusId: 1 });
 CustomerSchema.index({ sourceId: 1 });
 CustomerSchema.index({ interestedProjectIds: 1 });
 CustomerSchema.index({ areaId: 1 });
+// Lọc theo thẻ / chân dung (M4).
+CustomerSchema.index({ tagIds: 1 });
+CustomerSchema.index({ personaFilterKeys: 1 });
+// Job tính lại chân dung tìm khách có dấu phiên bản cấu hình cũ (SF-1).
+CustomerSchema.index({ personaConfigVersion: 1 });
+// Quét sinh nhật/kỷ niệm hằng ngày (C13, scheduler M5).
+CustomerSchema.index(
+  { 'occasions.month': 1, 'occasions.day': 1 },
+  { partialFilterExpression: { deletedAt: null } },
+);
 CustomerSchema.index({ progress: 1 });
 CustomerSchema.index({ nextAppointmentAt: 1 });
 // Sort tên đúng thứ tự tiếng Việt (query sort tên phải truyền cùng collation).

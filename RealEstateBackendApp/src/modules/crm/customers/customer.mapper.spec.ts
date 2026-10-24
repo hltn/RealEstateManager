@@ -15,6 +15,7 @@ const refs: RefMaps = {
   areas: new Map(),
   projects: new Map(),
   contactResults: new Map(),
+  tags: new Map(),
   users: new Map(),
 };
 const me = new Types.ObjectId();
@@ -105,6 +106,25 @@ describe('audit changes của hồ sơ', () => {
     );
     expect(changes).toEqual([
       { field: 'phone', from: '+84912345678', to: '+84988888888' },
+    ]);
+  });
+});
+
+describe('thẻ trên list item', () => {
+  const liveTag = new Types.ObjectId();
+  const deletedTag = new Types.ObjectId();
+  const withTags = {
+    ...doc,
+    tagIds: [liveTag, deletedTag],
+  } as unknown as CustomerLean;
+  const refsWithTag: RefMaps = {
+    ...refs,
+    tags: new Map([[String(liveTag), 'Golf']]),
+  };
+
+  it('chỉ hiện thẻ còn hoạt động (thẻ đã xóa/gộp không có nhãn thì bị bỏ qua)', () => {
+    expect(toListItem(withTags, refsWithTag).tags).toEqual([
+      { id: String(liveTag), label: 'Golf' },
     ]);
   });
 });

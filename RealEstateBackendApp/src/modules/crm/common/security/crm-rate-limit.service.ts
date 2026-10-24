@@ -21,6 +21,8 @@ export const RATE_LIMITS = {
   BULK_OPERATION: { limit: 10, windowMs: 60_000 },
   /** Đề nghị tham gia nhóm chăm sóc: 20 lần/phút/người (chống spam người duyệt). */
   JOIN_REQUEST: { limit: 20, windowMs: 60_000 },
+  /** Tạo thẻ mới: 30 lần/phút/người (mọi vai trò được tạo thẻ, chống làm rác danh sách thẻ). */
+  TAG_CREATE: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Cửa sổ gộp lượt tìm kiếm trùng từ khóa (list + list-counts + đổi trang). */

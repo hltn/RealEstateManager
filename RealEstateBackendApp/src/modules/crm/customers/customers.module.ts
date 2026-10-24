@@ -23,6 +23,7 @@ import { PiiCryptoModule } from '../common/crypto/pii-crypto.module';
 import { CrmSecurityModule } from '../common/security/crm-security.module';
 import { CrmSettingsModule } from '../crm-settings/crm-settings.module';
 import { ProjectsModule } from '../projects/projects.module';
+import { Tag, TagSchema } from '../tags/schemas/tag.schema';
 import { CustomerAccessService } from './access/customer-access.service';
 import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
 import { CustomerCriteriaService } from './customer-criteria.service';
@@ -31,11 +32,13 @@ import { CustomerHistoriesService } from './customer-histories.service';
 import { CustomerLifecycleController } from './customer-lifecycle.controller';
 import { CustomerLifecycleService } from './customer-lifecycle.service';
 import { CustomerListService } from './customer-list.service';
+import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
 import { CustomerNationalIdService } from './customer-national-id.service';
 import { CustomerPhoneService } from './customer-phone.service';
 import { CustomerRefsService } from './customer-refs.service';
 import { CustomerSensitiveDataController } from './customer-sensitive-data.controller';
 import { CustomerStatusChangeService } from './customer-status-change.service';
+import { CustomerTagsService } from './customer-tags.service';
 import { CustomerTeamSyncModule } from './customer-team-sync.module';
 import { CustomersController } from './customers.controller';
 import { CustomersRepository } from './customers.repository';
@@ -53,6 +56,8 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
       { name: CareTeamRequest.name, schema: CareTeamRequestSchema },
       { name: CareLog.name, schema: CareLogSchema },
       { name: CrmAttachment.name, schema: CrmAttachmentSchema },
+      // Thẻ gắn cho khách (M4): kiểm thẻ còn hoạt động, dịch nhãn, giữ `usageCount`, dọn khi ẩn danh hóa.
+      { name: Tag.name, schema: TagSchema },
     ]),
     // Model danh mục/dự án (CustomerStatus, CatalogItem, Area, Project) để dịch nhãn và khóa ghi.
     CatalogsModule,
@@ -85,12 +90,15 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerLifecycleService,
     CustomerHistoriesService,
     CustomerCareAnonymizerService,
+    CustomerTagsService,
+    CustomerPersonaAnonymizerService,
   ],
   exports: [
     CustomersRepository,
     CustomerAccessService,
     CustomerRefsService,
     CustomerStatusChangeService,
+    CustomerTagsService,
   ],
 })
 export class CustomersModule {}

@@ -19,6 +19,8 @@ export enum CrmAuditEntityType {
   USER = 'USER',
   /** Thêm ở M3: đề nghị tham gia nhóm chăm sóc. */
   CARE_TEAM_REQUEST = 'CARE_TEAM_REQUEST',
+  /** Thêm ở M4: thẻ sở thích/nghề nghiệp. */
+  TAG = 'TAG',
 }
 
 /** Hành động audit thuộc phạm vi M1 (danh mục, dự án, nhóm, cài đặt). */
@@ -68,6 +70,17 @@ export enum CrmAuditAction {
   CARE_LOG_DELETED = 'CARE_LOG_DELETED',
   ATTACHMENT_UPLOADED = 'ATTACHMENT_UPLOADED',
   ATTACHMENT_REMOVED = 'ATTACHMENT_REMOVED',
+  // --- M4: chân dung và thẻ (tài liệu 04 mục 3.7.1) ---
+  PERSONA_UPDATED = 'PERSONA_UPDATED',
+  TAGS_UPDATED = 'TAGS_UPDATED',
+  PERSONA_FIELD_CREATED = 'PERSONA_FIELD_CREATED',
+  PERSONA_FIELD_UPDATED = 'PERSONA_FIELD_UPDATED',
+  PERSONA_FIELD_DELETED = 'PERSONA_FIELD_DELETED',
+  PERSONA_FIELDS_REORDERED = 'PERSONA_FIELDS_REORDERED',
+  TAG_CREATED = 'TAG_CREATED',
+  TAG_UPDATED = 'TAG_UPDATED',
+  TAG_MERGED = 'TAG_MERGED',
+  TAG_DELETED = 'TAG_DELETED',
 }
 
 export type CrmAuditSource = 'WEB' | 'MOBILE' | 'IMPORT' | 'SYSTEM';

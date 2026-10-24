@@ -21,7 +21,7 @@ import { maskNationalId } from './utils/customer-rules.util';
 
 /** Field cần đọc để dựng list item (KHÔNG gồm nationalId, searchText). */
 export const LIST_PROJECTION =
-  'fullName phone statusId sourceId interestedProjectIds areaId progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt';
+  'fullName phone statusId sourceId interestedProjectIds areaId tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt';
 
 const iso = (date: Date | null | undefined): string | null =>
   date ? new Date(date).toISOString() : null;
@@ -32,6 +32,7 @@ export const collectRefIds = (docs: CustomerLean[]): RefIds => ({
   sourceIds: docs.map((doc) => doc.sourceId),
   areaIds: docs.map((doc) => doc.areaId),
   projectIds: docs.flatMap((doc) => doc.interestedProjectIds ?? []),
+  tagIds: docs.flatMap((doc) => doc.tagIds ?? []),
   userIds: docs.flatMap((doc) => [
     doc.primaryAssigneeId,
     doc.lastUpdatedBy,
@@ -67,7 +68,11 @@ export const toListItem = (
     (id) => toRef(id, refs.projects)!,
   ),
   area: toRef(doc.areaId, refs.areas),
-  tags: [],
+  tags: (doc.tagIds ?? []).flatMap((id) => {
+    const ref = toRef(id, refs.tags);
+    // Thẻ đã xóa mềm không có nhãn trong `refs.tags` => không hiện.
+    return ref && refs.tags.has(ref.id) ? [ref] : [];
+  }),
   progress: doc.progress ?? 0,
   criteriaDone: criteriaDone(doc),
   primaryAssignee: toUserRef(doc.primaryAssigneeId, refs.users),

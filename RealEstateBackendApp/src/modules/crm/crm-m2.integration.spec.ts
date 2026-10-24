@@ -485,7 +485,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(bad.body.errorCode).toBe('INVALID_PHONE');
       for (const body of [
         { fullName: 'A', phone: nextPhone(), email: 'khong-phai-email' },
-        { fullName: 'A', phone: nextPhone(), tagIds: [] },
+        { fullName: 'A', phone: nextPhone(), tagIds: ['khong-phai-id'] },
         { fullName: 'A', phone: nextPhone(), customerCode: 'X1' },
       ]) {
         expect(

@@ -19,6 +19,7 @@ import {
   resolveClientSource,
 } from '../customers/customer.errors';
 import { CustomerStatusChangeService } from '../customers/customer-status-change.service';
+import { BulkTaggingService } from './bulk-tagging.service';
 import {
   BulkOperationDto,
   BulkOperationPayloadDto,
@@ -64,6 +65,7 @@ export class BulkOperationsService {
     private readonly access: CustomerAccessService,
     private readonly statusChanges: CustomerStatusChangeService,
     private readonly careTeam: CareTeamService,
+    private readonly tagging: BulkTaggingService,
     private readonly rateLimit: CrmRateLimitService,
   ) {}
 
@@ -75,7 +77,7 @@ export class BulkOperationsService {
     await this.rateLimit.consume(jwt.sub, 'BULK_OPERATION');
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
-    const apply = this.buildApplier(ctx, dto, auditSource);
+    const apply = await this.buildApplier(ctx, dto, auditSource);
 
     const result: BulkOperationResponseDto = { succeeded: [], failed: [] };
     for (const customerId of dto.customerIds) {
@@ -98,11 +100,11 @@ export class BulkOperationsService {
   }
 
   /** Kiểm quyền + payload theo loại thao tác (400/403 cho cả lô) rồi trả hàm xử lý MỘT khách trong transaction. */
-  private buildApplier(
+  private async buildApplier(
     ctx: AccessContext,
     dto: BulkOperationDto,
     source: CrmAuditSource,
-  ): (customerId: string, session: ClientSession) => Promise<unknown> {
+  ): Promise<(customerId: string, session: ClientSession) => Promise<unknown>> {
     const { payload } = dto;
     switch (dto.type) {
       case BulkOperationType.CHANGE_STATUS: {
@@ -125,12 +127,33 @@ export class BulkOperationsService {
       case BulkOperationType.ASSIGN:
         return this.buildAssign(ctx, payload, source);
       default:
-        // ADD_TAGS / REMOVE_TAGS: thẻ thuộc M4.
-        throw validationFailed(
-          'Gắn/gỡ thẻ hàng loạt chưa khả dụng (thẻ thuộc milestone sau)',
-          { type: dto.type },
-        );
+        return this.buildTagging(ctx, dto, source);
     }
+  }
+
+  /** ADD_TAGS / REMOVE_TAGS: cần `payload.tagIds`; thẻ gắn thêm phải còn tồn tại (400 cho cả lô). */
+  private async buildTagging(
+    ctx: AccessContext,
+    dto: BulkOperationDto,
+    source: CrmAuditSource,
+  ) {
+    const tagIds = (dto.payload.tagIds ?? []).map(oid);
+    if (tagIds.length === 0) {
+      throw validationFailed(`${dto.type} cần payload.tagIds`, {
+        field: 'payload.tagIds',
+      });
+    }
+    const mode = dto.type === BulkOperationType.ADD_TAGS ? 'ADD' : 'REMOVE';
+    await this.tagging.prepare(mode, tagIds);
+    return (customerId: string, session: ClientSession) =>
+      this.tagging.applyToCustomer(
+        ctx,
+        customerId,
+        mode,
+        tagIds,
+        source,
+        session,
+      );
   }
 
   private buildAssign(

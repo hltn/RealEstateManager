@@ -12,6 +12,7 @@ import {
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CustomerAccessService } from './access/customer-access.service';
 import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
+import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
 import { isAdminOrManager } from './access/customer-scope';
 import {
   ANONYMIZED_NAME,
@@ -38,12 +39,15 @@ import {
 const PII_AUDIT_FIELDS = ['fullName', 'phone', 'email', 'nationalId'];
 /**
  * Trường chứa văn bản tự do (có thể có PII) khớp theo MẪU regex — module sau (M4 chân dung) chỉ cần thêm mẫu vào
- * đây. Hiện có: mô tả tiêu chí (`criteria.<key>.description`, tối đa 1000 ký tự) và nhật ký chăm sóc
- * (`careLog.content`, `careLog.nextAction.suggestion`, M3).
+ * đây. Hiện có: mô tả tiêu chí (`criteria.<key>.description`, tối đa 1000 ký tự), nhật ký chăm sóc
+ * (`careLog.content`, `careLog.nextAction.suggestion`, M3), giá trị chân dung (`persona.<fieldKey>`, giá trị tự do về
+ * nghề nghiệp/gia đình... — M4) và thẻ của khách (`tags`, M4).
  */
 export const PII_AUDIT_FIELD_PATTERNS = [
   String.raw`^criteria\..+\.description$`,
   String.raw`^careLog\.(content|nextAction\.suggestion)$`,
+  String.raw`^persona\..+$`,
+  String.raw`^tags$`,
 ];
 /** Mục đích xem số là danh sách đóng (VIEW/CALL/COPY) nên là `reason` duy nhất được giữ lại. */
 const KEEP_REASON_ACTIONS = ['PHONE_VIEWED'];
@@ -64,6 +68,7 @@ export class CustomerLifecycleService {
     private readonly audit: CrmAuditLogService,
     private readonly customers: CustomersService,
     private readonly careData: CustomerCareAnonymizerService,
+    private readonly personaData: CustomerPersonaAnonymizerService,
   ) {}
 
   async softDelete(
@@ -188,6 +193,7 @@ export class CustomerLifecycleService {
         const now = new Date();
         await this.overwriteAuditPii(customerId, session);
         await this.careData.anonymize(customerId, now, session);
+        await this.personaData.anonymize(customerId, session);
         await this.repo.updateOne(
           ctx.scope,
           customerId,

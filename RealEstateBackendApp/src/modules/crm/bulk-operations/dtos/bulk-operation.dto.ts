@@ -18,9 +18,9 @@ const MAX_MEMBERS = 20;
 
 export enum BulkOperationType {
   CHANGE_STATUS = 'CHANGE_STATUS',
-  /** Thuộc M4 (thẻ): chưa khả dụng, gửi lên sẽ nhận 400. */
+  /** Gắn thẻ (M4): bỏ qua khách đã có thẻ. */
   ADD_TAGS = 'ADD_TAGS',
-  /** Thuộc M4 (thẻ): chưa khả dụng, gửi lên sẽ nhận 400. */
+  /** Gỡ thẻ (M4): bỏ qua khách chưa có thẻ. */
   REMOVE_TAGS = 'REMOVE_TAGS',
   ASSIGN = 'ASSIGN',
 }
@@ -33,7 +33,7 @@ export class BulkOperationPayloadDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'ADD_TAGS/REMOVE_TAGS (M4, chưa khả dụng)',
+    description: 'ADD_TAGS/REMOVE_TAGS: thẻ cần gắn/gỡ (bắt buộc, tối đa 50)',
   })
   @OptionalNotNull()
   @ArrayMaxSize(MAX_TAGS)

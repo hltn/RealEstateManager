@@ -32,6 +32,7 @@ import {
 } from './customer.errors';
 import { collectRefIds, toDetail } from './customer.mapper';
 import { CustomerPhoneService } from './customer-phone.service';
+import { CustomerTagsService } from './customer-tags.service';
 import { CustomerRefsService, RefMaps } from './customer-refs.service';
 import { CustomerLean, CustomersRepository } from './customers.repository';
 import {
@@ -40,6 +41,7 @@ import {
 } from './dtos/customer-request.dto';
 import { CustomerDetailDto } from './dtos/customer-response.dto';
 import { CareTeamEntry } from './schemas/customer.schema';
+import { diffTagIds } from '../tags/tag.rules';
 import {
   buildProfileChanges,
   EMPTY_PROFILE,
@@ -71,6 +73,7 @@ const profileOf = (doc: CustomerLean): ProfileSnapshot => ({
   sourceId: doc.sourceId ?? null,
   areaId: doc.areaId ?? null,
   interestedProjectIds: doc.interestedProjectIds ?? [],
+  tagIds: doc.tagIds ?? [],
 });
 
 /**
@@ -88,6 +91,7 @@ export class CustomersService {
     private readonly phoneService: CustomerPhoneService,
     private readonly audit: CrmAuditLogService,
     private readonly pii: PiiCryptoService,
+    private readonly tags: CustomerTagsService,
   ) {}
 
   async getById(jwt: JwtPayload, id: string): Promise<CustomerDetailDto> {
@@ -178,6 +182,8 @@ export class CustomersService {
       { statusId, sourceId, areaId, projectIds },
       session,
     );
+    const tagIds = uniqueIds((dto.tagIds ?? []).map(oid));
+    await this.tags.applyDelta({ added: tagIds, removed: [] }, session);
 
     const plan = await this.planCareTeam(ctx, dto, now, session);
     const { next: criteria } = mergeCriteria(
@@ -198,7 +204,7 @@ export class CustomersService {
       sourceId,
       interestedProjectIds: projectIds,
       areaId,
-      tagIds: [],
+      tagIds,
       nationalId: dto.nationalId
         ? this.pii.encrypt(dto.nationalId, nationalIdAad(String(_id)))
         : null,
@@ -207,7 +213,11 @@ export class CustomersService {
       criteria,
       progress: computeProgress(criteria),
       ...plan,
+      persona: [],
+      personaFilterKeys: [],
+      occasions: [],
       personaCompleteness: 0,
+      personaConfigVersion: 0,
       dataConsent: {
         status: dto.dataConsent?.status ?? ConsentStatus.UNKNOWN,
         method: dto.dataConsent?.method ?? null,
@@ -233,6 +243,7 @@ export class CustomersService {
       sourceIds: [sourceId],
       areaIds: [areaId],
       projectIds,
+      tagIds,
       userIds: plan.careTeam.map((member) => member.userId),
     });
     const changes: CrmAuditChange[] = [
@@ -413,6 +424,7 @@ export class CustomersService {
         sourceId: 1,
         areaId: 1,
         interestedProjectIds: 1,
+        tagIds: 1,
         __v: 1,
       },
     });
@@ -444,6 +456,10 @@ export class CustomersService {
         dto.interestedProjectIds === undefined
           ? (before.interestedProjectIds ?? [])
           : uniqueIds(dto.interestedProjectIds.map(oid)),
+      tagIds:
+        dto.tagIds === undefined
+          ? (before.tagIds ?? [])
+          : uniqueIds(dto.tagIds.map(oid)),
     };
 
     // Ref tham chiếu cần dịch nhãn cho audit: cũ + mới.
@@ -455,6 +471,7 @@ export class CustomersService {
         ...beforeSnapshot.interestedProjectIds,
         ...next.interestedProjectIds,
       ],
+      tagIds: [...beforeSnapshot.tagIds, ...next.tagIds],
     });
     const changes = buildProfileChanges(beforeSnapshot, next, refMaps);
     if (changes.length === 0) {
@@ -480,6 +497,11 @@ export class CustomersService {
       },
       session,
     );
+    // Thẻ: kiểm thẻ mới gắn còn hoạt động + giữ `usageCount` trong cùng transaction.
+    await this.tags.applyDelta(
+      diffTagIds(beforeSnapshot.tagIds, next.tagIds),
+      session,
+    );
 
     const now = new Date();
     const set: Record<string, unknown> = {
@@ -489,6 +511,7 @@ export class CustomersService {
       sourceId: next.sourceId,
       areaId: next.areaId,
       interestedProjectIds: next.interestedProjectIds,
+      tagIds: next.tagIds,
       lastUpdatedAt: now,
       lastUpdatedBy: ctx.actor.userId,
       searchText: buildSearchText({
