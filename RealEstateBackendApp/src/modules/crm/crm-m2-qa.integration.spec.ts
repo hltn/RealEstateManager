@@ -20,7 +20,8 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { Connection, Model, Types } from 'mongoose';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
@@ -144,7 +145,7 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
     process.env[FLAG] = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-m2-${RUN_ID}:`;
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -760,9 +761,17 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       let n = 0;
       for (let i = 0; i < 12 && n < 21; i += 1) {
         for (const base of bases) {
-          await call('GET', `/crm/customers?q=${encodeURIComponent(base)}`, 'multi');
+          await call(
+            'GET',
+            `/crm/customers?q=${encodeURIComponent(base)}`,
+            'multi',
+          );
           const guess = forms[(i + n) % forms.length](`${base}${i}`);
-          await call('GET', `/crm/customers?q=${encodeURIComponent(guess)}`, 'multi');
+          await call(
+            'GET',
+            `/crm/customers?q=${encodeURIComponent(guess)}`,
+            'multi',
+          );
           n += 1;
         }
       }

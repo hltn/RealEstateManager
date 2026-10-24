@@ -19,7 +19,8 @@ import {
 } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { Connection, Model, Types } from 'mongoose';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
@@ -254,7 +255,7 @@ describe('CRM M5 — QA đối kháng', () => {
     process.env[FLAG] = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-m5-${RUN_ID}:`;
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -356,8 +357,15 @@ describe('CRM M5 — QA đối kháng', () => {
       const c = await createCustomer('staffA');
       await addMember(c, 'staffB');
       const startAt = new Date(Date.now() + 3 * DAY_MS);
-      const appt = await mustCreate('staffA', c, { startAt: startAt.toISOString(), assigneeId: ids.staffB });
-      const del = await call('DELETE', `/crm/customers/${c}/care-team/members/${ids.staffB}`, 'admin');
+      const appt = await mustCreate('staffA', c, {
+        startAt: startAt.toISOString(),
+        assigneeId: ids.staffB,
+      });
+      const del = await call(
+        'DELETE',
+        `/crm/customers/${c}/care-team/members/${ids.staffB}`,
+        'admin',
+      );
       expect(del.status).toBe(200);
       for (const [method, url, body] of [
         ['GET', `/crm/appointments/${appt.id}`, undefined],
@@ -368,12 +376,25 @@ describe('CRM M5 — QA đối kháng', () => {
         const res = await call(method, url, 'staffB', body);
         expect([method, url, res.status]).toEqual([method, url, 404]);
       }
-      const list = await call('GET', `/crm/appointments?from=${todayKey()}&to=${addDaysToDateKey(todayKey(), 10)}`, 'staffB');
+      const list = await call(
+        'GET',
+        `/crm/appointments?from=${todayKey()}&to=${addDaysToDateKey(todayKey(), 10)}`,
+        'staffB',
+      );
       expect(list.body.data.map((a: any) => a.id)).not.toContain(appt.id);
       // đến giờ nhắc: staffB (đã gỡ) không nhận, staffA (phụ trách chính) vẫn nhận
-      await dispatch.dispatchDue(new Date(startAt.getTime() - 1439 * MINUTE_MS));
-      expect(await notificationsOf('staffB', { type: 'APPOINTMENT_DUE' })).toHaveLength(0);
-      expect(await notificationsOf('staffA', { type: 'APPOINTMENT_DUE', 'data.appointmentId': oid(appt.id) })).toHaveLength(1);
+      await dispatch.dispatchDue(
+        new Date(startAt.getTime() - 1439 * MINUTE_MS),
+      );
+      expect(
+        await notificationsOf('staffB', { type: 'APPOINTMENT_DUE' }),
+      ).toHaveLength(0);
+      expect(
+        await notificationsOf('staffA', {
+          type: 'APPOINTMENT_DUE',
+          'data.appointmentId': oid(appt.id),
+        }),
+      ).toHaveLength(1);
     });
 
     it('đổi người thực hiện trước giờ nhắc: nhắc chỉ tới người MỚI (và phụ trách chính), không tới người cũ', async () => {
@@ -381,12 +402,24 @@ describe('CRM M5 — QA đối kháng', () => {
       const c = await createCustomer('staffA');
       await addMember(c, 'staffB');
       const startAt = new Date(Date.now() + 4 * DAY_MS);
-      const appt = await mustCreate('staffA', c, { startAt: startAt.toISOString(), assigneeId: ids.staffB, remindBeforeMinutes: [60] });
+      const appt = await mustCreate('staffA', c, {
+        startAt: startAt.toISOString(),
+        assigneeId: ids.staffB,
+        remindBeforeMinutes: [60],
+      });
       await addMember(c, 'manager1');
-      const patch = await call('PATCH', `/crm/appointments/${appt.id}`, 'admin', { assigneeId: ids.manager1, version: appt.version });
+      const patch = await call(
+        'PATCH',
+        `/crm/appointments/${appt.id}`,
+        'admin',
+        { assigneeId: ids.manager1, version: appt.version },
+      );
       expect(patch.status).toBe(200);
       await dispatch.dispatchDue(new Date(startAt.getTime() - 59 * MINUTE_MS));
-      const forAppt = { type: 'APPOINTMENT_DUE', 'data.appointmentId': oid(appt.id) };
+      const forAppt = {
+        type: 'APPOINTMENT_DUE',
+        'data.appointmentId': oid(appt.id),
+      };
       expect(await notificationsOf('staffB', forAppt)).toHaveLength(0);
       expect(await notificationsOf('manager1', forAppt)).toHaveLength(1);
       expect(await notificationsOf('staffA', forAppt)).toHaveLength(1);
@@ -394,7 +427,9 @@ describe('CRM M5 — QA đối kháng', () => {
 
     it('đầu vào xấu trả 400, không bao giờ 500 và không để lại lịch/nhắc', async () => {
       const c = await createCustomer('staffA');
-      const before = await col('appointments').countDocuments({ customerId: oid(c) });
+      const before = await col('appointments').countDocuments({
+        customerId: oid(c),
+      });
       const bad: Array<Record<string, unknown>> = [
         { title: 'x'.repeat(10_000) },
         { note: 'x'.repeat(100_000) },
@@ -415,24 +450,41 @@ describe('CRM M5 — QA đối kháng', () => {
       ];
       for (const extra of bad) {
         const res = await createAppointment('staffA', c, extra);
-        expect([JSON.stringify(extra).slice(0, 60), res.status]).toEqual([JSON.stringify(extra).slice(0, 60), 400]);
+        expect([JSON.stringify(extra).slice(0, 60), res.status]).toEqual([
+          JSON.stringify(extra).slice(0, 60),
+          400,
+        ]);
       }
-      expect(await col('appointments').countDocuments({ customerId: oid(c) })).toBe(before);
+      expect(
+        await col('appointments').countDocuments({ customerId: oid(c) }),
+      ).toBe(before);
     });
 
     it('20 PATCH đồng thời cùng version: đúng 1 thành công, 19 VERSION_CONFLICT, nhắc khớp giờ cuối', async () => {
       await resetPendingReminders();
       const c = await createCustomer('staffA');
-      const appt = await mustCreate('staffA', c, { startAt: inDays(5), remindBeforeMinutes: [60] });
+      const appt = await mustCreate('staffA', c, {
+        startAt: inDays(5),
+        remindBeforeMinutes: [60],
+      });
       const results = await Promise.all(
         Array.from({ length: 20 }, (_, i) =>
-          call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', { version: appt.version, startAt: inDays(6, i * 3_600_000) }),
+          call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', {
+            version: appt.version,
+            startAt: inDays(6, i * 3_600_000),
+          }),
         ),
       );
       expect(results.filter((r) => r.status === 200)).toHaveLength(1);
-      expect(results.filter((r) => r.status === 409 && r.body.errorCode === 'VERSION_CONFLICT')).toHaveLength(19);
+      expect(
+        results.filter(
+          (r) => r.status === 409 && r.body.errorCode === 'VERSION_CONFLICT',
+        ),
+      ).toHaveLength(19);
       const doc = await col('appointments').findOne({ _id: oid(appt.id) });
-      const pending = (await remindersOf(appt.id)).filter((r) => r.status === 'PENDING');
+      const pending = (await remindersOf(appt.id)).filter(
+        (r) => r.status === 'PENDING',
+      );
       expect(pending).toHaveLength(1);
       expect(pending[0].dueAt.getTime()).toBe(doc!.startAt.getTime());
     });
@@ -440,37 +492,124 @@ describe('CRM M5 — QA đối kháng', () => {
     it('hoàn thành đồng thời nhiều lần kèm createCareLog: đúng 1 nhật ký được tạo; xóa đua với hoàn thành luôn để lại nhắc đã hủy', async () => {
       await resetPendingReminders();
       const c = await createCustomer('staffA');
-      const appt = await mustCreate('staffA', c, { startAt: inDays(2), remindBeforeMinutes: [60] });
+      const appt = await mustCreate('staffA', c, {
+        startAt: inDays(2),
+        remindBeforeMinutes: [60],
+      });
       const results = await Promise.all(
         Array.from({ length: 6 }, () =>
-          call('PATCH', `/crm/appointments/${appt.id}/status`, 'staffA', { status: 'DONE', outcome: 'Đã xem nhà', createCareLog: true }),
+          call('PATCH', `/crm/appointments/${appt.id}/status`, 'staffA', {
+            status: 'DONE',
+            outcome: 'Đã xem nhà',
+            createCareLog: true,
+          }),
         ),
       );
       expect(results.filter((r) => r.status >= 500)).toHaveLength(0);
-      expect(await col('care_logs').countDocuments({ customerId: oid(c), deletedAt: null })).toBe(1);
+      expect(
+        await col('care_logs').countDocuments({
+          customerId: oid(c),
+          deletedAt: null,
+        }),
+      ).toBe(1);
 
       const c2 = await createCustomer('staffA');
-      const a2 = await mustCreate('staffA', c2, { startAt: inDays(2), remindBeforeMinutes: [60] });
+      const a2 = await mustCreate('staffA', c2, {
+        startAt: inDays(2),
+        remindBeforeMinutes: [60],
+      });
       const race = await Promise.all([
-        call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', { status: 'DONE' }),
+        call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', {
+          status: 'DONE',
+        }),
         call('DELETE', `/crm/appointments/${a2.id}`, 'staffA'),
       ]);
       expect(race.filter((r) => r.status >= 500)).toHaveLength(0);
-      expect((await remindersOf(a2.id)).filter((r) => ['PENDING', 'PROCESSING'].includes(r.status))).toHaveLength(0);
+      expect(
+        (await remindersOf(a2.id)).filter((r) =>
+          ['PENDING', 'PROCESSING'].includes(r.status),
+        ),
+      ).toHaveLength(0);
       expect((await customerDoc(c2))!.nextAppointmentAt ?? null).toBeNull();
     });
 
-    it('lịch hẹn cách giờ hiện tại ngắn hơn mọi mốc nhắc: không có nhắc nào được tạo (ghi nhận hành vi)', async () => {
+    it('lịch hẹn cách giờ hiện tại ngắn hơn mọi mốc nhắc: có đúng MỘT nhắc ngay cho mốc nhỏ nhất (N1)', async () => {
       const c = await createCustomer('staffA');
-      const appt = await mustCreate('staffA', c, { startAt: inDays(0, 30 * MINUTE_MS), remindBeforeMinutes: [60, 1440] });
-      expect(await remindersOf(appt.id)).toHaveLength(0);
+      const appt = await mustCreate('staffA', c, {
+        startAt: inDays(0, 30 * MINUTE_MS),
+        remindBeforeMinutes: [60, 1440],
+      });
+      expect(await remindersOf(appt.id)).toHaveLength(1);
+    });
+
+    it('nhắc "ngay" (N1): sửa nhiều lần không sinh thêm; gửi đúng một lần; sửa sau khi gửi không gửi lại; hủy trước khi gửi thì không gửi; người bị gỡ không nhận', async () => {
+      await resetPendingReminders();
+      const c = await createCustomer('staffA');
+      await addMember(c, 'staffB');
+      const appt = await mustCreate('staffA', c, { startAt: inDays(0, 30 * MINUTE_MS), remindBeforeMinutes: [60, 1440], assigneeId: ids.staffB });
+      let version = appt.version;
+      for (let i = 0; i < 4; i += 1) {
+        const res = await call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', { version, title: `Sửa ${i}`, note: `ghi chú ${i}` });
+        expect(res.status).toBe(200);
+        version = res.body.data.version;
+      }
+      expect(await remindersOf(appt.id)).toHaveLength(1);
+      await call('DELETE', `/crm/customers/${c}/care-team/members/${ids.staffB}`, 'admin');
+      const forAppt = { type: 'APPOINTMENT_DUE', 'data.appointmentId': oid(appt.id) };
+      const first = await dispatch.dispatchDue(new Date());
+      expect(first.sent).toBeGreaterThanOrEqual(1);
+      expect(await notificationsOf('staffB', forAppt)).toHaveLength(0);
+      expect(await notificationsOf('staffA', forAppt)).toHaveLength(1);
+      // sửa sau khi đã gửi + chạy lại: không gửi lần hai
+      const after = await call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', { version, title: 'Sửa sau gửi' });
+      expect(after.status).toBe(200);
+      await dispatch.dispatchDue(new Date());
+      await dispatch.dispatchDue(new Date(Date.now() + 5 * MINUTE_MS));
+      expect(await notificationsOf('staffA', forAppt)).toHaveLength(1);
+      expect((await remindersOf(appt.id)).map((r) => r.status)).toEqual(['SENT']);
+
+      // hủy trước khi gửi: không có nhắc nào được gửi
+      const c2 = await createCustomer('staffA');
+      const a2 = await mustCreate('staffA', c2, { startAt: inDays(0, 20 * MINUTE_MS), remindBeforeMinutes: [60] });
+      expect((await call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', { status: 'CANCELED' })).status).toBe(200);
+      await dispatch.dispatchDue(new Date());
+      expect(await notificationsOf('staffA', { type: 'APPOINTMENT_DUE', 'data.appointmentId': oid(a2.id) })).toHaveLength(0);
+      // mở lại: dựng lại nhắc "ngay" đúng một cái
+      expect((await call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', { status: 'SCHEDULED' })).status).toBe(200);
+      expect(await remindersOf(a2.id)).toHaveLength(1);
+    });
+
+    it('biên: startAt sắp tới 2 giây có nhắc ngay; startAt quá khứ (trong dung sai 5 phút) không có nhắc', async () => {
+      const c = await createCustomer('staffA');
+      const soon = await mustCreate('staffA', c, { startAt: new Date(Date.now() + 2000).toISOString(), remindBeforeMinutes: [60] });
+      expect(await remindersOf(soon.id)).toHaveLength(1);
+      const past = await mustCreate('staffA', c, { startAt: new Date(Date.now() - 60_000).toISOString(), remindBeforeMinutes: [60] });
+      expect(await remindersOf(past.id)).toHaveLength(0);
     });
 
     it('thông báo: before sai định dạng / ids không phải ObjectId => 400; PATCH /notifications/:id sai id 400', async () => {
-      expect((await call('PATCH', '/notifications', 'staffA', { before: 'hôm qua' })).status).toBe(400);
-      expect((await call('PATCH', '/notifications', 'staffA', { ids: ['zz'] })).status).toBe(400);
-      expect((await call('PATCH', '/notifications/zz', 'staffA', { isRead: true })).status).toBe(400);
-      expect((await call('PATCH', `/notifications/${new Types.ObjectId().toHexString()}`, 'staffA', { isRead: true })).status).toBe(404);
+      expect(
+        (await call('PATCH', '/notifications', 'staffA', { before: 'hôm qua' }))
+          .status,
+      ).toBe(400);
+      expect(
+        (await call('PATCH', '/notifications', 'staffA', { ids: ['zz'] }))
+          .status,
+      ).toBe(400);
+      expect(
+        (await call('PATCH', '/notifications/zz', 'staffA', { isRead: true }))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await call(
+            'PATCH',
+            `/notifications/${new Types.ObjectId().toHexString()}`,
+            'staffA',
+            { isRead: true },
+          )
+        ).status,
+      ).toBe(404);
     });
   });
 });

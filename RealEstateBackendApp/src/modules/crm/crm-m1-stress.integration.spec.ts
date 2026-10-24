@@ -25,7 +25,8 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { Connection, Model, Types } from 'mongoose';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
@@ -103,7 +104,7 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
     // M2: CrmModule kéo theo PiiCryptoService (cần khóa CCCD) và Redis (rate limit/idempotency, tiền tố riêng).
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = 'it-m1-' + Date.now() + ':';
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
@@ -157,35 +158,65 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
     await replSet?.stop();
   });
 
-
   const ROUNDS = 30;
   const statuses = (rs: Res[]) => rs.map((r) => r.status);
 
   it('chéo A<->B khu vực: 30 vòng, không vòng cha-con, không 500', async () => {
     for (let r = 0; r < ROUNDS; r += 1) {
-      const a = (await call('POST', '/crm/areas', 'admin', { name: `CA${r}`, type: 'OTHER' })).body.data.id;
-      const b = (await call('POST', '/crm/areas', 'admin', { name: `CB${r}`, type: 'OTHER' })).body.data.id;
+      const a = (
+        await call('POST', '/crm/areas', 'admin', {
+          name: `CA${r}`,
+          type: 'OTHER',
+        })
+      ).body.data.id;
+      const b = (
+        await call('POST', '/crm/areas', 'admin', {
+          name: `CB${r}`,
+          type: 'OTHER',
+        })
+      ).body.data.id;
       const res = await Promise.all([
         call('PATCH', `/crm/areas/${a}`, 'admin', { parentId: b }),
         call('PATCH', `/crm/areas/${b}`, 'admin', { parentId: a }),
       ]);
       const areas = connection.collection('areas');
-      const [da, db] = await Promise.all([areas.findOne({ _id: new Types.ObjectId(a) }), areas.findOne({ _id: new Types.ObjectId(b) })]);
-      expect([r, String(da?.parentId) === b && String(db?.parentId) === a, statuses(res).filter((x) => x >= 500).length]).toEqual([r, false, 0]);
+      const [da, db] = await Promise.all([
+        areas.findOne({ _id: new Types.ObjectId(a) }),
+        areas.findOne({ _id: new Types.ObjectId(b) }),
+      ]);
+      expect([
+        r,
+        String(da?.parentId) === b && String(db?.parentId) === a,
+        statuses(res).filter((x) => x >= 500).length,
+      ]).toEqual([r, false, 0]);
     }
   });
 
   it('chu trình 3 nút song song: 20 vòng, không có vòng', async () => {
     for (let r = 0; r < 20; r += 1) {
-      const mk = async (n: string) => (await call('POST', '/crm/areas', 'admin', { name: `T${n}${r}`, type: 'OTHER' })).body.data.id as string;
+      const mk = async (n: string) =>
+        (
+          await call('POST', '/crm/areas', 'admin', {
+            name: `T${n}${r}`,
+            type: 'OTHER',
+          })
+        ).body.data.id as string;
       const [a, b, c] = [await mk('a'), await mk('b'), await mk('c')];
       await Promise.all([
         call('PATCH', `/crm/areas/${a}`, 'admin', { parentId: b }),
         call('PATCH', `/crm/areas/${b}`, 'admin', { parentId: c }),
         call('PATCH', `/crm/areas/${c}`, 'admin', { parentId: a }),
       ]);
-      const docs = await connection.collection('areas').find({ _id: { $in: [a, b, c].map((x) => new Types.ObjectId(x)) } }).toArray();
-      const parent = new Map(docs.map((d) => [String(d._id), d.parentId ? String(d.parentId) : null]));
+      const docs = await connection
+        .collection('areas')
+        .find({ _id: { $in: [a, b, c].map((x) => new Types.ObjectId(x)) } })
+        .toArray();
+      const parent = new Map(
+        docs.map((d) => [
+          String(d._id),
+          d.parentId ? String(d.parentId) : null,
+        ]),
+      );
       for (const start of [a, b, c]) {
         let cur: string | null = start;
         let steps = 0;
@@ -202,88 +233,263 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
     for (let r = 0; r < ROUNDS; r += 1) {
       const key = `zs${r}`;
       await createUser(key, UserRole.STAFF);
-      const t = (await call('POST', '/teams', 'admin', { name: `ZT${r}`, code: `ZT${r}` })).body.data.id;
+      const t = (
+        await call('POST', '/teams', 'admin', {
+          name: `ZT${r}`,
+          code: `ZT${r}`,
+        })
+      ).body.data.id;
       const res = await Promise.all([
         call('PATCH', `/users/${ids[key]}/team`, 'admin', { teamId: t }),
         call('DELETE', `/teams/${t}`, 'admin'),
-        call('POST', '/users', 'admin', { email: `zc${r}@qa.vn`, password: 'Aa@123456789', displayName: 'zc', role: 'STAFF', teamId: t }),
+        call('POST', '/users', 'admin', {
+          email: `zc${r}@qa.vn`,
+          password: 'Aa@123456789',
+          displayName: 'zc',
+          role: 'STAFF',
+          teamId: t,
+        }),
       ]);
-      const team = await connection.collection('teams').findOne({ _id: new Types.ObjectId(t) });
-      const members = await userModel.countDocuments({ teamId: new Types.ObjectId(t) });
-      expect([r, !!team?.deletedAt && members > 0, statuses(res).filter((x) => x >= 500).length]).toEqual([r, false, 0]);
+      const team = await connection
+        .collection('teams')
+        .findOne({ _id: new Types.ObjectId(t) });
+      const members = await userModel.countDocuments({
+        teamId: new Types.ObjectId(t),
+      });
+      expect([
+        r,
+        !!team?.deletedAt && members > 0,
+        statuses(res).filter((x) => x >= 500).length,
+      ]).toEqual([r, false, 0]);
     }
   });
 
   it('ADMIN cuối cùng: khóa/hạ chéo nhau song song 30 vòng luôn còn >=1 ADMIN ACTIVE', async () => {
-    await userModel.updateMany({ role: UserRole.ADMIN }, { $set: { status: UserStatus.BLOCKED } });
+    await userModel.updateMany(
+      { role: UserRole.ADMIN },
+      { $set: { status: UserStatus.BLOCKED } },
+    );
     for (let r = 0; r < ROUNDS; r += 1) {
       await createUser(`laA${r}`, UserRole.ADMIN);
       await createUser(`laB${r}`, UserRole.ADMIN);
       const res = await Promise.all([
-        call('PATCH', `/users/${ids[`laB${r}`]}/status`, `laA${r}`, { status: 'BLOCKED' }),
-        call('PATCH', `/users/${ids[`laA${r}`]}/role`, `laB${r}`, { role: 'EDITOR' }),
+        call('PATCH', `/users/${ids[`laB${r}`]}/status`, `laA${r}`, {
+          status: 'BLOCKED',
+        }),
+        call('PATCH', `/users/${ids[`laA${r}`]}/role`, `laB${r}`, {
+          role: 'EDITOR',
+        }),
       ]);
-      const active = await userModel.countDocuments({ role: UserRole.ADMIN, status: UserStatus.ACTIVE, deletedAt: null });
-      expect([r, active >= 1, statuses(res).filter((x) => x >= 500).length]).toEqual([r, true, 0]);
+      const active = await userModel.countDocuments({
+        role: UserRole.ADMIN,
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      });
+      expect([
+        r,
+        active >= 1,
+        statuses(res).filter((x) => x >= 500).length,
+      ]).toEqual([r, true, 0]);
       // dọn: khóa mọi admin của vòng này (bằng DB) để vòng sau độc lập
-      await userModel.updateMany({ email: { $in: [`laA${r}@qa.vn`, `laB${r}@qa.vn`] } }, { $set: { status: UserStatus.BLOCKED } });
+      await userModel.updateMany(
+        { email: { $in: [`laA${r}@qa.vn`, `laB${r}@qa.vn`] } },
+        { $set: { status: UserStatus.BLOCKED } },
+      );
     }
   });
 
   it('ADMIN cuối cùng đơn lẻ: hạ role => 409 LAST_ADMIN_REQUIRED, không audit khi bị chặn', async () => {
-    await userModel.updateMany({ role: UserRole.ADMIN }, { $set: { status: UserStatus.BLOCKED } });
+    await userModel.updateMany(
+      { role: UserRole.ADMIN },
+      { $set: { status: UserStatus.BLOCKED } },
+    );
     await createUser('soloAdmin', UserRole.ADMIN);
-    const before = await connection.collection('crm_audit_logs').countDocuments({ entityId: new Types.ObjectId(ids.soloAdmin) });
-    const demote = await call('PATCH', `/users/${ids.soloAdmin}/role`, 'soloAdmin', { role: 'STAFF' });
-    expect([demote.status, demote.body.errorCode]).toEqual([409, 'LAST_ADMIN_REQUIRED']);
-    expect((await call('PATCH', `/users/${ids.soloAdmin}/status`, 'soloAdmin', { status: 'BLOCKED' })).status).toBe(403);
-    expect(await connection.collection('crm_audit_logs').countDocuments({ entityId: new Types.ObjectId(ids.soloAdmin) })).toBe(before);
-    expect((await userModel.findById(ids.soloAdmin).lean())?.role).toBe(UserRole.ADMIN);
+    const before = await connection
+      .collection('crm_audit_logs')
+      .countDocuments({ entityId: new Types.ObjectId(ids.soloAdmin) });
+    const demote = await call(
+      'PATCH',
+      `/users/${ids.soloAdmin}/role`,
+      'soloAdmin',
+      { role: 'STAFF' },
+    );
+    expect([demote.status, demote.body.errorCode]).toEqual([
+      409,
+      'LAST_ADMIN_REQUIRED',
+    ]);
+    expect(
+      (
+        await call('PATCH', `/users/${ids.soloAdmin}/status`, 'soloAdmin', {
+          status: 'BLOCKED',
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      await connection
+        .collection('crm_audit_logs')
+        .countDocuments({ entityId: new Types.ObjectId(ids.soloAdmin) }),
+    ).toBe(before);
+    expect((await userModel.findById(ids.soloAdmin).lean())?.role).toBe(
+      UserRole.ADMIN,
+    );
     // admin khác khóa admin cuối: cũng 409
     await createUser('soloOther', UserRole.ADMIN);
-    await userModel.updateOne({ _id: ids.soloOther }, { $set: { status: UserStatus.BLOCKED } });
+    await userModel.updateOne(
+      { _id: ids.soloOther },
+      { $set: { status: UserStatus.BLOCKED } },
+    );
     // soloOther bị khóa nên token của nó trả 401 (ActiveAdminGuard); dùng token soloAdmin khóa chính nó bị 403, nên chỉ kiểm hạ role đã đủ
-    await userModel.updateMany({ email: /^(admin|soloAdmin)@/ }, { $set: { status: UserStatus.ACTIVE, role: UserRole.ADMIN } });
+    await userModel.updateMany(
+      { email: /^(admin|soloAdmin)@/ },
+      { $set: { status: UserStatus.ACTIVE, role: UserRole.ADMIN } },
+    );
   });
 
   it('audit đổi role/status: cùng transaction, actorRole/actorName từ DB, no-op không audit', async () => {
     await createUser('auditTarget', UserRole.STAFF);
-    expect((await call('PATCH', `/users/${ids.auditTarget}/role`, 'admin', { role: 'MANAGER' })).status).toBe(200);
-    expect((await call('PATCH', `/users/${ids.auditTarget}/role`, 'admin', { role: 'MANAGER' })).status).toBe(200);
-    expect((await call('PATCH', `/users/${ids.auditTarget}/status`, 'admin', { status: 'BLOCKED' })).status).toBe(200);
-    const logs = await connection.collection('crm_audit_logs').find({ entityId: new Types.ObjectId(ids.auditTarget) }).sort({ _id: 1 }).toArray();
-    expect(logs.map((l) => l.action)).toEqual(['USER_ROLE_CHANGED', 'USER_STATUS_CHANGED']);
+    expect(
+      (
+        await call('PATCH', `/users/${ids.auditTarget}/role`, 'admin', {
+          role: 'MANAGER',
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call('PATCH', `/users/${ids.auditTarget}/role`, 'admin', {
+          role: 'MANAGER',
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call('PATCH', `/users/${ids.auditTarget}/status`, 'admin', {
+          status: 'BLOCKED',
+        })
+      ).status,
+    ).toBe(200);
+    const logs = await connection
+      .collection('crm_audit_logs')
+      .find({ entityId: new Types.ObjectId(ids.auditTarget) })
+      .sort({ _id: 1 })
+      .toArray();
+    expect(logs.map((l) => l.action)).toEqual([
+      'USER_ROLE_CHANGED',
+      'USER_STATUS_CHANGED',
+    ]);
     expect(logs[0]).toMatchObject({ actorName: 'admin', actorRole: 'ADMIN' });
     expect(JSON.stringify(logs)).not.toMatch(/password|hash/i);
   });
 
   it('null: bị 400 ở field bắt buộc; hợp lệ ở field có chủ đích; hạ MANAGER gỡ managerIds; id sai 400', async () => {
-    const t = (await call('POST', '/teams', 'admin', { name: 'NullT', code: 'NULLT' })).body.data.id;
+    const t = (
+      await call('POST', '/teams', 'admin', { name: 'NullT', code: 'NULLT' })
+    ).body.data.id;
     await createUser('mgrDemote', UserRole.MANAGER);
-    await call('PATCH', `/teams/${t}`, 'admin', { managerIds: [ids.mgrDemote] });
-    await call('PATCH', `/users/${ids.mgrDemote}/role`, 'admin', { role: 'STAFF' });
-    expect((await connection.collection('teams').findOne({ _id: new Types.ObjectId(t) }))?.managerIds).toEqual([]);
-    expect((await call('PATCH', '/users/zzz/role', 'admin', { role: 'EDITOR' })).status).toBe(400);
-    expect((await call('PATCH', '/users/zzz/status', 'admin', { status: 'ACTIVE' })).status).toBe(400);
-    for (const body of [{ name: null }, { isActive: null }, { managerIds: null }]) {
-      expect([JSON.stringify(body), (await call('PATCH', `/teams/${t}`, 'admin', body)).status]).toEqual([JSON.stringify(body), 400]);
+    await call('PATCH', `/teams/${t}`, 'admin', {
+      managerIds: [ids.mgrDemote],
+    });
+    await call('PATCH', `/users/${ids.mgrDemote}/role`, 'admin', {
+      role: 'STAFF',
+    });
+    expect(
+      (
+        await connection
+          .collection('teams')
+          .findOne({ _id: new Types.ObjectId(t) })
+      )?.managerIds,
+    ).toEqual([]);
+    expect(
+      (await call('PATCH', '/users/zzz/role', 'admin', { role: 'EDITOR' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await call('PATCH', '/users/zzz/status', 'admin', { status: 'ACTIVE' }))
+        .status,
+    ).toBe(400);
+    for (const body of [
+      { name: null },
+      { isActive: null },
+      { managerIds: null },
+    ]) {
+      expect([
+        JSON.stringify(body),
+        (await call('PATCH', `/teams/${t}`, 'admin', body)).status,
+      ]).toEqual([JSON.stringify(body), 400]);
     }
-    const res = (await call('POST', '/crm/contact-results', 'admin', { code: 'NN_RES', label: 'x', suggestedFollowUpDays: 3, suggestionText: 'abc' })).body.data.id;
-    const ok = await call('PATCH', `/crm/contact-results/${res}`, 'admin', { suggestedFollowUpDays: null });
-    expect([ok.status, ok.body.data.suggestedFollowUpDays]).toEqual([200, null]);
-    expect((await call('PATCH', `/crm/contact-results/${res}`, 'admin', { suggestionText: null })).status).toBe(400);
-    const area = (await call('POST', '/crm/areas', 'admin', { name: 'NN root', type: 'OTHER' })).body.data.id;
-    const child = (await call('POST', '/crm/areas', 'admin', { name: 'NN child', type: 'OTHER', parentId: area })).body.data.id;
-    const toRoot = await call('PATCH', `/crm/areas/${child}`, 'admin', { parentId: null });
+    const res = (
+      await call('POST', '/crm/contact-results', 'admin', {
+        code: 'NN_RES',
+        label: 'x',
+        suggestedFollowUpDays: 3,
+        suggestionText: 'abc',
+      })
+    ).body.data.id;
+    const ok = await call('PATCH', `/crm/contact-results/${res}`, 'admin', {
+      suggestedFollowUpDays: null,
+    });
+    expect([ok.status, ok.body.data.suggestedFollowUpDays]).toEqual([
+      200,
+      null,
+    ]);
+    expect(
+      (
+        await call('PATCH', `/crm/contact-results/${res}`, 'admin', {
+          suggestionText: null,
+        })
+      ).status,
+    ).toBe(400);
+    const area = (
+      await call('POST', '/crm/areas', 'admin', {
+        name: 'NN root',
+        type: 'OTHER',
+      })
+    ).body.data.id;
+    const child = (
+      await call('POST', '/crm/areas', 'admin', {
+        name: 'NN child',
+        type: 'OTHER',
+        parentId: area,
+      })
+    ).body.data.id;
+    const toRoot = await call('PATCH', `/crm/areas/${child}`, 'admin', {
+      parentId: null,
+    });
     expect([toRoot.status, toRoot.body.data.parentId]).toEqual([200, null]);
-    expect((await call('PATCH', `/crm/areas/${child}`, 'admin', { name: null })).status).toBe(400);
-    const st = (await call('POST', '/crm/customer-statuses', 'admin', { code: 'NN_ST', label: 'x', listGroup: 'NET', color: 'red' })).body.data.id;
-    const clr = await call('PATCH', `/crm/customer-statuses/${st}`, 'admin', { color: null });
+    expect(
+      (await call('PATCH', `/crm/areas/${child}`, 'admin', { name: null }))
+        .status,
+    ).toBe(400);
+    const st = (
+      await call('POST', '/crm/customer-statuses', 'admin', {
+        code: 'NN_ST',
+        label: 'x',
+        listGroup: 'NET',
+        color: 'red',
+      })
+    ).body.data.id;
+    const clr = await call('PATCH', `/crm/customer-statuses/${st}`, 'admin', {
+      color: null,
+    });
     expect([clr.status, clr.body.data.color]).toEqual([200, null]);
-    expect((await call('PATCH', `/crm/customer-statuses/${st}`, 'admin', { label: null })).status).toBe(400);
-    const src = (await call('POST', '/crm/lead-sources', 'admin', { code: 'NN_SRC', label: 'x' })).body.data.id;
+    expect(
+      (
+        await call('PATCH', `/crm/customer-statuses/${st}`, 'admin', {
+          label: null,
+        })
+      ).status,
+    ).toBe(400);
+    const src = (
+      await call('POST', '/crm/lead-sources', 'admin', {
+        code: 'NN_SRC',
+        label: 'x',
+      })
+    ).body.data.id;
     for (const body of [{ label: null }, { order: null }, { isActive: null }]) {
-      expect([JSON.stringify(body), (await call('PATCH', `/crm/lead-sources/${src}`, 'admin', body)).status]).toEqual([JSON.stringify(body), 400]);
+      expect([
+        JSON.stringify(body),
+        (await call('PATCH', `/crm/lead-sources/${src}`, 'admin', body)).status,
+      ]).toEqual([JSON.stringify(body), 400]);
     }
   });
 
@@ -291,26 +497,70 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
     const areas = connection.collection('areas');
     const projects = connection.collection('projects');
     const cols = ['areas', 'projects', 'catalog_items', 'customer_statuses'];
-    await Promise.all(cols.map((c) => connection.collection(c).updateMany({}, { $unset: { seedKey: '' } })));
-    const total = async () => Promise.all(cols.map((c) => connection.collection(c).countDocuments({})));
+    await Promise.all(
+      cols.map((c) =>
+        connection.collection(c).updateMany({}, { $unset: { seedKey: '' } }),
+      ),
+    );
+    const total = async () =>
+      Promise.all(cols.map((c) => connection.collection(c).countDocuments({})));
     const before = await total();
     const rep = await seed.seedAll();
     expect(await total()).toEqual(before);
     expect(Object.values(rep).every((n) => n === 0)).toBe(true);
     // bản ghi seed cũ đã được gắn seedKey bổ sung
-    expect(await areas.countDocuments({ seedKey: { $type: 'string' } })).toBeGreaterThan(10);
-    const hcm = await areas.findOne({ seedKey: { $regex: '^AREA:tp. ho chi minh$' } });
+    expect(
+      await areas.countDocuments({ seedKey: { $type: 'string' } }),
+    ).toBeGreaterThan(10);
+    const hcm = await areas.findOne({
+      seedKey: { $regex: '^AREA:tp. ho chi minh$' },
+    });
     expect(hcm).not.toBeNull();
-    await areas.updateOne({ _id: hcm!._id }, { $set: { name: 'Sài Gòn', nameNormalized: 'sai gon' } });
-    const q1 = await areas.findOne({ seedKey: { $regex: '^AREA:tp. ho chi minh/quan 1$' } });
-    const other = await areas.findOne({ parentId: null, seedKey: { $type: 'string' }, _id: { $ne: hcm!._id } });
-    expect((await call('PATCH', `/crm/areas/${String(q1!._id)}`, 'admin', { parentId: String(other!._id) })).status).toBe(200);
-    const pj = await projects.findOne({ seedKey: { $type: 'string' }, deletedAt: null });
-    expect((await call('PATCH', `/crm/projects/${String(pj!._id)}`, 'admin', { code: 'RECODED9' })).status).toBe(200);
-    await connection.collection('customer_statuses').updateOne({ seedKey: 'STATUS:INTERESTED' }, { $set: { label: 'Đã sửa' } });
+    await areas.updateOne(
+      { _id: hcm!._id },
+      { $set: { name: 'Sài Gòn', nameNormalized: 'sai gon' } },
+    );
+    const q1 = await areas.findOne({
+      seedKey: { $regex: '^AREA:tp. ho chi minh/quan 1$' },
+    });
+    const other = await areas.findOne({
+      parentId: null,
+      seedKey: { $type: 'string' },
+      _id: { $ne: hcm!._id },
+    });
+    expect(
+      (
+        await call('PATCH', `/crm/areas/${String(q1!._id)}`, 'admin', {
+          parentId: String(other!._id),
+        })
+      ).status,
+    ).toBe(200);
+    const pj = await projects.findOne({
+      seedKey: { $type: 'string' },
+      deletedAt: null,
+    });
+    expect(
+      (
+        await call('PATCH', `/crm/projects/${String(pj!._id)}`, 'admin', {
+          code: 'RECODED9',
+        })
+      ).status,
+    ).toBe(200);
+    await connection
+      .collection('customer_statuses')
+      .updateOne(
+        { seedKey: 'STATUS:INTERESTED' },
+        { $set: { label: 'Đã sửa' } },
+      );
     const snap = await total();
     for (let i = 0; i < 3; i += 1) await seed.seedAll();
     expect(await total()).toEqual(snap);
-    expect((await connection.collection('customer_statuses').findOne({ code: 'INTERESTED' }))?.label).toBe('Đã sửa');
+    expect(
+      (
+        await connection
+          .collection('customer_statuses')
+          .findOne({ code: 'INTERESTED' })
+      )?.label,
+    ).toBe('Đã sửa');
   });
 });

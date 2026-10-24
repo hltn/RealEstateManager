@@ -23,7 +23,8 @@ import {
 } from '@nestjs/platform-fastify';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { Connection, Model, Types } from 'mongoose';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
@@ -186,7 +187,7 @@ describe('CRM M4 — chân dung và thẻ', () => {
     process.env[FLAG] = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-m4-${RUN_ID}:`;
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
 
     const moduleRef = await Test.createTestingModule({
       imports: [

@@ -5,7 +5,8 @@
  * Dùng mongodb-memory-server ở chế độ replica set (lần đầu tự tải binary mongod về cache).
  */
 import mongoose, { Connection, InferSchemaType, Model, Schema } from 'mongoose';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from './memory-replset.util';
 import { withTransaction } from './with-transaction.util';
 
 jest.setTimeout(180_000);
@@ -21,7 +22,7 @@ describe('withTransaction (MongoDB Replica Set)', () => {
   let Audit: Model<InferSchemaType<typeof auditSchema>>;
 
   beforeAll(async () => {
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
     connection = await mongoose.createConnection(replSet.getUri()).asPromise();
     Customer = connection.model('Customer', customerSchema);
     Audit = connection.model('Audit', auditSchema);

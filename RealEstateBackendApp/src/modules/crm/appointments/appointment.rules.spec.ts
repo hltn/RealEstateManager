@@ -83,12 +83,22 @@ describe('planAppointmentReminders', () => {
     ]);
   });
 
-  it('mốc nhắc đúng bằng "bây giờ" đã qua (không nhắc bù); lịch quá gần không còn mốc nào', () => {
-    expect(
-      planAppointmentReminders(at('2026-10-24T04:00:00.000Z'), [60], NOW),
-    ).toEqual([]);
+  it('mọi mốc đã qua nhưng lịch còn ở tương lai: MỘT nhắc ngay (now) theo mốc nhỏ nhất', () => {
     expect(
       planAppointmentReminders(at('2026-10-24T03:10:00.000Z'), [60, 1440], NOW),
+    ).toEqual([{ offsetMinutes: 60, fireAt: NOW }]);
+    expect(
+      planAppointmentReminders(at('2026-10-24T03:10:00.000Z'), [60, 15], NOW),
+    ).toEqual([{ offsetMinutes: 15, fireAt: NOW }]);
+  });
+
+  it('lịch đã/đang diễn ra (startAt <= now) hoặc không có mốc nào thì không nhắc', () => {
+    expect(planAppointmentReminders(NOW, [60], NOW)).toEqual([]);
+    expect(
+      planAppointmentReminders(at('2026-10-24T02:00:00.000Z'), [60], NOW),
+    ).toEqual([]);
+    expect(
+      planAppointmentReminders(at('2026-10-24T03:10:00.000Z'), [], NOW),
     ).toEqual([]);
   });
 });

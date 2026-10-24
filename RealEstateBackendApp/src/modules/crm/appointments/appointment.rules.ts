@@ -66,19 +66,30 @@ export interface PlannedReminder {
 
 /**
  * Các mốc nhắc thật sự còn có ý nghĩa: `fireAt = startAt - offset` phải còn ở tương lai (mốc đã qua thì bỏ, không
- * nhắc bù ngay lúc tạo). Hàm thuần.
+ * nhắc bù); ngoại lệ: lịch còn ở tương lai mà mọi mốc đã qua thì giữ MỘT nhắc ngay (mốc gần nhất). Hàm thuần.
  */
 export const planAppointmentReminders = (
   startAt: Date,
   offsets: readonly number[],
   now: Date,
-): PlannedReminder[] =>
-  offsets
-    .map((offsetMinutes) => ({
-      offsetMinutes,
-      fireAt: new Date(startAt.getTime() - offsetMinutes * MS_PER_MINUTE),
-    }))
-    .filter((reminder) => reminder.fireAt.getTime() > now.getTime());
+): PlannedReminder[] => {
+  const all = offsets.map((offsetMinutes) => ({
+    offsetMinutes,
+    fireAt: new Date(startAt.getTime() - offsetMinutes * MS_PER_MINUTE),
+  }));
+  const upcoming = all.filter(
+    (reminder) => reminder.fireAt.getTime() > now.getTime(),
+  );
+  if (upcoming.length > 0 || startAt.getTime() <= now.getTime())
+    return upcoming;
+  // Lịch hẹn gần hơn mọi mốc nhắc nhưng chưa diễn ra: vẫn nhắc MỘT lần, ngay lập tức, theo mốc gần nhất (offset nhỏ
+  // nhất). Khóa chống trùng chỉ gồm offset + startAt nên ổn định khi đồng bộ lại.
+  if (all.length === 0) return [];
+  const nearest = all.reduce((a, b) =>
+    b.offsetMinutes < a.offsetMinutes ? b : a,
+  );
+  return [{ offsetMinutes: nearest.offsetMinutes, fireAt: now }];
+};
 
 /**
  * Chuyển trạng thái hợp lệ: SCHEDULED -> DONE | CANCELED; DONE | CANCELED -> SCHEDULED (mở lại). Chuyển thẳng

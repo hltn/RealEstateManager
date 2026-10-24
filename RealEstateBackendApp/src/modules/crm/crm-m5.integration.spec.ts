@@ -26,7 +26,8 @@ import {
 } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { Connection, Model, Types } from 'mongoose';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
@@ -261,7 +262,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
     process.env[FLAG] = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-m5-${RUN_ID}:`;
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -1332,6 +1333,37 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         'data.customerId': oid(c2),
       });
       expect(notification.body).toContain(formatVnDateTime(newStart));
+    });
+
+    it('N1: lịch cách hiện tại ngắn hơn mọi mốc nhắc vẫn có MỘT nhắc ngay (mốc nhỏ nhất), gửi đúng một lần dù sync lại; lịch quá khứ thì không nhắc', async () => {
+      await resetPendingReminders();
+      const c2 = await createCustomer('staffA');
+      const created = await mustCreate('staffA', c2, {
+        startAt: new Date(Date.now() + 30 * MINUTE_MS).toISOString(),
+        remindBeforeMinutes: [1440, 60],
+      });
+      const reminders = await remindersOf(created.id);
+      expect(reminders).toHaveLength(1);
+      expect(reminders[0].dedupeKey).toContain(`:60:`);
+      expect(reminders[0].status).toBe('PENDING');
+
+      const first = await dispatch.dispatchDue(new Date(Date.now() + 1000));
+      expect(first).toMatchObject({ claimed: 1, sent: 1 });
+      // Sửa lịch (không đổi giờ) đồng bộ lại nhắc: không sinh nhắc mới, không gửi lại.
+      const edited = await call(
+        'PATCH',
+        `/crm/appointments/${created.id}`,
+        'staffA',
+        { title: 'Đổi tiêu đề' },
+      );
+      expect(edited.status).toBe(200);
+      expect(await remindersOf(created.id)).toHaveLength(1);
+      expect(
+        await dispatch.dispatchDue(new Date(Date.now() + 2000)),
+      ).toMatchObject({ claimed: 0 });
+      expect(
+        await notificationsOf('staffA', { 'data.customerId': oid(c2) }),
+      ).toHaveLength(1);
     });
 
     it('lịch không còn SCHEDULED dù nhắc chưa kịp hủy (đua): chốt gửi đọc lại thấy trạng thái mới và hủy, không gửi nhắc cũ', async () => {

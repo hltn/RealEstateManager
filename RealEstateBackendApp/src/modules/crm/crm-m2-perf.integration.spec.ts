@@ -21,7 +21,8 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import type Redis from 'ioredis';
 import { Connection, Model, Types } from 'mongoose';
 import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
@@ -137,7 +138,7 @@ describe('CRM M2 — kiểm tải sơ bộ danh sách trên 10.000 khách', () =
     process.env.FEATURE_CRM_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-perf-${randomUUID().slice(0, 8)}:`;
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
 
     const moduleRef = await Test.createTestingModule({
       imports: [

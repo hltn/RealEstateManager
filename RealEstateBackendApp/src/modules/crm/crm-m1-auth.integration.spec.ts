@@ -16,7 +16,8 @@ import { getConnectionToken } from '@nestjs/mongoose';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import * as argon2 from 'argon2';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { Connection, Types } from 'mongoose';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
@@ -59,7 +60,7 @@ describe('CRM M1 — tương thích ngược đăng nhập (AuthModule thật)',
     // M2: CrmModule kéo theo PiiCryptoService (cần khóa CCCD) và Redis (rate limit/idempotency, tiền tố riêng).
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = 'it-m1-' + Date.now() + ':';
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    replSet = await createMemoryReplSet();
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
