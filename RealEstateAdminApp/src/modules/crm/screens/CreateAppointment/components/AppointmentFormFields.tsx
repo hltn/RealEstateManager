@@ -28,7 +28,7 @@ interface CustomerFieldsProps extends FieldGroupProps {
 }
 
 export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) => {
-  const { values, errors, customers, customerTotal, setCustomerSearch, selectedCustomer, changeCustomer, setField } = form;
+  const { values, errors, customers, customerTotal, setCustomerSearch, selectedCustomer, isCustomerLoading, changeCustomer, setField } = form;
   const customerId = getFieldId('customerId');
   const titleId = getFieldId('title');
 
@@ -42,7 +42,7 @@ export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) =
         hint={selectedCustomer?.primaryAssignee ? `Phụ trách chính: ${selectedCustomer.primaryAssignee.displayName}` : undefined}
       >
         {customerControl === 'picker' ? (
-          <CustomerPicker id={customerId} customers={customers} total={customerTotal} onSearch={setCustomerSearch} selectedCustomer={selectedCustomer} hasError={Boolean(errors.customerId)} onChange={changeCustomer} />
+          <CustomerPicker id={customerId} customers={customers} total={customerTotal} onSearch={setCustomerSearch} selectedCustomer={selectedCustomer} isLoading={isCustomerLoading} hasError={Boolean(errors.customerId)} onChange={changeCustomer} />
         ) : (
           <SelectInput
             id={customerId}

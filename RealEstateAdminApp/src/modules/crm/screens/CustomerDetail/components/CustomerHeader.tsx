@@ -17,7 +17,7 @@ interface CustomerHeaderProps {
 }
 
 export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
-  const { navigate } = useCrmActions();
+  const { openCreateAppointment } = useCrmActions();
   const { callCustomer, messageZalo, openQuickNote } = useContactActions();
   const isDesktop = variant === 'desktop';
   const updatedText = formatVnRelative(customer.lastUpdatedAt);
@@ -52,7 +52,7 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
             <NotebookPen size={16} aria-hidden="true" />
             Ghi chú
           </button>
-          <button type="button" onClick={() => navigate('create_appointment')} className={`${ICON_BUTTON_OUTLINE_CLASS} w-full gap-1.5 text-sm`}>
+          <button type="button" onClick={() => openCreateAppointment(customer.id)} className={`${ICON_BUTTON_OUTLINE_CLASS} w-full gap-1.5 text-sm`}>
             <CalendarPlus size={16} aria-hidden="true" />
             Hẹn nhắc
           </button>
@@ -91,7 +91,7 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
           <button type="button" onClick={() => openQuickNote(customer.id)} aria-label="Ghi chú nhanh" title="Ghi chú nhanh" className={ICON_BUTTON_OUTLINE_CLASS}>
             <NotebookPen size={18} aria-hidden="true" />
           </button>
-          <button type="button" onClick={() => navigate('create_appointment')} aria-label="Đặt lịch hẹn" title="Đặt lịch hẹn" className={ICON_BUTTON_OUTLINE_CLASS}>
+          <button type="button" onClick={() => openCreateAppointment(customer.id)} aria-label="Đặt lịch hẹn" title="Đặt lịch hẹn" className={ICON_BUTTON_OUTLINE_CLASS}>
             <CalendarPlus size={18} aria-hidden="true" />
           </button>
         </div>

@@ -38,15 +38,15 @@ export const CrmProvider = ({ children, store }: CrmProviderProps) => {
   const actions = useMemo(() => {
     const router: CrmRouterBridge = {
       navigateTo: (path, options) => routerNavigateRef.current(path, { replace: options?.shouldReplace ?? false }),
-      goBack: () => {
+      goBack: (fallbackPath) => {
         if (hasInAppHistory()) {
           routerNavigateRef.current(-1);
           return;
         }
-        // Mở thẳng URL (không có lịch sử) -> về màn cha.
+        // Mở thẳng URL (không có lịch sử) -> về `fallbackPath` nếu có, không thì về màn cha.
         const current = matchCrmPath(pathnameRef.current);
         const parentPath = current ? buildCrmPath(getParentView(current.view), current.customerId) : CRM_DEFAULT_PATH;
-        routerNavigateRef.current(parentPath, { replace: true });
+        routerNavigateRef.current(fallbackPath ?? parentPath, { replace: true });
       },
     };
     return createCrmActions({

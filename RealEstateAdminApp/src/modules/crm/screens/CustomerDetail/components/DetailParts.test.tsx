@@ -6,7 +6,7 @@ import type { CustomerDetail } from '@crm/api';
 import { CrmProvider } from '@crm/store/CrmProvider';
 import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
 import { FIXED_NOW } from '@crm/test/fixtures';
-import { NationalIdField, PhoneDisplay } from './DetailParts';
+import { AttachedPhotoTray, NationalIdField, PhoneDisplay } from './DetailParts';
 
 const createPhoneView = vi.fn();
 const createNationalIdView = vi.fn();
@@ -104,5 +104,24 @@ describe('NationalIdField: CCCD chỉ hiện cho người được phép (server
     await waitFor(() => expect(screen.getByText('079092001234')).toBeInTheDocument());
     rerender(<NationalIdField customer={makeCustomer('c2', '', true)} />);
     expect(screen.queryByText('079092001234')).toBeNull();
+  });
+});
+
+describe('AttachedPhotoTray: ảnh lỗi phải hiện lý do thấy được và gỡ được trước khi lưu', () => {
+  it('ảnh lỗi: hiện chữ lý do (không chỉ tooltip); bấm Xóa ảnh gọi onRemove đúng vị trí', () => {
+    const onRemove = vi.fn();
+    const photos = [
+      { key: 'a', name: 'a.png', previewUrl: 'blob:a', status: 'ready' as const, attachmentId: 'att-1' },
+      { key: 'b', name: 'b.png', previewUrl: 'blob:b', status: 'error' as const, errorMessage: 'Ảnh quá lớn, tối đa 5 MB.' },
+    ];
+    render(<AttachedPhotoTray photos={photos} onRemove={onRemove} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('b.png: Ảnh quá lớn, tối đa 5 MB.');
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa ảnh 2' }));
+    expect(onRemove).toHaveBeenCalledWith(1);
+  });
+
+  it('toàn ảnh hợp lệ: không có cảnh báo lỗi', () => {
+    render(<AttachedPhotoTray photos={[{ key: 'a', name: 'a.png', previewUrl: 'blob:a', status: 'ready', attachmentId: 'att-1' }]} onRemove={vi.fn()} />);
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

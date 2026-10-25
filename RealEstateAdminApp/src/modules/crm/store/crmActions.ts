@@ -5,7 +5,7 @@
  */
 import { createElement } from 'react';
 import toast from 'react-hot-toast';
-import { buildCrmPath } from '@crm/routes';
+import { buildCreateAppointmentPath, buildCrmPath } from '@crm/routes';
 import type { ActiveModal, CustomerFilters, ToastInput, ViewId } from '@crm/types/app';
 import type { GalleryImage } from '@crm/types/crm';
 import type { CrmAction, CrmState } from './crmReducer';
@@ -20,14 +20,22 @@ export interface CrmNavigateOptions {
 /** Cầu nối tới react-router — CrmProvider tạo từ `useNavigate()`. */
 export interface CrmRouterBridge {
   navigateTo: (path: string, options?: CrmNavigateOptions) => void;
-  goBack: () => void;
+  /** Còn lịch sử trong app -> lùi 1 mục; mở thẳng URL -> thay bằng `fallbackPath` (mặc định: màn cha của màn hiện tại). */
+  goBack: (fallbackPath?: string) => void;
 }
 
 export interface CrmActions {
   navigate: (view: ViewId, options?: CrmNavigateOptions) => void;
   goBack: () => void;
+  /**
+   * Như `goBack` nhưng khi mở thẳng URL (không có lịch sử trong app) thì về `fallbackPath` (thay mục lịch sử hiện tại).
+   * Dùng cho nút Hủy/Quay lại cần về đúng màn bắt đầu mà Back không làm lịch sử bị trùng mục.
+   */
+  goBackTo: (fallbackPath: string) => void;
   /** Chọn khách; mặc định mở luôn màn chi tiết. */
   selectCustomer: (customerId: string, options?: { shouldOpenDetail?: boolean } & CrmNavigateOptions) => void;
+  /** Mở màn tạo lịch hẹn; có `customerId` thì khách đó được chọn sẵn (từ chi tiết khách). Không truyền = mở trống (từ danh sách Lịch hẹn). */
+  openCreateAppointment: (customerId?: string) => void;
   setFilters: (changes: Partial<CustomerFilters>) => void;
   resetFilters: () => void;
   showToast: (input: ToastInput) => string;
@@ -93,8 +101,11 @@ export const createCrmActions = ({ dispatch, getState, router }: CrmActionDepend
 
   return {
     navigate,
-    goBack: router.goBack,
+    // Bọc lại để không truyền nhầm sự kiện click (`onClick={goBack}`) thành `fallbackPath`.
+    goBack: () => router.goBack(),
+    goBackTo: (fallbackPath) => router.goBack(fallbackPath),
     selectCustomer,
+    openCreateAppointment: (customerId) => router.navigateTo(buildCreateAppointmentPath(customerId)),
     setFilters: (changes) => dispatch({ type: 'filters/set', changes }),
     resetFilters: () => dispatch({ type: 'filters/reset' }),
     showToast,

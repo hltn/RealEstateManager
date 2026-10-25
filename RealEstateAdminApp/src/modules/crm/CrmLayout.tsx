@@ -4,6 +4,7 @@
  * - Chặn vai trò không có quyền CRM (EDITOR) và màn không đủ quyền theo vai trò (02 §3, §10) — chỉ là UX, backend mới quyết định.
  * - Tải danh mục 1 lần (04 §7.6) trước khi hiện màn: Skeleton khi đang tải, thông báo + nút thử lại khi lỗi (403/503/mạng...).
  * - `GlobalModals`: Ghi chú nhanh / Lightbox / Bộ lọc nâng cao (Gọi/Zalo trong app chỉ khi bật cờ tính năng).
+ * - Đổi màn (đổi pathname, không phải Back/Forward) thì cuộn về đầu trang.
  * - Mobile < 768px: thêm `CrmBottomNav` + padding đáy để nội dung không bị che (trừ màn chi tiết/form).
  */
 import { Navigate, Outlet } from 'react-router-dom';
@@ -12,6 +13,7 @@ import { useAuthStore } from '../../stores/auth.store';
 import { CrmBottomNav } from './components/CrmBottomNav';
 import { CrmUnavailable } from './components/CrmUnavailable';
 import { GlobalModals } from './components/GlobalModals';
+import { useScrollToTopOnPathChange } from './hooks/useScrollToTopOnPathChange';
 import { getMobileChrome } from './lib/viewHierarchy';
 import { canAccessView } from './navigation';
 import { CRM_DEFAULT_PATH } from './routes';
@@ -19,6 +21,7 @@ import { ScreenSkeleton } from './screens/ScreenSkeleton';
 import { CrmProvider, useCurrentUser, useCurrentView } from './store';
 
 const CrmLayoutContent = () => {
+  useScrollToTopOnPathChange();
   const currentView = useCurrentView();
   const { role } = useCurrentUser();
   const { isLoading, isError, error, refetch } = useCatalogs();

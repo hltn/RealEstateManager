@@ -17,11 +17,13 @@ interface CustomerPickerProps {
   total: number;
   onSearch: (keyword: string) => void;
   selectedCustomer: CustomerDetail | null;
+  /** Đang tải thông tin khách chọn sẵn. */
+  isLoading?: boolean;
   hasError: boolean;
   onChange: (customerId: string) => void;
 }
 
-export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustomer, hasError, onChange }: CustomerPickerProps) => {
+export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustomer, isLoading = false, hasError, onChange }: CustomerPickerProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
 
@@ -56,7 +58,7 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
           </div>
         </div>
       ) : (
-        <p className="text-theme-sm text-gray-500 dark:text-gray-400">Chưa chọn khách hàng.</p>
+        <p role={isLoading ? 'status' : undefined} className="text-theme-sm text-gray-500 dark:text-gray-400">{isLoading ? 'Đang tải thông tin khách…' : 'Chưa chọn khách hàng.'}</p>
       )}
 
       <div className="relative shrink-0">
@@ -65,6 +67,8 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
           type="button"
           aria-haspopup="listbox"
           aria-expanded={isOpen}
+          // Tên truy cập khớp chữ hiển thị (nhãn "Khách hàng" trỏ vào nút sẽ làm tên nút lệch chữ).
+          aria-label={selectedCustomer ? 'Thay đổi khách' : 'Chọn khách'}
           onClick={() => (isOpen ? closePicker() : setIsOpen(true))}
           className="dropdown-toggle inline-flex h-9 items-center rounded-lg border border-brand-200 bg-white px-3 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50 dark:border-brand-500/30 dark:bg-gray-900 dark:text-brand-400 dark:hover:bg-brand-500/10"
         >

@@ -1,7 +1,7 @@
 // Port từ stnd-admin-real-estate-manager-crm-oct-16-2026-1-51-45-pm/src/components/CreateAppointmentView.tsx
 // theo phong cách Admin App (tài liệu 03): đầu trang + breadcrumb, thẻ/ô nhập/select/DatePicker/Dropdown/công tắc Admin,
 // icon lucide, cặp `dark:`. Thẻ chọn loại kiểu radio + thanh hành động dính đáy vẽ theo Stitch.
-// Validate trường bắt buộc rồi gọi `addAppointment` (store tự điều hướng về Lịch hẹn + toast).
+// Validate trường bắt buộc rồi tạo lịch hẹn (hook form điều hướng về chi tiết khách nếu mở từ đó, không thì về Lịch hẹn).
 import { BellRing, CalendarCheck, type LucideIcon, UsersRound } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { FormActionBar } from '@crm/components/form/FormActionBar';
@@ -51,7 +51,10 @@ export const CreateAppointmentDesktop = () => {
         description="Thiết lập cuộc hẹn gặp gỡ khách hàng, dẫn xem nhà mẫu, ký cọc hoặc nhắc nhở chăm sóc định kỳ."
         breadcrumbs={[
           { label: 'Quản lý khách hàng', to: buildCrmPath('today') },
-          { label: 'Lịch hẹn & Nhắc việc', to: buildCrmPath('appointments') },
+          // Mở từ chi tiết khách: cấp giữa là hồ sơ khách đó (bấm để quay lại); mở từ Lịch hẹn: danh sách lịch hẹn.
+          form.originCustomer
+            ? { label: form.originCustomer.name || 'Hồ sơ khách hàng', to: buildCrmPath('customer_detail', form.originCustomer.id) }
+            : { label: 'Lịch hẹn & Nhắc việc', to: buildCrmPath('appointments') },
           { label: 'Tạo lịch hẹn mới' },
         ]}
         badges={

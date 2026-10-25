@@ -61,15 +61,19 @@ export const getDefaultAssigneeId = (customer: CustomerDetail | null, currentUse
   return customer.primaryAssignee?.id ?? currentUserId;
 };
 
-export const createInitialValues = (customer: CustomerDetail | null, todayKey: string, currentUserId: string): AppointmentFormValues => ({
-  customerId: customer?.id ?? '',
+/**
+ * Giá trị ban đầu của form. `customerId` = khách mang sang từ chi tiết khách ('' = chưa chọn);
+ * `assigneeId` để trống để hook tự suy ra theo nhóm chăm sóc của khách khi dữ liệu khách tải xong.
+ */
+export const createInitialValues = (customerId: string, todayKey: string): AppointmentFormValues => ({
+  customerId,
   type: 'SITE_VISIT',
   title: '',
   date: todayKey,
   time: DEFAULT_TIME,
   location: '',
   note: '',
-  assigneeId: getDefaultAssigneeId(customer, currentUserId),
+  assigneeId: '',
   remindBeforeMinutes: DEFAULT_REMINDER_MINUTES,
   smsZnsAuto: false,
   calendarSync: false,

@@ -6,7 +6,7 @@ import { useCatalogs, type CustomerDetail } from '@crm/api';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CONTACT_CHANNEL_LABELS, CONTACT_CHANNEL_ORDER } from '@crm/lib/customerAdapters';
 import {
-  BUTTON_LINK_CLASS,
+  BUTTON_DASHED_CLASS,
   BUTTON_PRIMARY_LG_CLASS,
   CARD_CLASS,
   CHECKBOX_CLASS,
@@ -166,26 +166,30 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
       </fieldset>
 
       {hasAttachments && (
-      <div className={`space-y-2 border-t pt-4 ${DIVIDER_CLASS}`}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-theme-xs font-medium text-gray-600 dark:text-gray-400">
-            <CircleCheck size={14} aria-hidden="true" className={photos.length > 0 ? 'text-success-500' : 'text-gray-400'} />
-            Đã chọn {photos.length} ảnh
-          </span>
-          <PhotoPickerButton
-            className={BUTTON_LINK_CLASS}
-            onPick={addFiles}
-            onSkipped={(count) =>
-              showToast({
-                type: 'warning',
-                title: `Bỏ qua ${count} ảnh`,
-                message: `Chỉ nhận ảnh JPEG/PNG/WebP ≤ ${MAX_PHOTO_BYTES / 1024 / 1024} MB, tối đa ${MAX_ATTACHED_PHOTOS} ảnh.`,
-              })
-            }
-          />
+        <div className={`space-y-2 border-t pt-4 ${DIVIDER_CLASS}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <CircleCheck size={16} aria-hidden="true" className={photos.length > 0 ? 'text-success-500' : 'text-gray-400'} />
+              Ảnh đính kèm <span className="font-normal text-gray-500 dark:text-gray-400">(tuỳ chọn)</span>
+            </span>
+            <PhotoPickerButton
+              className={BUTTON_DASHED_CLASS}
+              label="Thêm ảnh"
+              onPick={addFiles}
+              onSkipped={(count) =>
+                showToast({
+                  type: 'warning',
+                  title: `Bỏ qua ${count} ảnh`,
+                  message: `Chỉ nhận ảnh JPEG/PNG/WebP ≤ ${MAX_PHOTO_BYTES / 1024 / 1024} MB, tối đa ${MAX_ATTACHED_PHOTOS} ảnh.`,
+                })
+              }
+            />
+          </div>
+          <p className={FORM_HINT_CLASS}>
+            JPEG, PNG hoặc WebP, tối đa {MAX_PHOTO_BYTES / 1024 / 1024} MB mỗi ảnh, tối đa {MAX_ATTACHED_PHOTOS} ảnh. Đã chọn {photos.length}/{MAX_ATTACHED_PHOTOS} ảnh.
+          </p>
+          <AttachedPhotoTray photos={photos} onRemove={removePhoto} />
         </div>
-        <AttachedPhotoTray photos={photos} onRemove={removePhoto} />
-      </div>
       )}
 
       <button type="submit" disabled={isContentEmpty || isSaving || isUploading} className={`${BUTTON_PRIMARY_LG_CLASS} w-full`}>

@@ -4,7 +4,7 @@
  * Xem trước bằng object URL cục bộ (không đọc ảnh vào bộ nhớ dưới dạng data URL). Tối đa 5 ảnh/ghi chú.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_PER_NOTE, useCrmApi } from '@crm/api';
+import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_PER_NOTE, useCrmApi, type ApiError } from '@crm/api';
 
 export const MAX_ATTACHED_PHOTOS = ATTACHMENT_MAX_PER_NOTE;
 export const MAX_PHOTO_BYTES = ATTACHMENT_MAX_BYTES;
@@ -46,6 +46,17 @@ export const pickAcceptedFiles = (candidates: readonly File[], freeSlots: number
   return { accepted, skippedCount: candidates.length - accepted.length };
 };
 
+/**
+ * Lỗi tải ảnh -> câu dễ hiểu cho người dùng. 404 riêng cho tải ảnh gần như chắc chắn là backend chưa bật
+ * `FEATURE_CRM_ATTACHMENTS` (hoặc khách ngoài quyền xem), nên không dùng câu chung "không tìm thấy dữ liệu".
+ */
+export const describeUploadError = (error: ApiError): string => {
+  if (error.statusCode === 413 || error.errorCode === 'FILE_TOO_LARGE') return `Ảnh quá lớn, tối đa ${MAX_PHOTO_BYTES / 1024 / 1024} MB.`;
+  if (error.statusCode === 415 || error.errorCode === 'ATTACHMENT_TYPE_INVALID') return 'Chỉ nhận ảnh JPEG, PNG hoặc WebP hợp lệ.';
+  if (error.statusCode === 404) return 'Máy chủ chưa bật tính năng tải ảnh (hoặc bạn không có quyền với khách này). Vui lòng liên hệ quản trị viên.';
+  return error.message;
+};
+
 let photoCounter = 0;
 
 export const useAttachedPhotos = (customerId: string): AttachedPhotos => {
@@ -74,7 +85,7 @@ export const useAttachedPhotos = (customerId: string): AttachedPhotos => {
         accepted.map(async (file, index) => {
           const result = await api.uploadCareLogAttachment(customerId, file);
           if (result.ok) patchPhoto(added[index].key, { status: 'ready', attachmentId: result.data.id });
-          else patchPhoto(added[index].key, { status: 'error', errorMessage: result.error.message });
+          else patchPhoto(added[index].key, { status: 'error', errorMessage: describeUploadError(result.error) });
         }),
       );
       return skippedCount;

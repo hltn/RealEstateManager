@@ -327,33 +327,46 @@ interface AttachedPhotoTrayProps {
 
 export const AttachedPhotoTray = ({ photos, onRemove }: AttachedPhotoTrayProps) => {
   if (photos.length === 0) return null;
+  const failedPhotos = photos.filter((photo) => photo.status === 'error');
   return (
-    <ul className="custom-scrollbar flex items-center gap-2 overflow-x-auto pb-1" aria-label="Ảnh đã đính kèm">
-      {photos.map((photo, index) => (
-        <li key={photo.key} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700" title={photo.errorMessage}>
-          <img src={photo.previewUrl} alt={photo.name} className={`h-full w-full object-cover ${photo.status === 'ready' ? '' : 'opacity-50'}`} />
-          {photo.status === 'uploading' && (
-            <span role="status" aria-label="Đang tải ảnh lên" className="absolute inset-0 flex items-center justify-center text-white">
-              <LoaderCircle size={18} className="animate-spin" aria-hidden="true" />
-            </span>
-          )}
-          {photo.status === 'error' && (
-            <span role="alert" aria-label={photo.errorMessage ?? 'Tải ảnh lỗi'} className="absolute inset-0 flex items-center justify-center text-error-500">
-              <TriangleAlert size={18} aria-hidden="true" />
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => onRemove(index)}
-            aria-label={`Xóa ảnh ${index + 1}`}
-            title="Xóa ảnh"
-            className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-white transition-colors hover:bg-error-500"
-          >
-            <X size={12} aria-hidden="true" />
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-1.5">
+      <ul className="custom-scrollbar flex items-center gap-2 overflow-x-auto pb-1" aria-label="Ảnh đã đính kèm">
+        {photos.map((photo, index) => (
+          <li key={photo.key} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700" title={photo.errorMessage}>
+            <img src={photo.previewUrl} alt={photo.name} className={`h-full w-full object-cover ${photo.status === 'ready' ? '' : 'opacity-50'}`} />
+            {photo.status === 'uploading' && (
+              <span role="status" aria-label="Đang tải ảnh lên" className="absolute inset-0 flex items-center justify-center text-white">
+                <LoaderCircle size={18} className="animate-spin" aria-hidden="true" />
+              </span>
+            )}
+            {photo.status === 'error' && (
+              <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center text-error-500">
+                <TriangleAlert size={18} aria-hidden="true" />
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => onRemove(index)}
+              aria-label={`Xóa ảnh ${index + 1}`}
+              title="Xóa ảnh"
+              className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-900/80 text-white transition-colors hover:bg-error-500"
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {/* Lý do lỗi hiện thẳng cạnh ảnh (không chỉ tooltip): người dùng biết vì sao ảnh không đính kèm được và gỡ bằng nút X. */}
+      {failedPhotos.length > 0 && (
+        <ul role="alert" className="space-y-0.5 text-xs text-error-600 dark:text-error-400">
+          {failedPhotos.map((photo) => (
+            <li key={photo.key}>
+              {photo.name}: {photo.errorMessage ?? 'Tải ảnh lỗi.'} Bấm X để gỡ ảnh này.
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 };
 
