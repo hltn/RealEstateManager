@@ -6,7 +6,7 @@ import { getDayPeriod, toVnDateKey, toVnTime } from './dateTime';
 
 export const APPOINTMENT_TYPE_LABELS: Record<AppointmentType, string> = {
   SITE_VISIT: 'Xem nhà mẫu',
-  DEPOSIT: 'Ký cọc / HĐMB',
+  DEPOSIT_CONTRACT: 'Ký cọc / HĐMB',
   MEETING: 'Gặp tư vấn',
   CALLBACK: 'Nhắc gọi lại',
   OTHER: 'Khác',

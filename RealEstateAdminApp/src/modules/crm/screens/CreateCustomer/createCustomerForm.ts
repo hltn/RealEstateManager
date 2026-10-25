@@ -4,6 +4,7 @@
  * Phụ trách chính mặc định = người tạo (04 §6.1); nhân viên luôn là phụ trách chính khi tự tạo khách.
  */
 import type { CreateCustomerInput } from '@crm/api';
+import type { UserRole } from '@crm/types/crm';
 import { isValidNationalId } from '@crm/lib/customerRules';
 import { getFullNameError, getPhoneFormatError, isValidOptionalEmail, type FormErrors } from './customerFormRules';
 
@@ -52,8 +53,11 @@ export const validateCreateCustomer = (values: CreateCustomerFormValues): FormEr
   return errors;
 };
 
-/** Form hợp lệ -> body `POST /crm/customers`. */
-export const toCreateCustomerInput = (values: CreateCustomerFormValues): CreateCustomerInput => ({
+/**
+ * Form hợp lệ -> body `POST /crm/customers`. Nhân viên KHÔNG gửi `careTeam` (server tự đặt người tạo làm phụ trách chính;
+ * gửi `careTeam` sẽ bị 403 `CARE_TEAM_ACTION_FORBIDDEN`).
+ */
+export const toCreateCustomerInput = (values: CreateCustomerFormValues, role: UserRole): CreateCustomerInput => ({
   fullName: values.fullName.trim(),
   phone: values.phone,
   email: values.email.trim(),
@@ -62,5 +66,5 @@ export const toCreateCustomerInput = (values: CreateCustomerFormValues): CreateC
   interestedProjectIds: values.interestedProjectIds,
   statusId: values.statusId || undefined,
   sourceId: values.sourceId || null,
-  careTeam: values.primaryUserId ? { primaryUserId: values.primaryUserId, memberIds: values.memberIds } : undefined,
+  careTeam: role !== 'STAFF' && values.primaryUserId ? { primaryUserId: values.primaryUserId, memberIds: values.memberIds } : undefined,
 });

@@ -145,13 +145,13 @@ export const formatMonthYearVi = (year: number, monthIndex: number): string => `
 /** Nhãn ngắn dùng cho dòng tóm tắt "1 xem mẫu • 1 ký cọc • 1 gọi điện" (Admin KPI "Hôm nay"). */
 const TYPE_SUMMARY_LABELS: Record<AppointmentType, string> = {
   SITE_VISIT: 'xem mẫu',
-  DEPOSIT: 'ký cọc',
+  DEPOSIT_CONTRACT: 'ký cọc',
   MEETING: 'tư vấn',
   CALLBACK: 'gọi điện',
   OTHER: 'khác',
 };
 
-const TYPE_ORDER: AppointmentType[] = ['SITE_VISIT', 'DEPOSIT', 'MEETING', 'CALLBACK', 'OTHER'];
+const TYPE_ORDER: AppointmentType[] = ['SITE_VISIT', 'DEPOSIT_CONTRACT', 'MEETING', 'CALLBACK', 'OTHER'];
 
 export const summarizeAppointmentTypes = (appointments: Appointment[]): string =>
   TYPE_ORDER.map((type) => {

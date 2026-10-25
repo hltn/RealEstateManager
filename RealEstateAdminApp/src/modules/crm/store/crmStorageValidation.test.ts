@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildActor } from '@crm/api/access';
-import { listCustomers } from '@crm/api/queries';
+import { queryCustomers } from '@crm/api/queries';
 import { createCrmStore, createSeedDataState } from './crmStore';
 import { CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData, saveCrmData } from './crmStorage';
 
@@ -18,8 +18,8 @@ describe('N4 payload v3 sai cấu trúc chi tiết -> fallback seed, không cras
     expect(loaded?.customers).toHaveLength(data.customers.length - 1);
     expect(loaded?.customers.some((customer) => customer.id === data.customers[0].id)).toBe(false);
     const state = createCrmStore().getState().state;
-    expect(() => listCustomers(state, buildActor(state.users[0], state.teams), { listGroup: 'ALL' })).not.toThrow();
-    expect(listCustomers(state, buildActor(state.users[0], state.teams), { listGroup: 'ALL', limit: 100 }).meta.total).toBe(data.customers.length - 1);
+    expect(() => queryCustomers(state, buildActor(state.users[0], state.teams), { listGroup: 'ALL' })).not.toThrow();
+    expect(queryCustomers(state, buildActor(state.users[0], state.teams), { listGroup: 'ALL' })).toHaveLength(data.customers.length - 1);
   });
 
   it('mọi khách đều hỏng -> không còn gì để giữ, rơi về seed', () => {
@@ -97,7 +97,7 @@ describe('C7 quota localStorage', () => {
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = failingSetItem;
     try {
-      store.getState().dispatch({ type: 'settings/update', changes: { upcomingDays: 9 } });
+      store.getState().dispatch({ type: 'settings/update', changes: { staleCustomerDays: 9 } });
     } finally {
       Storage.prototype.setItem = original;
     }

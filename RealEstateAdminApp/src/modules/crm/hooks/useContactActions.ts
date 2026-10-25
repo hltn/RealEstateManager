@@ -7,9 +7,9 @@ import { useIsMobile } from './useIsMobile';
 
 export interface ContactActions {
   /** Gọi khách: mặc định mở `tel:`; chỉ khi bật cờ `isInAppCallEnabled` (desktop) mới mở CallModal. */
-  callCustomer: (customerId: string) => void;
+  callCustomer: (customerId: string) => Promise<void>;
   /** Zalo: mặc định mở `https://zalo.me/<sđt>` (Z1); chỉ khi bật cờ `isZaloZnsEnabled` (desktop) mới mở ZaloModal. */
-  messageZalo: (customerId: string) => void;
+  messageZalo: (customerId: string) => Promise<void>;
   /** Mở Ghi chú nhanh (desktop = modal giữa màn, mobile = bottom sheet). */
   openQuickNote: (customerId: string) => void;
 }
@@ -22,8 +22,8 @@ export const useContactActions = (): ContactActions => {
 
   return useMemo(() => {
     /** Số đầy đủ qua lớp dữ liệu (kiểm quyền + ghi log); không có quyền -> toast và null. */
-    const requirePhone = (customerId: string): string | null => {
-      const result = api.createPhoneView(customerId);
+    const requirePhone = async (customerId: string, purpose: 'VIEW' | 'CALL'): Promise<string | null> => {
+      const result = await api.createPhoneView(customerId, purpose);
       if (!result.ok) {
         actions.showToast({ type: 'error', title: result.error.message });
         return null;
@@ -31,15 +31,15 @@ export const useContactActions = (): ContactActions => {
       return result.data.phone;
     };
     return {
-      callCustomer: (customerId) => {
-        // Xem số = lấy qua `createPhoneView` (kiểm phạm vi + ghi log) TRONG handler (không trong render/effect -> không trùng log do StrictMode).
-        const phone = requirePhone(customerId);
+      callCustomer: async (customerId) => {
+        // Xem số = lấy qua `createPhoneView` (kiểm phạm vi + ghi log) TRONG handler (không trong render/effect -> không trùng log do StrictMode); PHONE_VIEWED server không lưu số.
+        const phone = await requirePhone(customerId, 'CALL');
         if (!phone) return;
         if (CRM_FEATURE_FLAGS.isInAppCallEnabled && !isMobile) actions.openCallModal(customerId, phone);
         else openTelLink(phone);
       },
-      messageZalo: (customerId) => {
-        const phone = requirePhone(customerId);
+      messageZalo: async (customerId) => {
+        const phone = await requirePhone(customerId, 'VIEW');
         if (!phone) return;
         if (CRM_FEATURE_FLAGS.isZaloZnsEnabled && !isMobile) actions.openZaloModal(customerId, phone);
         else openZaloChat(phone);

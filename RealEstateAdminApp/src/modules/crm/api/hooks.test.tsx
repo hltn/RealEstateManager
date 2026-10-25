@@ -1,55 +1,48 @@
-import { act, renderHook } from '@testing-library/react';
-import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
-import { CrmProvider } from '@crm/store/CrmProvider';
-import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
-import { FIXED_NOW } from '@crm/test/fixtures';
-import { getCustomerTeamIds, getUsersById } from './access';
-import { useCrmActor } from './hooks';
+import { renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { useAuthStore } from '../../../stores/auth.store';
+import { getDefaultAppointmentWindow, useCrmActor } from './hooks';
+import { canBulkAssign, canExportCustomers, canImportCustomers, canManageProjects, canViewProjectCatalog, canViewReports, canViewSettings } from './access';
 
-const setup = () => {
-  const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), initialSession: { currentUserId: 'hanh' }, shouldPersist: false });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <MemoryRouter>
-      <CrmProvider store={store}>{children}</CrmProvider>
-    </MemoryRouter>
-  );
-  return { store, wrapper };
-};
+const login = (role: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF', extra: { teamId?: string | null; managedTeamIds?: string[] } = {}) =>
+  useAuthStore.getState().setAuth('token', { _id: 'u1', email: 'a@b.vn', displayName: 'A', role, ...extra });
 
-describe('TB8 useCrmActor ổn định tham chiếu', () => {
-  it('đổi dữ liệu khách/cài đặt KHÔNG tạo actor mới (tránh tính lại mọi truy vấn); đổi người dùng thì có', () => {
-    const { store, wrapper } = setup();
-    const { result } = renderHook(() => useCrmActor(), { wrapper });
+beforeEach(() => useAuthStore.getState().clearAuth());
+
+describe('useCrmActor: người dùng thật từ /auth/me', () => {
+  it('Quản lý mang nhóm quản lý; tham chiếu ổn định khi store đổi phần không liên quan', () => {
+    login('MANAGER', { teamId: 't1', managedTeamIds: ['t1', 't2'] });
+    const { result, rerender } = renderHook(() => useCrmActor());
     const first = result.current;
-    act(() => store.getState().dispatch({ type: 'settings/update', changes: { upcomingDays: 9 } }));
+    expect(first).toEqual({ userId: 'u1', role: 'MANAGER', teamId: 't1', managedTeamIds: ['t1', 't2'] });
+    useAuthStore.getState().markInitialized();
+    rerender();
     expect(result.current).toBe(first);
-    act(() => store.getState().dispatch({ type: 'session/setUser', userId: 'minh' }));
-    expect(result.current).not.toBe(first);
-    expect(result.current.userId).toBe('minh');
+  });
+
+  it('vai trò không có quyền CRM (EDITOR) hoặc chưa đăng nhập -> coi như Nhân viên (ít quyền nhất)', () => {
+    login('EDITOR');
+    expect(renderHook(() => useCrmActor()).result.current.role).toBe('STAFF');
   });
 });
 
-describe('TB8 map user cho phạm vi', () => {
-  it('getUsersById cache theo tham chiếu mảng và getCustomerTeamIds cho kết quả đúng', () => {
-    const { users } = createSeedDataState(FIXED_NOW);
-    expect(getUsersById(users)).toBe(getUsersById(users));
-    expect(getUsersById(users).get('hanh')?.displayName).toBe('Hạnh');
-    expect(getCustomerTeamIds({ careTeam: [{ userId: 'hanh', role: 'PRIMARY', addedBy: 'hanh', addedAt: '' }, { userId: 'minh', role: 'MEMBER', addedBy: 'hanh', addedAt: '' }], createdBy: 'hanh' }, users).sort()).toEqual(['team-1', 'team-2']);
+describe('quyền hiển thị theo vai trò (02 §3, 04 §4.2) — chỉ là UX, backend mới là nguồn sự thật', () => {
+  it('ma trận Quản trị / Quản lý / Nhân viên', () => {
+    expect([canViewReports('ADMIN'), canViewReports('MANAGER'), canViewReports('STAFF')]).toEqual([true, true, false]);
+    expect([canViewSettings('ADMIN'), canViewSettings('MANAGER'), canViewSettings('STAFF')]).toEqual([true, false, false]);
+    expect([canViewProjectCatalog('ADMIN'), canViewProjectCatalog('STAFF')]).toEqual([true, false]);
+    expect([canManageProjects('ADMIN'), canManageProjects('MANAGER')]).toEqual([true, false]);
+    expect([canExportCustomers('MANAGER'), canExportCustomers('STAFF')]).toEqual([true, false]);
+    expect([canImportCustomers('ADMIN'), canImportCustomers('MANAGER')]).toEqual([true, false]);
+    expect([canBulkAssign('MANAGER'), canBulkAssign('STAFF')]).toEqual([true, false]);
   });
 });
 
-describe('usePhoneLookup phản ứng theo state (thay mẹo lookupVersion)', () => {
-  it('sau khi gửi đề nghị, kết quả tra trùng tự chuyển sang "đang chờ duyệt"', async () => {
-    const { store, wrapper } = setup();
-    act(() => store.getState().dispatch({ type: 'session/setUser', userId: 'thao' }));
-    const { usePhoneLookup, useCrmApi } = await import('./hooks');
-    const { result } = renderHook(() => ({ lookup: usePhoneLookup('0988 333 112'), api: useCrmApi() }), { wrapper });
-    expect(result.current.lookup).toMatchObject({ exists: true, canRequestJoin: true, hasPendingRequest: false });
-    act(() => {
-      result.current.api.createCareTeamRequest({ customerRef: result.current.lookup?.customerRef as string });
-    });
-    expect(result.current.lookup).toMatchObject({ hasPendingRequest: true, canRequestJoin: false });
+describe('cửa sổ lịch hẹn mặc định', () => {
+  it('14 ngày trước tới 45 ngày sau hôm nay (VN), ≤ 62 ngày như backend', () => {
+    const window = getDefaultAppointmentWindow(new Date('2026-10-25T00:00:00.000Z'));
+    expect(window).toEqual({ from: '2026-10-11', to: '2026-12-09' });
+    const spanDays = (Date.parse(window.to) - Date.parse(window.from)) / 86_400_000;
+    expect(spanDays).toBeLessThanOrEqual(62);
   });
 });

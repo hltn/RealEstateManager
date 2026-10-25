@@ -17,7 +17,7 @@ import {
   TAB_BASE_CLASS,
   TAB_INACTIVE_CLASS,
 } from '@crm/lib/uiClasses';
-import { useAppointments, useDailyTasks, useListCounts } from '@crm/api';
+import { useAppointments, useDailyTaskSummary, useListCounts } from '@crm/api';
 import { useModuleTabItems } from '@crm/navigation';
 import { buildCrmPath } from '@crm/routes';
 import { useCurrentView } from '@crm/store';
@@ -27,9 +27,9 @@ export const CrmModuleTabs = () => {
   const currentView = useCurrentView();
   const tabItems = useModuleTabItems();
   const { data: counts } = useListCounts({});
-  const { data: tasks } = useDailyTasks();
+  const { data: taskSummary } = useDailyTaskSummary();
   const { data: appointments } = useAppointments({ status: 'SCHEDULED' });
-  const pendingTaskCount = tasks.filter((task) => task.group !== 'UPCOMING').length;
+  const pendingTaskCount = taskSummary.overdue + taskSummary.today;
   const navRef = useRef<HTMLElement>(null);
   const activeTabRef = useRef<HTMLAnchorElement>(null);
 

@@ -1,11 +1,14 @@
 /**
  * "Hành động hàng loạt" của bảng khách (02 §4.2, `POST /crm/customer-bulk-operations`):
- * đổi tình trạng, gắn thẻ, thêm người chăm sóc (Quản lý/Quản trị), xuất CSV các dòng đã chọn (Quản lý/Quản trị).
+ * đổi tình trạng, gắn thẻ, thêm người chăm sóc (Quản lý/Quản trị), xuất CSV các dòng đã chọn (chỉ khi bật mock xuất file, M8).
+ * Backend xử lý đồng bộ, mỗi khách một transaction: khách lỗi không kéo khách khác (trả `succeeded` + `failed`).
  */
 import { useState } from 'react';
 import { CheckSquare, X } from 'lucide-react';
-import { canBulkAssign, canExportCustomers, useAssignableUsers, useCatalogs, useCrmActor, useCrmApi, useCustomerExport } from '@crm/api';
+import { canBulkAssign, canExportCustomers, useAssignableUsers, useCatalogs, useCrmActor, useCrmApi } from '@crm/api';
+import { useCustomerExport } from '@crm/api/mockHooks';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { isDroppedStatus } from '@crm/lib/customerRules';
 import { downloadCsv } from '@crm/lib/csv';
 import { BUTTON_PRIMARY_CLASS, FILTER_INPUT_CLASS } from '@crm/lib/uiClasses';
@@ -16,9 +19,19 @@ type BulkKind = '' | 'CHANGE_STATUS' | 'ADD_TAGS' | 'ASSIGN' | 'EXPORT';
 interface BulkActionBarProps {
   selectedIds: string[];
   onClear: () => void;
+  /** Tình trạng hiện tại của khách đã chọn (từ các trang đã tải) để Hoàn tác đổi tình trạng hàng loạt. */
+  getStatusId: (customerId: string) => string | undefined;
 }
 
-export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
+const ERROR_NOTES: Record<string, string> = {
+  PRIMARY_REQUIRED: 'chưa có phụ trách chính — hãy chọn người phụ trách chính',
+  CUSTOMER_NOT_FOUND: 'không còn trong phạm vi của bạn',
+  USER_NOT_ASSIGNABLE: 'người được chọn không thể phân chăm sóc',
+  CARE_TEAM_ACTION_FORBIDDEN: 'bạn không có quyền với khách này',
+  VALIDATION_FAILED: 'dữ liệu không hợp lệ (vd vượt 30 thẻ/khách)',
+};
+
+export const BulkActionBar = ({ selectedIds, onClear, getStatusId }: BulkActionBarProps) => {
   const api = useCrmApi();
   const actor = useCrmActor();
   const exportCustomers = useCustomerExport();
@@ -29,7 +42,9 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
   const [value, setValue] = useState('');
   const [primaryUserId, setPrimaryUserId] = useState('');
   const [isConfirmingDrop, setIsConfirmingDrop] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
   const needsValue = kind === 'CHANGE_STATUS' || kind === 'ADD_TAGS' || kind === 'ASSIGN';
+  const canExport = canExportCustomers(actor.role) && CRM_FEATURE_FLAGS.isMockImportExportEnabled;
 
   const valueOptions =
     kind === 'CHANGE_STATUS'
@@ -48,40 +63,48 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
   };
 
   /** Hoàn tác đổi tình trạng hàng loạt: trả từng khách về tình trạng cũ (gom theo tình trạng). */
-  const undoStatusChange = (previousStatusIds: Record<string, string>) => {
+  const undoStatusChange = async (previousStatusIds: Record<string, string>) => {
     const byStatus = new Map<string, string[]>();
     Object.entries(previousStatusIds).forEach(([customerId, statusId]) => byStatus.set(statusId, [...(byStatus.get(statusId) ?? []), customerId]));
-    byStatus.forEach((customerIds, statusId) => api.bulkOperation({ type: 'CHANGE_STATUS', customerIds, statusId }));
-    showToast({ title: `Đã hoàn tác ${Object.keys(previousStatusIds).length} khách` });
+    const results = await Promise.all([...byStatus].map(([statusId, customerIds]) => api.bulkOperation({ type: 'CHANGE_STATUS', customerIds, statusId })));
+    const failedResult = results.find((result) => !result.ok);
+    showToast(failedResult && !failedResult.ok ? { type: 'error', title: failedResult.error.message } : { title: `Đã hoàn tác ${Object.keys(previousStatusIds).length} khách` });
   };
 
-  const run = () => {
+  const run = async () => {
+    setIsRunning(true);
+    const previousStatusIds: Record<string, string> = {};
+    selectedIds.forEach((id) => {
+      const statusId = getStatusId(id);
+      if (statusId) previousStatusIds[id] = statusId;
+    });
     const result =
       kind === 'CHANGE_STATUS'
-        ? api.bulkOperation({ type: 'CHANGE_STATUS', customerIds: selectedIds, statusId: value })
+        ? await api.bulkOperation({ type: 'CHANGE_STATUS', customerIds: selectedIds, statusId: value })
         : kind === 'ADD_TAGS'
-          ? api.bulkOperation({ type: 'ADD_TAGS', customerIds: selectedIds, tagIds: [value] })
-          : api.bulkOperation({ type: 'ASSIGN', customerIds: selectedIds, memberIds: [value], primaryUserId: primaryUserId || undefined });
+          ? await api.bulkOperation({ type: 'ADD_TAGS', customerIds: selectedIds, tagIds: [value] })
+          : await api.bulkOperation({ type: 'ASSIGN', customerIds: selectedIds, memberIds: [value], primaryUserId: primaryUserId || undefined });
+    setIsRunning(false);
     if (!result.ok) {
       showToast({ type: 'error', title: result.error.message });
       return;
     }
-    const { succeeded, unchanged, failed, previousStatusIds } = result.data;
-    const notes = [
-      unchanged.length > 0 ? `${unchanged.length} khách không có thay đổi` : '',
-      failed.length > 0 ? `${failed.length} khách không áp dụng được${failed.some((item) => item.errorCode === 'PRIMARY_REQUIRED') ? ' (chưa có phụ trách chính — hãy chọn người phụ trách chính)' : ''}` : '',
-    ].filter(Boolean);
+    const { succeeded, failed } = result.data;
+    const failedReasons = [...new Set(failed.map((item) => ERROR_NOTES[item.errorCode]).filter(Boolean))];
+    const notes = failed.length > 0 ? [`${failed.length} khách không áp dụng được${failedReasons.length > 0 ? ` (${failedReasons.join('; ')})` : ''}`] : [];
+    const undoable = Object.fromEntries(Object.entries(previousStatusIds).filter(([id]) => succeeded.includes(id)));
     showToast({
+      type: succeeded.length === 0 ? 'error' : 'success',
       title: `Đã áp dụng cho ${succeeded.length} khách`,
       message: notes.length > 0 ? `${notes.join('; ')}.` : undefined,
-      action: kind === 'CHANGE_STATUS' && succeeded.length > 0 ? { label: 'Hoàn tác', onClick: () => undoStatusChange(previousStatusIds) } : undefined,
+      action: kind === 'CHANGE_STATUS' && Object.keys(undoable).length > 0 ? { label: 'Hoàn tác', onClick: () => void undoStatusChange(undoable) } : undefined,
       durationMs: kind === 'CHANGE_STATUS' ? 8000 : undefined,
     });
     if (failed.length === 0) finish();
   };
 
   const apply = () => {
-    if (!kind || (needsValue && !value)) return;
+    if (!kind || (needsValue && !value) || isRunning) return;
     if (kind === 'EXPORT') {
       const result = exportCustomers({ listGroup: 'ALL', customerIds: selectedIds, limit: selectedIds.length });
       if (!result.ok) {
@@ -90,7 +113,7 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
       }
       const file = result.data;
       downloadCsv(file.fileName, file.content);
-      showToast({ title: `Đã xuất ${file.rowCount} khách ra CSV`, message: 'CCCD chỉ ghi 4 số cuối.' });
+      showToast({ title: `Đã xuất ${file.rowCount} khách ra CSV (dữ liệu mẫu)`, message: 'CCCD chỉ ghi 4 số cuối.' });
       return;
     }
     // Chuyển nhiều khách sang nhóm "Bỏ" phải xác nhận như ở màn chi tiết (02 §5).
@@ -98,7 +121,7 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
       setIsConfirmingDrop(true);
       return;
     }
-    run();
+    void run();
   };
 
   return (
@@ -123,7 +146,7 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
         <option value="CHANGE_STATUS">Đổi tình trạng</option>
         <option value="ADD_TAGS">Gắn thẻ</option>
         {canBulkAssign(actor.role) && <option value="ASSIGN">Thêm người chăm sóc</option>}
-        {canExportCustomers(actor.role) && <option value="EXPORT">Xuất CSV các dòng đã chọn</option>}
+        {canExport && <option value="EXPORT">Xuất CSV các dòng đã chọn</option>}
       </select>
       {needsValue && (
         <select value={value} onChange={(event) => setValue(event.target.value)} aria-label="Giá trị áp dụng" className={`${FILTER_INPUT_CLASS} dark:[color-scheme:dark]`}>
@@ -145,8 +168,8 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
           ))}
         </select>
       )}
-      <button type="button" onClick={apply} disabled={!kind || (needsValue && !value)} className={`${BUTTON_PRIMARY_CLASS} h-10`}>
-        Áp dụng
+      <button type="button" onClick={apply} disabled={!kind || (needsValue && !value) || isRunning} className={`${BUTTON_PRIMARY_CLASS} h-10`}>
+        {isRunning ? 'Đang áp dụng…' : 'Áp dụng'}
       </button>
       <button type="button" onClick={onClear} className="inline-flex items-center gap-1 text-theme-xs font-medium text-gray-600 hover:text-gray-800 sm:ml-auto dark:text-gray-400">
         <X size={14} aria-hidden="true" />
@@ -161,7 +184,7 @@ export const BulkActionBar = ({ selectedIds, onClear }: BulkActionBarProps) => {
         onCancel={() => setIsConfirmingDrop(false)}
         onConfirm={() => {
           setIsConfirmingDrop(false);
-          run();
+          void run();
         }}
       />
     </div>

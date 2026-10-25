@@ -15,8 +15,7 @@ import { MaskedIdInput } from '@crm/components/form/MaskedIdInput';
 import { SectionCard } from '@crm/components/form/SectionCard';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
-import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
-import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS, TEXTAREA_CLASS } from '@crm/lib/uiClasses';
+import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
 import type { PersonaGroupCode, TagCategory } from '@crm/types/crm';
 import { DuplicatePhoneBanner } from '../CreateCustomer/components/DuplicatePhoneBanner';
 import { PersonaFieldInput } from './components/PersonaFieldInput';
@@ -173,16 +172,10 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
                 </div>
               ))}
           </div>
-          {code === 'OCCASION' && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-700">
-              <span className="text-sm text-gray-700 dark:text-gray-300">Nhắc người chăm sóc trước sinh nhật / dịp đặc biệt</span>
-              <ToggleSwitch isChecked={form.shouldRemindOccasions} onChange={form.setShouldRemindOccasions} label="Nhắc dịp đặc biệt" size="sm" />
-            </div>
-          )}
         </SectionCard>
       ))}
 
-      <SectionCard icon={StickyNote} title="Nguồn thông tin & ghi chú">
+      <SectionCard icon={StickyNote} title="Nguồn thông tin">
         <ChoiceGroup
           legend="Thông tin chân dung vừa sửa do"
           options={[
@@ -194,11 +187,6 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
           gridClass="grid-cols-1 sm:grid-cols-2"
         />
         <p className={FORM_HINT_CLASS}>Không ghi nội dung nhạy cảm (tôn giáo, chính trị, sức khoẻ, đời sống riêng tư) trừ khi khách tự chia sẻ và thật cần cho việc chăm sóc.</p>
-        {hasBasicInfo && (
-          <FormField inputId={fieldId('notes')} label="Ghi chú chung">
-            <textarea id={fieldId('notes')} rows={3} value={basic.notes} onChange={(event) => form.setBasicField('notes', event.target.value)} className={TEXTAREA_CLASS} />
-          </FormField>
-        )}
       </SectionCard>
     </div>
   );

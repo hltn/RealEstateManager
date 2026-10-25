@@ -292,6 +292,8 @@ const UserManagementScreen: React.FC = () => {
                         >
                           <option value={UserRole.EDITOR}>EDITOR</option>
                           <option value={UserRole.ADMIN}>ADMIN</option>
+                          <option value={UserRole.MANAGER}>MANAGER</option>
+                          <option value={UserRole.STAFF}>STAFF</option>
                         </select>
                       </td>
                       <td className="px-5 py-4">
@@ -424,6 +426,8 @@ const UserManagementScreen: React.FC = () => {
             >
               <option value={UserRole.EDITOR}>EDITOR</option>
               <option value={UserRole.ADMIN}>ADMIN</option>
+              <option value={UserRole.MANAGER}>MANAGER</option>
+              <option value={UserRole.STAFF}>STAFF</option>
             </select>
           </div>
 

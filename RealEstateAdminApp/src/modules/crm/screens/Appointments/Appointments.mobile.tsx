@@ -14,6 +14,7 @@ import {
 import { useMemo, useState } from 'react';
 import { getVnTodayKey } from '@crm/lib/dateTime';
 import { useAppointments, type AppointmentView } from '@crm/api';
+import { useAppointmentsAround } from './useAppointmentsAround';
 import { useCrmActions } from '@crm/store';
 import type { DayPeriod } from '@crm/types/crm';
 import {
@@ -115,17 +116,18 @@ export const AppointmentsMobile = () => {
   const { navigate } = useCrmActions();
   const [todayIso] = useState(() => getVnTodayKey());
   const [selectedDate, setSelectedDate] = useState(todayIso);
+  const { data: browsed } = useAppointmentsAround(selectedDate);
   const [viewScope, setViewScope] = useState<ViewScope>('week');
 
-  const countsByDate = useMemo(() => countAppointmentsByDate(appointments), [appointments]);
+  const countsByDate = useMemo(() => countAppointmentsByDate(browsed), [browsed]);
   const todayCount = countsByDate[todayIso] ?? 0;
   const upcomingCount = useMemo(() => getUpcomingAppointments(appointments, todayIso).length, [appointments, todayIso]);
-  const dayAppointments = useMemo(() => getAppointmentsOnDate(appointments, selectedDate), [appointments, selectedDate]);
+  const dayAppointments = useMemo(() => getAppointmentsOnDate(browsed, selectedDate), [browsed, selectedDate]);
   const sessions = groupAppointmentsByPeriod(dayAppointments);
   const monthGroups = useMemo(() => {
     const { startIso, endIso } = getMonthRange(selectedDate);
-    return groupAppointmentsByDate(getAppointmentsInRange(appointments, startIso, endIso));
-  }, [appointments, selectedDate]);
+    return groupAppointmentsByDate(getAppointmentsInRange(browsed, startIso, endIso));
+  }, [browsed, selectedDate]);
 
   const visibleMonth = parseIsoDate(selectedDate) ?? new Date();
   const goToCreate = () => navigate('create_appointment');

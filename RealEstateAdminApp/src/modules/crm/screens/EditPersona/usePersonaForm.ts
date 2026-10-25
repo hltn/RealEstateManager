@@ -1,11 +1,11 @@
 /**
  * Hook form sửa hồ sơ + chân dung (dùng chung màn "Chân dung khách hàng" và "Nhu cầu BĐS", desktop + mobile).
- * Luồng lưu: kiểm form -> `saveCustomerProfile` (hồ sơ + CCCD mới + chân dung trong MỘT mutation nguyên tử,
- * ghi nguồn + người + ngày cho trường đổi) -> quay lại chi tiết. "Xoá CCCD" là hành động riêng có xác nhận.
+ * Luồng lưu: kiểm form -> `saveCustomerProfile` (hồ sơ -> chân dung -> CCCD mới; CHỈ gửi phần thật sự đổi) -> quay lại chi tiết.
+ * "Xoá CCCD" là hành động riêng có xác nhận. Số điện thoại đầy đủ chỉ lấy khi bấm "Sửa số" (server ghi `PHONE_VIEWED`).
+ * Xung đột phiên bản (409): báo rõ và tải lại dữ liệu, KHÔNG ghi đè thay đổi của người khác.
  */
 import { useMemo, useState, type FormEvent } from 'react';
-import { useCrmApi, useCustomerPersona, usePhoneLookup, type CustomerDetail, type PhoneLookupResult } from '@crm/api';
-import { PERSONA_FIELDS } from '@crm/data/personaFields';
+import { describeWriteError, useCatalogs, useCrmApi, usePhoneLookup, type CustomerDetail, type CustomerPersonaView, type PersonaValueInput, type PhoneLookupResult } from '@crm/api';
 import { formatPhoneDisplay, normalizePhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import type { PersonaGroupCode, PersonaSource, TagCategory } from '@crm/types/crm';
@@ -14,11 +14,11 @@ import { getFirstError, toggleItem, type FormErrors } from '../CreateCustomer/cu
 import {
   BASIC_FIELD_ORDER,
   fieldsOfGroups,
+  getChangedBasicInput,
+  getChangedPersonaInputs,
   getDraftValue,
   toBasicInfoValues,
   toPersonaDraft,
-  toPersonaInputs,
-  toUpdateCustomerInput,
   validateBasicInfo,
   validatePersonaDraft,
   type BasicInfoField,
@@ -34,17 +34,20 @@ interface PersonaFormOptions {
   successToastTitle: string;
 }
 
-export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicInfo, successToastTitle }: PersonaFormOptions) => {
+export const usePersonaForm = (customer: CustomerDetail, persona: CustomerPersonaView, { groupCodes, hasBasicInfo, successToastTitle }: PersonaFormOptions) => {
   const api = useCrmApi();
   const { goBack, showToast } = useCrmActions();
-  const { data: persona } = useCustomerPersona(customer.id);
-  const fields = useMemo(() => fieldsOfGroups(PERSONA_FIELDS, groupCodes), [groupCodes]);
-  const [basic, setBasic] = useState<BasicInfoValues>(() => toBasicInfoValues(customer));
-  const [draft, setDraft] = useState<PersonaDraft>(() => toPersonaDraft(persona?.values ?? [], fields));
+  const { personaFields } = useCatalogs();
+  const fields = useMemo(() => fieldsOfGroups(personaFields, groupCodes), [personaFields, groupCodes]);
+  // Bản gốc để so sánh: chỉ gửi trường thật sự đổi (tránh ghi đè/ xóa giá trị người khác vừa sửa).
+  const [initialBasic] = useState<BasicInfoValues>(() => toBasicInfoValues(customer));
+  const [initialDraft] = useState<PersonaDraft>(() => toPersonaDraft(persona.values, fields));
+  const [basic, setBasic] = useState<BasicInfoValues>(initialBasic);
+  const [draft, setDraft] = useState<PersonaDraft>(initialDraft);
   const [source, setSource] = useState<Exclude<PersonaSource, 'IMPORTED'>>('CUSTOMER_SHARED');
-  const [shouldRemindOccasions, setShouldRemindOccasions] = useState(customer.shouldRemindOccasions);
   const [basicErrors, setBasicErrors] = useState<FormErrors<BasicInfoField>>({});
   const [personaErrors, setPersonaErrors] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   /** Số đầy đủ chỉ có sau khi bấm "Sửa số" (createPhoneView ghi log); trước đó ô SĐT khoá và không gửi SĐT khi lưu. */
   const [revealedPhone, setRevealedPhone] = useRevealedValue(customer.id);
@@ -53,8 +56,9 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
   const lookup = usePhoneLookup(isPhoneLocked ? '' : basic.phone, customer.id);
   const phoneLookup: PhoneLookupResult | null = isPhoneChanged ? lookup : null;
 
-  const submit = (event?: FormEvent) => {
+  const submit = async (event?: FormEvent): Promise<boolean> => {
     event?.preventDefault();
+    if (isSaving) return false;
     const nextBasicErrors = hasBasicInfo ? validateBasicInfo(basic, isPhoneLocked) : {};
     if (phoneLookup?.exists) nextBasicErrors.phone = 'Số điện thoại đã có trong hệ thống.';
     const nextPersonaErrors = validatePersonaDraft(draft, fields);
@@ -66,15 +70,20 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
       return false;
     }
 
-    // MỘT mutation nguyên tử: kiểm tất cả rồi mới ghi (1 version, 1 changeLog); lỗi -> không ghi gì.
-    const result = api.saveCustomerProfile(customer.id, {
-      version: customer.version,
-      profile: hasBasicInfo ? (({ version: _version, ...rest }) => ({ ...rest, shouldRemindOccasions }))(toUpdateCustomerInput(basic, customer.version, isPhoneLocked)) : undefined,
-      nationalId: hasBasicInfo ? basic.nationalId : undefined,
-      personaValues: toPersonaInputs(draft, fields, source),
-    });
+    const profile = hasBasicInfo ? getChangedBasicInput(initialBasic, basic, isPhoneLocked, revealedPhone) : undefined;
+    const personaValues: PersonaValueInput[] = getChangedPersonaInputs(initialDraft, draft, fields, source);
+    const nationalId = hasBasicInfo && basic.nationalId.trim() ? basic.nationalId : undefined;
+    if (!profile && !nationalId && personaValues.length === 0) {
+      showToast({ type: 'info', title: 'Chưa có thay đổi nào để lưu' });
+      return false;
+    }
+
+    setIsSaving(true);
+    const result = await api.saveCustomerProfile(customer.id, { version: customer.version, profile, nationalId, personaValues });
+    setIsSaving(false);
     if (!result.ok) {
-      showToast({ type: 'error', title: result.error.message });
+      // Dữ liệu vẫn được tải lại nhưng form GIỮ NGUYÊN những gì đang nhập; bấm Lưu lần nữa sẽ gửi phần đã sửa với version mới.
+      showToast({ type: 'error', title: describeWriteError(result.error) });
       return false;
     }
     showToast({ title: successToastTitle });
@@ -89,13 +98,13 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
     draft,
     personaErrors,
     source,
-    shouldRemindOccasions,
     phoneLookup,
     isPhoneLocked,
+    isSaving,
     phoneMasked: customer.phoneMasked,
     /** Bấm "Sửa số": lấy số đầy đủ qua `createPhoneView` (kiểm phạm vi + ghi 1 log) rồi mở khoá ô SĐT. Gọi trong handler. */
-    revealPhone: () => {
-      const result = api.createPhoneView(customer.id);
+    revealPhone: async () => {
+      const result = await api.createPhoneView(customer.id, 'VIEW');
       if (!result.ok) {
         showToast({ type: 'error', title: result.error.message });
         return;
@@ -111,8 +120,8 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
     toggleProject: (projectId: string) => setBasic((current) => ({ ...current, interestedProjectIds: toggleItem(current.interestedProjectIds, projectId) })),
     toggleTag: (tagId: string) => setBasic((current) => ({ ...current, tagIds: toggleItem(current.tagIds, tagId) })),
     /** Gắn nhanh thẻ mới (C11): tạo thẻ (hoặc dùng thẻ trùng tên) rồi gắn cho khách. */
-    addNewTag: (name: string, category: TagCategory) => {
-      const result = api.createTag({ name, category });
+    addNewTag: async (name: string, category: TagCategory) => {
+      const result = await api.createTag({ name, category });
       if (!result.ok) {
         showToast({ type: 'error', title: result.error.message });
         return;
@@ -122,16 +131,15 @@ export const usePersonaForm = (customer: CustomerDetail, { groupCodes, hasBasicI
     getValue: (fieldKey: string) => getDraftValue(draft, fieldKey),
     setValue: (fieldKey: string, value: PersonaDraftValue) => setDraft((current) => ({ ...current, [fieldKey]: value })),
     setSource,
-    setShouldRemindOccasions,
     /** Xoá CCCD đã lưu (UI phải xác nhận trước khi gọi). */
-    deleteNationalId: () => {
-      const result = api.deleteNationalId(customer.id);
+    deleteNationalId: async () => {
+      const result = await api.deleteNationalId(customer.id);
       showToast(result.ok ? { title: 'Đã xoá CCCD của khách' } : { type: 'error', title: result.error.message });
       return result.ok;
     },
-    requestJoin: () => {
+    requestJoin: async () => {
       if (!phoneLookup?.customerRef) return;
-      const result = api.createCareTeamRequest({ customerRef: phoneLookup.customerRef });
+      const result = await api.createCareTeamRequest({ customerRef: phoneLookup.customerRef });
       showToast(result.ok ? { title: 'Đã gửi đề nghị tham gia nhóm chăm sóc' } : { type: 'error', title: result.error.message });
     },
     submit,

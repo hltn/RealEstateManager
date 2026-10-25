@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import { Navigate } from 'react-router-dom';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
+import { CRM_DEFAULT_PATH } from '@crm/routes';
 import { UserRole } from '../../types/user';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -19,6 +22,10 @@ const RoleGuard: React.FC<RoleGuardProps> = ({ allowedRoles, children, fallback 
   const { user } = useAuth();
 
   if (!user || !allowedRoles.includes(user.role)) {
+    // MANAGER/STAFF chỉ dùng CRM: gõ URL trang tin tức/quản trị thì chuyển về màn CRM mặc định (UX; backend vẫn 403).
+    if (user && (user.role === UserRole.MANAGER || user.role === UserRole.STAFF) && CRM_FEATURE_FLAGS.isPrototypeEnabled) {
+      return <Navigate to={CRM_DEFAULT_PATH} replace />;
+    }
     return <>{fallback}</>;
   }
 

@@ -35,7 +35,8 @@ export interface CreateAppointmentForm {
   pendingRequiredCount: number;
   setField: <K extends keyof AppointmentFormValues>(field: K, value: AppointmentFormValues[K]) => void;
   changeCustomer: (customerId: string) => void;
-  handleSubmit: (event?: FormEvent) => void;
+  handleSubmit: (event?: FormEvent) => Promise<void>;
+  isSubmitting: boolean;
   cancel: () => void;
 }
 
@@ -51,6 +52,7 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   const { navigate, goBack, showToast } = useCrmActions();
   const [draft, setValues] = useState<AppointmentFormValues>(() => createInitialValues(preselected, getVnTodayKey(), currentUser.id));
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { data: selectedCustomer } = useCustomerDetail(draft.customerId);
   // Đổi khách thì người thực hiện về mặc định theo nhóm chăm sóc của khách mới (assigneeId '' = chưa chọn tay).
   const values = useMemo(
@@ -80,8 +82,10 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
     pendingRequiredCount: Object.keys(currentErrors).length,
     setField,
     changeCustomer: (customerId) => setValues((previous) => ({ ...previous, customerId, assigneeId: '' })),
-    handleSubmit: (event) => {
+    isSubmitting,
+    handleSubmit: async (event) => {
       event?.preventDefault();
+      if (isSubmitting) return;
       setHasSubmitted(true);
       const firstInvalidField = FIELD_ORDER.find((field) => currentErrors[field]);
       if (firstInvalidField) {
@@ -89,7 +93,9 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
         document.getElementById(getFieldId(firstInvalidField))?.focus();
         return;
       }
-      const result = api.createAppointment(toCreateAppointmentInput(values));
+      setIsSubmitting(true);
+      const result = await api.createAppointment(toCreateAppointmentInput(values));
+      setIsSubmitting(false);
       if (!result.ok) {
         showToast({ type: 'error', title: result.error.message });
         return;

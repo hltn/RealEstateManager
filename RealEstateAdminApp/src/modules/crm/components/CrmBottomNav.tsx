@@ -7,7 +7,7 @@
  * Chỉ CrmLayout render component này (route `/crm/*`), và ẩn trên màn chi tiết/form (mobile chrome = fullscreen).
  */
 import { Link } from 'react-router-dom';
-import { useDailyTasks } from '@crm/api';
+import { useDailyTaskSummary } from '@crm/api';
 import { useModuleTabItems } from '@crm/navigation';
 import { buildCrmPath } from '@crm/routes';
 import { useCurrentView } from '@crm/store';
@@ -18,8 +18,8 @@ export const CRM_BOTTOM_NAV_HEIGHT_CLASS = 'h-16';
 export const CrmBottomNav = () => {
   const currentView = useCurrentView();
   const tabItems = useModuleTabItems();
-  const { data: tasks } = useDailyTasks();
-  const pendingTaskCount = tasks.filter((task) => task.group !== 'UPCOMING').length;
+  const { data: taskSummary } = useDailyTaskSummary();
+  const pendingTaskCount = taskSummary.overdue + taskSummary.today;
 
   return (
     <nav

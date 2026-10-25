@@ -1,16 +1,13 @@
 // Khối "Chân dung khách hàng" (C10, C12, C13) + "Nhu cầu BĐS": đọc `GET /crm/customers/:id/persona`.
 // Mỗi giá trị hiện nguồn + người/ngày cập nhật khi rê chuột (QT9). Độ đầy đủ + 3–5 thông tin nên hỏi tiếp (C12).
 import { Building2, CircleUserRound, MessageCircleQuestion, Pencil } from 'lucide-react';
-import { useCustomerPersona, type CustomerDetail, type PersonaFieldValueView } from '@crm/api';
-import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
+import { useCustomerPersona, usePersonaFieldMap, type CustomerDetail, type PersonaFieldValueView } from '@crm/api';
 import { describePersonaValue } from '@crm/lib/changeTracking';
 import { CRITERION_LABELS } from '@crm/lib/customerRules';
 import { formatVnDate } from '@crm/lib/dateTime';
-import { PERSONA_FIELDS } from '@crm/data/personaFields';
 import { BUTTON_SOFT_SM_CLASS, CAPTION_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, INFO_LABEL_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import type { PersonaSource } from '@crm/types/crm';
-import { useCustomerDetailActions } from '../useCustomerDetailActions';
 import { CardHeading, ProgressBar } from './DetailParts';
 
 const SOURCE_LABELS: Record<PersonaSource, string> = {
@@ -21,7 +18,7 @@ const SOURCE_LABELS: Record<PersonaSource, string> = {
 
 /** 1 dòng giá trị chân dung; tooltip = nguồn · người · ngày cập nhật. */
 const PersonaValueRow = ({ field }: { field: PersonaFieldValueView }) => {
-  const linkedCriterion = PERSONA_FIELDS.find((item) => item.key === field.fieldKey)?.linkedCriterion;
+  const linkedCriterion = usePersonaFieldMap().get(field.fieldKey)?.linkedCriterion;
   const metaText = field.value
     ? `${field.source ? SOURCE_LABELS[field.source] : ''} · ${field.updatedBy?.displayName ?? ''} · ${formatVnDate(field.updatedAt)}`
     : '';
@@ -42,7 +39,6 @@ interface PersonaCardProps {
 
 export const PersonaCard = ({ customer }: PersonaCardProps) => {
   const { navigate } = useCrmActions();
-  const { setOccasionReminder } = useCustomerDetailActions(customer);
   const { data: persona } = useCustomerPersona(customer.id);
   if (!persona) return null;
   const groups = persona.groups.filter((group) => group.code !== 'REAL_ESTATE');
@@ -96,12 +92,6 @@ export const PersonaCard = ({ customer }: PersonaCardProps) => {
                 {filled.map((field) => (
                   <PersonaValueRow key={field.fieldKey} field={field} />
                 ))}
-              </div>
-            )}
-            {group.code === 'OCCASION' && (
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <span className="text-theme-xs text-gray-600 dark:text-gray-400">Nhắc người chăm sóc trước các dịp đặc biệt</span>
-                <ToggleSwitch isChecked={customer.shouldRemindOccasions} onChange={setOccasionReminder} label="Nhắc dịp đặc biệt" size="sm" />
               </div>
             )}
           </div>

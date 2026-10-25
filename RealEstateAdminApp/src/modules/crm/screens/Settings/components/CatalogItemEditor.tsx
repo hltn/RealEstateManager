@@ -1,25 +1,23 @@
 /**
- * Form sửa/thêm 1 mục danh mục (tình trạng, nguồn khách, khu vực, dự án). Trường hiển thị tuỳ loại danh mục.
+ * Form sửa/thêm 1 mục danh mục (tình trạng, nguồn khách, khu vực). Trường hiển thị tuỳ loại danh mục.
  */
 import type { FormEvent } from 'react';
-import type { AdminCatalogKind } from '@crm/api';
 import { useCatalogs } from '@crm/api';
 import { FieldError } from '@crm/components/form/FieldError';
-import { ProjectFormFields } from '@crm/components/form/ProjectFormFields';
 import { FormField } from '@crm/components/form/FormField';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CARD_TITLE_CLASS, INSET_CLASS } from '@crm/lib/uiClasses';
 import type { ListGroup, StatusTone } from '@crm/types/crm';
-import { LIST_GROUP_OPTIONS, STATUS_TONE_OPTIONS, type AdminCatalogItem } from '../settingsForms';
+import { AREA_TYPE_OPTIONS, CATALOG_NAME_MAX_LENGTH, LIST_GROUP_OPTIONS, STATUS_TONE_OPTIONS, type AdminCatalogKind, type AreaType, type CatalogDraft } from '../settingsForms';
 
 interface CatalogItemEditorProps {
   kind: AdminCatalogKind;
-  item: AdminCatalogItem;
-  isNew: boolean;
+  draft: CatalogDraft;
   error: string | null;
-  onChange: (item: AdminCatalogItem) => void;
+  isSaving: boolean;
+  onChange: (draft: CatalogDraft) => void;
   onSave: () => void;
   onCancel: () => void;
 }
@@ -43,79 +41,85 @@ export const SwitchRow = ({ label, description, isChecked, onChange }: SwitchRow
   </div>
 );
 
-export const CatalogItemEditor = ({ kind, item, isNew, error, onChange, onSave, onCancel }: CatalogItemEditorProps) => {
+export const CatalogItemEditor = ({ kind, draft, error, isSaving, onChange, onSave, onCancel }: CatalogItemEditorProps) => {
   const { catalogs } = useCatalogs();
-  const name = 'label' in item ? item.label : item.name;
-  const setName = (value: string) => onChange('label' in item ? { ...item, label: value } : { ...item, name: value });
-
+  const isNew = draft.id === null;
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     onSave();
   };
+  // Khu vực cha: mọi khu vực khác chính nó (backend chặn chuyển vào chính nó/nhánh con).
+  const parentOptions = catalogs.areas.filter((area) => area.id !== draft.id).map((area) => ({ value: area.id, label: area.name }));
 
   return (
     <form onSubmit={handleSubmit} className={`${INSET_CLASS} space-y-4 p-4`} aria-label={isNew ? 'Thêm mục danh mục' : 'Sửa mục danh mục'}>
-      <h3 className={CARD_TITLE_CLASS}>{isNew ? 'Thêm mới' : `Sửa "${name}"`}</h3>
+      <h3 className={CARD_TITLE_CLASS}>{isNew ? 'Thêm mới' : `Sửa "${draft.name}"`}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField inputId={fieldId('name')} label={kind === 'projects' ? 'Tên ngắn' : 'Tên'} isRequired>
-          <TextInput id={fieldId('name')} value={name} maxLength={80} autoFocus onChange={(event) => setName(event.target.value)} />
+        <FormField inputId={fieldId('name')} label="Tên" isRequired>
+          <TextInput id={fieldId('name')} value={draft.name} maxLength={CATALOG_NAME_MAX_LENGTH} autoFocus onChange={(event) => onChange({ ...draft, name: event.target.value })} />
         </FormField>
 
-        {'listGroup' in item && (
+        {kind === 'statuses' && (
           <>
-            <FormField inputId={fieldId('group')} label="Thuộc danh sách" hint="Quyết định khách hiện ở tab nào">
-              <SelectInput
-                id={fieldId('group')}
-                value={item.listGroup}
-                options={LIST_GROUP_OPTIONS}
-                onChange={(event) => onChange({ ...item, listGroup: event.target.value as ListGroup })}
-              />
+            <FormField inputId={fieldId('group')} label="Thuộc danh sách" hint={draft.isSystem ? 'Tình trạng hệ thống: không đổi được' : 'Quyết định khách hiện ở tab nào'}>
+              <SelectInput id={fieldId('group')} value={draft.listGroup} options={LIST_GROUP_OPTIONS} disabled={draft.isSystem} onChange={(event) => onChange({ ...draft, listGroup: event.target.value as ListGroup })} />
             </FormField>
             <FormField inputId={fieldId('tone')} label="Màu hiển thị">
-              <SelectInput id={fieldId('tone')} value={item.tone} options={STATUS_TONE_OPTIONS} onChange={(event) => onChange({ ...item, tone: event.target.value as StatusTone })} />
+              <SelectInput id={fieldId('tone')} value={draft.tone} options={STATUS_TONE_OPTIONS} onChange={(event) => onChange({ ...draft, tone: event.target.value as StatusTone })} />
             </FormField>
           </>
         )}
 
-        {'order' in item && (
-          <FormField inputId={fieldId('order')} label="Thứ tự hiển thị">
-            <TextInput
-              id={fieldId('order')}
-              type="number"
-              min={1}
-              value={item.order}
-              onChange={(event) => onChange({ ...item, order: Math.max(1, Number(event.target.value) || 1) })}
-            />
-          </FormField>
+        {kind === 'areas' && (
+          <>
+            {isNew && (
+              <FormField inputId={fieldId('area-type')} label="Loại khu vực">
+                <SelectInput id={fieldId('area-type')} value={draft.areaType} options={AREA_TYPE_OPTIONS} onChange={(event) => onChange({ ...draft, areaType: event.target.value as AreaType })} />
+              </FormField>
+            )}
+            <FormField inputId={fieldId('parent')} label="Thuộc khu vực" hint="Bỏ trống = khu vực gốc (tỉnh/thành)">
+              <SelectInput id={fieldId('parent')} value={draft.parentId} emptyLabel="— Khu vực gốc —" options={parentOptions} onChange={(event) => onChange({ ...draft, parentId: event.target.value })} />
+            </FormField>
+          </>
         )}
 
-        {'fullName' in item && <ProjectFormFields project={item} areas={catalogs.areas} idPrefix="settings-project" onChange={onChange} />}
-      </div>
-
-      <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-white/[0.05]">
-        {'isDefault' in item && (
-          <SwitchRow
-            label="Mặc định cho khách mới"
-            description="Chỉ 1 tình trạng; phải thuộc danh sách Chưa tiếp cận"
-            isChecked={item.isDefault}
-            onChange={(isDefault) => onChange({ ...item, isDefault })}
+        <FormField inputId={fieldId('order')} label="Thứ tự hiển thị">
+          <TextInput
+            id={fieldId('order')}
+            type="number"
+            min={0}
+            value={draft.order}
+            onChange={(event) => onChange({ ...draft, order: Math.max(0, Number(event.target.value) || 0) })}
           />
-        )}
-        <SwitchRow
-          label="Đang dùng"
-          description="Tắt = ẩn khỏi lựa chọn mới; khách đã gắn vẫn giữ và hiển thị đúng"
-          isChecked={item.isActive}
-          onChange={(isActive) => onChange({ ...item, isActive })}
-        />
+        </FormField>
       </div>
+
+      {!isNew && (
+        <div className="space-y-3 border-t border-gray-100 pt-3 dark:border-white/[0.05]">
+          {kind === 'statuses' && (
+            <SwitchRow
+              label="Mặc định cho khách mới"
+              description="Chỉ 1 tình trạng; phải thuộc danh sách Chưa tiếp cận"
+              isChecked={draft.isDefault}
+              onChange={(isDefault) => onChange({ ...draft, isDefault })}
+            />
+          )}
+          <SwitchRow
+            label="Đang dùng"
+            description="Tắt = ẩn khỏi lựa chọn mới; khách đã gắn vẫn giữ và hiển thị đúng"
+            isChecked={draft.isActive}
+            onChange={(isActive) => onChange({ ...draft, isActive })}
+          />
+        </div>
+      )}
 
       <FieldError id={fieldId('error')} message={error ?? undefined} />
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={onCancel} className={BUTTON_OUTLINE_CLASS}>
           Huỷ
         </button>
-        <button type="submit" className={BUTTON_PRIMARY_CLASS}>
-          {isNew ? 'Thêm' : 'Lưu'}
+        <button type="submit" disabled={isSaving} className={BUTTON_PRIMARY_CLASS}>
+          {isSaving ? 'Đang lưu…' : isNew ? 'Thêm' : 'Lưu'}
         </button>
       </div>
     </form>

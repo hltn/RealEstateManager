@@ -23,7 +23,7 @@ const QUICK_FILTER_SIZE_CLASS = 'h-9 shrink-0 whitespace-nowrap px-3 text-xs';
 
 export const CustomersMobile = () => {
   const screen = useCustomerListScreen(MOBILE_PAGE_SIZE);
-  const { list, counts, filters, sort, setSort, updateFilters, setPage } = screen;
+  const { list, counts, filters, sort, setSort, updateFilters, setPage, isLoading, error, refetch } = screen;
   const { navigate, openAdvancedFilter } = useCrmActions();
   const advancedCount = countActiveAdvancedFilters(filters);
   const sortIndex = CUSTOMER_SORT_OPTIONS.findIndex((option) => option.value === sort);
@@ -53,7 +53,7 @@ export const CustomersMobile = () => {
             aria-label="Tìm khách hàng"
             value={filters.q}
             onChange={(event) => updateFilters({ q: event.target.value })}
-            placeholder="Tên (có/không dấu), SĐT, mã KH..."
+            placeholder="Tên (có/không dấu), SĐT, email..."
             className={`${FILTER_INPUT_CLASS} w-full pl-10 pr-10`}
           />
           {filters.q && (
@@ -100,7 +100,17 @@ export const CustomersMobile = () => {
         {list.data.map((customer) => (
           <CustomerCard key={customer.id} customer={customer} />
         ))}
-        {list.data.length === 0 && (
+        {isLoading &&
+          Array.from({ length: 4 }).map((_, index) => <div key={index} aria-hidden="true" className="h-28 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />)}
+        {!isLoading && error && (
+          <div role="alert" className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-gray-200 p-8 text-center dark:border-white/[0.1]">
+            <p className="text-theme-sm font-medium text-gray-700 dark:text-gray-300">{error.message}</p>
+            <button type="button" onClick={refetch} className={BUTTON_OUTLINE_BASE_CLASS + ' h-9 px-3 text-xs'}>
+              Thử lại
+            </button>
+          </div>
+        )}
+        {!isLoading && !error && list.data.length === 0 && (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-gray-200 p-8 text-center dark:border-white/[0.1]">
             <SearchX size={28} className="text-gray-400" aria-hidden="true" />
             <p className="text-theme-sm font-medium text-gray-700 dark:text-gray-300">{counts.ALL === 0 ? 'Chưa có khách.' : 'Không có khách hàng phù hợp'}</p>

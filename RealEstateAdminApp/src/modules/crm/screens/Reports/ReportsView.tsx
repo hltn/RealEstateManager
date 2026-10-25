@@ -1,9 +1,11 @@
 /**
  * Màn Báo cáo (X6) dùng chung desktop + mobile — bố cục co giãn bằng Tailwind (mobile-first).
- * Mọi số liệu tính từ dữ liệu khách thật (`useReportData`); không hiển thị chỉ số giả (tăng trưởng, CPL, KPI mẫu...).
+ * M8 (giai đoạn 2): CHƯA có API dashboard nên màn chạy trên DỮ LIỆU MẪU trong trình duyệt khi bật cờ `VITE_CRM_MOCK_REPORTS`
+ * (mặc định bật ở dev, tắt ở production -> hiện thông báo "sắp ra mắt"). Số liệu mẫu KHÔNG phải số liệu thật của hệ thống.
  */
-import { ChartPie, Download, FolderKanban, MapPin, Megaphone, RotateCcw, UserCheck, UserMinus, UserRound, UserRoundCheck, Users } from 'lucide-react';
+import { ChartPie, Construction, Download, FolderKanban, MapPin, Megaphone, RotateCcw, UserCheck, UserMinus, UserRound, UserRoundCheck, Users } from 'lucide-react';
 import type { DashboardDateField } from '@crm/api';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import {
@@ -26,7 +28,7 @@ interface ReportsViewProps {
 
 const FILTER_SELECT_CLASS = `${FILTER_INPUT_CLASS} w-full sm:min-w-[200px] dark:[color-scheme:dark]`;
 
-export const ReportsView = ({ variant }: ReportsViewProps) => {
+const MockReportsContent = ({ variant }: ReportsViewProps) => {
   const { filters, setFilter, resetFilters, summary, statusSegments, leadSources, projects, areas, assigneeRows, projectOptions, assigneeOptions, exportCsv } =
     useReportData();
   const isDesktop = variant === 'desktop';
@@ -253,6 +255,32 @@ export const ReportsView = ({ variant }: ReportsViewProps) => {
           )}
         </section>
       </div>
+    </div>
+  );
+};
+
+/** Cổng cờ: tắt -> thông báo sắp ra mắt; bật -> báo cáo trên dữ liệu mẫu kèm biểu ngữ cảnh báo. */
+export const ReportsView = ({ variant }: ReportsViewProps) => {
+  if (!CRM_FEATURE_FLAGS.isMockReportsEnabled) {
+    return (
+      <div className="flex w-full flex-col gap-6">
+        <CrmModuleTabs />
+        <div className="mx-auto flex max-w-lg flex-col items-center rounded-2xl border border-gray-200 bg-white px-6 py-12 text-center dark:border-white/[0.05] dark:bg-white/[0.03]">
+          <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+            <Construction size={32} aria-hidden="true" />
+          </span>
+          <p className="text-base font-medium text-gray-700 dark:text-gray-300">Báo cáo &amp; Thống kê sắp ra mắt</p>
+          <p className="mt-1 max-w-sm text-theme-sm text-gray-500 dark:text-gray-400">Tính năng đang được hoàn thiện ở giai đoạn tiếp theo.</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex w-full flex-col gap-4">
+      <p role="note" className="rounded-xl border border-warning-100 bg-warning-50 px-4 py-3 text-theme-sm text-warning-700 dark:border-warning-500/25 dark:bg-warning-500/10 dark:text-warning-400">
+        Dữ liệu mẫu (chưa nối API Báo cáo): số liệu dưới đây không phải dữ liệu thật của hệ thống.
+      </p>
+      <MockReportsContent variant={variant} />
     </div>
   );
 };

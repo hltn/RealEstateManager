@@ -6,6 +6,8 @@
  */
 import { lazy, Suspense, type ReactElement } from 'react';
 import { Navigate, Route } from 'react-router-dom';
+import RoleGuard from '../../components/auth/RoleGuard';
+import { UserRole } from '../../types/user';
 import { CRM_CHILD_ROUTES, CRM_DEFAULT_PATH } from './routes';
 
 const CrmLayout = lazy(() => import('./CrmLayout'));
@@ -20,6 +22,7 @@ const CreateAppointmentScreen = lazy(() => import('./screens/CreateAppointment')
 const ReportsScreen = lazy(() => import('./screens/Reports'));
 const ProjectsScreen = lazy(() => import('./screens/Projects'));
 const SettingsScreen = lazy(() => import('./screens/Settings'));
+const NotificationsScreen = lazy(() => import('./screens/Notifications'));
 
 const LoadingFallback = () => <div role="status" className="p-6 text-theme-sm text-gray-500 dark:text-gray-400">Đang tải…</div>;
 
@@ -48,4 +51,20 @@ export const buildCrmRoute = (isEnabled: boolean): ReactElement | null =>
       <Route path={CRM_CHILD_ROUTES.settings} element={<SettingsScreen />} />
       <Route path="*" element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
     </Route>
+  ) : null;
+
+/** Route `/notifications` (hộp thông báo trong app, 05 §2.10) — cùng cờ module CRM; nằm ngoài `/crm` nên không bọc CrmProvider. */
+export const buildNotificationsRoute = (isEnabled: boolean): ReactElement | null =>
+  isEnabled ? (
+    <Route
+      path="notifications"
+      element={
+        // Hộp thông báo là của vai trò CRM; EDITOR bị backend chặn 403 nên chặn sớm ở giao diện.
+        <RoleGuard allowedRoles={[UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF]} fallback={<Navigate to="/" replace />}>
+          <Suspense fallback={<LoadingFallback />}>
+            <NotificationsScreen />
+          </Suspense>
+        </RoleGuard>
+      }
+    />
   ) : null;

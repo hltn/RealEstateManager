@@ -1,20 +1,22 @@
-/** Bật cờ gọi/Zalo trong ứng dụng: số đầy đủ lấy qua createPhoneView TRONG handler (1 log / lần mở, StrictMode không nhân đôi), modal nhận số từ đó. */
+/** Bật cờ gọi/Zalo trong ứng dụng: số đầy đủ lấy qua API `phone-views` TRONG handler (1 lượt / lần mở), modal nhận số từ đó. */
 import { act, renderHook } from '@testing-library/react';
 import { StrictMode, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CrmProvider } from '@crm/store/CrmProvider';
 import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
 import { FIXED_NOW } from '@crm/test/fixtures';
 import { useContactActions } from './useContactActions';
 
+const createPhoneView = vi.fn();
+vi.mock('@crm/api', () => ({ useCrmApi: () => ({ createPhoneView }) }));
 vi.mock('@crm/config/featureFlags', () => ({
   CRM_FEATURE_FLAGS: { isPrototypeEnabled: true, isInAppCallEnabled: true, isZaloZnsEnabled: true, isAppointmentNotifySyncEnabled: false },
 }));
 vi.mock('./useIsMobile', () => ({ useIsMobile: () => false }));
 
-const setup = (userId: string) => {
-  const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), initialSession: { currentUserId: userId }, shouldPersist: false });
+const setup = () => {
+  const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <StrictMode>
       <MemoryRouter>
@@ -23,40 +25,44 @@ const setup = (userId: string) => {
     </StrictMode>
   );
   const { result } = renderHook(() => useContactActions(), { wrapper });
-  const phoneLogs = () => store.getState().state.changeLogs.filter((log) => log.action === 'PHONE_VIEWED');
-  return { store, result, phoneLogs };
+  return { store, result };
 };
 
+beforeEach(() => createPhoneView.mockReset());
+
 describe('modal Gọi / Zalo trong ứng dụng', () => {
-  it('Gọi: mở modal mang số đầy đủ và ghi ĐÚNG 1 log PHONE_VIEWED (không trùng do StrictMode/re-render)', () => {
-    const { store, result, phoneLogs } = setup('thao');
-    act(() => result.current.callCustomer('CUST-001'));
-    expect(store.getState().state.activeModal).toEqual({ kind: 'call', customerId: 'CUST-001', phone: '+84912345678' });
-    expect(phoneLogs()).toHaveLength(1);
-    expect(phoneLogs()[0]).toMatchObject({ customerId: 'CUST-001', actorId: 'thao' });
+  it('Gọi: lấy số với mục đích CALL, mở modal mang số đầy đủ, đúng 1 lượt xem', async () => {
+    createPhoneView.mockResolvedValue({ ok: true, data: { phone: '+84912345678', viewedAt: 't' } });
+    const { store, result } = setup();
+    await act(async () => result.current.callCustomer('c1'));
+    expect(createPhoneView).toHaveBeenCalledTimes(1);
+    expect(createPhoneView).toHaveBeenCalledWith('c1', 'CALL');
+    expect(store.getState().state.activeModal).toEqual({ kind: 'call', customerId: 'c1', phone: '+84912345678' });
   });
 
-  it('Zalo: cũng lấy số qua createPhoneView — 1 log, modal có số', () => {
-    const { store, result, phoneLogs } = setup('hanh');
-    act(() => result.current.messageZalo('CUST-001'));
-    expect(store.getState().state.activeModal).toEqual({ kind: 'zalo', customerId: 'CUST-001', phone: '+84912345678' });
-    expect(phoneLogs()).toHaveLength(1);
+  it('Zalo: lấy số (VIEW) rồi mở modal Zalo', async () => {
+    createPhoneView.mockResolvedValue({ ok: true, data: { phone: '+84912345678', viewedAt: 't' } });
+    const { store, result } = setup();
+    await act(async () => result.current.messageZalo('c1'));
+    expect(createPhoneView).toHaveBeenCalledWith('c1', 'VIEW');
+    expect(store.getState().state.activeModal).toEqual({ kind: 'zalo', customerId: 'c1', phone: '+84912345678' });
   });
 
-  it('mỗi lần mở là 1 lần xem: mở lại -> log thứ 2', () => {
-    const { result, phoneLogs } = setup('thao');
-    act(() => result.current.callCustomer('CUST-001'));
-    act(() => result.current.callCustomer('CUST-001'));
-    expect(phoneLogs()).toHaveLength(2);
+  it('mỗi lần mở là một lượt xem: mở lại -> gọi API lần 2', async () => {
+    createPhoneView.mockResolvedValue({ ok: true, data: { phone: '+84912345678', viewedAt: 't' } });
+    const { result } = setup();
+    await act(async () => result.current.callCustomer('c1'));
+    await act(async () => result.current.callCustomer('c1'));
+    expect(createPhoneView).toHaveBeenCalledTimes(2);
   });
 
-  it('khách ngoài phạm vi: không mở modal, không ghi log', () => {
-    const { store, result, phoneLogs } = setup('thao');
-    act(() => {
-      result.current.callCustomer('CUST-002');
-      result.current.messageZalo('CUST-002');
+  it('khách ngoài phạm vi (404) hoặc bị giới hạn (429): không mở modal', async () => {
+    createPhoneView.mockResolvedValue({ ok: false, error: { statusCode: 404, errorCode: 'CUSTOMER_NOT_FOUND', message: 'Không tìm thấy khách hàng.' } });
+    const { store, result } = setup();
+    await act(async () => {
+      await result.current.callCustomer('c2');
+      await result.current.messageZalo('c2');
     });
     expect(store.getState().state.activeModal).toBeNull();
-    expect(phoneLogs()).toHaveLength(0);
   });
 });

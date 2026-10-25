@@ -55,7 +55,7 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
                   </div>
                   <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</p>
                   <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">
-                    Dự án {formatProjectSummary(appointment.customer.projects)} • Phụ trách: {appointment.assignee.displayName}
+                    {appointment.customer.projects && appointment.customer.projects.length > 0 && `Dự án ${formatProjectSummary(appointment.customer.projects)} • `}Phụ trách: {appointment.assignee.displayName}
                   </p>
                 </div>
                 <button

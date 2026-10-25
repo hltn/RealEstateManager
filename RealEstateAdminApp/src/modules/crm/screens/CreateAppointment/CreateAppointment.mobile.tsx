@@ -21,7 +21,7 @@ import { useCreateAppointmentForm } from './useCreateAppointmentForm';
 
 export const CreateAppointmentMobile = () => {
   const form = useCreateAppointmentForm();
-  const { values, setField, handleSubmit, cancel, pendingRequiredCount } = form;
+  const { values, setField, handleSubmit, cancel, pendingRequiredCount, isSubmitting } = form;
   const leadName = form.selectedCustomer?.careTeam.find((member) => member.user.id === values.assigneeId)?.user.displayName ?? '';
 
   return (
@@ -79,6 +79,7 @@ export const CreateAppointmentMobile = () => {
         variant="mobile"
         submitLabel="Xác nhận tạo lịch hẹn"
         submitIcon={CalendarCheck}
+        isSubmitting={isSubmitting}
         onCancel={cancel}
         mobileNote={pendingRequiredCount > 0 ? `Còn ${pendingRequiredCount} trường bắt buộc cần kiểm tra` : undefined}
       />

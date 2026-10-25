@@ -2,7 +2,7 @@
 // Màn chi tiết là sub view -> CrmLayout KHÔNG hiện `CrmBottomNav`; chừa `pb-24` cho thanh CTA đáy.
 import { useState } from 'react';
 import { useCareLogs, useCustomerDetail } from '@crm/api';
-import { CustomerNotFound } from '@crm/components/CustomerNotFound';
+import { CustomerLoadState } from '@crm/components/CustomerLoadState';
 import { TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmState } from '@crm/store';
 import { CareLogForm } from './components/CareLogForm';
@@ -27,11 +27,13 @@ const TAB_ITEMS: { id: MobileTab; label: string }[] = [
 
 export const CustomerDetailMobile = () => {
   const { selectedCustomerId } = useCrmState();
-  const { data: customer } = useCustomerDetail(selectedCustomerId);
-  const { data: careLogs } = useCareLogs(selectedCustomerId);
+  const { data: customer, isLoading, isNotFound, error, refetch } = useCustomerDetail(selectedCustomerId);
+  const primaryUserId = customer?.careTeam.find((member) => member.role === 'PRIMARY')?.user.id ?? null;
+  const careLogsState = useCareLogs(selectedCustomerId, primaryUserId);
+  const careLogs = careLogsState.data;
   const [activeTab, setActiveTab] = useState<MobileTab>('info');
 
-  if (!customer) return <CustomerNotFound variant="mobile" title="Chi tiết khách hàng" />;
+  if (!customer) return <CustomerLoadState variant="mobile" title="Chi tiết khách hàng" isLoading={isLoading} isNotFound={isNotFound} error={error} onRetry={refetch} />;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 pb-24" data-testid="customer-detail-mobile">
@@ -67,7 +69,7 @@ export const CustomerDetailMobile = () => {
       {activeTab === 'logs' && (
         <>
           <CareLogForm key={customer.id} customer={customer} variant="mobile" />
-          <CareTimeline careLogs={careLogs} />
+          <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} />
           <HistoryList customerId={customer.id} />
         </>
       )}

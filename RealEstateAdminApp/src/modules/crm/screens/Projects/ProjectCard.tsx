@@ -36,7 +36,7 @@ export const ProjectCard = ({ project, interestedCount, onBookVisit, onEdit, onD
           <Building2 size={24} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-lg font-semibold leading-tight text-gray-800 dark:text-white/90">{project.fullName || project.name}</h3>
+          <h3 className="text-lg font-semibold leading-tight text-gray-800 dark:text-white/90">{project.name}</h3>
           <p className="mt-0.5 text-theme-xs text-gray-500 dark:text-gray-400">
             {[project.code, project.developer].filter(Boolean).join(' · ')}
           </p>

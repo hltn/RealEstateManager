@@ -1,11 +1,14 @@
 // Danh sách khách (web) theo mẫu trang "Manage WP" của Admin (02 §4.2): đầu trang + tab module, tab danh sách có số đếm,
 // thanh lọc, hành động hàng loạt, bảng `rounded-2xl`, `Pagination` của Admin.
 // Dữ liệu: `GET /crm/customers` qua `useCustomerListScreen` (lọc + sắp xếp + phân trang ở lớp dữ liệu).
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Download, Plus, SearchX } from 'lucide-react';
+import { TableSkeletonRows } from '../../../../components/common/TableSkeletonRows';
 import { Pagination } from '../../../../components/common/Pagination';
 import { DEFAULT_PAGE_SIZE } from '../../../../types/pagination';
-import { canExportCustomers, useCrmActor, useCustomerExport } from '@crm/api';
+import { canExportCustomers, canImportCustomers, useCrmActor } from '@crm/api';
+import { useCustomerExport } from '@crm/api/mockHooks';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import { downloadCsv } from '@crm/lib/csv';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHECKBOX_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
@@ -33,11 +36,14 @@ const CUSTOMER_TABLE_COLUMNS: { label: string; className?: string; isRightAligne
 
 export const CustomersDesktop = () => {
   const screen = useCustomerListScreen(DEFAULT_PAGE_SIZE);
-  const { list, counts, filters, query, updateFilters, setPage, setPageSize } = screen;
+  const { list, counts, filters, query, isLoading, error, refetch, updateFilters, setPage, setPageSize } = screen;
   const { navigate, showToast } = useCrmActions();
   const actor = useCrmActor();
   const exportCustomers = useCustomerExport();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** Tình trạng của khách ở các trang đã xem (để Hoàn tác đổi tình trạng hàng loạt). */
+  const statusById = useRef(new Map<string, string>());
+  list.data.forEach((customer) => statusById.current.set(customer.id, customer.status.id));
   const pageIds = list.data.map((customer) => customer.id);
   const isPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
 
@@ -66,8 +72,8 @@ export const CustomersDesktop = () => {
             <p className={`${PAGE_DESCRIPTION_CLASS} max-w-2xl`}>Theo dõi, chăm sóc khách hàng, nhắc việc và lịch hẹn.</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <ImportCustomersButton />
-            {canExportCustomers(actor.role) && (
+            {CRM_FEATURE_FLAGS.isMockImportExportEnabled && canImportCustomers(actor.role) && <ImportCustomersButton />}
+            {canExportCustomers(actor.role) && CRM_FEATURE_FLAGS.isMockImportExportEnabled && (
               <button type="button" onClick={exportFiltered} disabled={list.meta.total === 0} className={BUTTON_OUTLINE_CLASS}>
                 <Download size={18} aria-hidden="true" />
                 Xuất Excel (CSV)
@@ -85,7 +91,7 @@ export const CustomersDesktop = () => {
       <div className="flex flex-col gap-4">
         <CustomerStatusPills activeTab={filters.listGroup} counts={counts} onChange={(listGroup) => updateFilters({ listGroup })} />
         <CustomerToolbar screen={screen} />
-        {selectedIds.length > 0 && <BulkActionBar selectedIds={selectedIds} onClear={() => setSelectedIds([])} />}
+        {selectedIds.length > 0 && <BulkActionBar selectedIds={selectedIds} onClear={() => setSelectedIds([])} getStatusId={(id) => statusById.current.get(id)} />}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -111,10 +117,21 @@ export const CustomersDesktop = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                {isLoading && <TableSkeletonRows columnCount={CUSTOMER_TABLE_COLUMNS.length + 1} />}
+                {!isLoading && error && (
+                  <tr>
+                    <td colSpan={CUSTOMER_TABLE_COLUMNS.length + 1} className="px-5 py-12 text-center" role="alert">
+                      <p className="text-base font-medium text-gray-700 dark:text-gray-300">{error.message}</p>
+                      <button type="button" onClick={refetch} className={`${BUTTON_OUTLINE_CLASS} mt-4`}>
+                        Thử lại
+                      </button>
+                    </td>
+                  </tr>
+                )}
                 {list.data.map((customer) => (
                   <CustomerTableRow key={customer.id} customer={customer} isSelected={selectedIds.includes(customer.id)} onToggleSelect={toggleSelect} />
                 ))}
-                {list.data.length === 0 && (
+                {!isLoading && !error && list.data.length === 0 && (
                   <tr>
                     <td colSpan={CUSTOMER_TABLE_COLUMNS.length + 1} className="px-5 py-16 text-center">
                       <div className="flex flex-col items-center gap-3">

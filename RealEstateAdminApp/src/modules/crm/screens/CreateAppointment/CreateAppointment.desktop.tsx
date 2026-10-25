@@ -39,7 +39,7 @@ const SideCard = ({ title, icon: Icon, children }: SideCardProps) => (
 
 export const CreateAppointmentDesktop = () => {
   const form = useCreateAppointmentForm();
-  const { values, setField, handleSubmit, cancel, pendingRequiredCount } = form;
+  const { values, setField, handleSubmit, cancel, pendingRequiredCount, isSubmitting } = form;
   const leadName = form.selectedCustomer?.careTeam.find((member) => member.user.id === values.assigneeId)?.user.displayName ?? '';
 
   return (
@@ -103,6 +103,7 @@ export const CreateAppointmentDesktop = () => {
         variant="desktop"
         submitLabel="Xác nhận tạo lịch hẹn"
         submitIcon={CalendarCheck}
+        isSubmitting={isSubmitting}
         onCancel={cancel}
         info={pendingRequiredCount > 0 ? `Còn ${pendingRequiredCount} trường bắt buộc cần kiểm tra` : 'Đã đủ thông tin bắt buộc'}
       />

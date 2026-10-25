@@ -19,7 +19,7 @@ const PILL_BASE_CLASS =
   'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors active:scale-95';
 
 export const DailyTasksMobile = () => {
-  const { data: tasks } = useDailyTasks();
+  const { data: tasks, isLoading, error, refetch } = useDailyTasks();
   const taskGroups = groupTasks(tasks);
   const { navigate } = useCrmActions();
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
@@ -60,7 +60,24 @@ export const DailyTasksMobile = () => {
         })}
       </div>
 
-      {visibleCategories.map((category) => {
+      {error && !isLoading && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl border border-error-100 bg-error-50 p-4 text-theme-sm text-error-600 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-400">
+          <span>{error.message}</span>
+          <button type="button" onClick={refetch} className="font-semibold underline">
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {isLoading && (
+        <div aria-busy="true" aria-label="Đang tải việc" className="flex flex-col gap-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && visibleCategories.map((category) => {
         const meta = TASK_CATEGORY_META[category];
         const Icon = meta.icon;
         const categoryTasks = taskGroups[category];

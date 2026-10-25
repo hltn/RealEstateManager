@@ -13,6 +13,8 @@ interface FormActionBarProps {
   cancelLabel?: string;
   /** Icon nút lưu (mặc định `Save`). */
   submitIcon?: LucideIcon;
+  /** Đang gửi lên server: khóa nút Lưu (chống bấm đúp). */
+  isSubmitting?: boolean;
 }
 
 /**
@@ -29,6 +31,7 @@ export const FormActionBar = ({
   mobileNote,
   cancelLabel = 'Hủy bỏ',
   submitIcon: SubmitIcon = Save,
+  isSubmitting = false,
 }: FormActionBarProps) => {
   if (variant === 'mobile') {
     return (
@@ -42,9 +45,9 @@ export const FormActionBar = ({
           <button type="button" onClick={onCancel} className={`${BUTTON_OUTLINE_LG_CLASS} h-11 w-1/3`}>
             {cancelLabel}
           </button>
-          <button type="submit" className={`${BUTTON_PRIMARY_LG_CLASS} h-11 flex-1`}>
+          <button type="submit" disabled={isSubmitting} className={`${BUTTON_PRIMARY_LG_CLASS} h-11 flex-1`}>
             <SubmitIcon size={18} aria-hidden="true" />
-            <span className="truncate">{submitLabel}</span>
+            <span className="truncate">{isSubmitting ? 'Đang lưu…' : submitLabel}</span>
           </button>
         </div>
       </div>
@@ -67,9 +70,9 @@ export const FormActionBar = ({
         <button type="button" onClick={onCancel} className={BUTTON_OUTLINE_LG_CLASS}>
           {cancelLabel}
         </button>
-        <button type="submit" className={BUTTON_PRIMARY_LG_CLASS}>
+        <button type="submit" disabled={isSubmitting} className={BUTTON_PRIMARY_LG_CLASS}>
           <SubmitIcon size={18} aria-hidden="true" />
-          {submitLabel}
+          {isSubmitting ? 'Đang lưu…' : submitLabel}
         </button>
       </div>
     </div>

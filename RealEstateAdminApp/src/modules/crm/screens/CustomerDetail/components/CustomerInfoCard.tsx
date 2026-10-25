@@ -62,11 +62,6 @@ export const CustomerInfoCard = ({ customer }: CustomerInfoCardProps) => {
         <InfoField label="Tạo lúc">
           {formatVnDateTime(customer.createdAt)} · {customer.createdBy.displayName}
         </InfoField>
-        {customer.notes.trim() && (
-          <InfoField label="Ghi chú" className="sm:col-span-2 xl:col-span-1" valueClassName="whitespace-pre-line text-theme-sm text-gray-700 dark:text-gray-300">
-            {customer.notes}
-          </InfoField>
-        )}
       </div>
     </section>
   );

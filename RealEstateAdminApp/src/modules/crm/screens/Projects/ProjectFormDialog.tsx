@@ -14,6 +14,7 @@ import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { useIsMobile } from '@crm/hooks/useIsMobile';
 import { createId } from '@crm/lib/id';
+import { toProjectBody } from '@crm/api/http/projectBody';
 import { createEmptyProject, getFirstProjectError, getProjectErrors, normalizeProject, PROJECT_NAME_MAX_LENGTH, type ProjectErrors } from '@crm/lib/projectRules';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
@@ -38,14 +39,20 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
   const [draft, setDraft] = useState<Project>(() => editingProject ?? createEmptyProject(createId('proj')));
   const [errors, setErrors] = useState<ProjectErrors>({});
 
-  const handleSubmit = (event: FormEvent) => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (isSaving) return;
     const normalized = normalizeProject(draft);
     const nextErrors = getProjectErrors(catalogs.projects, normalized);
     setErrors(nextErrors);
     if (getFirstProjectError(nextErrors)) return;
-    const { id: _id, ...input } = normalized;
-    const result = isNew ? api.createProject(input) : api.updateProject(normalized.id, input);
+    setIsSaving(true);
+    // POST không nhận `isActive` (dự án mới luôn hoạt động): tắt hoạt động khi tạo = tạo xong rồi PATCH.
+    const result = isNew ? await api.createProject(toProjectBody(normalized, { isCreate: true })) : await api.updateProject(normalized.id, toProjectBody(normalized));
+    if (result.ok && isNew && !normalized.isActive) await api.updateProject(result.data.id, { isActive: false });
+    setIsSaving(false);
     if (!result.ok) {
       showToast({ type: 'error', title: result.error.message });
       return;
@@ -85,9 +92,9 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
       <button type="button" onClick={onClose} className={BUTTON_OUTLINE_CLASS}>
         Huỷ
       </button>
-      <button type="submit" form={FORM_ID} className={BUTTON_PRIMARY_CLASS}>
+      <button type="submit" form={FORM_ID} disabled={isSaving} className={BUTTON_PRIMARY_CLASS}>
         <Save size={16} aria-hidden="true" />
-        {isNew ? 'Thêm dự án' : 'Lưu thay đổi'}
+        {isSaving ? 'Đang lưu…' : isNew ? 'Thêm dự án' : 'Lưu thay đổi'}
       </button>
     </div>
   );

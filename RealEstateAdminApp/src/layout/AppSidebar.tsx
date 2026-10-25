@@ -19,7 +19,7 @@ import {
 } from "../icons";
 // [Prototype] Submenu module Quản lý khách hàng (CRM)
 import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
-import { useCrmSidebarSubItems, withCrmMenu } from "@crm/navigation";
+import { CRM_MENU_NAME, useCrmSidebarSubItems, withCrmMenu } from "@crm/navigation";
 import { CRM_BASE_PATH } from "@crm/routes";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
@@ -117,7 +117,16 @@ const AppSidebar: React.FC = () => {
   const isAdmin = user?.role === UserRole.ADMIN;
   // [Prototype] Submenu CRM ẩn mục không đủ quyền (Báo cáo: Quản lý/Quản trị; Dự án, Cài đặt: Quản trị).
   const crmSubItems = useCrmSidebarSubItems();
-  const mainItems = useMemo(() => withCrmMenu(navItems, crmSubItems, CRM_FEATURE_FLAGS.isPrototypeEnabled), [crmSubItems]);
+  // MANAGER/STAFF chỉ dùng CRM; EDITOR không có quyền CRM (backend 403) -> ẩn mục tương ứng (UX; backend mới là nguồn sự thật).
+  const isCrmOnlyRole = user?.role === UserRole.MANAGER || user?.role === UserRole.STAFF;
+  const isEditor = user?.role === UserRole.EDITOR;
+  const mainItems = useMemo(
+    () =>
+      withCrmMenu(navItems, crmSubItems, CRM_FEATURE_FLAGS.isPrototypeEnabled).filter((item) =>
+        isCrmOnlyRole ? item.name === CRM_MENU_NAME : isEditor ? item.name !== CRM_MENU_NAME : true,
+      ),
+    [crmSubItems, isCrmOnlyRole, isEditor],
+  );
   const canManagePrompts =
     user?.role === UserRole.ADMIN || user?.role === UserRole.EDITOR;
 

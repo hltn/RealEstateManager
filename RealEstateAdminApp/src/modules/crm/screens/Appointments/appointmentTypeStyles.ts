@@ -20,7 +20,7 @@ import type { AppointmentType } from '@crm/types/crm';
 export type AppointmentActionVariant = 'visit' | 'deposit' | 'reminder';
 
 export const getAppointmentActionVariant = (type: AppointmentType): AppointmentActionVariant => {
-  if (type === 'DEPOSIT') return 'deposit';
+  if (type === 'DEPOSIT_CONTRACT') return 'deposit';
   if (type === 'CALLBACK') return 'reminder';
   return 'visit';
 };
@@ -45,7 +45,7 @@ export const APPOINTMENT_TYPE_STYLES: Record<AppointmentType, AppointmentTypeSty
     iconBoxClass: 'bg-success-50 text-success-600 dark:bg-success-500/10 dark:text-success-500',
     shortLabel: 'Dẫn sa bàn',
   },
-  DEPOSIT: {
+  DEPOSIT_CONTRACT: {
     icon: FilePen,
     accentBorderClass: 'border-l-warning-500',
     chipClass: 'bg-warning-50 text-warning-700 dark:bg-warning-500/10 dark:text-warning-500',

@@ -19,7 +19,7 @@ export const useCustomerListScreen = (initialPageSize: number) => {
 
   const query = useMemo<CustomerListQuery>(() => ({ ...filters, sort, page, limit: pageSize }), [filters, sort, page, pageSize]);
   const countsQuery = useMemo<CustomerListQuery>(() => ({ ...filters, listGroup: 'ALL' }), [filters]);
-  const { data: list } = useCustomerList(query);
+  const { data: list, isLoading, error, refetch } = useCustomerList(query);
   const { data: counts } = useListCounts(countsQuery);
 
   return {
@@ -27,6 +27,9 @@ export const useCustomerListScreen = (initialPageSize: number) => {
     query,
     list,
     counts,
+    isLoading,
+    error,
+    refetch,
     sort,
     updateFilters: (changes: Partial<CustomerFilters>) => {
       setFilters(changes);

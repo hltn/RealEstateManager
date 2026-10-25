@@ -6,7 +6,8 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { CircleAlert, FileUp, Upload } from 'lucide-react';
 import { Modal } from '../../../../../components/ui/modal';
-import { canImportCustomers, useCatalogs, useCrmActor, useCrmApi, usePhoneExists } from '@crm/api';
+import { canImportCustomers } from '@crm/api';
+import { useMockActor, useMockCatalogs, useMockCrmApi, useMockPhoneExists } from '@crm/api/mockHooks';
 import { parseCsv } from '@crm/lib/csv';
 import { autoMapColumns, checkImportLimits, IMPORT_PRESETS, IMPORT_TARGET_LABELS, IMPORT_TARGETS, validateImportRows, type ImportMapping, type ImportTarget } from '@crm/lib/importCustomers';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, FORM_LABEL_CLASS, SOLID_INPUT_CLASS } from '@crm/lib/uiClasses';
@@ -21,9 +22,9 @@ interface ParsedFile {
 }
 
 const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
-  const api = useCrmApi();
-  const { catalogs, users } = useCatalogs();
-  const isPhoneTaken = usePhoneExists();
+  const api = useMockCrmApi();
+  const { catalogs, users } = useMockCatalogs();
+  const isPhoneTaken = useMockPhoneExists();
   const { showToast } = useCrmActions();
   const [presetCode, setPresetCode] = useState(IMPORT_PRESETS[0].code);
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
@@ -77,7 +78,7 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
       <div role="dialog" aria-modal="true" aria-labelledby="crm-import-title" className="flex max-h-[90vh] flex-col">
         <header className="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
           <h3 id="crm-import-title" className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            Nhập khách từ file CSV
+            Nhập khách từ file CSV (dữ liệu mẫu)
           </h3>
           <p className="text-theme-xs text-gray-500 dark:text-gray-400">Kiểm tra từng dòng trước khi nhập. Dòng có lỗi sẽ không được nhập.</p>
         </header>
@@ -215,9 +216,12 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
   );
 };
 
-/** Nút "Nhập CSV" ở đầu danh sách khách — chỉ hiện với Quản trị (04 §4.2: Import dữ liệu = Quản trị). */
+/**
+ * Nút "Nhập CSV" ở đầu danh sách khách — M8 chưa có API: nhập vào DỮ LIỆU MẪU trong trình duyệt (chỉ hiện khi bật cờ
+ * `VITE_CRM_MOCK_IMPORT_EXPORT`, màn danh sách đã kiểm cờ), KHÔNG ghi vào hệ thống thật.
+ */
 export const ImportCustomersButton = () => {
-  const actor = useCrmActor();
+  const actor = useMockActor();
   const [isOpen, setIsOpen] = useState(false);
   if (!canImportCustomers(actor.role)) return null;
   return (

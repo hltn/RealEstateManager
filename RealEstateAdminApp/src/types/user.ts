@@ -11,6 +11,10 @@
 export const UserRole = {
   ADMIN: 'ADMIN',
   EDITOR: 'EDITOR',
+  /** Quản lý nhóm CRM (backend `UserRole.MANAGER`). */
+  MANAGER: 'MANAGER',
+  /** Nhân viên kinh doanh CRM (backend `UserRole.STAFF`). */
+  STAFF: 'STAFF',
 } as const;
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
@@ -32,6 +36,10 @@ export interface AuthUser {
   displayName: string;
   role: UserRole;
   status?: UserStatus;
+  /** Nhóm của người dùng (CRM). Chỉ có ở `GET /auth/me`; `null` = chưa thuộc nhóm. */
+  teamId?: string | null;
+  /** Các nhóm người này là Quản lý. Chỉ có ở `GET /auth/me`. */
+  managedTeamIds?: string[];
 }
 
 /** Response body của `POST /auth/login`. */

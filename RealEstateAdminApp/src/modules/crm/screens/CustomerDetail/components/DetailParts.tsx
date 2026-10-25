@@ -1,10 +1,10 @@
 // Mảnh giao diện dùng chung giữa 2 biến thể desktop/mobile của màn "Chi tiết khách hàng".
 // Phần Admin có sẵn: `Dropdown`/`DropdownItem`, `Modal`; phần mới (avatar chồng, thanh tiến độ, khay ảnh) vẽ bằng token Admin.
 import { useCallback, useState, type ChangeEvent, type ReactNode } from 'react';
-import { Check, ChevronDown, Eye, EyeOff, ImagePlus, Lightbulb, ShieldCheck, Star, X, type LucideIcon } from 'lucide-react';
+import { Check, ChevronDown, Eye, EyeOff, ImagePlus, LoaderCircle, Lightbulb, ShieldCheck, Star, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import { Dropdown } from '../../../../../components/ui/dropdown/Dropdown';
 import { DropdownItem } from '../../../../../components/ui/dropdown/DropdownItem';
-import { useCatalogs, useCrmApi, useNationalIdViews, type CareTeamMemberView, type CustomerDetail } from '@crm/api';
+import { ATTACHMENT_ACCEPT, useCatalogs, useCrmActor, useCrmApi, useNationalIdViews, type CareTeamMemberView, type CustomerDetail } from '@crm/api';
 import { useCrmActions } from '@crm/store';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
@@ -13,7 +13,8 @@ import { formatVnDateTime } from '@crm/lib/dateTime';
 import { formatPhoneDisplay } from '@crm/lib/phone';
 import { getInitials } from '@crm/lib/staff';
 import { BUTTON_LINK_CLASS, CARD_TITLE_CLASS, CHIP_CLASS, CHIP_TONE_CLASS, DIVIDER_CLASS, INFO_LABEL_CLASS, INFO_VALUE_CLASS } from '@crm/lib/uiClasses';
-import type { CustomerStatusItem, GalleryImage } from '@crm/types/crm';
+import type { CustomerStatusItem } from '@crm/types/crm';
+import type { AttachedPhoto } from '../useAttachedPhotos';
 import { useCustomerDetailActions } from '../useCustomerDetailActions';
 import { useRevealedValue } from '../useRevealedValue';
 
@@ -156,12 +157,12 @@ export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerD
   const isVisible = revealedPhone !== null;
   const ToggleIcon = isVisible ? EyeOff : Eye;
   // "Hiện số" = gọi API có ghi log (như CCCD) trong handler, không trong updater của setState.
-  const toggle = () => {
+  const toggle = async () => {
     if (isVisible) {
       setRevealedPhone(null);
       return;
     }
-    const result = api.createPhoneView(customer.id);
+    const result = await api.createPhoneView(customer.id);
     if (!result.ok) {
       showToast({ type: 'error', title: result.error.message });
       return;
@@ -187,7 +188,9 @@ export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerD
 export const NationalIdField = ({ customer }: { customer: CustomerDetail }) => {
   const { revealNationalId } = useCustomerDetailActions(customer);
   const [revealed, setRevealed] = useRevealedValue(customer.id);
-  const { data: viewLog } = useNationalIdViews(customer.id);
+  const actor = useCrmActor();
+  // Nhật ký xem CCCD chỉ Quản trị/Quản lý đọc được (05 §2.4); gọi cho người khác sẽ 403.
+  const { data: viewLog } = useNationalIdViews(customer.id, customer.hasNationalId && (actor.role === 'ADMIN' || actor.role === 'MANAGER'));
   const ToggleIcon = revealed ? EyeOff : Eye;
 
   if (!customer.hasNationalId) return <span className={INFO_VALUE_CLASS}>Chưa cập nhật</span>;
@@ -198,10 +201,10 @@ export const NationalIdField = ({ customer }: { customer: CustomerDetail }) => {
       {customer.permissions.canRevealNationalId && (
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             // Gọi API (có ghi log) trong handler, KHÔNG trong updater của setState (StrictMode chạy updater 2 lần).
             if (revealed) setRevealed(null);
-            else setRevealed(revealNationalId());
+            else setRevealed(await revealNationalId());
           }}
           aria-pressed={Boolean(revealed)}
           title="Mỗi lần xem CCCD đầy đủ đều được ghi lại"
@@ -314,11 +317,11 @@ export const ProgressBar = ({ percent, label, className = 'h-2', fillClassName =
 );
 
 // ---------------------------------------------------------------------------
-// Ảnh đính kèm nhật ký (tính năng đang chờ quyết định giữ/bỏ; mặc định rỗng)
+// Ảnh đính kèm nhật ký (tải lên server ngay khi chọn; cờ `isAttachmentsEnabled`)
 // ---------------------------------------------------------------------------
 
 interface AttachedPhotoTrayProps {
-  photos: GalleryImage[];
+  photos: AttachedPhoto[];
   onRemove: (index: number) => void;
 }
 
@@ -327,8 +330,18 @@ export const AttachedPhotoTray = ({ photos, onRemove }: AttachedPhotoTrayProps) 
   return (
     <ul className="custom-scrollbar flex items-center gap-2 overflow-x-auto pb-1" aria-label="Ảnh đã đính kèm">
       {photos.map((photo, index) => (
-        <li key={`${photo.src.slice(-24)}-${index}`} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-          <img src={photo.src} alt={photo.caption} className="h-full w-full object-cover" />
+        <li key={photo.key} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700" title={photo.errorMessage}>
+          <img src={photo.previewUrl} alt={photo.name} className={`h-full w-full object-cover ${photo.status === 'ready' ? '' : 'opacity-50'}`} />
+          {photo.status === 'uploading' && (
+            <span role="status" aria-label="Đang tải ảnh lên" className="absolute inset-0 flex items-center justify-center text-white">
+              <LoaderCircle size={18} className="animate-spin" aria-hidden="true" />
+            </span>
+          )}
+          {photo.status === 'error' && (
+            <span role="alert" aria-label={photo.errorMessage ?? 'Tải ảnh lỗi'} className="absolute inset-0 flex items-center justify-center text-error-500">
+              <TriangleAlert size={18} aria-hidden="true" />
+            </span>
+          )}
           <button
             type="button"
             onClick={() => onRemove(index)}
@@ -367,7 +380,7 @@ export const PhotoPickerButton = ({ onPick, onSkipped, className, label = 'Đín
     <label className={`${className} cursor-pointer`}>
       <ImagePlus size={14} aria-hidden="true" />
       {label}
-      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={handleChange} />
+      <input type="file" accept={ATTACHMENT_ACCEPT.join(',')} multiple className="sr-only" onChange={handleChange} />
     </label>
   );
 };

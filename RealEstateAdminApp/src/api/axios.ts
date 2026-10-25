@@ -15,6 +15,12 @@ const apiAxios = axios.create({
   timeout: 30_000,
 });
 
+/** UUID v4 cho `X-Request-ID` (fallback khi môi trường không có `crypto.randomUUID`). */
+const createRequestId = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+
 /** Các endpoint public (KHÔNG đính token, KHÔNG retry khi 401). */
 const PUBLIC_ENDPOINTS = ['/auth/login', '/auth/refresh'];
 
@@ -29,6 +35,9 @@ const isPublicRequest = (config: AxiosRequestConfig | undefined): boolean => {
  * vào mọi request không phải public. Token chỉ nằm trong RAM, không bao giờ chạm localStorage.
  */
 apiAxios.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  // Correlation ID (skill mục 4): mỗi request mang `X-Request-ID` để truy vết lỗi xuyên FE/BE.
+  if (!config.headers['X-Request-ID']) config.headers['X-Request-ID'] = createRequestId();
+
   if (isPublicRequest(config)) return config;
 
   const token = useAuthStore.getState().accessToken;

@@ -47,7 +47,7 @@ export const TaskListTable = ({ tasks }: { tasks: DailyTask[] }) => {
                 </td>
                 <td className="px-5 py-4">
                   <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{task.customer.fullName}</p>
-                  <p className="text-theme-xs text-gray-500 dark:text-gray-400">{task.customer.phoneMasked}</p>
+                  {task.customer.phoneMasked && <p className="text-theme-xs text-gray-500 dark:text-gray-400">{task.customer.phoneMasked}</p>}
                 </td>
                 <td className="px-5 py-4">
                   <CustomerStatusChip status={task.customer.status} />

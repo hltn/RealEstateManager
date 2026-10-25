@@ -19,7 +19,7 @@ export const CreateCustomerDesktop = () => {
         onBack={form.cancel}
       />
       <CreateCustomerFormBody form={form} variant="desktop" />
-      <FormActionBar variant="desktop" submitLabel="Lưu khách hàng" onCancel={form.cancel} />
+      <FormActionBar variant="desktop" submitLabel="Lưu khách hàng" isSubmitting={form.isSubmitting} onCancel={form.cancel} />
     </form>
   );
 };

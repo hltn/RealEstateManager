@@ -22,7 +22,8 @@ export const SEED_USERS: CrmUser[] = [
 ];
 
 /** Người dùng đăng nhập mặc định của prototype (đổi được bằng bộ chuyển "đăng nhập giả" ở môi trường dev). */
-export const DEFAULT_CURRENT_USER_ID = 'hanh';
+/** Người dùng MẪU của store mock (Quản trị: thấy mọi khách mẫu, được xuất/nhập file mẫu). */
+export const DEFAULT_CURRENT_USER_ID = 'admin';
 
 export const SEED_CATALOGS: CrmCatalogs = {
   statuses: [
@@ -90,6 +91,11 @@ export const SEED_CATALOGS: CrmCatalogs = {
 
 export const DEFAULT_SETTINGS: CrmSettings = {
   staleCustomerDays: 14,
-  occasionLeadDays: 3,
-  upcomingDays: 7,
+  staleCheckTime: '08:00',
+  occasionNotifyTime: '07:30',
+  occasionLeadDays: [0, 1],
+  defaultAppointmentReminderMinutes: [60, 1440],
+  careLogEditWindowHours: 24,
+  careLogNotifyDebounceMinutes: 10,
+  phoneViewAlertPerHour: 200,
 };

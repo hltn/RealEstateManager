@@ -22,6 +22,8 @@ export interface CrmUser {
   /** Chức danh hiển thị (không dùng để phân quyền). */
   jobTitle: string;
   teamId: string | null;
+  /** Tên nhóm (có khi lấy từ `assignable-users`). */
+  teamName?: string;
   isActive: boolean;
   avatarUrl?: string;
 }
@@ -65,6 +67,8 @@ export interface CustomerStatusItem {
 /** Danh mục phẳng (nguồn khách...). */
 export interface CatalogItem {
   id: string;
+  /** Mã bất biến của backend (chữ HOA, số, `_`). */
+  code?: string;
   label: string;
   order: number;
   isActive: boolean;
@@ -74,6 +78,11 @@ export interface CatalogItem {
 export interface Area {
   id: string;
   name: string;
+  /** Tên gốc của khu vực (không kèm tên khu vực cha) — dùng khi sửa. */
+  rawName?: string;
+  /** Loại khu vực của backend (PROVINCE/DISTRICT/WARD/OTHER). */
+  type?: string;
+  parentId?: string | null;
   order: number;
   isActive: boolean;
 }
@@ -166,7 +175,10 @@ export interface PersonaFieldDefinition {
   label: string;
   groupCode: PersonaGroupCode;
   type: PersonaFieldType;
+  /** Nhãn lựa chọn đang dùng (UI chọn/hiển thị theo nhãn). */
   options?: string[];
+  /** Cặp mã/nhãn từ API (kể cả lựa chọn đã tắt) để đổi nhãn <-> mã khi gọi API. */
+  optionItems?: { value: string; label: string; isActive: boolean }[];
   placeholder?: string;
   /** Trọng số độ đầy đủ (C12). */
   weight: number;
@@ -178,6 +190,8 @@ export interface PersonaFieldDefinition {
   occasionLabel?: string;
   /** Hiển thị cạnh tiêu chí tương ứng; KHÔNG tự đánh dấu hoàn thành tiêu chí. */
   linkedCriterion: CriterionKey | null;
+  /** Trường nhạy cảm: chỉ ghi khi khách tự nguyện chia sẻ + xác nhận (QT9). */
+  isSensitive?: boolean;
   isActive: boolean;
 }
 
@@ -313,7 +327,7 @@ export interface CareLog {
   images?: GalleryImage[];
 }
 
-export type AppointmentType = 'SITE_VISIT' | 'MEETING' | 'DEPOSIT' | 'CALLBACK' | 'OTHER';
+export type AppointmentType = 'SITE_VISIT' | 'MEETING' | 'DEPOSIT_CONTRACT' | 'CALLBACK' | 'OTHER';
 export type AppointmentStatus = 'SCHEDULED' | 'DONE' | 'CANCELED';
 export type DayPeriod = 'morning' | 'afternoon';
 
@@ -420,14 +434,21 @@ export interface ChangeLog {
   createdAt: string;
 }
 
-/** Cấu hình CRM (04 §3.7 `crm_settings`) — prototype giữ các ngưỡng dùng ở client. */
+/** Cấu hình CRM (05 §2.14 `GET /crm/settings`). */
 export interface CrmSettings {
   /** Khách nhóm "Chưa tiếp cận" / "Có quan tâm" quá N ngày chưa có nhật ký -> việc "khách lâu chưa chăm sóc". */
   staleCustomerDays: number;
-  /** Nhắc dịp đặc biệt trước N ngày (C13). */
-  occasionLeadDays: number;
-  /** Số ngày hiển thị ở nhóm "Sắp tới". */
-  upcomingDays: number;
+  /** Giờ quét khách lâu chưa chăm sóc (HH:mm, giờ VN). */
+  staleCheckTime: string;
+  /** Giờ gửi nhắc dịp đặc biệt (HH:mm, giờ VN). */
+  occasionNotifyTime: string;
+  /** Nhắc dịp đặc biệt trước N ngày (0 = đúng ngày). */
+  occasionLeadDays: number[];
+  /** Mốc nhắc lịch hẹn mặc định (phút trước giờ hẹn). */
+  defaultAppointmentReminderMinutes: number[];
+  careLogEditWindowHours: number;
+  careLogNotifyDebounceMinutes: number;
+  phoneViewAlertPerHour: number;
 }
 
 // ---------------------------------------------------------------------------

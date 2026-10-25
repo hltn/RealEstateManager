@@ -1,10 +1,10 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import AppLayout from './layout/AppLayout';
 import ManageWpScreen from './screens/ManageWpScreen';
 import CronjobScreen from './screens/CronjobScreen';
 import ExternalLogsScreen from './screens/ExternalLogsScreen';
 import ManageSourcesScreen from './screens/ManageSourcesScreen';
-import RawArticlesScreen from './screens/RawArticlesScreen';
 import MarketAnalysisWorkflowScreen from './screens/MarketAnalysisWorkflowScreen';
 import AiConfigScreen from './screens/AiConfigScreen';
 import AiPromptConfigScreen from './screens/AiPromptConfigScreen';
@@ -18,9 +18,17 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import RoleGuard from './components/auth/RoleGuard';
 import AuthInitializer from './components/auth/AuthInitializer';
 import { UserRole } from './types/user';
+import HomeIndex from './components/auth/HomeIndex';
 // [Prototype] Module Quản lý khách hàng (CRM) — xem src/modules/crm
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
-import { buildCrmRoute } from '@crm/crmRoute';
+import { buildCrmRoute, buildNotificationsRoute } from '@crm/crmRoute';
+
+/** Chặn route tin tức theo vai trò (EDITOR/ADMIN); vai trò CRM chuyển về /crm/today. */
+const NewsGuard = ({ children }: { children: ReactNode }) => (
+  <RoleGuard allowedRoles={[UserRole.ADMIN, UserRole.EDITOR]} fallback={<div className="flex min-h-[60vh] items-center justify-center text-gray-500">Bạn không có quyền truy cập trang này.</div>}>
+    {children}
+  </RoleGuard>
+);
 
 function App() {
   return (
@@ -41,15 +49,17 @@ function App() {
             }
           >
             {/* [Prototype] Mặc định mở Raw Articles; thêm route /crm/* cho module CRM */}
-            <Route index element={<RawArticlesScreen />} />
+            <Route index element={<HomeIndex />} />
 
             {/* [Prototype] Module Quản lý khách hàng — CrmLayout bọc CrmProvider + bottom nav mobile */}
             {buildCrmRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
+            {buildNotificationsRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
 
-            <Route path="manage-wp" element={<ManageWpScreen />} />
-            <Route path="market-analysis-workflow" element={<MarketAnalysisWorkflowScreen />} />
-            <Route path="news-detail/:id" element={<NewsDetailScreen />} />
-            <Route path="sources" element={<ManageSourcesScreen />} />
+            {/* Nhóm tin tức: ADMIN/EDITOR; MANAGER/STAFF bị chuyển về CRM (RoleGuard) */}
+            <Route path="manage-wp" element={<NewsGuard><ManageWpScreen /></NewsGuard>} />
+            <Route path="market-analysis-workflow" element={<NewsGuard><MarketAnalysisWorkflowScreen /></NewsGuard>} />
+            <Route path="news-detail/:id" element={<NewsGuard><NewsDetailScreen /></NewsGuard>} />
+            <Route path="sources" element={<NewsGuard><ManageSourcesScreen /></NewsGuard>} />
             {/* ADMIN only — cấu hình hệ thống */}
             <Route
               path="ai-config"
@@ -177,7 +187,7 @@ function App() {
           </Route>
 
           {/* Fallback — mọi route không khớp chuyển về vùng protected */}
-          <Route path="*" element={<ProtectedRoute><AppLayout /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthInitializer>
     </BrowserRouter>

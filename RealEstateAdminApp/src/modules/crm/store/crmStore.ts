@@ -4,6 +4,7 @@
  * cả phần ngoài `/crm` (vd menu `AppSidebar`) đọc vai trò người dùng hiện tại để ẩn mục không đủ quyền.
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { buildSeedData } from '@crm/data/mockData';
 import { DEFAULT_CURRENT_USER_ID, DEFAULT_SETTINGS, SEED_CATALOGS, SEED_TEAMS, SEED_USERS } from '@crm/data/seedCatalogs';
 import { seedNationalIds } from '@crm/lib/nationalIdVault';
@@ -35,6 +36,24 @@ export const createSeedDataState = (now: Date = new Date()): CrmDataState => {
     auditLogs: [],
   };
 };
+
+/** Dữ liệu rỗng: store chỉ giữ trạng thái giao diện (bộ lọc, modal) khi không bật mock nào. */
+export const createEmptyDataState = (): CrmDataState => ({
+  users: [],
+  teams: [],
+  catalogs: { statuses: [], leadSources: [], areas: [], projects: [], tags: [], contactResults: [] },
+  settings: { ...DEFAULT_SETTINGS },
+  customers: [],
+  careLogs: [],
+  appointments: [],
+  changeLogs: [],
+  nationalIdViews: [],
+  careTeamRequests: [],
+  auditLogs: [],
+});
+
+/** Có tính năng nào còn chạy trên dữ liệu mẫu (Báo cáo/nhập-xuất, M8) không. */
+const isMockDataNeeded = (): boolean => CRM_FEATURE_FLAGS.isMockReportsEnabled || CRM_FEATURE_FLAGS.isMockImportExportEnabled;
 
 export interface CreateCrmStoreOptions {
   initialData?: CrmDataState;
@@ -68,8 +87,11 @@ const pickData = (state: CrmState): CrmDataState => ({
   auditLogs: state.auditLogs,
 });
 
-export const createCrmStore = ({ initialData, initialSession, shouldPersist = true, onPersistError }: CreateCrmStoreOptions = {}): CrmStore => {
-  const data = initialData ?? (shouldPersist ? loadCrmData() : null) ?? createSeedDataState();
+export const createCrmStore = ({ initialData, initialSession, shouldPersist: shouldPersistOption = true, onPersistError }: CreateCrmStoreOptions = {}): CrmStore => {
+  // Không có dữ liệu mẫu nào cần dùng: không dựng/không lưu dữ liệu mẫu vào localStorage.
+  const isMock = Boolean(initialData) || isMockDataNeeded();
+  const shouldPersist = shouldPersistOption && isMock;
+  const data = initialData ?? (isMock ? ((shouldPersist ? loadCrmData() : null) ?? createSeedDataState()) : createEmptyDataState());
   const storedSession = initialSession ?? (shouldPersist ? loadCrmSession() : null);
   const session: CrmSession =
     storedSession && data.users.some((user) => user.id === storedSession.currentUserId)

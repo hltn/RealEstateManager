@@ -54,19 +54,23 @@ export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalPro
   const trimmedContent = content.trim();
   const hasContent = trimmedContent.length > 0;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!hasContent) return;
+    if (!hasContent || isSaving) return;
     const result = contactResults.find((item) => item.id === contactResultId);
     const option = REMINDER_OPTIONS.find((item) => item.value === reminder);
     const days = reminder === 'suggested' ? (result?.suggestedFollowUpDays ?? null) : (option?.days ?? null);
     const dueAt = reminder === 'none' ? '' : getSuggestedFollowUpIso(days);
-    const saved = api.createCareLog(customer.id, {
+    setIsSaving(true);
+    const saved = await api.createCareLog(customer.id, {
       content: trimmedContent,
       contactChannel: 'CALL',
       contactResultId: contactResultId || null,
       nextAction: dueAt || result?.suggestionText ? { suggestion: result?.suggestionText ?? '', dueAt: dueAt || null } : undefined,
     });
+    setIsSaving(false);
     if (!saved.ok) {
       showToast({ type: 'error', title: saved.error.message });
       return;
@@ -84,11 +88,11 @@ export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalPro
       <button
         type="submit"
         form={FORM_ID}
-        disabled={!hasContent}
+        disabled={!hasContent || isSaving}
         className={`${BUTTON_PRIMARY_CLASS} ${isSheet ? 'h-11 flex-[2]' : ''}`}
       >
         <Save size={16} aria-hidden="true" />
-        Lưu ghi chú
+        {isSaving ? 'Đang lưu…' : 'Lưu ghi chú'}
       </button>
     </div>
   );

@@ -1,6 +1,7 @@
 // Dòng thời gian nhật ký chăm sóc (C2, 02 §5 "Mục dòng thời gian"): ngày giờ đầy đủ (giờ VN), người viết,
 // dấu "Chính" chỉ khi tác giả là phụ trách chính của khách, kênh + kết quả liên hệ, bước tiếp theo, ảnh đính kèm.
 import { Activity, CalendarClock, Images } from 'lucide-react';
+import { useRef } from 'react';
 import type { CareLogView } from '@crm/api';
 import { CONTACT_CHANNEL_LABELS } from '@crm/lib/customerAdapters';
 import { formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
@@ -11,9 +12,10 @@ import { getHiddenImageCount, getShortCaption } from '../customerDetailUtils';
 import { CardHeading } from './DetailParts';
 
 const VISIBLE_THUMBNAIL_COUNT = 3;
+const IMAGE_RETRY_INTERVAL_MS = 30_000;
 const PHOTO_GROUP_TITLE = 'Ảnh đính kèm';
 
-const CareLogPhotos = ({ images }: { images: GalleryImage[] }) => {
+const CareLogPhotos = ({ images, onImageError }: { images: GalleryImage[]; onImageError?: () => void }) => {
   const { openLightbox } = useCrmActions();
   const hiddenCount = getHiddenImageCount(images.length, VISIBLE_THUMBNAIL_COUNT);
   return (
@@ -28,10 +30,10 @@ const CareLogPhotos = ({ images }: { images: GalleryImage[] }) => {
             key={`${image.src.slice(-24)}-${index}`}
             type="button"
             onClick={() => openLightbox(images, index, PHOTO_GROUP_TITLE)}
-            aria-label={`Xem ảnh: ${image.caption}`}
+            aria-label={`Xem ảnh: ${image.caption || 'đính kèm'}`}
             className="group relative aspect-video overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
           >
-            <img src={image.src} alt={image.caption} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+            <img src={image.src} alt={image.caption} onError={onImageError} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
             <span className="absolute inset-x-0 bottom-0 truncate bg-gray-900/60 px-1 py-0.5 text-center text-[10px] text-white">
               {getShortCaption(image.caption)}
             </span>
@@ -57,10 +59,33 @@ interface CareTimelineProps {
   careLogs: CareLogView[];
   /** Có khung thẻ + tiêu đề (desktop) hay danh sách trần (nằm trong thẻ khác). */
   isFramed?: boolean;
+  isLoading?: boolean;
+  /** Còn nhật ký cũ hơn chưa tải (phân trang 20 mục/lần). */
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
+  /** Ảnh không tải được (URL ký 15 phút đã hết hạn): tải lại nhật ký để lấy URL mới. */
+  onImageError?: () => void;
+  customerId?: string;
 }
 
-export const CareTimeline = ({ careLogs, isFramed = true }: CareTimelineProps) => {
-  const list =
+export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, hasMore = false, isLoadingMore = false, onLoadMore, onImageError }: CareTimelineProps) => {
+  const lastImageRetry = useRef(0);
+  /** Tối đa 1 lần làm mới / 30 giây để URL hỏng thật không gây vòng lặp tải. */
+  const handleImageError = onImageError
+    ? () => {
+        if (Date.now() - lastImageRetry.current < IMAGE_RETRY_INTERVAL_MS) return;
+        lastImageRetry.current = Date.now();
+        onImageError();
+      }
+    : undefined;
+  const list = isLoading ? (
+    <div aria-busy="true" aria-label="Đang tải nhật ký" className="space-y-3">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="h-24 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
+      ))}
+    </div>
+  ) : (
     careLogs.length === 0 ? (
       <p className={`py-8 text-center ${MUTED_TEXT_CLASS}`}>Chưa có nhật ký chăm sóc nào cho khách hàng này.</p>
     ) : (
@@ -91,22 +116,33 @@ export const CareTimeline = ({ careLogs, isFramed = true }: CareTimelineProps) =
                   <span>
                     Tiếp theo: {log.nextAction.suggestion || 'Chăm sóc lại'}
                     {log.nextAction.dueAt && ` — ${formatVnDateTime(log.nextAction.dueAt)}`}
-                    {log.nextAction.completedAt && ' (đã xong)'}
                   </span>
                 </p>
               )}
-              {log.images.length > 0 && <CareLogPhotos images={log.images} />}
+              {log.images.length > 0 && <CareLogPhotos images={log.images} onImageError={handleImageError} />}
             </article>
           </li>
         ))}
       </ol>
-    );
+    )
+  );
+  const loadMore = hasMore && onLoadMore && (
+    <button type="button" onClick={onLoadMore} disabled={isLoadingMore} className="mx-auto mt-2 block text-theme-sm font-medium text-brand-500 hover:underline disabled:opacity-60">
+      {isLoadingMore ? 'Đang tải…' : 'Xem nhật ký cũ hơn'}
+    </button>
+  );
+  const content = (
+    <>
+      {list}
+      {loadMore}
+    </>
+  );
 
-  if (!isFramed) return list;
+  if (!isFramed) return content;
   return (
     <section aria-label="Nhật ký chăm sóc" className={`${CARD_CLASS} space-y-4 p-5`}>
-      <CardHeading icon={Activity} title="Nhật ký chăm sóc" as="h3" trailing={<span className={MUTED_TEXT_CLASS}>{careLogs.length} mục</span>} />
-      {list}
+      <CardHeading icon={Activity} title="Nhật ký chăm sóc" as="h3" trailing={<span className={MUTED_TEXT_CLASS}>{careLogs.length}{hasMore ? '+' : ''} mục</span>} />
+      {content}
     </section>
   );
 };

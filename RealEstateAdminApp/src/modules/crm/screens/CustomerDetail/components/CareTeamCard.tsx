@@ -18,17 +18,18 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
   const api = useCrmApi();
   const { showToast } = useCrmActions();
   const { data: assignableUsers } = useAssignableUsers();
-  const { data: requests } = useCareTeamRequests('to-review');
   const [isAdding, setIsAdding] = useState(false);
   const [newMemberId, setNewMemberId] = useState('');
   const [removingPrimaryId, setRemovingPrimaryId] = useState<string | null>(null);
   const [replacementId, setReplacementId] = useState('');
   const { permissions, careTeam } = customer;
+  const { data: requests } = useCareTeamRequests('to-review', permissions.canReviewJoinRequests);
   const hasPrimary = careTeam.some((member) => member.role === 'PRIMARY');
   const candidates = assignableUsers.filter((user) => !careTeam.some((member) => member.user.id === user.id));
-  const pendingRequests = requests.filter((request) => request.customer?.id === customer.id && request.status === 'PENDING');
+  const pendingRequests = requests.filter((request) => request.customerId === customer.id && request.status === 'PENDING');
 
-  const handle = <T,>(result: ApiResult<T>, successTitle: string): boolean => {
+  const handle = async <T,>(pending: Promise<ApiResult<T>>, successTitle: string): Promise<boolean> => {
+    const result = await pending;
     if (!result.ok) {
       showToast({ type: 'error', title: result.error.message });
       return false;
@@ -37,10 +38,10 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
     return true;
   };
 
-  const addMember = () => {
+  const addMember = async () => {
     if (!newMemberId) return;
     // Khách chưa có phụ trách chính: người đầu tiên được thêm là phụ trách chính (bắt buộc chọn khi phân lần đầu).
-    const isSaved = handle(
+    const isSaved = await handle(
       api.addCareTeamMembers(customer.id, { userIds: [newMemberId], primaryUserId: hasPrimary ? undefined : newMemberId }),
       hasPrimary ? 'Đã thêm người cùng chăm sóc' : 'Đã phân người phụ trách chính',
     );
@@ -68,7 +69,8 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
                     <span className="truncate">{member.user.fullName}</span>
                   </p>
                   <p className="text-theme-xs text-gray-500 dark:text-gray-400">
-                    {isPrimary ? 'Phụ trách chính' : 'Cùng chăm sóc'} · {member.user.jobTitle}
+                    {isPrimary ? 'Phụ trách chính' : 'Cùng chăm sóc'}
+                    {member.user.jobTitle && ` · ${member.user.jobTitle}`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -166,13 +168,13 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
         confirmLabel="Gỡ và thay người"
         tone="danger"
         onCancel={() => setRemovingPrimaryId(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!removingPrimaryId) return;
           if (!replacementId) {
             showToast({ type: 'error', title: 'Vui lòng chọn người phụ trách chính thay thế.' });
             return;
           }
-          if (handle(api.removeCareTeamMember(customer.id, removingPrimaryId, replacementId), 'Đã gỡ và đổi người phụ trách chính')) {
+          if (await handle(api.removeCareTeamMember(customer.id, removingPrimaryId, replacementId), 'Đã gỡ và đổi người phụ trách chính')) {
             setRemovingPrimaryId(null);
           }
         }}

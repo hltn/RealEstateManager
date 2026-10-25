@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { queryClient } from '../queryClient';
 import type { AuthUser } from '../types/user';
 
 /**
@@ -33,16 +34,31 @@ export interface AuthState {
   markInitialized: () => void;
 }
 
+/** Đổi sang tài khoản khác (không qua đăng xuất): xóa cache. Cùng tài khoản (refresh token) thì giữ nguyên. */
+const clearCacheIfUserChanged = (previous: AuthUser | null, next: AuthUser): void => {
+  if (previous && previous._id !== next._id) queryClient.clear();
+};
+
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
   user: null,
   isInitialized: false,
 
-  setAuth: (token, user) => set({ accessToken: token, user }),
+  setAuth: (token, user) => {
+    clearCacheIfUserChanged(useAuthStore.getState().user, user);
+    set({ accessToken: token, user });
+  },
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    clearCacheIfUserChanged(useAuthStore.getState().user, user);
+    set({ user });
+  },
 
-  clearAuth: () => set({ accessToken: null, user: null, isInitialized: true }),
+  clearAuth: () => {
+    // Đăng xuất / refresh thất bại: xóa cache dữ liệu (CRM có PII) để người dùng sau không thấy dữ liệu của người trước.
+    queryClient.clear();
+    set({ accessToken: null, user: null, isInitialized: true });
+  },
 
   markInitialized: () => set({ isInitialized: true }),
 }));

@@ -94,11 +94,13 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
               <span className="truncate font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</span>
               <CustomerStatusChip status={appointment.customer.status} size="small" />
             </InfoRow>
-            <InfoRow icon={<Phone size={16} />}>
-              <span className="truncate">
-                SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customer.phoneMasked}</strong>
-              </span>
-            </InfoRow>
+            {appointment.customer.phoneMasked && (
+              <InfoRow icon={<Phone size={16} />}>
+                <span className="truncate">
+                  SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customer.phoneMasked}</strong>
+                </span>
+              </InfoRow>
+            )}
 
             {actionVariant === 'reminder' ? (
               appointment.note && (

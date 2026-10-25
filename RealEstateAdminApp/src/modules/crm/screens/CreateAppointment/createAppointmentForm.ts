@@ -48,7 +48,7 @@ export interface AppointmentTypeOption {
 
 export const APPOINTMENT_TYPE_OPTIONS: AppointmentTypeOption[] = [
   { type: 'SITE_VISIT', title: 'Xem nhà mẫu / sa bàn', description: 'Dẫn khách xem sa bàn, căn hộ mẫu và tiện ích dự án.', shortTitle: 'Xem nhà mẫu', shortDescription: 'Trải nghiệm dự án' },
-  { type: 'DEPOSIT', title: 'Ký cọc / HĐMB', description: 'Hẹn ký thỏa thuận đặt cọc hoặc hợp đồng mua bán.', shortTitle: 'Ký cọc / HĐMB', shortDescription: 'Ưu tiên cao', isHighPriority: true },
+  { type: 'DEPOSIT_CONTRACT', title: 'Ký cọc / HĐMB', description: 'Hẹn ký thỏa thuận đặt cọc hoặc hợp đồng mua bán.', shortTitle: 'Ký cọc / HĐMB', shortDescription: 'Ưu tiên cao', isHighPriority: true },
   { type: 'MEETING', title: 'Gặp tư vấn', description: 'Trao đổi phương án tài chính, pháp lý, chính sách bán hàng.', shortTitle: 'Gặp tư vấn', shortDescription: 'Trao đổi trực tiếp' },
   { type: 'CALLBACK', title: 'Nhắc gọi lại', description: 'Nhắc gọi lại cho khách theo hẹn.', shortTitle: 'Nhắc gọi lại', shortDescription: 'Gọi lại theo hẹn' },
   { type: 'OTHER', title: 'Mục đích khác', description: 'Ghi rõ nội dung ở phần ghi chú bên dưới.', shortTitle: 'Mục đích khác', shortDescription: 'Ghi rõ ở ghi chú' },
@@ -82,12 +82,16 @@ export const getProjectOfficeLocation = (project: Project | undefined): string =
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Validate trường bắt buộc + định dạng. Trả object rỗng nếu hợp lệ. */
-export const validateAppointmentForm = (values: AppointmentFormValues, customer: CustomerDetail | null, todayKey: string = getVnTodayKey()): AppointmentFormErrors => {
+/** Dung sai giờ hẹn ở quá khứ (backend chấp nhận lệch ≤ 5 phút so với hiện tại). */
+export const PAST_TOLERANCE_MS = 5 * 60 * 1000;
+
+export const validateAppointmentForm = (values: AppointmentFormValues, customer: CustomerDetail | null, todayKey: string = getVnTodayKey(), now: Date = new Date()): AppointmentFormErrors => {
   const errors: AppointmentFormErrors = {};
   if (!values.customerId || !customer) errors.customerId = 'Vui lòng chọn khách hàng.';
   if (!DATE_KEY_PATTERN.test(values.date)) errors.date = 'Vui lòng chọn ngày diễn ra.';
   else if (values.date < todayKey) errors.date = 'Ngày hẹn không được ở quá khứ.';
   if (!parseTime24(values.time)) errors.time = 'Vui lòng nhập giờ hợp lệ (HH:mm).';
+  else if (!errors.date && new Date(vnDateTimeToIso(values.date, values.time)).getTime() < now.getTime() - PAST_TOLERANCE_MS) errors.time = 'Giờ hẹn không được ở quá khứ.';
   if (values.type !== 'CALLBACK' && !values.location.trim()) errors.location = 'Vui lòng nhập địa điểm gặp.';
   if (values.note.length > NOTE_MAX_LENGTH) errors.note = `Ghi chú tối đa ${NOTE_MAX_LENGTH} ký tự.`;
   else if (values.type === 'OTHER' && !values.note.trim()) errors.note = 'Mục đích khác: vui lòng ghi rõ nội dung buổi hẹn.';
@@ -107,8 +111,6 @@ export const toCreateAppointmentInput = (values: AppointmentFormValues): CreateA
   note: values.note.trim(),
   assigneeId: values.assigneeId || undefined,
   remindBeforeMinutes: [values.remindBeforeMinutes],
-  smsZnsAuto: values.smsZnsAuto,
-  calendarSync: values.calendarSync,
 });
 
 /** "2026-10-21" -> "Thứ Tư, 21 tháng 10, 2026" (dòng gợi ý dưới ô ngày). */

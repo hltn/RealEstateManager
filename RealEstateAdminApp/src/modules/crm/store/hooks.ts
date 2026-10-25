@@ -13,7 +13,7 @@ import type { CrmActions } from './crmActions';
 import { CrmActionsContext, CrmStoreContext } from './crmContext';
 import type { CrmState } from './crmReducer';
 import { getDefaultCrmStore, type CrmStore } from './crmStore';
-import { selectCurrentUser } from './selectors';
+import { useAuthStore } from '../../../stores/auth.store';
 
 /** Store đang dùng: store của CrmProvider gần nhất, ngoài provider (vd AppSidebar) dùng store chung. */
 export const useCrmStore = (): CrmStore => useContext(CrmStoreContext) ?? getDefaultCrmStore();
@@ -41,5 +41,19 @@ export const useCurrentView = (): ViewId => {
   return matchCrmPath(pathname)?.view ?? DEFAULT_VIEW;
 };
 
-/** Người dùng đang đăng nhập (mock) — dùng được cả ngoài `<CrmProvider>`. */
-export const useCurrentUser = (): CrmUser => selectCurrentUser(useCrmRawState());
+/** Người dùng đang đăng nhập (tài khoản thật từ `/auth/me`) — dùng được cả ngoài `<CrmProvider>`. Vai trò lạ (EDITOR) coi như Nhân viên. */
+export const useCurrentUser = (): CrmUser => {
+  const user = useAuthStore((state) => state.user);
+  return useMemo(
+    () => ({
+      id: user?._id ?? '',
+      fullName: user?.displayName ?? '',
+      displayName: user?.displayName ?? '',
+      role: user?.role === 'ADMIN' || user?.role === 'MANAGER' ? user.role : 'STAFF',
+      jobTitle: '',
+      teamId: user?.teamId ?? null,
+      isActive: true,
+    }),
+    [user],
+  );
+};

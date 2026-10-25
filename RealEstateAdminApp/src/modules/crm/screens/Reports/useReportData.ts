@@ -2,7 +2,8 @@
  * State bộ lọc báo cáo (cục bộ — không đụng `filters` của danh sách khách) + số liệu từ `useDashboardReport`.
  */
 import { useMemo, useState } from 'react';
-import { buildDashboardReportRows, useCatalogs, useDashboardReport, type AssigneeStat, type DashboardSummary } from '@crm/api';
+import { buildDashboardReportRows, type AssigneeStat, type DashboardSummary } from '@crm/api';
+import { useDashboardReport, useMockCatalogs } from '@crm/api/mockHooks';
 import { downloadCsv, toCsv } from '@crm/lib/csv';
 import { getVnTodayKey } from '@crm/lib/dateTime';
 import type { Project } from '@crm/types/crm';
@@ -33,7 +34,8 @@ export interface ReportData {
 }
 
 export const useReportData = (): ReportData => {
-  const { catalogs, users } = useCatalogs();
+  // Báo cáo (M8) chạy trên DỮ LIỆU MẪU nên dùng danh mục mẫu cùng store, không dùng danh mục thật.
+  const { catalogs, users } = useMockCatalogs();
   const [filters, setFilters] = useState<ReportFilters>(DEFAULT_REPORT_FILTERS);
   const todayKey = getVnTodayKey();
   const query = useMemo(() => toDashboardQuery(filters, todayKey), [filters, todayKey]);

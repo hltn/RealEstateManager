@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { CalendarClock, CircleCheck, MessageSquareText, Save } from 'lucide-react';
 import { useCatalogs, type CustomerDetail } from '@crm/api';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CONTACT_CHANNEL_LABELS, CONTACT_CHANNEL_ORDER } from '@crm/lib/customerAdapters';
 import {
   BUTTON_LINK_CLASS,
@@ -32,7 +33,8 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
   const { catalogs } = useCatalogs();
   const { showToast } = useCrmActions();
   const { saveCareLog } = useCustomerDetailActions(customer);
-  const { photos, addFiles, removePhoto, clearPhotos } = useAttachedPhotos();
+  const { photos, attachmentIds, isUploading, addFiles, removePhoto, clearPhotos } = useAttachedPhotos(customer.id);
+  const [isSaving, setIsSaving] = useState(false);
   const [content, setContent] = useState('');
   const [contactChannel, setContactChannel] = useState<ContactChannel>('CALL');
   const [contactResultId, setContactResultId] = useState('');
@@ -42,6 +44,7 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
   const idPrefix = `care-log-${variant}`;
   const contactResults = catalogs.contactResults.filter((item) => item.isActive).sort((a, b) => a.order - b.order);
   const isContentEmpty = content.trim().length === 0;
+  const hasAttachments = CRM_FEATURE_FLAGS.isAttachmentsEnabled;
 
   const handleResultChange = (resultId: string) => {
     setContactResultId(resultId);
@@ -61,19 +64,22 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
     clearPhotos();
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isSaving || isUploading) return;
     const dueAt = fromDateTimeLocalValue(nextDueLocal) || null;
     const hasNextAction = Boolean(nextSuggestion.trim() || dueAt);
-    const isSaved = saveCareLog({
+    setIsSaving(true);
+    const isSaved = await saveCareLog({
       content,
       contactChannel,
       contactResultId: contactResultId || null,
       nextAction: hasNextAction
         ? { suggestion: nextSuggestion, dueAt, appointment: shouldCreateAppointment && dueAt ? { type: 'CALLBACK' } : undefined }
         : undefined,
-      images: photos,
+      attachmentIds,
     });
+    setIsSaving(false);
     if (isSaved) reset();
   };
 
@@ -159,6 +165,7 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
         <p className={FORM_HINT_CLASS}>Có thời điểm nhắc thì việc sẽ hiện ở "Việc hôm nay" đúng ngày (giờ Việt Nam).</p>
       </fieldset>
 
+      {hasAttachments && (
       <div className={`space-y-2 border-t pt-4 ${DIVIDER_CLASS}`}>
         <div className="flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 text-theme-xs font-medium text-gray-600 dark:text-gray-400">
@@ -172,17 +179,18 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
               showToast({
                 type: 'warning',
                 title: `Bỏ qua ${count} ảnh`,
-                message: `Chỉ nhận ảnh PNG/JPG/WebP/GIF ≤ ${MAX_PHOTO_BYTES / 1024 / 1024} MB, tối đa ${MAX_ATTACHED_PHOTOS} ảnh.`,
+                message: `Chỉ nhận ảnh JPEG/PNG/WebP ≤ ${MAX_PHOTO_BYTES / 1024 / 1024} MB, tối đa ${MAX_ATTACHED_PHOTOS} ảnh.`,
               })
             }
           />
         </div>
         <AttachedPhotoTray photos={photos} onRemove={removePhoto} />
       </div>
+      )}
 
-      <button type="submit" disabled={isContentEmpty} className={`${BUTTON_PRIMARY_LG_CLASS} w-full`}>
+      <button type="submit" disabled={isContentEmpty || isSaving || isUploading} className={`${BUTTON_PRIMARY_LG_CLASS} w-full`}>
         <Save size={18} aria-hidden="true" />
-        Lưu nhật ký
+        {isSaving ? 'Đang lưu…' : isUploading ? 'Đang tải ảnh…' : 'Lưu nhật ký'}
       </button>
     </form>
   );

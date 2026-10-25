@@ -123,7 +123,7 @@ const isStatusV3 = (value: unknown): boolean =>
   isRecord(value) && isString(value.id) && isString(value.label) && LIST_GROUPS.includes(value.listGroup as string) && typeof value.isActive === 'boolean';
 
 const isSettingsV3 = (value: unknown): boolean =>
-  isRecord(value) && ['staleCustomerDays', 'occasionLeadDays', 'upcomingDays'].every((key) => typeof value[key] === 'number');
+  isRecord(value) && typeof value.staleCustomerDays === 'number';
 
 /** Kiểm tra cấu trúc dữ liệu v3 (sâu tới các trường UI/selector dùng trực tiếp). Sai -> nạp seed. */
 export const isCrmDataState = (value: unknown): value is CrmDataState => {

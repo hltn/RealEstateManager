@@ -21,6 +21,12 @@ export interface CrmFeatureFlags {
   isInAppCallEnabled: boolean;
   /** Tự gửi SMS/ZNS xác nhận lịch hẹn + đồng bộ Google/Outlook Calendar. */
   isAppointmentNotifySyncEnabled: boolean;
+  /** Ảnh đính kèm nhật ký (khớp cờ backend `FEATURE_CRM_ATTACHMENTS`; backend tắt thì API upload trả 404). Mặc định TẮT. */
+  isAttachmentsEnabled: boolean;
+  /** M8: màn Báo cáo chạy trên DỮ LIỆU MẪU (chưa có API dashboard). Mặc định bật ở dev, tắt ở production (màn hiện "sắp ra mắt"). */
+  isMockReportsEnabled: boolean;
+  /** M8: nhập/xuất file chạy trên DỮ LIỆU MẪU (chưa có API import/export). Mặc định bật ở dev, tắt ở production (ẩn nút). */
+  isMockImportExportEnabled: boolean;
 }
 
 const readFlag = (value: unknown): boolean => value === true || value === 'true';
@@ -35,8 +41,12 @@ export const resolvePrototypeFlag = (value: unknown, isDev: boolean): boolean =>
 const env = (import.meta as ImportMeta & { env?: Record<string, unknown> }).env ?? {};
 
 export const CRM_FEATURE_FLAGS: Readonly<CrmFeatureFlags> = Object.freeze({
-  isPrototypeEnabled: resolvePrototypeFlag(env.VITE_CRM_PROTOTYPE, env.DEV === true),
+  // `VITE_CRM_ENABLED` (module nối API thật) ưu tiên; `VITE_CRM_PROTOTYPE` giữ để tương thích cấu hình cũ.
+  isPrototypeEnabled: resolvePrototypeFlag(env.VITE_CRM_ENABLED ?? env.VITE_CRM_PROTOTYPE, env.DEV === true),
   isZaloZnsEnabled: readFlag(env.VITE_CRM_FEATURE_ZALO_ZNS),
   isInAppCallEnabled: readFlag(env.VITE_CRM_FEATURE_IN_APP_CALL),
   isAppointmentNotifySyncEnabled: readFlag(env.VITE_CRM_FEATURE_APPOINTMENT_SYNC),
+  isAttachmentsEnabled: readFlag(env.VITE_FEATURE_CRM_ATTACHMENTS),
+  isMockReportsEnabled: resolvePrototypeFlag(env.VITE_CRM_MOCK_REPORTS, env.DEV === true),
+  isMockImportExportEnabled: resolvePrototypeFlag(env.VITE_CRM_MOCK_IMPORT_EXPORT, env.DEV === true),
 });

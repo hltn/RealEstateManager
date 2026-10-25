@@ -1,5 +1,5 @@
 /**
- * Các trường của dự án ngoài "Tên ngắn" (mã, tên đầy đủ, chủ đầu tư, vị trí, khu vực, loại hình, khoảng giá, trạng thái, phân khúc).
+ * Các trường của dự án ngoài "Tên" (mã, chủ đầu tư, vị trí, khu vực, loại hình, khoảng giá, trạng thái). Backend không có tên đầy đủ/đơn vị giá/phân khúc.
  * Dùng chung dialog Thêm/Sửa ở màn Dự án và form trong tab Dự án của Cài đặt (DRY). Ô "Tên ngắn" do nơi dùng tự vẽ.
  */
 import { useState } from 'react';
@@ -10,12 +10,11 @@ import { TextInput } from '@crm/components/form/TextInput';
 import {
   PROJECT_CODE_MAX_LENGTH,
   PROJECT_FIELD_MAX_LENGTH,
-  PROJECT_PRICE_UNIT_OPTIONS,
   PROJECT_STATUS_OPTIONS,
   type ProjectErrors,
   type ProjectField,
 } from '@crm/lib/projectRules';
-import type { Area, Project, ProjectPriceUnit, ProjectStatus } from '@crm/types/crm';
+import type { Area, Project, ProjectStatus } from '@crm/types/crm';
 
 const MILLION = 1_000_000;
 
@@ -93,9 +92,6 @@ export const ProjectFormFields = ({ project, areas, errors = {}, idPrefix, onCha
   return (
     <>
       {text('code', 'Mã dự án', { isRequired: true, hint: 'Viết hoa, không trùng. VD: QTERRA', maxLength: PROJECT_CODE_MAX_LENGTH })}
-      <FormField inputId={fieldId('full-name')} label="Tên đầy đủ" hint="Bỏ trống = dùng tên ngắn">
-        <TextInput id={fieldId('full-name')} value={project.fullName} maxLength={160} onChange={(event) => onChange({ ...project, fullName: event.target.value })} />
-      </FormField>
       {text('developer', 'Chủ đầu tư')}
       {text('location', 'Vị trí / địa chỉ')}
       <FormField inputId={fieldId('area')} label="Khu vực">
@@ -116,14 +112,6 @@ export const ProjectFormFields = ({ project, areas, errors = {}, idPrefix, onCha
           {...getFieldA11yProps(getErrorId(fieldId('property-types')), errors.propertyTypes)}
         />
       </FormField>
-      <FormField inputId={fieldId('price-unit')} label="Đơn vị giá">
-        <SelectInput
-          id={fieldId('price-unit')}
-          value={project.priceUnit}
-          options={PROJECT_PRICE_UNIT_OPTIONS}
-          onChange={(event) => onChange({ ...project, priceUnit: event.target.value as ProjectPriceUnit })}
-        />
-      </FormField>
       {price('priceFrom', 'Giá từ')}
       {price('priceTo', 'Giá đến')}
       <FormField inputId={fieldId('status')} label="Trạng thái bán hàng">
@@ -134,9 +122,6 @@ export const ProjectFormFields = ({ project, areas, errors = {}, idPrefix, onCha
           options={PROJECT_STATUS_OPTIONS}
           onChange={(event) => onChange({ ...project, status: (event.target.value || null) as ProjectStatus | null })}
         />
-      </FormField>
-      <FormField inputId={fieldId('segment')} label="Phân khúc">
-        <TextInput id={fieldId('segment')} value={project.segment} maxLength={60} onChange={(event) => onChange({ ...project, segment: event.target.value })} />
       </FormField>
     </>
   );

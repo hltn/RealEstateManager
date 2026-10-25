@@ -21,7 +21,7 @@ export const DailyTasksDesktop = () => {
   const { navigate } = useCrmActions();
   const [filters, setFilters] = useState<TaskFilterState>(DEFAULT_TASK_FILTERS);
   // Số đếm đầu trang theo toàn bộ việc; danh sách hiển thị theo ô tìm (tìm xử lý ở lớp dữ liệu).
-  const { data: allTasks } = useDailyTasks({ scope });
+  const { data: allTasks, isLoading, error, refetch } = useDailyTasks({ scope });
   const { data: tasks } = useDailyTasks({ scope, q: filters.search });
   const [viewMode, setViewMode] = useState<TaskViewMode>('kanban');
 
@@ -69,7 +69,22 @@ export const DailyTasksDesktop = () => {
         onViewModeChange={setViewMode}
       />
 
-      {viewMode === 'kanban' ? (
+      {error && !isLoading && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl border border-error-100 bg-error-50 p-4 text-theme-sm text-error-600 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-400">
+          <span>{error.message}</span>
+          <button type="button" onClick={refetch} className="font-semibold underline">
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div aria-busy="true" aria-label="Đang tải việc" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          {TASK_CATEGORY_ORDER.map((category) => (
+            <div key={category} className="h-48 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
+          ))}
+        </div>
+      ) : viewMode === 'kanban' ? (
         <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
           {TASK_CATEGORY_ORDER.map((category) => (
             <TaskKanbanColumn key={category} category={category} tasks={groups[category]} />

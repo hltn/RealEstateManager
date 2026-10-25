@@ -70,8 +70,8 @@ const CriterionRow = ({ customer, criterionKey, label }: CriterionRowProps) => {
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (saveCriterionDescription(criterionKey, draft)) setDraft(null);
+              onClick={async () => {
+                if (await saveCriterionDescription(criterionKey, draft)) setDraft(null);
               }}
               className={`${BUTTON_PRIMARY_CLASS} px-3 py-1.5 text-xs`}
             >

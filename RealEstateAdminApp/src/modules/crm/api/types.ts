@@ -1,6 +1,6 @@
 /**
- * Kiểu request/response của lớp truy cập dữ liệu CRM — bám tài liệu 05 (§1.2–1.6).
- * UI chỉ làm việc với các kiểu này; bản mock (`mockCrmApi.ts`) và bản API thật sau này cùng trả đúng shape.
+ * Kiểu request/response (view-type) của lớp truy cập dữ liệu CRM — bám tài liệu 05 (§1.2–1.6).
+ * UI chỉ làm việc với các kiểu này; mapper ở `api/http/*` đổi response thô của backend sang các kiểu này.
  */
 import type { CustomerFilters } from '@crm/types/app';
 import type {
@@ -8,7 +8,6 @@ import type {
   AppointmentType,
   CareTeamRequestStatus,
   CareTeamRole,
-  ChangeAction,
   ContactChannel,
   CreatedVia,
   CriterionKey,
@@ -86,7 +85,8 @@ export interface CustomerListItem {
   nextAppointmentAt: string | null;
   lastCareLogAt: string | null;
   lastUpdatedAt: string;
-  createdAt: string;
+  /** Chỉ có ở chi tiết; danh sách của backend không trả `createdAt`. */
+  createdAt?: string;
   personaCompleteness: number;
 }
 
@@ -118,13 +118,13 @@ export interface CustomerPermissions {
 }
 
 export interface CustomerDetail extends CustomerListItem {
+  /** Chuỗi rỗng khi chưa có email. */
   email: string;
+  createdAt: string;
   criteria: Record<CriterionKey, CriterionView>;
   careTeam: CareTeamMemberView[];
   nationalIdMasked: string | null;
   hasNationalId: boolean;
-  notes: string;
-  shouldRemindOccasions: boolean;
   lastUpdatedBy: UserRef;
   createdBy: UserRef;
   createdVia: CreatedVia;
@@ -168,8 +168,7 @@ export interface CreateCustomerInput {
   tagIds?: string[];
   nationalId?: string;
   careTeam?: { memberIds: string[]; primaryUserId: string };
-  notes?: string;
-  createdVia?: CreatedVia;
+  criteria?: CriteriaPatch;
 }
 
 export interface UpdateCustomerInput {
@@ -181,8 +180,6 @@ export interface UpdateCustomerInput {
   interestedProjectIds?: string[];
   areaId?: string | null;
   tagIds?: string[];
-  notes?: string;
-  shouldRemindOccasions?: boolean;
 }
 
 export interface UpdateStatusResult {
@@ -191,6 +188,13 @@ export interface UpdateStatusResult {
   version: number;
   lastUpdatedAt: string;
 }
+
+/** Thao tác hàng loạt (`POST /crm/customer-bulk-operations`, 05 §2.3). `primaryUserId` bắt buộc với khách chưa có phụ trách chính. */
+export type BulkOperation =
+  | { type: 'CHANGE_STATUS'; customerIds: string[]; statusId: string }
+  | { type: 'ADD_TAGS'; customerIds: string[]; tagIds: string[] }
+  | { type: 'REMOVE_TAGS'; customerIds: string[]; tagIds: string[] }
+  | { type: 'ASSIGN'; customerIds: string[]; memberIds: string[]; primaryUserId?: string };
 
 export type CriteriaPatch = Partial<Record<CriterionKey, { isDone?: boolean; description?: string }>>;
 
@@ -213,8 +217,10 @@ export interface CustomerPersonaView {
   groups: { code: PersonaGroupCode; label: string; fields: PersonaFieldValueView[] }[];
   completeness: number;
   missingSuggestions: { fieldKey: string; label: string; groupCode: PersonaGroupCode }[];
-  /** Giá trị thô (để dựng form sửa). */
+  /** Giá trị thô (để dựng form sửa; `updatedBy` là id người sửa). */
   values: PersonaValue[];
+  /** Version hồ sơ để gửi kèm PATCH (khóa lạc quan). */
+  version: number;
 }
 
 export interface PersonaValueInput {
@@ -240,7 +246,12 @@ export interface CareLogView {
   contactResult: Ref | null;
   nextAction: NextAction | null;
   source: 'MANUAL' | 'IMPORT' | 'SYSTEM';
+  /** Ảnh đính kèm: `src` là URL có chữ ký (hết hạn 15 phút), không phải dữ liệu nhúng. */
   images: GalleryImage[];
+  attachmentIds: string[];
+  editedAt: string | null;
+  /** Người gọi còn quyền sửa/xóa (tác giả trong 24 giờ, Quản trị, Quản lý trong phạm vi). */
+  canEdit: boolean;
 }
 
 export interface CreateCareLogInput {
@@ -251,15 +262,17 @@ export interface CreateCareLogInput {
   nextAction?: {
     suggestion?: string;
     dueAt?: string | null;
-    /** Tạo kèm lịch hẹn tại `dueAt`. */
-    appointment?: { type: AppointmentType; location?: string };
+    /** Tạo kèm lịch hẹn tại `dueAt` (bắt buộc có `dueAt`). */
+    appointment?: { type: AppointmentType; location?: string; remindBeforeMinutes?: number[] };
   };
-  images?: GalleryImage[];
+  /** Id ảnh đã tải lên (`POST care-log-attachments`), tối đa 5. */
+  attachmentIds?: string[];
 }
 
 export interface AppointmentView {
   id: string;
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects: Ref[] };
+  /** `phoneMasked`/`projects` không có trong response lịch hẹn của backend. */
+  customer: { id: string; fullName: string; phoneMasked?: string; status: StatusRef; projects?: Ref[] };
   type: AppointmentType;
   title: string;
   startAt: string;
@@ -270,9 +283,12 @@ export interface AppointmentView {
   remindBeforeMinutes: number[];
   status: AppointmentStatus;
   completedAt: string | null;
+  outcome: string | null;
   createdBy: UserRef;
-  smsZnsAuto: boolean;
-  calendarSync: boolean;
+  /** Khóa lạc quan, gửi kèm khi sửa/đổi trạng thái. */
+  version: number;
+  /** Người gọi được xóa lịch này (Quản trị/Quản lý trong phạm vi; Nhân viên: lịch do mình tạo). */
+  canDelete: boolean;
 }
 
 export interface AppointmentListQuery {
@@ -281,6 +297,9 @@ export interface AppointmentListQuery {
   to?: string;
   customerId?: string;
   status?: AppointmentStatus;
+  /** Giới hạn tối đa 100/trang; hook tự gom trang cho cửa sổ ≤ 62 ngày. */
+  assigneeIds?: string[];
+  types?: AppointmentType[];
 }
 
 export interface CreateAppointmentInput {
@@ -291,10 +310,8 @@ export interface CreateAppointmentInput {
   location?: string;
   note?: string;
   assigneeId?: string;
+  endAt?: string;
   remindBeforeMinutes?: number[];
-  smsZnsAuto?: boolean;
-  calendarSync?: boolean;
-  sourceCareLogId?: string | null;
 }
 
 export interface DailyTask {
@@ -302,7 +319,7 @@ export interface DailyTask {
   kind: DailyTaskKind;
   dueAt: string;
   group: DailyTaskGroup;
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects: Ref[] };
+  customer: { id: string; fullName: string; phoneMasked?: string; status: StatusRef; projects: Ref[] };
   title: string;
   lastCareLog: { occurredAt: string; excerpt: string } | null;
   suggestion: string;
@@ -317,7 +334,7 @@ export type DailyTaskScope = 'mine' | 'team';
 
 export interface DailyTaskQuery {
   scope?: DailyTaskScope;
-  /** Từ khoá tìm (không dấu): tên khách, nội dung việc, SĐT (≥ 3 chữ số, như tìm khách), email. */
+  /** Từ khoá tìm; lọc phía giao diện trên các việc đã tải (API không có tham số tìm). */
   q?: string;
 }
 
@@ -327,9 +344,10 @@ export interface DailyTaskQuery {
 
 export interface HistoryEntry {
   id: string;
-  action: ChangeAction;
+  /** Mã hành động của audit (vd `STATUS_CHANGED`); mã lạ hiển thị nguyên văn. */
+  action: string;
   actor: UserRef;
-  actorRole: UserRole;
+  actorRole: string;
   changes: FieldChange[];
   reason?: string;
   source: string;
@@ -339,6 +357,7 @@ export interface HistoryEntry {
 export interface NationalIdViewEntry {
   viewer: UserRef;
   viewedAt: string;
+  purpose: string | null;
 }
 
 export interface CareTeamRequestView {
@@ -350,6 +369,7 @@ export interface CareTeamRequestView {
   createdAt: string;
   resolvedBy: UserRef | null;
   resolvedAt: string | null;
+  resolutionNote: string | null;
 }
 
 export interface AssignableUser extends UserRef {

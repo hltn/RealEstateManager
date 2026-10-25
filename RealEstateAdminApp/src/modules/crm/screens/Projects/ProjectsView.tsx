@@ -6,16 +6,14 @@
  */
 import { useMemo, useState } from 'react';
 import { CalendarPlus, Plus, Settings2 } from 'lucide-react';
-import { canManageProjects, useCatalogs, useCatalogUsage, useCrmActor, useCrmApi, useDashboardReport } from '@crm/api';
+import { canManageProjects, useCatalogs, useCrmActor, useCrmApi, useDeletedProjects, useProjectsWithCounts } from '@crm/api';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { useCrmActions } from '@crm/store';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_LG_CLASS, OPTION_ACTIVE_CLASS, OPTION_IDLE_CLASS } from '@crm/lib/uiClasses';
 import type { Project } from '@crm/types/crm';
 import { ProjectCard } from './ProjectCard';
 import { ProjectFormDialog } from './ProjectFormDialog';
-import { ALL_SEGMENTS, filterProjectsBySegment, getProjectSegments, toInterestedCounts } from './projectCatalog';
-
-const EMPTY_QUERY = {};
+import { ALL_SEGMENTS, filterProjectsBySegment, getProjectSegments } from './projectCatalog';
 
 interface ProjectsViewProps {
   variant: 'desktop' | 'mobile';
@@ -23,12 +21,13 @@ interface ProjectsViewProps {
 
 export const ProjectsView = ({ variant }: ProjectsViewProps) => {
   const { catalogs } = useCatalogs();
-  const { data: report } = useDashboardReport(EMPTY_QUERY);
   const { navigate, showToast } = useCrmActions();
   const api = useCrmApi();
   const actor = useCrmActor();
-  const { data: usage } = useCatalogUsage('projects');
   const canManage = canManageProjects(actor.role);
+  // Số khách đang quan tâm từng dự án (`customerCount` của API, không gồm khách đã xóa mềm).
+  const { data: usage } = useProjectsWithCounts();
+  const { data: deletedProjects } = useDeletedProjects(canManage);
   const [selectedSegment, setSelectedSegment] = useState<string>(ALL_SEGMENTS);
   const [shouldShowInactive, setShouldShowInactive] = useState(false);
   const [shouldShowDeleted, setShouldShowDeleted] = useState(false);
@@ -39,25 +38,25 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
 
   // Mặc định chỉ dự án đang hoạt động; Quản trị có thể bật xem cả dự án đã ngừng để sửa/dùng lại.
   const inactiveCount = useMemo(() => catalogs.projects.filter((project) => !project.isActive && !project.deletedAt).length, [catalogs.projects]);
-  const deletedCount = useMemo(() => catalogs.projects.filter((project) => project.deletedAt).length, [catalogs.projects]);
+  const deletedCount = deletedProjects.length;
   const activeProjects = useMemo(
-    () =>
-      catalogs.projects.filter((project) => {
-        if (project.deletedAt) return canManage && shouldShowDeleted;
-        return project.isActive || (canManage && shouldShowInactive);
-      }),
-    [catalogs.projects, canManage, shouldShowInactive, shouldShowDeleted],
+    () => [
+      ...catalogs.projects.filter((project) => !project.deletedAt && (project.isActive || (canManage && shouldShowInactive))),
+      ...(canManage && shouldShowDeleted ? deletedProjects : []),
+    ],
+    [catalogs.projects, deletedProjects, canManage, shouldShowInactive, shouldShowDeleted],
   );
-  const interestedCounts = useMemo(() => toInterestedCounts(report.byProject), [report.byProject]);
+  const interestedCounts = usage;
   const visibleProjects = filterProjectsBySegment(activeProjects, selectedSegment);
-  const segmentItems = [
-    { value: ALL_SEGMENTS, label: 'Tất cả phân khúc', count: activeProjects.length },
-    ...getProjectSegments(activeProjects).map((segment) => ({
-      value: segment,
-      label: segment,
-      count: activeProjects.filter((project) => project.segment.trim() === segment).length,
-    })),
-  ];
+  // Backend không có "phân khúc" của dự án: chỉ hiện nhóm lọc khi dữ liệu có phân khúc.
+  const segments = getProjectSegments(activeProjects);
+  const segmentItems =
+    segments.length === 0
+      ? []
+      : [
+          { value: ALL_SEGMENTS, label: 'Tất cả phân khúc', count: activeProjects.length },
+          ...segments.map((segment) => ({ value: segment, label: segment, count: activeProjects.filter((project) => project.segment.trim() === segment).length })),
+        ];
 
   const bookVisit = () => navigate('create_appointment');
   const deleteUsage = deleteTarget ? (usage.get(deleteTarget.id) ?? 0) : 0;
@@ -66,14 +65,14 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
    * Xác nhận trong hộp thoại: dự án còn khách -> không xoá được (409 PROJECT_IN_USE), gợi ý "Ngừng hoạt động" = `updateProject(isActive:false)`;
    * dự án đã ngừng sẵn thì chỉ báo; dự án không ai dùng -> xoá mềm.
    */
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
     if (deleteUsage > 0 && !deleteTarget.isActive) {
       setDeleteTarget(null);
       return;
     }
     if (deleteUsage > 0) {
-      const result = api.updateProject(deleteTarget.id, { isActive: false });
+      const result = await api.updateProject(deleteTarget.id, { isActive: false });
       showToast(
         result.ok
           ? { type: 'warning', title: `Đã chuyển "${deleteTarget.name}" sang ngừng hoạt động`, message: `Dự án đang được ${deleteUsage} khách quan tâm nên không xoá.` }
@@ -82,14 +81,14 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
       setDeleteTarget(null);
       return;
     }
-    const result = api.deleteProject(deleteTarget.id);
+    const result = await api.deleteProject(deleteTarget.id);
     if (!result.ok) showToast({ type: 'error', title: result.error.message });
     else showToast({ title: `Đã xoá dự án "${deleteTarget.name}"`, message: 'Có thể khôi phục trong mục "Hiện dự án đã xoá".' });
     setDeleteTarget(null);
   };
 
-  const restoreProject = (project: Project) => {
-    const result = api.restoreProject(project.id);
+  const restoreProject = async (project: Project) => {
+    const result = await api.restoreProject(project.id);
     showToast(result.ok ? { title: `Đã khôi phục dự án "${project.name}"` } : { type: 'error', title: result.error.message });
   };
   const bookButton = (
@@ -130,6 +129,7 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
       </header>
 
       {/* Lọc phân khúc: tab viên thuốc có số đếm (Admin chưa có — làm mới bằng token Admin) */}
+      {segmentItems.length > 0 && (
       <div
         role="group"
         aria-label="Lọc theo phân khúc"
@@ -161,6 +161,7 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
           );
         })}
       </div>
+      )}
 
       {canManage && inactiveCount > 0 && (
         <label className="flex items-center gap-2 text-theme-sm text-gray-600 dark:text-gray-400">

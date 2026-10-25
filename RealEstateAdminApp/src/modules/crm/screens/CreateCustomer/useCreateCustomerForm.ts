@@ -22,8 +22,9 @@ export interface CreateCustomerFormApi {
   setField: <K extends CreateCustomerField>(field: K, value: CreateCustomerFormValues[K]) => void;
   toggleProject: (projectId: string) => void;
   toggleMember: (userId: string) => void;
-  requestJoin: () => void;
-  submit: (event?: FormEvent) => boolean;
+  requestJoin: () => Promise<void>;
+  submit: (event?: FormEvent) => Promise<boolean>;
+  isSubmitting: boolean;
   cancel: () => void;
 }
 
@@ -40,17 +41,22 @@ export const useCreateCustomerForm = (): CreateCustomerFormApi => {
     createDefaultFormValues({ statusId: getDefaultStatus(catalogs.statuses)?.id ?? '', currentUserId: actor.role === 'ADMIN' ? '' : actor.userId }),
   );
   const [errors, setErrors] = useState<FormErrors<CreateCustomerField>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  /** Trùng SĐT do server báo khi lưu (409 `CUSTOMER_PHONE_DUPLICATED`), gắn với SĐT lúc báo. */
+  const [serverDuplicate, setServerDuplicate] = useState<{ phone: string; lookup: PhoneLookupResult } | null>(null);
 
-  // Kiểm trùng ngay khi SĐT hợp lệ (mô phỏng `POST phone-lookups`); tự làm mới khi trạng thái đề nghị đổi.
-  const phoneLookup = usePhoneLookup(values.phone);
+  // Kiểm trùng khi SĐT hợp lệ (`POST phone-lookups`, đã debounce); kết quả 409 từ server dùng khi lookup chưa có (vd bị giới hạn 429).
+  const lookupResult = usePhoneLookup(values.phone);
+  const phoneLookup = lookupResult ?? (serverDuplicate?.phone === values.phone ? serverDuplicate.lookup : null);
 
   const setField: CreateCustomerFormApi['setField'] = (field, value) => {
     setValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
   };
 
-  const submit: CreateCustomerFormApi['submit'] = (event) => {
+  const submit: CreateCustomerFormApi['submit'] = async (event) => {
     event?.preventDefault();
+    if (isSubmitting) return false;
     const nextErrors = validateCreateCustomer(values);
     if (phoneLookup?.exists) nextErrors.phone = 'Số điện thoại đã có trong hệ thống.';
     setErrors(nextErrors);
@@ -59,8 +65,27 @@ export const useCreateCustomerForm = (): CreateCustomerFormApi => {
       showToast({ type: 'error', title: 'Chưa thể lưu khách hàng', message: firstError });
       return false;
     }
-    const result = api.createCustomer(toCreateCustomerInput(values));
+    setIsSubmitting(true);
+    const result = await api.createCustomer(toCreateCustomerInput(values, actor.role));
+    setIsSubmitting(false);
     if (!result.ok) {
+      if (result.error.errorCode === 'CUSTOMER_PHONE_DUPLICATED' && result.error.details) {
+        const details = result.error.details as Partial<PhoneLookupResult>;
+        setServerDuplicate({
+          phone: values.phone,
+          lookup: {
+            normalizedPhone: '',
+            exists: true,
+            isAccessible: Boolean(details.isAccessible),
+            customerId: details.customerId,
+            customerRef: details.customerRef,
+            caredByName: details.caredByName ?? null,
+            canRequestJoin: Boolean(details.canRequestJoin),
+            hasPendingRequest: false,
+          },
+        });
+        setErrors((current) => ({ ...current, phone: 'Số điện thoại đã có trong hệ thống.' }));
+      }
       showToast({ type: 'error', title: 'Chưa thể lưu khách hàng', message: result.error.message });
       return false;
     }
@@ -75,12 +100,13 @@ export const useCreateCustomerForm = (): CreateCustomerFormApi => {
     errors,
     phoneLookup,
     isPrimaryLocked: actor.role === 'STAFF',
+    isSubmitting,
     setField,
     toggleProject: (projectId) => setValues((current) => ({ ...current, interestedProjectIds: toggleItem(current.interestedProjectIds, projectId) })),
     toggleMember: (userId) => setValues((current) => ({ ...current, memberIds: toggleItem(current.memberIds, userId) })),
-    requestJoin: () => {
+    requestJoin: async () => {
       if (!phoneLookup?.customerRef) return;
-      const result = api.createCareTeamRequest({ customerRef: phoneLookup.customerRef });
+      const result = await api.createCareTeamRequest({ customerRef: phoneLookup.customerRef });
       if (!result.ok) {
         showToast({ type: 'error', title: result.error.message });
         return;

@@ -4,6 +4,7 @@
  * Việc "Bước tiếp theo" có nút "Đã xong"; việc "Lịch hẹn" có nút "Hoàn thành".
  */
 import { Building, CircleCheck, Clock, Lightbulb } from 'lucide-react';
+import { useState } from 'react';
 import { useCrmApi, type DailyTask } from '@crm/api';
 import { ContactActionGrid } from '@crm/components/ContactActionGrid';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
@@ -23,32 +24,38 @@ export const TaskDueChip = ({ task }: { task: DailyTask }) => (
   </span>
 );
 
-/** Nút đóng việc: bước tiếp theo -> "Đã xong"; lịch hẹn -> "Hoàn thành". Việc khác (dịp, lâu chưa chăm sóc) tự hết khi có nhật ký/ qua ngày. */
+/**
+ * Nút xử lý việc: lịch hẹn -> "Hoàn thành" (`PATCH appointments/:id/status`); bước tiếp theo -> "Ghi nhật ký" (mở ghi chú nhanh;
+ * việc tự hết khi có nhật ký mới hơn — backend không có thao tác "đã xong" riêng). Việc khác (dịp, lâu chưa chăm sóc) tự hết theo ngày/nhật ký.
+ */
 export const TaskDoneButton = ({ task }: { task: DailyTask }) => {
   const api = useCrmApi();
-  const { showToast } = useCrmActions();
+  const { showToast, openQuickNote } = useCrmActions();
+  const [isBusy, setIsBusy] = useState(false);
   if (task.kind !== 'FOLLOW_UP' && task.kind !== 'APPOINTMENT') return null;
-  const complete = () => {
-    const result =
-      task.kind === 'FOLLOW_UP' && task.careLogId
-        ? api.completeFollowUp(task.careLogId)
-        : task.appointmentId
-          ? api.updateAppointmentStatus(task.appointmentId, 'DONE')
-          : null;
-    if (!result) return;
-    showToast(result.ok ? { title: task.kind === 'FOLLOW_UP' ? 'Đã đánh dấu xong bước tiếp theo' : 'Đã hoàn thành lịch hẹn' } : { type: 'error', title: result.error.message });
+  const complete = async () => {
+    if (task.kind === 'FOLLOW_UP') {
+      openQuickNote(task.customer.id);
+      return;
+    }
+    if (!task.appointmentId || isBusy) return;
+    setIsBusy(true);
+    const result = await api.updateAppointmentStatus(task.appointmentId, 'DONE');
+    setIsBusy(false);
+    showToast(result.ok ? { title: 'Đã hoàn thành lịch hẹn' } : { type: 'error', title: result.error.message });
   };
   return (
     <button
       type="button"
       onClick={(event) => {
         event.stopPropagation();
-        complete();
+        void complete();
       }}
+      disabled={isBusy}
       className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-success-600 transition-colors hover:bg-success-50 dark:text-success-500 dark:hover:bg-success-500/10"
     >
       <CircleCheck size={14} aria-hidden="true" />
-      {task.kind === 'FOLLOW_UP' ? 'Đã xong' : 'Hoàn thành'}
+      {task.kind === 'FOLLOW_UP' ? 'Ghi nhật ký' : 'Hoàn thành'}
     </button>
   );
 };

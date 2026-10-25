@@ -25,8 +25,8 @@ describe('xuất CSV không có mã khách', () => {
 describe('N2 xuất CSV khách chống formula injection', () => {
   it('họ tên / ghi chú bắt đầu bằng = + - @ được thêm tiền tố nháy đơn trong file xuất', () => {
     const harness = createTestHarness('admin');
-    const created = harness.api.createCustomer({ fullName: '=HYPERLINK("http://evil.example","bấm")', phone: '0911000444' });
-    expect(created.ok).toBe(true);
+    const created = harness.api.importCustomers([{ fullName: '=HYPERLINK("http://evil.example","bấm")', phone: '0911000444' }]);
+    expect(created.ok && created.data.created).toBe(1);
     const state = harness.getState();
     const file = buildCustomerExport(state, buildActor(selectCurrentUser(state), state.teams), { listGroup: 'ALL', limit: 100 }, FIXED_NOW);
     // File thô: ô họ tên có tiền tố nháy đơn (Excel không chạy công thức).
@@ -47,8 +47,8 @@ describe('N2 xuất CSV khách chống formula injection', () => {
 describe('TB-n1 vòng export -> import SĐT', () => {
   it.each([['+14155552671'], ['+447911123456'], ['0912 000 222'], ['+84 912 000 111']])('SĐT %s xuất ra rồi đọc lại bằng parseCsv + normalizePhone cho cùng số, ô không kích hoạt công thức', (phone) => {
     const harness = createTestHarness('admin');
-    const created = harness.api.createCustomer({ fullName: 'Vòng khứ hồi', phone });
-    expect(created.ok).toBe(true);
+    const created = harness.api.importCustomers([{ fullName: 'Vòng khứ hồi', phone }]);
+    expect(created.ok && created.data.created).toBe(1);
     const state = harness.getState();
     const file = buildCustomerExport(state, buildActor(selectCurrentUser(state), state.teams), { listGroup: 'ALL', limit: 100 }, FIXED_NOW);
     const raw = file.content.split('\r\n').find((line) => line.includes('Vòng khứ hồi')) ?? '';

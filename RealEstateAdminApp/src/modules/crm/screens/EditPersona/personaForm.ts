@@ -6,6 +6,7 @@
  */
 import type { CustomerDetail, PersonaValueInput, UpdateCustomerInput } from '@crm/api';
 import { billionToVnd, findPersonaValue, isValidNationalId, vndToBillion } from '@crm/lib/customerRules';
+import { normalizePhone } from '@crm/lib/phone';
 import type { PersonaFieldDefinition, PersonaGroupCode, PersonaSource, PersonaValue } from '@crm/types/crm';
 import { getFullNameError, getPhoneFormatError, isValidOptionalEmail, type FormErrors } from '../CreateCustomer/customerFormRules';
 
@@ -23,7 +24,6 @@ export interface BasicInfoValues {
   sourceId: string;
   interestedProjectIds: string[];
   tagIds: string[];
-  notes: string;
 }
 
 export type BasicInfoField = keyof BasicInfoValues;
@@ -40,7 +40,6 @@ export const toBasicInfoValues = (customer: CustomerDetail): BasicInfoValues => 
   sourceId: customer.source?.id ?? '',
   interestedProjectIds: customer.projects.map((project) => project.id),
   tagIds: customer.tags.map((tag) => tag.id),
-  notes: customer.notes,
 });
 
 /** `isPhoneLocked`: chưa lấy số đầy đủ (chưa bấm "Sửa số") -> không kiểm/không gửi SĐT. */
@@ -55,18 +54,28 @@ export const validateBasicInfo = (values: BasicInfoValues, isPhoneLocked = false
   return errors;
 };
 
-/** Body `PATCH /crm/customers/:id` (khu vực = nơi ở, sửa được sau khi tạo — C1). */
-export const toUpdateCustomerInput = (values: BasicInfoValues, version: number, isPhoneLocked = false): UpdateCustomerInput => ({
-  version,
-  fullName: values.fullName,
-  phone: isPhoneLocked ? undefined : values.phone,
-  email: values.email,
-  areaId: values.areaId || null,
-  sourceId: values.sourceId || null,
-  interestedProjectIds: values.interestedProjectIds,
-  tagIds: values.tagIds,
-  notes: values.notes,
-});
+const sameSet = (left: readonly string[], right: readonly string[]): boolean => left.length === right.length && left.every((item) => right.includes(item));
+
+/**
+ * Body `PATCH /crm/customers/:id` CHỈ gồm trường thật sự đổi (khu vực = nơi ở, sửa được sau khi tạo — C1); `undefined` = không đổi gì.
+ * SĐT chỉ gửi khi đã mở khóa ("Sửa số") VÀ khác số đầy đủ đã lấy (so sau khi chuẩn hóa).
+ */
+export const getChangedBasicInput = (
+  initial: BasicInfoValues,
+  current: BasicInfoValues,
+  isPhoneLocked: boolean,
+  revealedPhone: string | null,
+): Omit<UpdateCustomerInput, 'version'> | undefined => {
+  const input: Omit<UpdateCustomerInput, 'version'> = {};
+  if (current.fullName.trim() !== initial.fullName.trim()) input.fullName = current.fullName.trim();
+  if (!isPhoneLocked && normalizePhone(current.phone) !== revealedPhone) input.phone = current.phone;
+  if (current.email.trim() !== initial.email.trim()) input.email = current.email.trim();
+  if (current.areaId !== initial.areaId) input.areaId = current.areaId || null;
+  if (current.sourceId !== initial.sourceId) input.sourceId = current.sourceId || null;
+  if (!sameSet(current.interestedProjectIds, initial.interestedProjectIds)) input.interestedProjectIds = current.interestedProjectIds;
+  if (!sameSet(current.tagIds, initial.tagIds)) input.tagIds = current.tagIds;
+  return Object.keys(input).length > 0 ? input : undefined;
+};
 
 // ---------------------------------------------------------------------------
 // Chân dung động
@@ -97,7 +106,8 @@ export const toPersonaDraft = (persona: readonly PersonaValue[], fields: readonl
       return [
         field.key,
         {
-          text: value?.valueText ?? '',
+          // SELECT lưu 1 mã lựa chọn trong `valueOptions` (05 §1.6); các kiểu chữ dùng `valueText`.
+          text: field.type === 'SELECT' ? (value?.valueOptions?.[0] ?? '') : (value?.valueText ?? ''),
           date: value?.valueDate ?? '',
           options: value?.valueOptions ?? [],
           isOn: value?.valueBoolean ?? false,
@@ -136,6 +146,8 @@ export const toPersonaInputs = (
         return { fieldKey: field.key, source, value: value.date ? { valueDate: value.date } : null };
       case 'MULTI_SELECT':
         return { fieldKey: field.key, source, value: value.options.length > 0 ? { valueOptions: value.options } : null };
+      case 'SELECT':
+        return { fieldKey: field.key, source, value: value.text ? { valueOptions: [value.text] } : null };
       case 'BOOLEAN':
         return { fieldKey: field.key, source, value: value.isOn ? { valueBoolean: true } : null };
       case 'NUMBER_RANGE':
@@ -148,3 +160,19 @@ export const toPersonaInputs = (
         return { fieldKey: field.key, source, value: value.text.trim() ? { valueText: value.text.trim() } : null };
     }
   });
+
+const sameValue = (left: PersonaValueInput['value'], right: PersonaValueInput['value']): boolean => JSON.stringify(left) === JSON.stringify(right);
+
+/**
+ * Chỉ các trường chân dung thật sự đổi so với bản gốc (tránh gửi \`value: null\` xóa nhầm, giảm ghi/audit thừa).
+ * Nguồn (\`source\`) áp dụng cho các trường đổi.
+ */
+export const getChangedPersonaInputs = (
+  initialDraft: PersonaDraft,
+  draft: PersonaDraft,
+  fields: readonly PersonaFieldDefinition[],
+  source: Exclude<PersonaSource, 'IMPORTED'>,
+): PersonaValueInput[] => {
+  const before = toPersonaInputs(initialDraft, fields, source);
+  return toPersonaInputs(draft, fields, source).filter((input, index) => !sameValue(input.value, before[index].value));
+};

@@ -4,10 +4,10 @@ import { History } from 'lucide-react';
 import { useCustomerHistories } from '@crm/api';
 import { formatVnDateTime } from '@crm/lib/dateTime';
 import { CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, INSET_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
-import type { ChangeAction } from '@crm/types/crm';
 import { CardHeading } from './DetailParts';
 
-const CHANGE_ACTION_LABELS: Record<ChangeAction, string> = {
+/** Nhãn mã hành động audit của backend (`crm-audit.constants.ts`); mã lạ hiển thị nguyên văn. */
+const CHANGE_ACTION_LABELS: Record<string, string> = {
   CUSTOMER_CREATED: 'Tạo khách',
   CUSTOMER_UPDATED: 'Sửa hồ sơ',
   STATUS_CHANGED: 'Đổi tình trạng',
@@ -26,6 +26,18 @@ const CHANGE_ACTION_LABELS: Record<ChangeAction, string> = {
   JOIN_REQUEST_CREATED: 'Đề nghị tham gia nhóm',
   JOIN_REQUEST_RESOLVED: 'Xử lý đề nghị tham gia',
   CUSTOMER_IMPORTED: 'Nhập từ file',
+  NATIONAL_ID_REMOVED: 'Xóa CCCD',
+  DATA_CONSENT_UPDATED: 'Cập nhật đồng ý xử lý dữ liệu',
+  CUSTOMER_DELETED: 'Xóa khách',
+  CUSTOMER_RESTORED: 'Khôi phục khách',
+  CUSTOMER_ANONYMIZED: 'Ẩn danh hóa',
+  CARE_LOG_UPDATED: 'Sửa nhật ký',
+  CARE_LOG_DELETED: 'Xóa nhật ký',
+  ATTACHMENT_UPLOADED: 'Tải ảnh đính kèm',
+  ATTACHMENT_REMOVED: 'Gỡ ảnh đính kèm',
+  TAGS_UPDATED: 'Cập nhật thẻ',
+  APPOINTMENT_STATUS_CHANGED: 'Đổi trạng thái lịch hẹn',
+  APPOINTMENT_DELETED: 'Xóa lịch hẹn',
 };
 
 interface HistoryListProps {
@@ -44,7 +56,7 @@ export const HistoryList = ({ customerId, isFramed = true }: HistoryListProps) =
         {entries.map((entry) => (
           <li key={entry.id} className={`${INSET_CLASS} space-y-1.5 p-3`}>
             <div className="flex flex-wrap items-center gap-2 text-theme-xs">
-              <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>{CHANGE_ACTION_LABELS[entry.action]}</span>
+              <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>{CHANGE_ACTION_LABELS[entry.action] ?? entry.action}</span>
               <span className="font-semibold text-gray-800 dark:text-white/90">{entry.actor.displayName}</span>
               <time dateTime={entry.createdAt} className="text-gray-500 dark:text-gray-400">
                 {formatVnDateTime(entry.createdAt)}

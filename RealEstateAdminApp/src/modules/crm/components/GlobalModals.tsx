@@ -39,9 +39,9 @@ export const GlobalModals = () => {
       }
     : null;
 
-  const logContact = (contactChannel: 'CALL' | 'ZALO', content: string, title: string) => {
+  const logContact = async (contactChannel: 'CALL' | 'ZALO', content: string, title: string) => {
     if (!customer) return;
-    const result = api.createCareLog(customer.id, { content, contactChannel });
+    const result = await api.createCareLog(customer.id, { content, contactChannel });
     actions.showToast(result.ok ? { title } : { type: 'error', title: result.error.message });
   };
 
