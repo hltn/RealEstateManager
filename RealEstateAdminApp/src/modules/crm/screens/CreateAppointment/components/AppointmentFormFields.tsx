@@ -28,7 +28,10 @@ interface CustomerFieldsProps extends FieldGroupProps {
 }
 
 export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) => {
-  const { values, errors, customers, customerTotal, setCustomerSearch, selectedCustomer, isCustomerLoading, changeCustomer, setField } = form;
+  const { values, errors, customers, customerTotal, setCustomerSearch, selectedCustomer, isCustomerLoading, originCustomer, changeCustomer, setField } = form;
+  // Mở từ chi tiết khách: khách bị khóa, người dùng đang đặt lịch cho đúng khách đó.
+  const isCustomerLocked = originCustomer !== null;
+  const hints = [isCustomerLocked ? 'Đặt lịch cho khách đang xem, không đổi được khách.' : '', selectedCustomer?.primaryAssignee ? `Phụ trách chính: ${selectedCustomer.primaryAssignee.displayName}` : ''].filter(Boolean);
   const customerId = getFieldId('customerId');
   const titleId = getFieldId('title');
 
@@ -38,11 +41,13 @@ export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) =
         inputId={customerId}
         label="Khách hàng"
         isRequired
+        isLabelStatic={isCustomerLocked}
         error={errors.customerId}
-        hint={selectedCustomer?.primaryAssignee ? `Phụ trách chính: ${selectedCustomer.primaryAssignee.displayName}` : undefined}
+        hint={hints.length > 0 ? hints.join(' ') : undefined}
       >
-        {customerControl === 'picker' ? (
-          <CustomerPicker id={customerId} customers={customers} total={customerTotal} onSearch={setCustomerSearch} selectedCustomer={selectedCustomer} isLoading={isCustomerLoading} hasError={Boolean(errors.customerId)} onChange={changeCustomer} />
+        {/* Khóa: cả desktop lẫn mobile dùng thẻ khách chỉ-đọc (select disabled trông gần như select thường). */}
+        {customerControl === 'picker' || isCustomerLocked ? (
+          <CustomerPicker id={customerId} customers={customers} total={customerTotal} onSearch={setCustomerSearch} selectedCustomer={selectedCustomer} isLoading={isCustomerLoading} isLocked={isCustomerLocked} hasError={Boolean(errors.customerId)} onChange={changeCustomer} />
         ) : (
           <SelectInput
             id={customerId}

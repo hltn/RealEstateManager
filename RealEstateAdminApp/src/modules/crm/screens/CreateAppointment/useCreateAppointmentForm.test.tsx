@@ -90,18 +90,21 @@ describe('G5: khách mang sang từ chi tiết khách qua ?customerId=', () => {
     useCustomerDetail.mockImplementation((id: string | null) => (id === CUSTOMER_ID || id === OTHER_ID ? detailOf(id) : NO_DETAIL));
   });
 
-  it('id hợp lệ: khách được chọn sẵn ngay lần render đầu, vẫn đổi khách được', () => {
+  it('id hợp lệ: khách được chọn sẵn ngay lần render đầu và BỊ KHÓA (changeCustomer không đổi được khách)', () => {
     const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
     expect(result.current.values.customerId).toBe(CUSTOMER_ID);
     expect(result.current.selectedCustomer?.id).toBe(CUSTOMER_ID);
+    expect(result.current.originCustomer?.id).toBe(CUSTOMER_ID);
     act(() => result.current.changeCustomer(OTHER_ID));
-    expect(result.current.values.customerId).toBe(OTHER_ID);
+    expect(result.current.values.customerId).toBe(CUSTOMER_ID);
   });
 
-  it('mở từ danh sách Lịch hẹn (không query): chưa chọn khách', () => {
+  it('mở từ danh sách Lịch hẹn (không query): chưa chọn khách, không khóa, chọn khách tự do', () => {
     const { result } = setup();
     expect(result.current.values.customerId).toBe('');
     expect(result.current.originCustomer).toBeNull();
+    act(() => result.current.changeCustomer(OTHER_ID));
+    expect(result.current.values.customerId).toBe(OTHER_ID);
   });
 
   it('id sai định dạng: không chọn khách, không gọi API tải khách với id rác', () => {
@@ -120,6 +123,9 @@ describe('G5: khách mang sang từ chi tiết khách qua ?customerId=', () => {
     expect(result.current.originCustomer).toBeNull();
     expect(toastDefault).toHaveBeenCalledTimes(1);
     expect(String(toastDefault.mock.calls[0][0])).toContain('Khách không tồn tại hoặc bạn không có quyền xem');
+    // Khách gốc không dùng được thì không khóa: người dùng chọn khách khác như bình thường.
+    act(() => result.current.changeCustomer(OTHER_ID));
+    expect(result.current.values.customerId).toBe(OTHER_ID);
   });
 });
 
@@ -163,13 +169,32 @@ describe('G6: lưu/hủy xong về nơi bắt đầu', () => {
     expect(result.current.isSubmitting).toBe(false);
   });
 
-  it('đổi khách A -> B trong form rồi lưu: lịch tạo cho B nên về chi tiết B (không phải khách gốc A)', async () => {
+  it('khách gốc bị khóa: dù cố đổi sang khách khác, lịch vẫn tạo cho khách gốc và về chi tiết khách gốc', async () => {
     const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
     act(() => result.current.changeCustomer(OTHER_ID));
     fillValidForm(result);
     await act(() => result.current.handleSubmit());
+    expect(createAppointment).toHaveBeenCalledWith(expect.objectContaining({ customerId: CUSTOMER_ID }));
+    expect(currentUrl.value).toBe(`/crm/customers/${CUSTOMER_ID}`);
+  });
+
+  it('khách gốc lỗi tạm thời -> người dùng chọn khách B -> khách gốc tự tải lại được: KHÔNG khóa lại trên B, lịch tạo cho B', async () => {
+    const transientError = { data: null, error: { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message: 'x' }, isLoading: false };
+    useCustomerDetail.mockImplementation((id: string | null) => (id === CUSTOMER_ID ? transientError : id ? detailOf(id) : NO_DETAIL));
+    const { result, rerender } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    expect(result.current.originCustomer).toBeNull(); // lỗi -> mở khóa
+    act(() => result.current.changeCustomer(OTHER_ID));
+
+    // Khách gốc hồi phục (react-query refetch thành công).
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    rerender();
+    expect(result.current.originCustomer).toBeNull();
+    expect(result.current.values.customerId).toBe(OTHER_ID);
+
+    fillValidForm(result);
+    await act(() => result.current.handleSubmit());
     expect(createAppointment).toHaveBeenCalledWith(expect.objectContaining({ customerId: OTHER_ID }));
-    expect(currentUrl.value).toBe(`/crm/customers/${OTHER_ID}`);
+    expect(currentUrl.value).toBe('/crm/appointments'); // đã chọn khách khác khách gốc: về danh sách, không về chi tiết khách gốc
   });
 
   it('hủy khi mở thẳng URL (không có lịch sử trong app): thay form bằng chi tiết khách', () => {
