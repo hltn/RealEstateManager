@@ -20,7 +20,7 @@ const mockFind = jest.fn(() => ({ sort: jest.fn(() => ({ skip: jest.fn(() => ({ 
 const mockFindOne = jest.fn(() => ({ lean: mockLean }));
 const mockCountDocuments = jest.fn(() => ({ exec: jest.fn().mockResolvedValue(0) }));
 const mockUpdateOne = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) }));
-const mockUpdateMany = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 0 }) }));
+const mockUpdateMany = jest.fn((..._args: any[]) => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 0 }) }));
 const mockCreate = jest.fn();
 
 const mockModel = {

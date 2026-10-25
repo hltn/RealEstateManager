@@ -12,8 +12,6 @@ import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
-import { UserRole } from '../../common/enums/user-role.enum';
-import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 
 describe('SettingsController (contract mục 1/3)', () => {
   let controller: SettingsController;
@@ -43,6 +41,9 @@ describe('SettingsController (contract mục 1/3)', () => {
         apiKey: '***',
         must1cApiKey: '***',
         must1cModel: '',
+        nineRouterBaseUrl: 'http://127.0.0.1:20128/v1',
+        nineRouterApiKey: '***',
+        nineRouterModel: '',
         activePlatform: 'OpenRouter',
       };
       service.getAiConfig.mockReturnValue(expected);

@@ -19,6 +19,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import * as fs from 'fs';
+import { Types } from 'mongoose';
 
 // Controller import NewsArticleService → ArticleExtractorUtil → jsdom →
 // @exodus/bytes (ESM) làm Jest parse fail. Mock jsdom rỗng để break chain,
@@ -166,7 +167,8 @@ describe('NewsFireCrawlManagerController', () => {
 
   describe('getRawArticles — Response Format phân trang chuẩn', () => {
     it('trả { data, meta: { total, page, limit, totalPages } } đúng shape', async () => {
-      customCrawlerService.getRawArticles.mockResolvedValue({ data: [{ _id: 'a' }], total: 25 });
+      const rawArticleId = new Types.ObjectId();
+      customCrawlerService.getRawArticles.mockResolvedValue({ data: [{ _id: rawArticleId }] as any, total: 25 });
 
       const result = await controller.getRawArticles({
         page: 2, limit: 10,
@@ -175,7 +177,7 @@ describe('NewsFireCrawlManagerController', () => {
       // Service nhận page/limit đã chuẩn hóa (2, 10).
       expect(customCrawlerService.getRawArticles).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, 2, 10);
       expect(result.meta).toEqual({ total: 25, page: 2, limit: 10, totalPages: 3 });
-      expect(result.data).toEqual([{ _id: 'a' }]);
+      expect(result.data).toEqual([{ _id: rawArticleId }]);
     });
 
     it('total=0 → totalPages=0 (không NaN/Infinity)', async () => {
@@ -277,7 +279,7 @@ describe('NewsFireCrawlManagerController', () => {
       analyzeJobService.createJob.mockReturnValue('job-1');
       customCrawlerService.crawlData.mockResolvedValue({
         filePath: '/tmp/x.json',
-        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [{ url: 'https://src', count: 2 }], failedDetails: [] },
       });
       (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ a: 1 }, { b: 2 }]));
 
@@ -306,7 +308,7 @@ describe('NewsFireCrawlManagerController', () => {
       analyzeJobService.createJob.mockReturnValue('job-2');
       customCrawlerService.crawlData.mockResolvedValue({
         filePath: '/tmp/y.json',
-        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [{ url: 'https://src', count: 2 }], failedDetails: [] },
       });
       (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ a: 1 }, { b: 2 }]));
 
@@ -316,7 +318,7 @@ describe('NewsFireCrawlManagerController', () => {
 
       expect(customCrawlerService.crawlData).toHaveBeenCalledWith(3, undefined, undefined);
       expect(analyzeJobService.markDone).toHaveBeenCalledWith('job-2', {
-        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [{ url: 'https://src', count: 2 }], failedDetails: [] },
         count: 2,
         filePath: '/tmp/y.json',
       });
@@ -436,7 +438,7 @@ describe('NewsFireCrawlManagerController', () => {
 
   describe('getArticles — Response Format phân trang', () => {
     it('truyền date/status xuống service và trả 10 record ở trang 2 khi toàn bộ tập đã lọc có 30 record', async () => {
-      const pageRecords = Array.from({ length: 10 }, (_, index) => ({ _id: `article-${index + 21}` }));
+      const pageRecords = Array.from({ length: 10 }, (_, index) => ({ _id: `article-${index + 21}` })) as any;
       newsArticleService.getSavedArticles.mockResolvedValue({ data: pageRecords, total: 30 });
 
       const result = await controller.getArticles({

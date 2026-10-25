@@ -1,9 +1,6 @@
 jest.mock('fs', () => ({
   readFileSync: jest.fn(),
 }));
-// Lưu ý: Gemini native SDK (@google/genai) đã được bỏ khỏi service (commit
-// 97bb5c2 "remove Gemini SDK"). Service hiện chỉ dùng OpenRouter/Must1c qua
-// fetch — không còn fallback Gemini native. Do đó không mock @google/genai nữa.
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
@@ -13,49 +10,61 @@ import { AiPromptConfigService } from './ai-prompt-config.service';
 import { UnifiedAiService } from '../../../shared/ai-provider/unified-ai.service';
 
 /**
- * Unit test cho AIFilterService — service gọi AI (OpenRouter/Must1c/Gemini).
- * Mock fetch global + fs để cô lập logic branching theo platform (OpenRouter/Must1c).
+ * Unit test cho AIFilterService.
+ *
+ * Service chỉ phụ thuộc UnifiedAiService (resolveProvider / callChatCompletion /
+ * httpErrorDescription) và AiPromptConfigService. Việc chọn platform
+ * (Must1c / 9Router) và gọi HTTP nằm trong UnifiedAiService (có spec riêng),
+ * nên ở đây mock UnifiedAiService để cô lập logic của AIFilterService:
+ * dựng prompt, parse JSON, map lỗi, timeout.
  */
 describe('AIFilterService', () => {
   let service: AIFilterService;
-  let mockConfigService: any;
-  let mockAiPromptConfigService: any;
+  let mockUnifiedAiService: {
+    resolveProvider: jest.Mock;
+    callChatCompletion: jest.Mock;
+    httpErrorDescription: jest.Mock;
+  };
+  let mockAiPromptConfigService: { getPromptByName: jest.Mock };
   const mockFs = fs as jest.Mocked<typeof fs>;
 
-  // Service có fallback `configService.get(...) || process.env.*` cho các key
-  // AI platform. Nếu CI load .env có set các key này, test "no key" có thể
-  // pass vì lý do sai (không throw) hoặc fail bất thường. Stub process.env
-  // trong scope test để deterministic, khôi phục lại ở afterEach.
-  const ENV_KEYS = [
-    'OPENROUTER_API_KEY',
-    'OPENROUTER_AI_MODEL',
-    'ACTIVE_AI_PLATFORM',
-    'MUST1C_API_KEY',
-    'MUST1C_MODEL',
-    'MUST1C_API_URL',
-    'GEMINI_API_KEY',
-  ] as const;
-  let savedEnv: Record<string, string | undefined>;
+  const PROVIDER = {
+    name: 'Must1c',
+    url: 'https://htmustc.id.vn/v1/chat/completions',
+    apiKey: 'm1c-key',
+    model: 'gemini-3.6-flash',
+  };
+
+  // Helper tạo mock Response cho callChatCompletion (service chỉ dùng ok/status/json/text).
+  const mockAiResponse = (content: string): Response =>
+    ({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        choices: [{ message: { content } }],
+      }),
+    }) as unknown as Response;
+
+  const mockErrorResponse = (status: number, body: unknown): Response =>
+    ({
+      ok: false,
+      status,
+      text: jest
+        .fn()
+        .mockResolvedValue(
+          typeof body === 'string' ? body : JSON.stringify(body),
+        ),
+    }) as unknown as Response;
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    // Xóa các env key AI khỏi process.env — lưu giá trị gốc để restore.
-    savedEnv = {};
-    for (const k of ENV_KEYS) {
-      savedEnv[k] = process.env[k];
-      delete process.env[k];
-    }
 
-    // Cấu hình mặc định: có OpenRouter
-    mockConfigService = {
-      get: jest.fn((key: string) => {
-        const cfg: Record<string, string> = {
-          OPENROUTER_API_KEY: 'or-key',
-          OPENROUTER_AI_MODEL: 'google/gemini-2.5-flash',
-          ACTIVE_AI_PLATFORM: 'OpenRouter',
-        };
-        return cfg[key];
-      }),
+    mockUnifiedAiService = {
+      resolveProvider: jest.fn().mockReturnValue(PROVIDER),
+      callChatCompletion: jest.fn(),
+      httpErrorDescription: jest
+        .fn()
+        .mockImplementation((status: number) => `desc-${status}`),
     };
 
     mockAiPromptConfigService = {
@@ -69,290 +78,296 @@ describe('AIFilterService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AIFilterService,
-        { provide: ConfigService, useValue: mockConfigService },
-        {
-          provide: AiPromptConfigService,
-          useValue: mockAiPromptConfigService,
-        },
-        {
-          provide: ExternalLogService,
-          useValue: { logCrawl: jest.fn(), logAi: jest.fn() },
-        },
+        { provide: UnifiedAiService, useValue: mockUnifiedAiService },
+        { provide: AiPromptConfigService, useValue: mockAiPromptConfigService },
       ],
     }).compile();
 
     service = module.get<AIFilterService>(AIFilterService);
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-    // Khôi phục process.env về trạng thái gốc sau khi stub.
-    for (const k of ENV_KEYS) {
-      if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k] as string;
-    }
-  });
-
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  // Helper tạo mock Response cho fetch
-  const mockFetchResponse = (
-    ok: boolean,
-    body: any,
-    status = 200,
-  ): Response => {
-    const res: Partial<Response> = {
-      ok,
-      status,
-      json: jest.fn().mockResolvedValue(body),
-      text: jest
-        .fn()
-        .mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
-      // Phase 2 (ExternalLogModule): service gọi res.clone().text() để log body
-      // mà không tiêu thụ stream của caller (res.text()/res.json()).
-      clone: jest.fn(() => mockFetchResponse(ok, body, status)),
-      headers: new Headers({ 'content-type': 'application/json' }),
-    };
-    return res as Response;
-  };
-
   describe('filterAndRank', () => {
-    it('should call OpenRouter fetch and return parsed JSON', async () => {
+    it('should call AI with provider/model and return JSON parsed from markdown fence', async () => {
       const top5 = [{ url: 'https://x', title: 'T1', score: 9 }];
-      const fetchSpy = jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          mockFetchResponse(true, {
-            choices: [{ message: { content: '```json\n' + JSON.stringify(top5) + '\n```' } }],
-          }),
-        );
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse('```json\n' + JSON.stringify(top5) + '\n```'),
+      );
 
       const result = await service.filterAndRank('file.json');
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        'https://openrouter.ai/api/v1/chat/completions',
-        expect.objectContaining({ method: 'POST' }),
-      );
       expect(result).toEqual(top5);
+      expect(mockAiPromptConfigService.getPromptByName).toHaveBeenCalledWith(
+        'FILTER_AND_RANK_PROMPT',
+      );
+      const [payload, options] =
+        mockUnifiedAiService.callChatCompletion.mock.calls[0];
+      expect(payload.model).toBe(PROVIDER.model);
+      expect(payload.messages).toEqual([
+        {
+          role: 'user',
+          content: expect.stringContaining(
+            'SYSTEM_PROMPT' + 'URL: https://x\nTitle: T1\nContent: C1',
+          ),
+        },
+      ]);
+      expect(options).toEqual(
+        expect.objectContaining({
+          provider: PROVIDER,
+          contextLabel: 'filterAndRank',
+        }),
+      );
     });
 
-    it('should throw when OpenRouter returns non-ok response', async () => {
-      jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(mockFetchResponse(false, 'err', 500));
+    it('should extract the nested array when AI wraps the result in an object', async () => {
+      const articles = [{ url: 'https://x', title: 'T1' }];
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse(JSON.stringify({ articles })),
+      );
+
+      await expect(service.filterAndRank('file.json')).resolves.toEqual(
+        articles,
+      );
+    });
+
+    it('should throw BadRequestException with status description when AI returns non-ok response', async () => {
+      // Hành vi hiện tại, cần thống nhất: filterAndRank bọc BadRequestException.
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockErrorResponse(401, { error: { message: 'invalid key' } }),
+      );
+
+      const promise = service.filterAndRank('file.json');
+      await expect(promise).rejects.toThrow(BadRequestException);
+      await expect(promise).rejects.toThrow(
+        /Must1c API error: 401 - desc-401\. Details: invalid key/,
+      );
+    });
+
+    it('should throw BadRequestException when AI returns invalid JSON', async () => {
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse('not-json-text'),
+      );
+
+      const promise = service.filterAndRank('file.json');
+      await expect(promise).rejects.toThrow(BadRequestException);
+      await expect(promise).rejects.toThrow(/JSON parsing failed/);
+    });
+
+    it('should wrap timeout (AbortError) into BadRequestException', async () => {
+      mockUnifiedAiService.callChatCompletion.mockRejectedValue(
+        Object.assign(new Error('aborted'), { name: 'AbortError' }),
+      );
+
+      await expect(service.filterAndRank('file.json')).rejects.toThrow(
+        /timed out after 300 seconds/,
+      );
+    });
+
+    it('should propagate provider-resolution error when no AI platform configured', async () => {
+      mockUnifiedAiService.resolveProvider.mockImplementation(() => {
+        throw new BadRequestException('No AI platform configured');
+      });
 
       await expect(service.filterAndRank('file.json')).rejects.toThrow(
         BadRequestException,
       );
+      expect(mockUnifiedAiService.callChatCompletion).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when no OpenRouter key (no Gemini fallback)', async () => {
-      // Sau commit 97bb5c2 (remove Gemini SDK), service không còn fallback
-      // Gemini native API. Khi thiếu OpenRouter key → throw BadRequestException
-      // ngay lập tức (contract hiện tại của service).
-      mockConfigService.get.mockReturnValue(undefined);
-
-      await expect(service.filterAndRank('file.json')).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should wrap readFileSync error in BadRequestException (sau khi fix, readFile trong try-catch)', async () => {
-      // Sau fix: readFileSync + JSON.parse nằm TRONG try-catch → lỗi được bọc
-      // trong BadRequestException với message nhất quán.
+    it('should wrap readFileSync error in BadRequestException', async () => {
       mockFs.readFileSync.mockImplementation(() => {
         throw new Error('file missing');
       });
 
-      await expect(service.filterAndRank('file.json')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.filterAndRank('file.json')).rejects.toThrow(
-        /file missing/i,
-      );
+      const promise = service.filterAndRank('file.json');
+      await expect(promise).rejects.toThrow(BadRequestException);
+      await expect(promise).rejects.toThrow(/file missing/i);
+      expect(mockUnifiedAiService.callChatCompletion).not.toHaveBeenCalled();
     });
   });
 
   describe('filterRawArticles', () => {
-    it('should return empty array when input is empty', async () => {
+    it('should return empty array without calling AI when input is empty', async () => {
       const result = await service.filterRawArticles([]);
+
       expect(result).toEqual([]);
+      expect(mockUnifiedAiService.callChatCompletion).not.toHaveBeenCalled();
     });
 
-    it('should call Must1c when platform=Must1c and key present', async () => {
-      mockConfigService.get.mockImplementation((key: string) => {
-        const cfg: Record<string, string | undefined> = {
-          ACTIVE_AI_PLATFORM: 'Must1c',
-          MUST1C_API_KEY: 'm1c-key',
-          MUST1C_MODEL: 'gemini-3.6-flash',
-          MUST1C_API_URL: 'https://htmustc.id.vn/v1/chat/completions',
-        };
-        return cfg[key];
-      });
+    it('should send articles (urlHash falls back to _id) and return parsed result', async () => {
       const parsed = [{ urlHash: 'h1', title: 'T1', reason: 'match' }];
-      const fetchSpy = jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          mockFetchResponse(true, {
-            choices: [{ message: { content: JSON.stringify(parsed) } }],
-          }),
-        );
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse(JSON.stringify(parsed)),
+      );
 
       const result = await service.filterRawArticles([
         { _id: 'a', urlHash: 'h1', title: 'T1', description: 'D1' },
+        { _id: 'b', title: 'T2' },
       ]);
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        'https://htmustc.id.vn/v1/chat/completions',
-        expect.objectContaining({ method: 'POST' }),
-      );
       expect(result).toEqual(parsed);
+      expect(mockAiPromptConfigService.getPromptByName).toHaveBeenCalledWith(
+        'RAW_ARTICLES_PROMPT',
+      );
+      const [payload, options] =
+        mockUnifiedAiService.callChatCompletion.mock.calls[0];
+      const content: string = payload.messages[0].content;
+      expect(content).toContain('urlHash: h1\nTitle: T1\nDescription: D1');
+      expect(content).toContain('urlHash: b\nTitle: T2\nDescription: ');
+      expect(options.contextLabel).toBe('filterRawArticles');
     });
 
-    it('should map Must1c 401 to authentication_error message', async () => {
-      mockConfigService.get.mockImplementation((key: string) => {
-        const cfg: Record<string, string> = {
-          ACTIVE_AI_PLATFORM: 'Must1c',
-          MUST1C_API_KEY: 'm1c-key',
-        };
-        return cfg[key];
+    it('should map 401 to authentication error description', async () => {
+      mockUnifiedAiService.httpErrorDescription.mockReturnValue(
+        'Invalid API key (authentication_error)',
+      );
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockErrorResponse(401, 'invalid key'),
+      );
+
+      await expect(
+        service.filterRawArticles([{ _id: 'a', title: 'T' }]),
+      ).rejects.toThrow(
+        /Must1c API error: 401 - Invalid API key \(authentication_error\)\. Details: invalid key/,
+      );
+      expect(mockUnifiedAiService.httpErrorDescription).toHaveBeenCalledWith(
+        401,
+      );
+    });
+
+    it('should propagate provider-resolution error when no AI platform configured', async () => {
+      mockUnifiedAiService.resolveProvider.mockImplementation(() => {
+        throw new BadRequestException('No AI platform configured');
       });
-      jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(mockFetchResponse(false, 'invalid key', 401));
 
       await expect(
         service.filterRawArticles([{ _id: 'a', title: 'T' }]),
       ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw BadRequestException when no AI platform configured', async () => {
-      mockConfigService.get.mockReturnValue(undefined);
-
-      await expect(
-        service.filterRawArticles([{ _id: 'a', title: 'T' }]),
-      ).rejects.toThrow(BadRequestException);
+      expect(mockUnifiedAiService.callChatCompletion).not.toHaveBeenCalled();
     });
 
     it('should throw when AI returns invalid JSON', async () => {
-      jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          mockFetchResponse(true, {
-            choices: [{ message: { content: 'not-json-text' } }],
-          }),
-        );
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse('not-json-text'),
+      );
 
       await expect(
         service.filterRawArticles([{ _id: 'a', title: 'T' }]),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(/JSON parsing failed/);
+    });
+
+    it('should throw timeout error when request is aborted', async () => {
+      mockUnifiedAiService.callChatCompletion.mockRejectedValue(
+        Object.assign(new Error('aborted'), { name: 'AbortError' }),
+      );
+
+      await expect(
+        service.filterRawArticles([{ _id: 'a', title: 'T' }]),
+      ).rejects.toThrow('AI API request timed out after 300 seconds');
     });
   });
 
   describe('cleanMarkdownContentWithAI', () => {
-    it('should return empty string when markdown is empty', async () => {
+    it('should return empty string without calling AI when markdown is empty', async () => {
       expect(await service.cleanMarkdownContentWithAI('')).toBe('');
       expect(await service.cleanMarkdownContentWithAI('   ')).toBe('');
+      expect(mockUnifiedAiService.callChatCompletion).not.toHaveBeenCalled();
     });
 
-    it('should return cleaned content via OpenRouter', async () => {
-      const cleaned = 'Cleaned text';
-      const fetchSpy = jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          mockFetchResponse(true, {
-            choices: [{ message: { content: cleaned } }],
-          }),
-        );
+    it('should return cleaned content and include markdown in prompt', async () => {
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse('Cleaned text'),
+      );
 
       const result = await service.cleanMarkdownContentWithAI('raw md');
-      expect(fetchSpy).toHaveBeenCalled();
-      expect(result).toBe(cleaned);
+
+      expect(result).toBe('Cleaned text');
+      const [payload, options] =
+        mockUnifiedAiService.callChatCompletion.mock.calls[0];
+      expect(payload.messages[0].content).toBe('SYSTEM_PROMPT\nraw md');
+      expect(options.contextLabel).toBe('cleanMarkdownContentWithAI');
     });
 
     it('should strip markdown code fences from response', async () => {
-      jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          mockFetchResponse(true, {
-            choices: [{ message: { content: '```markdown\ncleaned\n```' } }],
-          }),
-        );
-
-      const result = await service.cleanMarkdownContentWithAI('raw');
-      expect(result).toBe('cleaned');
-    });
-
-    it('should throw BadRequestException when no OpenRouter/Must1c key (no Gemini fallback)', async () => {
-      // Sau commit 97bb5c2 (remove Gemini SDK), service không còn fallback
-      // Gemini native API. Khi không có OpenRouter/Must1c key và platform
-      // = OpenRouter → throw BadRequestException ('No AI platform configured').
-      mockConfigService.get.mockImplementation((key: string) =>
-        key === 'OPENROUTER_API_KEY'
-          ? undefined
-          : key === 'ACTIVE_AI_PLATFORM'
-            ? 'OpenRouter'
-            : undefined,
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse('```markdown\ncleaned\n```'),
       );
 
-      await expect(
-        service.cleanMarkdownContentWithAI('raw'),
-      ).rejects.toThrow(BadRequestException);
+      expect(await service.cleanMarkdownContentWithAI('raw')).toBe('cleaned');
     });
 
-    it('should throw BadRequestException when no platform configured', async () => {
-      mockConfigService.get.mockReturnValue(undefined);
+    it('should return empty string when AI returns no content', async () => {
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ choices: [] }),
+      } as unknown as Response);
 
-      await expect(
-        service.cleanMarkdownContentWithAI('raw'),
-      ).rejects.toThrow(BadRequestException);
+      expect(await service.cleanMarkdownContentWithAI('raw')).toBe('');
+    });
+
+    it('should propagate provider-resolution error when no AI platform configured', async () => {
+      mockUnifiedAiService.resolveProvider.mockImplementation(() => {
+        throw new BadRequestException('No AI platform configured');
+      });
+
+      await expect(service.cleanMarkdownContentWithAI('raw')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
   describe('callAiCompletion', () => {
-    it('should return empty string when contentData is empty', async () => {
+    it('should return empty string without calling AI when contentData is empty', async () => {
       expect(
         await service.callAiCompletion('sys', '', 'Market trends analysis'),
       ).toBe('');
       expect(
         await service.callAiCompletion('sys', '   ', 'Extract listings'),
       ).toBe('');
+      expect(mockUnifiedAiService.callChatCompletion).not.toHaveBeenCalled();
     });
 
-    it('should send system + user messages to OpenRouter', async () => {
-      const analysis = 'Market up trend';
-      const fetchSpy = jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          mockFetchResponse(true, {
-            choices: [{ message: { content: analysis } }],
-          }),
-        );
+    it('should send system + user messages with the given context label', async () => {
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockAiResponse('Market up trend'),
+      );
 
       const result = await service.callAiCompletion(
         'SYS',
         'CONTENT',
         'Market trends analysis',
       );
-      expect(fetchSpy).toHaveBeenCalledWith(
-        'https://openrouter.ai/api/v1/chat/completions',
+
+      expect(result).toBe('Market up trend');
+      expect(mockUnifiedAiService.callChatCompletion).toHaveBeenCalledWith(
+        {
+          model: PROVIDER.model,
+          messages: [
+            { role: 'system', content: 'SYS' },
+            { role: 'user', content: 'CONTENT' },
+          ],
+        },
         expect.objectContaining({
-          body: expect.stringContaining('"role":"system"'),
+          provider: PROVIDER,
+          contextLabel: 'Market trends analysis',
+          prompt: 'SYS\nCONTENT',
         }),
       );
-      expect(result).toBe(analysis);
     });
 
-    it('should throw BadRequestException on fetch error', async () => {
-      jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(mockFetchResponse(false, 'err', 500));
+    it('should throw descriptive error when AI returns non-ok response', async () => {
+      // Hành vi hiện tại, cần thống nhất: hàm này (và filterRawArticles/cleanMarkdown) ném Error thường, không bọc BadRequestException.
+      mockUnifiedAiService.callChatCompletion.mockResolvedValue(
+        mockErrorResponse(500, 'err'),
+      );
 
       await expect(
         service.callAiCompletion('SYS', 'CONTENT', 'Extract listings'),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(/Must1c API error: 500 - desc-500\. Details: err/);
     });
   });
 });

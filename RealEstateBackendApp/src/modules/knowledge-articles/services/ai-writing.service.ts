@@ -4,7 +4,10 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { KnowledgeConfigService } from './knowledge-config.service';
-import { UnifiedAiService, AiProviderConfig } from '../../../shared/ai-provider/unified-ai.service';
+import {
+  UnifiedAiService,
+  AiProviderConfig,
+} from '../../../shared/ai-provider/unified-ai.service';
 
 /**
  * AI content generation service using UnifiedAiService.
@@ -36,8 +39,9 @@ export class AiWritingService {
       } catch (error: any) {
         lastError = error;
 
-        // Don't retry on 4xx (except 429)
-        const status = error.response?.status;
+        // Don't retry on 4xx (except 429). Lỗi HTTP từ fetch mang field `status`
+        // (gắn ở generateContent), lỗi kiểu axios mang `response.status`.
+        const status = error.status ?? error.response?.status;
         if (status && status >= 400 && status < 500 && status !== 429) {
           this.logger.error(`${context}: HTTP ${status} — ${error.message}`);
           throw new InternalServerErrorException(
@@ -121,7 +125,7 @@ Return ONLY the JSON object, no preamble or explanation.`;
     const result = await this.withRetry(async () => {
       const abortController = new AbortController();
       const signal = abortController.signal;
-      
+
       const res = await this.unifiedAiService.callChatCompletion(
         {
           model: providerConfig.model,
@@ -140,8 +144,10 @@ Return ONLY the JSON object, no preamble or explanation.`;
 
       if (!res.ok) {
         const errorBody = await res.text();
-        throw new Error(
-          `HTTP ${res.status}: ${errorBody.substring(0, 200)}`,
+        // Gắn status vào lỗi để withRetry phân biệt 4xx (không retry) với 5xx/429.
+        throw Object.assign(
+          new Error(`HTTP ${res.status}: ${errorBody.substring(0, 200)}`),
+          { status: res.status },
         );
       }
 
@@ -175,9 +181,7 @@ Return ONLY the JSON object, no preamble or explanation.`;
         tags: Array.isArray(parsed.tags) ? parsed.tags : [],
       };
     } catch (parseError: any) {
-      this.logger.error(
-        `Failed to parse AI response: ${parseError.message}`,
-      );
+      this.logger.error(`Failed to parse AI response: ${parseError.message}`);
       throw new InternalServerErrorException(
         `AI returned unparseable content: ${parseError.message}`,
       );
