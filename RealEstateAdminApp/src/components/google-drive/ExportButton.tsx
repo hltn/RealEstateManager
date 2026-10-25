@@ -87,12 +87,6 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     exportMutation.mutate();
   }, [exportMutation]);
 
-  const handleReset = useCallback(() => {
-    setExportStatus("idle");
-    setErrorMessage(null);
-    setExportResult(null);
-  }, []);
-
   const handleReExport = useCallback(() => {
     setExportStatus("exporting");
     setErrorMessage(null);
@@ -131,76 +125,10 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     );
   }
 
-  // State: Success (đã export thành công) hoặc khi có lịch sử export
-  if ((exportStatus === "success" && exportResult) || googleDriveExport) {
-    const exportData = exportResult?.data || {
-      documentId: googleDriveExport?.documentId,
-      documentUrl: googleDriveExport?.documentUrl,
-      title: googleDriveExport?.title,
-    };
-
-    return (
-      <div className="inline-flex items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-300">
-          <ExternalLink className="w-4 h-4" />
-          {exportStatus === "success" ? "Đã export!" : "ĐÃ EXPORT!"}
-        </span>
-        <a
-          href={exportData.documentUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline underline-offset-2"
-        >
-          Mở Drive
-        </a>
-        <button
-          type="button"
-          onClick={handleReExport}
-          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          title="Export lại"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    );
-  }
-
-  // State: Success (đã export thành công) hoặc khi có lịch sử export
-  if ((exportStatus === "success" && exportResult) || googleDriveExport) {
-    const exportData = exportResult?.data || {
-      documentId: googleDriveExport?.documentId,
-      documentUrl: googleDriveExport?.documentUrl,
-      title: googleDriveExport?.title,
-    };
-
-    return (
-      <div className="inline-flex items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-300">
-          <ExternalLink className="w-4 h-4" />
-          {exportStatus === "success" ? "Đã export!" : "ĐÃ EXPORT!"}
-        </span>
-        <a
-          href={exportData.documentUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline underline-offset-2"
-        >
-          Mở Drive
-        </a>
-        <button
-          type="button"
-          onClick={handleReExport}
-          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          title="Export lại"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
-      </div>
-    );
-  }
-
-  // State: Error
+  // State: Error - ưu tiên hơn Success để export (lại) thất bại không bị che bởi badge "Đã export!".
+  // Nếu mục đã từng export thì vẫn giữ link "Mở Drive" cũ bên cạnh thông báo lỗi.
   if (exportStatus === "error") {
+    const previousExport = googleDriveExport ?? null;
     return (
       <div className="inline-flex items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400">
@@ -218,6 +146,46 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         >
           <RotateCcw className="w-3 h-3" />
           Thử lại
+        </button>
+        {previousExport && (
+          <a
+            href={previousExport.documentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline underline-offset-2"
+          >
+            Mở Drive
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // State: Success - ưu tiên kết quả export vừa xong, fallback về lịch sử export từ server.
+  // `exportResult` chỉ được set khi mutation thành công nên không cần kiểm tra thêm exportStatus.
+  const exportData = exportResult?.data ?? googleDriveExport ?? null;
+  if (exportData) {
+    return (
+      <div className="inline-flex items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <ExternalLink className="w-4 h-4" />
+          Đã export!
+        </span>
+        <a
+          href={exportData.documentUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline underline-offset-2"
+        >
+          Mở Drive
+        </a>
+        <button
+          type="button"
+          onClick={handleReExport}
+          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          title="Export lại"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>
     );

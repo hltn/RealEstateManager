@@ -36,5 +36,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     pool: 'forks',
+    // Màn hình nặng (ManageWp...) render chậm khi chạy song song cả suite; 5s mặc định gây flaky.
+    testTimeout: 15_000,
   },
 })

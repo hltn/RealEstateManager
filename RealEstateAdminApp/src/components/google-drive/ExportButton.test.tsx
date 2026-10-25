@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -18,8 +19,10 @@ vi.mock("../../context/GoogleDriveAuthContext");
 const mockedExport = vi.mocked(googleDriveApi.exportToGoogleDrive);
 const mockedUseAuth = vi.mocked(googleDriveAuth.useGoogleDriveAuth);
 
+type RenderButtonProps = Partial<Omit<ComponentProps<typeof ExportButton>, "historyId">>;
+
 function renderButton(
-  props?: { googleDriveExport?: { documentId: string; documentUrl: string; title: string; exportedAt: string } | null },
+  props?: RenderButtonProps,
   overrides: Partial<ReturnType<typeof googleDriveAuth.useGoogleDriveAuth>> = {}
 ) {
   const queryClient = new QueryClient({
@@ -59,7 +62,7 @@ describe("ExportButton", () => {
   });
 
   it("hiển thị enabled khi đã kết nối", () => {
-    renderButton({ isConnected: true });
+    renderButton(undefined, { isConnected: true });
 
     const button = screen.getByRole("button", { name: /export/i });
     expect(button).not.toBeDisabled();
@@ -188,15 +191,31 @@ describe("ExportButton", () => {
       expect(screen.getByRole("button", { name: /export lại/i })).toBeInTheDocument();
     });
 
-    it("click nút re-export bắt đầu export lại", () => {
+    it("click nút re-export bắt đầu export lại", async () => {
+      mockedExport.mockResolvedValueOnce({
+        message: "ok",
+        data: { documentId: "doc123", documentUrl: "https://docs.google.com/document/d/doc123/edit", title: "t" },
+      });
       renderButton({ googleDriveExport: mockGoogleDriveExport });
 
-      const rotateButton = screen.getByRole("button", { name: /export lại/i });
-      fireEvent.click(rotateButton);
+      fireEvent.click(screen.getByRole("button", { name: /export lại/i }));
 
-      // Component should re-render after click
-      // The test would need to verify the mutation is called
-      // Note: This test would need to mock useMutation from ExportButton's context
+      // Mutation phải gọi API với đúng historyId và UI hiện trạng thái đang export
+      expect(screen.getByText("Đang export...")).toBeInTheDocument();
+      await waitFor(() => expect(mockedExport).toHaveBeenCalledWith("hist123"));
+      expect(await screen.findByText("Đã export!")).toBeInTheDocument();
+    });
+
+    it("hiển thị lỗi khi re-export thất bại dù đã có googleDriveExport, giữ link Drive cũ", async () => {
+      mockedExport.mockRejectedValueOnce({ response: { data: { message: "Quota exceeded" } } });
+      renderButton({ googleDriveExport: mockGoogleDriveExport });
+
+      fireEvent.click(screen.getByRole("button", { name: /export lại/i }));
+
+      expect(await screen.findByText("Quota exceeded")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /thử lại/i })).toBeInTheDocument();
+      expect(screen.queryByText(/đã export!/i)).not.toBeInTheDocument();
+      expect(screen.getByText("Mở Drive")).toHaveAttribute("href", mockGoogleDriveExport.documentUrl);
     });
 
     it("hiển thị Mở Drive link với href đúng từ googleDriveExport", () => {
@@ -211,15 +230,21 @@ describe("ExportButton", () => {
       expect(link).toHaveAttribute("rel", "noopener noreferrer");
     });
 
-    it("nút re-export không ảnh hưởng đến link Drive khi đang export", () => {
+    it("khi đang re-export thì ẩn link Drive và hiển thị trạng thái đang export", async () => {
+      let resolveExport: (v: googleDriveApi.GoogleDriveExportResult) => void = () => {};
+      mockedExport.mockReturnValueOnce(new Promise((resolve) => { resolveExport = resolve; }));
       renderButton({ googleDriveExport: mockGoogleDriveExport });
 
-      const rotateButton = screen.getByRole("button", { name: /export lại/i });
-      fireEvent.click(rotateButton);
+      fireEvent.click(screen.getByRole("button", { name: /export lại/i }));
 
-      // The component re-renders to show exporting state
-      // The link is no longer visible during export
+      expect(await screen.findByText("Đang export...")).toBeInTheDocument();
       expect(screen.queryByText("Mở Drive")).not.toBeInTheDocument();
+
+      // Giải phóng mutation trong act() để không còn cập nhật state ngoài act
+      await act(async () => {
+        resolveExport({ message: "ok", data: { documentId: "d", documentUrl: "https://x/d", title: "t" } });
+      });
+      expect(await screen.findByText("Mở Drive")).toHaveAttribute("href", "https://x/d");
     });
 
     it("hiển thị UI bình thường khi googleDriveExport là null", () => {
@@ -241,21 +266,30 @@ describe("ExportButton", () => {
         },
       });
 
-      renderButton(
-        { googleDriveExport: mockGoogleDriveExport, onExportSuccess: mockOnExportSuccess }
-      );
-
-      const rotateButton = screen.getByRole("button", { name: /export lại/i });
-      fireEvent.click(rotateButton);
-
-      // Wait for export to complete
-      await act(async () => {
-        await new Promise(resolve => setTimeout(resolve, 0));
+      renderButton({
+        googleDriveExport: mockGoogleDriveExport,
+        onExportSuccess: mockOnExportSuccess,
       });
 
-      // Should call onExportSuccess when export completes
-      // Note: This test might not work perfectly due to React Query's async nature
-      // In a real scenario, the callback would be called when the mutation succeeds
+      fireEvent.click(screen.getByRole("button", { name: /export lại/i }));
+
+      // onExportSuccess phải được gọi với đúng kết quả API khi mutation thành công
+      await waitFor(() => {
+        expect(mockOnExportSuccess).toHaveBeenCalledTimes(1);
+      });
+      expect(mockOnExportSuccess.mock.calls[0][0]).toEqual({
+        message: "Export successful",
+        data: {
+          documentId: "doc456",
+          documentUrl: "https://docs.google.com/document/d/doc456/edit",
+          title: "New Report",
+        },
+      });
+      // UI chuyển sang dữ liệu export mới
+      expect(await screen.findByText("Mở Drive")).toHaveAttribute(
+        "href",
+        "https://docs.google.com/document/d/doc456/edit",
+      );
     });
   });
 });
