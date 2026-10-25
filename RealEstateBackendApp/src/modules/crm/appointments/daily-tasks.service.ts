@@ -78,6 +78,8 @@ interface TaskCandidate {
   title: string;
   suggestion: string;
   appointmentId?: Types.ObjectId;
+  /** Dự án của lịch hẹn (chỉ việc kiểu lịch hẹn có gắn dự án). */
+  projectId?: Types.ObjectId;
   careLogId?: Types.ObjectId;
   assigneeId: Types.ObjectId | null;
 }
@@ -279,6 +281,7 @@ export class DailyTasksService {
           note: string;
           startAt: Date;
           assigneeId: Types.ObjectId;
+          projectId?: Types.ObjectId | null;
         }>;
         total: Array<{ count: number }>;
       }>(pipeline)
@@ -293,6 +296,7 @@ export class DailyTasksService {
         title: row.title || APPOINTMENT_TYPE_LABELS[row.type],
         suggestion: row.note,
         appointmentId: row._id,
+        ...(row.projectId && { projectId: row.projectId }),
         assigneeId: row.assigneeId,
       })),
     };
@@ -558,9 +562,10 @@ export class DailyTasksService {
     const lastLogs = await this.latestCareLogs(customerIds);
     const maps = await this.refs.resolve({
       statusIds: customers.map((customer) => customer.statusId),
-      projectIds: customers.flatMap(
-        (customer) => customer.interestedProjectIds ?? [],
-      ),
+      projectIds: [
+        ...customers.flatMap((customer) => customer.interestedProjectIds ?? []),
+        ...items.map((item) => item.projectId),
+      ],
       userIds: items.map((item) => item.assigneeId),
     });
 
@@ -591,6 +596,8 @@ export class DailyTasksService {
             ),
           },
           title: item.title,
+          // Dự án của buổi hẹn (chỉ việc kiểu lịch hẹn có gắn dự án), tách khỏi `customer.projects`.
+          project: toRef(item.projectId, maps.projects),
           lastCareLog: log
             ? {
                 occurredAt: log.occurredAt.toISOString(),

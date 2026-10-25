@@ -17,6 +17,7 @@ import { formatLongDateVi, getFieldId, getProjectOfficeLocation, NOTE_MAX_LENGTH
 import type { CreateAppointmentForm } from '../useCreateAppointmentForm';
 import { CustomerPicker } from './CustomerPicker';
 import { LocationInput } from './LocationInput';
+import { ProjectField } from './ProjectField';
 
 interface FieldGroupProps {
   form: CreateAppointmentForm;
@@ -73,12 +74,13 @@ export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) =
 };
 
 export const ScheduleFields = ({ form }: FieldGroupProps) => {
-  const { values, errors, setField, selectedCustomer } = form;
+  const { values, errors, setField } = form;
   const { catalogs } = useCatalogs();
   const dateId = getFieldId('date');
   const timeId = getFieldId('time');
   const locationId = getFieldId('location');
-  const firstProject = catalogs.projects.find((project) => project.id === selectedCustomer?.projects[0]?.id);
+  // Văn phòng gợi ý theo dự án đã chọn cho lịch.
+  const selectedProject = catalogs.projects.find((project) => project.id === values.projectId);
 
   return (
     <div className="space-y-4">
@@ -99,8 +101,9 @@ export const ScheduleFields = ({ form }: FieldGroupProps) => {
           />
         </FormField>
       </div>
-      <FormField inputId={locationId} label="Địa điểm" isRequired={values.type !== 'CALLBACK'} error={errors.location} hint="Bấm biểu tượng định vị để dùng văn phòng bán hàng của dự án khách quan tâm">
-        <LocationInput id={locationId} value={values.location} officeLocation={getProjectOfficeLocation(firstProject)} error={errors.location} onChange={(location) => setField('location', location)} />
+      <ProjectField form={form} />
+      <FormField inputId={locationId} label="Địa điểm" isRequired={values.type !== 'CALLBACK'} error={errors.location} hint="Bấm biểu tượng định vị để dùng văn phòng bán hàng của dự án đã chọn">
+        <LocationInput id={locationId} value={values.location} officeLocation={getProjectOfficeLocation(selectedProject)} error={errors.location} onChange={(location) => setField('location', location)} />
       </FormField>
     </div>
   );

@@ -5,7 +5,6 @@
 import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { useAppointments } from '@crm/api';
-import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { getAppointmentDateKey, getAppointmentTime } from '@crm/lib/appointmentAdapters';
 import { useCrmActions } from '@crm/store';
 import { formatShortWeekdayDate, getUpcomingAppointments, getWeekDates } from '../appointmentSchedule';
@@ -44,6 +43,7 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
         <ul className="divide-y divide-gray-100 dark:divide-white/[0.05]">
           {upcoming.map((appointment) => {
             const style = APPOINTMENT_TYPE_STYLES[appointment.type];
+            const projectLabel = appointment.project?.label;
             return (
               <li key={appointment.id} className="flex items-start justify-between gap-2 py-3">
                 <div className="min-w-0 space-y-1">
@@ -55,7 +55,7 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
                   </div>
                   <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</p>
                   <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">
-                    {appointment.customer.projects && appointment.customer.projects.length > 0 && `Dự án ${formatProjectSummary(appointment.customer.projects)} • `}Phụ trách: {appointment.assignee.displayName}
+                    {projectLabel && `Dự án ${projectLabel} • `}Phụ trách: {appointment.assignee.displayName}
                   </p>
                 </div>
                 <button

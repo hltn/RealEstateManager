@@ -21,7 +21,7 @@ interface ProjectsViewProps {
 
 export const ProjectsView = ({ variant }: ProjectsViewProps) => {
   const { catalogs } = useCatalogs();
-  const { navigate, showToast } = useCrmActions();
+  const { navigate, openCreateAppointment, showToast } = useCrmActions();
   const api = useCrmApi();
   const actor = useCrmActor();
   const canManage = canManageProjects(actor.role);
@@ -58,7 +58,8 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
           ...segments.map((segment) => ({ value: segment, label: segment, count: activeProjects.filter((project) => project.segment.trim() === segment).length })),
         ];
 
-  const bookVisit = () => navigate('create_appointment');
+  // Từ thẻ dự án: mang sẵn dự án sang form (khách chưa chọn); từ nút chung ở đầu trang: mở form trống.
+  const bookVisit = (project?: Project) => openCreateAppointment(project ? { projectId: project.id } : {});
   const deleteUsage = deleteTarget ? (usage.get(deleteTarget.id) ?? 0) : 0;
 
   /**
@@ -92,7 +93,7 @@ export const ProjectsView = ({ variant }: ProjectsViewProps) => {
     showToast(result.ok ? { title: `Đã khôi phục dự án "${project.name}"` } : { type: 'error', title: result.error.message });
   };
   const bookButton = (
-    <button type="button" onClick={bookVisit} className={`${BUTTON_PRIMARY_LG_CLASS} ${isMobile ? 'h-11 w-full' : ''}`}>
+    <button type="button" onClick={() => bookVisit()} className={`${BUTTON_PRIMARY_LG_CLASS} ${isMobile ? 'h-11 w-full' : ''}`}>
       <CalendarPlus size={18} aria-hidden="true" />
       Đặt lịch xem sa bàn
     </button>

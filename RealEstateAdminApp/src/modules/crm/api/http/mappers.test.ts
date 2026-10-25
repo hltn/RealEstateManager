@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PersonaFieldDefinition } from '@crm/types/crm';
 import { buildCareLogBody } from './careApi';
 import { toArea, toPersonaField, toProject, toStatusTone } from './catalogMappers';
-import { toAppointment, toCareLog, toCustomerDetail, toCustomerPersona, toHistoryEntry, toPersonaValueBody } from './customerMappers';
+import { toAppointment, toCareLog, toDailyTask, toCustomerDetail, toCustomerPersona, toHistoryEntry, toPersonaValueBody } from './customerMappers';
 import { buildCustomerListParams, buildCustomerFilterParams, normalizeSearchTerm } from './customerQuery';
 import { toProjectBody } from './projectBody';
 import type { CareLogDto, CustomerDetailDto, PersonaFieldDto } from './dto';
@@ -124,6 +124,52 @@ describe('toCareLog / toAppointment / toHistoryEntry', () => {
     });
     expect(appointment).toMatchObject({ version: 4, canDelete: true, type: 'DEPOSIT_CONTRACT' });
     expect(appointment.customer.phoneMasked).toBeUndefined();
+  });
+
+  it('dự án của lịch (G7): response `label` thành tên hiển thị; null hoặc thiếu (lịch cũ) thành null', () => {
+    const base = {
+      id: 'p1',
+      customer: { id: 'c1', fullName: 'An', status: STATUS },
+      type: 'SITE_VISIT' as const,
+      title: '',
+      startAt: 't',
+      endAt: null,
+      location: '',
+      note: '',
+      assignee: { id: 'u1', displayName: 'Hạnh' },
+      remindBeforeMinutes: [60],
+      status: 'SCHEDULED' as const,
+      completedAt: null,
+      outcome: null,
+      createdBy: { id: 'u1', displayName: 'Hạnh' },
+      version: 1,
+      canDelete: true,
+    };
+    expect(toAppointment({ ...base, project: { id: 'pr1', label: "Q'Terra" } }).project).toEqual({ id: 'pr1', label: "Q'Terra" });
+    expect(toAppointment({ ...base, project: null }).project).toBeNull();
+    expect(toAppointment(base).project).toBeNull();
+  });
+
+  it('việc hôm nay (G7): `project` riêng của task giữ label; thiếu/null thành null; customer.projects giữ nguyên', () => {
+    const dto = {
+      id: 't1',
+      kind: 'APPOINTMENT' as const,
+      dueAt: 't',
+      group: 'TODAY' as const,
+      customer: { id: 'c1', fullName: 'An', status: STATUS, projects: [{ id: 'pa', label: 'A' }] },
+      title: '',
+      lastCareLog: null,
+      suggestion: '',
+      assignee: null,
+      isPrimary: true,
+      editedAt: null,
+      canEdit: false,
+    };
+    const withProject = toDailyTask({ ...dto, project: { id: 'pb', label: 'B' } } as never);
+    expect(withProject.project).toEqual({ id: 'pb', label: 'B' });
+    expect(withProject.customer.projects).toEqual([{ id: 'pa', label: 'A' }]);
+    expect(toDailyTask({ ...dto, project: null } as never).project).toBeNull();
+    expect(toDailyTask(dto as never).project).toBeNull();
   });
 
   it('lịch sử: before/after bất kỳ kiểu -> chuỗi hiển thị, không có "undefined"/"[object Object]"', () => {

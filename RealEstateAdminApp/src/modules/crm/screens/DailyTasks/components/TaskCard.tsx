@@ -67,7 +67,8 @@ interface TaskCardProps {
 export const TaskCard = ({ task }: TaskCardProps) => {
   const { selectCustomer } = useCrmActions();
   const meta = TASK_CATEGORY_META[task.group];
-  const projectSummary = formatProjectSummary(task.customer.projects);
+  // Việc lịch hẹn có dự án: hiện dự án của buổi hẹn (nhãn rõ); không thì dự án khách quan tâm.
+  const projectSummary = task.project ? `Dự án: ${task.project.label}` : formatProjectSummary(task.customer.projects);
 
   return (
     <article className={`${CARD_BASE_CLASS} ${meta.cardBorderClass} space-y-3`}>

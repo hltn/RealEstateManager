@@ -42,24 +42,41 @@ export const buildCrmPath = (view: ViewId, customerId?: string | null): string =
   return `${CRM_BASE_PATH}/customers/${encodeURIComponent(customerId)}${CUSTOMER_SCOPED_SUFFIX[view]}`;
 };
 
-/** Tên tham số query mang khách sang màn "Tạo lịch hẹn mới" (`/crm/appointments/new?customerId=<id>`). */
+/** Tên tham số query mang khách / dự án sang màn "Tạo lịch hẹn mới" (`/crm/appointments/new?customerId=<id>&projectId=<id>`). */
 export const CREATE_APPOINTMENT_CUSTOMER_PARAM = 'customerId';
+export const CREATE_APPOINTMENT_PROJECT_PARAM = 'projectId';
 
-/** Id khách hợp lệ = ObjectId 24 ký tự hex (chặn rác trước khi gọi API). */
+/** Id hợp lệ = ObjectId 24 ký tự hex (chặn rác trước khi gọi API). */
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
 export const isValidCustomerId = (value: string | null | undefined): value is string => typeof value === 'string' && OBJECT_ID_PATTERN.test(value);
 
-/** URL màn tạo lịch hẹn; có `customerId` hợp lệ thì mở với khách đó đã chọn sẵn (giữ được khi tải lại trang). */
-export const buildCreateAppointmentPath = (customerId?: string | null): string =>
-  isValidCustomerId(customerId)
-    ? `${STATIC_PATH_BY_VIEW.create_appointment}?${CREATE_APPOINTMENT_CUSTOMER_PARAM}=${encodeURIComponent(customerId)}`
-    : STATIC_PATH_BY_VIEW.create_appointment;
+export interface CreateAppointmentLink {
+  customerId?: string | null;
+  projectId?: string | null;
+}
 
-/** Khách mang theo ở query của màn tạo lịch hẹn; `null` nếu không có hoặc sai định dạng. */
-export const parseCreateAppointmentCustomerId = (search: string): string | null => {
-  const value = new URLSearchParams(search).get(CREATE_APPOINTMENT_CUSTOMER_PARAM);
+/**
+ * URL màn tạo lịch hẹn. Có `customerId` hợp lệ thì khách đó được chọn sẵn; có `projectId` hợp lệ thì dự án đó được chọn sẵn
+ * (giữ được khi tải lại trang). Id sai định dạng bị bỏ khỏi URL.
+ */
+export const buildCreateAppointmentPath = ({ customerId, projectId }: CreateAppointmentLink = {}): string => {
+  const params = new URLSearchParams();
+  if (isValidCustomerId(customerId)) params.set(CREATE_APPOINTMENT_CUSTOMER_PARAM, customerId);
+  if (isValidCustomerId(projectId)) params.set(CREATE_APPOINTMENT_PROJECT_PARAM, projectId);
+  const query = params.toString();
+  return query ? `${STATIC_PATH_BY_VIEW.create_appointment}?${query}` : STATIC_PATH_BY_VIEW.create_appointment;
+};
+
+const readIdParam = (search: string, name: string): string | null => {
+  const value = new URLSearchParams(search).get(name);
   return isValidCustomerId(value) ? value : null;
 };
+
+/** Khách mang theo ở query của màn tạo lịch hẹn; `null` nếu không có hoặc sai định dạng. */
+export const parseCreateAppointmentCustomerId = (search: string): string | null => readIdParam(search, CREATE_APPOINTMENT_CUSTOMER_PARAM);
+
+/** Dự án mang theo ở query của màn tạo lịch hẹn; `null` nếu không có hoặc sai định dạng. */
+export const parseCreateAppointmentProjectId = (search: string): string | null => readIdParam(search, CREATE_APPOINTMENT_PROJECT_PARAM);
 
 export interface CrmRouteMatch {
   view: ViewId;

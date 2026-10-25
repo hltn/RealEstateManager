@@ -7,20 +7,26 @@
  * vì người dùng đang thao tác trên khách đó), lưu/hủy xong về chi tiết khách đó. Khách trong query không xem được (404/403/lỗi)
  * thì mở khóa, form về "chưa chọn khách". Mở từ danh sách Lịch hẹn (không có query) thì form trống, chọn khách tự do và lưu/hủy về danh sách lịch hẹn. Form không có bản nháp lưu trữ:
  * state chỉ sống trong màn (màn được `key` theo khách nên đổi khách ở URL sẽ dựng form mới, không rò dữ liệu khách cũ).
+ *
+ * Dự án của lịch (tuỳ chọn): thứ tự ưu tiên = lựa chọn tay của người dùng (kể cả "Không chọn") > dự án mang sang qua `?projectId=`
+ * (màn Dự án; bỏ qua nếu không còn hoạt động) > gợi ý theo khách (khách quan tâm đúng một dự án). Đổi khách/loại lịch KHÔNG ghi đè lựa chọn tay.
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useCrmApi, useCustomerDetail, useCustomerList, type CustomerDetail, type CustomerListItem } from '@crm/api';
+import { useCatalogs, useCrmApi, useCustomerDetail, useCustomerList, type CustomerDetail, type CustomerListItem } from '@crm/api';
 import { useDebouncedValue } from '@crm/hooks/useDebouncedValue';
 import { getVnTodayKey } from '@crm/lib/dateTime';
-import { buildCrmPath, parseCreateAppointmentCustomerId } from '@crm/routes';
+import { buildCrmPath, parseCreateAppointmentCustomerId, parseCreateAppointmentProjectId } from '@crm/routes';
 import { useCrmActions, useCurrentUser } from '@crm/store';
+import type { Project } from '@crm/types/crm';
 import {
   CALL_LOCATION,
   createInitialValues,
   FIELD_ORDER,
   getDefaultAssigneeId,
   getFieldId,
+  getSuggestedProjectId,
+  listSelectableProjects,
   toCreateAppointmentInput,
   validateAppointmentForm,
   type AppointmentFormErrors,
@@ -39,6 +45,8 @@ export interface CreateAppointmentForm {
   customerTotal: number;
   setCustomerSearch: (keyword: string) => void;
   selectedCustomer: CustomerDetail | null;
+  /** Dự án đang hoạt động, chọn được cho lịch (danh sách ô "Dự án"). */
+  selectableProjects: Project[];
   /** Đang tải thông tin khách đã chọn sẵn (để hiện "đang tải" thay vì "chưa chọn khách"). */
   isCustomerLoading: boolean;
   /**
@@ -69,6 +77,14 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   const { data: customerPage } = useCustomerList({ listGroup: 'ALL', q: debouncedSearch, limit: CUSTOMER_PICKER_LIMIT, sort: 'fullName' });
   const { selectCustomer, navigate, goBack, goBackTo, showToast } = useCrmActions();
   const [draft, setValues] = useState<AppointmentFormValues>(() => createInitialValues(originCustomerId ?? '', getVnTodayKey()));
+  const { catalogs } = useCatalogs();
+  const selectableProjects = useMemo(() => listSelectableProjects(catalogs.projects), [catalogs.projects]);
+  const originProjectId = parseCreateAppointmentProjectId(search);
+  // null = người dùng chưa tự chọn dự án (dùng dự án mang sang / gợi ý); '' = chủ động "Không chọn".
+  const [manualProjectId, setManualProjectId] = useState<string | null>(null);
+  // Lỗi 400 của trường dự án do máy chủ trả về (`details.field = projectId`).
+  // Gắn kèm dự án lúc lỗi: dự án đổi (tay hoặc do gợi ý khi đổi khách) thì lỗi cũ tự hết hiệu lực.
+  const [projectServerError, setProjectServerError] = useState<{ message: string; projectId: string } | null>(null);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const customerId = isOriginUnavailable && draft.customerId === originCustomerId ? '' : draft.customerId;
@@ -88,9 +104,11 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   }, [originError, showToast]);
 
   // Đổi khách thì người thực hiện về mặc định theo nhóm chăm sóc của khách mới (assigneeId '' = chưa chọn tay).
+  const linkedProjectId = originProjectId && selectableProjects.some((project) => project.id === originProjectId) ? originProjectId : '';
+  const projectId = manualProjectId ?? (linkedProjectId || getSuggestedProjectId(selectedCustomer, selectableProjects));
   const values = useMemo(
-    () => ({ ...draft, customerId, assigneeId: draft.assigneeId || getDefaultAssigneeId(selectedCustomer, currentUser.id) }),
-    [draft, customerId, selectedCustomer, currentUser.id],
+    () => ({ ...draft, customerId, projectId, assigneeId: draft.assigneeId || getDefaultAssigneeId(selectedCustomer, currentUser.id) }),
+    [draft, customerId, projectId, selectedCustomer, currentUser.id],
   );
   // Khóa chỉ khi khách gốc dùng được VÀ form vẫn đang giữ đúng khách gốc. Đã mở khóa (khách gốc lỗi thoáng qua) rồi chọn khách khác thì
   // khách gốc tự tải lại thành công cũng KHÔNG khóa lại trên khách khác (khóa là một chiều trong phiên form này).
@@ -98,15 +116,21 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
 
   const currentErrors = useMemo(() => validateAppointmentForm(values, selectedCustomer), [values, selectedCustomer]);
   // Chỉ hiện lỗi sau lần bấm lưu đầu tiên.
-  const errors = hasSubmitted ? currentErrors : {};
+  const errors: AppointmentFormErrors = { ...(hasSubmitted ? currentErrors : {}), ...(projectServerError && projectServerError.projectId === projectId ? { projectId: projectServerError.message } : {}) };
 
-  const setField: CreateAppointmentForm['setField'] = (field, value) =>
+  const setField: CreateAppointmentForm['setField'] = (field, value) => {
+    if (field === 'projectId') {
+      // Ghi nhận lựa chọn tay (kể cả "Không chọn") để gợi ý/dự án mang sang không ghi đè.
+      setManualProjectId(value as string);
+      return;
+    }
     setValues((previous) => {
       const next = { ...previous, [field]: value };
       // Chọn "Nhắc gọi lại" khi chưa có địa điểm -> điền sẵn kênh gọi.
       if (field === 'type' && value === 'CALLBACK' && !previous.location.trim()) next.location = CALL_LOCATION;
       return next;
     });
+  };
 
   return {
     values,
@@ -115,6 +139,7 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
     customerTotal: customerPage.meta.total,
     setCustomerSearch,
     selectedCustomer,
+    selectableProjects,
     isCustomerLoading,
     originCustomer,
     pendingRequiredCount: Object.keys(currentErrors).length,
@@ -139,6 +164,12 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
       const result = await api.createAppointment(toCreateAppointmentInput(values));
       setIsSubmitting(false);
       if (!result.ok) {
+        // Lỗi gắn với dự án (dự án không còn hoạt động...): hiện cạnh ô dự án; lỗi khác: toast.
+        if (result.error.details?.field === 'projectId') {
+          setProjectServerError({ message: result.error.message, projectId: values.projectId });
+          document.getElementById(getFieldId('projectId'))?.focus();
+          return;
+        }
         showToast({ type: 'error', title: result.error.message });
         return;
       }

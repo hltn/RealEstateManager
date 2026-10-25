@@ -263,7 +263,7 @@ export interface CreateCareLogInput {
     suggestion?: string;
     dueAt?: string | null;
     /** Tạo kèm lịch hẹn tại `dueAt` (bắt buộc có `dueAt`). */
-    appointment?: { type: AppointmentType; location?: string; remindBeforeMinutes?: number[] };
+    appointment?: { type: AppointmentType; location?: string; remindBeforeMinutes?: number[]; /** Dự án của lịch (không bắt buộc; dự án phải còn hoạt động). */ projectId?: string | null };
   };
   /** Id ảnh đã tải lên (`POST care-log-attachments`), tối đa 5. */
   attachmentIds?: string[];
@@ -279,6 +279,8 @@ export interface AppointmentView {
   endAt: string | null;
   location: string;
   note: string;
+  /** Dự án gắn với lịch (vd dự án khách đi xem); null = lịch không gắn dự án (kể cả lịch cũ). */
+  project: Ref | null;
   assignee: UserRef;
   remindBeforeMinutes: number[];
   status: AppointmentStatus;
@@ -296,6 +298,8 @@ export interface AppointmentListQuery {
   from?: string;
   to?: string;
   customerId?: string;
+  /** Lọc theo dự án của lịch (dự án không tồn tại/ngừng hoạt động: backend trả 400). */
+  projectId?: string;
   status?: AppointmentStatus;
   /** Giới hạn tối đa 100/trang; hook tự gom trang cho cửa sổ ≤ 62 ngày. */
   assigneeIds?: string[];
@@ -312,6 +316,8 @@ export interface CreateAppointmentInput {
   assigneeId?: string;
   endAt?: string;
   remindBeforeMinutes?: number[];
+  /** Dự án của lịch: id = gắn, null = không gắn; bỏ trống = không gửi. */
+  projectId?: string | null;
 }
 
 export interface DailyTask {
@@ -319,7 +325,10 @@ export interface DailyTask {
   kind: DailyTaskKind;
   dueAt: string;
   group: DailyTaskGroup;
+  /** `projects` = dự án khách quan tâm (mọi loại việc). */
   customer: { id: string; fullName: string; phoneMasked?: string; status: StatusRef; projects: Ref[] };
+  /** Dự án của lịch hẹn: chỉ có khi việc là APPOINTMENT và lịch có dự án; ngược lại null. */
+  project: Ref | null;
   title: string;
   lastCareLog: { occurredAt: string; excerpt: string } | null;
   suggestion: string;

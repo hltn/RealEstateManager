@@ -13,7 +13,7 @@ export const fetchAppointments = async (query: AppointmentListQuery, signal?: Ab
   const items: AppointmentView[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const result = await crmHttp.list<AppointmentDto>('/crm/appointments', {
-      params: { from: query.from, to: query.to, customerId: query.customerId, status: query.status, assigneeIds: query.assigneeIds, types: query.types, page, limit: 100 },
+      params: { from: query.from, to: query.to, customerId: query.customerId, projectId: query.projectId, status: query.status, assigneeIds: query.assigneeIds, types: query.types, page, limit: 100 },
       signal,
     });
     items.push(...result.data.map(toAppointment));
@@ -23,7 +23,7 @@ export const fetchAppointments = async (query: AppointmentListQuery, signal?: Ab
 };
 
 export const postAppointment = async (input: CreateAppointmentInput): Promise<AppointmentView> => {
-  const { customerId, type, startAt, endAt, title, location, note, assigneeId, remindBeforeMinutes } = input;
+  const { customerId, type, startAt, endAt, title, location, note, assigneeId, remindBeforeMinutes, projectId } = input;
   const body = {
     customerId,
     type,
@@ -34,6 +34,8 @@ export const postAppointment = async (input: CreateAppointmentInput): Promise<Ap
     ...(note?.trim() ? { note: note.trim() } : {}),
     ...(assigneeId ? { assigneeId } : {}),
     ...(remindBeforeMinutes ? { remindBeforeMinutes } : {}),
+    // null = không gắn dự án (gửi tường minh); bỏ trống thì không gửi.
+    ...(projectId !== undefined ? { projectId } : {}),
   };
   return toAppointment(await crmHttp.post<AppointmentDto>('/crm/appointments', body, { isIdempotent: true }));
 };

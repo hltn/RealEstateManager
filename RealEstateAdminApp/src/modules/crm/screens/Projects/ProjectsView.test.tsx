@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@crm/types/crm';
 import { CrmProvider } from '@crm/store/CrmProvider';
@@ -108,5 +108,39 @@ describe('ProjectsView (API thật)', () => {
     fireEvent.click(screen.getByLabelText(/Hiện dự án đã xoá/));
     fireEvent.click(screen.getByRole('button', { name: /Khôi phục dự án Dự án cũ/ }));
     await waitFor(() => expect(api.restoreProject).toHaveBeenCalledWith('p2'));
+  });
+
+  it('G7: "Dẫn khách xem" trên thẻ dự án mở form tạo lịch kèm ?projectId=; nút chung ở đầu trang mở form trống', () => {
+    const PROJECT_ID = '6add87b88f689f6e6cd96aa1';
+    state.projects = [project({ id: PROJECT_ID })];
+    let url = '';
+    const Probe = () => {
+      const { pathname, search } = useLocation();
+      url = pathname + search;
+      return null;
+    };
+    const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
+    const { unmount } = render(
+      <MemoryRouter>
+        <CrmProvider store={store}>
+          <Probe />
+          <ProjectsView variant="desktop" />
+        </CrmProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Dẫn khách xem/ }));
+    expect(url).toBe(`/crm/appointments/new?projectId=${PROJECT_ID}`);
+    unmount();
+
+    render(
+      <MemoryRouter>
+        <CrmProvider store={store}>
+          <Probe />
+          <ProjectsView variant="desktop" />
+        </CrmProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Đặt lịch xem sa bàn/ }));
+    expect(url).toBe('/crm/appointments/new');
   });
 });

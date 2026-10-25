@@ -50,6 +50,8 @@ export interface CreateAppointmentInput {
   note?: string;
   assigneeId?: Types.ObjectId;
   remindBeforeMinutes?: number[];
+  /** Dự án của buổi hẹn (tùy chọn); phải còn hoạt động. */
+  projectId?: Types.ObjectId | null;
   sourceCareLogId?: Types.ObjectId | null;
 }
 
@@ -131,6 +133,9 @@ export class AppointmentsWriteService {
       input.assigneeId,
       session,
     );
+    // Dự án gắn MỚI phải còn hoạt động: khóa ghi trong transaction để không đua với việc ngừng/xóa dự án.
+    const projectId = input.projectId ?? null;
+    await this.refs.lockAndAssert({ appointmentProjectId: projectId }, session);
     const defaults = (await this.settings.get())
       .defaultAppointmentReminderMinutes;
     const offsets = normalizeRemindOffsets(input.remindBeforeMinutes, defaults);
@@ -148,6 +153,7 @@ export class AppointmentsWriteService {
           assigneeId,
           remindBeforeMinutes: offsets,
           status: AppointmentStatus.SCHEDULED,
+          projectId,
           sourceCareLogId: input.sourceCareLogId ?? null,
           createdBy: ctx.actor.userId,
           deletedAt: null,
@@ -160,7 +166,10 @@ export class AppointmentsWriteService {
     await this.refreshCustomer(ctx, input.customerId, now, session);
     await this.reminders.syncAppointment(appointment, now, session);
 
-    const maps = await this.refs.resolve({ userIds: [assigneeId] });
+    const maps = await this.refs.resolve({
+      userIds: [assigneeId],
+      projectIds: [projectId],
+    });
     const changes: CrmAuditChange[] = [
       { field: 'appointment.type', from: null, to: appointment.type },
       {
@@ -174,6 +183,13 @@ export class AppointmentsWriteService {
         to: maps.users.get(String(assigneeId)) ?? String(assigneeId),
       },
     ];
+    if (projectId) {
+      changes.push({
+        field: 'appointment.project',
+        from: null,
+        to: maps.projects.get(String(projectId)) ?? String(projectId),
+      });
+    }
     if (appointment.title) {
       changes.push({
         field: 'appointment.title',
@@ -260,6 +276,36 @@ export class AppointmentsWriteService {
         maps.users.get(String(appointment.assigneeId)) ?? null,
         maps.users.get(String(assigneeId)) ?? String(assigneeId),
       );
+    }
+    // `projectId`: bỏ trống = giữ nguyên; null = gỡ; đổi sang dự án KHÁC thì dự án mới phải còn hoạt động
+    // (gửi lại đúng dự án cũ đã ngừng hoạt động không bị chặn).
+    if (dto.projectId !== undefined) {
+      const nextProjectId = dto.projectId ? oid(dto.projectId) : null;
+      const currentProjectId = appointment.projectId ?? null;
+      const isSame =
+        nextProjectId === null
+          ? currentProjectId === null
+          : !!currentProjectId && currentProjectId.equals(nextProjectId);
+      if (!isSame) {
+        await this.refs.lockAndAssert(
+          { appointmentProjectId: nextProjectId },
+          session,
+        );
+        const maps = await this.refs.resolve({
+          projectIds: [currentProjectId, nextProjectId],
+        });
+        set.projectId = nextProjectId;
+        track(
+          'project',
+          currentProjectId
+            ? (maps.projects.get(String(currentProjectId)) ?? null)
+            : null,
+          nextProjectId
+            ? (maps.projects.get(String(nextProjectId)) ??
+                String(nextProjectId))
+            : null,
+        );
+      }
     }
     let offsets = appointment.remindBeforeMinutes;
     if (dto.remindBeforeMinutes) {

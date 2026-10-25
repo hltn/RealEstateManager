@@ -52,7 +52,7 @@ export const TaskListTable = ({ tasks }: { tasks: DailyTask[] }) => {
                 <td className="px-5 py-4">
                   <CustomerStatusChip status={task.customer.status} />
                 </td>
-                <td className="hidden px-5 py-4 text-theme-sm text-gray-700 2xl:table-cell dark:text-gray-300">{formatProjectSummary(task.customer.projects) || '—'}</td>
+                <td className="hidden px-5 py-4 text-theme-sm text-gray-700 2xl:table-cell dark:text-gray-300">{task.project ? `Dự án: ${task.project.label}` : formatProjectSummary(task.customer.projects) || '—'}</td>
                 <td className="px-5 py-4">
                   <p className="text-theme-xs text-gray-500 dark:text-gray-400">{TASK_KIND_LABELS[task.kind]}</p>
                   <p className="line-clamp-2 text-theme-sm text-gray-700 dark:text-gray-300">{task.title}</p>

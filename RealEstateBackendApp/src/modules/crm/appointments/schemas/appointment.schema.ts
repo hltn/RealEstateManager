@@ -18,6 +18,8 @@ import {
  *   (phạm vi tính theo khách) và không còn nhận nhắc (QT8).
  * - `__v` là `version` cho khóa lạc quan (PATCH có thể gửi kèm `version`; lệch => 409 VERSION_CONFLICT).
  * - `sourceCareLogId`: nhật ký đã sinh ra lịch hẹn này (nextAction.appointment).
+ * - `projectId`: dự án của buổi hẹn (tùy chọn, mọi loại lịch). Chỉ gắn MỚI được dự án còn hoạt động; dự án ngừng/ẩn
+ *   sau đó vẫn hiển thị tên. Bản ghi cũ không có field này = chưa gắn dự án (không cần migration).
  */
 @Schema({ timestamps: true, collection: 'appointments' })
 export class Appointment {
@@ -76,6 +78,9 @@ export class Appointment {
   @Prop({ type: Types.ObjectId, default: null })
   sourceCareLogId: Types.ObjectId | null;
 
+  @Prop({ type: Types.ObjectId, default: null })
+  projectId: Types.ObjectId | null;
+
   @Prop({ type: Types.ObjectId, required: true })
   createdBy: Types.ObjectId;
 
@@ -100,3 +105,5 @@ export const AppointmentSchema = SchemaFactory.createForClass(Appointment);
 AppointmentSchema.index({ assigneeId: 1, startAt: 1 });
 AppointmentSchema.index({ customerId: 1, startAt: 1 });
 AppointmentSchema.index({ status: 1, startAt: 1 });
+// Lọc danh sách lịch theo dự án trong khoảng thời gian.
+AppointmentSchema.index({ projectId: 1, startAt: 1 });

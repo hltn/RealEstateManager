@@ -10,6 +10,7 @@ const task = (overrides: Partial<DailyTask>): DailyTask => ({
   dueAt: '2026-10-22T08:30:00.000Z',
   group: 'TODAY',
   customer: { id: 'C1', fullName: 'Nguyễn Văn An', phoneMasked: '0912 345 •••', status: { id: 's', label: 'Có quan tâm', code: 'INTERESTED', listGroup: 'INTERESTED', tone: 'success' }, projects: [{ id: 'proj-1', label: "Q'Terra" }] },
+  project: null,
   title: 'Gọi lại báo giá',
   lastCareLog: null,
   suggestion: '',
@@ -25,6 +26,15 @@ describe('taskFilters', () => {
     expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, projectId: 'proj-2' })).toBe(false);
     expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, assigneeId: 'thao' })).toBe(false);
     expect(matchesTaskFilter(task({}), { ...DEFAULT_TASK_FILTERS, kind: 'APPOINTMENT' })).toBe(false);
+  });
+
+  it('lọc theo dự án (G7): việc lịch có dự án B chỉ khớp lọc B dù khách quan tâm A; việc không có dự án riêng khớp theo dự án khách quan tâm', () => {
+    const appointment = task({ kind: 'APPOINTMENT', project: { id: 'proj-2', label: 'Ecopark' } });
+    expect(matchesTaskFilter(appointment, { ...DEFAULT_TASK_FILTERS, projectId: 'proj-2' })).toBe(true);
+    expect(matchesTaskFilter(appointment, { ...DEFAULT_TASK_FILTERS, projectId: 'proj-1' })).toBe(false);
+    const noProject = task({ kind: 'APPOINTMENT', project: null });
+    expect(matchesTaskFilter(noProject, { ...DEFAULT_TASK_FILTERS, projectId: 'proj-1' })).toBe(true);
+    expect(matchesTaskFilter(noProject, { ...DEFAULT_TASK_FILTERS, projectId: 'proj-2' })).toBe(false);
   });
 
   it('groupTasks chia đúng 3 nhóm', () => {

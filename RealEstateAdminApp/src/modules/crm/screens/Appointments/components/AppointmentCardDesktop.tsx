@@ -4,6 +4,7 @@
  */
 import {
   Building,
+  Building2,
   CircleCheck,
   Eye,
   IdCard,
@@ -98,6 +99,14 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
               <InfoRow icon={<Phone size={16} />}>
                 <span className="truncate">
                   SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customer.phoneMasked}</strong>
+                </span>
+              </InfoRow>
+            )}
+
+            {appointment.project && (
+              <InfoRow icon={<Building2 size={16} />}>
+                <span className="truncate" title={appointment.project.label}>
+                  Dự án: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.project.label}</strong>
                 </span>
               </InfoRow>
             )}

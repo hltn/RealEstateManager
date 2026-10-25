@@ -202,6 +202,9 @@ export class CareLogsService {
           title: dto.nextAction.suggestion ?? '',
           location: dto.nextAction.appointment.location,
           remindBeforeMinutes: dto.nextAction.appointment.remindBeforeMinutes,
+          projectId: dto.nextAction.appointment.projectId
+            ? oid(dto.nextAction.appointment.projectId)
+            : null,
           sourceCareLogId: _id,
         },
         auditSource,

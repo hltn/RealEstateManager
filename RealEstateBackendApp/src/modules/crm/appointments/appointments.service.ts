@@ -99,6 +99,7 @@ export class AppointmentsService {
       deletedAt: null,
       startAt: { $gte: from, $lte: to },
       ...(query.customerId && { customerId: oid(query.customerId) }),
+      ...(query.projectId && { projectId: oid(query.projectId) }),
       ...(query.assigneeIds?.length && {
         assigneeId: { $in: query.assigneeIds.map(oid) },
       }),
@@ -153,6 +154,7 @@ export class AppointmentsService {
             note: dto.note,
             assigneeId: dto.assigneeId ? oid(dto.assigneeId) : undefined,
             remindBeforeMinutes: dto.remindBeforeMinutes,
+            projectId: dto.projectId ? oid(dto.projectId) : null,
           },
           auditSource,
           session,
@@ -280,6 +282,7 @@ export class AppointmentsService {
     const maps = await this.refs.resolve({
       statusIds: rows.map((row) => row.customer[0].statusId),
       userIds: rows.flatMap((row) => [row.assigneeId, row.createdBy]),
+      projectIds: rows.map((row) => row.projectId),
     });
     return rows.map((row) =>
       toAppointmentResponse(row, row.customer[0], maps, actor),

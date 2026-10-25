@@ -20,7 +20,7 @@ import { CsvList } from '../../../../common/decorators/csv-list.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination-query.dto';
-import { UserRefDto } from '../../../../common/dto/ref.dto';
+import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
 import { StatusRefDto } from '../../customers/dtos/customer-response.dto';
 import { CareLogResponseDto } from '../../care-logs/dtos/care-log.dto';
 import {
@@ -102,6 +102,16 @@ export class CreateAppointmentDto {
   assigneeId?: string;
 
   @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Dự án của buổi hẹn (mọi loại lịch, không bắt buộc); phải còn hoạt động, ngược lại 400 VALIDATION_FAILED (field projectId). null/bỏ trống = không gắn',
+  })
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string | null;
+
+  @ApiPropertyOptional({
     type: [Number],
     example: [60, 1440],
     description:
@@ -163,6 +173,16 @@ export class UpdateAppointmentDto {
   @IsMongoId()
   assigneeId?: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Đổi dự án (phải còn hoạt động khi gắn MỚI; gửi lại đúng dự án cũ thì bỏ qua kiểm tra). null = gỡ dự án; bỏ trống = giữ nguyên',
+  })
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string | null;
+
   @ApiPropertyOptional({ type: [Number] })
   @OptionalNotNull()
   @RemindBeforeMinutes()
@@ -218,6 +238,11 @@ export class ListAppointmentsQueryDto extends PaginationQueryDto {
   @IsMongoId()
   customerId?: string;
 
+  @ApiPropertyOptional({ description: 'Chỉ lịch hẹn của dự án này' })
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string;
+
   @ApiPropertyOptional({
     type: [String],
     description: 'Phân tách bằng dấu phẩy',
@@ -269,6 +294,13 @@ export class AppointmentResponseDto {
   @ApiProperty() location: string;
   @ApiProperty() note: string;
   @ApiProperty({ type: UserRefDto }) assignee: UserRefDto;
+  @ApiProperty({
+    type: RefDto,
+    nullable: true,
+    description:
+      'Dự án của buổi hẹn; vẫn trả tên khi dự án đã ngừng hoạt động/ẩn. null = chưa gắn',
+  })
+  project: RefDto | null;
   @ApiProperty({ type: [Number] }) remindBeforeMinutes: number[];
   @ApiProperty({ enum: AppointmentStatus }) status: AppointmentStatus;
   @ApiProperty({ nullable: true, type: String }) completedAt: string | null;

@@ -108,6 +108,13 @@ export class DailyTaskResponseDto {
   @ApiProperty({ enum: DailyTaskGroup }) group: DailyTaskGroup;
   @ApiProperty({ type: DailyTaskCustomerDto }) customer: DailyTaskCustomerDto;
   @ApiProperty() title: string;
+  @ApiProperty({
+    type: RefDto,
+    nullable: true,
+    description:
+      'Dự án của buổi hẹn: chỉ việc kiểu APPOINTMENT có lịch gắn dự án (vẫn trả tên khi dự án đã ngừng/ẩn); các việc khác và lịch chưa gắn dự án = null. Không ảnh hưởng `customer.projects` (luôn là dự án khách quan tâm)',
+  })
+  project: RefDto | null;
   @ApiProperty({ nullable: true, type: DailyTaskLastCareLogDto })
   lastCareLog: DailyTaskLastCareLogDto | null;
   @ApiProperty() suggestion: string;

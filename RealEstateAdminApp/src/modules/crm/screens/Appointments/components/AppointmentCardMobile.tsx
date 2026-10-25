@@ -3,7 +3,7 @@
  * Khác nguồn: màu/nút theo LOẠI lịch (nguồn chia theo buổi sáng/chiều) để mọi loại hiển thị đúng ở cả 2 buổi;
  * nút "⋮" mở menu thao tác (Dropdown Admin) thay cho nút trang trí.
  */
-import { CircleCheck, Eye, IdCard, MapPin, NotebookPen, PhoneCall, Undo2, UserRound } from 'lucide-react';
+import { Building2, CircleCheck, Eye, IdCard, MapPin, NotebookPen, PhoneCall, Undo2, UserRound } from 'lucide-react';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { APPOINTMENT_TYPE_LABELS, getAppointmentTitle } from '@crm/lib/appointmentAdapters';
 import { useCrmActions } from '@crm/store';
@@ -66,6 +66,15 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
           </div>
           <CustomerStatusChip status={appointment.customer.status} size="small" />
         </div>
+
+        {appointment.project && (
+          <div className="flex min-w-0 items-center gap-2">
+            <Building2 size={16} aria-hidden="true" className="shrink-0 text-gray-400 dark:text-gray-500" />
+            <span className="truncate" title={appointment.project.label}>
+              Dự án: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.project.label}</strong>
+            </span>
+          </div>
+        )}
 
         {actionVariant !== 'reminder' && (
           <div className="flex min-w-0 items-center gap-2">

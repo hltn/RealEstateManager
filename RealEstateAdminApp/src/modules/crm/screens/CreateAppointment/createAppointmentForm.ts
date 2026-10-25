@@ -22,6 +22,8 @@ export interface AppointmentFormValues {
   time: string;
   location: string;
   note: string;
+  /** Dự án của lịch ('' = không chọn). Tuỳ chọn, mọi loại lịch đều gắn được. */
+  projectId: string;
   assigneeId: string;
   remindBeforeMinutes: number;
   smsZnsAuto: boolean;
@@ -32,7 +34,7 @@ export type AppointmentFormField = keyof AppointmentFormValues;
 export type AppointmentFormErrors = Partial<Record<AppointmentFormField, string>>;
 
 /** Thứ tự trường để focus lỗi đầu tiên (khớp thứ tự hiển thị). */
-export const FIELD_ORDER: AppointmentFormField[] = ['customerId', 'type', 'date', 'time', 'location', 'note', 'assigneeId'];
+export const FIELD_ORDER: AppointmentFormField[] = ['customerId', 'type', 'date', 'time', 'projectId', 'location', 'note', 'assigneeId'];
 
 /** id DOM của ô nhập ứng với trường (dùng cho `htmlFor` + focus lỗi). */
 export const getFieldId = (field: AppointmentFormField): string => `appointment-${field}`;
@@ -73,11 +75,29 @@ export const createInitialValues = (customerId: string, todayKey: string): Appoi
   time: DEFAULT_TIME,
   location: '',
   note: '',
+  projectId: '',
   assigneeId: '',
   remindBeforeMinutes: DEFAULT_REMINDER_MINUTES,
   smsZnsAuto: false,
   calendarSync: false,
 });
+
+/** Loại lịch mà dự án là thông tin quan trọng (đi xem nhà mẫu / ký cọc): ô dự án được nhấn mạnh ("Nên chọn"). */
+export const isProjectEmphasizedType = (type: AppointmentType): boolean => type === 'SITE_VISIT' || type === 'DEPOSIT_CONTRACT';
+
+/** Dự án đang hoạt động (chưa ngừng, chưa xóa mềm) - chỉ những dự án này gắn được vào lịch mới. */
+export const listSelectableProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => project.isActive && !project.deletedAt);
+
+/**
+ * Gợi ý dự án theo khách: khách quan tâm ĐÚNG MỘT dự án (đang hoạt động) thì chọn sẵn dự án đó;
+ * không có hoặc nhiều dự án thì không tự chọn ('' ) để người dùng quyết định.
+ */
+export const getSuggestedProjectId = (customer: Pick<CustomerDetail, 'projects'> | null, selectableProjects: readonly Pick<Project, 'id'>[]): string => {
+  if (!customer) return '';
+  const selectableIds = new Set(selectableProjects.map((project) => project.id));
+  const interested = customer.projects.filter((project) => selectableIds.has(project.id));
+  return interested.length === 1 ? interested[0].id : '';
+};
 
 /** Địa chỉ gợi ý: văn phòng của dự án khách quan tâm đầu tiên (nút "Dùng văn phòng dự án"). */
 export const getProjectOfficeLocation = (project: Project | undefined): string =>
@@ -115,6 +135,8 @@ export const toCreateAppointmentInput = (values: AppointmentFormValues): CreateA
   note: values.note.trim(),
   assigneeId: values.assigneeId || undefined,
   remindBeforeMinutes: [values.remindBeforeMinutes],
+  // '' (Không chọn) gửi null tường minh = không gắn dự án.
+  projectId: values.projectId || null,
 });
 
 /** "2026-10-21" -> "Thứ Tư, 21 tháng 10, 2026" (dòng gợi ý dưới ô ngày). */

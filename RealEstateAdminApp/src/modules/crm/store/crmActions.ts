@@ -5,7 +5,7 @@
  */
 import { createElement } from 'react';
 import toast from 'react-hot-toast';
-import { buildCreateAppointmentPath, buildCrmPath } from '@crm/routes';
+import { buildCreateAppointmentPath, buildCrmPath, type CreateAppointmentLink } from '@crm/routes';
 import type { ActiveModal, CustomerFilters, ToastInput, ViewId } from '@crm/types/app';
 import type { GalleryImage } from '@crm/types/crm';
 import type { CrmAction, CrmState } from './crmReducer';
@@ -34,8 +34,11 @@ export interface CrmActions {
   goBackTo: (fallbackPath: string) => void;
   /** Chọn khách; mặc định mở luôn màn chi tiết. */
   selectCustomer: (customerId: string, options?: { shouldOpenDetail?: boolean } & CrmNavigateOptions) => void;
-  /** Mở màn tạo lịch hẹn; có `customerId` thì khách đó được chọn sẵn (từ chi tiết khách). Không truyền = mở trống (từ danh sách Lịch hẹn). */
-  openCreateAppointment: (customerId?: string) => void;
+  /**
+   * Mở màn tạo lịch hẹn; `customerId` = khách chọn sẵn và khóa (từ chi tiết khách), `projectId` = dự án chọn sẵn (từ màn Dự án).
+   * Không truyền = mở trống (từ danh sách Lịch hẹn).
+   */
+  openCreateAppointment: (link?: CreateAppointmentLink) => void;
   setFilters: (changes: Partial<CustomerFilters>) => void;
   resetFilters: () => void;
   showToast: (input: ToastInput) => string;
@@ -105,7 +108,7 @@ export const createCrmActions = ({ dispatch, getState, router }: CrmActionDepend
     goBack: () => router.goBack(),
     goBackTo: (fallbackPath) => router.goBack(fallbackPath),
     selectCustomer,
-    openCreateAppointment: (customerId) => router.navigateTo(buildCreateAppointmentPath(customerId)),
+    openCreateAppointment: (link) => router.navigateTo(buildCreateAppointmentPath(link)),
     setFilters: (changes) => dispatch({ type: 'filters/set', changes }),
     resetFilters: () => dispatch({ type: 'filters/reset' }),
     showToast,

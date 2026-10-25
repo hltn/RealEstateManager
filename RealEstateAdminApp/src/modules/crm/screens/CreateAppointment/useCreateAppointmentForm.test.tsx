@@ -11,6 +11,8 @@ const useCustomerList = vi.fn();
 const useCustomerDetail = vi.fn();
 const createAppointment = vi.fn();
 const toastDefault = vi.fn();
+// Danh mục dự án do ca test đặt (useCatalogs thật cần QueryClient).
+const catalogProjects = vi.hoisted(() => ({ current: [] as { id: string; name: string; isActive: boolean; deletedAt: string | null }[] }));
 
 // Toast loại "warning" đi qua `toast(content, options)`; success/error không dùng trong các ca dưới.
 vi.mock('react-hot-toast', () => ({
@@ -22,6 +24,7 @@ vi.mock('@crm/api', async () => {
   return {
     ...real,
     useCrmApi: () => ({ createAppointment }),
+    useCatalogs: () => ({ catalogs: { projects: catalogProjects.current } }),
     useCustomerDetail: (id: string | null) => useCustomerDetail(id),
     useCustomerList: (query: unknown) => useCustomerList(query),
   };
@@ -30,7 +33,11 @@ vi.mock('@crm/api', async () => {
 const CUSTOMER_ID = '6add87b88f689f6e6cd96833';
 const OTHER_ID = '6add87b88f689f6e6cd96999';
 const NO_DETAIL = { data: null, error: null, isLoading: false };
-const detailOf = (id: string) => ({ data: { id, fullName: `Khách ${id.slice(-3)}`, careTeam: [], primaryAssignee: null }, error: null, isLoading: false });
+const detailOf = (id: string, interestedProjectIds: string[] = []) => ({
+  data: { id, fullName: `Khách ${id.slice(-3)}`, careTeam: [], primaryAssignee: null, projects: interestedProjectIds.map((projectId) => ({ id: projectId, label: projectId })) },
+  error: null,
+  isLoading: false,
+});
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -42,6 +49,7 @@ beforeEach(() => {
   useCustomerDetail.mockReturnValue(NO_DETAIL);
   createAppointment.mockReset();
   toastDefault.mockReset();
+  catalogProjects.current = [];
   // CrmProvider.goBack đọc `history.state.idx` của trình duyệt để biết còn lịch sử trong app hay không.
   window.history.replaceState(null, '');
 });
@@ -222,5 +230,134 @@ describe('G6: lưu/hủy xong về nơi bắt đầu', () => {
     const direct = setup();
     act(() => direct.result.current.cancel());
     expect(currentUrl.value).toBe('/crm/appointments');
+  });
+});
+
+describe('G7: dự án của lịch', () => {
+  const PROJECT_A = '6add87b88f689f6e6cd96aa1';
+  const PROJECT_B = '6add87b88f689f6e6cd96aa2';
+  const PROJECT_OFF = '6add87b88f689f6e6cd96aa3';
+  const project = (id: string, isActive = true) => ({ id, name: `Dự án ${id.slice(-1)}`, isActive, deletedAt: null });
+
+  const fillValidForm = (result: { current: ReturnType<typeof useCreateAppointmentForm> }) =>
+    act(() => {
+      result.current.setField('time', '15:00');
+      result.current.setField('location', 'Văn phòng bán hàng');
+    });
+
+  beforeEach(() => {
+    catalogProjects.current = [project(PROJECT_A), project(PROJECT_B), project(PROJECT_OFF, false)];
+    createAppointment.mockResolvedValue({ ok: true, data: {} });
+  });
+
+  it('khách quan tâm đúng MỘT dự án: chọn sẵn dự án đó (khách gốc từ chi tiết khách)', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [PROJECT_A]) : NO_DETAIL));
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    expect(result.current.values.projectId).toBe(PROJECT_A);
+  });
+
+  it('khách quan tâm NHIỀU dự án hoặc chỉ dự án đã ngừng: không tự chọn', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [PROJECT_A, PROJECT_B]) : NO_DETAIL));
+    expect(setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`).result.current.values.projectId).toBe('');
+
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [PROJECT_OFF]) : NO_DETAIL));
+    expect(setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`).result.current.values.projectId).toBe('');
+  });
+
+  it('chọn khách bằng picker (mở từ Lịch hẹn): gợi ý theo khách vừa chọn, đổi sang khách nhiều dự án thì bỏ gợi ý', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => {
+      if (id === CUSTOMER_ID) return detailOf(id, [PROJECT_A]);
+      if (id === OTHER_ID) return detailOf(id, [PROJECT_A, PROJECT_B]);
+      return NO_DETAIL;
+    });
+    const { result } = setup();
+    expect(result.current.values.projectId).toBe('');
+    act(() => result.current.changeCustomer(CUSTOMER_ID));
+    expect(result.current.values.projectId).toBe(PROJECT_A);
+    act(() => result.current.changeCustomer(OTHER_ID));
+    expect(result.current.values.projectId).toBe('');
+  });
+
+  it('KHÔNG ghi đè lựa chọn tay: đổi khách/loại lịch vẫn giữ dự án đã chọn, kể cả "Không chọn"', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [PROJECT_A]) : NO_DETAIL));
+    const { result } = setup();
+    act(() => result.current.changeCustomer(CUSTOMER_ID)); // gợi ý A
+    act(() => result.current.setField('projectId', PROJECT_B));
+    act(() => result.current.changeCustomer(OTHER_ID));
+    act(() => result.current.setField('type', 'MEETING'));
+    expect(result.current.values.projectId).toBe(PROJECT_B);
+
+    act(() => result.current.setField('projectId', ''));
+    act(() => result.current.changeCustomer(CUSTOMER_ID));
+    expect(result.current.values.projectId).toBe(''); // chủ động "Không chọn" thì không gợi ý lại
+  });
+
+  it('?projectId= từ màn Dự án: chọn sẵn dự án, khách chưa chọn (không khóa), loại mặc định Xem nhà mẫu; thắng gợi ý theo khách', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [PROJECT_A]) : NO_DETAIL));
+    const { result } = setup(`/crm/appointments/new?projectId=${PROJECT_B}`);
+    expect(result.current.values.projectId).toBe(PROJECT_B);
+    expect(result.current.values.customerId).toBe('');
+    expect(result.current.originCustomer).toBeNull();
+    expect(result.current.values.type).toBe('SITE_VISIT');
+    act(() => result.current.changeCustomer(CUSTOMER_ID)); // khách quan tâm A nhưng dự án mang sang B vẫn giữ
+    expect(result.current.values.projectId).toBe(PROJECT_B);
+  });
+
+  it('?projectId= sai định dạng, không tồn tại hoặc đã ngừng: bỏ qua, không crash', () => {
+    for (const bad of ['abc', '6add87b88f689f6e6cd96000', PROJECT_OFF]) {
+      const { result } = setup(`/crm/appointments/new?projectId=${bad}`);
+      expect(result.current.values.projectId).toBe('');
+    }
+  });
+
+  it('kết hợp ?customerId=&projectId=: khách khóa + dự án chọn sẵn', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}&projectId=${PROJECT_A}`);
+    expect(result.current.originCustomer?.id).toBe(CUSTOMER_ID);
+    expect(result.current.values.projectId).toBe(PROJECT_A);
+  });
+
+  it('payload: gửi projectId đã chọn; "Không chọn" gửi null', async () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    const withProject = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}&projectId=${PROJECT_A}`);
+    fillValidForm(withProject.result);
+    await act(() => withProject.result.current.handleSubmit());
+    expect(createAppointment).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: PROJECT_A }));
+
+    const withoutProject = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    fillValidForm(withoutProject.result);
+    await act(() => withoutProject.result.current.handleSubmit());
+    expect(createAppointment).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: null }));
+  });
+
+  it('lỗi 400 của trường projectId: hiện cạnh ô dự án (không toast), ở lại form, gỡ lỗi khi đổi dự án', async () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    createAppointment.mockResolvedValue({ ok: false, error: { statusCode: 400, errorCode: 'VALIDATION_FAILED', message: 'Dự án không tồn tại hoặc đã ngừng hoạt động', details: { field: 'projectId' } } });
+    const entry = `/crm/appointments/new?customerId=${CUSTOMER_ID}&projectId=${PROJECT_A}`;
+    const { result } = setup(entry);
+    fillValidForm(result);
+    await act(() => result.current.handleSubmit());
+    expect(result.current.errors.projectId).toBe('Dự án không tồn tại hoặc đã ngừng hoạt động');
+    expect(toastDefault).not.toHaveBeenCalled();
+    expect(currentUrl.value).toBe(entry);
+    act(() => result.current.setField('projectId', PROJECT_B));
+    expect(result.current.errors.projectId).toBeUndefined();
+  });
+
+  it('lỗi dự án của máy chủ tự hết khi dự án đổi do gợi ý (đổi khách), không cần sửa tay ô dự án', async () => {
+    useCustomerDetail.mockImplementation((id: string | null) => {
+      if (id === CUSTOMER_ID) return detailOf(id, [PROJECT_A]);
+      if (id === OTHER_ID) return detailOf(id, [PROJECT_B]);
+      return NO_DETAIL;
+    });
+    createAppointment.mockResolvedValue({ ok: false, error: { statusCode: 400, errorCode: 'VALIDATION_FAILED', message: 'Dự án không tồn tại hoặc đã ngừng hoạt động', details: { field: 'projectId' } } });
+    const { result } = setup();
+    act(() => result.current.changeCustomer(CUSTOMER_ID));
+    fillValidForm(result);
+    await act(() => result.current.handleSubmit());
+    expect(result.current.errors.projectId).toBeDefined();
+    act(() => result.current.changeCustomer(OTHER_ID));
+    expect(result.current.values.projectId).toBe(PROJECT_B);
+    expect(result.current.errors.projectId).toBeUndefined();
   });
 });

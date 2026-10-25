@@ -265,6 +265,8 @@ export interface AppointmentDto {
   endAt: string | null;
   location: string;
   note: string;
+  /** Có ở mọi response lịch hẹn; thiếu (backend cũ) hoặc null = không gắn dự án. */
+  project?: RefDto | null;
   assignee: UserRefDto;
   remindBeforeMinutes: number[];
   status: AppointmentStatus;
@@ -282,6 +284,8 @@ export interface DailyTaskDto {
   dueAt: string;
   group: DailyTaskGroup;
   customer: { id: string; fullName: string; status: StatusRefDto; projects: RefDto[] };
+  /** Dự án của lịch hẹn (task APPOINTMENT có dự án); thiếu hoặc null = không có. */
+  project?: RefDto | null;
   title: string;
   lastCareLog: { occurredAt: string; excerpt: string } | null;
   suggestion: string;

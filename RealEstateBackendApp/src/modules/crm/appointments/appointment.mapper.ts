@@ -3,7 +3,7 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { CrmActor } from '../common/access/crm-actor';
 import { StatusRefDto } from '../customers/dtos/customer-response.dto';
 import type { RefMaps } from '../customers/customer-refs.service';
-import { toUserRef } from '../customers/customer-refs.service';
+import { toRef, toUserRef } from '../customers/customer-refs.service';
 import { AppointmentResponseDto } from './dtos/appointment.dto';
 import { Appointment } from './schemas/appointment.schema';
 
@@ -54,6 +54,7 @@ export const toAppointmentResponse = (
   location: row.location,
   note: row.note,
   assignee: toUserRef(row.assigneeId, maps.users)!,
+  project: toRef(row.projectId, maps.projects),
   remindBeforeMinutes: row.remindBeforeMinutes,
   status: row.status,
   completedAt: row.completedAt ? row.completedAt.toISOString() : null,

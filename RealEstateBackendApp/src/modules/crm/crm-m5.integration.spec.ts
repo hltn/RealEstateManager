@@ -2614,6 +2614,262 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
   });
 
   // ---------------------------------------------------------------------------------------------
+  describe('Lịch hẹn gắn dự án (G7)', () => {
+    let c: string; // staffA chính
+    let projectA: string;
+    let projectB: string;
+    let projectOff: string; // dự án đã ngừng hoạt động
+    const projectOf = (res: Res) => res.body.data.project;
+    const labelOf = (code: string) => `Dự án ${code}${RUN_ID}`;
+
+    const createProject = async (code: string): Promise<string> => {
+      const res = await call('POST', '/crm/projects', 'admin', {
+        name: labelOf(code),
+        code: `${code}${RUN_ID}`,
+      });
+      expect(res.status).toBe(201);
+      return res.body.data.id;
+    };
+
+    beforeAll(async () => {
+      c = await createCustomer('staffA');
+      projectA = await createProject('G7A');
+      projectB = await createProject('G7B');
+      projectOff = await createProject('G7O');
+      const off = await call('PATCH', `/crm/projects/${projectOff}`, 'admin', {
+        isActive: false,
+      });
+      expect(off.status).toBe(200);
+    });
+
+    it('tạo lịch có dự án hợp lệ: lưu projectId, response/chi tiết trả project {id, label}, audit ghi tên dự án; không gửi hoặc null vẫn tạo được', async () => {
+      const res = await createAppointment('staffA', c, { projectId: projectA });
+      expect([res.status, res.body.message]).toEqual([201, undefined]);
+      expect(projectOf(res)).toEqual({ id: projectA, label: labelOf('G7A') });
+      const doc = await col('appointments').findOne({
+        _id: oid(res.body.data.id),
+      });
+      expect(String(doc!.projectId)).toBe(projectA);
+      const detail = await call(
+        'GET',
+        `/crm/appointments/${res.body.data.id}`,
+        'staffA',
+      );
+      expect(projectOf(detail)).toEqual({
+        id: projectA,
+        label: labelOf('G7A'),
+      });
+      const audit = await col('crm_audit_logs').findOne({
+        action: 'APPOINTMENT_CREATED',
+        entityId: oid(res.body.data.id),
+      });
+      expect(audit!.changes).toContainEqual({
+        field: 'appointment.project',
+        from: null,
+        to: labelOf('G7A'),
+      });
+
+      const omitted = await createAppointment('staffA', c);
+      const explicitNull = await createAppointment('staffA', c, {
+        projectId: null,
+      });
+      expect([omitted.status, projectOf(omitted)]).toEqual([201, null]);
+      expect([explicitNull.status, projectOf(explicitNull)]).toEqual([
+        201,
+        null,
+      ]);
+    });
+
+    it('dự án không tồn tại hoặc đã ngừng hoạt động => 400 VALIDATION_FAILED (field projectId) và KHÔNG tạo lịch; id sai định dạng => 400', async () => {
+      const before = await col('appointments').countDocuments({
+        customerId: oid(c),
+      });
+      for (const projectId of [String(new Types.ObjectId()), projectOff]) {
+        const res = await createAppointment('staffA', c, { projectId });
+        expect([
+          res.status,
+          res.body.errorCode,
+          res.body.details?.field,
+        ]).toEqual([400, 'VALIDATION_FAILED', 'projectId']);
+      }
+      expect(
+        (await createAppointment('staffA', c, { projectId: 'abc' })).status,
+      ).toBe(400);
+      expect(
+        await col('appointments').countDocuments({ customerId: oid(c) }),
+      ).toBe(before);
+    });
+
+    it('sửa lịch: đổi dự án, gỡ bằng null, bỏ trống thì giữ; dự án bị ngừng sau khi gắn vẫn trả tên và gửi lại đúng dự án đó không bị chặn, nhưng không đổi sang dự án ngừng', async () => {
+      const created = await mustCreate('staffA', c, { projectId: projectA });
+      const url = `/crm/appointments/${created.id}`;
+
+      const keep = await call('PATCH', url, 'staffA', { title: 'Đổi tiêu đề' });
+      expect(projectOf(keep)).toMatchObject({ id: projectA });
+
+      const swap = await call('PATCH', url, 'staffA', { projectId: projectB });
+      expect(projectOf(swap)).toEqual({ id: projectB, label: labelOf('G7B') });
+      const audit = await col('crm_audit_logs')
+        .find({ action: 'APPOINTMENT_UPDATED', entityId: oid(created.id) })
+        .toArray();
+      expect(audit.flatMap((a) => a.changes)).toContainEqual({
+        field: 'appointment.project',
+        from: labelOf('G7A'),
+        to: labelOf('G7B'),
+      });
+
+      const rejected = await call('PATCH', url, 'staffA', {
+        projectId: projectOff,
+      });
+      expect([
+        rejected.status,
+        rejected.body.errorCode,
+        rejected.body.details?.field,
+      ]).toEqual([400, 'VALIDATION_FAILED', 'projectId']);
+
+      await call('PATCH', `/crm/projects/${projectB}`, 'admin', {
+        isActive: false,
+      });
+      const read = await call('GET', url, 'staffA');
+      expect(projectOf(read)).toEqual({ id: projectB, label: labelOf('G7B') });
+      const resend = await call('PATCH', url, 'staffA', {
+        projectId: projectB,
+        note: 'ghi chú',
+      });
+      expect([resend.status, projectOf(resend)?.id]).toEqual([200, projectB]);
+      await call('PATCH', `/crm/projects/${projectB}`, 'admin', {
+        isActive: true,
+      });
+
+      const cleared = await call('PATCH', url, 'staffA', { projectId: null });
+      expect([cleared.status, projectOf(cleared)]).toEqual([200, null]);
+      const doc = await col('appointments').findOne({ _id: oid(created.id) });
+      expect(doc!.projectId).toBeNull();
+    });
+
+    it('lọc danh sách theo projectId chỉ trả lịch của dự án đó; projectId sai định dạng => 400', async () => {
+      const onlyP = await createProject('G7F');
+      const withP = await mustCreate('staffA', c, { projectId: onlyP });
+      await mustCreate('staffA', c, { projectId: projectA });
+      await mustCreate('staffA', c);
+      const from = inDays(-1).slice(0, 10);
+      const to = inDays(10).slice(0, 10);
+      const res = await call(
+        'GET',
+        `/crm/appointments?from=${from}&to=${to}&projectId=${onlyP}&limit=100`,
+        'staffA',
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((a: any) => a.id)).toEqual([withP.id]);
+      expect(res.body.meta.total).toBe(1);
+      expect(
+        (
+          await call(
+            'GET',
+            `/crm/appointments?from=${from}&to=${to}&projectId=zzz`,
+            'staffA',
+          )
+        ).status,
+      ).toBe(400);
+    });
+
+    it('Việc hôm nay: task lịch hẹn có dự án trả `project` riêng của lịch, `customer.projects` vẫn là dự án khách quan tâm; task không dự án có `project: null`', async () => {
+      const cust = await createCustomer('staffA', {
+        interestedProjectIds: [projectA],
+      });
+      const withProject = await insertAppointment(cust, 'staffA', noonVn(1), {
+        title: 'Có dự án',
+        projectId: oid(projectB),
+      });
+      await insertAppointment(cust, 'staffA', noonVn(2), {
+        title: 'Không dự án',
+      });
+      const res = await call(
+        'GET',
+        '/crm/daily-tasks?kinds=APPOINTMENT&limit=100',
+        'staffA',
+      );
+      const ofCust = Object.fromEntries(
+        res.body.data
+          .filter((task: any) => task.customer.id === cust)
+          .map((task: any) => [task.title, task]),
+      );
+      expect(ofCust['Có dự án'].appointmentId).toBe(withProject);
+      expect(ofCust['Có dự án'].project).toEqual({
+        id: projectB,
+        label: labelOf('G7B'),
+      });
+      expect(ofCust['Có dự án'].customer.projects).toEqual([
+        { id: projectA, label: labelOf('G7A') },
+      ]);
+      expect(ofCust['Không dự án'].project).toBeNull();
+      expect(ofCust['Không dự án'].customer.projects).toEqual([
+        { id: projectA, label: labelOf('G7A') },
+      ]);
+    });
+
+    it('nextAction.appointment nhận projectId: lịch sinh ra mang dự án; dự án ngừng hoạt động => 400 và hoàn tác cả nhật ký', async () => {
+      const ok = await call('POST', `/crm/customers/${c}/care-logs`, 'staffA', {
+        content: 'Hẹn xem nhà',
+        contactChannel: 'CALL',
+        nextAction: {
+          dueAt: inDays(6),
+          appointment: { type: 'SITE_VISIT', projectId: projectA },
+        },
+      });
+      expect([ok.status, ok.body.message]).toEqual([201, undefined]);
+      const appointment = await call(
+        'GET',
+        `/crm/appointments/${ok.body.data.nextAction.appointmentId}`,
+        'staffA',
+      );
+      expect(projectOf(appointment)).toMatchObject({ id: projectA });
+
+      const logsBefore = await col('care_logs').countDocuments({
+        customerId: oid(c),
+      });
+      // Ảnh chờ gắn: bước gắn ảnh chạy TRƯỚC khi tạo lịch, nên chỉ khi rollback thật thì ảnh mới không bị gắn.
+      const attachmentId = new Types.ObjectId();
+      await col('crm_attachments').insertOne({
+        _id: attachmentId,
+        customerId: oid(c),
+        careLogId: null,
+        uploaderId: oid(ids.staffA),
+        kind: 'CARE_LOG_IMAGE',
+        fileKey: `g7-${RUN_ID}`,
+        thumbKey: null,
+        originalName: 'g7.jpg',
+        mimeType: 'image/jpeg',
+        size: 1,
+        status: 'READY',
+        createdAt: new Date(),
+      });
+      process.env.FEATURE_CRM_ATTACHMENTS = 'true';
+      let bad: Res;
+      try {
+        bad = await call('POST', `/crm/customers/${c}/care-logs`, 'staffA', {
+          content: 'Hẹn xem nhà 2',
+          contactChannel: 'CALL',
+          attachmentIds: [String(attachmentId)],
+          nextAction: {
+            dueAt: inDays(6),
+            appointment: { type: 'SITE_VISIT', projectId: projectOff },
+          },
+        });
+      } finally {
+        delete process.env.FEATURE_CRM_ATTACHMENTS;
+      }
+      expect([bad.status, bad.body.details?.field]).toEqual([400, 'projectId']);
+      expect(
+        await col('crm_attachments').findOne({ _id: attachmentId }),
+      ).toMatchObject({ status: 'READY', careLogId: null });
+      expect(
+        await col('care_logs').countDocuments({ customerId: oid(c) }),
+      ).toBe(logsBefore);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------
   describe('Hạ tầng BullMQ (Redis thật)', () => {
     const queueName = `crm-scheduler-it-${RUN_ID}`;
     const configFor = (workers: string) =>

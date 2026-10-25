@@ -25,6 +25,8 @@ export interface RefsToAssign {
   sourceId?: Types.ObjectId | null;
   areaId?: Types.ObjectId | null;
   projectIds?: Types.ObjectId[];
+  /** Dự án gắn cho lịch hẹn (một dự án, tùy chọn). */
+  appointmentProjectId?: Types.ObjectId | null;
   /** Kết quả liên hệ của nhật ký chăm sóc (M3). */
   contactResultId?: Types.ObjectId | null;
 }
@@ -139,6 +141,14 @@ export class CustomerRefsService {
       'interestedProjectIds',
       'Dự án',
       refs.projectIds,
+      session,
+      {},
+    );
+    await this.lock(
+      'projects',
+      'projectId',
+      'Dự án',
+      refs.appointmentProjectId,
       session,
       {},
     );

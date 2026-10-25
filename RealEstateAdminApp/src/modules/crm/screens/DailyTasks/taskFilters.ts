@@ -25,11 +25,17 @@ export interface TaskFilterState {
 export const DEFAULT_TASK_FILTERS: TaskFilterState = { search: '', projectId: 'all', assigneeId: 'all', kind: 'all' };
 
 /**
+ * Khớp dự án: việc lịch hẹn có dự án riêng thì chỉ khớp theo dự án của lịch; các việc còn lại khớp theo dự án khách quan tâm.
+ */
+const matchesTaskProject = (task: DailyTask, projectId: string): boolean =>
+  task.project ? task.project.id === projectId : task.customer.projects.some((project) => project.id === projectId);
+
+/**
  * Lọc cục bộ theo dự án, người thực hiện, loại việc. Từ khoá `search` (tên/nội dung/SĐT) được xử lý ở LỚP DỮ LIỆU
  * (`useDailyTasks({ q })`), không lọc lại ở đây để số điện thoại không phải đi kèm trong payload.
  */
 export const matchesTaskFilter = (task: DailyTask, filters: TaskFilterState): boolean => {
-  if (filters.projectId !== 'all' && !task.customer.projects.some((project) => project.id === filters.projectId)) return false;
+  if (filters.projectId !== 'all' && !matchesTaskProject(task, filters.projectId)) return false;
   if (filters.assigneeId !== 'all' && task.assignee?.id !== filters.assigneeId) return false;
   if (filters.kind !== 'all' && task.kind !== filters.kind) return false;
   return true;

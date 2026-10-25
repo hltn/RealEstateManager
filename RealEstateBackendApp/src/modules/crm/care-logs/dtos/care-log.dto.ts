@@ -58,6 +58,16 @@ export class CareLogNextActionAppointmentDto {
   location?: string;
 
   @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Dự án của buổi hẹn (không bắt buộc); phải còn hoạt động, ngược lại 400 VALIDATION_FAILED (field projectId)',
+  })
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string | null;
+
+  @ApiPropertyOptional({
     type: [Number],
     description: 'Nhắc trước giờ hẹn (phút); không gửi = mặc định theo cài đặt',
   })
