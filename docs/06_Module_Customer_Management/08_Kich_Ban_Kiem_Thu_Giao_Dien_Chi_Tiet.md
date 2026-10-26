@@ -226,6 +226,10 @@ Ba hồi quy nặng nhất (G5, G6, G7, G2) gom vào `f4b`, chạy trước tron
 
 ### F4-09 Đổi giờ / hủy lịch hẹn: rà thiếu chức năng (P1)
 > **Spec (2026-10-26):** ban đầu KHÔNG có lối đổi giờ/hủy ở cả 3 loại thẻ (desktop và mobile) nên F4-09 từng là `test.fail`; nay đã có "Đổi giờ" và "Hủy lịch hẹn" ở menu "Thao tác khác" (có ở mọi thẻ, cả desktop lẫn mobile) và F4-09 chạy như test thường (khẳng định mềm cho từng viewport và từng loại thẻ). F4-09b (mới) kiểm hành vi thật: đổi giờ lưu đúng `startAt` ở Mongo và thẻ rời khỏi hôm nay; hủy kèm lý do thì thẻ biến mất, `status=CANCELED`, `outcome` = lý do; bấm "Hoàn tác" trên toast thì lịch về `SCHEDULED`. Lịch đã hủy không còn hiện ở danh sách (`useAppointments` bỏ mặc định).
+>
+> **F4-09c (mới, desktop) xung đột phiên bản 409:** phiên khác (API) sửa lịch trước khi người dùng bấm "Đổi giờ" / "Hủy lịch hẹn" bằng thẻ đã cũ. Khẳng định: toast "Lịch hẹn vừa được người khác cập nhật. Dữ liệu mới nhất đã được tải lại…"; Mongo không bị ghi đè (giờ/status giữ nguyên, `__v` chỉ tăng do lần sửa kia); thẻ phía sau hộp thoại đã hiện dữ liệu mới; hộp thoại còn mở, nút không kẹt "Đang lưu…"; đổi giờ thoát bằng "Đóng" rồi mở lại lưu được; hủy giữ nguyên lý do đã nhập và bấm lại "Xác nhận hủy lịch" thì hủy thành công. Đã kiểm bằng đột biến (bỏ `version` khỏi thân PATCH thì test đỏ).
+>
+> **F4-09d (mới, mobile 390x844):** cùng ba hành động đổi giờ, hủy kèm lý do và "Hoàn tác" trên thẻ `AppointmentCardMobile` (menu "Thao tác khác" là Dropdown như desktop); mục menu và hộp "Đổi giờ" phải nằm trọn chiều ngang điện thoại; Mongo khớp ở từng bước.
 
 - **Mục tiêu:** API có `updateAppointmentStatus(... 'CANCELED')` nhưng trong code đã đọc, menu thẻ lịch hẹn chỉ có "Xem hồ sơ khách", "Ghi chú nhanh", "Nhắn Zalo", "Đánh dấu hoàn thành" và **không thấy** thao tác Đổi giờ hay Hủy lịch.
 - **Bước:** mở từng thẻ lịch hẹn (desktop và mobile), mở "Thao tác khác", tìm mọi lối để đổi giờ hoặc hủy.
@@ -378,14 +382,14 @@ Kiểm tra phủ: mỗi cột có ít nhất 3 kịch bản chính (CN: 10, NC: 
 | `f1-auth` | F1-01..04 | 12 (F1-01 chạy 3 vai trò) | 0 (trước đây 4: ADMIN vào màn chính, U-F1-02, U-F1-03, U-F1-03b) |
 | `f2-customers` | F2-01..05 | 8 | 0 (trước đây 1: S-F2-04) |
 | `f6-team-access` | F6-01..03 | 4 | 0 |
-| `f4-appointments` | F4-04, 07, 08, 09 | 9 (thêm F4-09b) | 0 (trước đây 1: T-F4-09) |
+| `f4-appointments` | F4-04, 07, 08, 09 | 11 (thêm F4-09b, F4-09c, F4-09d) | 0 (trước đây 1: T-F4-09) |
 | `f5-persona` | F5-01, 02 | 4 | 0 |
 | `f7-gaps` | F7-01, 02 | 4 | 0 (trước đây 1: T-G4) |
 | `smoke` | hạ tầng E2E | 2 | 0 |
 | `vn-time` | hàm tính giờ hẹn theo giờ VN | 5 | 0 |
-| **Tổng** | **29 kịch bản** | **67** | **0** (trước đây 12) |
+| **Tổng** | **29 kịch bản** | **69** | **0** (trước đây 12) |
 
-Cả **67 test xanh bình thường**; không còn test `test.fail` nào (12 test từng đỏ có chủ đích đã được gỡ `knownBug` sau khi lỗi UX được sửa, xem mục 6 của tài liệu 07). Hàm `knownBug` và cờ `E2E_SHOW_BUGS=1` vẫn có trong `e2e/fixtures.ts` để ghi nhận khuyết tật mới: test dùng `knownBug` chạy thật, kỳ vọng ĐỎ (Playwright báo "passed"), khi lỗi được sửa test tự báo "Expected to fail, but passed" để gỡ dấu. Thời gian một lượt đầy đủ khoảng 11 phút (tuần tự, `workers: 1`; riêng test chuông thông báo F4-08 chờ job nhắc việc 1 phút/lần nên mất ~3 phút).
+Cả **69 test xanh bình thường**; không còn test `test.fail` nào (12 test từng đỏ có chủ đích đã được gỡ `knownBug` sau khi lỗi UX được sửa, xem mục 6 của tài liệu 07). Hàm `knownBug` và cờ `E2E_SHOW_BUGS=1` vẫn có trong `e2e/fixtures.ts` để ghi nhận khuyết tật mới: test dùng `knownBug` chạy thật, kỳ vọng ĐỎ (Playwright báo "passed"), khi lỗi được sửa test tự báo "Expected to fail, but passed" để gỡ dấu. Thời gian một lượt đầy đủ khoảng 11 phút (tuần tự, `workers: 1`; riêng test chuông thông báo F4-08 chờ job nhắc việc 1 phút/lần nên mất ~3 phút).
 
 Giờ hẹn trong spec KHÔNG gắn cứng: `tomorrowSlot()` (ngày mai 09:00) cho chỗ không cần "hôm nay", `todaySlot()` (bây giờ + 5 phút, chờ qua nửa đêm nếu còn dưới 8 phút) cho chỗ cần thấy lịch trong ngày; hàm tính giờ có test đơn vị ở các biên 23:56 và 00:03 (`vn-time.spec.ts`).
 
@@ -436,5 +440,6 @@ Quy ước: mức **Cao** = chặn việc hoặc rò quyền; **TB** = làm sai 
 | 2 - 5 | `npm run e2e` đầy đủ, 4 lần liên tiếp | mỗi lần **66/66 "passed"** (54 xanh + 12 `test.fail` đỏ đúng kỳ vọng), không chập chờn | 10,2 - 10,7 phút |
 | 6 | `npm run e2e` đầy đủ, SAU khi sửa 12 lỗi UX (đã gỡ hết `knownBug`) | **66/66 xanh thật**, 0 test đỏ có chủ đích, 0 "xanh bất ngờ" | 10,9 phút |
 | 7 | `npm run e2e` đầy đủ, sau khi thêm F4-09b (đổi giờ/hủy/hoàn tác) | **67/67 xanh thật**, 0 test `test.fail`, không chập chờn | 9,8 phút |
+| 8 | `npm run e2e` đầy đủ, sau khi thêm F4-09c (409) và F4-09d (mobile), sửa lỗi ảnh "+N" và dung sai 5 phút của "Lịch hẹn sắp tới" | **69/69 xanh thật**, 0 test `test.fail`, không test chập chờn | 9,8 phút |
 
 Sau chạy: cổng 3100/5183 trống, Redis db 15 rỗng, không còn bucket `e2e-*`, số document DB dev `mongodb` không đổi. (Lần 6 và 7: cổng 3100/5183 trống, Redis db 15 rỗng; DB dev `mongodb` không đối chiếu được vì container đang tắt, nhưng E2E chỉ dùng MongoDB tạm trong bộ nhớ.)

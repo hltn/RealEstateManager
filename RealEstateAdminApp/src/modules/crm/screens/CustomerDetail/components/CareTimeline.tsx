@@ -29,7 +29,11 @@ interface CareLogPhotosProps {
 const CareLogPhotos = ({ images, removableAttachmentIds, onRemovePhoto, isRemoving = false, onImageError }: CareLogPhotosProps) => {
   const { openLightbox } = useCrmActions();
   const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const canRemove = Boolean(removableAttachmentIds && onRemovePhoto);
   const hiddenCount = getHiddenImageCount(images.length, VISIBLE_THUMBNAIL_COUNT);
+  // Người có quyền sửa: "+N" mở rộng toàn bộ ảnh để gỡ được từng ảnh; người chỉ xem: "+N" mở lightbox như cũ.
+  const visibleImages = isExpanded ? images : images.slice(0, VISIBLE_THUMBNAIL_COUNT);
 
   const confirmRemove = async () => {
     if (!pendingAttachmentId || !onRemovePhoto) return;
@@ -44,7 +48,7 @@ const CareLogPhotos = ({ images, removableAttachmentIds, onRemovePhoto, isRemovi
         {PHOTO_GROUP_TITLE} ({images.length} ảnh)
       </div>
       <div className="grid grid-cols-4 gap-2">
-        {images.slice(0, VISIBLE_THUMBNAIL_COUNT).map((image, index) => {
+        {visibleImages.map((image, index) => {
           const attachmentId = removableAttachmentIds?.[index];
           return (
             <div key={`${image.src.slice(-24)}-${index}`} className="relative">
@@ -73,18 +77,23 @@ const CareLogPhotos = ({ images, removableAttachmentIds, onRemovePhoto, isRemovi
             </div>
           );
         })}
-        {hiddenCount > 0 && (
+        {hiddenCount > 0 && !isExpanded && (
           <button
             type="button"
-            onClick={() => openLightbox(images, VISIBLE_THUMBNAIL_COUNT, PHOTO_GROUP_TITLE)}
-            aria-label={`Xem tất cả ${images.length} ảnh`}
+            onClick={() => (canRemove ? setIsExpanded(true) : openLightbox(images, VISIBLE_THUMBNAIL_COUNT, PHOTO_GROUP_TITLE))}
+            aria-label={canRemove ? `Hiện thêm ${hiddenCount} ảnh` : `Xem tất cả ${images.length} ảnh`}
             className="flex aspect-video flex-col items-center justify-center rounded-lg bg-gray-900 text-white transition-colors hover:bg-gray-800 dark:bg-gray-800"
           >
             <span className="text-sm font-semibold">+{hiddenCount}</span>
-            <span className="text-[10px] text-gray-300">Xem tất cả</span>
+            <span className="text-[10px] text-gray-300">{canRemove ? 'Hiện thêm' : 'Xem tất cả'}</span>
           </button>
         )}
       </div>
+      {isExpanded && hiddenCount > 0 && (
+        <button type="button" onClick={() => setIsExpanded(false)} className="text-theme-xs font-medium text-brand-500 hover:underline">
+          Thu gọn
+        </button>
+      )}
       <ConfirmDialog
         isOpen={pendingAttachmentId !== null}
         title="Gỡ ảnh khỏi nhật ký?"

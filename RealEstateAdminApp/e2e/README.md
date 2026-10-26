@@ -20,7 +20,7 @@ npx playwright show-report playwright-report
 
 Điều kiện: đã `npm install` ở cả `RealEstateAdminApp` và `RealEstateBackendApp` (thư viện mongodb-memory-server, ioredis, AWS SDK và Nest CLI lấy từ backend), `npx playwright install chromium`, Redis + MinIO dev đang chạy (`docker compose -f RealEstateBackendApp/docker-compose.dev.yml up -d`).
 
-Thời gian (đo thật): dựng stack 25-40 giây; chạy đủ bộ khoảng 11 phút (67 test, mọi test xanh thật). Lần đầu tiên (hoặc khi mã nguồn backend đổi) có thêm bước build backend riêng, vài phút lần đầu (xem mục "Build backend riêng").
+Thời gian (đo thật): dựng stack 25-40 giây; chạy đủ bộ khoảng 10-11 phút (69 test, mọi test xanh thật). Lần đầu tiên (hoặc khi mã nguồn backend đổi) có thêm bước build backend riêng, vài phút lần đầu (xem mục "Build backend riêng").
 
 ## Khuyết tật UX đã biết (`knownBug`)
 

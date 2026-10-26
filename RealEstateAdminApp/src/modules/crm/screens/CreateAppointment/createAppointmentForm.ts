@@ -3,6 +3,7 @@
  * Ngày + giờ nhập theo giờ Việt Nam, lưu `startAt` ISO UTC. Người thực hiện phải thuộc nhóm chăm sóc của khách.
  */
 import type { CreateAppointmentInput, CustomerDetail } from '@crm/api';
+import { APPOINTMENT_PAST_TOLERANCE_MS } from '@crm/lib/appointmentAdapters';
 import { getVnTodayKey, parseTime24, vnDateTimeToIso } from '@crm/lib/dateTime';
 import type { AppointmentType, Project } from '@crm/types/crm';
 
@@ -112,17 +113,13 @@ export const getProjectOfficeLocation = (project: Project | undefined): string =
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Validate trường bắt buộc + định dạng. Trả object rỗng nếu hợp lệ. */
-/** Dung sai giờ hẹn ở quá khứ (backend chấp nhận lệch ≤ 5 phút so với hiện tại). */
-export const PAST_TOLERANCE_MS = 5 * 60 * 1000;
-
 /** Validate ngày + giờ hẹn (giờ VN, không ở quá khứ); dùng chung cho form tạo lịch và hộp "Đổi giờ". */
 export const validateScheduleDateTime = (date: string, time: string, todayKey: string = getVnTodayKey(), now: Date = new Date()): Pick<AppointmentFormErrors, 'date' | 'time'> => {
   const errors: Pick<AppointmentFormErrors, 'date' | 'time'> = {};
   if (!DATE_KEY_PATTERN.test(date)) errors.date = 'Vui lòng chọn ngày diễn ra.';
   else if (date < todayKey) errors.date = 'Ngày hẹn không được ở quá khứ.';
   if (!parseTime24(time)) errors.time = 'Vui lòng nhập giờ hợp lệ (HH:mm).';
-  else if (!errors.date && new Date(vnDateTimeToIso(date, time)).getTime() < now.getTime() - PAST_TOLERANCE_MS) errors.time = 'Giờ hẹn không được ở quá khứ.';
+  else if (!errors.date && new Date(vnDateTimeToIso(date, time)).getTime() < now.getTime() - APPOINTMENT_PAST_TOLERANCE_MS) errors.time = 'Giờ hẹn không được ở quá khứ.';
   return errors;
 };
 

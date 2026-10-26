@@ -6,11 +6,14 @@
  * Chống bấm đúp: bỏ qua lần bấm khi thao tác trước cho cùng lịch chưa xong.
  */
 import { useMemo, useRef } from 'react';
-import { describeWriteError, useCrmApi, type AppointmentView } from '@crm/api';
+import { APPOINTMENT_VERSION_CONFLICT_GUIDE, describeWriteError, useCrmApi, type AppointmentView } from '@crm/api';
 import { useCrmActions } from '@crm/store';
 import { buildRescheduleBody } from './rescheduleAppointment';
 
 const UNDO_DURATION_MS = 10_000;
+
+/** Lỗi ghi lịch hẹn; xung đột phiên bản nói đúng "Lịch hẹn" (không phải "Hồ sơ"). */
+const describeAppointmentError = (error: Parameters<typeof describeWriteError>[0]): string => describeWriteError(error, APPOINTMENT_VERSION_CONFLICT_GUIDE);
 
 export const useAppointmentActions = () => {
   const api = useCrmApi();
@@ -27,7 +30,7 @@ export const useAppointmentActions = () => {
         showToast(
           result.ok
             ? { title: nextStatus === 'DONE' ? 'Đã đánh dấu hoàn thành lịch hẹn' : 'Đã mở lại lịch hẹn' }
-            : { type: 'error', title: result.error.message },
+            : { type: 'error', title: describeAppointmentError(result.error) },
         );
       },
       /** Dời lịch sang ngày + giờ VN mới; trả `true` nếu đã lưu. */
@@ -36,7 +39,7 @@ export const useAppointmentActions = () => {
         pendingIds.current.add(appointment.id);
         const result = await api.updateAppointment(appointment.id, buildRescheduleBody(appointment, date, time));
         pendingIds.current.delete(appointment.id);
-        showToast(result.ok ? { title: 'Đã đổi giờ lịch hẹn' } : { type: 'error', title: describeWriteError(result.error) });
+        showToast(result.ok ? { title: 'Đã đổi giờ lịch hẹn' } : { type: 'error', title: describeAppointmentError(result.error) });
         return result.ok;
       },
       /** Hủy lịch (lý do tùy chọn); toast có "Hoàn tác" mở lại lịch. Trả `true` nếu đã hủy. */
@@ -47,7 +50,7 @@ export const useAppointmentActions = () => {
         const result = await api.updateAppointmentStatus(appointment.id, 'CANCELED', { version: appointment.version, ...(outcome ? { outcome } : {}) });
         pendingIds.current.delete(appointment.id);
         if (!result.ok) {
-          showToast({ type: 'error', title: describeWriteError(result.error) });
+          showToast({ type: 'error', title: describeAppointmentError(result.error) });
           return false;
         }
         const canceledVersion = result.data.appointment.version;
@@ -58,7 +61,7 @@ export const useAppointmentActions = () => {
             label: 'Hoàn tác',
             onClick: async () => {
               const undo = await api.updateAppointmentStatus(appointment.id, 'SCHEDULED', { version: canceledVersion });
-              showToast(undo.ok ? { title: 'Đã mở lại lịch hẹn' } : { type: 'error', title: describeWriteError(undo.error) });
+              showToast(undo.ok ? { title: 'Đã mở lại lịch hẹn' } : { type: 'error', title: describeAppointmentError(undo.error) });
             },
           },
         });

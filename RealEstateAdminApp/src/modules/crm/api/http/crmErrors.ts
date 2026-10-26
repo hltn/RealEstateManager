@@ -94,8 +94,12 @@ export const normalizeApiError = (error: unknown): ApiError => {
 /** Hướng dẫn khi 409 `VERSION_CONFLICT`: dữ liệu mới nhất đã được tải lại, người dùng kiểm tra rồi thử lại. */
 export const VERSION_CONFLICT_GUIDE = 'Hồ sơ vừa được người khác cập nhật. Dữ liệu mới nhất đã được tải lại, vui lòng kiểm tra rồi thực hiện lại.';
 
-/** Thông báo hiển thị cho lỗi ghi: riêng xung đột phiên bản có hướng dẫn rõ ràng. */
-export const describeWriteError = (error: ApiError): string => (error.errorCode === 'VERSION_CONFLICT' ? VERSION_CONFLICT_GUIDE : error.message);
+/** Như `VERSION_CONFLICT_GUIDE` nhưng nêu đúng đối tượng là lịch hẹn (không gọi là "hồ sơ" gây hiểu nhầm với hồ sơ khách). */
+export const APPOINTMENT_VERSION_CONFLICT_GUIDE = 'Lịch hẹn vừa được người khác cập nhật. Dữ liệu mới nhất đã được tải lại, vui lòng kiểm tra rồi thực hiện lại.';
+
+/** Thông báo hiển thị cho lỗi ghi: riêng xung đột phiên bản có hướng dẫn rõ ràng (`conflictGuide` thay câu mặc định về hồ sơ). */
+export const describeWriteError = (error: ApiError, conflictGuide: string = VERSION_CONFLICT_GUIDE): string =>
+  error.errorCode === 'VERSION_CONFLICT' ? conflictGuide : error.message;
 
 /** Lỗi có phải do ngoài phạm vi / không tồn tại (UI hiện màn "Không tìm thấy"). */
 export const isNotFoundError = (error: ApiError): boolean => error.statusCode === 404;

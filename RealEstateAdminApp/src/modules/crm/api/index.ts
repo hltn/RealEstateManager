@@ -20,6 +20,6 @@ export type { BulkResult } from './http/careApi';
 export type { ProjectBody, CatalogEndpoint } from './http/adminApi';
 export type { NotificationItem } from './http/schedulingApi';
 export { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_PER_NOTE } from './http/careApi';
-export { describeWriteError, isNotFoundError, isVersionConflict, toApiError } from './http/crmErrors';
+export { APPOINTMENT_VERSION_CONFLICT_GUIDE, describeWriteError, isNotFoundError, isVersionConflict, toApiError } from './http/crmErrors';
 export type { AssigneeStat, BreakdownItem, DashboardDateField, DashboardQuery, DashboardReport, DashboardSummary } from './dashboard';
 export { buildDashboardReportRows } from './dashboard';

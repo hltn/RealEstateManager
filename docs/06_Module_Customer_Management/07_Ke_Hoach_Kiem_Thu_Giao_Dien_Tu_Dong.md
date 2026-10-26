@@ -84,15 +84,15 @@ Mỗi bước kết thúc bằng qa-agent soi lại cả code lẫn test (bắt 
 
 ## 6. Kết quả rà soát chỗ thiếu
 
-Cập nhật 2026-10-26 (sau đợt sửa lỗi UX): ban đầu bộ E2E có 12 test "ghi nhận" dùng `test.fail()` (đỏ có chủ đích), mỗi cái đo đúng một khuyết tật UX. **Cả 12 lỗi đã được sửa**, các test đã gỡ dấu `knownBug(...)` và chạy như test thường nên **hiện còn 0 test đỏ có chủ đích**: toàn bộ bộ E2E (67 test, gồm cả F4-09b mới thêm để khóa hành vi đổi giờ/hủy/hoàn tác) xanh thật. Hàm `knownBug` và cờ `E2E_SHOW_BUGS=1` vẫn nằm trong `e2e/fixtures.ts` để dùng cho khuyết tật mới phát hiện sau này; hiện không test nào dùng.
+Cập nhật 2026-10-26 (sau đợt sửa lỗi UX): ban đầu bộ E2E có 12 test "ghi nhận" dùng `test.fail()` (đỏ có chủ đích), mỗi cái đo đúng một khuyết tật UX. **Cả 12 lỗi đã được sửa**, các test đã gỡ dấu `knownBug(...)` và chạy như test thường nên **hiện còn 0 test đỏ có chủ đích**: toàn bộ bộ E2E (69 test, gồm F4-09b khóa hành vi đổi giờ/hủy/hoàn tác, F4-09c khóa xung đột phiên bản 409 khi đổi giờ/hủy và F4-09d chạy lại ba hành động đó ở mobile) xanh thật. Hàm `knownBug` và cờ `E2E_SHOW_BUGS=1` vẫn nằm trong `e2e/fixtures.ts` để dùng cho khuyết tật mới phát hiện sau này; hiện không test nào dùng.
 
 **Nhóm 1 - Thiếu chức năng** (đã sửa)
 
 | ID | Test | Đã sửa thế nào | File |
 |---|---|---|---|
-| T-F3-04b | `f3-care-log` F3-04b | Mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ hiện khi `canEdit`) + hộp xác nhận "Xác nhận gỡ ảnh", gọi DELETE care-log-attachments rồi làm mới nhật ký + lịch sử | `CareTimeline.tsx`, `useRemoveCareLogPhoto.ts` |
-| T-F4-09 | `f4-appointments` F4-09 (+ F4-09b) | Menu "Thao tác khác" có ở mọi thẻ lịch hẹn (desktop thay nút "Xem hồ sơ" bằng menu, mục "Xem hồ sơ khách" vẫn còn) với "Đổi giờ" (dời `endAt` theo thời lượng, gửi `version`) và "Hủy lịch hẹn" (lý do tùy chọn, toast "Hoàn tác" 10 giây); lịch đã hủy không còn hiện ở danh sách | `AppointmentMoreMenu.tsx`, `RescheduleAppointmentDialog.tsx`, `useAppointmentActions.ts` |
-| G-UX-01 | `f4b` F4-02 | Chi tiết khách có khối "Lịch hẹn sắp tới" (lịch còn chờ, 60 ngày tới, tối đa 3) | `UpcomingAppointmentsSection.tsx` |
+| T-F3-04b | `f3-care-log` F3-04b | Mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ hiện khi `canEdit`) + hộp xác nhận "Xác nhận gỡ ảnh", gọi DELETE care-log-attachments rồi làm mới nhật ký + lịch sử; nhật ký > 3 ảnh: người có quyền sửa bấm "+N" để mở rộng hết ảnh (mỗi ảnh có nút xóa, có "Thu gọn"), người chỉ xem vẫn mở lightbox | `CareTimeline.tsx`, `useRemoveCareLogPhoto.ts` |
+| T-F4-09 | `f4-appointments` F4-09 (+ F4-09b, 09c, 09d) | Menu "Thao tác khác" có ở mọi thẻ lịch hẹn (desktop thay nút "Xem hồ sơ" bằng menu, mục "Xem hồ sơ khách" vẫn còn) với "Đổi giờ" (dời `endAt` theo thời lượng, gửi `version`) và "Hủy lịch hẹn" (lý do tùy chọn, toast "Hoàn tác" 10 giây); lịch đã hủy không còn hiện ở danh sách. Cả hai gửi `version`: lịch bị phiên khác sửa thì báo "Lịch hẹn vừa được người khác cập nhật…", tải lại dữ liệu, không ghi đè, hộp thoại còn đường ra (F4-09c); chạy tốt ở mobile (F4-09d) | `AppointmentMoreMenu.tsx`, `RescheduleAppointmentDialog.tsx`, `useAppointmentActions.ts` |
+| G-UX-01 | `f4b` F4-02 | Chi tiết khách có khối "Lịch hẹn sắp tới" (lịch còn chờ, 60 ngày tới, tối đa 3; lịch trễ giờ tối đa 5 phút vẫn hiện, khớp dung sai của backend) | `UpcomingAppointmentsSection.tsx` |
 | T-G4 | `f7-gaps` F7-02 | Backend trả `customer.phoneMasked` ở lịch hẹn và việc hôm nay (cùng quy ước che với danh sách khách, không bao giờ trả số đầy đủ); thẻ lịch hẹn và việc hôm nay hiện SĐT đã che | `customer.mapper.ts` (`toPhoneMasked`), `appointment.mapper.ts`, `daily-tasks.service.ts`, thẻ FE |
 
 **Nhóm 2 - Sai hành vi** (đã sửa)

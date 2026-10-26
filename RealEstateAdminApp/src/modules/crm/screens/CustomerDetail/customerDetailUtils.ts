@@ -1,16 +1,20 @@
 /**
  * Hàm thuần dùng riêng cho màn "Chi tiết khách hàng" (2 biến thể desktop/mobile).
  */
+import { APPOINTMENT_PAST_TOLERANCE_MS } from '@crm/lib/appointmentAdapters';
 import { CRITERIA_KEYS, CRITERION_LABELS } from '@crm/lib/customerRules';
 import { addDaysToDateKey, getVnTodayKey, toVnDateKey, toVnTime, vnDateTimeToIso } from '@crm/lib/dateTime';
 import type { CriterionKey } from '@crm/types/crm';
 
 /**
- * Lịch hẹn sắp tới của một khách: chỉ lịch còn chờ thực hiện (SCHEDULED) có giờ hẹn từ `now` trở đi, gần nhất trước.
- * Lịch đã qua giờ mà chưa đánh dấu hoàn thành thuộc về "việc quá hạn", không nằm ở đây.
+ * Lịch hẹn sắp tới của một khách: chỉ lịch còn chờ thực hiện (SCHEDULED) có giờ hẹn không sớm hơn `now` quá
+ * `APPOINTMENT_PAST_TOLERANCE_MS` (cùng dung sai backend khi tạo lịch, để lịch vừa tạo lùi vài phút vẫn hiện), gần nhất trước.
+ * Lịch quá hạn xa hơn dung sai thuộc về "việc quá hạn", không nằm ở đây.
  */
-export const selectUpcomingAppointments = <T extends { status: string; startAt: string }>(appointments: readonly T[], now: Date = new Date()): T[] =>
-  appointments.filter((appointment) => appointment.status === 'SCHEDULED' && new Date(appointment.startAt).getTime() >= now.getTime()).sort((a, b) => a.startAt.localeCompare(b.startAt));
+export const selectUpcomingAppointments = <T extends { status: string; startAt: string }>(appointments: readonly T[], now: Date = new Date()): T[] => {
+  const earliestVisibleMs = now.getTime() - APPOINTMENT_PAST_TOLERANCE_MS;
+  return appointments.filter((appointment) => appointment.status === 'SCHEDULED' && new Date(appointment.startAt).getTime() >= earliestVisibleMs).sort((a, b) => a.startAt.localeCompare(b.startAt));
+};
 
 /** "Sa bàn thực tế dự án" -> "Sa bàn" (nhãn ảnh thu nhỏ trên timeline). */
 export const getShortCaption = (caption: string, wordCount = 2): string =>

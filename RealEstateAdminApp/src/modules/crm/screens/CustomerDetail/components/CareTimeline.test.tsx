@@ -14,6 +14,13 @@ vi.mock('@crm/api', async () => {
   return { ...real, useCrmApi: () => ({ removeSavedCareLogAttachment }) };
 });
 
+/** Nhật ký có `count` ảnh (id att-1..att-N) để thử nhóm "+N" khi vượt 3 thumbnail. */
+const withPhotos = (log: CareLogView, count: number): CareLogView => ({
+  ...log,
+  images: Array.from({ length: count }, (_, index) => ({ src: `https://s3.test/${index + 1}.jpg`, caption: `Ảnh ${index + 1}` })),
+  attachmentIds: Array.from({ length: count }, (_, index) => `att-${index + 1}`),
+});
+
 const makeLog = (canEdit: boolean): CareLogView => ({
   id: 'l1',
   customerId: 'c1',
@@ -69,5 +76,30 @@ describe('CareTimeline: gỡ ảnh khỏi nhật ký đã lưu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận gỡ ảnh' }));
     await waitFor(() => expect(removeSavedCareLogAttachment).toHaveBeenCalledTimes(1));
     expect(removeSavedCareLogAttachment).toHaveBeenCalledWith('c1', 'att-2');
+  });
+
+  it('nhật ký > 3 ảnh: "+N" mở rộng để gỡ được cả ảnh trong nhóm ẩn (đúng id), "Thu gọn" ẩn lại', async () => {
+    removeSavedCareLogAttachment.mockResolvedValue({ ok: true, data: undefined });
+    renderTimeline(withPhotos(makeLog(true), 5));
+    expect(screen.getAllByTestId('care-log-photo-remove')).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hiện thêm 2 ảnh' }));
+    expect(screen.getAllByTestId('care-log-photo')).toHaveLength(5);
+    expect(screen.getAllByTestId('care-log-photo-remove')).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa ảnh 5 khỏi nhật ký' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận gỡ ảnh' }));
+    await waitFor(() => expect(removeSavedCareLogAttachment).toHaveBeenCalledWith('c1', 'att-5'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thu gọn' }));
+    expect(screen.getAllByTestId('care-log-photo')).toHaveLength(3);
+  });
+
+  it('người chỉ xem (không canEdit): "+N" vẫn là lối mở lightbox, không mở rộng, không có nút gỡ', () => {
+    renderTimeline(withPhotos(makeLog(false), 5));
+    expect(screen.getByRole('button', { name: 'Xem tất cả 5 ảnh' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hiện thêm/ })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('care-log-photo')).toHaveLength(3);
+    expect(screen.queryAllByTestId('care-log-photo-remove')).toHaveLength(0);
   });
 });

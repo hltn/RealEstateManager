@@ -12,6 +12,12 @@ export const APPOINTMENT_TYPE_LABELS: Record<AppointmentType, string> = {
   OTHER: 'Khác',
 };
 
+/**
+ * Dung sai giờ hẹn ở quá khứ (ms): backend chấp nhận `startAt` sớm hơn "bây giờ" tối đa 5 phút
+ * (`APPOINTMENT_PAST_TOLERANCE_MS` ở backend). Giữ khớp để form tạo lịch và khối "Lịch hẹn sắp tới" cùng quy tắc.
+ */
+export const APPOINTMENT_PAST_TOLERANCE_MS = 5 * 60 * 1000;
+
 /** Khoá ngày VN của lịch hẹn ("YYYY-MM-DD"). */
 export const getAppointmentDateKey = (appointment: { startAt: string }): string => toVnDateKey(appointment.startAt);
 

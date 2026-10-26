@@ -1,6 +1,6 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { describe, expect, it } from 'vitest';
-import { buildRateLimitMessage, CrmApiException, isNotFoundError, isRetryableError, isVersionConflict, normalizeApiError, toApiError } from './crmErrors';
+import { APPOINTMENT_VERSION_CONFLICT_GUIDE, buildRateLimitMessage, CrmApiException, describeWriteError, isNotFoundError, isRetryableError, isVersionConflict, normalizeApiError, toApiError } from './crmErrors';
 
 const httpError = (status: number, data: unknown): AxiosError => {
   const config = { headers: {} } as InternalAxiosRequestConfig;
@@ -50,5 +50,19 @@ describe('normalizeApiError (05 §1.3, §5)', () => {
     const apiError = { statusCode: 404, errorCode: 'CUSTOMER_NOT_FOUND', message: 'x' };
     expect(toApiError(new CrmApiException(apiError))).toBe(apiError);
     expect(toApiError(new Error('lạ')).errorCode).toBe('UNKNOWN_ERROR');
+  });
+});
+
+describe('describeWriteError', () => {
+  const conflict = { statusCode: 409, errorCode: 'VERSION_CONFLICT', message: 'x' };
+
+  it('xung đột phiên bản: câu về hồ sơ mặc định, hoặc câu riêng của lịch hẹn khi được truyền vào', () => {
+    expect(describeWriteError(conflict)).toMatch(/^Hồ sơ vừa được người khác cập nhật/);
+    expect(describeWriteError(conflict, APPOINTMENT_VERSION_CONFLICT_GUIDE)).toMatch(/^Lịch hẹn vừa được người khác cập nhật/);
+  });
+
+  it('lỗi khác giữ nguyên message, kể cả khi truyền câu riêng', () => {
+    const other = { statusCode: 400, errorCode: 'APPOINTMENT_STATUS_INVALID', message: 'Chỉ sửa được lịch đang chờ' };
+    expect(describeWriteError(other, APPOINTMENT_VERSION_CONFLICT_GUIDE)).toBe('Chỉ sửa được lịch đang chờ');
   });
 });

@@ -46,14 +46,17 @@ describe('customerDetailUtils', () => {
     expect(fromDateTimeLocalValue('')).toBe('');
   });
 
-  it('selectUpcomingAppointments: chỉ lịch đang chờ và chưa qua giờ, gần nhất trước', () => {
+  it('selectUpcomingAppointments: chỉ lịch đang chờ, chưa quá dung sai 5 phút của backend, gần nhất trước', () => {
     const now = new Date('2026-10-26T03:00:00.000Z');
     const items = [
       { id: 'late', status: 'SCHEDULED', startAt: '2026-10-28T02:00:00.000Z' },
       { id: 'past', status: 'SCHEDULED', startAt: '2026-10-26T02:00:00.000Z' },
+      { id: 'justOver', status: 'SCHEDULED', startAt: '2026-10-26T02:54:59.000Z' },
+      { id: 'edge', status: 'SCHEDULED', startAt: '2026-10-26T02:55:00.000Z' },
+      { id: 'justCreated', status: 'SCHEDULED', startAt: '2026-10-26T02:58:00.000Z' },
       { id: 'done', status: 'DONE', startAt: '2026-10-27T02:00:00.000Z' },
       { id: 'soon', status: 'SCHEDULED', startAt: '2026-10-26T04:00:00.000Z' },
     ];
-    expect(selectUpcomingAppointments(items, now).map((item) => item.id)).toEqual(['soon', 'late']);
+    expect(selectUpcomingAppointments(items, now).map((item) => item.id)).toEqual(['edge', 'justCreated', 'soon', 'late']);
   });
 });

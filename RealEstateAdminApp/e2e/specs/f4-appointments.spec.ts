@@ -335,6 +335,141 @@ test.describe('f4-appointments', () => {
     expect(reopened?.status).toBe('SCHEDULED');
   });
 
+  test('F4-09c xung đột phiên bản (409): lịch bị phiên khác sửa trước khi bấm Đổi giờ / Hủy -> báo xung đột rõ, không ghi đè, tải lại dữ liệu, hộp thoại còn đường ra, nút không kẹt', async ({ loginAs, api, backstage }, testInfo) => {
+    const slot = await todaySlot(testInfo);
+    const mover = await api.createCustomer({ label: 'Khách-409-DờiGiờ' });
+    const canceler = await api.createCustomer({ label: 'Khách-409-Hủy' });
+    await api.createAppointment({ customerId: mover.id, slot });
+    await api.createAppointment({ customerId: canceler.id, slot });
+    const rowOf = async (customerId: string) => (await backstage.find('appointments')).find((r) => String(r.customerId) === customerId);
+    const page = await loginAs('staff1');
+    await page.goto('/crm/appointments');
+    await expect(cardFor(page, mover.fullName)).toHaveCount(1);
+    await expect(cardFor(page, canceler.fullName)).toHaveCount(1);
+
+    /** Phiên khác (API) sửa địa điểm với đúng version hiện tại: __v tăng, thẻ trên màn hình thành "cũ". */
+    const editElsewhere = async (customerId: string, location: string) => {
+      const row = await rowOf(customerId);
+      const r = await api.call('staff1', 'PATCH', `/crm/appointments/${row?._id}`, { version: row?.__v, location });
+      expect(r.status).toBe(200);
+      return row?.__v as number;
+    };
+    const CONFLICT = /^Lịch hẹn vừa được người khác cập nhật\. Dữ liệu mới nhất đã được tải lại/;
+    const openMenuItem = async (fullName: string, item: string) => {
+      await cardFor(page, fullName).getByRole('button', { name: 'Thao tác khác' }).click();
+      await cardFor(page, fullName).getByRole('list', { name: 'Thao tác lịch hẹn' }).getByRole('button', { name: item }).click();
+    };
+
+    // --- Đổi giờ ---
+    const moverLocation = 'Địa điểm do phiên khác sửa (đổi giờ)';
+    const moverStale = await editElsewhere(mover.id, moverLocation);
+    await expect(cardFor(page, mover.fullName)).not.toContainText(moverLocation); // màn hình vẫn là bản cũ
+    const newDate = vnToday(1);
+    await openMenuItem(mover.fullName, 'Đổi giờ');
+    const rescheduleDialog = page.getByRole('dialog', { name: 'Đổi giờ lịch hẹn' });
+    await rescheduleDialog.getByLabel('Ngày mới').fill(newDate);
+    await rescheduleDialog.getByLabel('Giờ mới (giờ Việt Nam)').fill('10:15');
+    await rescheduleDialog.getByRole('button', { name: 'Lưu giờ mới' }).click();
+    await expect(toast(page, CONFLICT)).toBeVisible();
+    // Không ghi đè: giờ cũ giữ nguyên, địa điểm của phiên khác còn đó, version chỉ tăng do lần sửa kia.
+    const afterConflict = await rowOf(mover.id);
+    expect(new Date(afterConflict?.startAt).toISOString()).toBe(slot.iso);
+    expect(afterConflict?.location).toBe(moverLocation);
+    expect(afterConflict?.__v).toBe(moverStale + 1);
+    // Dữ liệu được tải lại ngay (thẻ phía sau hộp thoại đã có địa điểm mới); hộp thoại còn mở, nút "Lưu giờ mới" không kẹt "Đang lưu…".
+    await expect(cardFor(page, mover.fullName)).toContainText(moverLocation);
+    await expect(rescheduleDialog).toBeVisible();
+    await expect(rescheduleDialog.getByRole('button', { name: 'Lưu giờ mới' })).toBeEnabled();
+    // Đường ra 1: "Đóng" thoát được; mở lại thì lưu thành công với version mới (pendingIds đã được gỡ).
+    await rescheduleDialog.getByRole('button', { name: 'Đóng' }).click();
+    await expect(rescheduleDialog).toHaveCount(0);
+    await openMenuItem(mover.fullName, 'Đổi giờ');
+    await rescheduleDialog.getByLabel('Ngày mới').fill(newDate);
+    await rescheduleDialog.getByLabel('Giờ mới (giờ Việt Nam)').fill('10:15');
+    await rescheduleDialog.getByRole('button', { name: 'Lưu giờ mới' }).click();
+    await expect(toast(page, 'Đã đổi giờ lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, mover.fullName)).toHaveCount(0);
+    expect(new Date((await rowOf(mover.id))?.startAt).toISOString()).toBe(`${newDate}T03:15:00.000Z`);
+
+    // --- Hủy lịch ---
+    const cancelerLocation = 'Địa điểm do phiên khác sửa (hủy)';
+    const cancelerStale = await editElsewhere(canceler.id, cancelerLocation);
+    await openMenuItem(canceler.fullName, 'Hủy lịch hẹn');
+    const cancelDialog = page.getByRole('alertdialog', { name: 'Hủy lịch hẹn này?' });
+    await cancelDialog.getByLabel('Lý do hủy (tùy chọn)').fill('Khách đổi ý');
+    await cancelDialog.getByRole('button', { name: 'Xác nhận hủy lịch' }).click();
+    await expect(toast(page, CONFLICT)).toBeVisible();
+    const canceledRow = await rowOf(canceler.id);
+    expect(canceledRow?.status).toBe('SCHEDULED');
+    expect(canceledRow?.outcome ?? '').toBe('');
+    expect(canceledRow?.location).toBe(cancelerLocation);
+    expect(canceledRow?.__v).toBe(cancelerStale + 1);
+    await expect(cardFor(page, canceler.fullName)).toContainText(cancelerLocation);
+    // Hộp thoại còn mở, lý do đã nhập không mất; đường ra 2: bấm lại "Xác nhận hủy lịch" (version mới) thì hủy thành công.
+    await expect(cancelDialog).toBeVisible();
+    await expect(cancelDialog.getByLabel('Lý do hủy (tùy chọn)')).toHaveValue('Khách đổi ý');
+    await cancelDialog.getByRole('button', { name: 'Xác nhận hủy lịch' }).click();
+    await expect(toast(page, 'Đã hủy lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, canceler.fullName)).toHaveCount(0);
+    const finalRow = await rowOf(canceler.id);
+    expect(finalRow?.status).toBe('CANCELED');
+    expect(finalRow?.outcome).toBe('Khách đổi ý');
+  });
+
+  test('F4-09d mobile: Đổi giờ, Hủy kèm lý do và Hoàn tác trên thẻ lịch hẹn (menu ⋮ của thẻ mobile)', async ({ loginAs, api, backstage }, testInfo) => {
+    const slot = await todaySlot(testInfo);
+    const mover = await api.createCustomer({ label: 'Khách-Mobile-DờiGiờ' });
+    const canceler = await api.createCustomer({ label: 'Khách-Mobile-Hủy' });
+    await api.createAppointment({ customerId: mover.id, slot });
+    await api.createAppointment({ customerId: canceler.id, slot });
+    const rowOf = async (customerId: string) => (await backstage.find('appointments')).find((r) => String(r.customerId) === customerId);
+    const page = await loginAs('staff1');
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await page.goto('/crm/appointments');
+    // Đang ở biến thể mobile: có thanh điều hướng đáy của app.
+    await expect(cardFor(page, mover.fullName)).toHaveCount(1);
+    await expect(page.getByRole('navigation', { name: 'Điều hướng module khách hàng' })).toBeVisible();
+    const openMenuItem = async (fullName: string, item: string) => {
+      const card = cardFor(page, fullName);
+      await card.getByRole('button', { name: 'Thao tác khác' }).click();
+      const entry = card.getByRole('list', { name: 'Thao tác lịch hẹn' }).getByRole('button', { name: item });
+      await expect(entry).toBeVisible();
+      // Mục menu phải nằm trọn trong khung nhìn điện thoại (không bị cắt ngang mép) để chạm được.
+      const box = await entry.boundingBox();
+      expect(box && box.x >= 0 && box.x + box.width <= MOBILE_VIEWPORT.width, `mục "${item}" nằm trọn trong chiều ngang ${MOBILE_VIEWPORT.width}px`).toBe(true);
+      await entry.click();
+    };
+
+    // Đổi giờ -> ngày mai 10:15 (VN = 03:15 UTC); hộp thoại vừa khung điện thoại.
+    const newDate = vnToday(1);
+    await openMenuItem(mover.fullName, 'Đổi giờ');
+    const rescheduleDialog = page.getByRole('dialog', { name: 'Đổi giờ lịch hẹn' });
+    await expect(rescheduleDialog).toBeVisible();
+    const dialogBox = await rescheduleDialog.boundingBox();
+    expect(dialogBox && dialogBox.x >= 0 && dialogBox.x + dialogBox.width <= MOBILE_VIEWPORT.width, 'hộp Đổi giờ nằm trọn trong chiều ngang điện thoại').toBe(true);
+    await rescheduleDialog.getByLabel('Ngày mới').fill(newDate);
+    await rescheduleDialog.getByLabel('Giờ mới (giờ Việt Nam)').fill('10:15');
+    await rescheduleDialog.getByRole('button', { name: 'Lưu giờ mới' }).click();
+    await expect(toast(page, 'Đã đổi giờ lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, mover.fullName)).toHaveCount(0);
+    expect(new Date((await rowOf(mover.id))?.startAt).toISOString()).toBe(`${newDate}T03:15:00.000Z`);
+
+    // Hủy kèm lý do rồi Hoàn tác từ thông báo.
+    await openMenuItem(canceler.fullName, 'Hủy lịch hẹn');
+    const cancelDialog = page.getByRole('alertdialog', { name: 'Hủy lịch hẹn này?' });
+    await cancelDialog.getByLabel('Lý do hủy (tùy chọn)').fill('Khách bận việc đột xuất');
+    await cancelDialog.getByRole('button', { name: 'Xác nhận hủy lịch' }).click();
+    await expect(toast(page, 'Đã hủy lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, canceler.fullName)).toHaveCount(0);
+    const canceled = await rowOf(canceler.id);
+    expect(canceled?.status).toBe('CANCELED');
+    expect(canceled?.outcome).toBe('Khách bận việc đột xuất');
+    await toast(page, 'Đã hủy lịch hẹn').getByRole('button', { name: 'Hoàn tác' }).click();
+    await expect(toast(page, 'Đã mở lại lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, canceler.fullName)).toHaveCount(1);
+    expect((await rowOf(canceler.id))?.status).toBe('SCHEDULED');
+  });
+
   test('F4-02 giờ mặc định đã qua: form chặn ngay, lỗi chỉ rõ cạnh ô Giờ, rời form không bị chặn', async ({ loginAs, api }) => {
     const c = await api.createCustomer({ label: 'Khách-GiờQuáKhứ' });
     const page = await loginAs('staff1');
