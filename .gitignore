@@ -34,3 +34,11 @@ get-docker.sh
 start.sh
 
 .ua/
+
+# E2E Playwright (RealEstateAdminApp/e2e)
+test-results/
+playwright-report/
+RealEstateAdminApp/e2e/.runtime/
+# Build backend RIÊNG của E2E (khác dist dùng chung với backend dev)
+RealEstateBackendApp/.e2e-dist/
+!RealEstateAdminApp/e2e/.env.e2e.example

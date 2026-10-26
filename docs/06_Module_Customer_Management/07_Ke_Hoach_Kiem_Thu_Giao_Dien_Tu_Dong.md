@@ -1,10 +1,10 @@
 # Kế hoạch kiểm thử giao diện tự động (E2E) - Module CRM
 
-> Trạng thái: **Kế hoạch, chưa viết spec.** Sơ đồ vẽ bằng Giotto: [`diagrams/crm-e2e-flows.svg`](diagrams/crm-e2e-flows.svg) (các luồng) và [`diagrams/crm-e2e-rig.svg`](diagrams/crm-e2e-rig.svg) (bộ máy chạy). Bản có hoạt cảnh xem ở canvas Giotto `http://localhost:4321` (file gốc `~/.giotto/crm-e2e-*.json`).
+> Trạng thái (2026-10-26): **Đã triển khai.** Bộ E2E Playwright chạy được bằng `npm run e2e` (số liệu chạy thật ở mục 6; kịch bản chi tiết ở [`08`](08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md)). Sơ đồ vẽ bằng Giotto: [`diagrams/crm-e2e-flows.svg`](diagrams/crm-e2e-flows.svg) (các luồng) và [`diagrams/crm-e2e-rig.svg`](diagrams/crm-e2e-rig.svg) (bộ máy chạy). Bản có hoạt cảnh xem ở canvas Giotto `http://localhost:4321` (file gốc `~/.giotto/crm-e2e-*.json`).
 
 ## 1. Mục tiêu
 
-Chứng minh Web Admin và backend nối với nhau đúng khi chạy trên **trình duyệt thật**, và **tìm chỗ còn thiếu** giữa giao diện, API và tài liệu. Không thay thế test hiện có (backend 1266, frontend 485); chỉ bù phần chúng không chạm tới: hợp đồng API giữa hai phía, guard route, cache sau đăng xuất, luồng nhiều màn hình, file thật lên MinIO.
+Chứng minh Web Admin và backend nối với nhau đúng khi chạy trên **trình duyệt thật**, và **tìm chỗ còn thiếu** giữa giao diện, API và tài liệu. Không thay thế test hiện có (backend 1286, frontend 546); chỉ bù phần chúng không chạm tới: hợp đồng API giữa hai phía, guard route, cache sau đăng xuất, luồng nhiều màn hình, file thật lên MinIO.
 
 ### 1.1. Tiêu chí UI/UX (áp dụng cho mọi luồng ở mục 3)
 
@@ -23,7 +23,7 @@ Báo cáo ở mục 6 chia 3 nhóm: **Thiếu chức năng**, **Sai hành vi**, 
 
 ## 2. Công cụ và bộ máy chạy
 
-- **Playwright** (chỉ Chromium), đặt trong `RealEstateAdminApp/e2e/`, lệnh `npm run test:e2e`. Repo chưa có công cụ E2E nào.
+- **Playwright** (chỉ Chromium), đặt trong `RealEstateAdminApp/e2e/`, lệnh `npm run e2e` (hoặc `npm run e2e:headed`); xem `RealEstateAdminApp/e2e/README.md`.
 - **Stack test riêng, không đụng stack dev:**
 
 | Thành phần | Dev (giữ nguyên) | E2E |
@@ -32,9 +32,9 @@ Báo cáo ở mục 6 chia 3 nhóm: **Thiếu chức năng**, **Sai hành vi**, 
 | Admin App | 5173 | **5183**, bật `VITE_FEATURE_CRM_ATTACHMENTS=true` |
 | MongoDB | container `mongodb`, DB `mongodb` | **mongodb-memory-server (replica set)**, dựng ở `globalSetup`, xóa khi xong; không ghi vào DB `mongodb` |
 | Redis | db 0 | **db 15**, xóa sạch trước mỗi lần chạy |
-| MinIO | `crm-attachments`, `crm-exports` | bucket **`e2e-crm-attachments`, `e2e-crm-exports`**, xóa sạch trước mỗi lần chạy |
+| MinIO | `crm-attachments`, `crm-exports` | bucket **`e2e-attachments`, `e2e-exports`**, tạo lúc đầu, xóa object và bucket lúc cuối |
 
-- **Dữ liệu mồi** (`globalSetup`): 1 Admin, 1 Quản lý, 2 Staff ở hai đội khác nhau, danh mục (trạng thái, nguồn, khu vực, dự án). Mật khẩu test sinh ngẫu nhiên mỗi lần chạy, không ghi vào file.
+- **Dữ liệu mồi** (`globalSetup`): 1 Admin, 1 Quản lý, 2 Staff ở hai đội khác nhau, danh mục (trạng thái, nguồn, khu vực, dự án). Mật khẩu tài khoản seed là `Test@12345678`, cố định có chủ ý (chỉ tồn tại trong stack E2E); `globalSetup` từ chối seed nếu Mongo không phải máy chủ tạm (cổng khác 27017, DB `e2e`), Redis khác db 15, cổng backend khác 3100 hoặc bucket không bắt đầu bằng `e2e-`. JWT secret và khóa PII test cũng cố định trong `e2e/env.ts` (không phải secret thật).
 - Mỗi spec tự tạo khách riêng (tên có hậu tố ngẫu nhiên), không phụ thuộc thứ tự chạy.
 - Selector ưu tiên `getByRole`/`getByLabel`; chỉ thêm `data-testid` ở chỗ không có nhãn truy cập được.
 - Chụp ảnh và trace khi lỗi; không quay video.
@@ -74,7 +74,7 @@ Danh sách này sẽ dài thêm khi chạy F2 - F7; kết quả cuối ghi vào 
 | Bước | Việc | Giao ai | Xong khi |
 |---|---|---|---|
 | 0 | Chốt kế hoạch này, bật cờ ảnh ở dev (G1) | Neptune, devops | Oniichan duyệt |
-| 1 | Dựng bộ máy: Playwright, `globalSetup`/`globalTeardown`, dữ liệu mồi, script khởi động stack ở cổng 3100/5183/db 15/bucket `e2e-*` | devops-agent + coder-backend | `npm run test:e2e` chạy được 1 spec rỗng, dọn sạch sau khi xong |
+| 1 | Dựng bộ máy: Playwright, `globalSetup`/`globalTeardown`, dữ liệu mồi, script khởi động stack ở cổng 3100/5183/db 15/bucket `e2e-*` | devops-agent + coder-backend | `npm run e2e` chạy được 1 spec rỗng, dọn sạch sau khi xong |
 | 2 | F1, F2, F3 (kèm sửa G1) | qa-agent viết spec; coder-frontend thêm `data-testid` khi cần | 3 spec xanh, lặp lại 3 lần không chập chờn |
 | 3 | F4, F6 | qa-agent | 2 spec xanh |
 | 4 | F5, F7, tổng hợp chỗ thiếu | qa-agent | Báo cáo mục 6 |
@@ -84,4 +84,33 @@ Mỗi bước kết thúc bằng qa-agent soi lại cả code lẫn test (bắt 
 
 ## 6. Kết quả rà soát chỗ thiếu
 
-_Chưa có. Điền sau bước 4._
+Cập nhật 2026-10-26, từ lần chạy thật bộ E2E (`npm run e2e`): 66 test, trong đó **12 test "ghi nhận" dùng `test.fail()`**: chạy thật và được kỳ vọng ĐỎ, mỗi cái đo đúng một khuyết tật UX bên dưới. Khi sản phẩm được sửa, test tự báo "Expected to fail, but passed"; lúc đó gỡ dấu `knownBug(...)` khỏi test là xong, không cần viết lại. Đặt `E2E_SHOW_BUGS=1` để chạy các test này như bình thường và xem lỗi thật (dòng assertion làm đỏ). Mô tả ngắn từng lỗi nằm ở annotation loại `bug` của test.
+
+**Nhóm 1 - Thiếu chức năng**
+
+| ID | Test | Thiếu gì | Mức | File nguyên nhân |
+|---|---|---|---|---|
+| T-F3-04b | `f3-care-log` F3-04b | Mục nhật ký đã lưu không có nút gỡ ảnh (chỉ gỡ được ở khay trước khi lưu); backend đã có DELETE | TB | `CareTimeline.tsx` |
+| T-F4-09 | `f4-appointments` F4-09 | Thẻ lịch hẹn (desktop và mobile, cả 3 loại thẻ) không có Đổi giờ / Hủy lịch; API đã có dời giờ và hủy | TB | `AppointmentMoreMenu.tsx`, thẻ lịch hẹn |
+| G-UX-01 | `f4b` F4-02 ghi nhận | Chi tiết khách không có khối lịch hẹn sắp tới, đặt lịch xong quay về hồ sơ không thấy lịch vừa tạo | TB | màn chi tiết khách (thư mục `CustomerDetail`) |
+| T-G4 | `f7-gaps` F7-02 ghi nhận | Thẻ lịch hẹn và thẻ Việc hôm nay không có SĐT đã che để gọi/nhắn nhanh | TB | backend `appointment.mapper`, `daily-tasks.service` (không trả `phoneMasked`) |
+
+**Nhóm 2 - Sai hành vi**
+
+| ID | Test | Thực tế so với mong đợi | Mức | File nguyên nhân |
+|---|---|---|---|---|
+| U-F1-03b | `f1-auth` F1-03 ghi nhận | Gõ `/crm/customers` khi chưa đăng nhập rồi đăng nhập: rơi vào Việc hôm nay thay vì về trang đang định vào | TB | `ProtectedRoute` giữ `state.from` nhưng `LoginScreen` luôn `navigate("/")` |
+| S-F2-04 | `f2-customers` F2-04 ghi nhận | Tìm không ra hiện "Chưa có khách." + nút "Thêm khách đầu tiên" (sai nghĩa) thay vì "Không có khách hàng phù hợp" | Thấp | `Customers.desktop.tsx` (nhánh `counts.ALL === 0`) |
+| S-F4-01b | `f4b` F4-01 ghi nhận | `?customerId=zzz` (sai định dạng) bị bỏ qua im lặng trong khi id đúng định dạng nhưng ngoài phạm vi thì có toast: không nhất quán | Thấp | form tạo lịch hẹn (đọc `customerId` từ URL) |
+
+**Nhóm 3 - Chưa thân thiện**
+
+| ID | Test | Vấn đề | Mức | File nguyên nhân |
+|---|---|---|---|---|
+| U-F1-01b | `f1-auth` F1-01 ghi nhận | ADMIN đăng nhập xong ở "/" (Raw Articles của hệ thống tin tức), phải mở menu 2 bước tới Việc hôm nay; STAFF/MANAGER được chuyển thẳng | Thấp | điều hướng sau đăng nhập |
+| U-F1-02 | `f1-auth` F1-02 ghi nhận | Lỗi đăng nhập chỉ báo bằng toast tự tắt, form không có vùng lỗi cố định `role=alert` | Thấp | `LoginScreen.tsx` |
+| U-F1-03 | `f1-auth` F1-03 ghi nhận | Gõ URL ngoài quyền bị chuyển về Việc hôm nay không kèm giải thích | Thấp | `CrmLayout.tsx` (`<Navigate>`) |
+| U-F4-03 | `f4b` F4-03 ghi nhận | "Hủy bỏ" bỏ ngay dữ liệu đã gõ, không hỏi xác nhận | Thấp | form tạo lịch hẹn |
+| U-A11Y-01 | `f4b` U-A11Y-01 | Ô "Ngày diễn ra" (flatpickr) không gắn nhãn truy cập được, trình đọc màn hình không đọc nhãn | TB | `DatePicker.tsx` không nhận `id` |
+
+Còn lại đã **xanh và khóa hồi quy** G1, G2, G5, G6, G7 (F3-02, F4-01, F4-02, F4-03, F4-05, F4-06). Quan sát UX dạng số liệu (số thao tác, huy hiệu bộ lọc, nút xóa nhanh bộ lọc, lọc thẻ chỉ nằm trong "Bộ lọc nâng cao") vẫn được ghi ở annotation `TT`/`PH` của test tương ứng, không làm đỏ test.

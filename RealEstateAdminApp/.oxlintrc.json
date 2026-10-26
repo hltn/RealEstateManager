@@ -4,5 +4,16 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    {
+      // E2E Playwright: fixture dùng tham số `use` (không phải React hook) và `{}` làm tham số đầu bắt buộc của Playwright.
+      // Chỉ tắt đúng 2 quy tắc này cho e2e/**; mã app (src/**) vẫn giữ nguyên mức lint.
+      "files": ["e2e/**"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-empty-pattern": "off"
+      }
+    }
+  ]
 }

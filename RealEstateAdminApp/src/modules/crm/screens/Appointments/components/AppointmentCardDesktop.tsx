@@ -71,6 +71,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
   return (
     <article
+      data-testid="appointment-card"
       aria-label={title}
       className={`${CARD_CLASS} border-l-4 ${style.accentBorderClass} p-5 transition-shadow hover:shadow-theme-sm ${isCompleted ? 'opacity-70' : ''}`}
     >

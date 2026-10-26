@@ -42,12 +42,13 @@ export default function NotificationDropdown() {
     <div className="relative">
       <button
         type="button"
+        data-testid="notification-bell"
         aria-label={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : "Thông báo"}
         className="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full dropdown-toggle hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         onClick={() => setIsOpen((current) => !current)}
       >
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[11px] font-semibold leading-none text-white">
+          <span data-testid="notification-bell-count" className="absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[11px] font-semibold leading-none text-white">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}

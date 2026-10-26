@@ -33,7 +33,7 @@ const CareLogPhotos = ({ images, onImageError }: { images: GalleryImage[]; onIma
             aria-label={`Xem ảnh: ${image.caption || 'đính kèm'}`}
             className="group relative aspect-video overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
           >
-            <img src={image.src} alt={image.caption} onError={onImageError} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+            <img data-testid="care-log-photo" src={image.src} alt={image.caption} onError={onImageError} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
             <span className="absolute inset-x-0 bottom-0 truncate bg-gray-900/60 px-1 py-0.5 text-center text-[10px] text-white">
               {getShortCaption(image.caption)}
             </span>

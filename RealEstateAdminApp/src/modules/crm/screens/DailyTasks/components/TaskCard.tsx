@@ -71,7 +71,7 @@ export const TaskCard = ({ task }: TaskCardProps) => {
   const projectSummary = task.project ? `Dự án: ${task.project.label}` : formatProjectSummary(task.customer.projects);
 
   return (
-    <article className={`${CARD_BASE_CLASS} ${meta.cardBorderClass} space-y-3`}>
+    <article data-testid="daily-task-card" className={`${CARD_BASE_CLASS} ${meta.cardBorderClass} space-y-3`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

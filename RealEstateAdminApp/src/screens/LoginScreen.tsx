@@ -183,6 +183,7 @@ const LoginScreen: React.FC = () => {
 
           <button
             type="submit"
+            data-testid="login-submit"
             disabled={isSubmitting}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
           >

@@ -36,6 +36,7 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
 
   return (
     <article
+      data-testid="appointment-card"
       aria-label={title}
       className={`${CARD_CLASS} space-y-3 border-l-4 ${style.accentBorderClass} p-4 ${isCompleted ? 'opacity-70' : ''}`}
     >
