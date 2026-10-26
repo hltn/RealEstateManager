@@ -58,6 +58,8 @@ export interface CreateAppointmentInput {
 /** Field của khách mà việc ghi lịch hẹn cần. */
 const CUSTOMER_PROJECTION = {
   fullName: 1,
+  phone: 1,
+  anonymizedAt: 1,
   statusId: 1,
   careTeam: 1,
   primaryAssigneeId: 1,

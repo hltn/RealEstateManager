@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { CareRole } from './customer.constants';
-import { toDetail, toListItem } from './customer.mapper';
+import { toDetail, toListItem, toPhoneMasked } from './customer.mapper';
 import type { RefMaps } from './customer-refs.service';
 import type { CustomerLean } from './customers.repository';
 import {
@@ -86,6 +86,14 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
   it('khách đã ẩn danh: phoneMasked không dựa trên số giả', () => {
     expect(
       toListItem({ ...doc, anonymizedAt: new Date() }, refs).phoneMasked,
+    ).toBe('••••');
+  });
+
+  it('toPhoneMasked: che số thường; thiếu SĐT (dữ liệu cũ) trả rỗng thay vì ném lỗi; ẩn danh ưu tiên hơn', () => {
+    expect(toPhoneMasked({ phone: '+84912345678' })).toBe('0912 ••• 678');
+    expect(toPhoneMasked({ phone: undefined })).toBe('');
+    expect(
+      toPhoneMasked({ phone: '+84912345678', anonymizedAt: new Date() }),
     ).toBe('••••');
   });
 });

@@ -24,6 +24,7 @@ import {
   AccessContext,
   CustomerAccessService,
 } from '../customers/access/customer-access.service';
+import { toPhoneMasked } from '../customers/customer.mapper';
 import { insufficientRole } from '../customers/customer.errors';
 import { toRef, toUserRef } from '../customers/customer-refs.service';
 import { CustomerRefsService } from '../customers/customer-refs.service';
@@ -67,7 +68,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Trần số khách quét cho nguồn "dịp đặc biệt" (ngày có quá nhiều dịp thì chỉ lấy phần đầu, an toàn bộ nhớ). */
 const OCCASION_CUSTOMER_CAP = 2000;
 const CUSTOMER_TASK_PROJECTION =
-  'fullName statusId interestedProjectIds primaryAssigneeId';
+  'fullName phone anonymizedAt statusId interestedProjectIds primaryAssigneeId';
 
 /** Một việc chưa dựng response (chỉ có id tham chiếu), đủ để sắp xếp và phân trang giữa các nguồn. */
 interface TaskCandidate {
@@ -103,10 +104,12 @@ interface SourceQuery {
 
 const EMPTY: SourceResult = { total: 0, items: [] };
 
-/** Phần field của khách mà các nguồn việc cần (chọn bằng projection, không có SĐT/CCCD). */
+/** Phần field của khách mà các nguồn việc cần (SĐT chỉ để che thành `phoneMasked`, không có CCCD). */
 type CustomerLeanForTask = {
   _id: Types.ObjectId;
   fullName: string;
+  phone?: string;
+  anonymizedAt?: Date | null;
   statusId: Types.ObjectId;
   interestedProjectIds?: Types.ObjectId[];
   primaryAssigneeId?: Types.ObjectId | null;
@@ -584,6 +587,7 @@ export class DailyTasksService {
           customer: {
             id: String(customer._id),
             fullName: customer.fullName,
+            phoneMasked: toPhoneMasked(customer),
             status: maps.statuses.get(String(customer.statusId)) ?? {
               id: String(customer.statusId),
               code: '',

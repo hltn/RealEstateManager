@@ -55,13 +55,25 @@ const emptyStatus = (id: Types.ObjectId): StatusRefDto => ({
   color: null,
 });
 
+/**
+ * SĐT đã che để hiển thị (VD `0912 ••• 678`). Khách đã ẩn danh hiện `••••`; thiếu SĐT (dữ liệu cũ) trả chuỗi rỗng thay vì
+ * ném lỗi. Dùng chung cho danh sách khách, lịch hẹn và việc hôm nay để mọi nơi che đúng một kiểu, không bao giờ lộ số đầy đủ.
+ */
+export const toPhoneMasked = (doc: {
+  phone?: string | null;
+  anonymizedAt?: Date | null;
+}): string => {
+  if (doc.anonymizedAt) return '••••';
+  return doc.phone ? maskPhone(doc.phone) : '';
+};
+
 export const toListItem = (
   doc: CustomerLean,
   refs: RefMaps,
 ): CustomerListItemDto => ({
   id: String(doc._id),
   fullName: doc.fullName,
-  phoneMasked: doc.anonymizedAt ? '••••' : maskPhone(doc.phone),
+  phoneMasked: toPhoneMasked(doc),
   status: refs.statuses.get(String(doc.statusId)) ?? emptyStatus(doc.statusId),
   source: toRef(doc.sourceId, refs.sources),
   projects: (doc.interestedProjectIds ?? []).map(

@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { CrmActor } from '../common/access/crm-actor';
+import { toPhoneMasked } from '../customers/customer.mapper';
 import { StatusRefDto } from '../customers/dtos/customer-response.dto';
 import type { RefMaps } from '../customers/customer-refs.service';
 import { toRef, toUserRef } from '../customers/customer-refs.service';
@@ -14,6 +15,9 @@ export interface AppointmentCustomerLean {
   _id: Types.ObjectId;
   fullName: string;
   statusId: Types.ObjectId;
+  /** SĐT E.164 chỉ để che (`phoneMasked`), KHÔNG bao giờ trả nguyên ra API. */
+  phone?: string;
+  anonymizedAt?: Date | null;
 }
 
 const emptyStatus = (id: Types.ObjectId): StatusRefDto => ({
@@ -43,6 +47,7 @@ export const toAppointmentResponse = (
   customer: {
     id: String(customer._id),
     fullName: customer.fullName,
+    phoneMasked: toPhoneMasked(customer),
     status:
       maps.statuses.get(String(customer.statusId)) ??
       emptyStatus(customer.statusId),

@@ -109,7 +109,12 @@ export class AppointmentsService {
     const [result] = await this.appointmentModel
       .aggregate<{ rows: AppointmentRow[]; total: Array<{ count: number }> }>([
         { $match: match },
-        ...customerScopeStages(this.repo, ctx, { fullName: 1, statusId: 1 }),
+        ...customerScopeStages(this.repo, ctx, {
+          fullName: 1,
+          statusId: 1,
+          phone: 1,
+          anonymizedAt: 1,
+        }),
         { $sort: { startAt: sort.direction, _id: sort.direction } },
         {
           $facet: {

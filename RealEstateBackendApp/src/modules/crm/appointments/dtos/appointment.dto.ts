@@ -280,6 +280,12 @@ export class ListAppointmentsQueryDto extends PaginationQueryDto {
 export class AppointmentCustomerDto {
   @ApiProperty() id: string;
   @ApiProperty() fullName: string;
+  @ApiProperty({
+    example: '0912 ••• 678',
+    description:
+      'SĐT khách đã che (cùng quy ước `phoneMasked` ở danh sách khách); không bao giờ trả số đầy đủ',
+  })
+  phoneMasked: string;
   @ApiProperty({ type: StatusRefDto }) status: StatusRefDto;
 }
 
