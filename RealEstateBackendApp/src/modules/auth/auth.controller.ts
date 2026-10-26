@@ -16,6 +16,11 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
+import {
+  AUTH_LOGIN_THROTTLE_TTL_MS,
+  reportAuthLoginThrottleStartup,
+  resolveAuthLoginThrottleLimit,
+} from './auth-throttle.config';
 
 /**
  * Cookie path cho refresh token.
@@ -29,11 +34,20 @@ const REFRESH_COOKIE_NAME = 'refreshToken';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {
+    // Fail-fast khi env throttle sai + log warn khi bị nới/bị bỏ qua (ConfigModule đã nạp .env vào process.env).
+    reportAuthLoginThrottleStartup();
+  }
 
   @Public()
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  // Mặc định 5/phút; AUTH_LOGIN_THROTTLE_LIMIT chỉ dành cho E2E (đọc lúc request).
+  @Throttle({
+    default: {
+      limit: () => resolveAuthLoginThrottleLimit(),
+      ttl: AUTH_LOGIN_THROTTLE_TTL_MS,
+    },
+  })
   @ApiOperation({
     summary: 'Login, returns access token + sets refresh cookie',
   })
