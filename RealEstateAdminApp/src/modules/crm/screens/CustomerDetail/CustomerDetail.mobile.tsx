@@ -15,6 +15,7 @@ import { NextStepNotice } from './components/DetailParts';
 import { HistoryList } from './components/HistoryList';
 import { MobileContactFooter } from './components/MobileContactFooter';
 import { MobileDetailHeader } from './components/MobileDetailHeader';
+import { UpcomingAppointmentsSection } from './components/UpcomingAppointmentsSection';
 import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
 
 type MobileTab = 'info' | 'logs' | 'progress';
@@ -60,6 +61,7 @@ export const CustomerDetailMobile = () => {
 
       {activeTab === 'info' && (
         <>
+          <UpcomingAppointmentsSection customerId={customer.id} />
           <CustomerInfoCard customer={customer} />
           <PersonaCard customer={customer} />
           <RealEstateNeedsCard customer={customer} />
@@ -69,7 +71,7 @@ export const CustomerDetailMobile = () => {
       {activeTab === 'logs' && (
         <>
           <CareLogForm key={customer.id} customer={customer} variant="mobile" />
-          <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} />
+          <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} />
           <HistoryList customerId={customer.id} />
         </>
       )}

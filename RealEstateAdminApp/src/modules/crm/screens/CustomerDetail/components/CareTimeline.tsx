@@ -1,23 +1,42 @@
 // Dòng thời gian nhật ký chăm sóc (C2, 02 §5 "Mục dòng thời gian"): ngày giờ đầy đủ (giờ VN), người viết,
 // dấu "Chính" chỉ khi tác giả là phụ trách chính của khách, kênh + kết quả liên hệ, bước tiếp theo, ảnh đính kèm.
-import { Activity, CalendarClock, Images } from 'lucide-react';
-import { useRef } from 'react';
+import { Activity, CalendarClock, Images, X } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { CareLogView } from '@crm/api';
+import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { CONTACT_CHANNEL_LABELS } from '@crm/lib/customerAdapters';
 import { formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
 import { CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, INSET_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import type { GalleryImage } from '@crm/types/crm';
 import { getHiddenImageCount, getShortCaption } from '../customerDetailUtils';
+import { useRemoveCareLogPhoto } from '../useRemoveCareLogPhoto';
 import { CardHeading } from './DetailParts';
 
 const VISIBLE_THUMBNAIL_COUNT = 3;
 const IMAGE_RETRY_INTERVAL_MS = 30_000;
 const PHOTO_GROUP_TITLE = 'Ảnh đính kèm';
 
-const CareLogPhotos = ({ images, onImageError }: { images: GalleryImage[]; onImageError?: () => void }) => {
+interface CareLogPhotosProps {
+  images: GalleryImage[];
+  /** Id ảnh song song với `images`; chỉ truyền khi người xem được phép gỡ ảnh của nhật ký này. */
+  removableAttachmentIds?: string[];
+  onRemovePhoto?: (attachmentId: string) => Promise<boolean>;
+  isRemoving?: boolean;
+  onImageError?: () => void;
+}
+
+const CareLogPhotos = ({ images, removableAttachmentIds, onRemovePhoto, isRemoving = false, onImageError }: CareLogPhotosProps) => {
   const { openLightbox } = useCrmActions();
+  const [pendingAttachmentId, setPendingAttachmentId] = useState<string | null>(null);
   const hiddenCount = getHiddenImageCount(images.length, VISIBLE_THUMBNAIL_COUNT);
+
+  const confirmRemove = async () => {
+    if (!pendingAttachmentId || !onRemovePhoto) return;
+    await onRemovePhoto(pendingAttachmentId);
+    setPendingAttachmentId(null);
+  };
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-theme-xs font-medium text-brand-500 dark:text-brand-400">
@@ -25,20 +44,35 @@ const CareLogPhotos = ({ images, onImageError }: { images: GalleryImage[]; onIma
         {PHOTO_GROUP_TITLE} ({images.length} ảnh)
       </div>
       <div className="grid grid-cols-4 gap-2">
-        {images.slice(0, VISIBLE_THUMBNAIL_COUNT).map((image, index) => (
-          <button
-            key={`${image.src.slice(-24)}-${index}`}
-            type="button"
-            onClick={() => openLightbox(images, index, PHOTO_GROUP_TITLE)}
-            aria-label={`Xem ảnh: ${image.caption || 'đính kèm'}`}
-            className="group relative aspect-video overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
-          >
-            <img data-testid="care-log-photo" src={image.src} alt={image.caption} onError={onImageError} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
-            <span className="absolute inset-x-0 bottom-0 truncate bg-gray-900/60 px-1 py-0.5 text-center text-[10px] text-white">
-              {getShortCaption(image.caption)}
-            </span>
-          </button>
-        ))}
+        {images.slice(0, VISIBLE_THUMBNAIL_COUNT).map((image, index) => {
+          const attachmentId = removableAttachmentIds?.[index];
+          return (
+            <div key={`${image.src.slice(-24)}-${index}`} className="relative">
+              <button
+                type="button"
+                onClick={() => openLightbox(images, index, PHOTO_GROUP_TITLE)}
+                aria-label={`Xem ảnh: ${image.caption || 'đính kèm'}`}
+                className="group relative block aspect-video w-full overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+              >
+                <img data-testid="care-log-photo" src={image.src} alt={image.caption} onError={onImageError} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                <span className="absolute inset-x-0 bottom-0 truncate bg-gray-900/60 px-1 py-0.5 text-center text-[10px] text-white">
+                  {getShortCaption(image.caption)}
+                </span>
+              </button>
+              {attachmentId && onRemovePhoto && (
+                <button
+                  type="button"
+                  data-testid="care-log-photo-remove"
+                  onClick={() => setPendingAttachmentId(attachmentId)}
+                  aria-label={`Xóa ảnh ${index + 1} khỏi nhật ký`}
+                  className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-gray-900/70 text-white transition-colors hover:bg-error-500"
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          );
+        })}
         {hiddenCount > 0 && (
           <button
             type="button"
@@ -51,6 +85,16 @@ const CareLogPhotos = ({ images, onImageError }: { images: GalleryImage[]; onIma
           </button>
         )}
       </div>
+      <ConfirmDialog
+        isOpen={pendingAttachmentId !== null}
+        title="Gỡ ảnh khỏi nhật ký?"
+        description="Ảnh sẽ không còn hiện trong nhật ký này và không khôi phục được."
+        confirmLabel={isRemoving ? 'Đang gỡ…' : 'Xác nhận gỡ ảnh'}
+        cancelLabel="Giữ ảnh"
+        tone="danger"
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => !isRemoving && setPendingAttachmentId(null)}
+      />
     </div>
   );
 };
@@ -66,10 +110,12 @@ interface CareTimelineProps {
   onLoadMore?: () => void;
   /** Ảnh không tải được (URL ký 15 phút đã hết hạn): tải lại nhật ký để lấy URL mới. */
   onImageError?: () => void;
-  customerId?: string;
+  /** Khách đang xem: cần để gỡ ảnh khỏi nhật ký đã lưu. */
+  customerId: string;
 }
 
-export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, hasMore = false, isLoadingMore = false, onLoadMore, onImageError }: CareTimelineProps) => {
+export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, hasMore = false, isLoadingMore = false, onLoadMore, onImageError, customerId }: CareTimelineProps) => {
+  const { removePhoto, isRemoving } = useRemoveCareLogPhoto(customerId);
   const lastImageRetry = useRef(0);
   /** Tối đa 1 lần làm mới / 30 giây để URL hỏng thật không gây vòng lặp tải. */
   const handleImageError = onImageError
@@ -119,7 +165,15 @@ export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, has
                   </span>
                 </p>
               )}
-              {log.images.length > 0 && <CareLogPhotos images={log.images} onImageError={handleImageError} />}
+              {log.images.length > 0 && (
+                <CareLogPhotos
+                  images={log.images}
+                  removableAttachmentIds={log.canEdit ? log.attachmentIds : undefined}
+                  onRemovePhoto={removePhoto}
+                  isRemoving={isRemoving}
+                  onImageError={handleImageError}
+                />
+              )}
             </article>
           </li>
         ))}

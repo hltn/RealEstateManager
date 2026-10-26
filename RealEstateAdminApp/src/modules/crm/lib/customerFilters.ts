@@ -17,6 +17,9 @@ export const countActiveAdvancedFilters = (filters: CustomerFilters): number => 
   return arrayCount + dateCount + occupationCount;
 };
 
+/** Có từ khoá tìm kiếm hoặc bộ lọc nâng cao nào đang bật (tab danh sách không tính). */
+export const hasActiveCustomerFilters = (filters: CustomerFilters): boolean => filters.q.trim() !== '' || countActiveAdvancedFilters(filters) > 0;
+
 export const PROGRESS_FILTER_OPTIONS: readonly { value: number; label: string }[] = PROGRESS_VALUES.map((value) => ({
   value,
   label: `${value}% (${value / 25}/4)`,

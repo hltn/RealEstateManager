@@ -2,7 +2,7 @@
 // Tab danh sách + ô tìm (không dấu) + sắp xếp + Bộ lọc nâng cao (bottom sheet), thẻ khách, phân trang Admin.
 import { ArrowUpDown, CircleX, Plus, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import { Pagination } from '../../../../components/common/Pagination';
-import { countActiveAdvancedFilters } from '@crm/lib/customerFilters';
+import { countActiveAdvancedFilters, hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import {
   BUTTON_OUTLINE_BASE_CLASS,
   BUTTON_PRIMARY_CLASS,
@@ -14,6 +14,7 @@ import {
 } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import { CustomerCard } from './components/CustomerCard';
+import { CustomerListEmptyState } from './components/CustomerListEmptyState';
 import { CustomerStatusPills } from './components/CustomerStatusPills';
 import { CUSTOMER_SORT_OPTIONS } from './customerListHelpers';
 import { useCustomerListScreen } from './useCustomerListScreen';
@@ -24,7 +25,8 @@ const QUICK_FILTER_SIZE_CLASS = 'h-9 shrink-0 whitespace-nowrap px-3 text-xs';
 export const CustomersMobile = () => {
   const screen = useCustomerListScreen(MOBILE_PAGE_SIZE);
   const { list, counts, filters, sort, setSort, updateFilters, setPage, isLoading, error, refetch } = screen;
-  const { navigate, openAdvancedFilter } = useCrmActions();
+  const { navigate, openAdvancedFilter, resetFilters } = useCrmActions();
+  const hasActiveFilters = hasActiveCustomerFilters(filters);
   const advancedCount = countActiveAdvancedFilters(filters);
   const sortIndex = CUSTOMER_SORT_OPTIONS.findIndex((option) => option.value === sort);
   const nextSort = CUSTOMER_SORT_OPTIONS[(sortIndex + 1) % CUSTOMER_SORT_OPTIONS.length];
@@ -113,14 +115,13 @@ export const CustomersMobile = () => {
         {!isLoading && !error && list.data.length === 0 && (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-gray-200 p-8 text-center dark:border-white/[0.1]">
             <SearchX size={28} className="text-gray-400" aria-hidden="true" />
-            <p className="text-theme-sm font-medium text-gray-700 dark:text-gray-300">{counts.ALL === 0 ? 'Chưa có khách.' : 'Không có khách hàng phù hợp'}</p>
-            {counts.ALL === 0 ? (
-              <button type="button" onClick={() => navigate('create_customer')} className={`${BUTTON_PRIMARY_CLASS} mt-1`}>
-                Thêm khách đầu tiên
-              </button>
-            ) : (
-              <p className="text-theme-xs text-gray-500 dark:text-gray-400">Thử đổi tab, từ khoá hoặc bộ lọc nâng cao.</p>
-            )}
+            <CustomerListEmptyState
+              hasNoCustomers={counts.ALL === 0 && !hasActiveFilters}
+              hasActiveFilters={hasActiveFilters}
+              hint="Thử đổi tab, từ khoá hoặc bộ lọc nâng cao."
+              onCreateCustomer={() => navigate('create_customer')}
+              onClearFilters={resetFilters}
+            />
           </div>
         )}
       </div>

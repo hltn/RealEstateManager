@@ -4,9 +4,10 @@
  * "ảnh quá lớn" và "PDF" là buffer giả (FE chặn trước khi tải lên, không đi tới máy chủ).
  *
  * Quyết định [Chưa rõ]:
- * - F3-04b: ở mục nhật ký đã lưu KHÔNG có điều khiển gỡ ảnh (chỉ có nút "Xóa ảnh N" ở khay trước khi lưu) -> `knownBug` (test.fail) + ghi vào báo cáo.
+ * - F3-04b: mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ khi người xem còn quyền sửa nhật ký) + hộp xác nhận "Xác nhận gỡ ảnh";
+ *   nút "Xóa ảnh N" ở khay trước khi lưu là điều khiển khác (F3-04a).
  */
-import { test, expect, knownBug } from '../fixtures';
+import { test, expect } from '../fixtures';
 import { MOBILE_VIEWPORT, bigPng, makeJpeg, note, openCustomerDetail, pdfFile, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
@@ -221,8 +222,7 @@ test.describe('f3-care-log', () => {
     expect(attached.originalName).toBe('anh-2.jpg');
   });
 
-  test('F3-04b gỡ ảnh khỏi nhật ký ĐÃ LƯU (API có, giao diện thiếu)', async ({ loginAs, api }, testInfo) => {
-    knownBug(testInfo, 'Thiếu chức năng', 'T-F3-04b: mục nhật ký đã lưu không có điều khiển gỡ ảnh (chỉ có "Xóa ảnh N" ở khay trước lưu); backend hỗ trợ DELETE care-log-attachments và lịch sử có loại "Gỡ ảnh đính kèm".');
+  test('F3-04b gỡ ảnh khỏi nhật ký ĐÃ LƯU: nút gỡ ở mục nhật ký, xác nhận rồi ảnh biến mất', async ({ loginAs, api }) => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
@@ -233,7 +233,6 @@ test.describe('f3-care-log', () => {
     await expect(toast(page, 'Đã lưu nhật ký chăm sóc')).toBeVisible();
     const entry = timeline(page).getByRole('article').first();
     await expect(entry.getByTestId('care-log-photo')).toHaveCount(1);
-    // Chức năng chưa tồn tại nên khẳng định rõ "phải thấy nút gỡ ảnh" (đỏ vì không tìm thấy), không để lệnh click chờ hết hạn test.
     const removeButton = entry.getByRole('button', { name: /Gỡ ảnh|Xóa ảnh/ });
     await expect(removeButton, 'mục nhật ký đã lưu phải có nút "Gỡ ảnh"').toBeVisible();
     await removeButton.click();

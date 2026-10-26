@@ -82,6 +82,13 @@ export const createInitialValues = (customerId: string, todayKey: string): Appoi
   calendarSync: false,
 });
 
+/**
+ * Form có thay đổi chưa lưu không: so giá trị đang nhập với giá trị ban đầu (khách mang sang tính là ban đầu),
+ * hoặc người dùng đã tự chọn dự án (kể cả "Không chọn"). Dùng để hỏi xác nhận trước khi "Hủy bỏ".
+ */
+export const hasUnsavedChanges = (draft: AppointmentFormValues, initial: AppointmentFormValues, hasManualProject: boolean): boolean =>
+  hasManualProject || (Object.keys(initial) as AppointmentFormField[]).some((field) => draft[field] !== initial[field]);
+
 /** Loại lịch mà dự án là thông tin quan trọng (đi xem nhà mẫu / ký cọc): ô dự án được nhấn mạnh ("Nên chọn"). */
 export const isProjectEmphasizedType = (type: AppointmentType): boolean => type === 'SITE_VISIT' || type === 'DEPOSIT_CONTRACT';
 
@@ -109,13 +116,19 @@ const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 /** Dung sai giờ hẹn ở quá khứ (backend chấp nhận lệch ≤ 5 phút so với hiện tại). */
 export const PAST_TOLERANCE_MS = 5 * 60 * 1000;
 
+/** Validate ngày + giờ hẹn (giờ VN, không ở quá khứ); dùng chung cho form tạo lịch và hộp "Đổi giờ". */
+export const validateScheduleDateTime = (date: string, time: string, todayKey: string = getVnTodayKey(), now: Date = new Date()): Pick<AppointmentFormErrors, 'date' | 'time'> => {
+  const errors: Pick<AppointmentFormErrors, 'date' | 'time'> = {};
+  if (!DATE_KEY_PATTERN.test(date)) errors.date = 'Vui lòng chọn ngày diễn ra.';
+  else if (date < todayKey) errors.date = 'Ngày hẹn không được ở quá khứ.';
+  if (!parseTime24(time)) errors.time = 'Vui lòng nhập giờ hợp lệ (HH:mm).';
+  else if (!errors.date && new Date(vnDateTimeToIso(date, time)).getTime() < now.getTime() - PAST_TOLERANCE_MS) errors.time = 'Giờ hẹn không được ở quá khứ.';
+  return errors;
+};
+
 export const validateAppointmentForm = (values: AppointmentFormValues, customer: CustomerDetail | null, todayKey: string = getVnTodayKey(), now: Date = new Date()): AppointmentFormErrors => {
-  const errors: AppointmentFormErrors = {};
+  const errors: AppointmentFormErrors = { ...validateScheduleDateTime(values.date, values.time, todayKey, now) };
   if (!values.customerId || !customer) errors.customerId = 'Vui lòng chọn khách hàng.';
-  if (!DATE_KEY_PATTERN.test(values.date)) errors.date = 'Vui lòng chọn ngày diễn ra.';
-  else if (values.date < todayKey) errors.date = 'Ngày hẹn không được ở quá khứ.';
-  if (!parseTime24(values.time)) errors.time = 'Vui lòng nhập giờ hợp lệ (HH:mm).';
-  else if (!errors.date && new Date(vnDateTimeToIso(values.date, values.time)).getTime() < now.getTime() - PAST_TOLERANCE_MS) errors.time = 'Giờ hẹn không được ở quá khứ.';
   if (values.type !== 'CALLBACK' && !values.location.trim()) errors.location = 'Vui lòng nhập địa điểm gặp.';
   if (values.note.length > NOTE_MAX_LENGTH) errors.note = `Ghi chú tối đa ${NOTE_MAX_LENGTH} ký tự.`;
   else if (values.type === 'OTHER' && !values.note.trim()) errors.note = 'Mục đích khác: vui lòng ghi rõ nội dung buổi hẹn.';

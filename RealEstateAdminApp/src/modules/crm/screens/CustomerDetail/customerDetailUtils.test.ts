@@ -7,6 +7,7 @@ import {
   getShortCaption,
   getSuggestedFollowUpIso,
   orEmptyText,
+  selectUpcomingAppointments,
   toDateTimeLocalValue,
 } from './customerDetailUtils';
 
@@ -43,5 +44,16 @@ describe('customerDetailUtils', () => {
     expect(toDateTimeLocalValue('2026-10-24T02:00:00.000Z')).toBe('2026-10-24T09:00');
     expect(fromDateTimeLocalValue('2026-10-24T09:00')).toBe('2026-10-24T02:00:00.000Z');
     expect(fromDateTimeLocalValue('')).toBe('');
+  });
+
+  it('selectUpcomingAppointments: chỉ lịch đang chờ và chưa qua giờ, gần nhất trước', () => {
+    const now = new Date('2026-10-26T03:00:00.000Z');
+    const items = [
+      { id: 'late', status: 'SCHEDULED', startAt: '2026-10-28T02:00:00.000Z' },
+      { id: 'past', status: 'SCHEDULED', startAt: '2026-10-26T02:00:00.000Z' },
+      { id: 'done', status: 'DONE', startAt: '2026-10-27T02:00:00.000Z' },
+      { id: 'soon', status: 'SCHEDULED', startAt: '2026-10-26T04:00:00.000Z' },
+    ];
+    expect(selectUpcomingAppointments(items, now).map((item) => item.id)).toEqual(['soon', 'late']);
   });
 });

@@ -100,9 +100,12 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     /** Tải ảnh lên trước khi lưu ghi chú. Không làm mới danh sách (ảnh chưa gắn). */
     uploadCareLogAttachment: (customerId: string, file: File, signal?: AbortSignal) => toResult(() => care.uploadCareLogAttachment(customerId, file, signal)),
     deleteCareLogAttachment: (customerId: string, attachmentId: string) => toResult(() => care.deleteCareLogAttachment(customerId, attachmentId)),
+    /** Gỡ ảnh khỏi nhật ký ĐÃ LƯU (backend kiểm quyền sửa nhật ký: tác giả trong 24 giờ/Quản trị/Quản lý) và làm mới nhật ký + lịch sử. */
+    removeSavedCareLogAttachment: (customerId: string, attachmentId: string) => write(() => care.deleteCareLogAttachment(customerId, attachmentId)),
 
     // --- Lịch hẹn ----------------------------------------------------------------------------------------------------
     createAppointment: (input: CreateAppointmentInput): Promise<ApiResult<AppointmentView>> => write(() => scheduling.postAppointment(input)),
+    updateAppointment: (appointmentId: string, body: Parameters<typeof scheduling.patchAppointment>[1]): Promise<ApiResult<AppointmentView>> => write(() => scheduling.patchAppointment(appointmentId, body)),
     updateAppointmentStatus: (appointmentId: string, status: 'DONE' | 'CANCELED' | 'SCHEDULED', extras: { version?: number; outcome?: string; createCareLog?: boolean } = {}) =>
       write(() => scheduling.patchAppointmentStatus(appointmentId, { status, ...extras })),
     deleteAppointment: (appointmentId: string) => write(() => scheduling.deleteAppointment(appointmentId)),

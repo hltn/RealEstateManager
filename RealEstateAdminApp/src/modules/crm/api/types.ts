@@ -271,8 +271,8 @@ export interface CreateCareLogInput {
 
 export interface AppointmentView {
   id: string;
-  /** `phoneMasked`/`projects` không có trong response lịch hẹn của backend. */
-  customer: { id: string; fullName: string; phoneMasked?: string; status: StatusRef; projects?: Ref[] };
+  /** `phoneMasked` ("0912 ••• 678") do backend trả; "" = khách dữ liệu cũ thiếu SĐT (ẩn dòng SĐT). `projects` không có trong response lịch hẹn. */
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects?: Ref[] };
   type: AppointmentType;
   title: string;
   startAt: string;
@@ -326,7 +326,7 @@ export interface DailyTask {
   dueAt: string;
   group: DailyTaskGroup;
   /** `projects` = dự án khách quan tâm (mọi loại việc). */
-  customer: { id: string; fullName: string; phoneMasked?: string; status: StatusRef; projects: Ref[] };
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects: Ref[] };
   /** Dự án của lịch hẹn: chỉ có khi việc là APPOINTMENT và lịch có dự án; ngược lại null. */
   project: Ref | null;
   title: string;

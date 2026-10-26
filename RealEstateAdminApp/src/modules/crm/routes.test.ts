@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateAppointmentPath, parseCreateAppointmentCustomerId, parseCreateAppointmentProjectId } from './routes';
+import { buildCreateAppointmentPath, hasInvalidCreateAppointmentCustomerId, parseCreateAppointmentCustomerId, parseCreateAppointmentProjectId } from './routes';
 
 const VALID_ID = '6add87b88f689f6e6cd96833';
 const PROJECT_ID = '6add87b88f689f6e6cd96aaa';
@@ -29,5 +29,15 @@ describe('đường dẫn màn tạo lịch hẹn mang khách (G5)', () => {
     expect(buildCreateAppointmentPath({ projectId: PROJECT_ID })).toBe(`/crm/appointments/new?projectId=${PROJECT_ID}`);
     expect(parseCreateAppointmentProjectId('?projectId=abc')).toBeNull();
     expect(parseCreateAppointmentProjectId('')).toBeNull();
+  });
+});
+
+describe('hasInvalidCreateAppointmentCustomerId', () => {
+  it('chỉ true khi có tham số customerId nhưng sai định dạng', () => {
+    expect(hasInvalidCreateAppointmentCustomerId('?customerId=zzz')).toBe(true);
+    expect(hasInvalidCreateAppointmentCustomerId('?customerId=')).toBe(true);
+    expect(hasInvalidCreateAppointmentCustomerId('')).toBe(false);
+    expect(hasInvalidCreateAppointmentCustomerId('?projectId=zzz')).toBe(false);
+    expect(hasInvalidCreateAppointmentCustomerId(`?customerId=${'a'.repeat(24)}`)).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ import { useLocation } from 'react-router-dom';
 import { useCatalogs, useCrmApi, useCustomerDetail, useCustomerList, type CustomerDetail, type CustomerListItem } from '@crm/api';
 import { useDebouncedValue } from '@crm/hooks/useDebouncedValue';
 import { getVnTodayKey } from '@crm/lib/dateTime';
-import { buildCrmPath, parseCreateAppointmentCustomerId, parseCreateAppointmentProjectId } from '@crm/routes';
+import { buildCrmPath, hasInvalidCreateAppointmentCustomerId, parseCreateAppointmentCustomerId, parseCreateAppointmentProjectId } from '@crm/routes';
 import { useCrmActions, useCurrentUser } from '@crm/store';
 import type { Project } from '@crm/types/crm';
 import {
@@ -26,6 +26,7 @@ import {
   getDefaultAssigneeId,
   getFieldId,
   getSuggestedProjectId,
+  hasUnsavedChanges,
   listSelectableProjects,
   toCreateAppointmentInput,
   validateAppointmentForm,
@@ -59,7 +60,13 @@ export interface CreateAppointmentForm {
   changeCustomer: (customerId: string) => void;
   handleSubmit: (event?: FormEvent) => Promise<void>;
   isSubmitting: boolean;
+  /** Hủy bỏ: form có thay đổi chưa lưu thì mở hộp xác nhận (`isConfirmingDiscard`) thay vì bỏ ngay. */
   cancel: () => void;
+  isConfirmingDiscard: boolean;
+  /** Xác nhận bỏ dữ liệu đã nhập và rời form. */
+  confirmDiscard: () => void;
+  /** Đóng hộp xác nhận, ở lại form. */
+  keepEditing: () => void;
 }
 
 export const useCreateAppointmentForm = (): CreateAppointmentForm => {
@@ -76,7 +83,9 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   // Tìm qua lớp dữ liệu (không dấu, theo tên/SĐT) thay vì chỉ lọc 100 khách đầu tiên ở client.
   const { data: customerPage } = useCustomerList({ listGroup: 'ALL', q: debouncedSearch, limit: CUSTOMER_PICKER_LIMIT, sort: 'fullName' });
   const { selectCustomer, navigate, goBack, goBackTo, showToast } = useCrmActions();
-  const [draft, setValues] = useState<AppointmentFormValues>(() => createInitialValues(originCustomerId ?? '', getVnTodayKey()));
+  const [initialValues] = useState<AppointmentFormValues>(() => createInitialValues(originCustomerId ?? '', getVnTodayKey()));
+  const [draft, setValues] = useState<AppointmentFormValues>(initialValues);
+  const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
   const { catalogs } = useCatalogs();
   const selectableProjects = useMemo(() => listSelectableProjects(catalogs.projects), [catalogs.projects]);
   const originProjectId = parseCreateAppointmentProjectId(search);
@@ -90,18 +99,20 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   const customerId = isOriginUnavailable && draft.customerId === originCustomerId ? '' : draft.customerId;
   const { data: selectedCustomer, isLoading: isCustomerLoading } = useCustomerDetail(customerId);
 
-  // Báo nhẹ đúng một lần khi không mở được khách đã chọn sẵn.
+  // Báo nhẹ đúng một lần khi không mở được khách đã chọn sẵn (không xem được / lỗi tải / mã khách trên URL sai định dạng).
+  const unavailableMessage = originError
+    ? originError.statusCode === 404 || originError.statusCode === 403
+      ? 'Khách không tồn tại hoặc bạn không có quyền xem. Vui lòng chọn khách khác.'
+      : 'Không tải được thông tin khách. Vui lòng chọn khách.'
+    : hasInvalidCreateAppointmentCustomerId(search)
+      ? 'Mã khách trên đường dẫn không hợp lệ. Vui lòng chọn khách.'
+      : null;
   const hasNotifiedRef = useRef(false);
   useEffect(() => {
-    if (!originError || hasNotifiedRef.current) return;
+    if (!unavailableMessage || hasNotifiedRef.current) return;
     hasNotifiedRef.current = true;
-    const isNotAccessible = originError.statusCode === 404 || originError.statusCode === 403;
-    showToast({
-      type: 'warning',
-      title: 'Chưa chọn sẵn được khách hàng',
-      message: isNotAccessible ? 'Khách không tồn tại hoặc bạn không có quyền xem. Vui lòng chọn khách khác.' : 'Không tải được thông tin khách. Vui lòng chọn khách.',
-    });
-  }, [originError, showToast]);
+    showToast({ type: 'warning', title: 'Chưa chọn sẵn được khách hàng', message: unavailableMessage });
+  }, [unavailableMessage, showToast]);
 
   // Đổi khách thì người thực hiện về mặc định theo nhóm chăm sóc của khách mới (assigneeId '' = chưa chọn tay).
   const linkedProjectId = originProjectId && selectableProjects.some((project) => project.id === originProjectId) ? originProjectId : '';
@@ -131,6 +142,8 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
       return next;
     });
   };
+
+  const leaveForm = () => (originCustomer ? goBackTo(buildCrmPath('customer_detail', originCustomer.id)) : goBack());
 
   return {
     values,
@@ -178,7 +191,17 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
       if (originCustomer) selectCustomer(originCustomer.id, { shouldReplace: true });
       else navigate('appointments', { shouldReplace: true });
     },
-    // Hủy: còn lịch sử trong app thì lùi 1 mục (đúng chi tiết khách đã mở form, Back không bị trùng mục); mở thẳng URL thì thay bằng chi tiết khách.
-    cancel: () => (originCustomer ? goBackTo(buildCrmPath('customer_detail', originCustomer.id)) : goBack()),
+    // Hủy: có thay đổi chưa lưu thì hỏi xác nhận trước; sau đó còn lịch sử trong app thì lùi 1 mục (đúng chi tiết khách đã mở form, Back không bị trùng mục);
+    // mở thẳng URL thì thay bằng chi tiết khách.
+    cancel: () => {
+      if (hasUnsavedChanges(draft, initialValues, manualProjectId !== null)) setIsConfirmingDiscard(true);
+      else leaveForm();
+    },
+    isConfirmingDiscard,
+    confirmDiscard: () => {
+      setIsConfirmingDiscard(false);
+      leaveForm();
+    },
+    keepEditing: () => setIsConfirmingDiscard(false),
   };
 };

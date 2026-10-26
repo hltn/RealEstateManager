@@ -115,10 +115,13 @@ describe('G5: khách mang sang từ chi tiết khách qua ?customerId=', () => {
     expect(result.current.values.customerId).toBe(OTHER_ID);
   });
 
-  it('id sai định dạng: không chọn khách, không gọi API tải khách với id rác', () => {
-    const { result } = setup('/crm/appointments/new?customerId=abc');
+  it('id sai định dạng: không chọn khách, không gọi API tải khách với id rác, báo nhẹ đúng một lần', () => {
+    const { result, rerender } = setup('/crm/appointments/new?customerId=abc');
+    rerender();
     expect(result.current.values.customerId).toBe('');
     expect(useCustomerDetail).not.toHaveBeenCalledWith('abc');
+    expect(toastDefault).toHaveBeenCalledTimes(1);
+    expect(String(toastDefault.mock.calls[0][0])).toContain('Mã khách trên đường dẫn không hợp lệ');
   });
 
   it('id đúng định dạng nhưng không tồn tại/không có quyền (404): về chưa chọn khách, báo nhẹ một lần, không còn khách gốc để quay về', () => {
@@ -210,6 +213,22 @@ describe('G6: lưu/hủy xong về nơi bắt đầu', () => {
     act(() => result.current.cancel());
     expect(currentUrl.value).toBe(`/crm/customers/${CUSTOMER_ID}`);
     expect(currentUrl.navigationType).toBe('REPLACE');
+  });
+
+  it('hủy khi form đã gõ dở: hỏi xác nhận (chưa rời form); "Tiếp tục nhập" ở lại, "Bỏ thay đổi" mới rời đi', () => {
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    act(() => result.current.setField('location', 'Gõ dở'));
+    act(() => result.current.cancel());
+    expect(result.current.isConfirmingDiscard).toBe(true);
+    expect(currentUrl.value).toContain('/crm/appointments/new');
+
+    act(() => result.current.keepEditing());
+    expect(result.current.isConfirmingDiscard).toBe(false);
+    expect(result.current.values.location).toBe('Gõ dở');
+
+    act(() => result.current.cancel());
+    act(() => result.current.confirmDiscard());
+    expect(currentUrl.value).toBe(`/crm/customers/${CUSTOMER_ID}`);
   });
 
   it('hủy khi còn lịch sử trong app (đi từ chi tiết khách sang): lùi đúng 1 mục, không đẩy thêm mục chi tiết trùng', () => {

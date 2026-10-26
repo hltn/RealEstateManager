@@ -24,8 +24,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   if (!isAuthenticated) {
-    // Giữ lại location định tới để sau khi login có thể redirect lại (nếu cần).
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    // Giữ lại trang định tới (kèm query/hash) để LoginScreen đưa người dùng quay lại sau khi đăng nhập.
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
 
   return <>{children}</>;

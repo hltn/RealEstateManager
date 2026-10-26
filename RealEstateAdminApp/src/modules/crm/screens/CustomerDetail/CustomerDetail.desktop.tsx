@@ -15,6 +15,7 @@ import { CustomerInfoCard } from './components/CustomerInfoCard';
 import { NextStepNotice } from './components/DetailParts';
 import { HistoryList } from './components/HistoryList';
 import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
+import { UpcomingAppointmentsSection } from './components/UpcomingAppointmentsSection';
 
 type CenterTab = 'logs' | 'history';
 
@@ -74,6 +75,7 @@ export const CustomerDetailDesktop = () => {
         </div>
 
         <div className="flex min-w-0 flex-col gap-6">
+          <UpcomingAppointmentsSection customerId={customer.id} />
           <CriteriaBoard customer={customer} />
           <CareTeamCard customer={customer} />
           <NextStepNotice suggestions={customer.nextActionSuggestions} />

@@ -1,18 +1,17 @@
 /**
  * F1 - Đăng nhập và phân quyền (doc 08 mục 2: F1-01..04). Các test ở đây đăng nhập THẬT bằng form (không dùng loginAs),
  * trừ F1-01 [+mobile] và F1-03 (chỉ cần phiên có sẵn).
- * Khuyết tật UX đã biết nằm ở các test "ghi nhận" dùng `knownBug` (= test.fail, chạy thật và được kỳ vọng ĐỎ; xem fixtures.ts).
+ * Các khuyết tật UX từng ghi nhận ở đây (ADMIN không vào màn làm việc, lỗi đăng nhập chỉ là toast, chặn quyền im lặng, không quay lại trang định vào) đã được sửa và test chạy như bình thường.
  *
  * Quyết định [Chưa rõ]:
- * - Trang đăng nhập là `/login`; sau đăng nhập app chuyển về `/`. STAFF/MANAGER từ `/` được chuyển tiếp tới `/crm/today`;
- *   ADMIN ở lại `/` (màn Raw Articles của hệ thống tin tức). Hành vi này KHÔNG được khóa ở test happy path (admin tự mở /crm/today);
- *   mong đợi đúng (vào thẳng màn làm việc chính) nằm ở test "ghi nhận" bên dưới.
- * - Gõ URL CRM ngoài quyền (`/crm/reports|projects|settings` với staff): CHUYỂN HƯỚNG IM LẶNG về `/crm/today` (không thông báo).
- * - Lỗi đăng nhập hiện bằng toast tự tắt (không có vùng lỗi cố định trong form): "Email hoặc mật khẩu không đúng." cho cả sai mật khẩu lẫn email lạ.
+ * - Trang đăng nhập là `/login`; sau đăng nhập app quay lại trang đang định vào (nếu là đường dẫn nội bộ an toàn), không thì vào `/crm/today`
+ *   (ADMIN/MANAGER/STAFF; EDITOR ở `/`).
+ * - Gõ URL CRM ngoài quyền (`/crm/reports|projects|settings` với staff): chuyển về `/crm/today` kèm toast "Bạn không có quyền vào trang này.".
+ * - Lỗi đăng nhập hiện cả toast tự tắt lẫn vùng lỗi cố định role=alert trong form: "Email hoặc mật khẩu không đúng." cho cả sai mật khẩu lẫn email lạ.
  * - Nút đăng xuất: menu người dùng ở header (data-testid user-menu-toggle / user-menu-logout), nhãn "Đăng xuất"; đăng xuất tải lại trang `/login`.
  * - "Phiên" nằm ở Mongo `refreshtokens` (hash refresh token, cờ isRevoked), KHÔNG nằm ở Redis; Redis chỉ giữ throttle/idempotency.
  */
-import { test, expect, ACCOUNTS, TEST_PASSWORD, knownBug } from '../fixtures';
+import { test, expect, ACCOUNTS, TEST_PASSWORD } from '../fixtures';
 import { MOBILE_VIEWPORT, openCustomerDetail, seenInDom, toast, watchDomFor } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
@@ -57,8 +56,6 @@ test.describe('f1-auth', () => {
       release();
 
       await expect(page).not.toHaveURL(/\/login/);
-      // Trang đích sau đăng nhập của ADMIN là việc khác (xem test "ghi nhận" ADMIN); ở đây chỉ cần phiên hợp lệ nên admin mở thẳng màn CRM.
-      if (role === 'admin') await page.goto('/crm/today');
       await expect(page).toHaveURL(/\/crm\/today$/);
       await expect(page.getByRole('heading', { name: 'Việc hôm nay' })).toBeVisible();
 
@@ -77,8 +74,7 @@ test.describe('f1-auth', () => {
     });
   }
 
-  test('F1-01 ghi nhận: ADMIN sau đăng nhập nên vào màn làm việc chính', async ({ page }, testInfo) => {
-    knownBug(testInfo, 'Chưa thân thiện', 'ADMIN đăng nhập xong ở "/" (Raw Articles của hệ thống tin tức) thay vì màn làm việc chính của CRM; phải mở menu 2 bước để tới Việc hôm nay (STAFF/MANAGER được chuyển thẳng tới /crm/today).');
+  test('F1-01 ADMIN sau đăng nhập vào thẳng màn làm việc chính (Việc hôm nay)', async ({ page }) => {
     await uiLogin(page, ACCOUNTS.admin.email);
     await expect(page).not.toHaveURL(/\/login/); // đăng nhập thành công
     await expect(page, 'ADMIN nên vào thẳng màn làm việc chính (Việc hôm nay)').toHaveURL(/\/crm\/today$/);
@@ -136,8 +132,7 @@ test.describe('f1-auth', () => {
     expect((await backstage.find('refreshtokens')).length).toBe(sessionsBefore);
   });
 
-  test('F1-02 ghi nhận: lỗi đăng nhập phải hiện cố định trong form (không chỉ toast tự tắt)', async ({ page }, testInfo) => {
-    knownBug(testInfo, 'Chưa thân thiện', 'U-F1-02: sai mật khẩu/email chỉ báo bằng toast tự tắt sau ~4 giây, form không có vùng lỗi role=alert; người dùng chậm mắt phải gõ lại để thấy lỗi.');
+  test('F1-02 lỗi đăng nhập hiện cố định trong form (role=alert), không chỉ toast tự tắt', async ({ page }) => {
     await uiLogin(page, ACCOUNTS.staff1.email, WRONG_PASSWORD);
     await expect(toast(page, 'Email hoặc mật khẩu không đúng.')).toBeVisible(); // lỗi có xuất hiện (toast): đỏ ở dòng dưới là do THIẾU vùng lỗi cố định
     await expect(page.getByRole('alert'), 'form phải có vùng lỗi cố định role=alert').toContainText('Email hoặc mật khẩu không đúng.');
@@ -165,8 +160,7 @@ test.describe('f1-auth', () => {
     }
   });
 
-  test('F1-03 ghi nhận: bị chặn thì phải có giải thích ngắn thay vì chuyển hướng im lặng', async ({ loginAs }, testInfo) => {
-    knownBug(testInfo, 'Chưa thân thiện', 'U-F1-03: gõ URL ngoài quyền bị chuyển về Việc hôm nay không kèm thông báo "Bạn không có quyền..."; người dùng không biết vì sao không vào được (CrmLayout.tsx: <Navigate to={CRM_DEFAULT_PATH}>).');
+  test('F1-03 bị chặn thì có thông báo giải thích ngắn thay vì chuyển hướng im lặng', async ({ loginAs }) => {
     const page = await loginAs('staff1');
     await page.goto('/crm/reports');
     await expect(page).toHaveURL(/\/crm\/today$/); // đã bị chuyển hướng như thiết kế
@@ -181,8 +175,7 @@ test.describe('f1-auth', () => {
     }
   });
 
-  test('F1-03 ghi nhận: đăng nhập xong phải quay lại trang đang định vào', async ({ page }, testInfo) => {
-    knownBug(testInfo, 'Sai hành vi', 'U-F1-03b: ProtectedRoute giữ `state.from` nhưng LoginScreen luôn navigate("/"), nên gõ /crm/customers khi chưa đăng nhập rồi đăng nhập sẽ rơi vào Việc hôm nay (mất ngữ cảnh).');
+  test('F1-03b đăng nhập xong quay lại trang đang định vào', async ({ page }) => {
     await page.goto('/crm/customers');
     await expect(page).toHaveURL(/\/login$/);
     await page.getByLabel('Email').fill(ACCOUNTS.staff1.email);

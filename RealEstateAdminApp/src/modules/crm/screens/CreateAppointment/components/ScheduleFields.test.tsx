@@ -34,3 +34,10 @@ describe('ô Địa điểm: nút định vị chỉ dùng dự án ĐÃ CHỌN 
     expect(screen.getByRole('button', { name: /Dùng địa chỉ văn phòng/ })).toBeDisabled();
   });
 });
+
+describe('nhãn truy cập của ô ngày (U-A11Y-01)', () => {
+  it('nhãn "Ngày diễn ra" gắn vào ô nhập ngày', () => {
+    render(<ScheduleFields form={makeForm('')} />);
+    expect(screen.getByLabelText(/Ngày diễn ra/)).toHaveValue('2026-10-26');
+  });
+});

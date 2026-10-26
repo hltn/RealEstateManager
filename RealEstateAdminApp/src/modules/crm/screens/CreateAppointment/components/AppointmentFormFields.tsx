@@ -86,7 +86,7 @@ export const ScheduleFields = ({ form }: FieldGroupProps) => {
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField inputId={dateId} label="Ngày diễn ra" isRequired error={errors.date} hint={formatLongDateVi(values.date)}>
-          <DatePicker value={values.date} onChange={(date) => setField('date', date)} placeholder="Chọn ngày" inputClassName={getDatePickerInputClass(Boolean(errors.date))} />
+          <DatePicker id={dateId} value={values.date} onChange={(date) => setField('date', date)} placeholder="Chọn ngày" inputClassName={getDatePickerInputClass(Boolean(errors.date))} />
         </FormField>
         <FormField inputId={timeId} label="Giờ (giờ Việt Nam)" isRequired error={errors.time}>
           <TextInput

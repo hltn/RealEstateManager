@@ -11,9 +11,11 @@ import { useCustomerExport } from '@crm/api/mockHooks';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import { downloadCsv } from '@crm/lib/csv';
+import { hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHECKBOX_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import { BulkActionBar } from './components/BulkActionBar';
+import { CustomerListEmptyState } from './components/CustomerListEmptyState';
 import { CustomerStatusPills } from './components/CustomerStatusPills';
 import { CustomerTableRow } from './components/CustomerTableRow';
 import { CustomerToolbar } from './components/CustomerToolbar';
@@ -37,7 +39,8 @@ const CUSTOMER_TABLE_COLUMNS: { label: string; className?: string; isRightAligne
 export const CustomersDesktop = () => {
   const screen = useCustomerListScreen(DEFAULT_PAGE_SIZE);
   const { list, counts, filters, query, isLoading, error, refetch, updateFilters, setPage, setPageSize } = screen;
-  const { navigate, showToast } = useCrmActions();
+  const { navigate, showToast, resetFilters } = useCrmActions();
+  const hasActiveFilters = hasActiveCustomerFilters(filters);
   const actor = useCrmActor();
   const exportCustomers = useCustomerExport();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -138,17 +141,13 @@ export const CustomersDesktop = () => {
                         <span className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
                           <SearchX size={32} aria-hidden="true" />
                         </span>
-                        <p className="text-base font-medium text-gray-700 dark:text-gray-300">
-                          {counts.ALL === 0 ? 'Chưa có khách.' : 'Không có khách hàng phù hợp'}
-                        </p>
-                        {counts.ALL === 0 ? (
-                          <button type="button" onClick={() => navigate('create_customer')} className={BUTTON_PRIMARY_CLASS}>
-                            <Plus size={16} aria-hidden="true" />
-                            Thêm khách đầu tiên
-                          </button>
-                        ) : (
-                          <p className="text-theme-sm text-gray-500 dark:text-gray-400">Thử đổi tab danh sách, từ khoá hoặc bộ lọc nâng cao.</p>
-                        )}
+                        <CustomerListEmptyState
+                          hasNoCustomers={counts.ALL === 0 && !hasActiveFilters}
+                          hasActiveFilters={hasActiveFilters}
+                          hint="Thử đổi tab danh sách, từ khoá hoặc bộ lọc nâng cao."
+                          onCreateCustomer={() => navigate('create_customer')}
+                          onClearFilters={resetFilters}
+                        />
                       </div>
                     </td>
                   </tr>

@@ -11,6 +11,7 @@ import { buildCrmPath } from '@crm/routes';
 import { CARD_CLASS, CHIP_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
 import { getFieldId } from './createAppointmentForm';
 import { AppointmentTypePicker } from './components/AppointmentTypePicker';
+import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import {
   AssigneeField,
   CustomerFields,
@@ -110,6 +111,7 @@ export const CreateAppointmentDesktop = () => {
         onCancel={cancel}
         info={pendingRequiredCount > 0 ? `Còn ${pendingRequiredCount} trường bắt buộc cần kiểm tra` : 'Đã đủ thông tin bắt buộc'}
       />
+      <DiscardChangesDialog form={form} />
     </form>
   );
 };

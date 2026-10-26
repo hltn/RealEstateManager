@@ -5,6 +5,13 @@ import { CRITERIA_KEYS, CRITERION_LABELS } from '@crm/lib/customerRules';
 import { addDaysToDateKey, getVnTodayKey, toVnDateKey, toVnTime, vnDateTimeToIso } from '@crm/lib/dateTime';
 import type { CriterionKey } from '@crm/types/crm';
 
+/**
+ * Lịch hẹn sắp tới của một khách: chỉ lịch còn chờ thực hiện (SCHEDULED) có giờ hẹn từ `now` trở đi, gần nhất trước.
+ * Lịch đã qua giờ mà chưa đánh dấu hoàn thành thuộc về "việc quá hạn", không nằm ở đây.
+ */
+export const selectUpcomingAppointments = <T extends { status: string; startAt: string }>(appointments: readonly T[], now: Date = new Date()): T[] =>
+  appointments.filter((appointment) => appointment.status === 'SCHEDULED' && new Date(appointment.startAt).getTime() >= now.getTime()).sort((a, b) => a.startAt.localeCompare(b.startAt));
+
 /** "Sa bàn thực tế dự án" -> "Sa bàn" (nhãn ảnh thu nhỏ trên timeline). */
 export const getShortCaption = (caption: string, wordCount = 2): string =>
   caption.trim().split(/\s+/).slice(0, wordCount).join(' ');

@@ -4,7 +4,7 @@ const request = vi.fn();
 vi.mock('../../../../api/axios', () => ({ default: { request: (config: unknown) => request(config) } }));
 
 import { resetIdempotencyKeys } from './crmHttp';
-import { postAppointment } from './schedulingApi';
+import { fetchAppointments, postAppointment } from './schedulingApi';
 
 const appointmentDto = {
   id: 'p1',
@@ -51,5 +51,17 @@ describe('postAppointment: dự án của lịch (G7)', () => {
 
   it('trả về lịch hẹn kèm tên dự án', async () => {
     expect((await postAppointment({ ...BASE, projectId: 'pr1' })).project).toEqual({ id: 'pr1', label: "Q'Terra" });
+  });
+});
+
+describe('fetchAppointments: lịch đã hủy', () => {
+  const listOf = (...statuses: string[]) => ({ data: { data: statuses.map((status, index) => ({ ...appointmentDto, id: `a${index}`, status })), meta: { total: statuses.length, page: 1, limit: 100, totalPages: 1 } } });
+
+  it('mặc định bỏ lịch ĐÃ HỦY; hỏi riêng status=CANCELED thì giữ', async () => {
+    request.mockResolvedValue(listOf('SCHEDULED', 'CANCELED', 'DONE'));
+    expect((await fetchAppointments({})).map((appointment) => appointment.status)).toEqual(['SCHEDULED', 'DONE']);
+
+    request.mockResolvedValue(listOf('CANCELED'));
+    expect(await fetchAppointments({ status: 'CANCELED' })).toHaveLength(1);
   });
 });

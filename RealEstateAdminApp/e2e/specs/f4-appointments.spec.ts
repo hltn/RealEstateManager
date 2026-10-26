@@ -2,17 +2,16 @@
  * F4 - Lịch hẹn và nhắc việc (phần còn lại): F4-04, F4-07, F4-08, F4-09 (doc 08 mục 5). F4-01/02/03/05/06 ở `f4b-appointment-context.spec.ts`.
  *
  * Giờ hẹn luôn tính từ "bây giờ" theo giờ VN (lib/api.ts): `todaySlot` (bây giờ + 5 phút) chỉ ở chỗ cần thấy lịch trong ngày hôm nay,
- * `tomorrowSlot` (ngày mai 09:00) ở mọi chỗ khác; không gắn cứng giờ nên kết quả không phụ thuộc giờ chạy. Khuyết tật UX đã biết dùng
- * `knownBug` (test.fail: chạy thật, kỳ vọng ĐỎ; xem fixtures.ts).
+ * `tomorrowSlot` (ngày mai 09:00) ở mọi chỗ khác; không gắn cứng giờ nên kết quả không phụ thuộc giờ chạy.
  *
  * Quyết định [Chưa rõ]:
  * - Nút tạo lịch ở màn Lịch hẹn: "Tạo lịch hẹn mới". Nút "Hủy bỏ" của FormActionBar: "Hủy bỏ".
- * - Menu "Thao tác khác" chỉ có ở thẻ loại "Xem nhà mẫu / sa bàn", "Gặp tư vấn", "Mục đích khác" (biến thể `visit`); thẻ "Ký cọc / HĐMB" dùng nút
- *   "Xác nhận hoàn thành" / "Hoàn tác xác nhận"; thẻ "Nhắc gọi lại" dùng "Đã liên hệ xong" / "Hoàn tác liên hệ" (không có menu).
+ * - Menu "Thao tác khác" có ở mọi thẻ lịch hẹn (mobile ở đầu thẻ; desktop ở hàng nút) và có "Đổi giờ" + "Hủy lịch hẹn" khi lịch còn chờ thực hiện;
+ *   thẻ "Ký cọc / HĐMB" còn nút "Xác nhận hoàn thành" / "Hoàn tác xác nhận"; thẻ "Nhắc gọi lại" còn "Đã liên hệ xong" / "Hoàn tác liên hệ".
  * - Chuông thông báo: nhắc đến hạn do job lặp 1 phút/lần của backend (BullMQ) gửi; test tạo lịch hẹn ~6 phút nữa với "nhắc trước 15 phút"
  *   (nhắc đã quá hạn ngay khi tạo) rồi chờ có điều kiện, không chờ cố định.
  */
-import { test, expect, knownBug } from '../fixtures';
+import { test, expect } from '../fixtures';
 import { tomorrowSlot, vnToday } from '../lib/api';
 import { MOBILE_VIEWPORT, note, openCustomerDetail, setSchedule, todaySlot, toast } from '../lib/ui';
 import type { Locator, Page } from '@playwright/test';
@@ -257,8 +256,7 @@ test.describe('f4-appointments', () => {
     await expect(page).toHaveURL(new RegExp(`/crm/(customers/${c.id}|appointments)`));
   });
 
-  test('F4-09 đổi giờ / hủy lịch hẹn phải có ở thẻ lịch hẹn (desktop và mobile, mọi loại thẻ)', async ({ loginAs, api }, testInfo) => {
-    knownBug(testInfo, 'Thiếu chức năng', 'T-F4-09: thẻ lịch hẹn chỉ có Xem hồ sơ khách, Ghi chú nhanh, Nhắn Zalo, Đánh dấu hoàn thành (hoặc nút xác nhận riêng); API đã có updateAppointmentStatus(CANCELED) và PATCH appointment (dời giờ) nhưng giao diện không có lối đổi giờ/hủy.');
+  test('F4-09 đổi giờ / hủy lịch hẹn có ở thẻ lịch hẹn (desktop và mobile, mọi loại thẻ)', async ({ loginAs, api }, testInfo) => {
     const slot = await todaySlot(testInfo);
     const cards = [
       { label: 'Xem nhà mẫu', customer: await api.createCustomer({ label: 'Khách-ĐổiGiờ-Xem' }), type: 'SITE_VISIT' },
@@ -290,6 +288,51 @@ test.describe('f4-appointments', () => {
     await page.setViewportSize(MOBILE_VIEWPORT);
     await page.goto('/crm/appointments');
     await check('mobile');
+  });
+
+  test('F4-09b đổi giờ lưu đúng giờ mới (lịch rời khỏi hôm nay); hủy lịch kèm lý do rồi "Hoàn tác" mở lại được', async ({ loginAs, api, backstage }, testInfo) => {
+    const slot = await todaySlot(testInfo);
+    const mover = await api.createCustomer({ label: 'Khách-DờiGiờ' });
+    const canceler = await api.createCustomer({ label: 'Khách-HủyLịch' });
+    await api.createAppointment({ customerId: mover.id, slot });
+    await api.createAppointment({ customerId: canceler.id, slot });
+    const page = await loginAs('staff1');
+    await page.goto('/crm/appointments');
+    const openMenuItem = async (fullName: string, item: string) => {
+      const card = cardFor(page, fullName);
+      await expect(card).toHaveCount(1);
+      await card.getByRole('button', { name: 'Thao tác khác' }).click();
+      await card.getByRole('list', { name: 'Thao tác lịch hẹn' }).getByRole('button', { name: item }).click();
+    };
+
+    // Đổi giờ sang ngày mai 10:15 (giờ VN = 03:15 UTC): lưu đúng, thẻ rời khỏi danh sách "hôm nay".
+    const newDate = vnToday(1);
+    await openMenuItem(mover.fullName, 'Đổi giờ');
+    const rescheduleDialog = page.getByRole('dialog', { name: 'Đổi giờ lịch hẹn' });
+    await rescheduleDialog.getByLabel('Ngày mới').fill(newDate);
+    await rescheduleDialog.getByLabel('Giờ mới (giờ Việt Nam)').fill('10:15');
+    await rescheduleDialog.getByRole('button', { name: 'Lưu giờ mới' }).click();
+    await expect(toast(page, 'Đã đổi giờ lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, mover.fullName)).toHaveCount(0);
+    const moved = (await backstage.find('appointments')).find((r) => String(r.customerId) === mover.id);
+    expect(new Date(moved?.startAt).toISOString()).toBe(`${newDate}T03:15:00.000Z`);
+
+    // Hủy kèm lý do: thẻ biến mất khỏi danh sách; "Hoàn tác" ngay trên thông báo mở lại lịch.
+    await openMenuItem(canceler.fullName, 'Hủy lịch hẹn');
+    const cancelDialog = page.getByRole('alertdialog', { name: 'Hủy lịch hẹn này?' });
+    await cancelDialog.getByLabel('Lý do hủy (tùy chọn)').fill('Khách bận việc đột xuất');
+    await cancelDialog.getByRole('button', { name: 'Xác nhận hủy lịch' }).click();
+    await expect(toast(page, 'Đã hủy lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, canceler.fullName)).toHaveCount(0);
+    const canceled = (await backstage.find('appointments')).find((r) => String(r.customerId) === canceler.id);
+    expect(canceled?.status).toBe('CANCELED');
+    expect(canceled?.outcome).toBe('Khách bận việc đột xuất');
+
+    await toast(page, 'Đã hủy lịch hẹn').getByRole('button', { name: 'Hoàn tác' }).click();
+    await expect(toast(page, 'Đã mở lại lịch hẹn')).toBeVisible();
+    await expect(cardFor(page, canceler.fullName)).toHaveCount(1);
+    const reopened = (await backstage.find('appointments')).find((r) => String(r.customerId) === canceler.id);
+    expect(reopened?.status).toBe('SCHEDULED');
   });
 
   test('F4-02 giờ mặc định đã qua: form chặn ngay, lỗi chỉ rõ cạnh ô Giờ, rời form không bị chặn', async ({ loginAs, api }) => {

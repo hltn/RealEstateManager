@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getSuggestedProjectId, isProjectEmphasizedType, listSelectableProjects, toCreateAppointmentInput, validateAppointmentForm } from './createAppointmentForm';
+import { getSuggestedProjectId, hasUnsavedChanges, isProjectEmphasizedType, listSelectableProjects, toCreateAppointmentInput, validateAppointmentForm } from './createAppointmentForm';
 import type { AppointmentFormValues } from './createAppointmentForm';
 
 const values = (date: string): AppointmentFormValues => ({
@@ -55,5 +55,15 @@ describe('dự án của lịch (G7)', () => {
   it('body tạo lịch: có dự án gửi id, "Không chọn" gửi null', () => {
     expect(toCreateAppointmentInput({ ...values('2026-10-23'), projectId: 'pr1' }).projectId).toBe('pr1');
     expect(toCreateAppointmentInput({ ...values('2026-10-23'), projectId: '' }).projectId).toBeNull();
+  });
+});
+
+describe('thay đổi chưa lưu của form lịch hẹn (U-F4-03)', () => {
+  const initial = values('2026-10-22');
+
+  it('giống giá trị ban đầu: không có thay đổi; sửa 1 trường hoặc chọn dự án tay (kể cả "Không chọn") thì có', () => {
+    expect(hasUnsavedChanges({ ...initial }, initial, false)).toBe(false);
+    expect(hasUnsavedChanges({ ...initial, location: 'Văn phòng' }, initial, false)).toBe(true);
+    expect(hasUnsavedChanges({ ...initial }, initial, true)).toBe(true);
   });
 });

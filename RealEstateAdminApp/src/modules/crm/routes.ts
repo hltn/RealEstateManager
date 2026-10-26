@@ -75,6 +75,12 @@ const readIdParam = (search: string, name: string): string | null => {
 /** Khách mang theo ở query của màn tạo lịch hẹn; `null` nếu không có hoặc sai định dạng. */
 export const parseCreateAppointmentCustomerId = (search: string): string | null => readIdParam(search, CREATE_APPOINTMENT_CUSTOMER_PARAM);
 
+/** Có tham số `customerId` nhưng sai định dạng (vd `?customerId=zzz`) -> màn tạo lịch phải báo thay vì bỏ qua im lặng. */
+export const hasInvalidCreateAppointmentCustomerId = (search: string): boolean => {
+  const value = new URLSearchParams(search).get(CREATE_APPOINTMENT_CUSTOMER_PARAM);
+  return value !== null && !isValidCustomerId(value);
+};
+
 /** Dự án mang theo ở query của màn tạo lịch hẹn; `null` nếu không có hoặc sai định dạng. */
 export const parseCreateAppointmentProjectId = (search: string): string | null => readIdParam(search, CREATE_APPOINTMENT_PROJECT_PARAM);
 

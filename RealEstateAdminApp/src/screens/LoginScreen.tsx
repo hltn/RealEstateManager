@@ -3,11 +3,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
+import { CRM_DEFAULT_PATH } from '@crm/routes';
 import Logo from '../images/logo/logo.png';
 import { AxiosError } from 'axios';
 import { login } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
+import { resolvePostLoginPath } from '../components/auth/postLoginPath';
 import { EnvelopeIcon as EnvelopeIconRaw, LockIcon as LockIconRaw, EyeIcon as EyeIconRaw, EyeCloseIcon as EyeCloseIconRaw } from '../icons';
 
 // Cast icon svgr sang typed FC để truyền className (type gốc của svgr client
@@ -43,35 +46,29 @@ const extractApiMessage = (body: ApiErrorBody | undefined, fallback: string): st
 };
 
 /**
- * Hiển thị toast thân thiện theo mã lỗi backend (mục 6.3 arch doc):
- * - 401: sai email/password → "Invalid email or password"
- * - 403: tài khoản bị khóa → "Account is blocked"
+ * Thông điệp thân thiện theo mã lỗi backend (mục 6.3 arch doc):
+ * - 401: sai email/password (cùng một nội dung cho email lạ, không lộ email nào tồn tại)
+ * - 403: tài khoản bị khóa
  * - 429: brute-force / quá rate limit
+ * - còn lại: message backend (vd. 400 validate) hoặc câu mặc định
  */
-const handleLoginError = (error: unknown): void => {
+const getLoginErrorMessage = (error: unknown): string => {
   const axiosError = error as AxiosError<ApiErrorBody>;
   const status = axiosError.response?.status;
-  const body = axiosError.response?.data;
-  const message = extractApiMessage(body, 'Đăng nhập thất bại, vui lòng thử lại');
-
-  if (status === 401) {
-    toast.error('Email hoặc mật khẩu không đúng.');
-  } else if (status === 403) {
-    toast.error('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.');
-  } else if (status === 429) {
-    toast.error('Bạn đã thử đăng nhập quá nhiều lần. Vui lòng thử lại sau ít phút.');
-  } else if (status === 400) {
-    toast.error(message);
-  } else {
-    toast.error(message);
-  }
+  if (status === 401) return 'Email hoặc mật khẩu không đúng.';
+  if (status === 403) return 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.';
+  if (status === 429) return 'Bạn đã thử đăng nhập quá nhiều lần. Vui lòng thử lại sau ít phút.';
+  return extractApiMessage(axiosError.response?.data, 'Đăng nhập thất bại, vui lòng thử lại');
 };
 
 const LoginScreen: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setAuth } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // Lỗi đăng nhập nằm lại trong form (role=alert) — toast tự tắt nên người đọc chậm sẽ bỏ lỡ.
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const {
     register,
@@ -84,13 +81,18 @@ const LoginScreen: React.FC = () => {
 
   const onSubmit = async (data: LoginFormData) => {
     setIsSubmitting(true);
+    setLoginError(null);
     try {
       const { accessToken, user } = await login(data.email, data.password);
       setAuth(accessToken, user);
       toast.success(`Xin chào, ${user.displayName}!`);
-      navigate('/', { replace: true });
+      // Quay lại trang đang định vào (do ProtectedRoute giữ trong state.from; chỉ nhận đường dẫn nội bộ), không có thì vào màn mặc định theo vai trò.
+      const returnTo = (location.state as { from?: unknown } | null)?.from;
+      navigate(resolvePostLoginPath({ returnTo, role: user.role, isCrmEnabled: CRM_FEATURE_FLAGS.isPrototypeEnabled, crmDefaultPath: CRM_DEFAULT_PATH }), { replace: true });
     } catch (error) {
-      handleLoginError(error);
+      const message = getLoginErrorMessage(error);
+      setLoginError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -180,6 +182,16 @@ const LoginScreen: React.FC = () => {
               <p className="mt-1 text-xs text-error-500">{errors.password.message}</p>
             )}
           </div>
+
+          {loginError && (
+            <div
+              role="alert"
+              data-testid="login-error"
+              className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-600 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400"
+            >
+              {loginError}
+            </div>
+          )}
 
           <button
             type="submit"

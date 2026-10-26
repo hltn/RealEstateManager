@@ -258,7 +258,8 @@ export interface CareLogDto {
 
 export interface AppointmentDto {
   id: string;
-  customer: { id: string; fullName: string; status: StatusRefDto };
+  /** `phoneMasked`: "0912 ••• 678"; "" = khách dữ liệu cũ thiếu SĐT; "••••" = khách ẩn danh. */
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRefDto };
   type: AppointmentType;
   title: string;
   startAt: string;
@@ -283,7 +284,7 @@ export interface DailyTaskDto {
   kind: DailyTaskKind;
   dueAt: string;
   group: DailyTaskGroup;
-  customer: { id: string; fullName: string; status: StatusRefDto; projects: RefDto[] };
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRefDto; projects: RefDto[] };
   /** Dự án của lịch hẹn (task APPOINTMENT có dự án); thiếu hoặc null = không có. */
   project?: RefDto | null;
   title: string;

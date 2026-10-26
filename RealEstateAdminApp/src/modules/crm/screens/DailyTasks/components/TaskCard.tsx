@@ -3,7 +3,7 @@
  * lần liên hệ gần nhất, gợi ý bước tiếp theo (CHỈ khi có dữ liệu thật) và nút hành động.
  * Việc "Bước tiếp theo" có nút "Đã xong"; việc "Lịch hẹn" có nút "Hoàn thành".
  */
-import { Building, CircleCheck, Clock, Lightbulb } from 'lucide-react';
+import { Building, CircleCheck, Clock, Lightbulb, Phone } from 'lucide-react';
 import { useState } from 'react';
 import { useCrmApi, type DailyTask } from '@crm/api';
 import { ContactActionGrid } from '@crm/components/ContactActionGrid';
@@ -84,6 +84,12 @@ export const TaskCard = ({ task }: TaskCardProps) => {
             </button>
             <CustomerStatusChip status={task.customer.status} size="small" />
           </div>
+          {task.customer.phoneMasked && (
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+              <Phone size={13} className="shrink-0" aria-hidden="true" />
+              <span className="truncate tabular-nums">{task.customer.phoneMasked}</span>
+            </p>
+          )}
           {projectSummary && (
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
               <Building size={13} className="shrink-0" aria-hidden="true" />

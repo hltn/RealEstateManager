@@ -18,7 +18,7 @@ vi.mock('@crm/api', async () => {
 
 const makeAppointment = (project: AppointmentView['project']): AppointmentView => ({
   id: 'a1',
-  customer: { id: 'c1', fullName: 'Nguyễn Văn An', status: { id: 's', code: 'NEW', label: 'Mới', tone: 'brand', listGroup: 'NOT_CONTACTED' } },
+  customer: { id: 'c1', fullName: 'Nguyễn Văn An', phoneMasked: '0912 ••• 678', status: { id: 's', code: 'NEW', label: 'Mới', tone: 'brand', listGroup: 'NOT_CONTACTED' } },
   type: 'SITE_VISIT',
   title: 'Xem căn tầng 15',
   startAt: '2026-10-26T02:00:00.000Z',
@@ -44,6 +44,21 @@ const renderCard = (ui: React.ReactElement) => {
     </MemoryRouter>,
   );
 };
+
+describe('thẻ lịch hẹn hiện SĐT đã che (G4)', () => {
+  it.each([
+    ['desktop', AppointmentCardDesktop],
+    ['mobile', AppointmentCardMobile],
+  ])('%s: hiện SĐT đã che; chuỗi rỗng (khách dữ liệu cũ) thì ẩn dòng SĐT', (_name, Card) => {
+    const { unmount } = renderCard(<Card appointment={makeAppointment(null)} />);
+    expect(screen.getByText('0912 ••• 678')).toBeInTheDocument();
+    unmount();
+
+    const noPhone = makeAppointment(null);
+    renderCard(<Card appointment={{ ...noPhone, customer: { ...noPhone.customer, phoneMasked: '' } }} />);
+    expect(screen.queryByText(/SĐT:/)).toBeNull();
+  });
+});
 
 describe('thẻ lịch hẹn hiện dự án của lịch (G7)', () => {
   it.each([

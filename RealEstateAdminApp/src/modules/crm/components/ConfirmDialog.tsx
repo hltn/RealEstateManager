@@ -13,6 +13,8 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   /** Tông nút xác nhận: nguy hiểm (đỏ) cho thao tác như chuyển sang "Bỏ". */
   tone?: 'primary' | 'danger';
+  /** `alertdialog` (mặc định) cho thao tác không hoàn tác; `dialog` cho hộp hỏi thông thường (vd bỏ thay đổi chưa lưu). */
+  role?: 'alertdialog' | 'dialog';
   onConfirm: () => void;
   onCancel: () => void;
   children?: ReactNode;
@@ -28,12 +30,13 @@ export const ConfirmDialog = ({
   confirmLabel,
   cancelLabel = 'Huỷ',
   tone = 'primary',
+  role = 'alertdialog',
   onConfirm,
   onCancel,
   children,
 }: ConfirmDialogProps) => (
   <Modal isOpen={isOpen} onClose={onCancel} showCloseButton={false} className="mx-4 max-w-md">
-    <div role="alertdialog" aria-modal="true" aria-labelledby="crm-confirm-title" className="space-y-4 p-6">
+    <div role={role} aria-modal="true" aria-labelledby="crm-confirm-title" className="space-y-4 p-6">
       <h3 id="crm-confirm-title" className="text-lg font-semibold text-gray-800 dark:text-white/90">
         {title}
       </h3>

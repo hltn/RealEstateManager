@@ -106,7 +106,7 @@ describe('toCareLog / toAppointment / toHistoryEntry', () => {
   it('lịch hẹn giữ version + canDelete; loại ký cọc là DEPOSIT_CONTRACT', () => {
     const appointment = toAppointment({
       id: 'p1',
-      customer: { id: 'c1', fullName: 'An', status: STATUS },
+      customer: { id: 'c1', fullName: 'An', phoneMasked: '0912 ••• 678', status: STATUS },
       type: 'DEPOSIT_CONTRACT',
       title: '',
       startAt: 't',
@@ -123,13 +123,13 @@ describe('toCareLog / toAppointment / toHistoryEntry', () => {
       canDelete: true,
     });
     expect(appointment).toMatchObject({ version: 4, canDelete: true, type: 'DEPOSIT_CONTRACT' });
-    expect(appointment.customer.phoneMasked).toBeUndefined();
+    expect(appointment.customer.phoneMasked).toBe('0912 ••• 678');
   });
 
   it('dự án của lịch (G7): response `label` thành tên hiển thị; null hoặc thiếu (lịch cũ) thành null', () => {
     const base = {
       id: 'p1',
-      customer: { id: 'c1', fullName: 'An', status: STATUS },
+      customer: { id: 'c1', fullName: 'An', phoneMasked: '0912 ••• 678', status: STATUS },
       type: 'SITE_VISIT' as const,
       title: '',
       startAt: 't',
@@ -156,7 +156,7 @@ describe('toCareLog / toAppointment / toHistoryEntry', () => {
       kind: 'APPOINTMENT' as const,
       dueAt: 't',
       group: 'TODAY' as const,
-      customer: { id: 'c1', fullName: 'An', status: STATUS, projects: [{ id: 'pa', label: 'A' }] },
+      customer: { id: 'c1', fullName: 'An', phoneMasked: '0912 ••• 678', status: STATUS, projects: [{ id: 'pa', label: 'A' }] },
       title: '',
       lastCareLog: null,
       suggestion: '',

@@ -5,11 +5,11 @@
  * - Tiêu đề màn danh sách thực tế là "Quản lý khách hàng" (doc ghi "Khách hàng"); nút thêm khách là "Thêm khách".
  * - Trùng SĐT khi bấm "Lưu khách hàng": CHẶN NGAY Ở GIAO DIỆN (toast "Chưa thể lưu khách hàng" + lỗi cạnh ô SĐT "Số điện thoại đã có trong hệ thống."),
  *   không đợi máy chủ; dữ liệu đã nhập còn nguyên.
- * - Tìm/lọc không ra kết quả: hiện "Chưa có khách." + nút "Thêm khách đầu tiên" (vì số đếm cũng theo bộ lọc), KHÔNG phải hướng dẫn
- *   "Thử đổi tab danh sách, từ khoá..." như doc. Câu hướng dẫn chỉ hiện khi đổi sang tab rỗng trong khi tổng khách > 0. Ghi bằng `knownBug` (test.fail).
+ * - Tìm/lọc không ra kết quả: hiện "Không có khách hàng phù hợp" + hướng dẫn + nút "Xóa bộ lọc"; "Chưa có khách." + "Thêm khách đầu tiên"
+ *   chỉ hiện khi hệ thống thật sự chưa có khách nào (không từ khoá/bộ lọc).
  * - F2-05 dùng hai trường cơ bản khác nhau (Email ở tab 1, Họ và tên ở tab 2) của màn "Chân dung khách hàng".
  */
-import { test, expect, knownBug } from '../fixtures';
+import { test, expect } from '../fixtures';
 import { formatPhone, uid, vnPhone } from '../lib/api';
 import { MOBILE_VIEWPORT, note, openCustomerDetail, searchCustomers, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
@@ -223,13 +223,14 @@ test.describe('f2-customers', () => {
     await expect(page.getByText('Thử đổi tab danh sách, từ khoá hoặc bộ lọc nâng cao.')).toBeVisible();
   });
 
-  test('F2-04 ghi nhận: tìm không khớp phải báo "không có kết quả phù hợp", không phải "Chưa có khách"', async ({ loginAs }, testInfo) => {
-    knownBug(testInfo, 'Sai hành vi', 'S-F2-04: tìm/lọc không ra kết quả hiện "Chưa có khách." + nút "Thêm khách đầu tiên" (số đếm list-counts cũng theo bộ lọc nên counts.ALL = 0), sai nghĩa; mong đợi "Không có khách hàng phù hợp" + "Thử đổi tab danh sách, từ khoá hoặc bộ lọc nâng cao." (Customers.desktop.tsx, nhánh `counts.ALL === 0`).');
+  test('F2-04 tìm không khớp báo "Không có khách hàng phù hợp" kèm nút xóa bộ lọc, không phải "Chưa có khách"', async ({ loginAs }) => {
     const page = await loginAs('staff1');
     await page.goto('/crm/customers');
     await searchCustomers(page, 'zzzkhongkhopbaogio');
     await expect(page.getByText('Không có khách hàng phù hợp')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Thêm khách đầu tiên' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Xóa bộ lọc' }).click();
+    await expect(page.getByText('Không có khách hàng phù hợp')).toHaveCount(0);
   });
 
   test('F2-05 sửa đồng thời hai tab: tab lưu sau nhận hướng dẫn 409, giữ nguyên dữ liệu đang gõ, lưu lại được mà không ghi đè tab trước', async ({ loginAs, api, backstage }) => {

@@ -1,10 +1,10 @@
 # Kế hoạch kiểm thử giao diện tự động (E2E) - Module CRM
 
-> Trạng thái (2026-10-26): **Đã triển khai.** Bộ E2E Playwright chạy được bằng `npm run e2e` (số liệu chạy thật ở mục 6; kịch bản chi tiết ở [`08`](08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md)). Sơ đồ vẽ bằng Giotto: [`diagrams/crm-e2e-flows.svg`](diagrams/crm-e2e-flows.svg) (các luồng) và [`diagrams/crm-e2e-rig.svg`](diagrams/crm-e2e-rig.svg) (bộ máy chạy). Bản có hoạt cảnh xem ở canvas Giotto `http://localhost:4321` (file gốc `~/.giotto/crm-e2e-*.json`).
+> Trạng thái (2026-10-26): **Đã triển khai.** Bộ E2E Playwright chạy được bằng `npm run e2e` (12 lỗi UX đã ghi nhận đều đã sửa, hiện 0 test đỏ có chủ đích; kết quả rà soát ở mục 6; kịch bản chi tiết ở [`08`](08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md)). Sơ đồ vẽ bằng Giotto: [`diagrams/crm-e2e-flows.svg`](diagrams/crm-e2e-flows.svg) (các luồng) và [`diagrams/crm-e2e-rig.svg`](diagrams/crm-e2e-rig.svg) (bộ máy chạy). Bản có hoạt cảnh xem ở canvas Giotto `http://localhost:4321` (file gốc `~/.giotto/crm-e2e-*.json`).
 
 ## 1. Mục tiêu
 
-Chứng minh Web Admin và backend nối với nhau đúng khi chạy trên **trình duyệt thật**, và **tìm chỗ còn thiếu** giữa giao diện, API và tài liệu. Không thay thế test hiện có (backend 1286, frontend 546); chỉ bù phần chúng không chạm tới: hợp đồng API giữa hai phía, guard route, cache sau đăng xuất, luồng nhiều màn hình, file thật lên MinIO.
+Chứng minh Web Admin và backend nối với nhau đúng khi chạy trên **trình duyệt thật**, và **tìm chỗ còn thiếu** giữa giao diện, API và tài liệu. Không thay thế test hiện có (backend 1289, frontend 573); chỉ bù phần chúng không chạm tới: hợp đồng API giữa hai phía, guard route, cache sau đăng xuất, luồng nhiều màn hình, file thật lên MinIO.
 
 ### 1.1. Tiêu chí UI/UX (áp dụng cho mọi luồng ở mục 3)
 
@@ -84,33 +84,35 @@ Mỗi bước kết thúc bằng qa-agent soi lại cả code lẫn test (bắt 
 
 ## 6. Kết quả rà soát chỗ thiếu
 
-Cập nhật 2026-10-26, từ lần chạy thật bộ E2E (`npm run e2e`): 66 test, trong đó **12 test "ghi nhận" dùng `test.fail()`**: chạy thật và được kỳ vọng ĐỎ, mỗi cái đo đúng một khuyết tật UX bên dưới. Khi sản phẩm được sửa, test tự báo "Expected to fail, but passed"; lúc đó gỡ dấu `knownBug(...)` khỏi test là xong, không cần viết lại. Đặt `E2E_SHOW_BUGS=1` để chạy các test này như bình thường và xem lỗi thật (dòng assertion làm đỏ). Mô tả ngắn từng lỗi nằm ở annotation loại `bug` của test.
+Cập nhật 2026-10-26 (sau đợt sửa lỗi UX): ban đầu bộ E2E có 12 test "ghi nhận" dùng `test.fail()` (đỏ có chủ đích), mỗi cái đo đúng một khuyết tật UX. **Cả 12 lỗi đã được sửa**, các test đã gỡ dấu `knownBug(...)` và chạy như test thường nên **hiện còn 0 test đỏ có chủ đích**: toàn bộ bộ E2E (67 test, gồm cả F4-09b mới thêm để khóa hành vi đổi giờ/hủy/hoàn tác) xanh thật. Hàm `knownBug` và cờ `E2E_SHOW_BUGS=1` vẫn nằm trong `e2e/fixtures.ts` để dùng cho khuyết tật mới phát hiện sau này; hiện không test nào dùng.
 
-**Nhóm 1 - Thiếu chức năng**
+**Nhóm 1 - Thiếu chức năng** (đã sửa)
 
-| ID | Test | Thiếu gì | Mức | File nguyên nhân |
-|---|---|---|---|---|
-| T-F3-04b | `f3-care-log` F3-04b | Mục nhật ký đã lưu không có nút gỡ ảnh (chỉ gỡ được ở khay trước khi lưu); backend đã có DELETE | TB | `CareTimeline.tsx` |
-| T-F4-09 | `f4-appointments` F4-09 | Thẻ lịch hẹn (desktop và mobile, cả 3 loại thẻ) không có Đổi giờ / Hủy lịch; API đã có dời giờ và hủy | TB | `AppointmentMoreMenu.tsx`, thẻ lịch hẹn |
-| G-UX-01 | `f4b` F4-02 ghi nhận | Chi tiết khách không có khối lịch hẹn sắp tới, đặt lịch xong quay về hồ sơ không thấy lịch vừa tạo | TB | màn chi tiết khách (thư mục `CustomerDetail`) |
-| T-G4 | `f7-gaps` F7-02 ghi nhận | Thẻ lịch hẹn và thẻ Việc hôm nay không có SĐT đã che để gọi/nhắn nhanh | TB | backend `appointment.mapper`, `daily-tasks.service` (không trả `phoneMasked`) |
+| ID | Test | Đã sửa thế nào | File |
+|---|---|---|---|
+| T-F3-04b | `f3-care-log` F3-04b | Mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ hiện khi `canEdit`) + hộp xác nhận "Xác nhận gỡ ảnh", gọi DELETE care-log-attachments rồi làm mới nhật ký + lịch sử | `CareTimeline.tsx`, `useRemoveCareLogPhoto.ts` |
+| T-F4-09 | `f4-appointments` F4-09 (+ F4-09b) | Menu "Thao tác khác" có ở mọi thẻ lịch hẹn (desktop thay nút "Xem hồ sơ" bằng menu, mục "Xem hồ sơ khách" vẫn còn) với "Đổi giờ" (dời `endAt` theo thời lượng, gửi `version`) và "Hủy lịch hẹn" (lý do tùy chọn, toast "Hoàn tác" 10 giây); lịch đã hủy không còn hiện ở danh sách | `AppointmentMoreMenu.tsx`, `RescheduleAppointmentDialog.tsx`, `useAppointmentActions.ts` |
+| G-UX-01 | `f4b` F4-02 | Chi tiết khách có khối "Lịch hẹn sắp tới" (lịch còn chờ, 60 ngày tới, tối đa 3) | `UpcomingAppointmentsSection.tsx` |
+| T-G4 | `f7-gaps` F7-02 | Backend trả `customer.phoneMasked` ở lịch hẹn và việc hôm nay (cùng quy ước che với danh sách khách, không bao giờ trả số đầy đủ); thẻ lịch hẹn và việc hôm nay hiện SĐT đã che | `customer.mapper.ts` (`toPhoneMasked`), `appointment.mapper.ts`, `daily-tasks.service.ts`, thẻ FE |
 
-**Nhóm 2 - Sai hành vi**
+**Nhóm 2 - Sai hành vi** (đã sửa)
 
-| ID | Test | Thực tế so với mong đợi | Mức | File nguyên nhân |
-|---|---|---|---|---|
-| U-F1-03b | `f1-auth` F1-03 ghi nhận | Gõ `/crm/customers` khi chưa đăng nhập rồi đăng nhập: rơi vào Việc hôm nay thay vì về trang đang định vào | TB | `ProtectedRoute` giữ `state.from` nhưng `LoginScreen` luôn `navigate("/")` |
-| S-F2-04 | `f2-customers` F2-04 ghi nhận | Tìm không ra hiện "Chưa có khách." + nút "Thêm khách đầu tiên" (sai nghĩa) thay vì "Không có khách hàng phù hợp" | Thấp | `Customers.desktop.tsx` (nhánh `counts.ALL === 0`) |
-| S-F4-01b | `f4b` F4-01 ghi nhận | `?customerId=zzz` (sai định dạng) bị bỏ qua im lặng trong khi id đúng định dạng nhưng ngoài phạm vi thì có toast: không nhất quán | Thấp | form tạo lịch hẹn (đọc `customerId` từ URL) |
+| ID | Test | Đã sửa thế nào | File |
+|---|---|---|---|
+| U-F1-03b | `f1-auth` F1-03b | Đăng nhập xong quay lại trang đang định vào; chỉ nhận đường dẫn nội bộ an toàn (chống open redirect: chặn `//`, `/\`, ký tự điều khiển, `/login`), không có thì vào màn mặc định theo vai trò | `postLoginPath.ts`, `LoginScreen.tsx`, `ProtectedRoute.tsx` |
+| S-F2-04 | `f2-customers` F2-04 | Tìm không ra hiện "Không có khách hàng phù hợp" + hướng dẫn + nút "Xóa bộ lọc"; "Chưa có khách." chỉ khi hệ thống không có khách và không bộ lọc | `CustomerListEmptyState.tsx` |
+| S-F4-01b | `f4b` F4-01 | `?customerId=zzz` cũng báo toast "Chưa chọn sẵn được khách hàng" như id ngoài phạm vi | `useCreateAppointmentForm.ts`, `routes.ts` |
 
-**Nhóm 3 - Chưa thân thiện**
+**Nhóm 3 - Chưa thân thiện** (đã sửa)
 
-| ID | Test | Vấn đề | Mức | File nguyên nhân |
-|---|---|---|---|---|
-| U-F1-01b | `f1-auth` F1-01 ghi nhận | ADMIN đăng nhập xong ở "/" (Raw Articles của hệ thống tin tức), phải mở menu 2 bước tới Việc hôm nay; STAFF/MANAGER được chuyển thẳng | Thấp | điều hướng sau đăng nhập |
-| U-F1-02 | `f1-auth` F1-02 ghi nhận | Lỗi đăng nhập chỉ báo bằng toast tự tắt, form không có vùng lỗi cố định `role=alert` | Thấp | `LoginScreen.tsx` |
-| U-F1-03 | `f1-auth` F1-03 ghi nhận | Gõ URL ngoài quyền bị chuyển về Việc hôm nay không kèm giải thích | Thấp | `CrmLayout.tsx` (`<Navigate>`) |
-| U-F4-03 | `f4b` F4-03 ghi nhận | "Hủy bỏ" bỏ ngay dữ liệu đã gõ, không hỏi xác nhận | Thấp | form tạo lịch hẹn |
-| U-A11Y-01 | `f4b` U-A11Y-01 | Ô "Ngày diễn ra" (flatpickr) không gắn nhãn truy cập được, trình đọc màn hình không đọc nhãn | TB | `DatePicker.tsx` không nhận `id` |
+| ID | Test | Đã sửa thế nào | File |
+|---|---|---|---|
+| U-F1-01b | `f1-auth` F1-01 | ADMIN đăng nhập xong vào thẳng `/crm/today` (EDITOR hoặc CRM tắt vẫn ở "/") | `postLoginPath.ts` |
+| U-F1-02 | `f1-auth` F1-02 | Lỗi đăng nhập hiện cố định trong form (`role=alert`), ngoài toast | `LoginScreen.tsx` |
+| U-F1-03 | `f1-auth` F1-03 | Bị chặn quyền thì chuyển về Việc hôm nay kèm toast "Bạn không có quyền vào trang này." | `RedirectWithNotice.tsx`, `CrmLayout.tsx`, `RoleGuard.tsx` |
+| U-F4-03 | `f4b` F4-03 | "Hủy bỏ" khi form có dữ liệu gõ dở thì hỏi xác nhận ("Bỏ thay đổi" / "Tiếp tục nhập"); form còn nguyên thì rời ngay | `DiscardChangesDialog.tsx`, `createAppointmentForm.ts` (`hasUnsavedChanges`) |
+| U-A11Y-01 | `f4b` U-A11Y-01 | Ô "Ngày diễn ra" gắn nhãn truy cập được (`DatePicker` nhận `id`) | `DatePicker.tsx` |
 
-Còn lại đã **xanh và khóa hồi quy** G1, G2, G5, G6, G7 (F3-02, F4-01, F4-02, F4-03, F4-05, F4-06). Quan sát UX dạng số liệu (số thao tác, huy hiệu bộ lọc, nút xóa nhanh bộ lọc, lọc thẻ chỉ nằm trong "Bộ lọc nâng cao") vẫn được ghi ở annotation `TT`/`PH` của test tương ứng, không làm đỏ test.
+Lưu ý hành vi mới cần nhớ khi viết test về sau: `fetchAppointments` (và hook `useAppointments`) mặc định BỎ lịch ĐÃ HỦY; muốn xem riêng thì truyền `status: 'CANCELED'`. Hiện chưa có màn nào hiển thị lịch đã hủy.
+
+Còn lại xanh và khóa hồi quy G1, G2, G5, G6, G7 (F3-02, F4-01, F4-02, F4-03, F4-05, F4-06). Quan sát UX dạng số liệu (số thao tác, huy hiệu bộ lọc, nút xóa nhanh bộ lọc, lọc thẻ chỉ nằm trong "Bộ lọc nâng cao") vẫn được ghi ở annotation `TT`/`PH` của test tương ứng, không làm đỏ test.

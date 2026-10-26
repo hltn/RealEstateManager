@@ -80,7 +80,7 @@ Màn đăng nhập: `LoginScreen` (nhãn "Email", ô mật khẩu có nút "Hi�
 ### F1-03 Chặn truy cập trực tiếp bằng URL theo vai trò (P0, bảo mật)
 - **Mục tiêu:** ẩn menu chưa đủ, gõ URL cũng phải bị chặn.
 - **Bước:** đăng nhập `staff1` -> gõ lần lượt `/crm/reports`, `/crm/projects`, `/crm/settings` vào thanh địa chỉ.
-- **Kết quả:** mỗi lần được chuyển về màn được phép hoặc thấy thông báo "Bạn không có quyền thực hiện thao tác này."; **không** thấy nội dung Báo cáo/Dự án/Cài đặt thoáng qua. **[Chưa rõ]** hành vi chặn thực tế (chuyển hướng hay màn lỗi) vì `crmRoute.tsx` chưa đọc kỹ; ghi nhận hành vi thật, sai khi hiện nội dung hoặc màn trắng. Cùng bước với chưa đăng nhập: bị đưa về màn đăng nhập.
+- **Kết quả:** mỗi lần được chuyển về màn được phép hoặc thấy thông báo "Bạn không có quyền thực hiện thao tác này."; **không** thấy nội dung Báo cáo/Dự án/Cài đặt thoáng qua. Hành vi chặn thực tế (đã xác định, 2026-10-26): chuyển hướng về `/crm/today` kèm toast "Bạn không có quyền vào trang này." (`RedirectWithNotice`); sai khi hiện nội dung hoặc màn trắng. Cùng bước với chưa đăng nhập: bị đưa về màn đăng nhập.
 - **UX kiểm kèm:** RG (có hướng dẫn thay vì trắng), ĐH.
 
 ### F1-04 Đăng xuất xóa sạch dữ liệu phiên (P0)
@@ -158,7 +158,7 @@ Form: thẻ "Ghi chú chăm sóc" (`form` có nhãn "Thêm nhật ký chăm sóc
 
 ### F3-04 Gỡ ảnh (P1)
 - **Phần a (trước khi lưu):** chọn 2 ảnh -> bấm nút "Xóa ảnh 1" -> khay còn 1 ảnh, đếm "Đã chọn 1/5 ảnh"; lưu thì chỉ ảnh còn lại được lên.
-- **Phần b (sau khi lưu):** **[Chưa rõ]** trong code đã đọc chỉ thấy nút "Xóa ảnh N" ở khay trước lưu; lịch sử có loại "Gỡ ảnh đính kèm" (`HistoryList.tsx:37`) nên backend hỗ trợ gỡ. Kịch bản: tìm điều khiển gỡ ảnh ở mục nhật ký đã lưu; **nếu không có** ghi vào nhóm *Thiếu chức năng* (API có, UI không); nếu có thì gỡ rồi kiểm ảnh biến mất.
+- **Phần b (sau khi lưu):** Mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ khi `canEdit`: tác giả trong 24 giờ, Quản trị, Quản lý trong phạm vi) + hộp xác nhận "Xác nhận gỡ ảnh"; nút "Xóa ảnh N" ở khay trước khi lưu là điều khiển khác (F3-04a). Kịch bản: gỡ ảnh ở mục đã lưu rồi kiểm ảnh biến mất (trước 2026-10-26 chưa có nút này, đã ghi nhóm *Thiếu chức năng* rồi sửa). Lịch sử có loại "Gỡ ảnh đính kèm" (`HistoryList.tsx:37`).
 - **Hậu trường (nếu có):** `crm_attachments` đánh dấu đã gỡ (không xóa cứng), lịch sử có "Gỡ ảnh đính kèm".
 - **UX kiểm kèm:** CN, PH (hỏi xác nhận trước khi gỡ?).
 
@@ -191,7 +191,7 @@ Ba hồi quy nặng nhất (G5, G6, G7, G2) gom vào `f4b`, chạy trước tron
 
 ### F4-03 Hủy bỏ về chi tiết khách (P0, hồi quy G6)
 - **Bước:** chi tiết khách -> "Đặt lịch hẹn" -> gõ vài trường -> bấm "Hủy bỏ" (sau đó lặp với nút quay lại ở đầu trang `onBack`). Ca phụ: mở thẳng URL `/crm/appointments/new?customerId=<id>` trong tab mới (không có lịch sử) rồi "Hủy bỏ".
-- **Kết quả:** về chi tiết khách đó, một lần Back của trình duyệt không bị lặp mục; ca mở thẳng URL thì chuyển về chi tiết khách (không kẹt hay trắng); không hiện hộp xác nhận mất dữ liệu **[Chưa rõ]** nếu đã gõ, ghi nhận hành vi thực tế (đề xuất ghi vào "Chưa thân thiện" nếu bỏ dữ liệu không hỏi).
+- **Kết quả:** về chi tiết khách đó, một lần Back của trình duyệt không bị lặp mục; ca mở thẳng URL thì chuyển về chi tiết khách (không kẹt hay trắng); form đã gõ dở thì hiện hộp xác nhận "Bỏ lịch hẹn đang nhập?" ("Bỏ thay đổi" / "Tiếp tục nhập"), form còn nguyên thì rời ngay (đã sửa U-F4-03).
 - **UX kiểm kèm:** ĐH, TT.
 
 ### F4-04 Đặt lịch từ màn Lịch hẹn: chọn khách tự do, lưu về danh sách (P0)
@@ -225,11 +225,11 @@ Ba hồi quy nặng nhất (G5, G6, G7, G2) gom vào `f4b`, chạy trước tron
 - **UX kiểm kèm:** PH, ĐH, CN.
 
 ### F4-09 Đổi giờ / hủy lịch hẹn: rà thiếu chức năng (P1)
-> **Spec (2026-10-26):** đã xác định: KHÔNG có lối đổi giờ/hủy ở cả 3 loại thẻ (desktop và mobile). Test `f4-appointments` F4-09 dùng `test.fail` (khẳng định mềm cho từng viewport và từng loại thẻ); bản "rà soát chỉ ghi annotation" đã bỏ vì trùng.
+> **Spec (2026-10-26):** ban đầu KHÔNG có lối đổi giờ/hủy ở cả 3 loại thẻ (desktop và mobile) nên F4-09 từng là `test.fail`; nay đã có "Đổi giờ" và "Hủy lịch hẹn" ở menu "Thao tác khác" (có ở mọi thẻ, cả desktop lẫn mobile) và F4-09 chạy như test thường (khẳng định mềm cho từng viewport và từng loại thẻ). F4-09b (mới) kiểm hành vi thật: đổi giờ lưu đúng `startAt` ở Mongo và thẻ rời khỏi hôm nay; hủy kèm lý do thì thẻ biến mất, `status=CANCELED`, `outcome` = lý do; bấm "Hoàn tác" trên toast thì lịch về `SCHEDULED`. Lịch đã hủy không còn hiện ở danh sách (`useAppointments` bỏ mặc định).
 
 - **Mục tiêu:** API có `updateAppointmentStatus(... 'CANCELED')` nhưng trong code đã đọc, menu thẻ lịch hẹn chỉ có "Xem hồ sơ khách", "Ghi chú nhanh", "Nhắn Zalo", "Đánh dấu hoàn thành" và **không thấy** thao tác Đổi giờ hay Hủy lịch.
 - **Bước:** mở từng thẻ lịch hẹn (desktop và mobile), mở "Thao tác khác", tìm mọi lối để đổi giờ hoặc hủy.
-- **Kết quả mong đợi:** nếu không có, **ghi nhóm "Thiếu chức năng"** (người dùng lỡ đặt sai giờ phải làm gì?). Nếu có, kiểm đổi giờ giữ khách+dự án, hủy yêu cầu xác nhận, thẻ phản ánh ngay. **[Chưa rõ]** đây là thiếu thật hay thao tác nằm ở màn khác (chưa đọc `useAppointmentActions.ts` đến cùng).
+- **Kết quả mong đợi:** có lối đổi giờ và hủy ở mọi thẻ; đổi giờ giữ khách+dự án và dời giờ kết thúc theo thời lượng, hủy yêu cầu xác nhận (lý do tùy chọn) và có "Hoàn tác", thẻ phản ánh ngay. (Từng là thiếu thật, đã sửa 2026-10-26.)
 - **UX kiểm kèm:** CN.
 
 ---
@@ -289,9 +289,9 @@ Màn: chi tiết khách có nút "Sửa chân dung khách hàng" / "Sửa nhu c�
 | Hoàn thành việc "Bước tiếp theo" | Có nút "Ghi nhật ký" (đã có); chưa có endpoint hoàn thành FOLLOW_UP | G4 |
 | SĐT ở lịch hẹn và việc hôm nay | Hiện (che) | G4 |
 | Đổi tình trạng khách | Có `StatusDropdown` ("Tình trạng: <x>. Bấm để đổi") | kiểm đổi lưu thật và có lịch sử |
-| Sửa/xóa lịch hẹn từ chi tiết khách | **[Chưa rõ]** | ghi nhận |
+| Sửa/xóa lịch hẹn từ chi tiết khách | Chỉ đọc: khối "Lịch hẹn sắp tới"; đổi giờ/hủy làm ở màn Lịch hẹn | ghi nhận |
 
-- **Spec (2026-10-26):** bảng rà thiếu không còn là một test "luôn xanh": từng hạng mục thiếu đã thành test `test.fail` riêng ở spec của luồng (gỡ ảnh F3-04b, đổi giờ/hủy F4-09, lịch hẹn ở chi tiết khách G-UX-01, nhãn ô ngày U-A11Y-01, SĐT ở lịch hẹn/việc hôm nay T-G4); hạng mục "nút tải ảnh" và "Ghi nhật ký cho việc Bước tiếp theo" đã được F3-01/F3-02 phủ. F7-02 còn lại đúng một test: đổi tình trạng khách ở `StatusDropdown`, kiểm lưu thật và có dòng lịch sử `STATUS`.
+- **Spec (2026-10-26):** bảng rà thiếu không còn là một test "luôn xanh": từng hạng mục thiếu đã thành test riêng ở spec của luồng (ban đầu là `test.fail`, nay đã sửa và chạy xanh: gỡ ảnh F3-04b, đổi giờ/hủy F4-09, lịch hẹn ở chi tiết khách G-UX-01, nhãn ô ngày U-A11Y-01, SĐT ở lịch hẹn/việc hôm nay T-G4); hạng mục "nút tải ảnh" và "Ghi nhật ký cho việc Bước tiếp theo" đã được F3-01/F3-02 phủ. F7-02 còn lại đúng một test: đổi tình trạng khách ở `StatusDropdown`, kiểm lưu thật và có dòng lịch sử `STATUS`.
 
 ---
 
@@ -371,21 +371,21 @@ Kiểm tra phủ: mỗi cột có ít nhất 3 kịch bản chính (CN: 10, NC: 
 
 ### 7.3. Số test thực tế (2026-10-26)
 
-| Spec | Kịch bản | Số test | Trong đó `test.fail` (khuyết tật UX đã biết, kỳ vọng đỏ) |
+| Spec | Kịch bản | Số test | Trong đó `test.fail` (khuyết tật UX đã biết, kỳ vọng đỏ; nay đều 0 vì 12 lỗi đã sửa) |
 |---|---|---|---|
-| `f4b-appointment-context` | F4-01, 02, 03, 05, 06 | 13 | 4 (G-UX-01, id sai định dạng, U-F4-03, U-A11Y-01) |
-| `f3-care-log` | F3-01..04 | 6 | 1 (T-F3-04b) |
-| `f1-auth` | F1-01..04 | 12 (F1-01 chạy 3 vai trò) | 4 (ADMIN vào màn chính, U-F1-02, U-F1-03, U-F1-03b) |
-| `f2-customers` | F2-01..05 | 8 | 1 (S-F2-04) |
+| `f4b-appointment-context` | F4-01, 02, 03, 05, 06 | 13 | 0 (trước đây 4: G-UX-01, id sai định dạng, U-F4-03, U-A11Y-01) |
+| `f3-care-log` | F3-01..04 | 6 | 0 (trước đây 1: T-F3-04b) |
+| `f1-auth` | F1-01..04 | 12 (F1-01 chạy 3 vai trò) | 0 (trước đây 4: ADMIN vào màn chính, U-F1-02, U-F1-03, U-F1-03b) |
+| `f2-customers` | F2-01..05 | 8 | 0 (trước đây 1: S-F2-04) |
 | `f6-team-access` | F6-01..03 | 4 | 0 |
-| `f4-appointments` | F4-04, 07, 08, 09 | 8 | 1 (T-F4-09) |
+| `f4-appointments` | F4-04, 07, 08, 09 | 9 (thêm F4-09b) | 0 (trước đây 1: T-F4-09) |
 | `f5-persona` | F5-01, 02 | 4 | 0 |
-| `f7-gaps` | F7-01, 02 | 4 | 1 (T-G4) |
+| `f7-gaps` | F7-01, 02 | 4 | 0 (trước đây 1: T-G4) |
 | `smoke` | hạ tầng E2E | 2 | 0 |
 | `vn-time` | hàm tính giờ hẹn theo giờ VN | 5 | 0 |
-| **Tổng** | **29 kịch bản** | **66** | **12** |
+| **Tổng** | **29 kịch bản** | **67** | **0** (trước đây 12) |
 
-Còn lại **54 test xanh bình thường**. 12 test `test.fail` chạy thật và phải ĐỎ (Playwright báo là "passed" vì kỳ vọng đỏ); khi một khuyết tật được sửa, test đó tự báo "Expected to fail, but passed" để gỡ dấu `knownBug` khỏi test. Đặt `E2E_SHOW_BUGS=1` để chạy các test này như test thường và xem dòng assertion làm đỏ. Thời gian một lượt đầy đủ khoảng 11 phút (tuần tự, `workers: 1`; riêng test chuông thông báo F4-08 chờ job nhắc việc 1 phút/lần nên mất ~3 phút).
+Cả **67 test xanh bình thường**; không còn test `test.fail` nào (12 test từng đỏ có chủ đích đã được gỡ `knownBug` sau khi lỗi UX được sửa, xem mục 6 của tài liệu 07). Hàm `knownBug` và cờ `E2E_SHOW_BUGS=1` vẫn có trong `e2e/fixtures.ts` để ghi nhận khuyết tật mới: test dùng `knownBug` chạy thật, kỳ vọng ĐỎ (Playwright báo "passed"), khi lỗi được sửa test tự báo "Expected to fail, but passed" để gỡ dấu. Thời gian một lượt đầy đủ khoảng 11 phút (tuần tự, `workers: 1`; riêng test chuông thông báo F4-08 chờ job nhắc việc 1 phút/lần nên mất ~3 phút).
 
 Giờ hẹn trong spec KHÔNG gắn cứng: `tomorrowSlot()` (ngày mai 09:00) cho chỗ không cần "hôm nay", `todaySlot()` (bây giờ + 5 phút, chờ qua nửa đêm nếu còn dưới 8 phút) cho chỗ cần thấy lịch trong ngày; hàm tính giờ có test đơn vị ở các biên 23:56 và 00:03 (`vn-time.spec.ts`).
 
@@ -417,8 +417,8 @@ Quy ước: mức **Cao** = chặn việc hoặc rò quyền; **TB** = làm sai 
 
 ## 8. Chưa kiểm chứng / rủi ro
 
-1. **Đã chạy thật (2026-10-26).** Nhãn, thông báo ở trên đã được so lại với giao diện chạy thật khi viết spec; chỗ lệch với tài liệu này được ghi ở mục "Quyết định [Chưa rõ]" đầu mỗi file spec. Kết quả chạy toàn bộ bộ E2E (stack cô lập, 66 test): xem bảng kết quả bên dưới.
-2. **Các chỗ từng phải suy đoán** (đường dẫn đăng nhập `/login`, trang đích sau đăng nhập, nhãn nút, cách chặn route theo vai trò là chuyển hướng im lặng về `/crm/today`, chưa có điều khiển gỡ ảnh sau khi lưu / đổi giờ / hủy lịch, lọc theo thẻ chỉ nằm trong "Bộ lọc nâng cao", chuông thông báo cần nhắc đã quá hạn) **đã được xác định bằng chạy thật**; các điểm không đạt mong đợi là 12 test `test.fail` ở mục 7.3 và bảng ở tài liệu 07 mục 6.
+1. **Đã chạy thật (2026-10-26).** Nhãn, thông báo ở trên đã được so lại với giao diện chạy thật khi viết spec; chỗ lệch với tài liệu này được ghi ở mục "Quyết định [Chưa rõ]" đầu mỗi file spec. Kết quả chạy toàn bộ bộ E2E (stack cô lập): xem bảng kết quả bên dưới.
+2. **Các chỗ từng phải suy đoán** (đường dẫn đăng nhập `/login`, trang đích sau đăng nhập, nhãn nút, cách chặn route theo vai trò là chuyển hướng về `/crm/today` (nay kèm toast giải thích), từng chưa có điều khiển gỡ ảnh sau khi lưu / đổi giờ / hủy lịch (nay đã có), lọc theo thẻ chỉ nằm trong "Bộ lọc nâng cao", chuông thông báo cần nhắc đã quá hạn) **đã được xác định bằng chạy thật**; các điểm từng không đạt mong đợi là 12 lỗi UX (từng là 12 test `test.fail`), nay đã sửa hết; chi tiết ở bảng tài liệu 07 mục 6.
 3. **Mật khẩu test cố định (đã thống nhất):** tài liệu 07 mục 2 đã ghi `Test@12345678` cố định cho stack E2E. Seed không bao giờ chạy ngoài stack cô lập: `assertIsolated()` từ chối nếu Mongo không phải máy chủ tạm, Redis khác db 15, cổng backend khác 3100 hoặc bucket không bắt đầu bằng `e2e-`.
 4. **Hai cờ dữ liệu mẫu:** stack E2E ép `VITE_CRM_MOCK_REPORTS=false` và `VITE_CRM_MOCK_IMPORT_EXPORT=false`; `smoke.spec.ts` kiểm cờ thật mà Vite nhận, F7-01 kiểm giao diện, và ca đối chứng bật cờ (chặn module `featureFlags.ts` trong trình duyệt của test, đổi đúng hai biến `VITE_CRM_MOCK_*`, đỏ ngay nếu không đổi được) chứng minh selector không kiểm hờ.
 5. **F4-06 phụ thuộc thao tác nền** (ngừng hoạt động dự án giữa chừng bằng API): nếu dự án dùng chung có thể làm nhiễu spec chạy song song; bắt buộc dùng dự án riêng cho spec này.
@@ -434,5 +434,7 @@ Quy ước: mức **Cao** = chặn việc hoặc rò quyền; **TB** = làm sai 
 |---|---|---|---|
 | 1 | `E2E_SHOW_BUGS=1` (12 test `test.fail` chạy như test thường) | 54 xanh + 12 đỏ, mỗi test đỏ đúng ở dòng assertion nói về lỗi UX của nó | ~10 phút |
 | 2 - 5 | `npm run e2e` đầy đủ, 4 lần liên tiếp | mỗi lần **66/66 "passed"** (54 xanh + 12 `test.fail` đỏ đúng kỳ vọng), không chập chờn | 10,2 - 10,7 phút |
+| 6 | `npm run e2e` đầy đủ, SAU khi sửa 12 lỗi UX (đã gỡ hết `knownBug`) | **66/66 xanh thật**, 0 test đỏ có chủ đích, 0 "xanh bất ngờ" | 10,9 phút |
+| 7 | `npm run e2e` đầy đủ, sau khi thêm F4-09b (đổi giờ/hủy/hoàn tác) | **67/67 xanh thật**, 0 test `test.fail`, không chập chờn | 9,8 phút |
 
-Sau chạy: cổng 3100/5183 trống, Redis db 15 rỗng, không còn bucket `e2e-*`, số document DB dev `mongodb` không đổi.
+Sau chạy: cổng 3100/5183 trống, Redis db 15 rỗng, không còn bucket `e2e-*`, số document DB dev `mongodb` không đổi. (Lần 6 và 7: cổng 3100/5183 trống, Redis db 15 rỗng; DB dev `mongodb` không đối chiếu được vì container đang tắt, nhưng E2E chỉ dùng MongoDB tạm trong bộ nhớ.)

@@ -8,6 +8,7 @@ import { FormPageHeader } from '@crm/components/form/FormPageHeader';
 import { CHIP_SMALL_CLASS } from '@crm/lib/uiClasses';
 import { getFieldId } from './createAppointmentForm';
 import { AppointmentTypePicker } from './components/AppointmentTypePicker';
+import { DiscardChangesDialog } from './components/DiscardChangesDialog';
 import {
   AssigneeField,
   CustomerFields,
@@ -83,6 +84,7 @@ export const CreateAppointmentMobile = () => {
         onCancel={cancel}
         mobileNote={pendingRequiredCount > 0 ? `Còn ${pendingRequiredCount} trường bắt buộc cần kiểm tra` : undefined}
       />
+      <DiscardChangesDialog form={form} />
     </form>
   );
 };

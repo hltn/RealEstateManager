@@ -6,12 +6,11 @@
  * - Nút ở chi tiết khách (desktop) là nút icon `aria-label="Đặt lịch hẹn"`, mobile là "Hẹn nhắc".
  * - Nhãn loại lịch là "Xem nhà mẫu / sa bàn" (doc ghi "Xem nhà / sa bàn").
  * - Desktop KHÔNG có nút "quay lại" ở đầu form: đường quay lại là breadcrumb (tên khách) và nút "Hủy bỏ"; nút "Quay lại" chỉ có ở mobile.
- * - `?customerId=zzz` (sai định dạng) bị bỏ qua: form trống, không khóa. Test happy path CHỈ khẳng định phần an toàn đó (không khóa, không lộ);
- *   việc nhánh này im lặng trong khi id đúng định dạng nhưng ngoài phạm vi thì có toast là KHÔNG nhất quán nên không bị khóa thành xanh:
- *   nằm ở test "ghi nhận" dùng `knownBug` (test.fail: chạy thật, kỳ vọng ĐỎ; xem fixtures.ts).
+ * - `?customerId=zzz` (sai định dạng): toast "Chưa chọn sẵn được khách hàng" như id ngoài phạm vi, form trống, không khóa.
+ * - "Hủy bỏ" khi form có dữ liệu gõ dở: hộp xác nhận (role dialog) "Bỏ thay đổi" / "Tiếp tục nhập"; form còn nguyên thì rời ngay.
  * - Giờ hẹn tính từ "bây giờ" (lib/api.ts): `todaySlot` chỉ ở chỗ cần thấy lịch trong ngày hôm nay, `tomorrowSlot` ở mọi chỗ khác.
  */
-import { test, expect, knownBug } from '../fixtures';
+import { test, expect } from '../fixtures';
 import { tomorrowSlot } from '../lib/api';
 import { MOBILE_VIEWPORT, note, openCustomerDetail, setSchedule, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
@@ -109,7 +108,7 @@ test.describe('f4b-appointment-context', () => {
     const other = await api.createCustomer({ role: 'staff2', label: 'Khách-Đội2' });
     const page = await loginAs('staff1');
 
-    // Sai định dạng: form về trạng thái trống, không khóa (có toast hay không: xem test "ghi nhận" bên dưới).
+    // Sai định dạng: form về trạng thái trống, không khóa (toast: xem test ngay bên dưới).
     await page.goto('/crm/appointments/new?customerId=zzz');
     await expect(page.getByRole('heading', { name: 'Tạo lịch hẹn mới' })).toBeVisible();
     await expect(customerCard(page)).toHaveCount(0); // không có thẻ khóa
@@ -127,8 +126,7 @@ test.describe('f4b-appointment-context', () => {
     await expect(page.locator('body')).not.toContainText(other.phone);
   });
 
-  test('F4-01 ghi nhận: id khách sai định dạng cũng phải báo như id ngoài phạm vi (không im lặng)', async ({ loginAs }, testInfo) => {
-    knownBug(testInfo, 'Sai hành vi', '?customerId=zzz (sai định dạng) bị bỏ qua im lặng trong khi id đúng định dạng nhưng ngoài phạm vi thì có toast "Chưa chọn sẵn được khách hàng": không nhất quán, người dùng không biết khách không được mang sang.');
+  test('F4-01 id khách sai định dạng cũng báo như id ngoài phạm vi (không im lặng) rồi mở form trống', async ({ loginAs }) => {
     const page = await loginAs('staff1');
     await page.goto('/crm/appointments/new?customerId=zzz');
     await expect(page.getByRole('heading', { name: 'Tạo lịch hẹn mới' })).toBeVisible();
@@ -206,8 +204,7 @@ test.describe('f4b-appointment-context', () => {
     note(testInfo, 'NC', 'Dự án A xuất hiện nhất quán ở Mongo, Việc hôm nay, Lịch hẹn.');
   });
 
-  test('F4-02 ghi nhận: chi tiết khách phải cho thấy lịch hẹn vừa đặt (xác nhận tại nơi người dùng quay về)', async ({ loginAs, api }, testInfo) => {
-    knownBug(testInfo, 'Thiếu chức năng', 'G-UX-01: chi tiết khách không có khối "Lịch hẹn sắp tới"; sau khi đặt lịch người dùng quay về hồ sơ nhưng không thấy lịch vừa tạo ở đó (chỉ có ở danh sách khách cột "Hẹn" và màn Lịch hẹn).');
+  test('F4-02 chi tiết khách cho thấy lịch hẹn sắp tới vừa đặt (xác nhận tại nơi người dùng quay về)', async ({ loginAs, api }) => {
     const slot = tomorrowSlot();
     const customer = await api.createCustomer();
     await api.createAppointment({ customerId: customer.id, slot });
@@ -262,6 +259,7 @@ test.describe('f4b-appointment-context', () => {
     await expect(customerCard(page)).toContainText(customer.fullName);
     await locationInput(page).fill('Dữ liệu gõ dở');
     await page.getByRole('button', { name: 'Hủy bỏ' }).click();
+    await page.getByRole('button', { name: 'Bỏ thay đổi' }).click(); // form có dữ liệu gõ dở: phải xác nhận bỏ
     await expect(page).toHaveURL(new RegExp(`/crm/customers/${customer.id}$`));
     await page.goBack();
     await expect(page).toHaveURL(/\/crm\/customers$/);
@@ -280,8 +278,7 @@ test.describe('f4b-appointment-context', () => {
     await expect(fresh.getByRole('heading', { name: customer.fullName }).first()).toBeVisible();
   });
 
-  test('F4-03 ghi nhận: gõ dở rồi bấm "Hủy bỏ" phải hỏi xác nhận trước khi bỏ dữ liệu', async ({ loginAs, api }, testInfo) => {
-    knownBug(testInfo, 'Chưa thân thiện', 'U-F4-03: "Hủy bỏ" bỏ ngay dữ liệu đã gõ, không hộp xác nhận (form không có bản nháp).');
+  test('F4-03 gõ dở rồi bấm "Hủy bỏ" thì hỏi xác nhận trước khi bỏ dữ liệu; "Tiếp tục nhập" ở lại form', async ({ loginAs, api }) => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await page.goto(`/crm/appointments/new?customerId=${customer.id}`);
@@ -390,8 +387,7 @@ test.describe('f4b-appointment-context', () => {
     expect(rows[0].projectId).toBeNull();
   });
 
-  test('U-A11Y-01 ô "Ngày diễn ra" phải có nhãn truy cập được', async ({ loginAs, api }, testInfo) => {
-    knownBug(testInfo, 'Chưa thân thiện', 'U-A11Y-01: DatePicker (flatpickr) không nhận id nên <label for="appointment-date"> không gắn vào ô nhập; getByLabel("Ngày diễn ra") không tìm thấy, trình đọc màn hình không đọc nhãn.');
+  test('U-A11Y-01 ô "Ngày diễn ra" có nhãn truy cập được', async ({ loginAs, api }) => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await page.goto(`/crm/appointments/new?customerId=${customer.id}`);

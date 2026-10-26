@@ -153,7 +153,7 @@ export const toCareLog = (dto: CareLogDto, primaryUserId: string | null): CareLo
 
 export const toAppointment = (dto: AppointmentDto): AppointmentView => ({
   id: dto.id,
-  customer: { id: dto.customer.id, fullName: dto.customer.fullName, status: toStatusRef(dto.customer.status) },
+  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked, status: toStatusRef(dto.customer.status) },
   type: dto.type,
   title: dto.title,
   startAt: dto.startAt,
@@ -176,7 +176,7 @@ export const toDailyTask = (dto: DailyTaskDto): DailyTask => ({
   kind: dto.kind,
   dueAt: dto.dueAt,
   group: dto.group,
-  customer: { id: dto.customer.id, fullName: dto.customer.fullName, status: toStatusRef(dto.customer.status), projects: dto.customer.projects },
+  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked, status: toStatusRef(dto.customer.status), projects: dto.customer.projects },
   project: dto.project ? { id: dto.project.id, label: dto.project.label } : null,
   title: dto.title,
   lastCareLog: dto.lastCareLog,

@@ -18,7 +18,7 @@ const makeTask = (project: DailyTask['project']): DailyTask => ({
   kind: 'APPOINTMENT',
   dueAt: '2026-10-25T08:30:00.000Z',
   group: 'TODAY',
-  customer: { id: 'c1', fullName: 'Nguyễn Văn An', status: { id: 's', code: 'NEW', label: 'Mới', tone: 'brand', listGroup: 'NOT_CONTACTED' }, projects: [{ id: 'pa', label: "Q'Terra" }] },
+  customer: { id: 'c1', fullName: 'Nguyễn Văn An', phoneMasked: '0912 ••• 678', status: { id: 's', code: 'NEW', label: 'Mới', tone: 'brand', listGroup: 'NOT_CONTACTED' }, projects: [{ id: 'pa', label: "Q'Terra" }] },
   project,
   title: 'Xem nhà mẫu',
   lastCareLog: null,
@@ -56,5 +56,16 @@ describe('Việc hôm nay hiện dự án của lịch (G7)', () => {
 
     renderWithProviders(<TaskListTable tasks={[makeTask(null)]} />);
     expect(screen.getByText("Q'Terra")).toBeInTheDocument();
+  });
+});
+
+describe('Việc hôm nay hiện SĐT đã che (G4)', () => {
+  it('thẻ và bảng đều hiện SĐT đã che', () => {
+    const { unmount } = renderWithProviders(<TaskCard task={makeTask(null)} />);
+    expect(screen.getByText('0912 ••• 678')).toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<TaskListTable tasks={[makeTask(null)]} />);
+    expect(screen.getByText('0912 ••• 678')).toBeInTheDocument();
   });
 });

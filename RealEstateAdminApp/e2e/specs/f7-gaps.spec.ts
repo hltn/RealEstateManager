@@ -1,13 +1,13 @@
 /**
  * F7 - Màn còn dữ liệu mẫu và đổi tình trạng khách (doc 08 mục 6: F7-01, F7-02).
- * Các khuyết tật UX đã biết KHÔNG nằm ở đây trừ T-G4 (SĐT ở lịch hẹn/việc hôm nay); mỗi khuyết tật có test "ghi nhận" riêng ở spec của luồng đó
- * (F3-04b gỡ ảnh, F4-09 đổi giờ/hủy lịch, F4-02 lịch hẹn ở chi tiết khách, U-A11Y-01 nhãn ô ngày).
+ * Các hạng mục từng thiếu (F3-04b gỡ ảnh, F4-09 đổi giờ/hủy lịch, F4-02 lịch hẹn ở chi tiết khách, U-A11Y-01 nhãn ô ngày) có test riêng
+ * ở spec của luồng đó.
  *
  * Quyết định: ca đối chứng "cờ mẫu bật" không đổi được biến Vite lúc chạy, nên test chặn module `featureFlags.ts` của Vite trong trình duyệt
  * của chính test (không ghi vào mã nguồn sản phẩm) và đổi giá trị biến môi trường `VITE_CRM_MOCK_*` mà Vite nhúng vào module,
  * rồi kiểm biểu ngữ cảnh báo dữ liệu mẫu. Nếu không tìm thấy biến để đổi thì test ĐỎ ngay (không lặng lẽ kiểm sai môi trường).
  */
-import { test, expect, knownBug } from '../fixtures';
+import { test, expect } from '../fixtures';
 import { openCustomerDetail, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
@@ -79,8 +79,7 @@ test.describe('f7-gaps', () => {
     expect(audits).toHaveLength(1);
   });
 
-  test('F7-02 ghi nhận: lịch hẹn và việc hôm nay phải hiện SĐT đã che của khách (G4)', async ({ loginAs, api }, testInfo) => {
-    knownBug(testInfo, 'Thiếu chức năng', 'T-G4: API lịch hẹn và việc hôm nay không trả `phoneMasked` (backend appointment.mapper/daily-tasks.service), nên thẻ lịch hẹn và thẻ việc không có dòng SĐT để gọi/nhắn nhanh; bảng danh sách việc còn ô SĐT trống.');
+  test('F7-02 lịch hẹn và việc hôm nay hiện SĐT đã che của khách (G4)', async ({ loginAs, api }, testInfo) => {
     const c = await api.createCustomer({ label: 'Khách-SĐTLịch' });
     await api.createAppointment({ customerId: c.id, slot: await todaySlot(testInfo) });
     const page = await loginAs('staff1');
@@ -88,7 +87,7 @@ test.describe('f7-gaps', () => {
 
     await page.goto('/crm/appointments');
     const appointmentCard = page.getByTestId('appointment-card').filter({ hasText: c.fullName });
-    await expect(appointmentCard).toHaveCount(1); // thẻ có hiện: đỏ ở dưới là do thiếu SĐT
+    await expect(appointmentCard).toHaveCount(1);
     await expect.soft(appointmentCard, 'thẻ lịch hẹn phải có dòng SĐT đã che').toContainText(maskedPhone);
 
     await page.goto('/crm/today');

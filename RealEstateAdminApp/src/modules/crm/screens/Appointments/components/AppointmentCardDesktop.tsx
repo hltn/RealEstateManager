@@ -6,7 +6,6 @@ import {
   Building,
   Building2,
   CircleCheck,
-  Eye,
   IdCard,
   MapPin,
   NotebookPen,
@@ -39,7 +38,6 @@ const ACTION_SOFT_CLASS = `${ACTION_BASE_CLASS} bg-brand-50 text-brand-500 hover
 const ACTION_SUCCESS_CLASS = `${ACTION_BASE_CLASS} bg-success-50 text-success-600 hover:bg-success-100 dark:bg-success-500/10 dark:text-success-500 dark:hover:bg-success-500/20`;
 const OUTLINE_TONE_CLASS = 'border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5';
 const ACTION_OUTLINE_CLASS = `${ACTION_BASE_CLASS} ${OUTLINE_TONE_CLASS}`;
-const ACTION_ICON_OUTLINE_CLASS = `inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${OUTLINE_TONE_CLASS}`;
 
 interface InfoRowProps {
   icon: ReactNode;
@@ -165,9 +163,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
                   <NotebookPen size={14} aria-hidden="true" />
                   Ghi chú cọc
                 </button>
-                <button type="button" title="Xem hồ sơ" aria-label="Xem hồ sơ" onClick={openProfile} className={ACTION_ICON_OUTLINE_CLASS}>
-                  <Eye size={16} aria-hidden="true" />
-                </button>
+                <AppointmentMoreMenu appointment={appointment} />
               </div>
             </>
           )}
@@ -182,9 +178,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
                 <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
                   {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}
                 </button>
-                <button type="button" title="Xem hồ sơ" aria-label="Xem hồ sơ" onClick={openProfile} className={ACTION_ICON_OUTLINE_CLASS}>
-                  <Eye size={16} aria-hidden="true" />
-                </button>
+                <AppointmentMoreMenu appointment={appointment} />
               </div>
             </>
           )}

@@ -8,7 +8,10 @@ import { toAppointment, toCareLog, toDailyTask } from './customerMappers';
 
 const MAX_PAGES = 5;
 
-/** Chuẩn hóa ngày "YYYY-MM-DD" (giờ VN) — backend nhận trực tiếp. */
+/**
+ * Lịch hẹn trong khoảng ngày VN "YYYY-MM-DD" (backend nhận trực tiếp). Mặc định bỏ lịch ĐÃ HỦY (người dùng đã chủ động hủy:
+ * không còn hiện trên lịch, KPI, danh sách); truyền `status: 'CANCELED'` để xem riêng.
+ */
 export const fetchAppointments = async (query: AppointmentListQuery, signal?: AbortSignal): Promise<AppointmentView[]> => {
   const items: AppointmentView[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
@@ -19,7 +22,7 @@ export const fetchAppointments = async (query: AppointmentListQuery, signal?: Ab
     items.push(...result.data.map(toAppointment));
     if (page >= result.meta.totalPages) break;
   }
-  return items;
+  return query.status === 'CANCELED' ? items : items.filter((appointment) => appointment.status !== 'CANCELED');
 };
 
 export const postAppointment = async (input: CreateAppointmentInput): Promise<AppointmentView> => {
@@ -39,6 +42,10 @@ export const postAppointment = async (input: CreateAppointmentInput): Promise<Ap
   };
   return toAppointment(await crmHttp.post<AppointmentDto>('/crm/appointments', body, { isIdempotent: true }));
 };
+
+/** `PATCH /crm/appointments/:id` — dời giờ lịch đang chờ (gửi `version` để chống ghi đè; 409 nếu lịch đã đổi). */
+export const patchAppointment = async (appointmentId: string, body: { version?: number; startAt?: string; endAt?: string | null }): Promise<AppointmentView> =>
+  toAppointment(await crmHttp.patch<AppointmentDto>(`/crm/appointments/${encodeURIComponent(appointmentId)}`, body));
 
 export const patchAppointmentStatus = async (
   appointmentId: string,

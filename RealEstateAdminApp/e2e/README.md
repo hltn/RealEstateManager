@@ -20,14 +20,15 @@ npx playwright show-report playwright-report
 
 Điều kiện: đã `npm install` ở cả `RealEstateAdminApp` và `RealEstateBackendApp` (thư viện mongodb-memory-server, ioredis, AWS SDK và Nest CLI lấy từ backend), `npx playwright install chromium`, Redis + MinIO dev đang chạy (`docker compose -f RealEstateBackendApp/docker-compose.dev.yml up -d`).
 
-Thời gian (đo thật): dựng stack 25-40 giây; chạy đủ bộ khoảng 10-11 phút (66 test, xem "Test đỏ có chủ đích"). Lần đầu tiên (hoặc khi mã nguồn backend đổi) có thêm bước build backend riêng, vài phút lần đầu (xem mục "Build backend riêng").
+Thời gian (đo thật): dựng stack 25-40 giây; chạy đủ bộ khoảng 11 phút (67 test, mọi test xanh thật). Lần đầu tiên (hoặc khi mã nguồn backend đổi) có thêm bước build backend riêng, vài phút lần đầu (xem mục "Build backend riêng").
 
-## Test đỏ có chủ đích (khuyết tật UX đã biết)
+## Khuyết tật UX đã biết (`knownBug`)
 
-Bộ có 66 test = 54 test xanh bình thường + 12 test đánh dấu `test.fail` bằng hàm `knownBug` trong `e2e/fixtures.ts` (không còn `test.fixme`). 12 test này mô tả đúng hành vi mong muốn nhưng giao diện hiện còn lỗi, nên chúng ĐỎ ĐÚNG KỲ VỌNG; Playwright coi "đỏ đúng kỳ vọng" là đạt, nên báo cáo cuối là "66 passed". Mỗi test có annotation `bug` (loại + lý do) trong báo cáo HTML. Khi lỗi UX được sửa, test sẽ "xanh bất ngờ" và Playwright báo FAIL: lúc đó bỏ dòng `knownBug` ở test đó.
+Trước đây bộ có 12 test đánh dấu `test.fail` bằng hàm `knownBug` trong `e2e/fixtures.ts` (đỏ có chủ đích: mô tả đúng hành vi mong muốn khi giao diện còn lỗi). **Cả 12 lỗi UX đó đã được sửa (2026-10-26) và các test đã gỡ `knownBug`, nên hiện không test nào dùng nó: 67/67 test xanh thật.** Hàm `knownBug` và cờ `E2E_SHOW_BUGS` được giữ lại để ghi nhận khuyết tật mới phát hiện sau này:
 
-- Xem lỗi thật của 12 test này: `E2E_SHOW_BUGS=1 npm run e2e` (PowerShell: `$env:E2E_SHOW_BUGS=1; npm run e2e`) chạy chúng như test thường nên sẽ đỏ thật kèm thông báo lỗi.
-- Cách đọc kết quả: "66 passed" nghĩa là không có hồi quy và không có khuyết tật nào tự hết; "failed" nghĩa là có hồi quy mới HOẶC một khuyết tật đã được sửa mà test chưa gỡ `knownBug`.
+- Test dùng `knownBug(testInfo, loại, lý do)` chạy thật và được kỳ vọng ĐỎ; Playwright coi "đỏ đúng kỳ vọng" là đạt. Khi lỗi được sửa, test "xanh bất ngờ" và Playwright báo FAIL: lúc đó bỏ dòng `knownBug` ở test đó. Mỗi test như vậy có annotation `bug` (loại + lý do) trong báo cáo HTML.
+- `E2E_SHOW_BUGS=1 npm run e2e` (PowerShell: `$env:E2E_SHOW_BUGS=1; npm run e2e`) chạy các test `knownBug` như test thường để xem lỗi thật.
+- Cách đọc kết quả: "N passed" nghĩa là không có hồi quy; "failed" nghĩa là có hồi quy mới HOẶC một khuyết tật đã sửa mà test `knownBug` chưa gỡ.
 - Lưu ý: cờ `E2E_SHOW_BUGS` hiện chỉ kiểm có giá trị hay không nên `E2E_SHOW_BUGS=0` vẫn bật chế độ xem lỗi; để tắt hãy bỏ hẳn biến (đã đề xuất dùng `isTruthyFlag` từ `e2e/env.ts`).
 
 ## Build backend riêng (`.e2e-dist`)
@@ -76,7 +77,7 @@ test('ví dụ', async ({ loginAs, backstage, seed }) => {
 
 - `loginAs(role)` với role `admin | mgr1 | staff1 | staff2`; `page` mặc định là chưa đăng nhập (dùng cho test form đăng nhập/đăng xuất thật).
 - `seed`: id người dùng, nhóm, dự án, khách mẫu. Mỗi spec nên tự tạo dữ liệu riêng (tên có hậu tố ngẫu nhiên) thay vì sửa khách mẫu.
-- Giao diện mới có rất ít `data-testid` (khoảng 8 điểm: `notification-bell`, `user-menu-toggle`/`user-menu-logout`, `login-submit`, `appointment-card`, `daily-task-card`, `care-log-photo`, `customer-detail-desktop`/`-mobile`); ưu tiên `getByRole`/`getByLabel`, chỉ thêm `data-testid` ở chỗ không có vai trò/nhãn ổn định.
+- Giao diện mới có rất ít `data-testid` (khoảng 10 điểm: `login-error`, `care-log-photo-remove`, `notification-bell`, `user-menu-toggle`/`user-menu-logout`, `login-submit`, `appointment-card`, `daily-task-card`, `care-log-photo`, `customer-detail-desktop`/`-mobile`); ưu tiên `getByRole`/`getByLabel`, chỉ thêm `data-testid` ở chỗ không có vai trò/nhãn ổn định.
 
 ## Lưu ý quan trọng
 
