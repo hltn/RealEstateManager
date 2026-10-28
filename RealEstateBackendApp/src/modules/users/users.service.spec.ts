@@ -25,6 +25,7 @@ import { Types } from 'mongoose';
 import { UsersService } from './users.service';
 import { User } from './schemas/user.schema';
 import { Team } from '../teams/schemas/team.schema';
+import { RefreshToken } from '../auth/schemas/refresh-token.schema';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -80,6 +81,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
   let service: UsersService;
   let userModel: any;
   let teamModel: any;
+  let refreshTokenModel: any;
   let connection: any;
   let audit: { record: jest.Mock };
 
@@ -94,6 +96,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       findOneAndUpdate: jest.fn(),
       updateMany: jest.fn(),
       create: jest.fn(),
+      exists: jest.fn(),
+    };
+    refreshTokenModel = {
+      updateMany: jest.fn().mockReturnValue({ exec: jest.fn() }),
     };
 
     teamModel = {
@@ -114,6 +120,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         UsersService,
         { provide: getModelToken(User.name), useValue: userModel },
         { provide: getModelToken(Team.name), useValue: teamModel },
+        {
+          provide: getModelToken(RefreshToken.name),
+          useValue: refreshTokenModel,
+        },
         { provide: getConnectionToken(), useValue: connection },
         { provide: CrmAuditLogService, useValue: audit },
         // Đồng bộ customers.teamIds được kiểm bằng integration thật (crm-m2.integration.spec.ts).
@@ -587,6 +597,199 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       await service.updateRole(USER_ID, { role: UserRole.ADMIN }, ADMIN_ACTOR);
 
       expect(userModel.countDocuments).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateProfile (sửa tên/email + audit + thu hồi phiên khi đổi email)', () => {
+    const ADMIN_ACTOR = { sub: '65e1f0a1b2c3d4e5f6a7b8aa' };
+    const userId = new Types.ObjectId(USER_ID);
+
+    it('body rỗng → 400 VALIDATION_FAILED, không mở transaction', async () => {
+      await expect(
+        service.updateProfile(USER_ID, {}, ADMIN_ACTOR),
+      ).rejects.toMatchObject({ errorCode: 'VALIDATION_FAILED' });
+      expect(connection.transaction).not.toHaveBeenCalled();
+    });
+
+    it('user không tồn tại (hoặc đã soft delete) → 404, không ghi gì', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+
+      await expect(
+        service.updateProfile(
+          USER_ID,
+          { displayName: 'New Name' },
+          ADMIN_ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('sửa tên: chỉ `$set displayName`, ghi audit USER_UPDATED, KHÔNG thu hồi phiên', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ displayName: 'New Name' })),
+      );
+
+      const result = await service.updateProfile(
+        USER_ID,
+        { displayName: 'New Name' },
+        ADMIN_ACTOR,
+      );
+
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: userId },
+        { $set: { displayName: 'New Name' } },
+        { returnDocument: 'after', session: SESSION },
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: 'USER',
+          action: 'USER_UPDATED',
+          actor: ADMIN_ACTOR,
+          changes: [
+            { field: 'displayName', from: 'Editor One', to: 'New Name' },
+          ],
+        }),
+        SESSION,
+      );
+      expect(refreshTokenModel.updateMany).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        _id: USER_ID,
+        email: EMAIL,
+        displayName: 'New Name',
+        role: UserRole.EDITOR,
+        status: UserStatus.ACTIVE,
+        teamId: null,
+      });
+    });
+
+    it('sửa email: chuẩn hóa chữ thường, kiểm trùng loại trừ chính nó, thu hồi mọi refresh token của user', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.exists.mockReturnValue(chainable(null));
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ email: 'new@example.com' })),
+      );
+
+      const result = await service.updateProfile(
+        USER_ID,
+        { email: 'New@Example.COM' },
+        ADMIN_ACTOR,
+      );
+
+      expect(userModel.exists).toHaveBeenCalledWith({
+        _id: { $ne: userId },
+        email: 'new@example.com',
+        deletedAt: null,
+      });
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: userId },
+        { $set: { email: 'new@example.com' } },
+        { returnDocument: 'after', session: SESSION },
+      );
+      expect(refreshTokenModel.updateMany).toHaveBeenCalledWith(
+        { userId, isRevoked: false },
+        { $set: { isRevoked: true } },
+        { session: SESSION },
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          changes: [{ field: 'email', from: EMAIL, to: 'new@example.com' }],
+        }),
+        SESSION,
+      );
+      expect(result.email).toBe('new@example.com');
+    });
+
+    it('email trùng tài khoản khác → 409 "Email already in use", không update/thu hồi/audit', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.exists.mockReturnValue(chainable({ _id: 'other' }));
+
+      await expect(
+        service.updateProfile(
+          USER_ID,
+          { email: 'taken@example.com' },
+          ADMIN_ACTOR,
+        ),
+      ).rejects.toThrow(new ConflictException('Email already in use'));
+      expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(refreshTokenModel.updateMany).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('hai request đổi email cùng lúc: lỗi E11000 từ unique index cũng thành 409', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.exists.mockReturnValue(chainable(null));
+      userModel.findOneAndUpdate.mockReturnValue({
+        lean: () => ({
+          exec: () =>
+            Promise.reject(Object.assign(new Error('E11000'), { code: 11000 })),
+        }),
+      });
+
+      await expect(
+        service.updateProfile(
+          USER_ID,
+          { email: 'race@example.com' },
+          ADMIN_ACTOR,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('resetPassword (đặt lại mật khẩu + thu hồi phiên + audit không lộ mật khẩu)', () => {
+    const ADMIN_ACTOR = { sub: '65e1f0a1b2c3d4e5f6a7b8aa' };
+    const userId = new Types.ObjectId(USER_ID);
+
+    it('hash argon2 mật khẩu mới, lưu hash, thu hồi mọi refresh token, audit USER_PASSWORD_RESET không chứa mật khẩu', async () => {
+      userModel.findOneAndUpdate.mockReturnValue(chainable(buildUserDoc()));
+
+      const result = await service.resetPassword(
+        USER_ID,
+        { newPassword: 'NewPass@123456' },
+        ADMIN_ACTOR,
+      );
+
+      expect(argon2.hash).toHaveBeenCalledWith('NewPass@123456');
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: userId, deletedAt: null },
+        { $set: { password: '$argon2id$hashed' } },
+        { returnDocument: 'after', session: SESSION },
+      );
+      expect(refreshTokenModel.updateMany).toHaveBeenCalledWith(
+        { userId, isRevoked: false },
+        { $set: { isRevoked: true } },
+        { session: SESSION },
+      );
+      const [entry] = audit.record.mock.calls[0];
+      expect(entry).toMatchObject({
+        entityType: 'USER',
+        action: 'USER_PASSWORD_RESET',
+        actor: ADMIN_ACTOR,
+      });
+      expect(JSON.stringify(entry)).not.toMatch(/NewPass|argon2id/);
+      expect(result).toEqual({
+        _id: USER_ID,
+        email: EMAIL,
+        displayName: 'Editor One',
+        role: UserRole.EDITOR,
+        status: UserStatus.ACTIVE,
+        teamId: null,
+      });
+    });
+
+    it('user không tồn tại → 404, không thu hồi phiên, không audit', async () => {
+      userModel.findOneAndUpdate.mockReturnValue(chainable(null));
+
+      await expect(
+        service.resetPassword(
+          USER_ID,
+          { newPassword: 'NewPass@123456' },
+          ADMIN_ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(refreshTokenModel.updateMany).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 

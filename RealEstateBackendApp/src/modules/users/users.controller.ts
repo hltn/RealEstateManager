@@ -17,6 +17,8 @@ import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { TeamsService } from '../teams/teams.service';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dtos/create-user.dto';
+import { UpdateUserDto } from './dtos/update-user.dto';
+import { ResetUserPasswordDto } from './dtos/reset-user-password.dto';
 import { UpdateUserStatusDto } from './dtos/update-user-status.dto';
 import { UpdateUserRoleDto } from './dtos/update-user-role.dto';
 import { UpdateUserTeamDto } from './dtos/update-user-team.dto';
@@ -52,6 +54,34 @@ export class UsersController {
   @ApiOperation({ summary: 'Create a user (ADMIN only)' })
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
+  }
+
+  @Patch(':id')
+  @AdminOnly()
+  @ApiOperation({
+    summary: 'Sửa tên hiển thị và/hoặc email của tài khoản (ADMIN only)',
+  })
+  updateProfile(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.updateProfile(id, dto, currentUser);
+  }
+
+  /** Admin được đặt lại mật khẩu của chính mình hoặc người khác; mọi phiên (refresh token) của tài khoản bị thu hồi. */
+  @Patch(':id/password')
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Đặt lại mật khẩu tài khoản và thu hồi mọi phiên đăng nhập (ADMIN only)',
+  })
+  resetPassword(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: ResetUserPasswordDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.resetPassword(id, dto, currentUser);
   }
 
   @Patch(':id/status')

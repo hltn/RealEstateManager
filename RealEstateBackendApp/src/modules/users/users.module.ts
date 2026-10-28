@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from './schemas/user.schema';
 import { Team, TeamSchema } from '../teams/schemas/team.schema';
+import {
+  RefreshToken,
+  RefreshTokenSchema,
+} from '../auth/schemas/refresh-token.schema';
 import { CrmAuditLogModule } from '../crm/audit-logs/crm-audit-log.module';
 import { CrmCommonModule } from '../crm/common/crm-common.module';
 import { CustomerTeamSyncModule } from '../crm/customers/customer-team-sync.module';
@@ -14,6 +18,8 @@ import { UsersController } from './users.controller';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Team.name, schema: TeamSchema },
+      // Đặt lại mật khẩu/đổi email thu hồi refresh token cùng transaction.
+      { name: RefreshToken.name, schema: RefreshTokenSchema },
     ]),
     // TeamsService xử lý gán nhóm (PATCH /users/:id/team) vì nghiệp vụ thuộc miền "nhóm".
     TeamsModule,

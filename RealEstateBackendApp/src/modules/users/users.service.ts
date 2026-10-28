@@ -9,11 +9,16 @@ import { ClientSession, Connection, Model, Types } from 'mongoose';
 import * as argon2 from 'argon2';
 import { User, UserDocument } from './schemas/user.schema';
 import { Team, TeamDocument } from '../teams/schemas/team.schema';
+import {
+  RefreshToken,
+  RefreshTokenDocument,
+} from '../auth/schemas/refresh-token.schema';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { ErrorCode } from '../../common/exceptions/error-codes';
 import { escapeRegex } from '../../common/utils/regex.util';
+import { isDuplicateKeyError } from '../../common/utils/mongo-error.util';
 import { withTransaction } from '../../shared/database/with-transaction.util';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { diffFields } from '../crm/audit-logs/audit-diff.util';
@@ -27,6 +32,8 @@ import { toUserPublicProfile, UserPublicProfile } from './user-public-profile';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UpdateUserStatusDto } from './dtos/update-user-status.dto';
 import { UpdateUserRoleDto } from './dtos/update-user-role.dto';
+import { UpdateUserDto } from './dtos/update-user.dto';
+import { ResetUserPasswordDto } from './dtos/reset-user-password.dto';
 
 /** Bộ lọc tùy chọn của danh sách tài khoản (tài liệu 05 mục 2.2). */
 export interface UserListFilters {
@@ -35,6 +42,8 @@ export interface UserListFilters {
   status?: UserStatus;
   q?: string;
 }
+
+const EMAIL_IN_USE_MESSAGE = 'Email already in use';
 
 /** Vai trò mà tài khoản được thuộc một nhóm; vai trò khác bị gỡ khỏi nhóm khi đổi sang. */
 const TEAM_MEMBER_ROLES: readonly UserRole[] = [
@@ -52,6 +61,8 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(Team.name) private readonly teamModel: Model<TeamDocument>,
+    @InjectModel(RefreshToken.name)
+    private readonly refreshTokenModel: Model<RefreshTokenDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly audit: CrmAuditLogService,
     private readonly teamSync: CustomerTeamSyncService,
@@ -106,7 +117,7 @@ export class UsersService {
       .lean()
       .exec();
     if (exists) {
-      throw new ConflictException('Email already in use');
+      throw new ConflictException(EMAIL_IN_USE_MESSAGE);
     }
 
     const passwordHash = await argon2.hash(dto.password);
@@ -188,6 +199,143 @@ export class UsersService {
         { session, timestamps: false },
       )
       .exec();
+  }
+
+  /**
+   * Thu hồi mọi refresh token còn hiệu lực của tài khoản (đăng xuất mọi thiết bị) — cùng cách đánh dấu
+   * `isRevoked` như AuthService.revokeFamily/logout. Chạy trong transaction của thao tác gọi nó.
+   * Access token đã cấp vẫn dùng được tới khi hết hạn (guard JWT không tra DB); sau đó không refresh được nữa.
+   */
+  private async revokeAllSessions(
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<void> {
+    await this.refreshTokenModel
+      .updateMany(
+        { userId, isRevoked: false },
+        { $set: { isRevoked: true } },
+        { session },
+      )
+      .exec();
+  }
+
+  /**
+   * Admin sửa tên hiển thị và/hoặc email + audit USER_UPDATED cùng transaction.
+   *
+   * - Cần ít nhất một trường (400). Email chuẩn hóa chữ thường; trùng tài khoản khác chưa xóa → 409.
+   * - Giá trị không đổi so với hiện tại là no-op (không ghi, không audit).
+   * - Email đổi thật thì thu hồi mọi refresh token của tài khoản: phải đăng nhập lại bằng email mới
+   *   (email nằm trong payload access token nên không để phiên cũ gia hạn mãi với email cũ).
+   */
+  async updateProfile(
+    id: string,
+    dto: UpdateUserDto,
+    actor: Pick<JwtPayload, 'sub'>,
+  ): Promise<UserPublicProfile> {
+    const displayName = dto.displayName ?? undefined;
+    const email = dto.email?.toLowerCase();
+    if (displayName === undefined && email === undefined) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        'Cần ít nhất một trường để cập nhật: displayName hoặc email',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const userId = new Types.ObjectId(id);
+    try {
+      const doc = await withTransaction(this.connection, async (session) => {
+        const before = await this.userModel
+          .findOne({ _id: userId, deletedAt: null })
+          .session(session)
+          .lean()
+          .exec();
+        if (!before) throw new NotFoundException('User not found');
+
+        const changes: Record<string, string> = {};
+        if (displayName !== undefined && displayName !== before.displayName) {
+          changes.displayName = displayName;
+        }
+        if (email !== undefined && email !== before.email) {
+          const taken = await this.userModel
+            .exists({ _id: { $ne: userId }, email, deletedAt: null })
+            .session(session)
+            .exec();
+          if (taken) throw new ConflictException(EMAIL_IN_USE_MESSAGE);
+          changes.email = email;
+        }
+        if (Object.keys(changes).length === 0) return before;
+
+        const after = await this.userModel
+          .findOneAndUpdate(
+            { _id: userId },
+            { $set: changes },
+            { returnDocument: 'after', session },
+          )
+          .lean()
+          .exec();
+        if (!after) throw new NotFoundException('User not found');
+
+        if (changes.email) await this.revokeAllSessions(userId, session);
+
+        await this.audit.record(
+          {
+            entityType: CrmAuditEntityType.USER,
+            entityId: userId,
+            action: CrmAuditAction.USER_UPDATED,
+            actor,
+            changes: diffFields(before, after, ['displayName', 'email']),
+          },
+          session,
+        );
+        return after;
+      });
+      return toUserPublicProfile(doc);
+    } catch (error) {
+      // Hai request đổi email đồng thời: chỉ unique index {email, deletedAt} bắt được.
+      if (isDuplicateKeyError(error)) {
+        throw new ConflictException(EMAIL_IN_USE_MESSAGE);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Admin đặt lại mật khẩu (của mình hoặc người khác) + thu hồi mọi refresh token + audit USER_PASSWORD_RESET
+   * cùng transaction. Hash argon2 làm TRƯỚC transaction (tốn CPU, và transaction có thể tự retry).
+   * Audit chỉ ghi sự kiện, `changes` rỗng — tuyệt đối không ghi mật khẩu/hash.
+   */
+  async resetPassword(
+    id: string,
+    dto: ResetUserPasswordDto,
+    actor: Pick<JwtPayload, 'sub'>,
+  ): Promise<UserPublicProfile> {
+    const userId = new Types.ObjectId(id);
+    const passwordHash = await argon2.hash(dto.newPassword);
+    const doc = await withTransaction(this.connection, async (session) => {
+      const after = await this.userModel
+        .findOneAndUpdate(
+          { _id: userId, deletedAt: null },
+          { $set: { password: passwordHash } },
+          { returnDocument: 'after', session },
+        )
+        .lean()
+        .exec();
+      if (!after) throw new NotFoundException('User not found');
+
+      await this.revokeAllSessions(userId, session);
+      await this.audit.record(
+        {
+          entityType: CrmAuditEntityType.USER,
+          entityId: userId,
+          action: CrmAuditAction.USER_PASSWORD_RESET,
+          actor,
+        },
+        session,
+      );
+      return after;
+    });
+    return toUserPublicProfile(doc);
   }
 
   private isActiveAdmin(user: { role: UserRole; status: UserStatus }): boolean {

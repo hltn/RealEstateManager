@@ -39,6 +39,10 @@ export enum CrmAuditAction {
   USER_TEAM_CHANGED = 'USER_TEAM_CHANGED',
   USER_ROLE_CHANGED = 'USER_ROLE_CHANGED',
   USER_STATUS_CHANGED = 'USER_STATUS_CHANGED',
+  /** Admin sửa tên hiển thị/email của tài khoản. */
+  USER_UPDATED = 'USER_UPDATED',
+  /** Admin đặt lại mật khẩu; audit KHÔNG chứa mật khẩu/hash (changes rỗng). */
+  USER_PASSWORD_RESET = 'USER_PASSWORD_RESET',
   SETTINGS_UPDATED = 'SETTINGS_UPDATED',
   // --- M2: khách hàng lõi (tài liệu 04 mục 3.7.1) ---
   CUSTOMER_CREATED = 'CUSTOMER_CREATED',

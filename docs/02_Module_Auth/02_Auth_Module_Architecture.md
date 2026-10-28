@@ -119,6 +119,8 @@ src/
 │       │   └── user.schema.ts
 │       └── dtos/
 │           ├── create-user.dto.ts
+│           ├── update-user.dto.ts
+│           ├── reset-user-password.dto.ts
 │           ├── update-user-status.dto.ts
 │           └── update-user-role.dto.ts
 
@@ -407,6 +409,26 @@ Quy tắc cốt lõi (bắt buộc):
 
 
 - **Response 200:** User object đã cập nhật
+
+
+#### `PATCH /api/v1/users/:id`
+
+- **Guard:** `JwtAuthGuard` + `@Roles(UserRole.ADMIN)`
+- **Request body:** `{ "displayName"?: string (2..50), "email"?: string (IsEmail) }` — ít nhất một trường (thiếu cả hai → 400 `VALIDATION_FAILED`). Chuỗi được trim; email lưu chữ thường.
+- **Constraint:** Email trùng tài khoản khác chưa xóa → 409 `"Email already in use"`. Không tìm thấy / đã soft delete → 404 `"User not found"`. Giá trị không đổi là no-op.
+- **Đổi email:** thu hồi mọi refresh token của tài khoản (cùng transaction) — phải đăng nhập lại bằng email mới. Access token đang sống (≤ `JWT_ACCESS_EXPIRES_IN`) mang email cũ trong payload nhưng không có nơi nào dùng email trong token làm định danh.
+- **Audit:** `USER_UPDATED` (changes: `displayName`, `email` thực sự đổi).
+- **Response 200:** `{ _id, email, displayName, role, status, teamId }` (không có `password`)
+
+
+#### `PATCH /api/v1/users/:id/password`
+
+- **Guard:** `JwtAuthGuard` + `@Roles(UserRole.ADMIN)`
+- **Request body:** `{ "newPassword": string (tối thiểu 8 ký tự, cùng rule `password` của CreateUserDto) }`
+- **Constraint:** ADMIN được đặt lại mật khẩu của chính mình hoặc người khác (không chặn như `/status`). Hash argon2 như lúc tạo user. Không tìm thấy / đã soft delete → 404.
+- **Hiệu ứng:** thu hồi mọi refresh token của tài khoản (`isRevoked=true`, cùng transaction với việc lưu hash). Access token đang sống vẫn dùng được tới khi hết hạn (guard JWT không tra DB).
+- **Audit:** `USER_PASSWORD_RESET` (`changes` rỗng — không bao giờ ghi mật khẩu/hash).
+- **Response 200:** `{ _id, email, displayName, role, status, teamId }` (không có `password`)
 
 
 #### `PATCH /api/v1/users/:id/role`
@@ -857,6 +879,8 @@ app.enableCors({
 | `GET /auth/me`                 |   ❌    |   ✅    |   ✅   |
 | `GET /users`                   |   ❌    |   ❌    |   ✅   |
 | `POST /users`                  |   ❌    |   ❌    |   ✅   |
+| `PATCH /users/:id`             |   ❌    |   ❌    |   ✅   |
+| `PATCH /users/:id/password`    |   ❌    |   ❌    |   ✅   |
 | `PATCH /users/:id/status`      |   ❌    |   ❌    |   ✅   |
 | `PATCH /users/:id/role`        |   ❌    |   ❌    |   ✅   |
 | `GET /articles` (News)         |   ❌    |   ✅    |   ✅   |
