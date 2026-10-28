@@ -197,6 +197,10 @@ services:
       # Production: cookie refresh có cờ Secure (cần HTTPS qua Cloudflare hoặc http://localhost), thiếu ADMIN_EMAIL/
       # ADMIN_PASSWORD thì backend không khởi động khi DB chưa có user, login throttle cố định 5/phút. Xem tài liệu mục 9.
       - NODE_ENV=production
+      # Số hop proxy tin cậy để backend lấy IP client (rate limit đăng nhập đếm theo IP thật). Nginx là proxy duy nhất
+      # được tin: nó ghi ĐÈ X-Forwarded-For bằng IP thật (CF-Connecting-IP chỉ được tin khi đến từ cloudflared tĩnh
+      # 10.213.77.250, xem RealEstateAdminApp/nginx.conf). Backend KHÔNG publish cổng nên chỉ nginx gọi vào được.
+      - TRUST_PROXY=1
       - PORT=3000
       - FRONTEND_URL=http://localhost
       # Cron chạy theo giờ Việt Nam (UTC+7), không dùng UTC mặc định của container.
@@ -251,11 +255,20 @@ services:
     depends_on:
       - frontend
     networks:
-      - realestate_net
+      realestate_net:
+        # IP TĨNH: nginx chỉ tin CF-Connecting-IP từ đúng địa chỉ này (set_real_ip_from trong nginx.conf).
+        ipv4_address: 10.213.77.250
 
 networks:
   realestate_net:
     driver: bridge
+    ipam:
+      config:
+        # Subnet riêng, hiếm gặp, để không đụng dải Docker mặc định (172.16-31.x, 192.168.x) và mạng nội bộ.
+        # Container thường lấy IP động trong ip_range (/25 = .1-.127); cloudflared ở .250 nằm NGOÀI ip_range
+        # nên không bị cấp trùng. Đổi dải thì sửa cả set_real_ip_from trong RealEstateAdminApp/nginx.conf.
+        - subnet: 10.213.77.0/24
+          ip_range: 10.213.77.0/25
 
 # CẢNH BÁO: `docker compose down -v` XÓA CẢ 3 VOLUME (toàn bộ dữ liệu Mongo, Redis, MinIO).
 volumes:

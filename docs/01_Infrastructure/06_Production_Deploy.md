@@ -24,7 +24,7 @@ Internet ── Cloudflare ── cloudflared ─┬─ <domain-admin> ─> fron
                                        └─ <domain-file>  ─> minio:9000 <─────────────────┘   minio:9000 (S3, nội bộ)
 ```
 
-Tất cả nằm trong network `realestate_net`; **chỉ frontend publish cổng 80**. Cổng Mongo `27017` đã bị bỏ (trước đây mở ra mọi interface mà không có xác thực).
+Tất cả nằm trong network `realestate_net` (subnet cố định `10.213.77.0/24`, cloudflared giữ IP tĩnh `10.213.77.250`, xem mục 2.1); **chỉ frontend publish cổng 80**. Cổng Mongo `27017` đã bị bỏ (trước đây mở ra mọi interface mà không có xác thực).
 
 Quyết định thiết kế chính:
 
@@ -96,7 +96,47 @@ Hệ quả cần biết:
 
 - Cookie `Secure` chỉ được trình duyệt giữ khi truy cập qua **HTTPS** (domain Cloudflare) hoặc `http://localhost`. Truy cập HTTP qua IP/hostname thường sẽ không giữ được cookie đăng nhập.
 - Swagger vẫn mở công khai qua nginx tại `/api/v1/docs` (không gắn với `NODE_ENV`): cân nhắc chặn đường dẫn này ở Cloudflare/nginx.
-- **IP client cho rate limit (PHÁT HIỆN QUAN TRỌNG):** backend (`main.ts`) tạo `FastifyAdapter()` không bật `trustProxy`, và `ThrottlerGuard` mặc định dùng `req.ip`. Phía sau nginx, `req.ip` là IP container nginx, không đọc `X-Forwarded-For`/`CF-Connecting-IP`. Đã thử trực tiếp: gửi đăng nhập với `X-Forwarded-For` khác nhau mỗi lần vẫn dùng chung một bộ đếm (1 đăng nhập đúng + 4 sai rồi bị 429 ở lần thứ 6; 105 request vào một route thì 5 request cuối bị 429, tức giới hạn mặc định 100/phút/route). Nghĩa là **toàn bộ người dùng chung một bộ đếm**: chỉ cần 5 lần đăng nhập (kể cả thành công) trong 1 phút từ bất kỳ ai là mọi người bị khóa đăng nhập tới hết phút, và mỗi route chỉ phục vụ 100 request/phút cho cả hệ thống. Lỗi này có sẵn từ trước (không do `NODE_ENV`; hành vi này có cả khi không đặt `NODE_ENV`). Đề xuất sửa (do coder-backend thực hiện, KHÔNG nằm trong phạm vi docker/compose): bật `trustProxy` ở `FastifyAdapter` (chỉ tin dải mạng nội bộ của nginx), và để nginx truyền `X-Forwarded-For` từ header `CF-Connecting-IP` (hoặc `real_ip_header CF-Connecting-IP` với dải IP Cloudflare); sau đó ThrottlerGuard sẽ đếm theo IP thật của người dùng.
+- **IP client cho rate limit: đã xử lý (mục 2.1 bên dưới).**
+
+### 2.1. IP client thật cho rate limit (nginx + Cloudflare + backend)
+
+Vấn đề đã gặp: backend không bật `trustProxy`, nên `req.ip` là IP nginx và **mọi người dùng chung một bộ đếm** (5 lần đăng nhập/phút cho cả hệ thống). Cách xử lý gồm 3 phần phải đi cùng nhau:
+
+| Thành phần | Cấu hình | Vai trò |
+|---|---|---|
+| `docker-compose.yml`: `cloudflared` | IP tĩnh `10.213.77.250` trong network `realestate_net` (subnet `10.213.77.0/24`, `ip_range 10.213.77.0/25` cho IP động) | Có một địa chỉ duy nhất để nginx tin |
+| `RealEstateAdminApp/nginx.conf` | `set_real_ip_from 10.213.77.250; real_ip_header CF-Connecting-IP; real_ip_recursive off;` rồi `proxy_set_header X-Forwarded-For $remote_addr` và `X-Real-IP $remote_addr` (ghi đè, không cộng dồn) | Lấy IP thật từ Cloudflare **chỉ khi request đến từ cloudflared**, rồi báo cho backend |
+| `docker-compose.yml`: backend | `TRUST_PROXY=1` | Backend tin đúng 1 hop (nginx) và lấy IP từ `X-Forwarded-For` mà nginx ghi |
+
+Vì sao không tin cả dải docker: cổng 80 của frontend được publish ra host, request vào thẳng cổng đó có nguồn là gateway của bridge (`10.213.77.1`) nằm trong cùng dải với cloudflared. Nếu `set_real_ip_from` là cả dải, kẻ tấn công tự đặt `CF-Connecting-IP` giả và lách được giới hạn đăng nhập. Vì thế chỉ tin đúng một IP.
+
+**Cảnh báo khi sửa:**
+- KHÔNG đổi `set_real_ip_from` thành dải mạng (`10.0.0.0/8`, `172.16.0.0/12`, subnet của `realestate_net`...).
+- Đổi IP/subnet thì sửa **đồng thời** `ipv4_address`/`ipam` trong compose và `set_real_ip_from` trong nginx.conf, rồi build lại frontend (`docker compose --env-file .env.docker up -d --build frontend cloudflared`). Chọn dải không trùng mạng nội bộ/VPN của server; nếu trùng, `up` báo `Pool overlaps`.
+- Không đổi `proxy_set_header X-Forwarded-For` về `$proxy_add_x_forwarded_for` (cộng dồn header do client gửi).
+- Không bỏ `ip_range` (nếu bỏ, container khác có thể bị cấp đúng `.250` trước cloudflared).
+- Đổi ipam của network `realestate_net` đang tồn tại cần tạo lại network: chạy `docker compose --env-file .env.docker down` (KHÔNG `-v`) rồi `up -d --build`. Có downtime ngắn, dữ liệu trong volume không mất.
+- Cổng 80 vẫn publish ra host như cũ. Nếu không cần truy cập trực tiếp, có thể đổi thành `127.0.0.1:80:80` (tăng an toàn); chưa áp dụng.
+
+Kiểm bằng lệnh (đã chạy thật trên project tạm, cloudflared được giả bằng container tạm gán đúng IP tĩnh):
+
+```bash
+NET=<tên-network>   # docker network ls | grep realestate_net
+# Script gửi N lần đăng nhập sai với CF-Connecting-IP cho trước tới nginx (cần node:24-slim, đặt file t.js ở thư mục tạm).
+#   (a) từ IP cloudflared: mỗi CF-Connecting-IP có bộ đếm riêng
+docker run --rm --network $NET --ip 10.213.77.250 -v "$PWD/tmp":/t:ro node:24-slim node /t/t.js cfA 203.0.113.10 6   # 401 x5 rồi 429
+docker run --rm --network $NET --ip 10.213.77.250 -v "$PWD/tmp":/t:ro node:24-slim node /t/t.js cfB 203.0.113.20 2   # 401, 401 (IP B không bị khóa theo IP A)
+#   (b) từ container khác (IP không phải cloudflared): CF-Connecting-IP bị bỏ qua
+docker run --rm --network $NET -v "$PWD/tmp":/t:ro node:24-slim node /t/t.js other 198.51.100.1,198.51.100.2,198.51.100.3,198.51.100.4,198.51.100.5,198.51.100.6 1   # lần 6 bị 429
+#   (c) vào thẳng cổng 80 publish của host với CF-Connecting-IP giả: không được tin (nguồn là gateway bridge)
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "%{http_code} " -X POST http://127.0.0.1/api/v1/auth/login -H 'content-type: application/json' -H "CF-Connecting-IP: 192.0.2.$i" -d '{"email":"x@x.local","password":"wrongpass1"}'; done   # 401 x5 rồi 429
+docker logs realestate_backend 2>&1 | grep trustProxy      # "trustProxy bật: tin 1 proxy"
+```
+
+(Ghi chú: file `t.js` lặp qua danh sách `CF-Connecting-IP`, gửi `POST /api/v1/auth/login` sai mật khẩu và in mã trạng thái; thay bằng cách tương đương tùy ý. Nhớ đợi 60 giây giữa hai lượt kiểm nếu thử lại cùng IP.)
+
+Kết quả đã quan sát: (a) IP A `401,401,401,401,401,429`, IP B `401,401`; (b) `401 x5` rồi `429` dù mỗi lần đổi `CF-Connecting-IP` và `X-Forwarded-For`; (c) `401 x5` rồi `429`, log nginx ghi nguồn `10.213.77.1`. Chưa kiểm chứng với cloudflared và Cloudflare thật (cần xác nhận `CF-Connecting-IP` đúng IP người dùng khi đã có tunnel thật), và chưa thử trên server Linux thật.
+
 
 ## 3. `S3_PUBLIC_ENDPOINT`: để trình duyệt tải ảnh/export
 
@@ -372,7 +412,7 @@ Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên w
 | `minio-init` thoát khác 0 | MinIO chưa sẵn sàng hoặc sai credential | `docker logs realestate_minio_init`; kiểm tra `S3_*` |
 | Backend restart liên tục, log `ADMIN_EMAIL/ADMIN_PASSWORD must be set in production` | DB chưa có user nhưng thiếu `ADMIN_*` trong `.env.docker` | Điền `ADMIN_EMAIL`, `ADMIN_PASSWORD` rồi `up -d backend` |
 | Đăng nhập thành công nhưng bị đẩy ra lại | Cookie `Secure` bị bỏ khi truy cập HTTP qua IP/hostname | Truy cập qua HTTPS (Cloudflare) hoặc `http://localhost` |
-| Nhiều người cùng bị 429 khi đăng nhập | Rate limit đếm theo IP nginx (chưa có `trustProxy`) | Xem mục 2, phần "IP client" |
+| Nhiều người cùng bị 429 khi đăng nhập | Rate limit đang đếm theo IP của nginx/gateway thay vì IP thật: do `TRUST_PROXY` bị xóa/sai, hoặc nginx.conf/compose bị sửa (IP tĩnh cloudflared lệch `set_real_ip_from`, hoặc thêm cả dải docker) | Làm theo mục 2.1, chạy phép kiểm bằng lệnh; xác nhận log backend có `trustProxy bật: tin 1 proxy` |
 | Mất sạch dữ liệu sau thao tác | Chạy `down -v`, hoặc đổi tên project nên volume mới rỗng | Khôi phục từ backup ngoài máy (mục 6); lần sau tuyệt đối không `-v` |
 
 ## 9. Việc cần làm thủ công (tóm tắt)
@@ -383,7 +423,7 @@ Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên w
 4. Nếu production đang có dữ liệu: thực hiện mục 5 theo thứ tự, không bỏ bước backup.
 5. Pin `MINIO_IMAGE` theo digest; thiết lập cron backup + chép ra ngoài máy chủ.
 6. `NODE_ENV=production` **đã được đặt** cho backend trong compose (Oniichan đã quyết định). Bắt buộc `ADMIN_EMAIL`/`ADMIN_PASSWORD` trong `.env.docker` khi DB chưa có user. Cookie refresh có cờ `Secure` nên truy cập qua HTTPS (Cloudflare) hoặc `http://localhost`; truy cập HTTP qua IP/hostname thường sẽ không giữ được cookie đăng nhập. Chi tiết và bảng hành vi ở mục 2.
-7. Báo cho đội backend về lỗi IP client của rate limit (mục 2, phần "IP client"): cần `trustProxy` + nginx truyền IP thật, nếu không mọi người dùng chung bộ đếm 5 lần đăng nhập/phút.
+7. **Chưa xử lý, chờ Oniichan quyết:** (a) Swagger luôn mở công khai tại `/api/v1/docs` (không gắn `NODE_ENV`): nên chặn đường dẫn này ở Cloudflare (WAF/Access) hoặc nginx; (b) `docker-compose.yml` đặt cứng `FRONTEND_URL=http://localhost` (ghi đè `.env.docker`): hiện không gây lỗi vì web và API cùng origin qua nginx, nhưng sẽ sai nếu có origin khác cần CORS.
 8. Server Linux: `mkdir -p logs && chown 1000:1000 logs` trước `up` lần đầu (backend chạy uid 1000).
 9. Cân nhắc sau này: tạo user Mongo riêng quyền `readWrite` trên DB `realestate` cho backend (hiện backend dùng root, theo thiết kế đơn giản ban đầu) và access key MinIO riêng thay vì root.
 
