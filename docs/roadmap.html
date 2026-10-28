@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lộ trình app quản lý bất động sản</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="mx-auto max-w-4xl px-4 py-10">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold">Lộ trình triển khai app quản lý bất động sản</h1>
+      <p class="mt-2 text-slate-600">Kế hoạch dài hạn theo từng giai đoạn. Mỗi tính năng có số thứ tự và dấu check đã làm hay chưa.</p>
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
+        <span class="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">✔ Đã xong</span>
+        <span class="rounded-full bg-blue-100 px-3 py-1 text-blue-700">● Đang làm</span>
+        <span class="rounded-full bg-violet-100 px-3 py-1 text-violet-700">➜ Tiếp theo</span>
+        <span class="rounded-full bg-slate-200 px-3 py-1 text-slate-600">○ Dự kiến</span>
+        <span id="total" class="ml-auto font-medium text-slate-600"></span>
+      </div>
+    </header>
+
+    <ol id="roadmap" class="relative space-y-6 border-l-2 border-slate-200 pl-6"></ol>
+
+    <footer class="mt-10 text-center text-xs text-slate-400">
+      Cập nhật 26/10/2026 · Để đổi trạng thái, sửa <code>done: true/false</code> trong mảng <code>phases</code> ở cuối file
+    </footer>
+  </div>
+
+  <script>
+    // done: true = đã làm xong, false = chưa làm
+    const phases = [
+      { title: 'Nền tảng', status: 'done', items: [
+        { t: 'Đăng nhập, phân quyền theo vai trò (Auth + RoleGuard)', done: true },
+        { t: 'Giới hạn số lần đăng nhập chống dò mật khẩu', done: true },
+        { t: 'Bộ E2E Playwright chạy trên stack cô lập', done: true },
+        { t: 'Khung ứng dụng Admin (React) + Backend (NestJS + MongoDB)', done: true },
+      ]},
+      { title: 'Quản lý khách hàng (CRM)', status: 'doing', items: [
+        { t: 'Danh sách, lọc, tìm kiếm và hồ sơ chi tiết khách hàng', done: true },
+        { t: 'Lịch hẹn: đặt lịch, gắn dự án, lưu/hủy quay về đúng ngữ cảnh', done: true },
+        { t: 'Việc hôm nay (daily tasks) và dòng thời gian chăm sóc', done: true },
+        { t: 'Giao diện desktop và mobile', done: true },
+        { t: 'Hoàn thiện kiểm thử E2E: thiếu chức năng, điều hướng sau lưu', done: false },
+      ]},
+      { title: 'Tích hợp AI', status: 'next', items: [
+        { t: 'Tóm tắt lịch sử chăm sóc và ghi chú cuộc gọi của khách', done: false },
+        { t: 'Gợi ý bước chăm sóc kế tiếp và nhắc việc thông minh', done: false },
+        { t: 'Soạn nhanh tin nhắn, email theo từng khách', done: false },
+        { t: 'Chấm điểm khách tiềm năng (lead scoring)', done: false },
+        { t: 'Trợ lý hỏi đáp, chăm sóc khách hàng: hỏi đáp dữ liệu bằng ngôn ngữ tự nhiên, trả lời khách theo ngữ cảnh hồ sơ', done: false },
+        { t: 'Kết nối Zalo cá nhân để hỗ trợ chăm sóc tự động', done: false },
+        { t: 'Nạp kịch bản chăm sóc ban đầu cho trợ lý', done: false },
+        { t: 'Người dùng hướng dẫn trợ lý ngay trong từng phiên chat', done: false },
+        { t: 'Học từ hướng dẫn của người dùng để cải thiện kịch bản chăm sóc dần theo thời gian', done: false },
+      ]},
+      { title: 'Quản lý dự án, nguồn hàng, tài liệu dự án', status: 'plan', items: [
+        { t: 'Quản lý dự án: thông tin, chủ đầu tư, vị trí, tiến độ, chính sách bán hàng', done: false },
+        { t: 'Quản lý nguồn hàng: tòa, căn/lô, giá, trạng thái', done: false },
+        { t: 'Giữ chỗ và theo dõi tình trạng hàng', done: false },
+        { t: 'Quản lý tài liệu liên quan đến dự án: bảng giá, pháp lý, brochure, mặt bằng, hình ảnh', done: false },
+        { t: 'Quản lý ưu đãi theo từng căn và từng giai đoạn dự án (ví dụ tặng ô tô chỉ áp dụng cho một số căn)', done: false },
+        { t: 'AI ghép khách với căn phù hợp dựa trên dữ liệu khách hàng, ưu đãi của từng căn và giai đoạn dự án', done: false },
+        { t: 'AI lọc ra căn nổi trội cho từng khách và gợi ý kịch bản tư vấn cho người chăm sóc', done: false },
+      ]},
+    ];
+
+    const STATUS = {
+      done:  { label: 'Đã xong',  dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700', card: 'border border-emerald-200 shadow-sm', bar: 'bg-emerald-500' },
+      doing: { label: 'Đang làm', dot: 'bg-blue-500',    badge: 'bg-blue-100 text-blue-700',       card: 'border-2 border-blue-300 shadow-md', bar: 'bg-blue-500' },
+      next:  { label: 'Tiếp theo', dot: 'bg-violet-500', badge: 'bg-violet-100 text-violet-700',   card: 'border border-violet-300 shadow-sm', bar: 'bg-violet-500' },
+      plan:  { label: 'Dự kiến',  dot: 'bg-slate-400',   badge: 'bg-slate-200 text-slate-600',     card: 'border border-slate-200 shadow-sm', bar: 'bg-slate-400' },
+    };
+
+    const check = (done) => done
+      ? '<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-emerald-500 bg-emerald-500 text-xs text-white">✔</span>'
+      : '<span class="h-5 w-5 shrink-0 rounded border-2 border-slate-300 bg-white"></span>';
+
+    let totalDone = 0, totalAll = 0;
+    document.getElementById('roadmap').innerHTML = phases.map((p, i) => {
+      const s = STATUS[p.status];
+      const done = p.items.filter((x) => x.done).length;
+      const pct = Math.round((done / p.items.length) * 100);
+      totalDone += done; totalAll += p.items.length;
+      const rows = p.items.map((x, j) => `
+        <li class="flex items-start gap-3 rounded-lg px-2 py-1.5 ">
+          ${check(x.done)}
+          <span class="w-9 shrink-0 text-sm font-mono text-slate-400">${i}.${j + 1}</span>
+          <span class="text-sm text-slate-900">${x.t}</span>
+        </li>`).join('');
+      return `
+        <li class="relative">
+          <span class="absolute -left-[34px] flex h-6 w-6 items-center justify-center rounded-full ${s.dot} text-xs font-bold text-white">${i}</span>
+          <section class="rounded-xl bg-white p-5 ${s.card}">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-lg font-semibold">Giai đoạn ${i} · ${p.title}</h2>
+              <span class="rounded-full px-3 py-1 text-xs ${s.badge}">${s.label}</span>
+            </div>
+            <ul class="mt-3 space-y-1">${rows}</ul>
+            <div class="mt-4">
+              <div class="mb-1 flex justify-between text-xs text-slate-500"><span>Hoàn thành ${done}/${p.items.length}</span><span>${pct}%</span></div>
+              <div class="h-2 rounded-full bg-slate-200"><div class="h-2 rounded-full ${s.bar}" style="width:${pct}%"></div></div>
+            </div>
+          </section>
+        </li>`;
+    }).join('');
+    document.getElementById('total').textContent = `Tổng: ${totalDone}/${totalAll} tính năng (${Math.round(totalDone / totalAll * 100)}%)`;
+  </script>
+</body>
+</html>
