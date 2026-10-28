@@ -33,7 +33,11 @@ export class RequestContextMiddleware implements NestMiddleware {
     requestContextStorage.run(
       {
         requestId,
-        ip: req.socket?.remoteAddress,
+        // FastifyAdapter (middie) gán `req.ip` (đã giải qua trustProxy) lên request thô trước khi chạy
+        // middleware; thiếu (unit test, không qua Fastify) thì rơi về IP kết nối.
+        ip:
+          (req as IncomingMessage & { ip?: string }).ip ??
+          req.socket?.remoteAddress,
         userAgent:
           typeof userAgent === 'string'
             ? userAgent.slice(0, MAX_USER_AGENT_LENGTH)
