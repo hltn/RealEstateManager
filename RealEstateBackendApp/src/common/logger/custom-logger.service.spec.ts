@@ -135,6 +135,98 @@ describe('CustomLogger (contract mục 3 — no console.log)', () => {
     });
   });
 
+  describe('prependCallerInfo — Error (không bị "{}")', () => {
+    it('error(Error có stack) → in stack kèm prefix, không phải "{}"', () => {
+      const err = new Error('thieu CRM_PII_ENCRYPTION_KEY');
+
+      withFakeStack(CALLER_STACK, () => logger.error(err));
+
+      const msg = superErrorSpy.mock.calls[0][0] as string;
+      expect(msg).toBe(EXPECTED_PREFIX + err.stack);
+      expect(msg).toContain('thieu CRM_PII_ENCRYPTION_KEY');
+      expect(msg).not.toContain('{}');
+    });
+
+    it('Error không có stack → fallback "name: message"', () => {
+      const err = new TypeError('khong co stack');
+      err.stack = undefined;
+
+      withFakeStack(CALLER_STACK, () => logger.error(err));
+
+      expect(superErrorSpy.mock.calls[0][0]).toBe(
+        EXPECTED_PREFIX + 'TypeError: khong co stack',
+      );
+    });
+
+    it('Error có cause (Error lồng, có vòng lặp) → nối "Caused by:" và không lặp vô hạn', () => {
+      const root = new Error('goc ré');
+      const top = new Error('ngoai', { cause: root });
+      root.cause = top; // vòng lặp
+
+      withFakeStack(CALLER_STACK, () => logger.error(top));
+
+      const msg = superErrorSpy.mock.calls[0][0] as string;
+      expect(msg).toBe(
+        EXPECTED_PREFIX + top.stack + '\nCaused by: ' + root.stack,
+      );
+    });
+
+    it('chuỗi cause dài hơn giới hạn → chỉ in tối đa 5 cấp "Caused by:"', () => {
+      let err = new Error('c0');
+      for (let i = 1; i <= 9; i++) err = new Error('c' + i, { cause: err });
+
+      withFakeStack(CALLER_STACK, () => logger.error(err));
+
+      const msg = superErrorSpy.mock.calls[0][0] as string;
+      expect(msg.match(/Caused by: /g)).toHaveLength(5);
+      expect(msg).toContain('Error: c4'); // cấp thứ 5 (c9 → c4)
+      expect(msg).not.toContain('Error: c3');
+    });
+
+    it('cause là chuỗi → được nối; cause là object lạ → bị bỏ (không in thuộc tính)', () => {
+      const withString = new Error('a', { cause: 'ly do' });
+      const withObject = new Error('b', { cause: { token: 'SECRET' } });
+
+      withFakeStack(CALLER_STACK, () => {
+        logger.error(withString);
+        logger.error(withObject);
+      });
+
+      expect(superErrorSpy.mock.calls[0][0]).toBe(
+        EXPECTED_PREFIX + withString.stack + '\nCaused by: ly do',
+      );
+      expect(superErrorSpy.mock.calls[1][0]).not.toContain('SECRET');
+    });
+
+    it('Error nằm trong object → stack thay cho "{}", phần còn lại giữ nguyên', () => {
+      const err = new Error('loi con');
+
+      withFakeStack(CALLER_STACK, () => logger.error({ code: 7, err }));
+
+      expect(superErrorSpy.mock.calls[0][0]).toBe(
+        EXPECTED_PREFIX + JSON.stringify({ code: 7, err: err.stack }),
+      );
+    });
+
+    it('tham số thứ hai (stack/context) được chuyển nguyên vẹn cho super.error', () => {
+      const err = new Error('x');
+
+      withFakeStack(CALLER_STACK, () => {
+        logger.error(err, 'MyContext');
+        logger.error('chuoi', 'stack-x');
+      });
+
+      expect(superErrorSpy.mock.calls[0]).toEqual([
+        EXPECTED_PREFIX + err.stack,
+        'MyContext',
+      ]);
+      expect(superErrorSpy.mock.calls[1]).toEqual([
+        EXPECTED_PREFIX + 'chuoi',
+        'stack-x',
+      ]);
+    });
+  });
+
   describe('các method error/warn/debug/verbose cũng prepend caller', () => {
     it('error → super.error với prefix', () => {
       withFakeStack(CALLER_STACK, () => logger.error('boom'));

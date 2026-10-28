@@ -5,6 +5,9 @@ import {
   resolveLoggerOptions,
 } from './winston.config';
 
+/** Số cấp `cause` tối đa được in thêm cho một Error. */
+const MAX_ERROR_CAUSE_DEPTH = 5;
+
 /**
  * Logger tuỳ chỉnh kế thừa ConsoleLogger của NestJS.
  * Mục đích: đính kèm `[<file-caller>:<dong>]` vào mọi dòng log, trong đó
@@ -81,6 +84,37 @@ export class CustomLogger extends ConsoleLogger {
     return '';
   }
 
+  /**
+   * Chuyển Error thành chuỗi đọc được: `stack` (đã gồm `Name: message`), fallback
+   * `name: message` khi không có stack. Nối thêm chuỗi `cause` (tối đa
+   * MAX_ERROR_CAUSE_DEPTH cấp, chống vòng lặp) vì stack của V8 không in cause.
+   */
+  private static formatError(error: Error): string {
+    const parts: string[] = [];
+    const seen = new Set<unknown>();
+    let current: unknown = error;
+
+    for (
+      let depth = 0;
+      current instanceof Error &&
+      !seen.has(current) &&
+      depth <= MAX_ERROR_CAUSE_DEPTH;
+      depth++
+    ) {
+      seen.add(current);
+      const text = current.stack || `${current.name}: ${current.message}`;
+      parts.push(depth === 0 ? text : `Caused by: ${text}`);
+      current = (current as Error & { cause?: unknown }).cause;
+    }
+
+    // Cause dạng chuỗi (không phải Error) -> giữ lại; kiểu khác bỏ qua cho gọn.
+    if (typeof current === 'string') {
+      parts.push(`Caused by: ${current}`);
+    }
+
+    return parts.join('\n');
+  }
+
   private prependCallerInfo(message: unknown): string {
     const callerInfo = this.getCallerInfo();
 
@@ -88,10 +122,20 @@ export class CustomLogger extends ConsoleLogger {
       return `${callerInfo}${message}`;
     }
 
+    // Error: `message`/`stack` không enumerable nên JSON.stringify ra "{}" và mất
+    // lý do lỗi (vd NestFactory.create ném lỗi DI lúc khởi động). In stack thay thế.
+    if (message instanceof Error) {
+      return `${callerInfo}${CustomLogger.formatError(message)}`;
+    }
+
     // Với message không phải chuỗi (object/array), serialize sạch để dễ đọc log.
     if (typeof message === 'object' && message !== null) {
       try {
-        return `${callerInfo}${JSON.stringify(message)}`;
+        // Error lồng trong object cũng bị "{}" -> thay bằng stack qua replacer.
+        const json = JSON.stringify(message, (_key, value: unknown) =>
+          value instanceof Error ? CustomLogger.formatError(value) : value,
+        );
+        return `${callerInfo}${json}`;
       } catch {
         return `${callerInfo}[Object]`;
       }
