@@ -194,6 +194,9 @@ services:
       #   S3_PUBLIC_ENDPOINT (hostname công khai ký signed URL), S3_SIGNED_URL_TTL_SECONDS, REDIS_KEY_PREFIX,
       #   FEATURE_CRM_ENABLED, FEATURE_CRM_ATTACHMENTS, CRM_PII_ENCRYPTION_KEY (+ CRM_PII_KEY_VERSION).
       #   Bật CRM thì BẮT BUỘC có CRM_PII_ENCRYPTION_KEY; MẤT khóa = không giải mã lại được CCCD, phải sao lưu.
+      # Production: cookie refresh có cờ Secure (cần HTTPS qua Cloudflare hoặc http://localhost), thiếu ADMIN_EMAIL/
+      # ADMIN_PASSWORD thì backend không khởi động khi DB chưa có user, login throttle cố định 5/phút. Xem tài liệu mục 9.
+      - NODE_ENV=production
       - PORT=3000
       - FRONTEND_URL=http://localhost
       # Cron chạy theo giờ Việt Nam (UTC+7), không dùng UTC mặc định của container.

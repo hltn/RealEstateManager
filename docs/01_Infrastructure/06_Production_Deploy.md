@@ -3,8 +3,8 @@
 Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài liệu này mô tả kiến trúc, biến môi trường, cách triển khai mới, **quy trình nâng cấp từ bản Mongo standalone cũ**, sao lưu và xử lý sự cố. Stack dev (`RealEstateBackendApp/docker-compose.dev.yml`, project `realestate-dev`) là hệ thống riêng, không bị ảnh hưởng.
 
 > Trạng thái kiểm chứng:
-> - **Đã chạy thật** (máy dev, project tạm, mật khẩu giả): Mongo/Redis/MinIO/minio-init; nâng cấp tại chỗ từ standalone; mongodump/mongorestore; `mc mirror`; ký URL bằng host công khai. QA đã dựng và chạy **backend thật** trên stack này: readiness 200 (database/redis/storage up), đăng nhập, tạo khách hàng có transaction, idempotency, upload ảnh + presigned URL (Host khớp trả 200, Host sai trả 403), dữ liệu còn sau restart và `down`/`up`.
-> - **Chưa kiểm chứng**: frontend nginx; cloudflared và Tunnel thật; đường lui 5.8 và khôi phục từ tar volume; hành vi trên server Linux thật (đặc biệt quyền ghi `./logs`, xem mục 4); backend ở `NODE_ENV=production`.
+> - **Đã chạy thật** (máy dev, project tạm, mật khẩu giả): Mongo/Redis/MinIO/minio-init; nâng cấp tại chỗ từ standalone; mongodump/mongorestore; `mc mirror`; ký URL bằng host công khai. QA đã dựng và chạy **backend thật** trên stack này: readiness 200 (database/redis/storage up), đăng nhập, tạo khách hàng có transaction, idempotency, upload ảnh + presigned URL (Host khớp trả 200, Host sai trả 403), dữ liệu còn sau restart và `down`/`up`. Với `NODE_ENV=production` đã chạy thật lại: backend khởi động, readiness 200, đăng nhập admin OK, `Set-Cookie` refresh có `Secure`, thiếu `ADMIN_*` trên DB trống thì backend thoát với lỗi rõ ràng.
+> - **Chưa kiểm chứng**: frontend nginx; cloudflared và Tunnel thật; đường lui 5.8 và khôi phục từ tar volume; hành vi trên server Linux thật (đặc biệt quyền ghi `./logs`, xem mục 4); đăng nhập qua HTTPS thật phía sau nginx + Cloudflare.
 
 ## 1. Kiến trúc stack
 
@@ -78,6 +78,25 @@ docker pull cgr.dev/chainguard/minio:latest
 docker image inspect --format '{{index .RepoDigests 0}}' cgr.dev/chainguard/minio:latest
 # đặt kết quả vào .env.docker:  MINIO_IMAGE=cgr.dev/chainguard/minio@sha256:<digest>
 ```
+
+### Hành vi khi `NODE_ENV=production` (compose đã đặt sẵn cho backend)
+
+Đã rà toàn bộ `RealEstateBackendApp/src`: chỉ các chỗ sau đọc `NODE_ENV`.
+
+| Hành vi | production | Ngoài production |
+|---|---|---|
+| Cookie refresh token (`auth.controller.ts`) | có cờ `Secure` (đã xác nhận trong `Set-Cookie`), `HttpOnly`, `SameSite=Strict` | không `Secure` |
+| Seed admin lần đầu (`auth.service.ts`) | **bắt buộc** `ADMIN_EMAIL` + `ADMIN_PASSWORD` khi DB chưa có user; thiếu thì backend thoát với `ADMIN_EMAIL/ADMIN_PASSWORD must be set in production` (đã thử; container sẽ restart liên tục vì `restart: unless-stopped`). DB đã có user thì bỏ qua | dùng admin mặc định + cảnh báo |
+| Giới hạn đăng nhập (`auth-throttle.config.ts`) | cố định 5 lần/phút/IP, bỏ qua `AUTH_LOGIN_THROTTLE_LIMIT` | cho nới bằng biến đó (E2E) |
+| Hàng đợi BullMQ, ghi log file | giữ nguyên (chỉ `NODE_ENV=test` mới tắt) | như nhau |
+| Swagger (`/api/v1/docs`), CORS, Helmet, ValidationPipe, log level | **không phụ thuộc** `NODE_ENV` (Swagger luôn bật, đã thấy 200; level theo `LOG_LEVEL`; CSP theo `HELMET_CSP_ENABLED`) | như nhau |
+| Stack trace trong lỗi API | không bao giờ gửi cho client (chỉ ghi log máy chủ) | như nhau |
+
+Hệ quả cần biết:
+
+- Cookie `Secure` chỉ được trình duyệt giữ khi truy cập qua **HTTPS** (domain Cloudflare) hoặc `http://localhost`. Truy cập HTTP qua IP/hostname thường sẽ không giữ được cookie đăng nhập.
+- Swagger vẫn mở công khai qua nginx tại `/api/v1/docs` (không gắn với `NODE_ENV`): cân nhắc chặn đường dẫn này ở Cloudflare/nginx.
+- **IP client cho rate limit (PHÁT HIỆN QUAN TRỌNG):** backend (`main.ts`) tạo `FastifyAdapter()` không bật `trustProxy`, và `ThrottlerGuard` mặc định dùng `req.ip`. Phía sau nginx, `req.ip` là IP container nginx, không đọc `X-Forwarded-For`/`CF-Connecting-IP`. Đã thử trực tiếp: gửi đăng nhập với `X-Forwarded-For` khác nhau mỗi lần vẫn dùng chung một bộ đếm (1 đăng nhập đúng + 4 sai rồi bị 429 ở lần thứ 6; 105 request vào một route thì 5 request cuối bị 429, tức giới hạn mặc định 100/phút/route). Nghĩa là **toàn bộ người dùng chung một bộ đếm**: chỉ cần 5 lần đăng nhập (kể cả thành công) trong 1 phút từ bất kỳ ai là mọi người bị khóa đăng nhập tới hết phút, và mỗi route chỉ phục vụ 100 request/phút cho cả hệ thống. Lỗi này có sẵn từ trước (không do `NODE_ENV`; hành vi này có cả khi không đặt `NODE_ENV`). Đề xuất sửa (do coder-backend thực hiện, KHÔNG nằm trong phạm vi docker/compose): bật `trustProxy` ở `FastifyAdapter` (chỉ tin dải mạng nội bộ của nginx), và để nginx truyền `X-Forwarded-For` từ header `CF-Connecting-IP` (hoặc `real_ip_header CF-Connecting-IP` với dải IP Cloudflare); sau đó ThrottlerGuard sẽ đếm theo IP thật của người dùng.
 
 ## 3. `S3_PUBLIC_ENDPOINT`: để trình duyệt tải ảnh/export
 
@@ -351,6 +370,9 @@ Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên w
 | Signed URL `SignatureDoesNotMatch` (403) | Tunnel đặt "HTTP Host Header"; `S3_PUBLIC_ENDPOINT` có đường dẫn/dấu `/` cuối; lệch giờ máy chủ | Gỡ override Host; sửa biến; đồng bộ NTP |
 | Ảnh không tải, URL trỏ `http://minio:9000` | `S3_PUBLIC_ENDPOINT` trống | Đặt theo mục 3 |
 | `minio-init` thoát khác 0 | MinIO chưa sẵn sàng hoặc sai credential | `docker logs realestate_minio_init`; kiểm tra `S3_*` |
+| Backend restart liên tục, log `ADMIN_EMAIL/ADMIN_PASSWORD must be set in production` | DB chưa có user nhưng thiếu `ADMIN_*` trong `.env.docker` | Điền `ADMIN_EMAIL`, `ADMIN_PASSWORD` rồi `up -d backend` |
+| Đăng nhập thành công nhưng bị đẩy ra lại | Cookie `Secure` bị bỏ khi truy cập HTTP qua IP/hostname | Truy cập qua HTTPS (Cloudflare) hoặc `http://localhost` |
+| Nhiều người cùng bị 429 khi đăng nhập | Rate limit đếm theo IP nginx (chưa có `trustProxy`) | Xem mục 2, phần "IP client" |
 | Mất sạch dữ liệu sau thao tác | Chạy `down -v`, hoặc đổi tên project nên volume mới rỗng | Khôi phục từ backup ngoài máy (mục 6); lần sau tuyệt đối không `-v` |
 
 ## 9. Việc cần làm thủ công (tóm tắt)
@@ -360,8 +382,9 @@ Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên w
 3. Cloudflare: thêm hostname `<domain-file>` -> `http://minio:9000` (mục 3), đặt `S3_PUBLIC_ENDPOINT`.
 4. Nếu production đang có dữ liệu: thực hiện mục 5 theo thứ tự, không bỏ bước backup.
 5. Pin `MINIO_IMAGE` theo digest; thiết lập cron backup + chép ra ngoài máy chủ.
-6. **`NODE_ENV` hiện KHÔNG được đặt ở đâu** (compose và `.env.docker` đều không có): cookie refresh token không `secure`, seed admin không fail-fast khi thiếu `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Oniichan quyết định có đặt `NODE_ENV=production` hay không; khi đặt thì cookie `secure` yêu cầu truy cập HTTPS qua Cloudflare. Compose không tự đặt.
-7. Server Linux: `mkdir -p logs && chown 1000:1000 logs` trước `up` lần đầu (backend chạy uid 1000).
-8. Cân nhắc sau này: tạo user Mongo riêng quyền `readWrite` trên DB `realestate` cho backend (hiện backend dùng root, theo thiết kế đơn giản ban đầu) và access key MinIO riêng thay vì root.
+6. `NODE_ENV=production` **đã được đặt** cho backend trong compose (Oniichan đã quyết định). Bắt buộc `ADMIN_EMAIL`/`ADMIN_PASSWORD` trong `.env.docker` khi DB chưa có user. Cookie refresh có cờ `Secure` nên truy cập qua HTTPS (Cloudflare) hoặc `http://localhost`; truy cập HTTP qua IP/hostname thường sẽ không giữ được cookie đăng nhập. Chi tiết và bảng hành vi ở mục 2.
+7. Báo cho đội backend về lỗi IP client của rate limit (mục 2, phần "IP client"): cần `trustProxy` + nginx truyền IP thật, nếu không mọi người dùng chung bộ đếm 5 lần đăng nhập/phút.
+8. Server Linux: `mkdir -p logs && chown 1000:1000 logs` trước `up` lần đầu (backend chạy uid 1000).
+9. Cân nhắc sau này: tạo user Mongo riêng quyền `readWrite` trên DB `realestate` cho backend (hiện backend dùng root, theo thiết kế đơn giản ban đầu) và access key MinIO riêng thay vì root.
 
 [← Về chỉ mục Hạ tầng](README.md)
