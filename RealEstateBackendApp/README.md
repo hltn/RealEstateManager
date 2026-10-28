@@ -54,7 +54,7 @@ curl -i http://127.0.0.1:9000/minio/health/live                                 
 Lưu ý quan trọng:
 
 - **Luôn dùng `?directConnection=true` trong `MONGODB_URI`** (đã có sẵn trong `.env.example`). Member của replica set được khai báo host `localhost:27017`; `directConnection=true` làm driver nối thẳng `127.0.0.1:27017` thay vì chạy topology discovery. Transaction (`ClientSession`) vẫn dùng được.
-- Container `realestate_dev_mongo` phải đang chạy (`docker ps`). Container tay cũ `mongodb` (mongodb-atlas-local) cũng chiếm cổng 27017 nên phải dừng khi dùng compose dev. Không chạy đồng thời stack deploy `docker-compose.yml` ở gốc repo (cũng chiếm cổng 27017).
+- Container `realestate_dev_mongo` phải đang chạy (`docker ps`). Container tay cũ `mongodb` (mongodb-atlas-local) cũng chiếm cổng 27017 nên phải dừng khi dùng compose dev. Stack production `docker-compose.yml` ở gốc repo (Mongo replica set + xác thực, Redis, MinIO) không publish cổng hạ tầng ra host nên không xung đột cổng với stack dev; hướng dẫn triển khai: `docs/01_Infrastructure/06_Production_Deploy.md`.
 - Image MinIO mặc định là `cgr.dev/chainguard/minio:latest` (image `minio/minio` trên Docker Hub/quay.io không còn pull được). Muốn pin/đổi nguồn: đặt `MINIO_IMAGE` trong `.env`.
 - Bật module để thử local: `FEATURE_CRM_ENABLED=true` trong `.env` (mặc định tắt).
 

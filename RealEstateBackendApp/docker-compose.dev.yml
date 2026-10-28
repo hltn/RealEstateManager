@@ -13,7 +13,7 @@
 # (member host là `localhost:27017`; không có directConnection thì driver sẽ chạy topology discovery
 # theo hostname member). Dữ liệu nằm ở named volume `mongo_data`; `down -v` sẽ XÓA nó.
 # KHÔNG thay thế /docker-compose.yml ở thư mục gốc repo (stack deploy: backend + frontend +
-# cloudflared + Mongo standalone). Xem README.md mục "Hạ tầng local (Docker)".
+# cloudflared + Mongo replica set có xác thực + Redis + MinIO). Xem README.md mục "Hạ tầng local (Docker)".
 #
 # Mọi cổng chỉ bind 127.0.0.1 (Mongo/Redis dev không bật xác thực).
 # ─────────────────────────────────────────────────────────────────────────────

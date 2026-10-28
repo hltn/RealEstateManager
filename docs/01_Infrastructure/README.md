@@ -9,6 +9,7 @@ Kiến trúc backend, cơ sở dữ liệu và hệ thống ghi log, dùng chung
 | 03 | [`03_Database_Mongo_Plan.md`](03_Database_Mongo_Plan.md) | Plan | Thiết kế dữ liệu MongoDB dạng document, tối ưu bằng embedding |
 | 04 | [`04_Request_Logging_Plan.md`](04_Request_Logging_Plan.md) | Plan | Kế hoạch ghi log tập trung các outgoing request (crawl, AI) |
 | 05 | [`05_External_Log_Module_Design.md`](05_External_Log_Module_Design.md) | Design | Thiết kế chi tiết ExternalLogModule: kiến trúc, schema, che dữ liệu nhạy cảm |
+| 06 | [`06_Production_Deploy.md`](06_Production_Deploy.md) | Vận hành | Stack production (Mongo replica set + auth, Redis, MinIO, Cloudflare Tunnel): biến môi trường, triển khai, nâng cấp từ Mongo standalone, backup/restore |
 
 > `02_Database_Plan.md` và `03_Database_Mongo_Plan.md` nằm trong nhóm 4 file phải đồng bộ trường dữ liệu (cùng Project Plan và UI Design Plan).
 
