@@ -6,9 +6,12 @@
 #   docker compose -f docker-compose.dev.yml down        # dừng (GIỮ dữ liệu)
 #   docker compose -f docker-compose.dev.yml down -v     # dừng + XÓA dữ liệu dev
 #
-# Gồm: Redis, MinIO + bucket CRM. KHÔNG có MongoDB: dùng container `mongodb` (mongodb-atlas-local,
-# Replica Set 1 node, cổng 27017) đã chạy sẵn trên máy; URI phải có `?directConnection=true`
-# (member host của nó là container-ID nên host Windows không resolve được nếu không ép direct).
+# Gồm: MongoDB (Replica Set 1 node `rs0`), Redis, MinIO + bucket CRM.
+# MongoDB: cần Replica Set vì code dùng Transaction (ClientSession). Image mongo:7 (khớp production),
+# tự rs.initiate qua healthcheck (idempotent). URI dev phải có `?directConnection=true`, vd
+#   mongodb://127.0.0.1:27017/mongodb?directConnection=true
+# (member host là `localhost:27017`; không có directConnection thì driver sẽ chạy topology discovery
+# theo hostname member). Dữ liệu nằm ở named volume `mongo_data`; `down -v` sẽ XÓA nó.
 # KHÔNG thay thế /docker-compose.yml ở thư mục gốc repo (stack deploy: backend + frontend +
 # cloudflared + Mongo standalone). Xem README.md mục "Hạ tầng local (Docker)".
 #
@@ -17,6 +20,39 @@
 name: realestate-dev
 
 services:
+
+  # ── MongoDB 7 (Replica Set 1 node rs0, KHÔNG bật xác thực: chỉ cho dev, giống Redis) ──────────
+  # Giữ cổng 27017 để MONGODB_URI trong .env không đổi (chỉ bind 127.0.0.1).
+  # Healthcheck vừa khởi tạo replica set (lần chạy đầu, khi còn NotYetInitialized) vừa kiểm tra
+  # node đã là PRIMARY; chạy lại nhiều lần vẫn an toàn.
+  mongo:
+    image: mongo:7
+    container_name: realestate_dev_mongo
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - realestate_dev_net
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - |
+          let s;
+          try { s = rs.status(); } catch (e) {
+            if (e.codeName === 'NotYetInitialized') { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }); }
+            quit(1);
+          }
+          quit(s.ok === 1 && s.myState === 1 ? 0 : 1);
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
 
   # ── Redis (BullMQ, Idempotency; Throttler storage: dự kiến, chưa dùng) ─────────────────────────
   # BullMQ yêu cầu maxmemory-policy = noeviction (không để Redis tự xóa key job).
@@ -113,5 +149,6 @@ networks:
     driver: bridge
 
 volumes:
+  mongo_data:
   redis_data:
   minio_data:
