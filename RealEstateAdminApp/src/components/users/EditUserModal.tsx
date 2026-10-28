@@ -72,7 +72,6 @@ const EditUserBody = ({
   passwordErrorMessage,
 }: EditUserBodyProps) => {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const subject = isSelf ? 'bạn' : 'tài khoản này';
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -153,7 +152,9 @@ const EditUserBody = ({
 
         {isEmailChanged && (
           <p role="note" className={WARNING_CLASS}>
-            Sau khi đổi email, {subject} phải đăng nhập lại bằng email mới.
+            {isSelf
+              ? 'Sau khi đổi email, bạn sẽ bị đăng xuất ngay và phải đăng nhập lại bằng email mới.'
+              : 'Sau khi đổi email, tài khoản này phải đăng nhập lại bằng email mới.'}
           </p>
         )}
         {profileErrorMessage && (
@@ -222,7 +223,9 @@ const EditUserBody = ({
         </div>
 
         <p role="note" className={WARNING_CLASS}>
-          Các phiên đăng nhập hiện tại của {subject} sẽ bị đăng xuất.
+          {isSelf
+            ? 'Sau khi đặt lại mật khẩu, bạn sẽ bị đăng xuất ngay và phải đăng nhập lại.'
+            : 'Các phiên đăng nhập hiện tại của tài khoản này sẽ bị đăng xuất.'}
         </p>
         {passwordErrorMessage && (
           <p role="alert" className="text-sm text-error-500">

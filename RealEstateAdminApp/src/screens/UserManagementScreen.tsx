@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -83,6 +83,8 @@ const UserManagementScreen: React.FC = () => {
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserListItem | null>(null);
+  // Chặn kết thúc phiên 2 lần khi submit đúp (validate form bất đồng bộ nên nút chưa kịp disabled).
+  const isEndingOwnSessionRef = useRef(false);
 
   const queryKey = ['users', page, limit] as const;
 
@@ -152,6 +154,25 @@ const UserManagementScreen: React.FC = () => {
     },
   });
 
+  /**
+   * Kết thúc phiên của chính Admin sau khi tự đổi email/mật khẩu (backend đã thu hồi refresh token).
+   * Dùng đúng luồng đăng xuất sẵn có: `logout()` (best-effort, xóa cookie) rồi `clearAuth()`;
+   * ProtectedRoute tự điều hướng mềm về /login — không reload trang nên toast ở <Toaster> gốc vẫn
+   * hiển thị trên trang login, và không có request 401 nào bị gọi lại.
+   */
+  const endOwnSession = async (message: string) => {
+    if (isEndingOwnSessionRef.current) return;
+    isEndingOwnSessionRef.current = true;
+    toast.success(message, { duration: 6000 });
+    try {
+      await logout();
+    } catch {
+      // Logout idempotent — bỏ qua lỗi (vd. 401 do phiên đã bị thu hồi), vẫn clear client state.
+    } finally {
+      clearAuth();
+    }
+  };
+
   // --- Mutation: sửa tên hiển thị / email ---
   // Giữ nguyên page/limit (state của màn) nên sau khi lưu vẫn ở đúng trang danh sách.
   const updateMutation = useMutation({
@@ -159,8 +180,16 @@ const UserManagementScreen: React.FC = () => {
       updateUser(id, changes),
     onError: (error) => handleMutationError(error, 'Không thể cập nhật tài khoản.'),
     onSuccess: (updated) => {
-      toast.success('Đã cập nhật tài khoản.');
       setEditingUser(null);
+      // Admin tự đổi email của mình: backend đã thu hồi mọi refresh token → đăng xuất ngay (có thông báo).
+      const isOwnEmailChanged =
+        currentUser?._id === updated._id &&
+        updated.email.trim().toLowerCase() !== currentUser.email.trim().toLowerCase();
+      if (isOwnEmailChanged) {
+        void endOwnSession('Đã đổi email, vui lòng đăng nhập lại bằng email mới.');
+        return;
+      }
+      toast.success('Đã cập nhật tài khoản.');
       // Cập nhật ngay dòng trong cache rồi mới refetch nền → bảng không nhấp nháy.
       queryClient.setQueryData(queryKey, (old: typeof data | undefined) =>
         old ? { ...old, data: old.data.map((u) => (u._id === updated._id ? updated : u)) } : old,
@@ -178,9 +207,14 @@ const UserManagementScreen: React.FC = () => {
     mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) =>
       resetUserPassword(id, newPassword),
     onError: (error) => handleMutationError(error, 'Không thể đặt lại mật khẩu.'),
-    onSuccess: () => {
-      toast.success('Đã đặt lại mật khẩu. Các phiên đăng nhập của tài khoản đó đã bị đăng xuất.');
+    onSuccess: (_data, { id }) => {
       setEditingUser(null);
+      // Admin tự đặt lại mật khẩu của mình: phiên hiện tại cũng bị thu hồi → đăng xuất ngay.
+      if (currentUser?._id === id) {
+        void endOwnSession('Đã đổi mật khẩu, vui lòng đăng nhập lại.');
+        return;
+      }
+      toast.success('Đã đặt lại mật khẩu. Các phiên đăng nhập của tài khoản đó đã bị đăng xuất.');
     },
   });
 
