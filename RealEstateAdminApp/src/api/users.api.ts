@@ -1,6 +1,7 @@
 import apiAxios from './axios';
 import type {
   CreateUserPayload,
+  UpdateUserPayload,
   UserListItem,
   UserRole,
   UserStatus,
@@ -48,4 +49,27 @@ export async function updateUserRole(
 ): Promise<UserListItem> {
   const { data } = await apiAxios.patch<UserListItem>(`/users/${id}/role`, { role });
   return data;
+}
+
+/**
+ * Sửa tên hiển thị / email — `PATCH /users/:id` (ADMIN only, ít nhất 1 trường).
+ * Email trùng → 409. Trả user đã cập nhật (cùng shape route status/role).
+ */
+export async function updateUser(
+  id: string,
+  payload: UpdateUserPayload,
+): Promise<UserListItem> {
+  const body: UpdateUserPayload = { ...payload };
+  if (body.email !== undefined) body.email = body.email.trim().toLowerCase();
+  if (body.displayName !== undefined) body.displayName = body.displayName.trim();
+  const { data } = await apiAxios.patch<UserListItem>(`/users/${id}`, body);
+  return data;
+}
+
+/**
+ * Đặt lại mật khẩu — `PATCH /users/:id/password` (ADMIN only).
+ * Sau khi đặt lại, các phiên đăng nhập của tài khoản đó bị thu hồi.
+ */
+export async function resetUserPassword(id: string, newPassword: string): Promise<void> {
+  await apiAxios.patch(`/users/${id}/password`, { newPassword });
 }

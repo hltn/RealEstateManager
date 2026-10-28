@@ -7,6 +7,12 @@ import toast from 'react-hot-toast';
 import { AxiosError } from 'axios';
 import { Modal } from '../components/ui/modal';
 import { Pagination } from '../components/common/Pagination';
+import { EditUserModal } from '../components/users/EditUserModal';
+import {
+  displayNameSchema,
+  emailSchema,
+  passwordSchema,
+} from '../components/users/userFormSchemas';
 import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
 import { PlusIcon as PlusIconRaw, CloseIcon as CloseIconRaw } from '../icons';
 
@@ -19,21 +25,20 @@ import {
   createUser,
   updateUserStatus,
   updateUserRole,
+  updateUser,
+  resetUserPassword,
 } from '../api/users.api';
 import { logout } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
 import { UserRole, UserStatus } from '../types/user';
-import type { UserListItem, CreateUserPayload } from '../types/user';
+import type { UserListItem, CreateUserPayload, UpdateUserPayload } from '../types/user';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 
 /** Schema validate form tạo user — đồng bộ với CreateUserDto backend (mục 16.4). */
 const createUserSchema = z.object({
-  email: z.string().min(1, 'Vui lòng nhập email').email('Email không đúng định dạng'),
-  password: z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự'),
-  displayName: z
-    .string()
-    .min(2, 'Tên hiển thị tối thiểu 2 ký tự')
-    .max(50, 'Tên hiển thị tối đa 50 ký tự'),
+  email: emailSchema,
+  password: passwordSchema,
+  displayName: displayNameSchema,
   role: z.nativeEnum(UserRole),
 });
 type CreateUserFormData = z.infer<typeof createUserSchema>;
@@ -51,33 +56,33 @@ const extractApiMessage = (error: unknown, fallback: string): string => {
   return Array.isArray(body.message) ? body.message.join(', ') : body.message;
 };
 
-/** Toast lỗi cho thao tác user management — phân theo mã lỗi (mục 6.3). */
-const handleMutationError = (error: unknown, fallback: string): void => {
+/** Message lỗi tiếng Việt cho thao tác user management — phân theo mã lỗi (mục 6.3). */
+const getMutationErrorMessage = (error: unknown, fallback: string): string => {
   const axiosError = error as AxiosError<ApiErrorBody>;
   const status = axiosError.response?.status;
   const message = extractApiMessage(error, fallback);
 
-  if (status === 401) {
-    toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  } else if (status === 403) {
-    // Phân biệt "Insufficient role" vs "Cannot block your own account".
-    toast.error(message || 'Bạn không có quyền thực hiện thao tác này.');
-  } else if (status === 409) {
-    toast.error('Email đã tồn tại. Vui lòng dùng email khác.');
-  } else if (status === 400) {
-    toast.error(message);
-  } else {
-    toast.error(message);
-  }
+  if (status === 401) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  // Phân biệt "Insufficient role" vs "Cannot block your own account".
+  if (status === 403) return message || 'Bạn không có quyền thực hiện thao tác này.';
+  if (status === 404) return 'Tài khoản không còn tồn tại. Vui lòng tải lại danh sách.';
+  if (status === 409) return 'Email đã tồn tại. Vui lòng dùng email khác.';
+  return message;
+};
+
+/** Toast lỗi cho thao tác user management. */
+const handleMutationError = (error: unknown, fallback: string): void => {
+  toast.error(getMutationErrorMessage(error, fallback));
 };
 
 const UserManagementScreen: React.FC = () => {
   const queryClient = useQueryClient();
-  const { user: currentUser, clearAuth } = useAuth();
+  const { user: currentUser, clearAuth, setUser } = useAuth();
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserListItem | null>(null);
 
   const queryKey = ['users', page, limit] as const;
 
@@ -147,6 +152,38 @@ const UserManagementScreen: React.FC = () => {
     },
   });
 
+  // --- Mutation: sửa tên hiển thị / email ---
+  // Giữ nguyên page/limit (state của màn) nên sau khi lưu vẫn ở đúng trang danh sách.
+  const updateMutation = useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: UpdateUserPayload }) =>
+      updateUser(id, changes),
+    onError: (error) => handleMutationError(error, 'Không thể cập nhật tài khoản.'),
+    onSuccess: (updated) => {
+      toast.success('Đã cập nhật tài khoản.');
+      setEditingUser(null);
+      // Cập nhật ngay dòng trong cache rồi mới refetch nền → bảng không nhấp nháy.
+      queryClient.setQueryData(queryKey, (old: typeof data | undefined) =>
+        old ? { ...old, data: old.data.map((u) => (u._id === updated._id ? updated : u)) } : old,
+      );
+      // Admin tự sửa mình: đồng bộ tên/email hiển thị ở header.
+      if (currentUser?._id === updated._id) {
+        setUser({ ...currentUser, displayName: updated.displayName, email: updated.email });
+      }
+      invalidateUsers();
+    },
+  });
+
+  // --- Mutation: đặt lại mật khẩu (backend thu hồi phiên của tài khoản đó) ---
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) =>
+      resetUserPassword(id, newPassword),
+    onError: (error) => handleMutationError(error, 'Không thể đặt lại mật khẩu.'),
+    onSuccess: () => {
+      toast.success('Đã đặt lại mật khẩu. Các phiên đăng nhập của tài khoản đó đã bị đăng xuất.');
+      setEditingUser(null);
+    },
+  });
+
   const {
     register,
     handleSubmit,
@@ -177,6 +214,13 @@ const UserManagementScreen: React.FC = () => {
     }
   };
 
+  const handleOpenEdit = (user: UserListItem) => {
+    // Xóa lỗi của lần mở trước để popup không hiện lại lỗi cũ.
+    updateMutation.reset();
+    resetPasswordMutation.reset();
+    setEditingUser(user);
+  };
+
   const handleToggleStatus = (user: UserListItem) => {
     const next =
       user.status === UserStatus.ACTIVE ? UserStatus.BLOCKED : UserStatus.ACTIVE;
@@ -197,7 +241,7 @@ const UserManagementScreen: React.FC = () => {
             Quản lý tài khoản
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Tạo tài khoản, khóa/mở và phân quyền Editor/Admin.
+            Tạo, sửa thông tin, đặt lại mật khẩu, khóa/mở và phân quyền tài khoản.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -313,25 +357,35 @@ const UserManagementScreen: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStatus(user)}
-                          disabled={isSelf || statusMutation.isPending}
-                          title={
-                            isSelf
-                              ? 'Không thể khóa chính tài khoản của bạn'
-                              : isBlocked
-                                ? 'Mở khóa tài khoản'
-                                : 'Khóa tài khoản'
-                          }
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                            isBlocked
-                              ? 'bg-success-500/10 text-success-600 hover:bg-success-500/20 dark:text-success-500'
-                              : 'bg-error-500/10 text-error-600 hover:bg-error-500/20 dark:text-error-500'
-                          }`}
-                        >
-                          {isBlocked ? 'Mở khóa' : 'Khóa'}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(user)}
+                            aria-label={`Sửa tài khoản ${user.displayName}`}
+                            className="rounded-lg bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/20 dark:text-brand-400"
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(user)}
+                            disabled={isSelf || statusMutation.isPending}
+                            title={
+                              isSelf
+                                ? 'Không thể khóa chính tài khoản của bạn'
+                                : isBlocked
+                                  ? 'Mở khóa tài khoản'
+                                  : 'Khóa tài khoản'
+                            }
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                              isBlocked
+                                ? 'bg-success-500/10 text-success-600 hover:bg-success-500/20 dark:text-success-500'
+                                : 'bg-error-500/10 text-error-600 hover:bg-error-500/20 dark:text-error-500'
+                            }`}
+                          >
+                            {isBlocked ? 'Mở khóa' : 'Khóa'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -452,6 +506,31 @@ const UserManagementScreen: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Modal sửa user */}
+      <EditUserModal
+        user={editingUser}
+        isSelf={currentUser?._id === editingUser?._id}
+        onClose={() => setEditingUser(null)}
+        onSaveProfile={(changes) => {
+          if (editingUser) updateMutation.mutate({ id: editingUser._id, changes });
+        }}
+        isSavingProfile={updateMutation.isPending}
+        profileErrorMessage={
+          updateMutation.isError
+            ? getMutationErrorMessage(updateMutation.error, 'Không thể cập nhật tài khoản.')
+            : null
+        }
+        onResetPassword={(newPassword) => {
+          if (editingUser) resetPasswordMutation.mutate({ id: editingUser._id, newPassword });
+        }}
+        isResettingPassword={resetPasswordMutation.isPending}
+        passwordErrorMessage={
+          resetPasswordMutation.isError
+            ? getMutationErrorMessage(resetPasswordMutation.error, 'Không thể đặt lại mật khẩu.')
+            : null
+        }
+      />
 
       {/* Nút đăng xuất (gọn cho UX ADMIN) */}
       <div className="flex justify-end pt-2">

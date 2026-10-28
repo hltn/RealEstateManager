@@ -75,3 +75,9 @@ export interface CreateUserPayload {
   displayName: string;
   role: UserRole;
 }
+
+/** Payload sửa thông tin tài khoản (`PATCH /users/:id`) — ít nhất 1 trường, chỉ gửi trường thực sự đổi. */
+export interface UpdateUserPayload {
+  displayName?: string;
+  email?: string;
+}
