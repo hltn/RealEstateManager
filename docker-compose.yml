@@ -190,10 +190,17 @@ services:
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
       - S3_BUCKET_ATTACHMENTS=${S3_BUCKET_ATTACHMENTS:-crm-attachments}
       - S3_BUCKET_EXPORTS=${S3_BUCKET_EXPORTS:-crm-exports}
-      # Các biến sau đặt trong .env.docker (không ghi đè ở đây, chờ Oniichan quyết định):
+      # Cờ CRM: CÙNG MỘT biến cho backend và bản build frontend (xem build args của frontend) để hai phía không lệch.
+      # Mặc định TẮT. Đặt CRM_ENABLED / CRM_ATTACHMENTS_ENABLED trong .env.docker; KHÔNG đặt FEATURE_CRM_ENABLED /
+      # FEATURE_CRM_ATTACHMENTS trong .env.docker nữa (bị các dòng dưới ghi đè). Import (M8) và Push giai đoạn sau: giữ tắt.
+      - FEATURE_CRM_ENABLED=${CRM_ENABLED:-false}
+      - FEATURE_CRM_ATTACHMENTS=${CRM_ATTACHMENTS_ENABLED:-false}
+      - FEATURE_CRM_IMPORT=false
+      - FEATURE_CRM_PUSH=false
+      # Các biến sau đặt trong .env.docker (đi qua env_file, không ghi đè ở đây):
       #   S3_PUBLIC_ENDPOINT (hostname công khai ký signed URL), S3_SIGNED_URL_TTL_SECONDS, REDIS_KEY_PREFIX,
-      #   FEATURE_CRM_ENABLED, FEATURE_CRM_ATTACHMENTS, CRM_PII_ENCRYPTION_KEY (+ CRM_PII_KEY_VERSION).
-      #   Bật CRM thì BẮT BUỘC có CRM_PII_ENCRYPTION_KEY; MẤT khóa = không giải mã lại được CCCD, phải sao lưu.
+      #   CRM_PII_ENCRYPTION_KEY (+ CRM_PII_KEY_VERSION). Bật CRM (CRM_ENABLED=true) thì BẮT BUỘC có
+      #   CRM_PII_ENCRYPTION_KEY (thiếu thì backend không khởi động); MẤT khóa = không giải mã lại được CCCD, phải sao lưu.
       # Production: cookie refresh có cờ Secure (cần HTTPS qua Cloudflare hoặc http://localhost), thiếu ADMIN_EMAIL/
       # ADMIN_PASSWORD thì backend không khởi động khi DB chưa có user, login throttle cố định 5/phút. Xem tài liệu mục 9.
       - NODE_ENV=production
@@ -202,7 +209,9 @@ services:
       # 10.213.77.250, xem RealEstateAdminApp/nginx.conf). Backend KHÔNG publish cổng nên chỉ nginx gọi vào được.
       - TRUST_PROXY=1
       - PORT=3000
-      - FRONTEND_URL=http://localhost
+      # URL công khai của web admin (https://<domain-admin>): dùng cho CORS và chuyển hướng sau Google Drive OAuth.
+      # Đọc từ .env.docker; thiếu thì giữ mặc định cũ http://localhost (không phá bản đang chạy, nhưng OAuth sẽ về localhost).
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
       # Cron chạy theo giờ Việt Nam (UTC+7), không dùng UTC mặc định của container.
       - TZ=Asia/Ho_Chi_Minh
       # Daily News Crawler: giữ config trong file bind-mount để backend có thể
@@ -232,6 +241,12 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api/v1
+        # Cờ Vite NHÚNG LÚC BUILD: đổi CRM_ENABLED/CRM_ATTACHMENTS_ENABLED thì phải build lại frontend (--build).
+        # Cùng biến với backend (FEATURE_CRM_*) để hai phía khớp. Mock (dữ liệu mẫu) luôn tắt ở production.
+        VITE_CRM_ENABLED: ${CRM_ENABLED:-false}
+        VITE_FEATURE_CRM_ATTACHMENTS: ${CRM_ATTACHMENTS_ENABLED:-false}
+        VITE_CRM_MOCK_REPORTS: "false"
+        VITE_CRM_MOCK_IMPORT_EXPORT: "false"
     container_name: realestate_frontend
     restart: unless-stopped
     ports:

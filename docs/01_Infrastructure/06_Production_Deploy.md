@@ -60,7 +60,8 @@ Mẫu toàn placeholder: `.env.docker.example`. Biến mới cần thêm vào `.
 | `MINIO_IMAGE` | không | image MinIO | khuyến nghị pin digest, xem dưới |
 | `S3_BUCKET_ATTACHMENTS`, `S3_BUCKET_EXPORTS` | không | tên bucket | mặc định `crm-attachments`, `crm-exports` |
 | `S3_SIGNED_URL_TTL_SECONDS`, `REDIS_KEY_PREFIX` | không | backend | mặc định 900 và `rem:` |
-| `FEATURE_CRM_ENABLED`, `FEATURE_CRM_ATTACHMENTS` | không | cờ module CRM | **chưa quyết định bật**, mặc định tắt, compose không đổi giúp |
+| `CRM_ENABLED`, `CRM_ATTACHMENTS_ENABLED` | không | cờ CRM dùng chung backend (`FEATURE_CRM_*`) và build frontend (`VITE_*`) | mặc định `false`; xem mục 10. **Không** đặt `FEATURE_CRM_*` trong `.env.docker` (compose ghi đè) |
+| `FRONTEND_URL` | nên có | CORS và chuyển hướng sau Google Drive OAuth | `https://<domain-admin>`; thiếu thì compose dùng `http://localhost` (OAuth sẽ về localhost) |
 | `CRM_PII_ENCRYPTION_KEY` | **có khi bật CRM** | mã hóa CCCD (AES-256-GCM) | `openssl rand -base64 32`; **mất khóa = không giải mã lại được CCCD đã lưu**, sao lưu ngoài máy chủ |
 
 Compose tự dựng (đặt qua `environment`, ghi đè `env_file`) nên **không cần** khai báo tay trong `.env.docker`: `MONGODB_URI` (`mongodb://<user>:<pwd>@mongo:27017/realestate?authSource=admin&replicaSet=rs0`), `REDIS_URL` (`redis://:<pwd>@redis:6379`), `S3_ENDPOINT`, `S3_REGION`, `S3_FORCE_PATH_STYLE`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, 2 tên bucket. Dòng `MONGODB_URI` cũ trong `.env.docker` có thể xóa.
@@ -418,13 +419,45 @@ Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên w
 ## 9. Việc cần làm thủ công (tóm tắt)
 
 1. Sinh mật khẩu/keyFile và điền `.env.docker` theo mục 2; **sao lưu `.env.docker` và `CRM_PII_ENCRYPTION_KEY` ra ngoài máy chủ**.
-2. Quyết định bật `FEATURE_CRM_ENABLED`/`FEATURE_CRM_ATTACHMENTS` (compose không tự đổi).
+2. Bật CRM: làm theo mục 10 (cờ `CRM_ENABLED`/`CRM_ATTACHMENTS_ENABLED`).
 3. Cloudflare: thêm hostname `<domain-file>` -> `http://minio:9000` (mục 3), đặt `S3_PUBLIC_ENDPOINT`.
 4. Nếu production đang có dữ liệu: thực hiện mục 5 theo thứ tự, không bỏ bước backup.
 5. Pin `MINIO_IMAGE` theo digest; thiết lập cron backup + chép ra ngoài máy chủ.
 6. `NODE_ENV=production` **đã được đặt** cho backend trong compose (Oniichan đã quyết định). Bắt buộc `ADMIN_EMAIL`/`ADMIN_PASSWORD` trong `.env.docker` khi DB chưa có user. Cookie refresh có cờ `Secure` nên truy cập qua HTTPS (Cloudflare) hoặc `http://localhost`; truy cập HTTP qua IP/hostname thường sẽ không giữ được cookie đăng nhập. Chi tiết và bảng hành vi ở mục 2.
-7. **Chưa xử lý, chờ Oniichan quyết:** (a) Swagger luôn mở công khai tại `/api/v1/docs` (không gắn `NODE_ENV`): nên chặn đường dẫn này ở Cloudflare (WAF/Access) hoặc nginx; (b) `docker-compose.yml` đặt cứng `FRONTEND_URL=http://localhost` (ghi đè `.env.docker`): hiện không gây lỗi vì web và API cùng origin qua nginx, nhưng sẽ sai nếu có origin khác cần CORS.
+7. **Chưa xử lý, chờ Oniichan quyết:** (a) Swagger luôn mở công khai tại `/api/v1/docs` (không gắn `NODE_ENV`): nên chặn đường dẫn này ở Cloudflare (WAF/Access) hoặc nginx; (b) đặt `FRONTEND_URL=https://<domain-admin>` trong `.env.docker` (compose đã đọc biến này; trước đây bị đặt cứng `http://localhost`).
 8. Server Linux: `mkdir -p logs && chown 1000:1000 logs` trước `up` lần đầu (backend chạy uid 1000).
 9. Cân nhắc sau này: tạo user Mongo riêng quyền `readWrite` trên DB `realestate` cho backend (hiện backend dùng root, theo thiết kế đơn giản ban đầu) và access key MinIO riêng thay vì root.
+
+## 10. Bật CRM trên production
+
+Cờ CRM có hai phía và **phải khớp**: backend đọc lúc chạy, frontend Vite **nhúng lúc build**. Compose dùng chung hai biến trong `.env.docker`:
+
+| Biến | Backend | Frontend (build arg) | Ghi chú |
+|---|---|---|---|
+| `CRM_ENABLED` | `FEATURE_CRM_ENABLED` | `VITE_CRM_ENABLED` | công tắc tổng, mặc định `false`; chỉ ghi đúng `true`/`false` chữ thường (backend nhận cả `1`/`yes`/`on` nhưng frontend thì không, sẽ lệch) |
+| `CRM_ATTACHMENTS_ENABLED` | `FEATURE_CRM_ATTACHMENTS` | `VITE_FEATURE_CRM_ATTACHMENTS` | ảnh nhật ký; cần MinIO + `S3_PUBLIC_ENDPOINT` (mục 3) |
+| (cố định) | `FEATURE_CRM_IMPORT=false`, `FEATURE_CRM_PUSH=false` | `VITE_CRM_MOCK_REPORTS=false`, `VITE_CRM_MOCK_IMPORT_EXPORT=false` | M8 chưa làm; không cho dữ liệu mẫu lọt vào production |
+
+**Thứ tự thực hiện (trên server, sau khi đã làm xong mục 4 hoặc 5):**
+
+1. Sinh khóa PII: `openssl rand -base64 32` (đúng 32 byte; mỗi môi trường 1 khóa).
+2. **Sao lưu khóa ngoài máy chủ** (secret manager/két mật khẩu) và xác nhận đọc lại được. Đổi hoặc mất khóa = CCCD đã mã hóa không giải mã lại được và **không có cách khôi phục**.
+3. Điền `.env.docker`: `CRM_PII_ENCRYPTION_KEY=<khóa>`, `CRM_ENABLED=true`, (tùy chọn) `CRM_ATTACHMENTS_ENABLED=true`, `FRONTEND_URL=https://<domain-admin>`. Xóa mọi dòng `FEATURE_CRM_*` cũ trong file (bị compose ghi đè, dễ gây nhầm).
+4. Sao lưu Mongo trước khi bật (mục 6).
+5. Build lại frontend và tạo lại backend: `docker compose --env-file .env.docker up -d --build --force-recreate backend frontend`. Bắt buộc `--build` vì cờ Vite nhúng lúc build.
+6. Lần chạy đầu backend tự seed (idempotent, không ghi đè phần Quản trị đã sửa): tình trạng khách, nguồn khách, kết quả liên hệ, khu vực, dự án, nhóm trường và trường chân dung. Đã quan sát trên stack thử: `{"statuses":4,"leadSources":6,"contactResults":7,"areas":15,"projects":8}` và `{"personaGroups":7,"personaFields":25}`.
+
+**Kiểm tra sau khi bật:**
+
+```bash
+docker logs realestate_backend 2>&1 | grep -E "Feature flags|Seed"     # CRM_ENABLED:true (+ CRM_ATTACHMENTS:true), có dòng Seed CRM xong
+docker compose --env-file .env.docker exec frontend sh -c 'grep -rho "VITE_CRM_ENABLED:.true." /usr/share/nginx/html/assets | head -1'   # bundle có cờ bật
+```
+
+Rồi đăng nhập web: thấy menu "Quản lý khách hàng"; tạo thử một khách; nếu bật ảnh thì thêm ảnh vào nhật ký (URL ảnh có host `<domain-file>`). Đã chạy thật trên stack thử (không qua Cloudflare): đăng nhập, `GET /crm/customers` 200, danh mục có dữ liệu seed, tạo khách, upload ảnh 201, cờ trong bundle bật và mock tắt.
+
+**Tắt lại:** đặt `CRM_ENABLED=false` (và `CRM_ATTACHMENTS_ENABLED=false`), chạy lại lệnh ở bước 5. Dữ liệu CRM đã tạo vẫn nằm trong Mongo/MinIO (không bị xóa); theo thiết kế (CrmFeatureGuard) các route `/crm/*` của backend trả 404 và menu ẩn (phần tắt lại chưa chạy thử). **Giữ nguyên `CRM_PII_ENCRYPTION_KEY`** trong `.env.docker` kể cả khi tắt, để bật lại vẫn giải mã được.
+
+**Lỗi thường gặp khi bật:** CRM bật nhưng thiếu `CRM_PII_ENCRYPTION_KEY` thì backend không khởi động (đã thử: container restart liên tục). Lưu ý nhật ký lỗi hiện chỉ in `ERROR [ExceptionHandler] {}` mà không in nguyên nhân, nên khi thấy restart loop kèm dòng đó hãy kiểm tra khóa trước (đúng 32 byte, base64/hex, không có khoảng trắng/dấu nháy). Menu CRM không hiện sau khi đổi cờ: quên `--build` frontend, hoặc trình duyệt giữ bản JS cũ (tải lại cứng).
 
 [← Về chỉ mục Hạ tầng](README.md)
