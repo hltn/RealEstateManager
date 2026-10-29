@@ -19,6 +19,8 @@ import {
 } from './schemas/refresh-token.schema';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { highestRole, rolesOf } from '../../common/utils/user-roles.util';
+import { teamIdsOf } from '../users/user-public-profile';
 import type { UserPublicDto } from './dtos/auth-response.dto';
 import { LoginDto } from './dtos/login.dto';
 
@@ -103,6 +105,7 @@ export class AuthService implements OnModuleInit {
       email: doc.email,
       displayName: doc.displayName,
       role: doc.role,
+      roles: rolesOf(doc) as UserRole[],
     };
   }
 
@@ -159,11 +162,17 @@ export class AuthService implements OnModuleInit {
     };
   }
 
+  /**
+   * Payload access token: `roles` đủ bộ + `role` = role cao nhất (token cũ chỉ có `role` vẫn được RolesGuard chấp nhận).
+   * Bản ghi chưa migrate (chỉ có `role`) được coi như `roles = [role]`.
+   */
   private async signAccessToken(user: UserDocument): Promise<string> {
+    const roles = rolesOf(user);
     const payload = {
       sub: String(user._id),
       email: user.email,
-      role: user.role,
+      role: highestRole(roles) ?? user.role,
+      roles,
     };
     return this.jwtService.signAsync(payload);
   }
@@ -295,16 +304,19 @@ export class AuthService implements OnModuleInit {
 
   /**
    * Lấy profile cho /auth/me (kèm status).
-   * Mở rộng cho CRM (tài liệu 05 mục 2.1): `teamId` và `managedTeamIds` (nhóm user là Quản lý).
-   * `managedTeamIds` chỉ tra khi role là MANAGER; các vai trò khác luôn trả mảng rỗng.
+   * Mở rộng cho CRM (tài liệu 05 mục 2.1): `teamId`/`teamIds` và `managedTeamIds` (nhóm user là Quản lý).
+   * `role`/`teamId` là role cao nhất / nhóm chính (giữ cho client cũ); `roles`/`teamIds` là danh sách đầy đủ.
+   * `managedTeamIds` chỉ tra khi có role MANAGER; các tài khoản khác luôn trả mảng rỗng.
    */
   async getMe(userId: string): Promise<{
     _id: string;
     email: string;
     displayName: string;
     role: UserRole;
+    roles: UserRole[];
     status: UserStatus;
     teamId: string | null;
+    teamIds: string[];
     managedTeamIds: string[];
   }> {
     const user = await this.userModel
@@ -314,21 +326,24 @@ export class AuthService implements OnModuleInit {
     if (!user) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    const managedTeams =
-      user.role === UserRole.MANAGER
-        ? await this.teamModel
-            .find({ managerIds: user._id, deletedAt: null })
-            .select('_id')
-            .lean()
-            .exec()
-        : [];
+    const roles = rolesOf(user) as UserRole[];
+    const teamIds = teamIdsOf(user);
+    const managedTeams = roles.includes(UserRole.MANAGER)
+      ? await this.teamModel
+          .find({ managerIds: user._id, deletedAt: null })
+          .select('_id')
+          .lean()
+          .exec()
+      : [];
     return {
       _id: String(user._id),
       email: user.email,
       displayName: user.displayName,
-      role: user.role,
+      role: highestRole(roles) ?? user.role,
+      roles,
       status: user.status,
-      teamId: user.teamId ? String(user.teamId) : null,
+      teamId: teamIds[0] ?? null,
+      teamIds,
       managedTeamIds: managedTeams.map((team) => String(team._id)),
     };
   }
@@ -387,6 +402,7 @@ export class AuthService implements OnModuleInit {
       password: passwordHash,
       displayName,
       role: UserRole.ADMIN,
+      roles: [UserRole.ADMIN],
       status: UserStatus.ACTIVE,
       deletedAt: null,
       lastLoginAt: null,

@@ -158,6 +158,72 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
     );
   });
 
+  describe('tài khoản nhiều role (hợp quyền) và token cũ chỉ có role', () => {
+    const CRM = [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF];
+
+    it('STAFF+EDITOR: vào được cả route CRM lẫn route EDITOR (hai phân vùng ngang quyền, hợp lại)', () => {
+      const ctx = createMockContext({
+        role: UserRole.STAFF,
+        roles: [UserRole.STAFF, UserRole.EDITOR],
+      });
+      mockMetadata({ roles: CRM });
+      expect(guard.canActivate(ctx)).toBe(true);
+      mockMetadata({ roles: [UserRole.EDITOR] });
+      expect(guard.canActivate(ctx)).toBe(true);
+      // Không có role ADMIN/MANAGER thì route chỉ-Quản-trị vẫn chặn.
+      mockMetadata({ roles: [UserRole.ADMIN] });
+      expect(() => guard.canActivate(ctx)).toThrow('Insufficient role');
+    });
+
+    it('khớp bằng role KHÔNG phải cao nhất vẫn pass (MANAGER+STAFF vào route chỉ khai báo STAFF)', () => {
+      mockMetadata({ roles: [UserRole.STAFF] });
+      const ctx = createMockContext({
+        role: UserRole.MANAGER,
+        roles: [UserRole.MANAGER, UserRole.STAFF],
+      });
+      expect(guard.canActivate(ctx)).toBe(true);
+    });
+
+    it('token cũ chỉ có `role` (không có roles) vẫn hoạt động như roles=[role]', () => {
+      mockMetadata({ roles: CRM });
+      expect(
+        guard.canActivate(createMockContext({ role: UserRole.STAFF })),
+      ).toBe(true);
+      expect(() =>
+        guard.canActivate(createMockContext({ role: UserRole.EDITOR })),
+      ).toThrow('Insufficient role');
+    });
+
+    it('khi có roles[], roles quyết định (role đơn trong token không được cộng thêm quyền)', () => {
+      mockMetadata({ roles: [UserRole.ADMIN] });
+      const ctx = createMockContext({
+        role: UserRole.ADMIN,
+        roles: [UserRole.EDITOR],
+      });
+      expect(() => guard.canActivate(ctx)).toThrow('Insufficient role');
+    });
+
+    it('route không khai báo quyền (default-deny): cần ít nhất một role ADMIN/EDITOR', () => {
+      mockMetadata({});
+      expect(
+        guard.canActivate(
+          createMockContext({
+            role: UserRole.STAFF,
+            roles: [UserRole.STAFF, UserRole.EDITOR],
+          }),
+        ),
+      ).toBe(true);
+      expect(() =>
+        guard.canActivate(
+          createMockContext({
+            role: UserRole.MANAGER,
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+          }),
+        ),
+      ).toThrow('Insufficient role');
+    });
+  });
+
   it('@AnyRole() → mọi vai trò đã đăng nhập pass; @Roles vẫn ưu tiên hơn @AnyRole', () => {
     mockMetadata({ anyRole: true });
     expect(guard.canActivate(createMockContext({ role: UserRole.STAFF }))).toBe(

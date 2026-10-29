@@ -1541,20 +1541,22 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         (await call('GET', '/crm/customers?statusIds=abc', 'admin')).status,
       ).toBe(400);
 
+      // Seed chỉ có tỉnh/thành (không có khu vực con) nên tự tạo một khu vực con để kiểm tra "gồm cả khu vực con".
       const province = (await connection
         .collection('areas')
         .findOne({ parentId: null }))!;
-      const child = await connection
-        .collection('areas')
-        .findOne({ ancestorIds: province._id });
-      if (child) {
-        const cust = await createCustomer('admin', {
-          areaId: String(child._id),
-        });
-        expect(
-          await listIds('admin', `&areaIds=${String(province._id)}`),
-        ).toContain(cust.id);
-      }
+      const childRes = await call('POST', '/crm/areas', 'admin', {
+        name: 'Quận Thử Lọc',
+        type: 'DISTRICT',
+        parentId: String(province._id),
+      });
+      expect(childRes.status).toBe(201);
+      const cust = await createCustomer('admin', {
+        areaId: childRes.body.data.id,
+      });
+      expect(
+        await listIds('admin', `&areaIds=${String(province._id)}`),
+      ).toContain(cust.id);
     });
   });
 

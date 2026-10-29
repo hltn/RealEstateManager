@@ -91,9 +91,20 @@ export const createEmptyDraft = (items: readonly AdminCatalogItem[]): CatalogDra
   isSystem: false,
   listGroup: 'INTERESTED',
   tone: 'brand',
-  areaType: 'DISTRICT',
+  // Khu vực mới mặc định là tỉnh/thành (danh sách chuẩn 34 tỉnh, không có cha); chọn cha thì `withAreaParent` đổi sang Quận/Huyện.
+  areaType: 'PROVINCE',
   parentId: '',
 });
+
+/**
+ * Đổi khu vực cha khi THÊM MỚI: có cha mà loại còn là Tỉnh/Thành thì chuyển Quận/Huyện, bỏ cha thì về Tỉnh/Thành
+ * (loại Phường/Xã/Khác do người dùng chọn thì giữ nguyên).
+ */
+export const withAreaParent = (draft: CatalogDraft, parentId: string): CatalogDraft => {
+  if (parentId && draft.areaType === 'PROVINCE') return { ...draft, parentId, areaType: 'DISTRICT' };
+  if (!parentId && draft.areaType === 'DISTRICT') return { ...draft, parentId, areaType: 'PROVINCE' };
+  return { ...draft, parentId };
+};
 
 export const toDraft = (item: AdminCatalogItem): CatalogDraft => ({
   ...createEmptyDraft([]),

@@ -5,7 +5,7 @@ import {
   FeatureFlag,
   FeatureFlagService,
 } from '../../../shared/feature-flags/feature-flag.service';
-import { CatalogItemType } from '../catalogs/catalog.enums';
+import { AreaType, CatalogItemType } from '../catalogs/catalog.enums';
 import { Area, AreaDocument } from '../catalogs/schemas/area.schema';
 import {
   CatalogItem,
@@ -23,12 +23,12 @@ import {
 import { Project, ProjectDocument } from '../projects/schemas/project.schema';
 import { ensureSeeded } from './ensure-seeded.util';
 import {
-  SEED_AREA_TREE,
+  provinceSeedKey,
   SEED_CONTACT_RESULTS,
   SEED_LEAD_SOURCES,
   SEED_PROJECTS,
+  SEED_PROVINCES,
   SEED_STATUSES,
-  SeedAreaNode,
 } from './crm-seed.data';
 
 export interface CrmSeedReport {
@@ -76,13 +76,13 @@ export class CrmSeedService implements OnApplicationBootstrap {
     }
   }
 
-  /** Chạy toàn bộ seed theo thứ tự phụ thuộc (khu vực trước dự án). Trả về số bản ghi MỚI được chèn. */
+  /** Chạy toàn bộ seed theo thứ tự phụ thuộc (34 tỉnh/thành trước dự án). Trả về số bản ghi MỚI được chèn. */
   async seedAll(): Promise<CrmSeedReport> {
     const statuses = await this.seedStatuses();
     const leadSources = await this.seedItems(SEED_LEAD_SOURCES);
     const contactResults = await this.seedItems(SEED_CONTACT_RESULTS);
-    const { inserted: areas, idByPath } = await this.seedAreas();
-    const projects = await this.seedProjects(idByPath);
+    const { inserted: areas, idByName } = await this.seedAreas();
+    const projects = await this.seedProjects(idByName);
     return { statuses, leadSources, contactResults, areas, projects };
   }
 
@@ -136,89 +136,51 @@ export class CrmSeedService implements OnApplicationBootstrap {
     return inserted;
   }
 
-  /** Seed cây khu vực; trả thêm bản đồ "tỉnh/huyện" -> id để gắn dự án. */
+  /** Seed 34 tỉnh/thành (danh sách phẳng); trả thêm bản đồ "tên tỉnh" -> id để gắn dự án. */
   private async seedAreas(): Promise<{
     inserted: number;
-    idByPath: Map<string, Types.ObjectId>;
+    idByName: Map<string, Types.ObjectId>;
   }> {
-    const idByPath = new Map<string, Types.ObjectId>();
+    const idByName = new Map<string, Types.ObjectId>();
     let inserted = 0;
 
-    interface ParentRef {
-      id: Types.ObjectId;
-      ancestorIds: Types.ObjectId[];
-      /** Đường dẫn chuẩn hóa (không dấu) — dùng làm khóa seed ổn định. */
-      keyPath: string;
-      /** Đường dẫn hiển thị — khớp `SeedProject.areaPath`. */
-      displayPath: string;
-    }
-
-    const visit = async (
-      node: SeedAreaNode,
-      parent: ParentRef | null,
-      order: number,
-    ): Promise<void> => {
-      const nameNormalized = normalizeVietnamese(node.name);
-      const parentId = parent?.id ?? null;
-      const ancestorIds = parent ? [...parent.ancestorIds, parent.id] : [];
-      const keyPath = parent
-        ? `${parent.keyPath}/${nameNormalized}`
-        : nameNormalized;
-      const seedKey = `AREA:${keyPath}`;
+    for (const [index, name] of SEED_PROVINCES.entries()) {
+      const nameNormalized = normalizeVietnamese(name);
+      const seedKey = provinceSeedKey(name);
       const created = await this.ensureSeeded(
         this.areaModel,
         seedKey,
-        { parentId, nameNormalized },
+        { parentId: null, nameNormalized },
         {
-          name: node.name,
-          type: node.type,
-          ancestorIds,
+          name,
+          type: AreaType.PROVINCE,
+          ancestorIds: [],
           adminCode: null,
           isLegacy: false,
-          order,
+          order: index + 1,
           isActive: true,
         },
       );
       if (created) inserted += 1;
 
-      // Tìm lại theo seedKey (không theo tên): bản ghi có thể đã được Quản trị đổi tên hoặc chuyển cha.
+      // Tìm lại theo seedKey (không theo tên): bản ghi có thể đã được Quản trị đổi tên.
       const saved = await this.areaModel
         .findOne({ seedKey })
-        .select('_id ancestorIds')
+        .select('_id')
         .lean()
         .exec();
-      if (!saved) return;
-      const displayPath = parent
-        ? `${parent.displayPath}/${node.name}`
-        : node.name;
-      idByPath.set(displayPath, saved._id);
-      for (const [index, child] of (node.children ?? []).entries()) {
-        await visit(
-          child,
-          {
-            id: saved._id,
-            ancestorIds: saved.ancestorIds,
-            keyPath,
-            displayPath,
-          },
-          index + 1,
-        );
-      }
-    };
-
-    for (const [index, root] of SEED_AREA_TREE.entries()) {
-      await visit(root, null, index + 1);
+      if (saved) idByName.set(name, saved._id);
     }
-    return { inserted, idByPath };
+    return { inserted, idByName };
   }
 
   private async seedProjects(
-    idByPath: Map<string, Types.ObjectId>,
+    idByName: Map<string, Types.ObjectId>,
   ): Promise<number> {
     let inserted = 0;
     for (const project of SEED_PROJECTS) {
-      const areaId = project.areaPath
-        ? (idByPath.get(project.areaPath.join('/')) ?? null)
+      const areaId = project.areaName
+        ? (idByName.get(project.areaName) ?? null)
         : null;
       const codeNormalized = normalizeProjectCode(project.code);
       const created = await this.ensureSeeded(

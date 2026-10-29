@@ -87,8 +87,10 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       email: 'editor@example.com',
       displayName: 'Editor',
       role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
       status: UserStatus.BLOCKED,
       teamId: null,
+      teamIds: [],
     });
 
     await controller.updateStatus(otherId, { status: UserStatus.BLOCKED }, me);
@@ -119,8 +121,10 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       email: 'admin@example.com',
       displayName: 'Admin',
       role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
       status: UserStatus.ACTIVE,
       teamId: null,
+      teamIds: [],
     });
 
     // Không throw — service được gọi.
@@ -182,8 +186,10 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       email: 'staff@example.com',
       displayName: 'Thảo',
       role: UserRole.STAFF,
+      roles: [UserRole.STAFF],
       status: UserStatus.ACTIVE,
       teamId: '65e1f0a1b2c3d4e5f6a7b8d1',
+      teamIds: ['65e1f0a1b2c3d4e5f6a7b8d1'],
     };
     teamsService.assignUserToTeam.mockResolvedValue(profile);
 
@@ -211,8 +217,10 @@ describe('UsersController — contract mục 6.4/16.6', () => {
       email: 'editor@example.com',
       displayName: 'Editor One',
       role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
       status: UserStatus.ACTIVE,
       teamId: null,
+      teamIds: [],
     });
 
     await controller.create(dto);

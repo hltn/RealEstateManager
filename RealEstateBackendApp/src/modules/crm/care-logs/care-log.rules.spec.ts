@@ -14,8 +14,10 @@ const NOW = new Date('2026-10-23T12:00:00Z');
 const actorOf = (role: UserRole, userId = new Types.ObjectId()): CrmActor => ({
   userId,
   role,
+  roles: [role],
   displayName: 'x',
   teamId: null,
+  teamIds: [],
   managedTeamIds: [],
 });
 const logBy = (authorId: Types.ObjectId, hoursAgo: number) => ({

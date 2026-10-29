@@ -10,6 +10,7 @@ import { CrmAuditLogModule } from '../crm/audit-logs/crm-audit-log.module';
 import { CrmCommonModule } from '../crm/common/crm-common.module';
 import { CustomerTeamSyncModule } from '../crm/customers/customer-team-sync.module';
 import { TeamsModule } from '../teams/teams.module';
+import { UserRolesMigrationGuard } from './migrations/user-roles-migration.guard';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 
@@ -29,7 +30,8 @@ import { UsersController } from './users.controller';
     CustomerTeamSyncModule,
   ],
   controllers: [UsersController],
-  providers: [UsersService],
+  // UserRolesMigrationGuard: khởi động thấy tài khoản chưa migrate 005 thì cảnh báo, production thì từ chối khởi động.
+  providers: [UsersService, UserRolesMigrationGuard],
   exports: [UsersService],
 })
 export class UsersModule {}

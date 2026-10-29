@@ -341,7 +341,13 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
     // soloOther bị khóa nên token của nó trả 401 (ActiveAdminGuard); dùng token soloAdmin khóa chính nó bị 403, nên chỉ kiểm hạ role đã đủ
     await userModel.updateMany(
       { email: /^(admin|soloAdmin)@/ },
-      { $set: { status: UserStatus.ACTIVE, role: UserRole.ADMIN } },
+      {
+        $set: {
+          status: UserStatus.ACTIVE,
+          role: UserRole.ADMIN,
+          roles: [UserRole.ADMIN],
+        },
+      },
     );
   });
 
@@ -520,13 +526,12 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
       { _id: hcm!._id },
       { $set: { name: 'Sài Gòn', nameNormalized: 'sai gon' } },
     );
-    const q1 = await areas.findOne({
-      seedKey: { $regex: '^AREA:tp. ho chi minh/quan 1$' },
-    });
+    // Danh sách seed phẳng: chuyển tỉnh "Hà Nội" vào dưới một tỉnh khác (Quản trị tự sắp lại cây).
+    const q1 = await areas.findOne({ seedKey: 'AREA:ha noi' });
     const other = await areas.findOne({
       parentId: null,
       seedKey: { $type: 'string' },
-      _id: { $ne: hcm!._id },
+      _id: { $nin: [hcm!._id, q1!._id] },
     });
     expect(
       (

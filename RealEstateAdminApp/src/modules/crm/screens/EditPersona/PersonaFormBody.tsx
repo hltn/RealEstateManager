@@ -13,6 +13,8 @@ import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
 import { MaskedIdInput } from '@crm/components/form/MaskedIdInput';
 import { SectionCard } from '@crm/components/form/SectionCard';
+import { getAreaSearchTerms } from '@crm/lib/areaMatch';
+import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
@@ -136,7 +138,7 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
           }}
         />
         <FormField inputId={fieldId('area')} label="Khu vực (nơi khách đang ở)">
-          <SelectInput id={fieldId('area')} icon={MapPin} emptyLabel="Chưa rõ" options={catalogs.areas.filter((area) => area.isActive || area.id === basic.areaId).map((area) => ({ value: area.id, label: area.name }))} value={basic.areaId} onChange={(event) => form.setBasicField('areaId', event.target.value)} />
+          <SearchableSelect id={fieldId('area')} icon={MapPin} emptyLabel="Chưa rõ" listLabel="Danh sách khu vực" getSearchTerms={getAreaSearchTerms} options={catalogs.areas.filter((area) => area.isActive || area.id === basic.areaId).map((area) => ({ value: area.id, label: area.name }))} value={basic.areaId} onChange={(areaId) => form.setBasicField('areaId', areaId)} />
         </FormField>
         <FormField inputId={fieldId('source')} label="Nguồn khách">
           <SelectInput id={fieldId('source')} icon={Megaphone} emptyLabel="Chưa rõ" options={catalogs.leadSources.filter((source) => source.isActive || source.id === basic.sourceId).map((source) => ({ value: source.id, label: source.label }))} value={basic.sourceId} onChange={(event) => form.setBasicField('sourceId', event.target.value)} />

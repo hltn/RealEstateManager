@@ -108,7 +108,8 @@ export class TeamResponseDto {
   managers: UserRefDto[];
 
   @ApiProperty({
-    description: 'Số thành viên (người dùng chưa xóa có teamId = nhóm này)',
+    description:
+      'Số thành viên (người dùng chưa xóa có nhóm này trong teamIds)',
   })
   memberCount: number;
 

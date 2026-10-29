@@ -185,8 +185,10 @@ describe('CRM M2 — kiểm tải sơ bộ danh sách trên 10.000 khách', () =
       password: 'x',
       displayName: key,
       role,
+      roles: [role],
       status: UserStatus.ACTIVE,
       teamId: teamId ?? null,
+      teamIds: teamId ? [teamId] : [],
       deletedAt: null,
     });
     const teamIds = Array.from(

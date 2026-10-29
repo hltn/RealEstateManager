@@ -2,19 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { User, UserDocument } from '../../users/schemas/user.schema';
+import { teamObjectIdsOf } from '../../users/user-public-profile';
 import { Customer, CustomerDocument } from './schemas/customer.schema';
 
 const BATCH_SIZE = 1000;
 
-/** `teamIds` mới của một khách = hợp `teamId` hiện tại của các thành viên chăm sóc (bỏ người chưa có nhóm). */
+/**
+ * `teamIds` mới của một khách = hợp `teamIds[]` hiện tại của MỌI thành viên chăm sóc (mỗi người có thể thuộc nhiều
+ * nhóm; người chưa có nhóm không đóng góp gì).
+ */
 export const computeTeamIds = (
   memberIds: Types.ObjectId[],
-  teamOfUser: Map<string, Types.ObjectId | null>,
+  teamsOfUser: Map<string, readonly Types.ObjectId[]>,
 ): Types.ObjectId[] => {
   const teams = new Map<string, Types.ObjectId>();
   for (const memberId of memberIds) {
-    const teamId = teamOfUser.get(String(memberId));
-    if (teamId) teams.set(String(teamId), teamId);
+    for (const teamId of teamsOfUser.get(String(memberId)) ?? []) {
+      teams.set(String(teamId), teamId);
+    }
   }
   return [...teams.values()];
 };
@@ -26,8 +31,8 @@ const sameSet = (a: Types.ObjectId[], b: Types.ObjectId[]): boolean => {
 };
 
 /**
- * Đồng bộ `customers.teamIds` khi nhóm của một người dùng đổi (`PATCH /users/:id/team`, hoặc đổi vai trò làm
- * mất nhóm). `teamIds` là cơ sở phạm vi của Quản lý nên phải được tính lại NGAY trong cùng transaction với việc đổi
+ * Đồng bộ `customers.teamIds` khi nhóm của một người dùng đổi (`PATCH /users/:id/team(s)`, thêm/gỡ thành viên
+ * nhóm, hoặc đổi vai trò làm mất nhóm). `teamIds` là cơ sở phạm vi của Quản lý nên phải được tính lại NGAY trong cùng transaction với việc đổi
  * nhóm — không để job nền, tránh khoảng thời gian Quản lý nhóm cũ vẫn thấy khách.
  *
  * Chỉ xử lý khách có người này trong `careTeam` (kể cả khách xóa mềm để khôi phục về sau vẫn đúng). Khách chưa có
@@ -63,18 +68,18 @@ export class CustomerTeamSyncService {
     ];
     const users = await this.userModel
       .find({ _id: { $in: memberIds } })
-      .select('teamId')
+      .select('teamId teamIds')
       .session(session)
       .lean()
       .exec();
-    const teamOfUser = new Map(
-      users.map((user) => [String(user._id), user.teamId ?? null]),
+    const teamsOfUser = new Map(
+      users.map((user) => [String(user._id), teamObjectIdsOf(user)]),
     );
 
     const operations = customers.flatMap((customer) => {
       const teamIds = computeTeamIds(
         customer.careTeam.map((member) => member.userId),
-        teamOfUser,
+        teamsOfUser,
       );
       if (sameSet(teamIds, customer.teamIds ?? [])) return [];
       return [

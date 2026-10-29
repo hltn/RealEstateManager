@@ -512,7 +512,7 @@ export class AppointmentsWriteService {
       .exists({
         _id: assigneeId,
         status: UserStatus.ACTIVE,
-        role: { $in: CRM_TEAM_ROLES },
+        roles: { $in: CRM_TEAM_ROLES },
         deletedAt: null,
       })
       .session(session)

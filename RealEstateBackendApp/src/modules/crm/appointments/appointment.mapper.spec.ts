@@ -16,8 +16,10 @@ const maps = {
 const actor = {
   userId,
   role: UserRole.STAFF,
+  roles: [UserRole.STAFF],
   displayName: 'A',
   teamId: null,
+  teamIds: [],
   managedTeamIds: [],
 };
 const row = {

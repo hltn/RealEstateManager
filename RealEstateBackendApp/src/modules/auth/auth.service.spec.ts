@@ -58,6 +58,8 @@ function buildUserDoc(overrides: Record<string, unknown> = {}) {
     password: '$argon2id$hash',
     displayName: 'System Admin',
     role: UserRole.ADMIN,
+    // Mặc định `roles` suy từ `role` (khớp pre-validate hook của schema) trừ khi test truyền riêng.
+    roles: [overrides.role ?? UserRole.ADMIN],
     status: UserStatus.ACTIVE,
     deletedAt: null,
     lastLoginAt: null,
@@ -215,26 +217,67 @@ describe('AuthService (contract mục 16.1)', () => {
       });
 
       expect(result.accessToken).toBe('access.jwt.token');
-      // UserPublicDto: chỉ {_id, email, displayName, role} — KHÔNG password/status.
+      // UserPublicDto: chỉ {_id, email, displayName, role, roles} — KHÔNG password/status.
       expect(result.user).toEqual({
         _id: USER_ID,
         email: EMAIL,
         displayName: 'System Admin',
         role: UserRole.ADMIN,
+        roles: [UserRole.ADMIN],
       });
       expect((result.user as any).password).toBeUndefined();
       expect((result.user as any).status).toBeUndefined();
       // Refresh token raw (UUID) trả về để controller set cookie.
       expect(typeof result.refreshToken).toBe('string');
       expect(result.refreshToken.length).toBeGreaterThan(0);
-      // signAsync với payload { sub (ObjectId string), email, role } — không nhét password.
+      // signAsync với payload { sub (ObjectId string), email, role, roles } — không nhét password.
       expect(jwtSignMock).toHaveBeenCalledWith({
         sub: USER_ID,
         email: EMAIL,
         role: UserRole.ADMIN,
+        roles: [UserRole.ADMIN],
       });
       // Refresh token được create 1 lần (hash lưu DB, raw trả client).
       expect(refreshTokenModel.create).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [[UserRole.EDITOR, UserRole.STAFF], UserRole.STAFF],
+      [[UserRole.STAFF, UserRole.MANAGER], UserRole.MANAGER],
+    ])(
+      'tài khoản nhiều role %j: token mang đủ roles và role = role cao nhất (%s)',
+      async (roles, highest) => {
+        jest
+          .spyOn(service, 'validateUser')
+          .mockResolvedValue(
+            buildUserDoc({ role: UserRole.EDITOR, roles }) as any,
+          );
+        userModel.updateOne.mockReturnValue(chainable({}));
+
+        await service.login({ email: EMAIL, password: 'password123' });
+
+        expect(jwtSignMock).toHaveBeenCalledWith(
+          expect.objectContaining({ role: highest, roles }),
+        );
+      },
+    );
+
+    it('tài khoản chưa migrate (chỉ có role đơn): token vẫn có roles = [role]', async () => {
+      jest
+        .spyOn(service, 'validateUser')
+        .mockResolvedValue(
+          buildUserDoc({ role: UserRole.STAFF, roles: undefined }) as any,
+        );
+      userModel.updateOne.mockReturnValue(chainable({}));
+
+      await service.login({ email: EMAIL, password: 'password123' });
+
+      expect(jwtSignMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role: UserRole.STAFF,
+          roles: [UserRole.STAFF],
+        }),
+      );
     });
 
     it('login thành công → cập nhật lastLoginAt (fire-and-forget)', async () => {
@@ -557,6 +600,47 @@ describe('AuthService (contract mục 16.1)', () => {
         managedTeamIds: [TEAM_ID, 'team-2'],
       });
       expect((me as any).password).toBeUndefined();
+    });
+
+    it('MANAGER+STAFF nhiều nhóm: trả roles/teamIds đầy đủ, role/teamId là bản suy ra, vẫn tra managedTeamIds', async () => {
+      const TEAM_B = '65e1f0a1b2c3d4e5f6a7b8d2';
+      userModel.findOne.mockReturnValue(
+        chainable(
+          buildUserDoc({
+            role: UserRole.MANAGER,
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+            teamId: TEAM_ID,
+            teamIds: [TEAM_ID, TEAM_B],
+          }),
+        ),
+      );
+      teamModel.find.mockReturnValue(chainable([{ _id: TEAM_B }]));
+
+      const me = await service.getMe(USER_ID);
+
+      expect(me).toMatchObject({
+        role: UserRole.MANAGER,
+        roles: [UserRole.MANAGER, UserRole.STAFF],
+        teamId: TEAM_ID,
+        teamIds: [TEAM_ID, TEAM_B],
+        managedTeamIds: [TEAM_B],
+      });
+    });
+
+    it('STAFF+EDITOR (không có MANAGER): không truy vấn nhóm quản lý', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(
+          buildUserDoc({
+            role: UserRole.STAFF,
+            roles: [UserRole.STAFF, UserRole.EDITOR],
+          }),
+        ),
+      );
+
+      const me = await service.getMe(USER_ID);
+
+      expect(me.roles).toEqual([UserRole.STAFF, UserRole.EDITOR]);
+      expect(teamModel.find).not.toHaveBeenCalled();
     });
 
     it('ADMIN cũ chưa có field teamId: teamId=null, managedTeamIds rỗng và KHÔNG truy vấn teams', async () => {

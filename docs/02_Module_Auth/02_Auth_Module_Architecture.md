@@ -443,6 +443,9 @@ Quy tắc cốt lõi (bắt buộc):
 - **Response 200:** User object đã cập nhật
 
 
+> Cập nhật (CRM): tài khoản có thêm `roles[]`, `teamIds[]`, JWT thêm claim `roles`, thêm `PATCH /users/:id/roles` và `PATCH /users/:id/teams`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+
+
 ### 6.3 Error Messages — Exact (cho assert body `message`)
 
 

@@ -102,6 +102,8 @@
 | DELETE | `/teams/:id` | **Mới.** Xóa mềm (chỉ khi không còn thành viên) | A | — | `204`; 409 `TEAM_NOT_EMPTY` | QT6 |
 | GET | `/crm/assignable-users` | **Mới.** Người có thể phân chăm sóc (cho ô chọn người). A: tất cả; M: nhóm mình; S (PR): nhóm mình | A, M, S | query `q, teamId, page, limit` | `{ data: [UserRef + { role, team: Ref }], meta }` | C8 |
 
+> Cập nhật: thêm `PATCH /users/:id/roles`, `PATCH /users/:id/teams`, `GET|POST|DELETE /teams/:id/members`, `DELETE` trong thao tác hàng loạt khách, route xóa vĩnh viễn khách và khu vực 34 tỉnh; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+
 ### 2.3 Khách hàng (14)
 
 > Khai báo route tĩnh (`list-counts`, `phone-lookups`) **trước** `/:id`.

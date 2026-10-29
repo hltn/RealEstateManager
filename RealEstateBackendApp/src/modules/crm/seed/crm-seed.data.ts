@@ -1,8 +1,5 @@
-import {
-  AreaType,
-  CatalogItemType,
-  ListGroup,
-} from '../catalogs/catalog.enums';
+import { CatalogItemType, ListGroup } from '../catalogs/catalog.enums';
+import { normalizeVietnamese } from '../common/utils/vietnamese-text.util';
 import { ProjectStatus } from '../projects/project.rules';
 
 /**
@@ -172,57 +169,59 @@ export const SEED_CONTACT_RESULTS: readonly SeedCatalogItem[] = [
   },
 ];
 
-export interface SeedAreaNode {
-  name: string;
-  type: AreaType;
-  children?: readonly SeedAreaNode[];
-}
-
 /**
- * Cây khu vực: prototype lưu phẳng ("Quận 7, TP.HCM"); backend tách thành tỉnh/thành -> quận/huyện
- * để lọc theo tỉnh tự bao gồm khu vực con (`ancestorIds`).
+ * 34 tỉnh/thành phố của Việt Nam (hiệu lực từ 01/07/2025, Nghị quyết 202/2025/QH15: 28 tỉnh + 6 thành phố
+ * trực thuộc Trung ương). Danh sách PHẲNG: chỉ cấp tỉnh/thành (`AreaType.PROVINCE`), không có quận/huyện/phường.
+ * Thứ tự mảng chính là `order` hiển thị (1..34). `adminCode` để trống vì chưa đối chiếu được mã hành chính chính thức.
  */
-export const SEED_AREA_TREE: readonly SeedAreaNode[] = [
-  {
-    name: 'TP. Hồ Chí Minh',
-    type: AreaType.PROVINCE,
-    children: [
-      { name: 'Quận 1', type: AreaType.DISTRICT },
-      { name: 'Quận 7', type: AreaType.DISTRICT },
-      { name: 'Quận Bình Thạnh', type: AreaType.DISTRICT },
-      { name: 'TP. Thủ Đức', type: AreaType.DISTRICT },
-      { name: 'Huyện Nhà Bè', type: AreaType.DISTRICT },
-    ],
-  },
-  {
-    name: 'Hà Nội',
-    type: AreaType.PROVINCE,
-    children: [
-      { name: 'Nam Từ Liêm', type: AreaType.DISTRICT },
-      { name: 'Long Biên', type: AreaType.DISTRICT },
-      { name: 'Gia Lâm', type: AreaType.DISTRICT },
-    ],
-  },
-  {
-    name: 'Hưng Yên',
-    type: AreaType.PROVINCE,
-    children: [{ name: 'Văn Giang', type: AreaType.DISTRICT }],
-  },
-  {
-    name: 'Bình Dương',
-    type: AreaType.PROVINCE,
-    children: [{ name: 'TP. Thủ Dầu Một', type: AreaType.DISTRICT }],
-  },
-  { name: 'Nước ngoài', type: AreaType.OTHER },
+export const SEED_PROVINCES: readonly string[] = [
+  'Hà Nội',
+  'Huế',
+  'Lai Châu',
+  'Điện Biên',
+  'Sơn La',
+  'Lạng Sơn',
+  'Quảng Ninh',
+  'Thanh Hóa',
+  'Nghệ An',
+  'Hà Tĩnh',
+  'Cao Bằng',
+  'Tuyên Quang',
+  'Lào Cai',
+  'Thái Nguyên',
+  'Phú Thọ',
+  'Bắc Ninh',
+  'Hưng Yên',
+  'Hải Phòng',
+  'Ninh Bình',
+  'Quảng Trị',
+  'Đà Nẵng',
+  'Quảng Ngãi',
+  'Gia Lai',
+  'Khánh Hòa',
+  'Lâm Đồng',
+  'Đắk Lắk',
+  'TP. Hồ Chí Minh',
+  'Đồng Nai',
+  'Tây Ninh',
+  'Cần Thơ',
+  'Vĩnh Long',
+  'Đồng Tháp',
+  'Cà Mau',
+  'An Giang',
 ];
+
+/** Khóa seed bất biến của một tỉnh/thành (`AREA:<tên không dấu>`); seed và migration 006 dùng chung để không tạo trùng. */
+export const provinceSeedKey = (name: string): string =>
+  `AREA:${normalizeVietnamese(name)}`;
 
 export interface SeedProject {
   code: string;
   name: string;
   developer: string;
   location: string;
-  /** [tỉnh/thành, quận/huyện] trong `SEED_AREA_TREE`; null = chưa gắn khu vực. */
-  areaPath: readonly [string, string] | null;
+  /** Tên tỉnh/thành trong `SEED_PROVINCES`; null = chưa gắn khu vực. */
+  areaName: string | null;
   propertyTypes: readonly string[];
   priceFrom: number;
   priceTo: number;
@@ -240,7 +239,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: "Q'Terra",
     developer: 'STND Group',
     location: 'Thủ Đức, TP.HCM',
-    areaPath: ['TP. Hồ Chí Minh', 'TP. Thủ Đức'],
+    areaName: 'TP. Hồ Chí Minh',
     propertyTypes: ['Căn hộ'],
     priceFrom: 95_000_000,
     priceTo: 130_000_000,
@@ -253,7 +252,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'The Privia',
     developer: 'Khang Điền',
     location: 'Bình Tân, TP.HCM',
-    areaPath: null,
+    areaName: 'TP. Hồ Chí Minh',
     propertyTypes: ['Căn hộ'],
     priceFrom: 48_000_000,
     priceTo: 55_000_000,
@@ -266,7 +265,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'Ecopark Grand',
     developer: 'Ecopark Corp',
     location: 'Văn Giang, Hưng Yên',
-    areaPath: ['Hưng Yên', 'Văn Giang'],
+    areaName: 'Hưng Yên',
     propertyTypes: ['Biệt thự', 'Nhà phố'],
     priceFrom: 120_000_000,
     priceTo: 180_000_000,
@@ -278,7 +277,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'Vinhomes Ocean Park',
     developer: 'Vinhomes',
     location: 'Gia Lâm, Hà Nội',
-    areaPath: ['Hà Nội', 'Gia Lâm'],
+    areaName: 'Hà Nội',
     propertyTypes: ['Căn hộ', 'Shophouse'],
     priceFrom: 45_000_000,
     priceTo: 90_000_000,
@@ -290,7 +289,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'Lumiere Riverside',
     developer: 'An Gia',
     location: 'Thảo Điền, TP.HCM',
-    areaPath: ['TP. Hồ Chí Minh', 'TP. Thủ Đức'],
+    areaName: 'TP. Hồ Chí Minh',
     propertyTypes: ['Căn hộ'],
     priceFrom: 110_000_000,
     priceTo: 150_000_000,
@@ -303,7 +302,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'Masteri Centre Point',
     developer: 'Masterise Homes',
     location: 'Thủ Đức, TP.HCM',
-    areaPath: ['TP. Hồ Chí Minh', 'TP. Thủ Đức'],
+    areaName: 'TP. Hồ Chí Minh',
     propertyTypes: ['Căn hộ'],
     priceFrom: 65_000_000,
     priceTo: 85_000_000,
@@ -316,7 +315,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'Aqua City Waterfront',
     developer: 'Nova Land',
     location: 'Biên Hòa, Đồng Nai',
-    areaPath: null,
+    areaName: 'Đồng Nai',
     propertyTypes: ['Nhà phố', 'Biệt thự'],
     priceFrom: 60_000_000,
     priceTo: 95_000_000,
@@ -329,7 +328,7 @@ export const SEED_PROJECTS: readonly SeedProject[] = [
     name: 'Vinhomes Grand Park',
     developer: 'Vinhomes',
     location: 'Thủ Đức, TP.HCM',
-    areaPath: ['TP. Hồ Chí Minh', 'TP. Thủ Đức'],
+    areaName: 'TP. Hồ Chí Minh',
     propertyTypes: ['Căn hộ', 'Shophouse'],
     priceFrom: 50_000_000,
     priceTo: 75_000_000,

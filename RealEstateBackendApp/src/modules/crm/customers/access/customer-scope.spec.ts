@@ -6,8 +6,10 @@ import { buildCustomerScope } from './customer-scope';
 const actor = (overrides: Partial<CrmActor>): CrmActor => ({
   userId: new Types.ObjectId(),
   role: UserRole.STAFF,
+  roles: [overrides.role ?? UserRole.STAFF],
   displayName: 'x',
   teamId: null,
+  teamIds: [],
   managedTeamIds: [],
   ...overrides,
 });

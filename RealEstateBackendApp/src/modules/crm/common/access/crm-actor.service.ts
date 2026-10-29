@@ -3,9 +3,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../../common/enums/user-role.enum';
+import { highestRole, rolesOf } from '../../../../common/utils/user-roles.util';
 import { UserStatus } from '../../../../common/enums/user-status.enum';
 import { Team, TeamDocument } from '../../../teams/schemas/team.schema';
 import { User, UserDocument } from '../../../users/schemas/user.schema';
+import { teamObjectIdsOf } from '../../../users/user-public-profile';
 import { CrmActor } from './crm-actor';
 
 /**
@@ -13,6 +15,7 @@ import { CrmActor } from './crm-actor';
  * (access token sống tới 15 phút nên không thể tin team trong token).
  *
  * Tài khoản đã xóa mềm hoặc bị khóa => 401 ngay, không đợi token hết hạn.
+ * `roles`/`teamIds` đọc từ DB; bản ghi chưa migrate (chỉ có `role`/`teamId` đơn) được coi như `[role]`/`[teamId]`.
  */
 @Injectable()
 export class CrmActorService {
@@ -24,29 +27,34 @@ export class CrmActorService {
   async resolve(jwt: Pick<JwtPayload, 'sub'>): Promise<CrmActor> {
     const user = await this.userModel
       .findOne({ _id: new Types.ObjectId(jwt.sub), deletedAt: null })
-      .select('displayName role status teamId')
+      .select('displayName role roles status teamId teamIds')
       .lean()
       .exec();
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    const managedTeamIds =
-      user.role === UserRole.MANAGER
-        ? (
-            await this.teamModel
-              .find({ managerIds: user._id, deletedAt: null })
-              .select('_id')
-              .lean()
-              .exec()
-          ).map((team) => team._id)
-        : [];
+    const roles = rolesOf(user) as UserRole[];
+    const role = highestRole(roles) ?? user.role;
+    const teamIds = teamObjectIdsOf(user);
+
+    const managedTeamIds = roles.includes(UserRole.MANAGER)
+      ? (
+          await this.teamModel
+            .find({ managerIds: user._id, deletedAt: null })
+            .select('_id')
+            .lean()
+            .exec()
+        ).map((team) => team._id)
+      : [];
 
     return {
       userId: user._id,
-      role: user.role,
+      role,
+      roles,
       displayName: user.displayName,
-      teamId: user.teamId ?? null,
+      teamId: teamIds[0] ?? null,
+      teamIds,
       managedTeamIds,
     };
   }

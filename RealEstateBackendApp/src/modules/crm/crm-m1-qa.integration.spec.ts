@@ -277,7 +277,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
 
   // ---------------------------------------------------------------------------
   describe('Swagger', () => {
-    it('dựng được tài liệu OpenAPI và có đủ 30 route CRM/teams của M1', () => {
+    it('dựng được tài liệu OpenAPI và có đủ 31 route CRM/teams của M1', () => {
       const doc = SwaggerModule.createDocument(
         app,
         new DocumentBuilder().setTitle('qa').addBearerAuth().build(),
@@ -301,11 +301,12 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
             op.includes('/users/{id}/team')) &&
           !isM2Route(op),
       );
-      // teams 4 + users/:id/team 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 30
-      expect(crmOps).toHaveLength(30);
+      // teams 4 + users/:id/team 1 + users/:id/teams 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 31
+      expect(crmOps).toHaveLength(31);
       for (const op of [
         'POST /api/v1/crm/project-restorations',
         'PATCH /api/v1/users/{id}/team',
+        'PATCH /api/v1/users/{id}/teams',
         'DELETE /api/v1/teams/{id}',
       ]) {
         expect(ops).toContain(op);
@@ -512,7 +513,8 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
       await createUser('demotedAdmin', UserRole.ADMIN);
       await userModel.updateOne(
         { _id: ids.demotedAdmin },
-        { $set: { role: UserRole.EDITOR } },
+        // Ghi trực tiếp DB phải cập nhật cả cặp `role` (suy ra) và `roles`.
+        { $set: { role: UserRole.EDITOR, roles: [UserRole.EDITOR] } },
       );
       const res = await call('POST', '/crm/projects', 'demotedAdmin', {
         name: 'Zombie',

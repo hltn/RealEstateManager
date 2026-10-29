@@ -61,16 +61,22 @@ const USER_ID = '65e1f0a1b2c3d4e5f6a7b8c9';
 /** Session giả do `connection.transaction` mock truyền vào `work`. */
 const SESSION = { id: 'session' };
 const EMAIL = 'editor@example.com';
+const TEAM_A = '65e1f0a1b2c3d4e5f6a7b8d1';
 
+/** Mặc định `roles`/`teamIds` suy từ `role`/`teamId` (khớp pre-validate hook của schema) trừ khi test truyền riêng. */
 function buildUserDoc(overrides: Record<string, unknown> = {}) {
+  const role = (overrides.role ?? UserRole.EDITOR) as UserRole;
+  const teamId = overrides.teamId ?? null;
   return {
     _id: USER_ID,
     email: EMAIL,
     password: '$argon2id$hash',
     displayName: 'Editor One',
-    role: UserRole.EDITOR,
+    role,
+    roles: [role],
     status: UserStatus.ACTIVE,
-    teamId: null,
+    teamId,
+    teamIds: teamId ? [teamId] : [],
     deletedAt: null,
     lastLoginAt: null,
     ...overrides,
@@ -103,9 +109,8 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
     };
 
     teamModel = {
-      exists: jest.fn(),
+      countDocuments: jest.fn(),
       updateMany: jest.fn(),
-      updateOne: jest.fn(),
     };
     audit = { record: jest.fn() };
     // Transaction giả: chạy `work` ngay với một session giả; phần ghi thật được kiểm ở integration test.
@@ -153,8 +158,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
             email: EMAIL,
             displayName: 'Editor One',
             role: UserRole.EDITOR,
+            roles: [UserRole.EDITOR],
             status: UserStatus.ACTIVE,
             teamId: null,
+            teamIds: [],
           },
         ],
         meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
@@ -379,8 +386,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         email: EMAIL,
         displayName: 'Editor One',
         role: UserRole.EDITOR,
+        roles: [UserRole.EDITOR],
         status: UserStatus.ACTIVE,
         teamId: null,
+        teamIds: [],
       });
       expect((result as any).password).toBeUndefined();
       expect((result as any).deletedAt).toBeUndefined();
@@ -469,14 +478,14 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       await service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR);
 
       expect(userModel.updateMany).toHaveBeenCalledWith(
-        { role: UserRole.ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
+        { roles: UserRole.ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
         { $currentDate: { updatedAt: true } },
         { session: SESSION, timestamps: false },
       );
     });
   });
 
-  describe('updateRole (đổi role + audit + dọn nhóm + chặn hạ ADMIN cuối cùng)', () => {
+  describe('updateRole / updateRoles (đổi role + audit + dọn nhóm + chặn hạ ADMIN cuối cùng)', () => {
     const ADMIN_ACTOR = { sub: '65e1f0a1b2c3d4e5f6a7b8aa' };
     const userId = new Types.ObjectId(USER_ID);
 
@@ -489,16 +498,53 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       expect(teamModel.updateMany).not.toHaveBeenCalled();
     });
 
-    it('đặt lại đúng vai trò hiện có là no-op: không update, không audit', async () => {
-      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+    it('đặt lại đúng tập role hiện có (kể cả khác thứ tự) là no-op: không update, không audit', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(
+          buildUserDoc({
+            role: UserRole.MANAGER,
+            roles: [UserRole.STAFF, UserRole.MANAGER],
+          }),
+        ),
+      );
 
-      await service.updateRole(USER_ID, { role: UserRole.EDITOR }, ADMIN_ACTOR);
+      await service.updateRoles(
+        USER_ID,
+        { roles: [UserRole.MANAGER, UserRole.STAFF] },
+        ADMIN_ACTOR,
+      );
 
       expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('đổi sang MANAGER: chỉ `$set role`, KHÔNG đụng teams; ghi audit USER_ROLE_CHANGED', async () => {
+    it('PATCH role đơn trên tài khoản nhiều role KHÔNG phải no-op: thu về đúng một role', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(
+          buildUserDoc({
+            role: UserRole.MANAGER,
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+          }),
+        ),
+      );
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.MANAGER })),
+      );
+
+      await service.updateRole(
+        USER_ID,
+        { role: UserRole.MANAGER },
+        ADMIN_ACTOR,
+      );
+
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: userId },
+        { $set: { roles: [UserRole.MANAGER], role: UserRole.MANAGER } },
+        { returnDocument: 'after', session: SESSION },
+      );
+    });
+
+    it('đổi sang MANAGER: `$set` roles + role cao nhất, KHÔNG đụng teams; audit USER_ROLE_CHANGED ghi roles cũ/mới', async () => {
       userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
       userModel.findOneAndUpdate.mockReturnValue(
         chainable(buildUserDoc({ role: UserRole.MANAGER })),
@@ -512,22 +558,62 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
 
       expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
         { _id: userId },
-        { $set: { role: UserRole.MANAGER } },
+        { $set: { roles: [UserRole.MANAGER], role: UserRole.MANAGER } },
         { returnDocument: 'after', session: SESSION },
       );
       expect(teamModel.updateMany).not.toHaveBeenCalled();
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'USER_ROLE_CHANGED',
-          changes: [{ field: 'role', from: 'EDITOR', to: 'MANAGER' }],
+          changes: [{ field: 'roles', from: ['EDITOR'], to: ['MANAGER'] }],
         }),
         SESSION,
       );
     });
 
-    it('đổi sang vai trò không thuộc nhóm (ADMIN): xóa teamId và gỡ khỏi managerIds trong CÙNG transaction', async () => {
+    it('roles khử trùng và sắp theo độ ưu tiên; role = cao nhất (STAFF+MANAGER → MANAGER), giữ nguyên nhóm', async () => {
       userModel.findOne.mockReturnValue(
-        chainable(buildUserDoc({ role: UserRole.STAFF })),
+        chainable(buildUserDoc({ role: UserRole.STAFF, teamId: TEAM_A })),
+      );
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(
+          buildUserDoc({
+            role: UserRole.MANAGER,
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+            teamId: TEAM_A,
+          }),
+        ),
+      );
+
+      await service.updateRoles(
+        USER_ID,
+        { roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.STAFF] },
+        ADMIN_ACTOR,
+      );
+
+      expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: userId },
+        {
+          $set: {
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+            role: UserRole.MANAGER,
+          },
+        },
+        expect.anything(),
+      );
+      expect(teamModel.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('roles rỗng/không hợp lệ → 400, không mở transaction', async () => {
+      await expect(
+        service.updateRoles(USER_ID, { roles: [] }, ADMIN_ACTOR),
+      ).rejects.toMatchObject({ errorCode: 'VALIDATION_FAILED' });
+      expect(connection.transaction).not.toHaveBeenCalled();
+    });
+
+    it('không còn role MANAGER/STAFF (ADMIN): xóa teamId + teamIds và gỡ khỏi managerIds trong CÙNG transaction', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ role: UserRole.STAFF, teamId: TEAM_A })),
       );
       userModel.findOneAndUpdate.mockReturnValue(
         chainable(buildUserDoc({ role: UserRole.ADMIN })),
@@ -543,7 +629,14 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       expect(connection.transaction).toHaveBeenCalledTimes(1);
       expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
         { _id: userId },
-        { $set: { role: UserRole.ADMIN, teamId: null } },
+        {
+          $set: {
+            roles: [UserRole.ADMIN],
+            role: UserRole.ADMIN,
+            teamIds: [],
+            teamId: null,
+          },
+        },
         { returnDocument: 'after', session: SESSION },
       );
       expect(teamModel.updateMany).toHaveBeenCalledWith(
@@ -557,10 +650,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
 
     it('hạ MANAGER xuống STAFF: giữ nhóm của người dùng nhưng vẫn gỡ khỏi managerIds', async () => {
       userModel.findOne.mockReturnValue(
-        chainable(buildUserDoc({ role: UserRole.MANAGER })),
+        chainable(buildUserDoc({ role: UserRole.MANAGER, teamId: TEAM_A })),
       );
       userModel.findOneAndUpdate.mockReturnValue(
-        chainable(buildUserDoc({ role: UserRole.STAFF })),
+        chainable(buildUserDoc({ role: UserRole.STAFF, teamId: TEAM_A })),
       );
       teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
 
@@ -568,7 +661,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
 
       expect(userModel.findOneAndUpdate).toHaveBeenCalledWith(
         expect.anything(),
-        { $set: { role: UserRole.STAFF } },
+        { $set: { roles: [UserRole.STAFF], role: UserRole.STAFF } },
         expect.anything(),
       );
       expect(teamModel.updateMany).toHaveBeenCalledTimes(1);
@@ -585,6 +678,29 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       ).rejects.toMatchObject({ errorCode: 'LAST_ADMIN_REQUIRED' });
       expect(userModel.findOneAndUpdate).not.toHaveBeenCalled();
       expect(teamModel.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ADMIN+STAFF bỏ ADMIN (còn STAFF) cũng bị chặn nếu là ADMIN cuối cùng; giữ ADMIN thì không cần kiểm', async () => {
+      const adminStaff = buildUserDoc({
+        role: UserRole.ADMIN,
+        roles: [UserRole.ADMIN, UserRole.STAFF],
+      });
+      userModel.findOne.mockReturnValue(chainable(adminStaff));
+      userModel.countDocuments.mockReturnValue(chainable(0));
+
+      await expect(
+        service.updateRoles(USER_ID, { roles: [UserRole.STAFF] }, ADMIN_ACTOR),
+      ).rejects.toMatchObject({ errorCode: 'LAST_ADMIN_REQUIRED' });
+
+      userModel.countDocuments.mockClear();
+      userModel.findOneAndUpdate.mockReturnValue(chainable(adminStaff));
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
+      await service.updateRoles(
+        USER_ID,
+        { roles: [UserRole.ADMIN, UserRole.EDITOR] },
+        ADMIN_ACTOR,
+      );
+      expect(userModel.countDocuments).not.toHaveBeenCalled();
     });
 
     it('nâng lên ADMIN không cần kiểm "ADMIN cuối cùng"', async () => {
@@ -659,8 +775,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         email: EMAIL,
         displayName: 'New Name',
         role: UserRole.EDITOR,
+        roles: [UserRole.EDITOR],
         status: UserStatus.ACTIVE,
         teamId: null,
+        teamIds: [],
       });
     });
 
@@ -773,8 +891,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         email: EMAIL,
         displayName: 'Editor One',
         role: UserRole.EDITOR,
+        roles: [UserRole.EDITOR],
         status: UserStatus.ACTIVE,
         teamId: null,
+        teamIds: [],
       });
     });
 
@@ -794,7 +914,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
   });
 
   describe('findAll — bộ lọc CRM (tài liệu 05 mục 2.2)', () => {
-    it('lọc theo role/status/teamId và q (escape regex) trên cùng filter cho cả find và count', async () => {
+    it('lọc theo role (có role đó trong roles)/status/teamId (có nhóm đó trong teamIds) và q (escape regex) trên cùng filter cho cả find và count', async () => {
       userModel.find.mockReturnValue(chainable([]));
       userModel.countDocuments.mockReturnValue(chainable(0));
       const teamId = '65e1f0a1b2c3d4e5f6a7b8d1';
@@ -809,9 +929,9 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       const filter = userModel.find.mock.calls[0][0];
       expect(filter).toMatchObject({
         deletedAt: null,
-        role: UserRole.STAFF,
+        roles: UserRole.STAFF,
         status: UserStatus.ACTIVE,
-        teamId: new Types.ObjectId(teamId),
+        teamIds: new Types.ObjectId(teamId),
       });
       // `q` phải bị escape: "a.b*" chỉ khớp đúng chuỗi đó, không khớp "axbb".
       const [{ displayName }] = filter.$or;
@@ -832,8 +952,8 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
 
     it('có nhóm hợp lệ: kiểm nhóm, tăng revision của nhóm ("khóa ghi") và tạo user trong CÙNG transaction', async () => {
       userModel.findOne.mockReturnValue(chainable(null));
-      teamModel.exists.mockReturnValue(chainable({ _id: TEAM_ID }));
-      teamModel.updateOne.mockReturnValue({ exec: jest.fn() });
+      teamModel.countDocuments.mockReturnValue(chainable(1));
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
       userModel.create.mockResolvedValue([
         buildUserDoc({ role: UserRole.STAFF, teamId: TEAM_ID }),
       ]);
@@ -842,13 +962,13 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
 
       const teamObjectId = new Types.ObjectId(TEAM_ID);
       expect(connection.transaction).toHaveBeenCalledTimes(1);
-      expect(teamModel.exists).toHaveBeenCalledWith({
-        _id: teamObjectId,
+      expect(teamModel.countDocuments).toHaveBeenCalledWith({
+        _id: { $in: [teamObjectId] },
         deletedAt: null,
         isActive: true,
       });
-      expect(teamModel.updateOne).toHaveBeenCalledWith(
-        { _id: teamObjectId },
+      expect(teamModel.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: [teamObjectId] } },
         { $inc: { revision: 1 } },
         { session: SESSION },
       );
@@ -856,12 +976,99 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         [
           expect.objectContaining({
             teamId: teamObjectId,
+            teamIds: [teamObjectId],
             role: UserRole.STAFF,
+            roles: [UserRole.STAFF],
           }),
         ],
         { session: SESSION },
       );
       expect(result.teamId).toBe(TEAM_ID);
+      expect(result.teamIds).toEqual([TEAM_ID]);
+    });
+
+    it('nhiều role + nhiều nhóm: role = cao nhất, teamId = nhóm đầu tiên, mọi nhóm được khóa ghi', async () => {
+      const TEAM_B = '65e1f0a1b2c3d4e5f6a7b8d2';
+      userModel.findOne.mockReturnValue(chainable(null));
+      teamModel.countDocuments.mockReturnValue(chainable(2));
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
+      userModel.create.mockResolvedValue([buildUserDoc()]);
+
+      await service.create({
+        ...baseDto,
+        role: undefined,
+        roles: [UserRole.STAFF, UserRole.MANAGER, UserRole.STAFF],
+        teamIds: [TEAM_B, TEAM_ID, TEAM_B],
+      });
+
+      const teamB = new Types.ObjectId(TEAM_B);
+      const teamA = new Types.ObjectId(TEAM_ID);
+      expect(userModel.create).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            role: UserRole.MANAGER,
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+            teamId: teamB,
+            teamIds: [teamB, teamA],
+          }),
+        ],
+        { session: SESSION },
+      );
+    });
+
+    it('gửi cả role lẫn roles mâu thuẫn (role ≠ role cao nhất) → 400 rõ ràng, không tạo user; khớp thì chấp nhận', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+
+      await expect(
+        service.create({
+          ...baseDto,
+          role: UserRole.STAFF,
+          roles: [UserRole.MANAGER, UserRole.STAFF],
+        }),
+      ).rejects.toMatchObject({
+        errorCode: 'VALIDATION_FAILED',
+        message: expect.stringContaining('role cao nhất'),
+      });
+      expect(userModel.create).not.toHaveBeenCalled();
+
+      userModel.create.mockResolvedValue(buildUserDoc());
+      await service.create({
+        ...baseDto,
+        role: UserRole.MANAGER,
+        roles: [UserRole.STAFF, UserRole.MANAGER],
+      });
+      expect(userModel.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('gửi cả teamId lẫn teamIds mâu thuẫn (teamId ≠ teamIds[0], kể cả teamIds rỗng) → 400, không mở transaction', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      const TEAM_B = '65e1f0a1b2c3d4e5f6a7b8d2';
+
+      for (const teamIds of [[TEAM_B, TEAM_ID], []]) {
+        await expect(
+          service.create({ ...baseDto, teamId: TEAM_ID, teamIds }),
+        ).rejects.toMatchObject({
+          errorCode: 'VALIDATION_FAILED',
+          message: expect.stringContaining('teamIds'),
+        });
+      }
+      expect(connection.transaction).not.toHaveBeenCalled();
+      expect(userModel.create).not.toHaveBeenCalled();
+    });
+
+    it('teamId trùng teamIds[0] (chữ hoa/thường hex không quan trọng) → hợp lệ', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      teamModel.countDocuments.mockReturnValue(chainable(1));
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
+      userModel.create.mockResolvedValue([buildUserDoc()]);
+
+      await service.create({
+        ...baseDto,
+        teamId: TEAM_ID.toUpperCase(),
+        teamIds: [TEAM_ID],
+      });
+
+      expect(userModel.create).toHaveBeenCalledTimes(1);
     });
 
     it('từ chối teamId với vai trò không thuộc nhóm (EDITOR) bằng 400 VALIDATION_FAILED, không tạo user', async () => {
@@ -876,7 +1083,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
 
     it('nhóm không tồn tại/đã ngừng → 404, không tạo user', async () => {
       userModel.findOne.mockReturnValue(chainable(null));
-      teamModel.exists.mockReturnValue(chainable(null));
+      teamModel.countDocuments.mockReturnValue(chainable(0));
 
       await expect(
         service.create({ ...baseDto, teamId: TEAM_ID }),

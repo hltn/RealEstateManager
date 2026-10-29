@@ -175,7 +175,7 @@ export class NotificationsService {
     try {
       const admins = await this.userModel
         .find({
-          role: UserRole.ADMIN,
+          roles: UserRole.ADMIN,
           status: UserStatus.ACTIVE,
           deletedAt: null,
         })

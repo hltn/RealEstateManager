@@ -62,6 +62,7 @@ describe('AuthController — contract mục 6.1/6.3', () => {
           email: 'admin@example.com',
           displayName: 'System Admin',
           role: UserRole.ADMIN,
+          roles: [UserRole.ADMIN],
         },
       });
       const reply = mockReply();
@@ -165,8 +166,10 @@ describe('AuthController — contract mục 6.1/6.3', () => {
         email: 'admin@example.com',
         displayName: 'System Admin',
         role: UserRole.ADMIN,
+        roles: [UserRole.ADMIN],
         status: 'ACTIVE' as any,
         teamId: null,
+        teamIds: [],
         managedTeamIds: [],
       });
 

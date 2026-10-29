@@ -10,6 +10,7 @@ import type { JwtPayload } from '../decorators/current-user.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { UserRole } from '../enums/user-role.enum';
+import { hasAnyRole, rolesOf } from '../utils/user-roles.util';
 
 /**
  * Vai trò được vào route KHÔNG khai báo quyền: chỉ nhân sự nội bộ có từ trước CRM.
@@ -23,12 +24,14 @@ const DEFAULT_ALLOWED_ROLES: readonly string[] = [
 /**
  * RolesGuard (global APP_GUARD) — chạy sau JwtAuthGuard, DEFAULT-DENY cho vai trò CRM.
  * - `@Public()` → pass (JwtAuthGuard cũng bỏ qua, không có `request.user`).
- * - Có `@Roles(...)` → `request.user.role` phải nằm trong danh sách, nếu không → 403 'Insufficient role'.
+ * - Có `@Roles(...)` → BẤT KỲ role nào trong `request.user.roles` nằm trong danh sách (hợp quyền: STAFF+EDITOR vào được
+ *   cả route CRM lẫn route EDITOR), nếu không → 403 'Insufficient role'.
  * - Có `@AnyRole()` → mọi người dùng đã đăng nhập.
- * - Không có gì → CHỈ ADMIN/EDITOR (route cũ như tin tức, nguồn tin, Google Drive không lộ cho MANAGER/STAFF).
+ * - Không có gì → CHỈ ai có role ADMIN/EDITOR (route cũ như tin tức, nguồn tin, Google Drive không lộ cho MANAGER/STAFF).
  *
- * Đọc role trực tiếp từ JWT payload (gắn bởi JwtAuthGuard), KHÔNG query DB. Với thao tác ghi cần quyền ADMIN
- * thật sự (không dựa vào bản chụp role trong token) dùng thêm `ActiveAdminGuard`.
+ * Đọc role trực tiếp từ JWT payload (gắn bởi JwtAuthGuard), KHÔNG query DB; token cũ chỉ có `role` đơn vẫn chạy
+ * (`roles = [role]`). Với thao tác ghi cần quyền ADMIN thật sự (không dựa vào bản chụp role trong token) dùng thêm
+ * `ActiveAdminGuard`.
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -43,14 +46,15 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user = request.user as JwtPayload | undefined;
-    const userRole = user?.role;
+    // Token cũ chỉ có `role` đơn → coi như `roles = [role]`.
+    const userRoles = user ? rolesOf(user) : [];
 
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(
       ROLES_KEY,
       targets,
     );
     if (requiredRoles && requiredRoles.length > 0) {
-      if (!userRole || !requiredRoles.includes(userRole)) {
+      if (!hasAnyRole(userRoles, requiredRoles)) {
         throw new ForbiddenException('Insufficient role');
       }
       return true;
@@ -60,7 +64,7 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    if (!userRole || !DEFAULT_ALLOWED_ROLES.includes(userRole)) {
+    if (!hasAnyRole(userRoles, DEFAULT_ALLOWED_ROLES)) {
       throw new ForbiddenException('Insufficient role');
     }
     return true;

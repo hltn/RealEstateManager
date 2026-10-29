@@ -89,8 +89,10 @@ test.describe('f2-customers', () => {
     await expect(page.getByText('Chưa có, tạo được')).toBeVisible(); // kiểm trùng thời gian thực
     const source = page.getByLabel('Nguồn khách');
     await source.selectOption({ index: 1 });
-    const area = page.getByLabel('Khu vực (nơi khách đang ở)');
-    await area.selectOption({ index: 1 });
+    // Khu vực là combobox có tìm kiếm (không còn là <select>): mở ô rồi chọn tỉnh đầu tiên trong listbox
+    // (scope vào listbox vì `getByRole('option')` còn khớp <option> của các <select> khác trên trang).
+    await page.getByLabel('Khu vực (nơi khách đang ở)').click();
+    await page.getByRole('listbox').getByRole('option').nth(1).click(); // nth(0) là dòng "Chọn khu vực" (bỏ chọn)
     await page.getByRole('button', { name: 'Lưu khách hàng' }).click();
 
     await expect(toast(page, 'Thêm khách hàng thành công')).toContainText(`${fullName} đã được thêm vào hệ thống.`);
@@ -106,6 +108,7 @@ test.describe('f2-customers', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].__v).toBe(0);
     expect(rows[0].phone).toBe(e164(phone));
+    expect(rows[0].areaId).toBeTruthy(); // khu vực chọn từ combobox được lưu
     expect(rows[0].careTeam.map((m: { userId: unknown }) => String(m.userId))).toEqual([seed.users.staff1.id]);
     expect(String(rows[0].primaryAssigneeId)).toBe(seed.users.staff1.id);
     note(testInfo, 'TT', 'Thêm khách: 1 click mở form + 2 ô nhập (tên, SĐT) + 2 chọn (nguồn, khu vực, không bắt buộc) + 1 click lưu; người phụ trách không phải chọn.');

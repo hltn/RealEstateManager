@@ -25,7 +25,7 @@ export class ActiveAdminGuard implements CanActivate {
 
     // `resolve` ném 401 khi tài khoản không còn tồn tại hoặc không ACTIVE.
     const actor = await this.actors.resolve(request.user);
-    if (actor.role !== UserRole.ADMIN) {
+    if (!actor.roles.includes(UserRole.ADMIN)) {
       throw new ForbiddenException('Insufficient role');
     }
     return true;

@@ -25,7 +25,7 @@ type FastifyRequestWithUser = FastifyRequest & { user?: unknown };
  * - Cookie không parse ở đây (do @fastify/cookie ở cấp plugin).
  *
  * Dùng `JwtService.verify()` (sync) theo mục 8. Payload gắn vào
- * `request.user` = `{ sub, email, role, iat, exp }`. RolesGuard + @CurrentUser()
+ * `request.user` = `{ sub, email, role, roles, iat, exp }` (token cũ chỉ có `role`). RolesGuard + @CurrentUser()
  * đọc từ đây.
  */
 @Injectable()

@@ -7,13 +7,50 @@ const id = () => new Types.ObjectId();
 const buildActor = (overrides: Partial<CrmActor>): CrmActor => ({
   userId: id(),
   role: UserRole.STAFF,
+  roles: [overrides.role ?? UserRole.STAFF],
   displayName: 'Tester',
   teamId: null,
+  teamIds: overrides.teamId ? [overrides.teamId] : [],
   managedTeamIds: [],
   ...overrides,
 });
 
 describe('resolveVisibleTeamIds (phạm vi nhóm theo vai trò)', () => {
+  it('nhiều nhóm: STAFF thấy MỌI nhóm mình thuộc; MANAGER thấy nhóm quản lý + mọi nhóm thuộc, khử trùng', () => {
+    const [a, b, c] = [id(), id(), id()];
+    expect(
+      resolveVisibleTeamIds(
+        buildActor({ role: UserRole.STAFF, teamId: a, teamIds: [a, b] }),
+      )?.map(String),
+    ).toEqual([String(a), String(b)]);
+
+    expect(
+      resolveVisibleTeamIds(
+        buildActor({
+          role: UserRole.MANAGER,
+          roles: [UserRole.MANAGER, UserRole.STAFF],
+          teamId: a,
+          teamIds: [a, b],
+          managedTeamIds: [c, b],
+        }),
+      )
+        ?.map(String)
+        .sort(),
+    ).toEqual([String(a), String(b), String(c)].sort());
+  });
+
+  it('ADMIN+STAFF (role cao nhất ADMIN): không giới hạn dù có nhóm', () => {
+    expect(
+      resolveVisibleTeamIds(
+        buildActor({
+          role: UserRole.ADMIN,
+          roles: [UserRole.ADMIN, UserRole.STAFF],
+          teamIds: [id()],
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('ADMIN: không giới hạn (null)', () => {
     expect(
       resolveVisibleTeamIds(buildActor({ role: UserRole.ADMIN })),

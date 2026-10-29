@@ -23,9 +23,26 @@ export class ListAssignableUsersQueryDto extends CatalogPaginationQueryDto {
 }
 
 export class AssignableUserResponseDto extends UserRefDto {
-  @ApiProperty({ enum: [UserRole.MANAGER, UserRole.STAFF] })
+  @ApiProperty({
+    enum: [UserRole.MANAGER, UserRole.STAFF],
+    description:
+      'Role cao nhất trong các role được phân chăm sóc (MANAGER/STAFF)',
+  })
   role: UserRole;
 
-  @ApiProperty({ nullable: true, type: RefDto })
+  @ApiProperty({ enum: UserRole, isArray: true })
+  roles: UserRole[];
+
+  @ApiProperty({
+    nullable: true,
+    type: RefDto,
+    description: 'Nhóm chính (phần tử đầu của teams)',
+  })
   team: RefDto | null;
+
+  @ApiProperty({ type: [String] })
+  teamIds: string[];
+
+  @ApiProperty({ type: [RefDto] })
+  teams: RefDto[];
 }

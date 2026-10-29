@@ -17,7 +17,8 @@ const brand = (filter: Record<string, unknown>): CustomerScope =>
   filter as unknown as CustomerScope;
 
 /**
- * Dựng phạm vi theo vai trò HIỆN TẠI trong DB:
+ * Dựng phạm vi theo vai trò CAO NHẤT HIỆN TẠI trong DB (`actor.role`; tài khoản nhiều role: ADMIN+bất kỳ → tất cả,
+ * MANAGER+STAFF → phạm vi MANAGER):
  * - ADMIN: tất cả (`{}`);
  * - MANAGER: khách có `teamIds` giao với nhóm mình quản lý, HOẶC mình nằm trong `careTeam`;
  * - STAFF: chỉ khách có mình trong `careTeam` (PRIMARY hoặc MEMBER);

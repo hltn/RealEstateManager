@@ -14,6 +14,12 @@ import {
   RefreshTokenDocument,
 } from '../auth/schemas/refresh-token.schema';
 import { UserRole } from '../../common/enums/user-role.enum';
+import {
+  hasCrmTeamRole,
+  highestRole,
+  normalizeRoles,
+  rolesOf,
+} from '../../common/utils/user-roles.util';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { ErrorCode } from '../../common/exceptions/error-codes';
@@ -28,10 +34,20 @@ import {
 } from '../crm/audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
-import { toUserPublicProfile, UserPublicProfile } from './user-public-profile';
+import {
+  assertRolesCanJoinTeam,
+  lockActiveTeams,
+  uniqueObjectIds,
+} from '../teams/team-membership.util';
+import {
+  teamIdsOf,
+  toUserPublicProfile,
+  UserPublicProfile,
+} from './user-public-profile';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UpdateUserStatusDto } from './dtos/update-user-status.dto';
 import { UpdateUserRoleDto } from './dtos/update-user-role.dto';
+import { UpdateUserRolesDto } from './dtos/update-user-roles.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { ResetUserPasswordDto } from './dtos/reset-user-password.dto';
 
@@ -44,12 +60,6 @@ export interface UserListFilters {
 }
 
 const EMAIL_IN_USE_MESSAGE = 'Email already in use';
-
-/** Vai trò mà tài khoản được thuộc một nhóm; vai trò khác bị gỡ khỏi nhóm khi đổi sang. */
-const TEAM_MEMBER_ROLES: readonly UserRole[] = [
-  UserRole.MANAGER,
-  UserRole.STAFF,
-];
 
 /**
  * UsersService — CRUD tài khoản (ADMIN only).
@@ -68,12 +78,15 @@ export class UsersService {
     private readonly teamSync: CustomerTeamSyncService,
   ) {}
 
-  /** Dựng filter Mongo từ bộ lọc (chỉ các khóa có giá trị); `q` tìm theo tên hiển thị hoặc email, đã escape regex. */
+  /**
+   * Dựng filter Mongo từ bộ lọc (chỉ các khóa có giá trị); `q` tìm theo tên hiển thị hoặc email, đã escape regex.
+   * `role` khớp tài khoản CÓ role đó trong `roles`; `teamId` khớp tài khoản CÓ nhóm đó trong `teamIds`.
+   */
   private buildListFilter(filters: UserListFilters): Record<string, unknown> {
     const filter: Record<string, unknown> = { deletedAt: null };
-    if (filters.role) filter.role = filters.role;
+    if (filters.role) filter.roles = filters.role;
     if (filters.status) filter.status = filters.status;
-    if (filters.teamId) filter.teamId = new Types.ObjectId(filters.teamId);
+    if (filters.teamId) filter.teamIds = new Types.ObjectId(filters.teamId);
     if (filters.q) {
       const pattern = new RegExp(escapeRegex(filters.q), 'i');
       filter.$or = [{ displayName: pattern }, { email: pattern }];
@@ -110,8 +123,47 @@ export class UsersService {
     };
   }
 
-  /** Tạo user mới. Email trùng (chưa soft delete) → 409 Conflict. */
+  /**
+   * Tạo user mới. Email trùng (chưa soft delete) → 409 Conflict.
+   * `roles` (hoặc `role` đơn = `[role]`) và `teamIds` (hoặc `teamId` đơn = `[teamId]`); `role`/`teamId` suy ra từ đó.
+   * Gửi cả hai dạng mà mâu thuẫn (role khác role cao nhất của roles, teamId khác teamIds[0]) → 400.
+   */
   async create(dto: CreateUserDto): Promise<UserPublicProfile> {
+    const roles = normalizeRoles(dto.roles ?? (dto.role ? [dto.role] : []));
+    if (roles.length === 0) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        'Cần ít nhất một vai trò',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    // Gửi cả dạng viết tắt lẫn dạng đầy đủ thì hai bên phải nhất quán, không âm thầm chọn một bên.
+    if (dto.roles !== undefined && dto.role !== undefined) {
+      const highest = highestRole(roles);
+      if (dto.role !== highest) {
+        throw new BusinessException(
+          ErrorCode.VALIDATION_FAILED,
+          `role (${String(dto.role)}) không khớp roles: role phải là role cao nhất trong roles (${String(highest)}), hoặc chỉ gửi roles`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+    const teamIds = uniqueObjectIds(
+      (dto.teamIds ?? (dto.teamId ? [dto.teamId] : [])).map(
+        (id) => new Types.ObjectId(id),
+      ),
+    );
+    if (dto.teamIds !== undefined && dto.teamId !== undefined) {
+      const primaryTeamId = teamIds[0] ? String(teamIds[0]) : null;
+      if (String(new Types.ObjectId(dto.teamId)) !== primaryTeamId) {
+        throw new BusinessException(
+          ErrorCode.VALIDATION_FAILED,
+          `teamId không khớp teamIds: teamId phải là phần tử đầu của teamIds (${primaryTeamId ?? 'rỗng'}), hoặc chỉ gửi teamIds`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
     const exists = await this.userModel
       .findOne({ email: dto.email.toLowerCase(), deletedAt: null })
       .lean()
@@ -125,46 +177,31 @@ export class UsersService {
       email: dto.email.toLowerCase(),
       password: passwordHash,
       displayName: dto.displayName,
-      role: dto.role,
+      role: highestRole(roles) as UserRole,
+      roles,
       teamId: null as Types.ObjectId | null,
+      teamIds: [] as Types.ObjectId[],
       status: UserStatus.ACTIVE,
       deletedAt: null,
       lastLoginAt: null,
     };
 
-    if (!dto.teamId) {
+    if (teamIds.length === 0) {
       return toUserPublicProfile(await this.userModel.create(newUser));
     }
 
     // Có nhóm: kiểm nhóm + "khóa ghi" nhóm + tạo user trong CÙNG transaction để việc xóa nhóm đồng thời
-    // không để lại tài khoản mới trỏ vào nhóm đã xóa (xem TeamsService.assignUserToTeam).
-    this.assertRoleCanJoinTeam(dto.role);
-    const teamId = new Types.ObjectId(dto.teamId);
+    // không để lại tài khoản mới trỏ vào nhóm đã xóa (xem TeamsService.setUserTeams).
+    assertRolesCanJoinTeam(roles);
     const created = await withTransaction(this.connection, async (session) => {
-      const team = await this.teamModel
-        .exists({ _id: teamId, deletedAt: null, isActive: true })
-        .session(session)
-        .exec();
-      if (!team) throw new NotFoundException('Không tìm thấy nhóm');
-      await this.teamModel
-        .updateOne({ _id: teamId }, { $inc: { revision: 1 } }, { session })
-        .exec();
-      const [doc] = await this.userModel.create([{ ...newUser, teamId }], {
-        session,
-      });
+      await lockActiveTeams(this.teamModel, teamIds, session);
+      const [doc] = await this.userModel.create(
+        [{ ...newUser, teamId: teamIds[0], teamIds }],
+        { session },
+      );
       return doc;
     });
     return toUserPublicProfile(created);
-  }
-
-  private assertRoleCanJoinTeam(role: UserRole): void {
-    if (!TEAM_MEMBER_ROLES.includes(role)) {
-      throw new BusinessException(
-        ErrorCode.VALIDATION_FAILED,
-        'Chỉ tài khoản vai trò Quản lý hoặc Nhân viên mới thuộc một nhóm',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
   }
 
   /**
@@ -179,7 +216,7 @@ export class UsersService {
     const others = await this.userModel
       .countDocuments({
         _id: { $ne: userId },
-        role: UserRole.ADMIN,
+        roles: UserRole.ADMIN,
         status: UserStatus.ACTIVE,
         deletedAt: null,
       })
@@ -194,7 +231,7 @@ export class UsersService {
     }
     await this.userModel
       .updateMany(
-        { role: UserRole.ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
+        { roles: UserRole.ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
         { $currentDate: { updatedAt: true } },
         { session, timestamps: false },
       )
@@ -338,8 +375,15 @@ export class UsersService {
     return toUserPublicProfile(doc);
   }
 
-  private isActiveAdmin(user: { role: UserRole; status: UserStatus }): boolean {
-    return user.role === UserRole.ADMIN && user.status === UserStatus.ACTIVE;
+  private isActiveAdmin(user: {
+    role: UserRole;
+    roles?: UserRole[];
+    status: UserStatus;
+  }): boolean {
+    return (
+      rolesOf(user).includes(UserRole.ADMIN) &&
+      user.status === UserStatus.ACTIVE
+    );
   }
 
   /**
@@ -390,18 +434,41 @@ export class UsersService {
   }
 
   /**
-   * Cập nhật role + audit USER_ROLE_CHANGED cùng transaction.
-   *
-   * - Không cho hạ vai trò ADMIN đang hoạt động cuối cùng (409 LAST_ADMIN_REQUIRED).
-   * - Đổi sang vai trò KHÔNG phải Quản lý thì gỡ người này khỏi `teams.managerIds`; sang vai trò không thuộc nhóm
-   *   (ADMIN/EDITOR) thì xóa luôn `teamId` — để không còn "Quản lý ma" giữ quyền theo nhóm sau khi bị hạ vai trò.
-   * - Đặt lại đúng vai trò hiện có là no-op (không audit).
+   * `PATCH /users/:id/role` (hợp đồng cũ của frontend): đặt `roles = [role]` — thay toàn bộ role bằng đúng một role.
+   * Xem `updateRoles`.
    */
-  async updateRole(
+  updateRole(
     id: string,
     dto: UpdateUserRoleDto,
     actor: Pick<JwtPayload, 'sub'>,
   ): Promise<UserPublicProfile> {
+    return this.updateRoles(id, { roles: [dto.role] }, actor);
+  }
+
+  /**
+   * Đặt toàn bộ role (`PATCH /users/:id/roles`) + audit USER_ROLE_CHANGED (roles/teamIds cũ → mới) cùng transaction.
+   *
+   * - `roles` được khử trùng; `role` (cao nhất) ghi cùng `roles` trong một lần cập nhật.
+   * - Không cho bỏ role ADMIN của ADMIN đang hoạt động cuối cùng (409 LAST_ADMIN_REQUIRED).
+   * - Không còn role MANAGER thì gỡ người này khỏi `teams.managerIds`; không còn role MANAGER/STAFF thì xóa luôn
+   *   `teamIds`/`teamId` — để không còn "Quản lý ma" giữ quyền theo nhóm sau khi bị hạ vai trò.
+   * - Đặt lại đúng tập role hiện có là no-op (không audit).
+   */
+  async updateRoles(
+    id: string,
+    dto: UpdateUserRolesDto,
+    actor: Pick<JwtPayload, 'sub'>,
+  ): Promise<UserPublicProfile> {
+    const roles = normalizeRoles(dto.roles);
+    const primaryRole = highestRole(roles);
+    if (!primaryRole) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        'Cần ít nhất một vai trò hợp lệ',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const userId = new Types.ObjectId(id);
     const doc = await withTransaction(this.connection, async (session) => {
       const before = await this.userModel
@@ -410,14 +477,23 @@ export class UsersService {
         .lean()
         .exec();
       if (!before) throw new NotFoundException('User not found');
-      if (before.role === dto.role) return before;
+      const rolesBefore = normalizeRoles(rolesOf(before));
+      if (
+        rolesBefore.length === roles.length &&
+        rolesBefore.every((role, index) => role === roles[index])
+      ) {
+        return before;
+      }
 
-      if (dto.role !== UserRole.ADMIN && this.isActiveAdmin(before)) {
+      if (!roles.includes(UserRole.ADMIN) && this.isActiveAdmin(before)) {
         await this.assertAnotherActiveAdmin(userId, session);
       }
 
-      const update: Record<string, unknown> = { role: dto.role };
-      if (!TEAM_MEMBER_ROLES.includes(dto.role)) update.teamId = null;
+      const update: Record<string, unknown> = { roles, role: primaryRole };
+      if (!hasCrmTeamRole(roles)) {
+        update.teamIds = [];
+        update.teamId = null;
+      }
       const after = await this.userModel
         .findOneAndUpdate(
           { _id: userId },
@@ -428,7 +504,7 @@ export class UsersService {
         .exec();
       if (!after) throw new NotFoundException('User not found');
 
-      if (dto.role !== UserRole.MANAGER) {
+      if (!roles.includes(UserRole.MANAGER)) {
         await this.teamModel
           .updateMany(
             { managerIds: userId },
@@ -438,8 +514,10 @@ export class UsersService {
           .exec();
       }
 
-      // Mất nhóm do đổi vai trò (ADMIN/EDITOR không thuộc nhóm) cũng đổi phạm vi khách của Quản lý.
-      if (String(before.teamId ?? '') !== String(after.teamId ?? '')) {
+      // Mất nhóm do đổi vai trò (không còn MANAGER/STAFF) cũng đổi phạm vi khách của Quản lý.
+      const teamsBefore = teamIdsOf(before);
+      const teamsAfter = teamIdsOf(after);
+      if (teamsBefore.join() !== teamsAfter.join()) {
         await this.teamSync.syncForUser(userId, session);
       }
 
@@ -449,7 +527,11 @@ export class UsersService {
           entityId: userId,
           action: CrmAuditAction.USER_ROLE_CHANGED,
           actor,
-          changes: diffFields(before, after, ['role', 'teamId']),
+          changes: diffFields(
+            { roles: rolesBefore, teamIds: teamsBefore },
+            { roles: rolesOf(after), teamIds: teamsAfter },
+            ['roles', 'teamIds'],
+          ),
         },
         session,
       );

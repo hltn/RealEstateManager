@@ -210,6 +210,11 @@ describe('danh mục', () => {
     expect(area).toMatchObject({ name: 'Quận 1 · TP.HCM', rawName: 'Quận 1', parentId: 'p' });
   });
 
+  it('khu vực là tỉnh/thành (không có cha): chỉ hiện tên tỉnh, không có dấu " · "', () => {
+    const area = toArea({ id: 'a', label: 'Hà Nội', name: 'Hà Nội', type: 'PROVINCE', parentId: null, path: [], adminCode: null, isLegacy: false, order: 1, isActive: true });
+    expect(area).toMatchObject({ name: 'Hà Nội', rawName: 'Hà Nội', parentId: null });
+  });
+
   it('projectBody: không gửi trường backend không nhận; POST không có isActive; chuỗi rỗng -> null', () => {
     const project = toProject({ id: 'p', name: 'A', code: 'A1', developer: '', location: '', area: null, propertyTypes: ['Căn hộ'], priceFrom: 1, priceTo: 2, status: 'UPCOMING', isActive: false, customerCount: 0, deletedAt: null });
     const create = toProjectBody(project, { isCreate: true });

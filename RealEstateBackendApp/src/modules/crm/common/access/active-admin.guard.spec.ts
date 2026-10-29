@@ -17,8 +17,10 @@ const context = (user: unknown): ExecutionContext =>
 const actor = (role: UserRole): CrmActor => ({
   userId: new Types.ObjectId(),
   role,
+  roles: [role],
   displayName: 'x',
   teamId: null,
+  teamIds: [],
   managedTeamIds: [],
 });
 

@@ -10,9 +10,11 @@ import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
 import { MaskedIdInput } from '@crm/components/form/MaskedIdInput';
 import { SectionCard } from '@crm/components/form/SectionCard';
+import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
+import { getAreaSearchTerms } from '@crm/lib/areaMatch';
 import { isValidPhone } from '@crm/lib/phone';
 import { CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
 import { DuplicatePhoneBanner } from './components/DuplicatePhoneBanner';
@@ -142,13 +144,15 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
       </div>
 
       <FormField inputId={fieldId('area')} label="Khu vực (nơi khách đang ở)">
-        <SelectInput
+        <SearchableSelect
           id={fieldId('area')}
           icon={MapPin}
           emptyLabel="Chọn khu vực"
+          listLabel="Danh sách khu vực"
+          getSearchTerms={getAreaSearchTerms}
           options={catalogs.areas.filter((area) => area.isActive).map((area) => ({ value: area.id, label: area.name }))}
           value={values.areaId}
-          onChange={(event) => setField('areaId', event.target.value)}
+          onChange={(areaId) => setField('areaId', areaId)}
         />
       </FormField>
     </SectionCard>

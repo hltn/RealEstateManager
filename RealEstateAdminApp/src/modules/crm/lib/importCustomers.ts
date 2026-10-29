@@ -5,6 +5,7 @@
  */
 import type { CrmCatalogs, CrmUser, SystemStatusCode } from '@crm/types/crm';
 import { normalizePhone } from './phone';
+import { toAreaKey } from './areaMatch';
 import { normalizeVietnamese } from './text';
 
 /** Giới hạn nhập (chống file quá lớn làm treo trình duyệt / ghi đầy localStorage). */
@@ -100,15 +101,23 @@ interface ValidationContext {
   preset: ImportPreset;
 }
 
-const matchesLabel = <T>(item: T, normalized: string, getLabels: (item: T) => string[]): boolean =>
-  getLabels(item).some((label) => normalizeVietnamese(label) === normalized);
+type Normalizer = (value: string) => string;
+
+const matchesLabel = <T>(item: T, normalized: string, getLabels: (item: T) => string[], normalize: Normalizer = normalizeVietnamese): boolean =>
+  getLabels(item).some((label) => normalize(label) === normalized);
 
 type Lookup<T> = { item: T } | { error: string };
 
 /** Tìm mục theo nhãn: chỉ khớp mục ĐANG DÙNG; mục đã ẩn -> lỗi riêng; trùng nhiều mục -> lỗi mơ hồ. */
-const lookupActive = <T extends { isActive: boolean }>(items: readonly T[], value: string, kindLabel: string, getLabels: (item: T) => string[]): Lookup<T> => {
-  const normalized = normalizeVietnamese(value);
-  const matches = items.filter((item) => matchesLabel(item, normalized, getLabels));
+const lookupActive = <T extends { isActive: boolean }>(
+  items: readonly T[],
+  value: string,
+  kindLabel: string,
+  getLabels: (item: T) => string[],
+  normalize: Normalizer = normalizeVietnamese,
+): Lookup<T> => {
+  const normalized = normalize(value);
+  const matches = items.filter((item) => matchesLabel(item, normalized, getLabels, normalize));
   const active = matches.filter((item) => item.isActive);
   if (active.length === 1) return { item: active[0] };
   if (active.length > 1) return { error: `${kindLabel} "${value}" trùng nhiều mục trong danh mục` };
@@ -165,7 +174,7 @@ export const validateImportRows = (rows: readonly (readonly string[])[], mapping
     const areaText = cell(row, 'area');
     let area: { id: string } | undefined;
     if (areaText) {
-      const found = lookupActive(catalogs.areas, areaText, 'Khu vực', (item) => [item.name]);
+      const found = lookupActive(catalogs.areas, areaText, 'Khu vực', (item) => [item.name], toAreaKey);
       if ('error' in found) errors.push(found.error);
       else area = found.item;
     }

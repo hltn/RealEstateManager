@@ -1,8 +1,8 @@
 import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
+import { ClientSession, Connection, Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
-import { CRM_TEAM_ROLES, UserRole } from '../../common/enums/user-role.enum';
+import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { ErrorCode } from '../../common/exceptions/error-codes';
@@ -13,6 +13,7 @@ import {
 } from '../../common/utils/pagination.util';
 import { isDuplicateKeyError } from '../../common/utils/mongo-error.util';
 import { escapeRegex } from '../../common/utils/regex.util';
+import { rolesOf } from '../../common/utils/user-roles.util';
 import { withTransaction } from '../../shared/database/with-transaction.util';
 import {
   CrmAuditAction,
@@ -25,6 +26,7 @@ import { CrmActorService } from '../crm/common/access/crm-actor.service';
 import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import {
+  teamObjectIdsOf,
   toUserPublicProfile,
   UserPublicProfile,
 } from '../users/user-public-profile';
@@ -35,6 +37,12 @@ import {
   UpdateTeamDto,
 } from './dtos/team.dto';
 import { Team, TeamDocument } from './schemas/team.schema';
+import {
+  assertRolesCanJoinTeam,
+  lockActiveTeams,
+  sameIdList,
+  uniqueObjectIds,
+} from './team-membership.util';
 
 const TEAM_AUDIT_FIELDS = ['name', 'managerIds', 'isActive'] as const;
 const VIETNAMESE_COLLATION = { locale: 'vi' } as const;
@@ -196,8 +204,12 @@ export class TeamsService {
         .exec();
       if (!team) throw this.notFound();
 
+      // `teamId` (nhóm chính) kiểm thêm để tài khoản chưa migrate sang `teamIds` vẫn chặn được việc xóa nhóm.
       const memberCount = await this.userModel
-        .countDocuments({ teamId, deletedAt: null })
+        .countDocuments({
+          $or: [{ teamIds: teamId }, { teamId }],
+          deletedAt: null,
+        })
         .session(session)
         .exec();
       if (memberCount > 0) {
@@ -235,80 +247,133 @@ export class TeamsService {
   }
 
   /**
-   * Gán người dùng vào nhóm (hoặc gỡ khỏi nhóm khi `teamId = null`) — `PATCH /users/:id/team`.
-   * Chỉ Quản lý/Nhân viên mới thuộc nhóm; nhóm đích phải còn tồn tại và đang hoạt động.
-   * Ghi audit USER_TEAM_CHANGED cùng transaction vì thay đổi này đổi phạm vi khách của người đó.
-   * Đồng bộ `customers.teamIds` (phạm vi Quản lý) cùng transaction qua `CustomerTeamSyncService` (M2).
+   * Gán người dùng vào MỘT nhóm (hoặc gỡ khỏi mọi nhóm khi `teamId = null`) — `PATCH /users/:id/team`
+   * (hợp đồng cũ của frontend): đặt `teamIds = [teamId]` hoặc `[]`. Xem `updateUserTeams`.
    */
-  async assignUserToTeam(
+  assignUserToTeam(
     jwt: JwtPayload,
     userId: string,
     teamId: string | null,
   ): Promise<UserPublicProfile> {
-    const userObjectId = new Types.ObjectId(userId);
+    return this.updateUserTeams(jwt, userId, teamId === null ? [] : [teamId]);
+  }
 
-    const updated = await withTransaction(this.connection, async (session) => {
-      const user = await this.userModel
-        .findOne({ _id: userObjectId, deletedAt: null })
-        .session(session)
-        .lean()
-        .exec();
-      if (!user) throw new NotFoundException('User not found');
-
-      let targetTeamId: Types.ObjectId | null = null;
-      if (teamId !== null) {
-        if (!CRM_TEAM_ROLES.includes(user.role)) {
-          throw new BusinessException(
-            ErrorCode.VALIDATION_FAILED,
-            'Chỉ tài khoản vai trò Quản lý hoặc Nhân viên mới thuộc một nhóm',
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-        targetTeamId = new Types.ObjectId(teamId);
-        const team = await this.teamModel
-          .exists({ _id: targetTeamId, deletedAt: null, isActive: true })
-          .session(session)
-          .exec();
-        if (!team) throw this.notFound();
-        // "Khóa ghi": xóa nhóm cũng ghi vào document này nên gán-người và xóa-nhóm đồng thời xung đột ghi
-        // (một bên bị retry và thấy trạng thái mới) thay vì cùng thành công rồi để người trỏ vào nhóm đã xóa.
-        await this.teamModel
-          .updateOne(
-            { _id: targetTeamId },
-            { $inc: { revision: 1 } },
-            { session },
-          )
-          .exec();
-      }
-
-      const after = await this.userModel
-        .findOneAndUpdate(
-          { _id: userObjectId },
-          { $set: { teamId: targetTeamId } },
-          { returnDocument: 'after', session },
-        )
-        .lean()
-        .exec();
-      if (!after) throw new NotFoundException('User not found');
-
-      if (String(user.teamId ?? '') !== String(targetTeamId ?? '')) {
-        await this.audit.record(
-          {
-            entityType: CrmAuditEntityType.USER,
-            entityId: userObjectId,
-            action: CrmAuditAction.USER_TEAM_CHANGED,
-            actor: jwt,
-            changes: diffFields(user, after, ['teamId']),
-          },
-          session,
-        );
-        // Đổi nhóm làm đổi phạm vi khách của Quản lý: tính lại `customers.teamIds` NGAY trong cùng transaction.
-        await this.teamSync.syncForUser(userObjectId, session);
-      }
-      return after;
-    });
-
+  /** Đặt toàn bộ nhóm của người dùng — `PATCH /users/:id/teams`. Chạy trong transaction riêng (xem `setUserTeams`). */
+  async updateUserTeams(
+    jwt: JwtPayload,
+    userId: string,
+    teamIds: string[],
+  ): Promise<UserPublicProfile> {
+    const updated = await withTransaction(this.connection, (session) =>
+      this.setUserTeams(
+        new Types.ObjectId(userId),
+        teamIds.map((id) => new Types.ObjectId(id)),
+        jwt,
+        session,
+      ),
+    );
     return toUserPublicProfile(updated);
+  }
+
+  /** Thêm người dùng vào một nhóm (giữ nguyên các nhóm khác; nhóm mới nằm cuối, không đổi nhóm chính). Đã thuộc nhóm ⇒ no-op. */
+  async addUserToTeam(
+    actor: Pick<JwtPayload, 'sub'>,
+    userId: string,
+    teamId: string,
+  ): Promise<UserPublicProfile> {
+    const userObjectId = new Types.ObjectId(userId);
+    const updated = await withTransaction(this.connection, async (session) => {
+      const user = await this.loadUser(userObjectId, session);
+      return this.setUserTeams(
+        userObjectId,
+        [...teamObjectIdsOf(user), new Types.ObjectId(teamId)],
+        actor,
+        session,
+      );
+    });
+    return toUserPublicProfile(updated);
+  }
+
+  /** Gỡ người dùng khỏi một nhóm (giữ các nhóm khác). Không thuộc nhóm đó ⇒ no-op. */
+  async removeUserFromTeam(
+    actor: Pick<JwtPayload, 'sub'>,
+    userId: string,
+    teamId: string,
+  ): Promise<UserPublicProfile> {
+    const userObjectId = new Types.ObjectId(userId);
+    const teamObjectId = new Types.ObjectId(teamId);
+    const updated = await withTransaction(this.connection, async (session) => {
+      const user = await this.loadUser(userObjectId, session);
+      return this.setUserTeams(
+        userObjectId,
+        teamObjectIdsOf(user).filter((id) => !id.equals(teamObjectId)),
+        actor,
+        session,
+      );
+    });
+    return toUserPublicProfile(updated);
+  }
+
+  /**
+   * Đặt toàn bộ nhóm của người dùng TRONG transaction của caller (dùng chung cho `PATCH /users/:id/team(s)` và
+   * thêm/gỡ thành viên nhóm).
+   * - Có nhóm thì người dùng phải có role MANAGER/STAFF (400); mỗi nhóm MỚI THÊM phải tồn tại và đang hoạt động (404)
+   *   và bị "khóa ghi" (tăng `revision`). Nhóm giữ nguyên không bị kiểm lại (nhóm đã bị vô hiệu hóa vẫn gỡ được).
+   * - Thứ tự quyết định nhóm chính: `teamId = teamIds[0] ?? null` (trường suy ra, luôn ghi cùng `teamIds`).
+   * - Danh sách không đổi ⇒ no-op (không ghi, không audit).
+   * - Ghi audit USER_TEAM_CHANGED và tính lại `customers.teamIds` (phạm vi Quản lý) NGAY trong cùng transaction.
+   */
+  async setUserTeams(
+    userId: Types.ObjectId,
+    teamIds: Types.ObjectId[],
+    actor: Pick<JwtPayload, 'sub'>,
+    session: ClientSession,
+  ) {
+    const user = await this.loadUser(userId, session);
+    const before = teamObjectIdsOf(user);
+    const next = uniqueObjectIds(teamIds);
+    if (sameIdList(before, next)) return user;
+
+    if (next.length > 0) assertRolesCanJoinTeam(rolesOf(user));
+    const added = next.filter(
+      (id) => !before.some((existing) => existing.equals(id)),
+    );
+    await lockActiveTeams(this.teamModel, added, session);
+
+    const after = await this.userModel
+      .findOneAndUpdate(
+        { _id: userId },
+        { $set: { teamIds: next, teamId: next[0] ?? null } },
+        { returnDocument: 'after', session },
+      )
+      .lean()
+      .exec();
+    if (!after) throw new NotFoundException('User not found');
+
+    await this.audit.record(
+      {
+        entityType: CrmAuditEntityType.USER,
+        entityId: userId,
+        action: CrmAuditAction.USER_TEAM_CHANGED,
+        actor,
+        changes: diffFields({ teamIds: before }, { teamIds: next }, [
+          'teamIds',
+        ]),
+      },
+      session,
+    );
+    await this.teamSync.syncForUser(userId, session);
+    return after;
+  }
+
+  private async loadUser(userId: Types.ObjectId, session: ClientSession) {
+    const user = await this.userModel
+      .findOne({ _id: userId, deletedAt: null })
+      .session(session)
+      .lean()
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 
   /** Người quản lý nhóm phải là MANAGER đang hoạt động, chưa xóa. Trả danh sách ObjectId đã khử trùng. */
@@ -323,7 +388,7 @@ export class TeamsService {
         _id: { $in: ids },
         deletedAt: null,
         status: UserStatus.ACTIVE,
-        role: UserRole.MANAGER,
+        roles: UserRole.MANAGER,
       })
       .select('_id')
       .lean()
@@ -366,8 +431,11 @@ export class TeamsService {
           _id: Types.ObjectId;
           count: number;
         }>([
-          { $match: { teamId: { $in: teamIds }, deletedAt: null } },
-          { $group: { _id: '$teamId', count: { $sum: 1 } } },
+          // Một người nhiều nhóm được đếm ở từng nhóm của họ.
+          { $match: { teamIds: { $in: teamIds }, deletedAt: null } },
+          { $unwind: '$teamIds' },
+          { $match: { teamIds: { $in: teamIds } } },
+          { $group: { _id: '$teamIds', count: { $sum: 1 } } },
         ])
         .exec(),
     ]);

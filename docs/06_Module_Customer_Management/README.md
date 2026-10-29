@@ -10,6 +10,7 @@ Module mới thay cho Google Sheets (DSKH, DSKH_DROP, DSKH_NET): quản lý và 
 | 04 | [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) | Technical Design | Kiến trúc (NestJS + MongoDB Replica Set + BullMQ/Redis + FCM), cấu trúc module, data model + index, ma trận phân quyền và row-level scope, luồng xử lý (sequence), yêu cầu phi chức năng (hiệu năng, GMT+7, bảo vệ dữ liệu cá nhân), phác thảo Zalo/ghi âm, giả định đã xác nhận, nhật ký quyết định 2026-10-22, chia giai đoạn và milestone |
 | 05 | [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) | API Contract | Quy ước chung (response, lỗi, phân trang, sort, filter, header) và danh sách 116 endpoint `/api/v1` theo 15 nhóm, map ID yêu cầu, mã lỗi nghiệp vụ |
 | 06 | [`06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md`](06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md) | Tracking | Theo dõi trạng thái milestone M0–M12 (giai đoạn 1/2), tiến độ frontend, việc cần chuẩn bị, quyết định còn mở |
+| 09 | [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) | Change Log | Bổ sung/sửa đổi tính năng theo phiên bản (chỉ thêm mới ở cuối). v1.0.3 (2026-10-29): nhiều role + nhiều nhóm, khu vực 34 tỉnh thành, thành viên nhóm, xóa/khôi phục/xóa vĩnh viễn khách "Bỏ"; kế hoạch triển khai 2 đợt |
 
 > `03_Design_System_Quy_Tac_Phong_Cach.md` mô tả phong cách của **toàn bộ web admin**, không riêng module này. Nếu sau này có module khác dùng, có thể chuyển lên `00_Project_Overview/`.
 

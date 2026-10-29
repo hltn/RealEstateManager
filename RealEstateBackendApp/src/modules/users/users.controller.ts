@@ -21,7 +21,9 @@ import { UpdateUserDto } from './dtos/update-user.dto';
 import { ResetUserPasswordDto } from './dtos/reset-user-password.dto';
 import { UpdateUserStatusDto } from './dtos/update-user-status.dto';
 import { UpdateUserRoleDto } from './dtos/update-user-role.dto';
+import { UpdateUserRolesDto } from './dtos/update-user-roles.dto';
 import { UpdateUserTeamDto } from './dtos/update-user-team.dto';
+import { UpdateUserTeamsDto } from './dtos/update-user-teams.dto';
 import { ListUsersQueryDto } from './dtos/list-users-query.dto';
 import { AdminOnly } from '../crm/common/access/admin-only.decorator';
 
@@ -42,7 +44,7 @@ export class UsersController {
   @AdminOnly()
   @ApiOperation({
     summary:
-      'List users (paginated, ADMIN only); lọc theo role, teamId, status, q',
+      'List users (paginated, ADMIN only); lọc theo role (có role đó), teamId (thuộc nhóm đó), status, q',
   })
   findAll(@Query() query: ListUsersQueryDto) {
     const { page, limit, role, teamId, status, q } = query;
@@ -103,13 +105,30 @@ export class UsersController {
 
   @Patch(':id/role')
   @AdminOnly()
-  @ApiOperation({ summary: 'Update user role (ADMIN only)' })
+  @ApiOperation({
+    summary: 'Đặt tài khoản về MỘT role (roles=[role]), ADMIN only',
+  })
   updateRole(
     @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateUserRoleDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
     return this.usersService.updateRole(id, dto, currentUser);
+  }
+
+  /** Đặt toàn bộ role (nhiều role). Quyền theo role cao nhất trong phân vùng CRM; STAFF và EDITOR cùng có hiệu lực. */
+  @Patch(':id/roles')
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Đặt toàn bộ role của tài khoản (≥1, không trùng); gỡ MANAGER thì gỡ khỏi managerIds, không còn MANAGER/STAFF thì xóa nhóm (ADMIN only)',
+  })
+  updateRoles(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserRolesDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.updateRoles(id, dto, currentUser);
   }
 
   /** Gán/gỡ nhóm cho tài khoản (CRM). Nằm sau cổng FEATURE_CRM_ENABLED vì là endpoint mới của CRM. */
@@ -130,6 +149,28 @@ export class UsersController {
         currentUser,
         id,
         dto.teamId,
+      ),
+    };
+  }
+
+  /** Đặt toàn bộ nhóm của tài khoản (nhiều nhóm; phần tử đầu là nhóm chính). Cùng cổng CRM như `:id/team`. */
+  @Patch(':id/teams')
+  @UseGuards(CrmFeatureGuard)
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Đặt toàn bộ nhóm của người dùng (teamIds, rỗng = gỡ khỏi mọi nhóm); chỉ role MANAGER/STAFF, ADMIN only',
+  })
+  async updateTeams(
+    @CurrentUser() currentUser: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserTeamsDto,
+  ) {
+    return {
+      data: await this.teamsService.updateUserTeams(
+        currentUser,
+        id,
+        dto.teamIds,
       ),
     };
   }

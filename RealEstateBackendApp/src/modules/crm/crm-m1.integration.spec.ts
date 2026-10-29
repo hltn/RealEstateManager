@@ -34,6 +34,7 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { backfillUserTeamId } from '../users/migrations/backfill-user-team-id';
 import { UsersModule } from '../users/users.module';
 import { CrmModule } from './crm.module';
+import { SEED_PROVINCES } from './seed/crm-seed.data';
 import { CrmSeedService } from './seed/crm-seed.service';
 
 jest.setTimeout(240_000);
@@ -730,14 +731,14 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       ).toBe(400);
     });
 
-    it('seed: dự án mẫu có khu vực dạng cây và chi tiết khớp contract', async () => {
+    it('seed: dự án mẫu gắn tỉnh/thành và chi tiết khớp contract', async () => {
       const list = await call('GET', '/crm/projects?q=qterra', 'admin');
       expect(list.body.data[0]).toMatchObject({
         code: 'QTERRA',
         name: "Q'Terra",
         status: 'SELLING',
         propertyTypes: ['Căn hộ'],
-        area: { label: 'TP. Thủ Đức' },
+        area: { label: 'TP. Hồ Chí Minh' },
       });
       const detail = await call(
         'GET',
@@ -1273,35 +1274,46 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
   // -------------------------------------------------------------------------
   describe('Khu vực (cây)', () => {
-    it('seed: tỉnh/thành là gốc, quận/huyện là con; tìm không dấu; path là tổ tiên', async () => {
+    it('seed: đúng 34 tỉnh/thành phẳng (không quận/huyện, không "Nước ngoài"), đúng thứ tự; tìm không dấu', async () => {
       const roots = await call('GET', '/crm/areas?parentId=root', 'staffA');
       expect(roots.body.data.map((a: any) => a.name)).toEqual([
-        'TP. Hồ Chí Minh',
-        'Hà Nội',
-        'Hưng Yên',
-        'Bình Dương',
-        'Nước ngoài',
+        ...SEED_PROVINCES,
       ]);
-      ids.hcm = roots.body.data[0].id;
-      ids.hanoi = roots.body.data[1].id;
+      expect(roots.body.meta.total).toBe(34);
+      expect(
+        roots.body.data.every(
+          (a: any) =>
+            a.type === 'PROVINCE' && a.parentId === null && a.path.length === 0,
+        ),
+      ).toBe(true);
+      // Không có khu vực con nào: toàn bộ danh mục là 34 mục gốc.
+      expect((await call('GET', '/crm/areas', 'staffA')).body.meta.total).toBe(
+        34,
+      );
+      ids.hcm = roots.body.data.find(
+        (a: any) => a.name === 'TP. Hồ Chí Minh',
+      ).id;
+      ids.hanoi = roots.body.data.find((a: any) => a.name === 'Hà Nội').id;
 
-      const found = await call('GET', '/crm/areas?q=thu duc', 'staffA');
+      const found = await call('GET', '/crm/areas?q=ho chi minh', 'staffA');
       expect(found.body.data).toHaveLength(1);
       expect(found.body.data[0]).toMatchObject({
-        name: 'TP. Thủ Đức',
-        label: 'TP. Thủ Đức',
-        type: 'DISTRICT',
-        parentId: ids.hcm,
-        path: [{ id: ids.hcm, label: 'TP. Hồ Chí Minh' }],
+        id: ids.hcm,
+        label: 'TP. Hồ Chí Minh',
+        type: 'PROVINCE',
+        parentId: null,
+        path: [],
       });
-      ids.thuDuc = found.body.data[0].id;
+      expect(
+        (await call('GET', '/crm/areas?q=thu duc', 'staffA')).body.data,
+      ).toEqual([]);
 
       const children = await call(
         'GET',
         `/crm/areas?parentId=${ids.hcm}`,
         'staffA',
       );
-      expect(children.body.data).toHaveLength(5);
+      expect(children.body.data).toEqual([]);
       expect(
         (await call('GET', '/crm/areas?parentId=abc', 'staffA')).status,
       ).toBe(400);
@@ -1454,7 +1466,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
       const usedByProject = await call(
         'DELETE',
-        `/crm/areas/${ids.thuDuc}`,
+        `/crm/areas/${ids.hcm}`,
         'admin',
       );
       expect([usedByProject.status, usedByProject.body.errorCode]).toEqual([
@@ -1576,7 +1588,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
         'USER_STATUS_CHANGED',
       ]);
       expect(logs[0].changes).toEqual([
-        { field: 'role', from: 'STAFF', to: 'EDITOR' },
+        { field: 'roles', from: ['STAFF'], to: ['EDITOR'] },
       ]);
       expect(logs[1].changes).toEqual([
         { field: 'status', from: 'ACTIVE', to: 'BLOCKED' },

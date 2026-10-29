@@ -186,8 +186,10 @@ describe('care-team.rules', () => {
     const actorOf = (role: UserRole, userId = id()): CrmActor => ({
       userId,
       role,
+      roles: [role],
       displayName: 'x',
       teamId: null,
+      teamIds: [],
       managedTeamIds: [],
     });
 

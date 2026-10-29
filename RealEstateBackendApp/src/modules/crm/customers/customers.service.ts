@@ -2,13 +2,16 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { CRM_TEAM_ROLES, UserRole } from '../../../common/enums/user-role.enum';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { hasCrmTeamRole, rolesOf } from '../../../common/utils/user-roles.util';
 import { UserStatus } from '../../../common/enums/user-status.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { isDuplicateKeyError } from '../../../common/utils/mongo-error.util';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import { User, UserDocument } from '../../users/schemas/user.schema';
+import { teamObjectIdsOf } from '../../users/user-public-profile';
+import { sharesAnyTeam } from '../common/access/crm-actor';
 import {
   CrmAuditAction,
   CrmAuditChange,
@@ -341,14 +344,14 @@ export class CustomersService {
       return {
         careTeam: [entry(actor.userId, CareRole.PRIMARY)],
         primaryAssigneeId: actor.userId,
-        teamIds: actor.teamId ? [actor.teamId] : [],
+        teamIds: actor.teamIds,
       };
     }
 
     if (!dto.careTeam) {
       const teamIds = uniqueIds(
         actor.role === UserRole.MANAGER
-          ? [...actor.managedTeamIds, ...(actor.teamId ? [actor.teamId] : [])]
+          ? [...actor.managedTeamIds, ...actor.teamIds]
           : [],
       );
       const managerSeesIt = teamIds.some((id) =>
@@ -371,7 +374,7 @@ export class CustomersService {
     ]);
     const users = await this.userModel
       .find({ _id: { $in: memberIds }, deletedAt: null })
-      .select('role status teamId')
+      .select('role roles status teamId teamIds')
       .session(session)
       .lean()
       .exec();
@@ -381,14 +384,14 @@ export class CustomersService {
       if (
         !user ||
         user.status !== UserStatus.ACTIVE ||
-        !CRM_TEAM_ROLES.includes(user.role)
+        !hasCrmTeamRole(rolesOf(user))
       ) {
         return true;
       }
       if (actor.role !== UserRole.MANAGER || id.equals(actor.userId)) {
         return false;
       }
-      return !actor.managedTeamIds.some((team) => user.teamId?.equals(team));
+      return !sharesAnyTeam(actor.managedTeamIds, teamObjectIdsOf(user));
     });
     if (invalid.length > 0) {
       throw new BusinessException(
@@ -406,8 +409,8 @@ export class CustomersService {
       primaryAssigneeId: primaryId,
       teamIds: uniqueIds(
         memberIds.flatMap((id) => {
-          const teamId = byId.get(String(id))?.teamId;
-          return teamId ? [teamId] : [];
+          const member = byId.get(String(id));
+          return member ? teamObjectIdsOf(member) : [];
         }),
       ),
     };

@@ -389,6 +389,8 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 | `users` | Thêm enum `MANAGER`, `STAFF` vào `role`; thêm `teamId: ObjectId \| null` (default `null`), index `{ teamId: 1, status: 1 }` | Không — user cũ giữ `ADMIN`/`EDITOR`, `teamId=null`. M1 chỉ gán/gỡ nhóm + audit; **đồng bộ `customers.teamIds` khi đổi nhóm thuộc M2** |
 | — | Không đổi kiểu, không xóa field nào | — |
 
+> Cập nhật: `users` có thêm `roles[]`, `teamIds[]` (`role`/`teamId` thành trường suy ra) và khu vực đổi sang 34 tỉnh thành; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+
 ---
 
 ## 4. Phân quyền
@@ -401,6 +403,8 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 | Quản lý | `MANAGER` | Khách có `teamIds` giao với các nhóm mình quản lý (`teams.managerIds` chứa mình) **hoặc** mình nằm trong `careTeam` |
 | Nhân viên chăm sóc | `STAFF` | Chỉ khách có mình trong `careTeam` (PRIMARY hoặc MEMBER) |
 | (Biên tập tin tức) | `EDITOR` | **Không có quyền CRM** — `@Roles(ADMIN, MANAGER, STAFF)` trên mọi controller CRM |
+
+> Cập nhật: một tài khoản có thể có nhiều role (quyền theo role CRM cao nhất) và STAFF có thêm quyền xóa khách "Bỏ" mình phụ trách chính; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
 
 ### 4.2 Ma trận vai trò × hành động
 
@@ -456,6 +460,8 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Export, dashboard, scheduler | Export và dashboard dùng cùng `CustomerScope`; scheduler chỉ gửi cho thành viên `careTeam` hiện tại (người bị gỡ không còn nhận — QT8) |
 | Dữ liệu trả về | `.select()` tường minh (`nationalId` `select:false`; `searchText` không bao giờ trả); DTO response map tay (không ném nguyên document). SĐT trong list/detail luôn là `phoneMasked`; số đầy đủ chỉ qua `phone-views` (đã kiểm scope + ghi `PHONE_VIEWED`) |
 | Kiểm thử | E2E bảng ma trận 4.2 × 4 vai trò; test riêng "NV bị gỡ khỏi nhóm ⇒ 404 ở mọi endpoint con" |
+
+> Cập nhật: `CrmActor`/`buildScope` theo role CRM cao nhất khi có nhiều role, `customers.teamIds` = hợp `teamIds[]` của thành viên `careTeam`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
 
 ---
 

@@ -1,19 +1,27 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
-import { CRM_TEAM_ROLES, UserRole } from '../../../common/enums/user-role.enum';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { UserStatus } from '../../../common/enums/user-status.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { User, UserDocument } from '../../users/schemas/user.schema';
-import { CrmActor } from '../common/access/crm-actor';
+import { hasCrmTeamRole, rolesOf } from '../../../common/utils/user-roles.util';
+import { teamObjectIdsOf } from '../../users/user-public-profile';
+import {
+  CrmActor,
+  resolveAssignableTeamIds,
+  sharesAnyTeam,
+} from '../common/access/crm-actor';
 
 /** Thông tin tối thiểu của người dùng cần để kiểm tra phân công và tính `teamIds`. */
 export interface AssigneeInfo {
   _id: Types.ObjectId;
-  role: UserRole;
+  /** Mọi role của người này (được phân khi có ít nhất một role MANAGER/STAFF). */
+  roles: UserRole[];
   status: UserStatus;
-  teamId: Types.ObjectId | null;
+  /** Mọi nhóm của người này. */
+  teamIds: Types.ObjectId[];
 }
 
 /**
@@ -26,7 +34,7 @@ export class CareTeamAssigneesService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
 
-  /** Đọc `role/status/teamId` của nhiều người trong một lần (chống N+1); bỏ qua tài khoản đã xóa mềm. */
+  /** Đọc `roles/status/teamIds` của nhiều người trong một lần (chống N+1); bỏ qua tài khoản đã xóa mềm. */
   async load(
     userIds: Types.ObjectId[],
     session: ClientSession,
@@ -34,7 +42,7 @@ export class CareTeamAssigneesService {
     if (userIds.length === 0) return new Map();
     const users = await this.userModel
       .find({ _id: { $in: userIds }, deletedAt: null })
-      .select('role status teamId')
+      .select('role roles status teamId teamIds')
       .session(session)
       .lean()
       .exec();
@@ -43,18 +51,18 @@ export class CareTeamAssigneesService {
         String(user._id),
         {
           _id: user._id,
-          role: user.role,
+          roles: rolesOf(user) as UserRole[],
           status: user.status,
-          teamId: user.teamId ?? null,
+          teamIds: teamObjectIdsOf(user),
         },
       ]),
     );
   }
 
   /**
-   * Người được phân phải ACTIVE và là MANAGER/STAFF. Khi `restrictToActorScope`:
-   * Quản lý chỉ phân cho người trong nhóm mình quản lý (hoặc chính mình), Nhân viên (phụ trách chính) chỉ phân cho
-   * người cùng nhóm — khớp danh sách `assignable-users` mà giao diện cho chọn. Quản trị không bị giới hạn.
+   * Người được phân phải ACTIVE và có role MANAGER/STAFF. Khi `restrictToActorScope`:
+   * Quản lý chỉ phân cho người thuộc BẤT KỲ nhóm nào mình quản lý (hoặc chính mình), Nhân viên (phụ trách chính) chỉ phân
+   * cho người chung ít nhất một nhóm — khớp danh sách `assignable-users` mà giao diện cho chọn. Quản trị không bị giới hạn.
    * Sai ⇒ 400 `USER_NOT_ASSIGNABLE` kèm danh sách `userIds` không hợp lệ.
    */
   assertAssignable(
@@ -68,16 +76,14 @@ export class CareTeamAssigneesService {
       if (
         !user ||
         user.status !== UserStatus.ACTIVE ||
-        !CRM_TEAM_ROLES.includes(user.role)
+        !hasCrmTeamRole(user.roles)
       ) {
         return true;
       }
-      if (!restrictToActorScope || actor.role === UserRole.ADMIN) return false;
+      const scope = resolveAssignableTeamIds(actor);
+      if (!restrictToActorScope || scope === null) return false;
       if (id.equals(actor.userId)) return false;
-      if (actor.role === UserRole.MANAGER) {
-        return !actor.managedTeamIds.some((team) => user.teamId?.equals(team));
-      }
-      return !actor.teamId || !user.teamId?.equals(actor.teamId);
+      return !sharesAnyTeam(scope, user.teamIds);
     });
     if (invalid.length > 0) {
       throw new BusinessException(

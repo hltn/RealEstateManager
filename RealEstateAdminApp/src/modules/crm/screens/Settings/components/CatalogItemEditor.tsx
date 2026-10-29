@@ -10,7 +10,7 @@ import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CARD_TITLE_CLASS, INSET_CLASS } from '@crm/lib/uiClasses';
 import type { ListGroup, StatusTone } from '@crm/types/crm';
-import { AREA_TYPE_OPTIONS, CATALOG_NAME_MAX_LENGTH, LIST_GROUP_OPTIONS, STATUS_TONE_OPTIONS, type AdminCatalogKind, type AreaType, type CatalogDraft } from '../settingsForms';
+import { AREA_TYPE_OPTIONS, CATALOG_NAME_MAX_LENGTH, LIST_GROUP_OPTIONS, STATUS_TONE_OPTIONS, type AdminCatalogKind, type AreaType, type CatalogDraft, withAreaParent } from '../settingsForms';
 
 interface CatalogItemEditorProps {
   kind: AdminCatalogKind;
@@ -78,7 +78,7 @@ export const CatalogItemEditor = ({ kind, draft, error, isSaving, onChange, onSa
               </FormField>
             )}
             <FormField inputId={fieldId('parent')} label="Thuộc khu vực" hint="Bỏ trống = khu vực gốc (tỉnh/thành)">
-              <SelectInput id={fieldId('parent')} value={draft.parentId} emptyLabel="— Khu vực gốc —" options={parentOptions} onChange={(event) => onChange({ ...draft, parentId: event.target.value })} />
+              <SelectInput id={fieldId('parent')} value={draft.parentId} emptyLabel="— Khu vực gốc —" options={parentOptions} onChange={(event) => onChange(isNew ? withAreaParent(draft, event.target.value) : { ...draft, parentId: event.target.value })} />
             </FormField>
           </>
         )}

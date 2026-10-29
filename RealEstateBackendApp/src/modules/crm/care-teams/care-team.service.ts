@@ -250,7 +250,7 @@ export class CareTeamService {
 
     const teamIds = computeTeamIds(
       memberIds,
-      new Map([...users].map(([key, user]) => [key, user.teamId])),
+      new Map([...users].map(([key, user]) => [key, user.teamIds])),
     );
     const matched = await this.repo.updateOne(
       ctx.scope,

@@ -32,7 +32,7 @@ describe('importCustomers', () => {
   it('báo lỗi từng dòng: thiếu tên/SĐT, SĐT sai, trùng hệ thống, trùng trong file, danh mục chưa có', () => {
     const mapping = autoMapColumns(headers, DSKH);
     const rows = [
-      ['1', 'Khách Hợp Lệ', '0900 111 001', 'Website STND', "Q'Terra; The Privia", 'Quận 7, TP.HCM', 'Trần Mỹ Hạnh', 'ok'],
+      ['1', 'Khách Hợp Lệ', '0900 111 001', 'Website STND', "Q'Terra; The Privia", 'TP. Hồ Chí Minh', 'Trần Mỹ Hạnh', 'ok'],
       ['2', '', '0900 111 002', '', '', '', '', ''],
       ['3', 'SĐT sai', '123', '', '', '', '', ''],
       ['4', 'Trùng hệ thống', '0912 345 678', '', '', '', '', ''],
@@ -45,7 +45,7 @@ describe('importCustomers', () => {
       isPhoneTaken: (phone) => phone === '+84912345678',
       preset: DSKH,
     });
-    expect(results[0]).toMatchObject({ rowNumber: 2, errors: [], data: { phone: '+84900111001', sourceId: 'src-website', interestedProjectIds: ['proj-1', 'proj-2'], areaId: 'area-q7', primaryUserId: 'hanh', statusId: 'st-not-contacted' } });
+    expect(results[0]).toMatchObject({ rowNumber: 2, errors: [], data: { phone: '+84900111001', sourceId: 'src-website', interestedProjectIds: ['proj-1', 'proj-2'], areaId: 'area-tp-ho-chi-minh', primaryUserId: 'hanh', statusId: 'st-not-contacted' } });
     expect(results[1].errors).toContain('Thiếu họ tên');
     expect(results[2].errors[0]).toMatch(/SĐT không hợp lệ/);
     expect(results[3].errors).toContain('SĐT đã có trong hệ thống (trùng)');
@@ -57,6 +57,39 @@ describe('importCustomers', () => {
       'Nhân viên chưa có trong hệ thống: "Người Lạ"',
     ]);
     expect(results.filter((result) => result.data).length).toBe(1);
+  });
+
+  it('khu vực khớp 1 trong 34 tỉnh không phân biệt dấu/hoa thường; quận/huyện (không phải tỉnh) bị báo chưa có trong danh mục', () => {
+    const mapping = autoMapColumns(headers, DSKH);
+    const rows = [
+      ['1', 'An', '0900 111 001', '', '', 'ha NOI', '', ''],
+      ['2', 'Bình', '0900 111 002', '', '', 'Quận 7, TP.HCM', '', ''],
+    ];
+    const [byProvince, byDistrict] = validateImportRows(rows, mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
+    expect(byProvince.data?.areaId).toBe('area-ha-noi');
+    expect(byDistrict.errors).toEqual(['Khu vực chưa có trong danh mục: "Quận 7, TP.HCM"']);
+  });
+
+  it.each([
+    ['TP.HCM', 'area-tp-ho-chi-minh'],
+    ['Sài Gòn', 'area-tp-ho-chi-minh'],
+    ['Hồ Chí Minh', 'area-tp-ho-chi-minh'],
+    ['Thành phố Hồ Chí Minh, Việt Nam', 'area-tp-ho-chi-minh'],
+    ['TP Hà Nội', 'area-ha-noi'],
+    ['Tỉnh Nghệ An', 'area-nghe-an'],
+    ['dac lac', 'area-dak-lak'],
+  ])('khu vực "%s" khớp đúng tỉnh trong danh mục', (text, expectedId) => {
+    const mapping = autoMapColumns(headers, DSKH);
+    const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', text, '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
+    expect(result.errors).toEqual([]);
+    expect(result.data?.areaId).toBe(expectedId);
+  });
+
+  it('khu vực không có trong 34 tỉnh (vd Bình Dương đã sáp nhập) vẫn báo lỗi dòng, không nhập', () => {
+    const mapping = autoMapColumns(headers, DSKH);
+    const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', 'Bình Dương', '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
+    expect(result.data).toBeNull();
+    expect(result.errors).toEqual(['Khu vực chưa có trong danh mục: "Bình Dương"']);
   });
 
   it('preset DSKH_DROP gán tình trạng mặc định "Bỏ" khi file không có cột tình trạng', () => {

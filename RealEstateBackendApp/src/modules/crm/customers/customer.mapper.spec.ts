@@ -42,8 +42,10 @@ const doc = {
 const actor = (role: UserRole) => ({
   userId: me,
   role,
+  roles: [role],
   displayName: 'me',
   teamId: null,
+  teamIds: [],
   managedTeamIds: [],
 });
 

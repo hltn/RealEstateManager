@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CrmSettings, CustomerStatusItem } from '@crm/types/crm';
 import {
   createEmptyDraft,
+  withAreaParent,
   createEmptyUserDraft,
   deriveCatalogCode,
   diffSettings,
@@ -60,6 +61,15 @@ describe('danh mục: bản nháp -> body API', () => {
     const editArea = toCatalogBody('areas', { ...createEmptyDraft([]), id: 'a1', name: 'Thủ Đức', parentId: '' });
     expect(editArea).toMatchObject({ parentId: null });
     expect(editArea).not.toHaveProperty('type');
+  });
+
+  it('thêm khu vực mới mặc định là Tỉnh/Thành; chọn cha -> Quận/Huyện, bỏ cha -> về Tỉnh/Thành, loại do người dùng chọn thì giữ', () => {
+    const draft = createEmptyDraft([]);
+    expect(draft.areaType).toBe('PROVINCE');
+    const withParent = withAreaParent(draft, 'p1');
+    expect(withParent).toMatchObject({ parentId: 'p1', areaType: 'DISTRICT' });
+    expect(withAreaParent(withParent, '')).toMatchObject({ parentId: '', areaType: 'PROVINCE' });
+    expect(withAreaParent({ ...draft, areaType: 'WARD' }, 'p1')).toMatchObject({ parentId: 'p1', areaType: 'WARD' });
   });
 
   it('kiểm tên/mã/thứ tự trước khi gọi API', () => {

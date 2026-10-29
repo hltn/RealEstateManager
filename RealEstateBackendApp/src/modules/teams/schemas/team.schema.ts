@@ -6,7 +6,7 @@ import { HydratedDocument, Types } from 'mongoose';
  *
  * - `code`: duy nhất toàn hệ thống (kể cả nhóm đã xóa mềm), lưu chữ HOA.
  * - `managerIds`: danh sách Quản lý của nhóm (người dùng vai trò MANAGER).
- * - Thành viên của nhóm KHÔNG lưu ở đây mà ở `users.teamId` (một nguồn sự thật duy nhất).
+ * - Thành viên của nhóm KHÔNG lưu ở đây mà ở `users.teamIds` (một người có thể thuộc nhiều nhóm; một nguồn sự thật duy nhất).
  * - Xóa mềm bằng `deletedAt`.
  */
 @Schema({ timestamps: true, collection: 'teams' })
