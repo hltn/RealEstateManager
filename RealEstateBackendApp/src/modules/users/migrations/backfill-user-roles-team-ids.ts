@@ -42,37 +42,49 @@ const TEAM_IDS_INDEX_KEY = { teamIds: 1, status: 1 } as const;
 const ROLES_INDEX_KEY = { roles: 1, status: 1 } as const;
 
 /**
- * Tài khoản chưa có `roles` (thiếu/rỗng) hoặc chưa có field `teamIds`.
+ * Tài khoản chưa có `roles` là MẢNG (thiếu/null/không phải mảng) hoặc `roles` rỗng, hoặc `teamIds` không phải mảng.
  * Dùng chung với guard khởi động (`UserRolesMigrationGuard`) để hai nơi cùng một định nghĩa "chưa migrate".
+ * `$not: { $type: 'array' }` khớp cả field thiếu, null lẫn kiểu sai — chặt hơn `$exists: false` (bỏ sót `roles: null`).
  */
 export const USERS_PENDING_ROLES_TEAM_IDS_FILTER = {
   $or: [
-    { roles: { $exists: false } },
+    { roles: { $not: { $type: 'array' as const } } },
     { roles: { $size: 0 } },
-    { teamIds: { $exists: false } },
+    { teamIds: { $not: { $type: 'array' as const } } },
   ],
 };
 
+/**
+ * Ép một field về mảng AN TOÀN trong aggregation: thiếu/null/không phải mảng → `[]`.
+ * BẮT BUỘC dùng trước `$in`/`$size`/`$arrayElemAt`: các toán tử này ném lỗi ("$in requires an array ... found: missing")
+ * khi gặp document chưa migrate, và query planner KHÔNG đảm bảo điều kiện `roles: { $exists: true }` được áp trước `$expr`.
+ */
+const asArray = (field: string) => ({
+  $cond: [{ $isArray: field }, field, []],
+});
+
 const hasItems = (field: string) => ({
-  $gt: [{ $size: { $ifNull: [field, []] } }, 0],
+  $gt: [{ $size: asArray(field) }, 0],
 });
 
 /** Biểu thức aggregation: role cao nhất trong `$roles` theo `ROLE_PRECEDENCE` (ADMIN > MANAGER > STAFF > EDITOR). */
 const highestRoleExpression = ROLE_PRECEDENCE.reduceRight<unknown>(
   (otherwise, role) => ({
-    $cond: [{ $in: [role, '$roles'] }, role, otherwise],
+    $cond: [{ $in: [role, asArray('$roles')] }, role, otherwise],
   }),
   null,
 );
 
 /**
- * Tài khoản đã migrate (roles không rỗng, có teamIds) nhưng cặp suy ra lệch nguồn:
+ * Tài khoản đã migrate (roles là mảng không rỗng, teamIds là mảng) nhưng cặp suy ra lệch nguồn:
  * `role` ≠ role cao nhất của `roles`, hoặc `teamId` ≠ `teamIds[0]` (so với null khi rỗng).
  * Chỉ xét khi có đủ field `role`/`teamId` để không "thu gọn" nhầm bản ghi thiếu field.
+ * Các biểu thức trong `$expr` đã an toàn với `roles`/`teamIds` thiếu/null/sai kiểu (xem `asArray`) nên đúng đắn
+ * KHÔNG phụ thuộc thứ tự đánh giá của query planner.
  */
 const DRIFT_FILTER = {
-  roles: { $exists: true, $not: { $size: 0 } },
-  teamIds: { $exists: true },
+  roles: { $type: 'array', $not: { $size: 0 } },
+  teamIds: { $type: 'array' },
   // role hợp lệ: `role: null`/giá trị lạ không bị coi là nguồn đúng (tránh ghi roles:[null]).
   role: { $in: [...ROLE_PRECEDENCE] },
   teamId: { $exists: true },
@@ -82,7 +94,7 @@ const DRIFT_FILTER = {
       {
         $ne: [
           { $ifNull: ['$teamId', null] },
-          { $ifNull: [{ $arrayElemAt: ['$teamIds', 0] }, null] },
+          { $ifNull: [{ $arrayElemAt: [asArray('$teamIds'), 0] }, null] },
         ],
       },
     ],

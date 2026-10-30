@@ -6,7 +6,8 @@
  * `role` (role cao nhất ADMIN > MANAGER > STAFF > EDITOR) và `teamId` (= teamIds[0]) được giữ làm trường SUY RA.
  *
  * Backward Compatible: CÓ — chỉ thêm field + index, `role`/`teamId` không đổi; index cũ { teamId, status } giữ nguyên.
- * Idempotent: chỉ cập nhật tài khoản chưa có `roles` (thiếu/rỗng) hoặc chưa có `teamIds`; createIndex không đổi nếu đã có.
+ * Idempotent: chỉ cập nhật tài khoản chưa migrate = `roles` thiếu/null/sai kiểu (không phải mảng) hoặc rỗng, hoặc `teamIds`
+ * thiếu/null/sai kiểu; createIndex không đổi nếu đã có.
  *
  * THỨ TỰ TRIỂN KHAI BẮT BUỘC (code mới lọc theo `roles`/`teamIds`; production sẽ KHÔNG khởi động nếu còn tài khoản
  * chưa migrate — xem `UserRolesMigrationGuard`):

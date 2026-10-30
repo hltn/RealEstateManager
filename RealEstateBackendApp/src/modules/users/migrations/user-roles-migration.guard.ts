@@ -11,7 +11,8 @@ export const USER_ROLES_MIGRATION_COMMAND =
 /**
  * Guard khởi động: code mới đọc/lọc theo `users.roles`/`users.teamIds`, nên nếu còn tài khoản CHƯA migrate (migration 005)
  * thì danh sách người phân công rỗng, kiểm tra "ADMIN cuối cùng" sai, v.v.
- * - Còn tài khoản thiếu `roles` (rỗng/thiếu) hoặc `teamIds`: ghi cảnh báo kèm số lượng + lệnh chạy migration.
+ * - "Chưa migrate" = `roles` thiếu/null/sai kiểu (không phải mảng) hoặc rỗng, hoặc `teamIds` thiếu/null/sai kiểu.
+ * - Còn tài khoản chưa migrate như trên: ghi cảnh báo kèm số lượng + lệnh chạy migration.
  * - `NODE_ENV=production`: ném lỗi để KHÔNG khởi động (fail-fast), tránh chạy code mới trên dữ liệu cũ.
  * - `NODE_ENV=test`: bỏ qua hoàn toàn (không truy vấn DB), như `AuthService.seedAdmin`.
  * Thứ tự triển khai: mongodump → 005 --dry-run → 005 --apply → rồi mới chạy code mới.

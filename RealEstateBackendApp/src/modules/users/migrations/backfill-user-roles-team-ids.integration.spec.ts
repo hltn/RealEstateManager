@@ -258,6 +258,182 @@ describe('backfillUserRolesTeamIds', () => {
     });
   });
 
+  /**
+   * REGRESSION — lỗi thật trên DB dev: mọi user CHƯA có field `roles` làm `$in: [role, '$roles']` ném
+   * "$in requires an array as a second argument, found: missing" (query planner không đảm bảo `roles: {$exists:true}`
+   * được áp trước `$expr`). Đây chính là trạng thái dữ liệu mà migration 005 phục vụ.
+   */
+  describe('tài khoản CHƯA migrate (thiếu roles/teamIds, roles rỗng/null/không phải mảng, role null)', () => {
+    const db = () => client.db('migration_005');
+    const snapshot = () => users().find({}).sort({ email: 1 }).toArray();
+
+    beforeEach(async () => {
+      await users().deleteMany({});
+      // Các test trước có thể đã tạo index; xóa để kiểm "dry-run không tạo index" chính xác.
+      await users().dropIndexes();
+      await users().insertMany([
+        // CHỈ có `role` (không roles, không teamIds, không teamId): trường hợp gây lỗi.
+        { email: 'legacy-only-role', role: 'MANAGER', status: 'ACTIVE' },
+        { email: 'legacy-with-team', role: 'STAFF', teamId, status: 'ACTIVE' },
+        // đã migrate đầy đủ, nhất quán.
+        {
+          email: 'migrated',
+          role: 'MANAGER',
+          roles: ['MANAGER', 'STAFF'],
+          teamId,
+          teamIds: [teamId, otherTeamId],
+          status: 'ACTIVE',
+        },
+        // roles rỗng + teamIds rỗng: coi là chưa migrate.
+        {
+          email: 'empty-roles',
+          role: 'STAFF',
+          roles: [],
+          teamId: null,
+          teamIds: [],
+          status: 'ACTIVE',
+        },
+        // role null, không roles: mặc định EDITOR như schema.
+        { email: 'null-role', role: null, teamId: null, status: 'ACTIVE' },
+        // roles null / không phải mảng (dữ liệu bẩn): không được làm vỡ aggregation.
+        {
+          email: 'null-roles',
+          role: 'ADMIN',
+          roles: null,
+          teamId: null,
+          teamIds: null,
+          status: 'ACTIVE',
+        },
+        {
+          email: 'scalar-roles',
+          role: 'STAFF',
+          roles: 'STAFF',
+          teamId: null,
+          teamIds: [],
+          status: 'ACTIVE',
+        },
+      ]);
+    });
+
+    it('dry-run chỉ với user THIẾU field roles (đúng tình huống dev: 6/6 user chưa có roles): không ném "found: missing"', async () => {
+      await users().deleteMany({});
+      // Lỗi dev CHỈ tái hiện khi collection có index như UserSchema (planner thử nhiều plan, đánh giá `$expr` trước
+      // `roles: {$exists:true}`); không có index → COLLSCAN và code cũ vô tình chạy được.
+      await users().createIndexes([
+        { key: { status: 1 } },
+        { key: { teamId: 1, status: 1 } },
+        { key: { teamIds: 1, status: 1 } },
+        { key: { roles: 1, status: 1 } },
+      ]);
+      await users().insertMany([
+        { email: 'a', role: 'ADMIN', teamId: null, status: 'ACTIVE' },
+        { email: 'b', role: 'MANAGER', teamId, status: 'ACTIVE' },
+        { email: 'c', role: 'STAFF', teamId, status: 'ACTIVE' },
+      ]);
+
+      const result = await backfillUserRolesTeamIds(db(), false);
+
+      expect(result).toMatchObject({
+        pendingBefore: 3,
+        driftBefore: 0,
+        updated: 0,
+      });
+    });
+
+    it('dry-run: không ném lỗi, đếm đúng pending/drift, không ghi gì', async () => {
+      const before = await snapshot();
+
+      const result = await backfillUserRolesTeamIds(db(), false);
+      const withReconcile = await backfillUserRolesTeamIds(db(), false, {
+        reconcile: true,
+      });
+
+      for (const r of [result, withReconcile]) {
+        // Tất cả trừ `migrated` đều chưa đủ roles (mảng không rỗng) + teamIds (mảng).
+        expect(r).toMatchObject({
+          pendingBefore: 6,
+          updated: 0,
+          driftBefore: 0,
+          reconciled: 0,
+        });
+        expect(r.driftIds).toEqual([]);
+      }
+      expect(await snapshot()).toEqual(before);
+      expect((await users().indexes()).map((i) => i.name)).toEqual(['_id_']);
+    });
+
+    it('apply (+reconcile): không ném lỗi, backfill đúng, giữ nguyên bản ghi đã migrate', async () => {
+      const migratedBefore = await byEmail('migrated');
+
+      const result = await backfillUserRolesTeamIds(db(), true, {
+        reconcile: true,
+      });
+
+      expect(result).toMatchObject({
+        pendingBefore: 6,
+        updated: 6,
+        driftBefore: 0,
+      });
+      expect(await byEmail('legacy-only-role')).toMatchObject({
+        role: 'MANAGER',
+        roles: ['MANAGER'],
+        teamIds: [],
+      });
+      expect(await byEmail('legacy-with-team')).toMatchObject({
+        roles: ['STAFF'],
+        teamIds: [teamId],
+      });
+      expect(await byEmail('empty-roles')).toMatchObject({
+        roles: ['STAFF'],
+        teamIds: [],
+      });
+      expect(await byEmail('null-role')).toMatchObject({
+        roles: ['EDITOR'],
+        teamIds: [],
+      });
+      expect(await byEmail('null-roles')).toMatchObject({
+        roles: ['ADMIN'],
+        teamIds: [],
+      });
+      expect(await byEmail('scalar-roles')).toMatchObject({
+        roles: ['STAFF'],
+        teamIds: [],
+      });
+      expect(await byEmail('migrated')).toEqual(migratedBefore);
+    });
+
+    it('idempotent: chạy lại sau apply không lỗi, không còn pending/drift, không ghi thêm', async () => {
+      await backfillUserRolesTeamIds(db(), true);
+      const done = await snapshot();
+
+      const again = await backfillUserRolesTeamIds(db(), true, {
+        reconcile: true,
+      });
+
+      expect(again).toMatchObject({
+        pendingBefore: 0,
+        updated: 0,
+        driftBefore: 0,
+        reconciled: 0,
+      });
+      expect(await snapshot()).toEqual(done);
+    });
+
+    it('drift lẫn bản ghi chưa migrate: chỉ đếm bản ghi lệch thật, không lỗi', async () => {
+      await users().insertOne({
+        email: 'role-drift',
+        role: 'STAFF',
+        roles: ['MANAGER', 'STAFF'],
+        teamId,
+        teamIds: [teamId],
+      });
+
+      const dry = await backfillUserRolesTeamIds(db(), false);
+
+      expect(dry).toMatchObject({ pendingBefore: 6, driftBefore: 1 });
+    });
+  });
+
   it('idempotent: chạy lại là no-op và không đổi dữ liệu', async () => {
     await backfillUserRolesTeamIds(client.db('migration_005'), true);
     const snapshot = await users().find({}).sort({ email: 1 }).toArray();
