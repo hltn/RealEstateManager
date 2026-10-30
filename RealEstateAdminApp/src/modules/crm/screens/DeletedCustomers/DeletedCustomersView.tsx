@@ -152,9 +152,9 @@ export const DeletedCustomersView = ({ variant }: DeletedCustomersViewProps) => 
         <ul aria-label="Danh sách khách đã xóa" className={`${CARD_CLASS} divide-y divide-gray-100 dark:divide-white/[0.05] ${isFetching && !isLoading ? 'opacity-70' : ''}`}>
           {data.data.map((customer) => (
             <li key={customer.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-              <div className="min-w-0 space-y-1.5">
+              <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="break-words text-sm font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</p>
+                  <p className="[overflow-wrap:anywhere] text-sm font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</p>
                   <span className="text-theme-sm text-gray-500 dark:text-gray-400">{customer.phoneMasked}</span>
                   {customer.anonymizedAt && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>Đã ẩn danh hóa</span>}
                   {customer.purgeInProgress && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.warning}`}>Đang xóa dở — bấm Xóa vĩnh viễn để hoàn tất</span>}
@@ -162,7 +162,7 @@ export const DeletedCustomersView = ({ variant }: DeletedCustomersViewProps) => 
                 <p className="text-theme-xs text-gray-500 dark:text-gray-400">
                   Xóa lúc {formatVnDateTime(customer.deletedAt)} · bởi {customer.deletedBy?.displayName ?? 'Hệ thống'}
                 </p>
-                <p className="break-words text-theme-xs text-gray-600 dark:text-gray-400">
+                <p className="[overflow-wrap:anywhere] text-theme-xs text-gray-600 dark:text-gray-400">
                   {customer.deleteReason ? `Lý do: ${customer.deleteReason}` : customer.anonymizedAt ? 'Lý do xóa đã được ẩn cùng dữ liệu cá nhân.' : 'Không ghi lý do.'}
                 </p>
               </div>
@@ -206,7 +206,7 @@ export const DeletedCustomersView = ({ variant }: DeletedCustomersViewProps) => 
           Khách sẽ trở lại danh sách khách hàng với tình trạng trước khi xóa.
         </p>
         {restoreError && (
-          <p role="alert" className="rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-600 dark:bg-error-500/10 dark:text-error-400">
+          <p role="alert" className="rounded-lg bg-error-50 px-3 py-2 text-theme-sm text-error-700 dark:bg-error-500/10 dark:text-error-400">
             {restoreError}
           </p>
         )}

@@ -105,11 +105,11 @@ export const DANGER_BUTTON_CLASS =
 
 /** Nút nguy hiểm kiểu viền (chữ + viền error, nền trong), thay cho `ICON_BUTTON_OUTLINE_CLASS` có `text-gray-500` đè màu chữ. */
 export const DANGER_OUTLINE_BUTTON_CLASS =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg border border-error-200 text-error-600 transition-colors hover:bg-error-50 dark:border-error-500/40 dark:text-error-400 dark:hover:bg-error-500/10';
+  'inline-flex items-center justify-center gap-1.5 rounded-lg border border-error-200 text-error-600 transition-colors hover:bg-error-50 hover:text-error-700 dark:border-error-500/40 dark:text-error-400 dark:hover:bg-error-500/10 dark:hover:text-error-400';
 
 /** Nút nhỏ kiểu "soft" nguy hiểm (hàng trong danh sách). */
 export const DANGER_SOFT_SM_BUTTON_CLASS =
-  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-error-100 bg-error-50 px-2.5 py-1.5 text-xs font-medium text-error-600 transition-colors hover:bg-error-100 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-400 dark:hover:bg-error-500/20';
+  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-error-100 bg-error-50 px-2.5 py-1.5 text-xs font-medium text-error-700 transition-colors hover:bg-error-100 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-400 dark:hover:bg-error-500/20';
 
 /** Nút điều hướng nhỏ 32px (tháng/tuần trước - sau). */
 export const NAV_ICON_BUTTON_CLASS =
