@@ -90,6 +90,8 @@ export interface ImportRowResult {
   rowNumber: number;
   data: ImportRowData | null;
   errors: string[];
+  /** Cảnh báo nhẹ, không chặn nhập (vd khu vực không khớp -> để trống). */
+  warnings: string[];
 }
 
 interface ValidationContext {
@@ -126,7 +128,8 @@ const lookupActive = <T extends { isActive: boolean }>(
 
 /**
  * Kiểm từng dòng: thiếu tên/SĐT, SĐT sai, SĐT trùng hệ thống, trùng trong file, giá trị danh mục chưa có
- * (tình trạng, nguồn, dự án, khu vực, nhân viên). Dòng có lỗi -> `data = null` (không nhập).
+ * (tình trạng, nguồn, dự án, nhân viên). Dòng có lỗi -> `data = null` (không nhập).
+ * Khu vực không khớp 34 tỉnh (sau bí danh) KHÔNG phải lỗi: để trống + cảnh báo `warnings`.
  */
 export const validateImportRows = (rows: readonly (readonly string[])[], mapping: ImportMapping, context: ValidationContext): ImportRowResult[] => {
   const { catalogs, users, isPhoneTaken, preset } = context;
@@ -137,6 +140,7 @@ export const validateImportRows = (rows: readonly (readonly string[])[], mapping
   return rows.map((row, index) => {
     const rowNumber = index + 2;
     const errors: string[] = [];
+    const warnings: string[] = [];
     const fullName = cell(row, 'fullName');
     const rawPhone = cell(row, 'phone');
     if (!fullName) errors.push('Thiếu họ tên');
@@ -174,9 +178,16 @@ export const validateImportRows = (rows: readonly (readonly string[])[], mapping
     const areaText = cell(row, 'area');
     let area: { id: string } | undefined;
     if (areaText) {
-      const found = lookupActive(catalogs.areas, areaText, 'Khu vực', (item) => [item.name], toAreaKey);
-      if ('error' in found) errors.push(found.error);
-      else area = found.item;
+      const getAreaLabels = (item: { name: string }) => [item.name];
+      const isKnownArea = catalogs.areas.some((item) => matchesLabel(item, toAreaKey(areaText), getAreaLabels, toAreaKey));
+      if (!isKnownArea) {
+        // Không khớp tỉnh nào (kể cả bí danh): để trống khu vực, vẫn nhập khách — chỉ cảnh báo nhẹ.
+        warnings.push(`Khu vực không khớp 34 tỉnh: "${areaText}" — để trống`);
+      } else {
+        const found = lookupActive(catalogs.areas, areaText, 'Khu vực', getAreaLabels, toAreaKey);
+        if ('error' in found) errors.push(found.error);
+        else area = found.item;
+      }
     }
 
     const projectNames = cell(row, 'projects').split(/[;,]/).map((name) => name.trim()).filter(Boolean);
@@ -203,6 +214,7 @@ export const validateImportRows = (rows: readonly (readonly string[])[], mapping
     return {
       rowNumber,
       errors,
+      warnings,
       data:
         errors.length === 0 && status
           ? {

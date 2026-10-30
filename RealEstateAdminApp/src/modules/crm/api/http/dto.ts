@@ -109,9 +109,16 @@ export interface PersonaFieldDto {
 
 // --- Người dùng, nhóm -------------------------------------------------------------------------------------------------
 
+/**
+ * `GET /crm/assignable-users`. Với `purpose=assign` (mặc định) `role` chỉ là MANAGER/STAFF; với `purpose=filter` (nguồn bộ lọc
+ * "Người phụ trách") có thể là ADMIN/EDITOR vì mọi người trong careTeam của tập khách đều có mặt. `roles`/`teamIds`/`teams` là bản đủ.
+ */
 export interface AssignableUserDto extends UserRefDto {
-  role: 'MANAGER' | 'STAFF';
+  role: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF';
+  roles?: ('ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF')[];
   team: RefDto | null;
+  teamIds?: string[];
+  teams?: RefDto[];
 }
 
 export interface UserDto {
@@ -121,6 +128,18 @@ export interface UserDto {
   role: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF';
   status: 'ACTIVE' | 'BLOCKED';
   teamId: string | null;
+  /** Có từ khi hỗ trợ nhiều role/nhóm; bản ghi cũ có thể thiếu -> suy từ `role`/`teamId`. */
+  roles?: ('ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF')[];
+  teamIds?: string[];
+}
+
+export interface TeamMemberDto {
+  id: string;
+  displayName: string;
+  role: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF';
+  roles: ('ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF')[];
+  status: 'ACTIVE' | 'BLOCKED';
+  isManager: boolean;
 }
 
 export interface TeamDto {
@@ -169,6 +188,15 @@ export interface CustomerListItemDto {
   lastCareLogAt: string | null;
   lastUpdatedAt: string;
   personaCompleteness: number;
+}
+
+/** Phần tử của `GET /crm/deleted-customers`: khách + thông tin xóa. */
+export interface DeletedCustomerDto extends CustomerListItemDto {
+  deletedAt: string;
+  deletedBy: UserRefDto | null;
+  anonymizedAt: string | null;
+  deleteReason: string | null;
+  purgeInProgress: boolean;
 }
 
 export interface CriterionDto {

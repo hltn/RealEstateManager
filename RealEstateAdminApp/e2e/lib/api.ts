@@ -30,9 +30,14 @@ export class Api {
   }
 
   async call(role: RoleKey, method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<{ status: number; data: Json }> {
+    return this.callWithToken(this.token(role), method, path, body, extraHeaders);
+  }
+
+  /** Như `call` nhưng bằng access token tự lấy (tài khoản tạo riêng trong spec, không thuộc bộ seed). */
+  async callWithToken(accessToken: string, method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<{ status: number; data: Json }> {
     const res = await fetch(`${URLS.api}${path}`, {
       method,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${this.token(role)}`, ...extraHeaders },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}`, ...extraHeaders },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();

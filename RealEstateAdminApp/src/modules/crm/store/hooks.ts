@@ -14,6 +14,7 @@ import { CrmActionsContext, CrmStoreContext } from './crmContext';
 import type { CrmState } from './crmReducer';
 import { getDefaultCrmStore, type CrmStore } from './crmStore';
 import { useAuthStore } from '../../../stores/auth.store';
+import { crmRoleOf } from '../../../utils/userRoles';
 
 /** Store đang dùng: store của CrmProvider gần nhất, ngoài provider (vd AppSidebar) dùng store chung. */
 export const useCrmStore = (): CrmStore => useContext(CrmStoreContext) ?? getDefaultCrmStore();
@@ -49,7 +50,7 @@ export const useCurrentUser = (): CrmUser => {
       id: user?._id ?? '',
       fullName: user?.displayName ?? '',
       displayName: user?.displayName ?? '',
-      role: user?.role === 'ADMIN' || user?.role === 'MANAGER' ? user.role : 'STAFF',
+      role: crmRoleOf(user),
       jobTitle: '',
       teamId: user?.teamId ?? null,
       isActive: true,

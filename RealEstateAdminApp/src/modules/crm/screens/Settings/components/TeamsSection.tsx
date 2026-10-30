@@ -3,8 +3,8 @@
  * 409 `TEAM_NOT_EMPTY`). Quản lý của nhóm xem được khách của cả nhóm; phạm vi dữ liệu do backend áp.
  */
 import { useState, type FormEvent } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { useAdminUsers, useCatalogs, useCrmApi } from '@crm/api';
+import { ChevronDown, ChevronUp, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { useAdminUsers, useCatalogs, useCrmActor, useCrmApi } from '@crm/api';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { FieldError } from '@crm/components/form/FieldError';
 import { FormField } from '@crm/components/form/FormField';
@@ -14,6 +14,7 @@ import { useCrmActions } from '@crm/store';
 import { toggleItem } from '../../CreateCustomer/customerFormRules';
 import { validateTeam, type TeamDraft } from '../settingsForms';
 import { SwitchRow } from './CatalogItemEditor';
+import { TeamMembersPanel } from './TeamMembersPanel';
 
 const fieldId = (name: string) => `settings-team-${name}`;
 
@@ -25,7 +26,10 @@ export const TeamsSection = () => {
   const [editing, setEditing] = useState<{ draft: TeamDraft; error: string | null } | null>(null);
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const managers = users.filter((user) => user.role === 'MANAGER' && user.isActive);
+  /** Nhóm đang mở panel thành viên (mở ngay dưới dòng nhóm, không rời màn). */
+  const [membersTeamId, setMembersTeamId] = useState<string | null>(null);
+  const { role: actorRole } = useCrmActor();
+  const managers = users.filter((user) => user.roles.includes('MANAGER') && user.isActive);
   const nameOf = (userId: string) => users.find((user) => user.id === userId)?.displayName ?? 'Không rõ';
 
   const handleSubmit = async (event: FormEvent) => {
@@ -121,7 +125,8 @@ export const TeamsSection = () => {
       {teams.length === 0 && !editing && <p className={MUTED_TEXT_CLASS}>Chưa có nhóm nào. Tạo nhóm trước khi thêm Quản lý/Nhân viên.</p>}
       <ul className="divide-y divide-gray-100 dark:divide-white/[0.05]">
         {teams.map((team) => (
-          <li key={team.id} className={`flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between ${team.isActive ? '' : 'opacity-60'}`}>
+          <li key={team.id} className="py-3">
+           <div className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${team.isActive ? '' : 'opacity-60'}`}>
             <div className="min-w-0 space-y-1">
               <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-800 dark:text-white/90">
                 {team.name}
@@ -133,6 +138,11 @@ export const TeamsSection = () => {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={() => setMembersTeamId(membersTeamId === team.id ? null : team.id)} className={BUTTON_SOFT_SM_CLASS} aria-expanded={membersTeamId === team.id} aria-label={`Thành viên nhóm ${team.name}`}>
+                <Users size={12} aria-hidden="true" />
+                Thành viên
+                {membersTeamId === team.id ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
+              </button>
               <button type="button" onClick={() => setEditing({ draft: { id: team.id, name: team.name, code: team.code, managerIds: team.managerIds, isActive: team.isActive }, error: null })} className={BUTTON_SOFT_SM_CLASS} aria-label={`Sửa nhóm ${team.name}`}>
                 <Pencil size={12} aria-hidden="true" />
                 Sửa
@@ -142,6 +152,8 @@ export const TeamsSection = () => {
                 Xoá
               </button>
             </div>
+           </div>
+           {membersTeamId === team.id && <TeamMembersPanel team={team} canManage={actorRole === 'ADMIN'} users={users} />}
           </li>
         ))}
       </ul>

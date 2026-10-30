@@ -52,14 +52,13 @@ describe('importCustomers', () => {
     expect(results[4].errors).toContain('SĐT trùng với dòng 2 trong file');
     expect(results[5].errors).toEqual([
       'Nguồn khách chưa có trong danh mục: "TikTok"',
-      'Khu vực chưa có trong danh mục: "Sao Hoả"',
       'Dự án chưa có trong danh mục: "The Rivus"',
       'Nhân viên chưa có trong hệ thống: "Người Lạ"',
     ]);
     expect(results.filter((result) => result.data).length).toBe(1);
   });
 
-  it('khu vực khớp 1 trong 34 tỉnh không phân biệt dấu/hoa thường; quận/huyện (không phải tỉnh) bị báo chưa có trong danh mục', () => {
+  it('khu vực khớp 1 trong 34 tỉnh không phân biệt dấu/hoa thường; quận/huyện (không phải tỉnh) -> để trống khu vực, vẫn hợp lệ', () => {
     const mapping = autoMapColumns(headers, DSKH);
     const rows = [
       ['1', 'An', '0900 111 001', '', '', 'ha NOI', '', ''],
@@ -67,7 +66,9 @@ describe('importCustomers', () => {
     ];
     const [byProvince, byDistrict] = validateImportRows(rows, mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
     expect(byProvince.data?.areaId).toBe('area-ha-noi');
-    expect(byDistrict.errors).toEqual(['Khu vực chưa có trong danh mục: "Quận 7, TP.HCM"']);
+    expect(byDistrict.errors).toEqual([]);
+    expect(byDistrict.data?.areaId).toBeNull();
+    expect(byDistrict.warnings).toHaveLength(1);
   });
 
   it.each([
@@ -85,11 +86,12 @@ describe('importCustomers', () => {
     expect(result.data?.areaId).toBe(expectedId);
   });
 
-  it('khu vực không có trong 34 tỉnh (vd Bình Dương đã sáp nhập) vẫn báo lỗi dòng, không nhập', () => {
+  it('khu vực không có trong 34 tỉnh (vd Bình Dương đã sáp nhập) vẫn nhập khách, để trống khu vực + cảnh báo', () => {
     const mapping = autoMapColumns(headers, DSKH);
     const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', 'Bình Dương', '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
-    expect(result.data).toBeNull();
-    expect(result.errors).toEqual(['Khu vực chưa có trong danh mục: "Bình Dương"']);
+    expect(result.errors).toEqual([]);
+    expect(result.data).toMatchObject({ fullName: 'An', areaId: null });
+    expect(result.warnings).toEqual(['Khu vực không khớp 34 tỉnh: "Bình Dương" — để trống']);
   });
 
   it('preset DSKH_DROP gán tình trạng mặc định "Bỏ" khi file không có cột tình trạng', () => {

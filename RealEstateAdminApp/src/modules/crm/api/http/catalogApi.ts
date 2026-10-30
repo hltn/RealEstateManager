@@ -35,6 +35,13 @@ export const fetchPersonaFields = async (signal?: AbortSignal): Promise<PersonaF
 /** Người có thể phân chăm sóc (Quản trị: tất cả; Quản lý/Nhân viên: trong phạm vi nhóm). */
 export const fetchAssignableUsers = async (signal?: AbortSignal): Promise<CrmUser[]> => (await fetchAllPages<AssignableUserDto>('/crm/assignable-users', {}, signal)).map(assignableToUser);
 
+/**
+ * Nguồn cho ô LỌC "Người phụ trách" (`purpose=filter`), tách khỏi ô GÁN (lọc ≠ gán): Quản lý nhận mọi người trong careTeam của tập khách
+ * mình thấy (kể cả người ngoài nhóm mình quản lý, ADMIN/EDITOR cũ); Quản trị/Nhân viên nhận như `fetchAssignableUsers`.
+ */
+export const fetchAssigneeFilterUsers = async (signal?: AbortSignal): Promise<CrmUser[]> =>
+  (await fetchAllPages<AssignableUserDto>('/crm/assignable-users', { purpose: 'filter' }, signal)).map(assignableToUser);
+
 /** Nhóm: Quản trị và Quản lý (Nhân viên không gọi — 403). */
 export const fetchTeams = async (signal?: AbortSignal): Promise<(Team & { code: string; memberCount: number; isActive: boolean })[]> =>
   (await fetchAllPages<TeamDto>('/teams', {}, signal)).map(toTeam);

@@ -28,6 +28,29 @@ export interface CrmUser {
   avatarUrl?: string;
 }
 
+/** Role của tài khoản trong `/users`: ngoài 3 role CRM còn EDITOR (quyền nội dung/tin tức, ngang STAFF, không có quyền CRM). */
+export type AccountRole = UserRole | 'EDITOR';
+
+/** Tài khoản từ `GET /users` (Quản trị): thêm mọi role + mọi nhóm; `role`/`teamId` là trường suy ra (role cao nhất, nhóm chính). */
+export interface AdminUser extends CrmUser {
+  /** Mọi role (≥1), sắp ADMIN > MANAGER > STAFF > EDITOR. */
+  roles: AccountRole[];
+  /** Mọi nhóm; phần tử đầu là nhóm chính. Rỗng nếu không có MANAGER/STAFF. */
+  teamIds: string[];
+}
+
+/** Thành viên của một nhóm (`GET /teams/:id/members`) — không có email. */
+export interface TeamMember {
+  id: string;
+  displayName: string;
+  /** Role cao nhất (trường suy ra). */
+  role: AccountRole;
+  roles: AccountRole[];
+  isActive: boolean;
+  /** Người này là Quản lý CỦA NHÓM (`Team.managerIds`) — khác với có role MANAGER. */
+  isManager: boolean;
+}
+
 export interface Team {
   id: string;
   name: string;

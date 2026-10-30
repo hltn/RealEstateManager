@@ -22,6 +22,7 @@ const CreateAppointmentScreen = lazy(() => import('./screens/CreateAppointment')
 const ReportsScreen = lazy(() => import('./screens/Reports'));
 const ProjectsScreen = lazy(() => import('./screens/Projects'));
 const SettingsScreen = lazy(() => import('./screens/Settings'));
+const DeletedCustomersScreen = lazy(() => import('./screens/DeletedCustomers'));
 const NotificationsScreen = lazy(() => import('./screens/Notifications'));
 
 const LoadingFallback = () => <div role="status" className="p-6 text-theme-sm text-gray-500 dark:text-gray-400">Đang tải…</div>;
@@ -49,6 +50,7 @@ export const buildCrmRoute = (isEnabled: boolean): ReactElement | null =>
       <Route path={CRM_CHILD_ROUTES.reports} element={<ReportsScreen />} />
       <Route path={CRM_CHILD_ROUTES.projects} element={<ProjectsScreen />} />
       <Route path={CRM_CHILD_ROUTES.settings} element={<SettingsScreen />} />
+      <Route path={CRM_CHILD_ROUTES.deletedCustomers} element={<DeletedCustomersScreen />} />
       <Route path="*" element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
     </Route>
   ) : null;

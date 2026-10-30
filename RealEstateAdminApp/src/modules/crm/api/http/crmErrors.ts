@@ -48,6 +48,9 @@ const MESSAGE_BY_CODE: Record<string, string> = {
   ATTACHMENT_LIMIT_EXCEEDED: 'Mỗi ghi chú tối đa 5 ảnh.',
 };
 
+/** Lời máy chủ còn bằng tiếng Anh mà người dùng có thể gặp (403 nghiệp vụ tự viết) -> tiếng Việt. */
+const KNOWN_ENGLISH_MESSAGES = new Map<string, string>([['Cannot block your own account', 'Bạn không thể tự khóa tài khoản của chính mình.']]);
+
 const MAX_VALIDATION_LINES = 3;
 
 /** Thông báo mặc định tiếng Anh của NestJS/guard (server thường đã dịch; phòng khi lọt ra) -> dùng thông báo theo mã lỗi. */
@@ -68,6 +71,8 @@ const pickMessage = (body: RawErrorBody, code: string, status: number): string =
   }
   // 5xx: không hiển thị nguyên văn message của server.
   if (status >= 500) return MESSAGE_BY_CODE[code] ?? MESSAGE_BY_CODE.INTERNAL_ERROR;
+  const translated = typeof body.message === 'string' ? KNOWN_ENGLISH_MESSAGES.get(body.message.trim()) : undefined;
+  if (translated) return translated;
   if (typeof body.message === 'string' && body.message.trim() && !ENGLISH_DEFAULT_MESSAGES.has(body.message)) return body.message;
   return MESSAGE_BY_CODE[code] ?? 'Không thực hiện được thao tác. Vui lòng thử lại.';
 };
@@ -100,6 +105,16 @@ export const APPOINTMENT_VERSION_CONFLICT_GUIDE = 'Lịch hẹn vừa được n
 /** Thông báo hiển thị cho lỗi ghi: riêng xung đột phiên bản có hướng dẫn rõ ràng (`conflictGuide` thay câu mặc định về hồ sơ). */
 export const describeWriteError = (error: ApiError, conflictGuide: string = VERSION_CONFLICT_GUIDE): string =>
   error.errorCode === 'VERSION_CONFLICT' ? conflictGuide : error.message;
+
+/** So thông báo bỏ qua dấu chấm cuối/hoa-thường: máy chủ trả "…thao tác này", bản dự phòng của FE có dấu chấm. */
+const normalizeNotice = (text: string): string => text.trim().replace(/[.\s]+$/, '').toLowerCase();
+
+/**
+ * 403 CHUNG CHUNG của guard vai trò. Phải kiểm cả nội dung vì các 403 nghiệp vụ cũng mang mã `INSUFFICIENT_ROLE` (mã mặc định theo status)
+ * nhưng có lý do riêng ("Bạn không quản lý nhóm này", "Cannot block your own account"...) cần giữ nguyên; 403 của BusinessException có mã riêng.
+ */
+export const isGenericForbidden = (error: ApiError): boolean =>
+  error.statusCode === 403 && error.errorCode === 'INSUFFICIENT_ROLE' && normalizeNotice(error.message) === normalizeNotice(MESSAGE_BY_CODE.INSUFFICIENT_ROLE);
 
 /** Lỗi có phải do ngoài phạm vi / không tồn tại (UI hiện màn "Không tìm thấy"). */
 export const isNotFoundError = (error: ApiError): boolean => error.statusCode === 404;

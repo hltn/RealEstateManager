@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { useAuth } from "../../hooks/useAuth";
+import { rolesOf } from "../../utils/userRoles";
 import { logout } from "../../api/auth.api";
 import toast from "react-hot-toast";
 
@@ -28,6 +29,8 @@ export default function UserDropdown() {
   };
 
   const displayName = user?.displayName ?? "Tài khoản";
+  // Hiển thị TẤT CẢ role của tài khoản (không chỉ role cao nhất).
+  const roleLabel = rolesOf(user ?? {}).join(", ");
   const email = user?.email ?? "";
   const initial = displayName.charAt(0).toUpperCase();
 
@@ -78,7 +81,7 @@ export default function UserDropdown() {
 
         <ul className="flex flex-col gap-1 py-3 border-b border-gray-200 dark:border-gray-800">
           <li className="flex items-center gap-3 px-3 py-2 text-theme-sm text-gray-500 dark:text-gray-400">
-            Vai trò: <span className="font-medium text-gray-700 dark:text-gray-300">{user?.role}</span>
+            Vai trò: <span className="font-medium text-gray-700 dark:text-gray-300" data-testid="user-menu-roles">{roleLabel}</span>
           </li>
         </ul>
         <button

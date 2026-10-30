@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PersonaFieldDefinition } from '@crm/types/crm';
 import { buildCareLogBody } from './careApi';
 import { toArea, toPersonaField, toProject, toStatusTone } from './catalogMappers';
-import { toAppointment, toCareLog, toDailyTask, toCustomerDetail, toCustomerPersona, toHistoryEntry, toPersonaValueBody } from './customerMappers';
+import { toAppointment, toCareLog, toDailyTask, toCustomerDetail, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toPersonaValueBody } from './customerMappers';
 import { buildCustomerListParams, buildCustomerFilterParams, normalizeSearchTerm } from './customerQuery';
 import { toProjectBody } from './projectBody';
 import type { CareLogDto, CustomerDetailDto, PersonaFieldDto } from './dto';
@@ -74,6 +74,17 @@ describe('toCustomerDetail', () => {
     const detail = toCustomerDetail(detailDto(), { actor: { userId: 'u1', role: 'STAFF' }, roleOf: (id) => (id === 'u2' ? 'MANAGER' : undefined) });
     expect(detail.careTeam[1].user.jobTitle).toBe('Quản lý');
     expect(detail.careTeam[0].user.jobTitle).toBe('');
+  });
+});
+
+describe('toDeletedCustomer', () => {
+  const base = { ...detailDto(), deletedAt: '2026-10-28T03:00:00.000Z', deletedBy: { id: 'a', displayName: 'Admin' }, anonymizedAt: null, deleteReason: 'Khách trùng', purgeInProgress: false };
+
+  it('giữ thông tin xóa và cờ purgeInProgress; khách ẩn danh hóa có lý do null', () => {
+    const normal = toDeletedCustomer(base);
+    expect(normal).toMatchObject({ id: 'c1', deletedBy: { id: 'a', displayName: 'Admin' }, deleteReason: 'Khách trùng', purgeInProgress: false });
+    const anonymized = toDeletedCustomer({ ...base, deletedBy: null, anonymizedAt: '2026-10-29T00:00:00.000Z', deleteReason: null, purgeInProgress: true });
+    expect(anonymized).toMatchObject({ deletedBy: null, deleteReason: null, purgeInProgress: true });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
@@ -24,13 +24,16 @@ import {
   fetchUsers,
   createUser,
   updateUserStatus,
-  updateUserRole,
+  updateUserRoles,
   updateUser,
   resetUserPassword,
 } from '../api/users.api';
 import { logout } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
+import { MultiChoiceChips } from '@crm/components/form/MultiChoiceChips';
+import { crmKeys } from '@crm/api';
 import { UserRole, UserStatus } from '../types/user';
+import { ROLE_OPTIONS, isSameSet, normalizeRoles, rolesOf, withRoles } from '../utils/userRoles';
 import type { UserListItem, CreateUserPayload, UpdateUserPayload } from '../types/user';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 
@@ -39,7 +42,7 @@ const createUserSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   displayName: displayNameSchema,
-  role: z.nativeEnum(UserRole),
+  roles: z.array(z.enum(['ADMIN', 'EDITOR', 'MANAGER', 'STAFF'])).min(1, 'Chọn ít nhất một vai trò'),
 });
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 
@@ -57,16 +60,16 @@ const extractApiMessage = (error: unknown, fallback: string): string => {
 };
 
 /** Message lỗi tiếng Việt cho thao tác user management — phân theo mã lỗi (mục 6.3). */
-const getMutationErrorMessage = (error: unknown, fallback: string): string => {
+const getMutationErrorMessage = (error: unknown, fallback: string, conflictMessage = 'Email đã tồn tại. Vui lòng dùng email khác.'): string => {
   const axiosError = error as AxiosError<ApiErrorBody>;
   const status = axiosError.response?.status;
   const message = extractApiMessage(error, fallback);
 
   if (status === 401) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
   // Phân biệt "Insufficient role" vs "Cannot block your own account".
-  if (status === 403) return message || 'Bạn không có quyền thực hiện thao tác này.';
+  if (status === 403) return !message || message === 'Insufficient role' || message === 'Forbidden' ? 'Bạn không có quyền thực hiện thao tác này.' : message;
   if (status === 404) return 'Tài khoản không còn tồn tại. Vui lòng tải lại danh sách.';
-  if (status === 409) return 'Email đã tồn tại. Vui lòng dùng email khác.';
+  if (status === 409) return conflictMessage;
   return message;
 };
 
@@ -97,9 +100,11 @@ const UserManagementScreen: React.FC = () => {
   const users = data?.data ?? [];
   const meta = data?.meta ?? { total: 0, page, limit, totalPages: 0 };
 
-  /** Invalidate danh sách user để refetch sau mỗi mutation. */
+  /** Invalidate danh sách user để refetch sau mỗi mutation (kèm dữ liệu CRM: vai trò/nhóm đổi ảnh hưởng người phụ trách, nhóm). */
   const invalidateUsers = () => {
     void queryClient.invalidateQueries({ queryKey: ['users'] });
+    void queryClient.invalidateQueries({ queryKey: crmKeys.data });
+    void queryClient.invalidateQueries({ queryKey: crmKeys.catalogs });
   };
 
   // --- Mutation: đổi trạng thái Active/Block (Optimistic UI) ---
@@ -132,13 +137,20 @@ const UserManagementScreen: React.FC = () => {
     },
   });
 
-  // --- Mutation: đổi role ---
+  // --- Mutation: đặt toàn bộ vai trò (nhiều role) — `PATCH /users/:id/roles` ---
+  // Lỗi hiện ngay trong popup (giữ lựa chọn đang nhập); 409 là LAST_ADMIN_REQUIRED nên hiện nguyên thông báo máy chủ.
   const roleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: UserRole }) =>
-      updateUserRole(id, role),
-    onError: (error) => handleMutationError(error, 'Không thể đổi vai trò.'),
+    mutationFn: ({ id, roles }: { id: string; roles: UserRole[] }) => updateUserRoles(id, roles),
     onSuccess: (updated) => {
-      toast.success(`Đã đổi vai trò thành ${updated.role}.`);
+      setEditingUser(null);
+      toast.success(`Đã cập nhật vai trò: ${rolesOf(updated).join(', ')}.`);
+      queryClient.setQueryData(queryKey, (old: typeof data | undefined) =>
+        old ? { ...old, data: old.data.map((u) => (u._id === updated._id ? updated : u)) } : old,
+      );
+      // Admin tự đổi vai trò của mình: đồng bộ role hiển thị/guard của client (mất ADMIN thì RoleGuard đưa ra khỏi trang quản trị).
+      if (currentUser?._id === updated._id && !isSameSet(rolesOf(currentUser), rolesOf(updated))) {
+        setUser(withRoles(currentUser, rolesOf(updated)));
+      }
       invalidateUsers();
     },
   });
@@ -221,6 +233,7 @@ const UserManagementScreen: React.FC = () => {
   const {
     register,
     handleSubmit,
+    control,
     reset,
     formState: { errors },
   } = useForm<CreateUserFormData>({
@@ -229,12 +242,12 @@ const UserManagementScreen: React.FC = () => {
       email: '',
       password: '',
       displayName: '',
-      role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
     },
   });
 
   const onCreateSubmit = (formData: CreateUserFormData) => {
-    createMutation.mutate(formData);
+    createMutation.mutate({ ...formData, roles: normalizeRoles(formData.roles) });
   };
 
   const handleLogout = async () => {
@@ -252,6 +265,7 @@ const UserManagementScreen: React.FC = () => {
     // Xóa lỗi của lần mở trước để popup không hiện lại lỗi cũ.
     updateMutation.reset();
     resetPasswordMutation.reset();
+    roleMutation.reset();
     setEditingUser(user);
   };
 
@@ -259,11 +273,6 @@ const UserManagementScreen: React.FC = () => {
     const next =
       user.status === UserStatus.ACTIVE ? UserStatus.BLOCKED : UserStatus.ACTIVE;
     statusMutation.mutate({ id: user._id, status: next });
-  };
-
-  const handleRoleChange = (user: UserListItem, role: UserRole) => {
-    if (user.role === role) return;
-    roleMutation.mutate({ id: user._id, role });
   };
 
   return (
@@ -362,17 +371,16 @@ const UserManagementScreen: React.FC = () => {
                         {user.email}
                       </td>
                       <td className="px-5 py-4">
-                        <select
-                          value={user.role}
-                          onChange={(e) => handleRoleChange(user, e.target.value as UserRole)}
-                          disabled={roleMutation.isPending}
-                          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-                        >
-                          <option value={UserRole.EDITOR}>EDITOR</option>
-                          <option value={UserRole.ADMIN}>ADMIN</option>
-                          <option value={UserRole.MANAGER}>MANAGER</option>
-                          <option value={UserRole.STAFF}>STAFF</option>
-                        </select>
+                        <ul className="flex flex-wrap gap-1.5" aria-label={`Vai trò của ${user.displayName}`}>
+                          {normalizeRoles(rolesOf(user)).map((role) => (
+                            <li
+                              key={role}
+                              className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                            >
+                              {role}
+                            </li>
+                          ))}
+                        </ul>
                       </td>
                       <td className="px-5 py-4">
                         <span
@@ -508,15 +516,21 @@ const UserManagementScreen: React.FC = () => {
             <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
               Vai trò
             </label>
-            <select
-              {...register('role')}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-            >
-              <option value={UserRole.EDITOR}>EDITOR</option>
-              <option value={UserRole.ADMIN}>ADMIN</option>
-              <option value={UserRole.MANAGER}>MANAGER</option>
-              <option value={UserRole.STAFF}>STAFF</option>
-            </select>
+            <Controller
+              control={control}
+              name="roles"
+              render={({ field }) => (
+                <MultiChoiceChips
+                  legend="Vai trò"
+                  isRequired
+                  options={ROLE_OPTIONS}
+                  values={field.value}
+                  onChange={(next) => field.onChange(next)}
+                  hint="Chọn được nhiều vai trò; quyền theo vai trò cao nhất. Gán nhóm sau khi tạo, ở Cài đặt CRM."
+                />
+              )}
+            />
+            {errors.roles && <p className="mt-1 text-xs text-error-500">{errors.roles.message}</p>}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -562,6 +576,19 @@ const UserManagementScreen: React.FC = () => {
         passwordErrorMessage={
           resetPasswordMutation.isError
             ? getMutationErrorMessage(resetPasswordMutation.error, 'Không thể đặt lại mật khẩu.')
+            : null
+        }
+        onSaveRoles={(roles) => {
+          if (editingUser) roleMutation.mutate({ id: editingUser._id, roles });
+        }}
+        isSavingRoles={roleMutation.isPending}
+        rolesErrorMessage={
+          roleMutation.isError
+            ? getMutationErrorMessage(
+                roleMutation.error,
+                'Không thể đổi vai trò.',
+                extractApiMessage(roleMutation.error, 'Không thể đổi vai trò do xung đột dữ liệu.'),
+              )
             : null
         }
       />

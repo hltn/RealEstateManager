@@ -10,6 +10,15 @@ beforeEach(() => {
   useAuthStore.setState({ accessToken: null, user: null, isInitialized: false });
 });
 
+describe('roles của phiên đăng nhập', () => {
+  it('thiếu roles (API/dữ liệu cũ) thì suy ra từ role; có roles thì giữ nguyên đủ cả hai', () => {
+    useAuthStore.getState().setAuth('t', user('a'));
+    expect(useAuthStore.getState().user?.roles).toEqual(['STAFF']);
+    useAuthStore.getState().setUser({ ...user('a'), roles: ['STAFF', 'EDITOR'] });
+    expect(useAuthStore.getState().user?.roles).toEqual(['STAFF', 'EDITOR']);
+  });
+});
+
 describe('cache React Query không lộ dữ liệu giữa các người dùng', () => {
   it('đăng xuất / refresh thất bại (clearAuth) xóa toàn bộ cache', () => {
     useAuthStore.getState().setAuth('t', user('a'));

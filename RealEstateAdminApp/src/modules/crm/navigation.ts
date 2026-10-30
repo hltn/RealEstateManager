@@ -4,7 +4,7 @@
  */
 import { useMemo } from 'react';
 import { BarChart3, CalendarCheck, CalendarDays, Users, type LucideIcon } from 'lucide-react';
-import { canViewProjectCatalog, canViewReports, canViewSettings } from '@crm/api/access';
+import { canViewDeletedCustomers, canViewProjectCatalog, canViewReports, canViewSettings } from '@crm/api/access';
 import { useCurrentUser } from '@crm/store/hooks';
 import type { AdminOnlyView, MainTab, ViewId } from '@crm/types/app';
 import type { UserRole } from '@crm/types/crm';
@@ -29,6 +29,7 @@ export const VIEW_TITLES: Record<ViewId, string> = {
   create_appointment: 'Tạo lịch hẹn mới',
   projects: 'Danh sách dự án',
   settings: 'Cài đặt CRM',
+  deleted_customers: 'Khách đã xóa',
 };
 
 const ALL_TAB_ITEMS: CrmNavItem<MainTab>[] = [
@@ -43,6 +44,7 @@ export const canAccessView = (view: ViewId, role: UserRole): boolean => {
   if (view === 'reports') return canViewReports(role);
   if (view === 'settings') return canViewSettings(role);
   if (view === 'projects') return canViewProjectCatalog(role);
+  if (view === 'deleted_customers') return canViewDeletedCustomers(role);
   return true;
 };
 
@@ -52,7 +54,7 @@ export const getModuleTabItems = (role: UserRole): CrmNavItem<MainTab>[] => ALL_
 /** Mục con "Quản lý khách hàng" ở AppSidebar theo vai trò. */
 export const getCrmSidebarSubItems = (role: UserRole): { name: string; path: string }[] => [
   ...getModuleTabItems(role).map((item) => ({ name: VIEW_TITLES[item.view], path: buildCrmPath(item.view) })),
-  ...(['projects', 'settings'] as AdminOnlyView[])
+  ...(['projects', 'settings', 'deleted_customers'] as AdminOnlyView[])
     .filter((view) => canAccessView(view, role))
     .map((view) => ({ name: VIEW_TITLES[view], path: buildCrmPath(view) })),
 ];

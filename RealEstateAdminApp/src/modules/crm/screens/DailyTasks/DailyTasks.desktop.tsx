@@ -2,7 +2,7 @@
 // Kanban 3 cột (Stitch, token Admin) hoặc bảng Admin; bộ lọc cục bộ.
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useCatalogs, useCrmActor, useDailyTasks, useProjectFilterOptions, type DailyTaskScope } from '@crm/api';
+import { useAssigneeFilterOptions, useCrmActor, useDailyTasks, useProjectFilterOptions, type DailyTaskScope } from '@crm/api';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import { BUTTON_PRIMARY_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
@@ -16,7 +16,7 @@ export const DailyTasksDesktop = () => {
   const actor = useCrmActor();
   const canSeeTeam = actor.role === 'ADMIN' || actor.role === 'MANAGER';
   const [scope, setScope] = useState<DailyTaskScope>('mine');
-  const { users } = useCatalogs();
+  const assigneeOptions = useAssigneeFilterOptions();
   const projectOptions = useProjectFilterOptions();
   const { navigate } = useCrmActions();
   const [filters, setFilters] = useState<TaskFilterState>(DEFAULT_TASK_FILTERS);
@@ -61,7 +61,7 @@ export const DailyTasksDesktop = () => {
         onFiltersChange={(changes) => setFilters((current) => ({ ...current, ...changes }))}
         onReset={() => setFilters(DEFAULT_TASK_FILTERS)}
         projects={projectOptions.map(({ value, label }) => ({ value, label }))}
-        assignees={users.filter((user) => user.isActive && user.role !== 'ADMIN').map((user) => ({ value: user.id, label: user.fullName }))}
+        assignees={assigneeOptions}
         scope={scope}
         canSeeTeam={canSeeTeam}
         onScopeChange={setScope}

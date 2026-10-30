@@ -66,7 +66,9 @@ export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer,
     canEdit: true,
     canManageCareTeam: isAdminOrManager || isPrimary,
     canChangePrimary: isAdminOrManager,
-    canDelete: isAdminOrManager,
+    // Khớp backend: Quản trị mọi khách; Nhân viên khi là phụ trách chính (và khách "Bỏ"); Quản lý chỉ khách thuộc NHÓM MÌNH QUẢN LÝ —
+    // dữ liệu này không có ở đây nên màn thật dùng `permissions.canDelete` backend trả ở chi tiết khách (tài khoản MANAGER+STAFF tính như Quản lý).
+    canDelete: actor.role === 'ADMIN' || (actor.role === 'STAFF' && isPrimary),
     canRevealNationalId: isAdminOrManager || isPrimary,
     canReviewJoinRequests: isAdminOrManager || isPrimary,
   };
@@ -76,6 +78,8 @@ export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer,
 export const canViewReports = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';
 export const canViewSettings = (role: UserRole): boolean => role === 'ADMIN';
 export const canViewProjectCatalog = (role: UserRole): boolean => role === 'ADMIN';
+/** Màn "Khách đã xóa" (khôi phục, xóa vĩnh viễn — Sửa đổi D): chỉ Quản trị. */
+export const canViewDeletedCustomers = (role: UserRole): boolean => role === 'ADMIN';
 /** Thêm/sửa/xoá dự án (04 §4.2, X7): chỉ Quản trị. */
 export const canManageProjects = (role: UserRole): boolean => role === 'ADMIN';
 /** Xuất danh sách (X8, 04 §4.2): Quản trị, Quản lý. */

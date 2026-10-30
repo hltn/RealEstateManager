@@ -9,7 +9,9 @@ import {
   CloseIcon as CloseIconRaw,
 } from '../../icons';
 import { displayNameSchema, emailSchema, passwordSchema } from './userFormSchemas';
-import type { UpdateUserPayload, UserListItem } from '../../types/user';
+import { MultiChoiceChips } from '@crm/components/form/MultiChoiceChips';
+import { UserRole, type UpdateUserPayload, type UserListItem } from '../../types/user';
+import { ROLE_OPTIONS, hasTeamRole, isSameSet, normalizeRoles, rolesOf } from '../../utils/userRoles';
 
 // Cast icon svgr sang typed FC để truyền className (xem giải thích ở LoginScreen).
 type SvgIcon = React.FC<React.SVGProps<SVGSVGElement>>;
@@ -56,6 +58,10 @@ interface EditUserModalProps {
   onResetPassword: (newPassword: string) => void;
   isResettingPassword: boolean;
   passwordErrorMessage: string | null;
+  /** Đặt toàn bộ vai trò (`PATCH /users/:id/roles`). */
+  onSaveRoles: (roles: UserRole[]) => void;
+  isSavingRoles: boolean;
+  rolesErrorMessage: string | null;
 }
 
 type EditUserBodyProps = Omit<EditUserModalProps, 'user'> & { user: UserListItem };
@@ -70,8 +76,16 @@ const EditUserBody = ({
   onResetPassword,
   isResettingPassword,
   passwordErrorMessage,
+  onSaveRoles,
+  isSavingRoles,
+  rolesErrorMessage,
 }: EditUserBodyProps) => {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const currentRoles = rolesOf(user);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(currentRoles);
+  const hasRoleChanges = !isSameSet(selectedRoles, currentRoles);
+  const isLosingOwnAdmin = isSelf && currentRoles.includes(UserRole.ADMIN) && !selectedRoles.includes(UserRole.ADMIN);
+  const isLosingAllTeamRoles = hasTeamRole(currentRoles) && !hasTeamRole(selectedRoles);
 
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -184,7 +198,56 @@ const EditUserBody = ({
         </div>
       </form>
 
-      {/* Phần 2: đặt lại mật khẩu — form riêng, nút xác nhận riêng */}
+      {/* Phần 2: vai trò (nhiều vai trò) — khối riêng, nút lưu riêng */}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (hasRoleChanges && selectedRoles.length > 0) onSaveRoles(normalizeRoles(selectedRoles));
+        }}
+        className="mt-6 space-y-4 border-t border-gray-100 pt-5 dark:border-gray-800"
+        noValidate
+      >
+        <MultiChoiceChips
+          legend="Vai trò"
+          isRequired
+          options={ROLE_OPTIONS}
+          values={selectedRoles}
+          onChange={setSelectedRoles}
+          hint="Chọn được nhiều vai trò; quyền theo vai trò cao nhất ADMIN > MANAGER > STAFF. STAFF và EDITOR ngang quyền (cùng có hiệu lực). Nhóm gán ở Cài đặt CRM."
+        />
+        {selectedRoles.length === 0 && (
+          <p role="alert" className="text-xs text-error-500">
+            Chọn ít nhất một vai trò.
+          </p>
+        )}
+        {isLosingAllTeamRoles && (
+          <p role="note" className={WARNING_CLASS}>
+            Bỏ cả MANAGER lẫn STAFF sẽ gỡ tài khoản này khỏi mọi nhóm.
+          </p>
+        )}
+        {isLosingOwnAdmin && (
+          <p role="note" className={WARNING_CLASS}>
+            Bạn sắp bỏ vai trò ADMIN của chính mình: sau khi lưu bạn sẽ mất quyền quản trị.
+          </p>
+        )}
+        {rolesErrorMessage && (
+          <p role="alert" className="text-sm text-error-500">
+            {rolesErrorMessage}
+          </p>
+        )}
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={isSavingRoles || !hasRoleChanges || selectedRoles.length === 0}
+            className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSavingRoles && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+            {isSavingRoles ? 'Đang lưu...' : 'Lưu vai trò'}
+          </button>
+        </div>
+      </form>
+
+      {/* Phần 3: đặt lại mật khẩu — form riêng, nút xác nhận riêng */}
       <form
         onSubmit={passwordForm.handleSubmit(submitPassword)}
         className="mt-6 space-y-4 border-t border-gray-100 pt-5 dark:border-gray-800"
@@ -251,7 +314,7 @@ const EditUserBody = ({
 };
 
 /**
- * Popup sửa tài khoản: (1) tên hiển thị + email, (2) đặt lại mật khẩu.
+ * Popup sửa tài khoản: (1) tên hiển thị + email, (2) vai trò (nhiều), (3) đặt lại mật khẩu.
  * Body chỉ mount khi có `user` → mỗi lần mở form được khởi tạo lại từ dữ liệu hiện tại.
  */
 export const EditUserModal = ({ user, ...rest }: EditUserModalProps) => (

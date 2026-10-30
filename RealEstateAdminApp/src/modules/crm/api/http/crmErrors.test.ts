@@ -1,6 +1,6 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { describe, expect, it } from 'vitest';
-import { APPOINTMENT_VERSION_CONFLICT_GUIDE, buildRateLimitMessage, CrmApiException, describeWriteError, isNotFoundError, isRetryableError, isVersionConflict, normalizeApiError, toApiError } from './crmErrors';
+import { APPOINTMENT_VERSION_CONFLICT_GUIDE, buildRateLimitMessage, CrmApiException, describeWriteError, isGenericForbidden, isNotFoundError, isRetryableError, isVersionConflict, normalizeApiError, toApiError } from './crmErrors';
 
 const httpError = (status: number, data: unknown): AxiosError => {
   const config = { headers: {} } as InternalAxiosRequestConfig;
@@ -50,6 +50,25 @@ describe('normalizeApiError (05 §1.3, §5)', () => {
     const apiError = { statusCode: 404, errorCode: 'CUSTOMER_NOT_FOUND', message: 'x' };
     expect(toApiError(new CrmApiException(apiError))).toBe(apiError);
     expect(toApiError(new Error('lạ')).errorCode).toBe('UNKNOWN_ERROR');
+  });
+});
+
+describe('403 chung chung và lời máy chủ tiếng Anh', () => {
+  it('isGenericForbidden nhận cả lời máy chủ không dấu chấm lẫn bản dự phòng có dấu chấm; không nhận 403 nghiệp vụ hay mã khác', () => {
+    const forbidden = (message: string, errorCode = 'INSUFFICIENT_ROLE') => ({ statusCode: 403, errorCode, message });
+    expect(isGenericForbidden(forbidden('Bạn không có quyền thực hiện thao tác này'))).toBe(true);
+    expect(isGenericForbidden(forbidden('Bạn không có quyền thực hiện thao tác này.'))).toBe(true);
+    expect(isGenericForbidden(forbidden('Bạn không quản lý nhóm này'))).toBe(false);
+    expect(isGenericForbidden(forbidden('Bạn không có quyền thực hiện thao tác này', 'CARE_TEAM_ACTION_FORBIDDEN'))).toBe(false);
+  });
+
+  it('lời máy chủ trùng tên thuộc tính của Object ("constructor") vẫn là chuỗi, không bị tra nhầm ra hàm', () => {
+    expect(normalizeApiError(httpError(403, { statusCode: 403, message: 'constructor' })).message).toBe('constructor');
+  });
+
+  it('"Cannot block your own account" của backend được hiển thị bằng tiếng Việt', () => {
+    const error = normalizeApiError(httpError(403, { statusCode: 403, message: 'Cannot block your own account', errorCode: 'INSUFFICIENT_ROLE' }));
+    expect(error.message).toBe('Bạn không thể tự khóa tài khoản của chính mình.');
   });
 });
 

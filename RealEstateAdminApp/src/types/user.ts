@@ -34,7 +34,13 @@ export interface AuthUser {
   _id: string;
   email: string;
   displayName: string;
+  /** Role cao nhất (trường suy ra, giữ để tương thích ngược). */
   role: UserRole;
+  /**
+   * Mọi role của tài khoản (backend trả ở `/auth/login`, `/auth/me`). Thiếu (backend cũ/dữ liệu cũ) thì suy ra từ `role`:
+   * dùng `rolesOf(user)` thay vì đọc trực tiếp. Quyền là HỢP của mọi role (STAFF và EDITOR cùng có hiệu lực).
+   */
+  roles?: UserRole[];
   status?: UserStatus;
   /** Nhóm của người dùng (CRM). Chỉ có ở `GET /auth/me`; `null` = chưa thuộc nhóm. */
   teamId?: string | null;
@@ -64,16 +70,24 @@ export interface UserListItem {
   _id: string;
   email: string;
   displayName: string;
+  /** Role cao nhất (trường suy ra, giữ để tương thích ngược). */
   role: UserRole;
+  /** Mọi role của tài khoản (≥1). Quyền theo role cao nhất ADMIN > MANAGER > STAFF; STAFF và EDITOR ngang nhau. */
+  roles: UserRole[];
+  /** Mọi nhóm của tài khoản (rỗng nếu không có MANAGER/STAFF). Gán nhóm làm ở Cài đặt CRM. */
+  teamIds?: string[];
   status: UserStatus;
 }
 
-/** Payload tạo user mới (`POST /users`). */
+/**
+ * Payload tạo user mới (`POST /users`). Chỉ gửi `roles[]` (không gửi kèm `role` đơn để khỏi lệch → 400).
+ * Nhóm gán ở Cài đặt CRM nên màn này không gửi `teamIds`.
+ */
 export interface CreateUserPayload {
   email: string;
   password: string;
   displayName: string;
-  role: UserRole;
+  roles: UserRole[];
 }
 
 /** Payload sửa thông tin tài khoản (`PATCH /users/:id`) — ít nhất 1 trường, chỉ gửi trường thực sự đổi. */

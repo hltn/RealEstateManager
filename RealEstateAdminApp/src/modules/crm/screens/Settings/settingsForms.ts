@@ -4,8 +4,10 @@
  */
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { toSlug } from '@crm/lib/text';
-import type { CatalogEndpoint } from '@crm/api';
-import type { Area, CatalogItem, CrmSettings, CustomerStatusItem, ListGroup, StatusTone } from '@crm/types/crm';
+import type { ApiError, CatalogEndpoint } from '@crm/api';
+import { isGenericForbidden } from '@crm/api/http/crmErrors';
+import type { AccountRole, AdminUser, Area, CatalogItem, CrmSettings, CustomerStatusItem, ListGroup, StatusTone, UserRole } from '@crm/types/crm';
+import { hasTeamRole, isSameSet, normalizeRoles } from '../../../../utils/userRoles';
 
 /** Danh mục chỉnh bằng form chung (dự án có màn riêng nên dùng `ProjectFormDialog`). */
 export type AdminCatalogKind = 'statuses' | 'leadSources' | 'areas';
@@ -264,19 +266,103 @@ export interface NewUserDraft {
   email: string;
   password: string;
   displayName: string;
-  role: 'MANAGER' | 'STAFF' | 'ADMIN';
-  teamId: string;
+  /** Nhiều role CRM (≥1). Quyền theo role cao nhất ADMIN > MANAGER > STAFF. */
+  roles: UserRole[];
+  /** Nhiều nhóm (thứ tự chọn; phần tử đầu = nhóm chính). Chỉ có nghĩa khi có MANAGER/STAFF. */
+  teamIds: string[];
 }
 
-export const createEmptyUserDraft = (teamId: string): NewUserDraft => ({ email: '', password: '', displayName: '', role: 'STAFF', teamId });
+/** `defaultTeamId`: nhóm chọn sẵn (nhóm đầu tiên đang hoạt động) để tạo nhanh Nhân viên; rỗng nếu chưa có nhóm. */
+export const createEmptyUserDraft = (defaultTeamId: string): NewUserDraft => ({ email: '', password: '', displayName: '', roles: ['STAFF'], teamIds: defaultTeamId ? [defaultTeamId] : [] });
 
-/** Lỗi tạo tài khoản (null = hợp lệ). Vai trò Quản trị không gắn nhóm; Quản lý/Nhân viên cần nhóm để có phạm vi dữ liệu. */
+/** Lỗi tạo tài khoản (null = hợp lệ). Chỉ Quản lý/Nhân viên có nhóm: có một trong hai role thì cần ≥1 nhóm để có phạm vi dữ liệu. */
 export const validateNewUser = (draft: NewUserDraft): string | null => {
   if (!EMAIL_PATTERN.test(draft.email.trim())) return 'Email không hợp lệ.';
   if (draft.password.length < USER_PASSWORD_MIN_LENGTH) return `Mật khẩu tối thiểu ${USER_PASSWORD_MIN_LENGTH} ký tự.`;
   if (!draft.displayName.trim()) return 'Vui lòng nhập tên hiển thị.';
-  if (draft.role !== 'ADMIN' && !draft.teamId) return 'Chọn nhóm cho Quản lý/Nhân viên.';
+  if (draft.roles.length === 0) return 'Chọn ít nhất một vai trò.';
+  if (hasTeamRole(draft.roles) && draft.teamIds.length === 0) return 'Chọn ít nhất một nhóm cho Quản lý/Nhân viên.';
   return null;
+};
+
+/** Body `POST /users`: chỉ `roles[]` (+ `teamIds[]` khi có role thuộc nhóm) — không gửi `role`/`teamId` đơn để khỏi lệch (400). */
+export const buildCreateUserBody = (draft: NewUserDraft): { email: string; password: string; displayName: string; roles: UserRole[]; teamIds?: string[] } => ({
+  email: draft.email.trim().toLowerCase(),
+  password: draft.password,
+  displayName: draft.displayName.trim(),
+  roles: normalizeRoles(draft.roles) as UserRole[],
+  ...(hasTeamRole(draft.roles) && draft.teamIds.length > 0 ? { teamIds: draft.teamIds } : {}),
+});
+
+/** Việc cần gọi API khi sửa tài khoản, theo thứ tự thực hiện: roles -> teams -> status. Phần nào không đổi thì không có. */
+export interface UserUpdatePlan {
+  roles?: AccountRole[];
+  teamIds?: string[];
+  status?: 'ACTIVE' | 'BLOCKED';
+}
+
+/**
+ * So form sửa với tài khoản hiện tại -> kế hoạch gọi API (hoặc lỗi).
+ * - EDITOR không sửa được ở đây (thuộc màn Quản lý tài khoản) nên được GIỮ NGUYÊN: không để lần lưu ở đây làm mất role EDITOR.
+ * - Nhóm chỉ gửi khi người đó (sau khi đổi role) vẫn có MANAGER/STAFF; mất cả hai thì backend tự xóa nhóm nên không gọi `/teams`.
+ * - Bắt buộc ≥1 nhóm khi người đó đang CÓ hoặc VỪA ĐƯỢC THÊM role thuộc nhóm; tài khoản cũ vốn chưa có nhóm thì không bị ép
+ *   chỉ vì đổi trạng thái.
+ */
+export const planUserUpdate = (user: AdminUser, next: { roles: UserRole[]; teamIds: string[]; isActive: boolean }): { error: string } | { plan: UserUpdatePlan } => {
+  if (next.roles.length === 0) return { error: 'Chọn ít nhất một vai trò.' };
+  const finalRoles = normalizeRoles([...next.roles, ...(user.roles.includes('EDITOR') ? ['EDITOR'] : [])]) as AccountRole[];
+  const plan: UserUpdatePlan = {};
+  if (!isSameSet(finalRoles, user.roles)) plan.roles = finalRoles;
+  if (hasTeamRole(finalRoles)) {
+    const wasTeamless = hasTeamRole(user.roles) && user.teamIds.length === 0;
+    if (next.teamIds.length === 0 && !wasTeamless) return { error: 'Chọn ít nhất một nhóm cho Quản lý/Nhân viên.' };
+    if (next.teamIds.join(',') !== user.teamIds.join(',')) plan.teamIds = next.teamIds;
+  }
+  if (next.isActive !== user.isActive) plan.status = next.isActive ? 'ACTIVE' : 'BLOCKED';
+  return { plan };
+};
+
+export type UserUpdateStep =
+  /** `isInterim`: bước đặt vai trò TẠM (thêm role mới, vẫn giữ Quản trị) để các bước sau cần quyền Quản trị chạy được. */
+  | { kind: 'roles'; roles: AccountRole[]; isInterim?: boolean }
+  | { kind: 'teams'; teamIds: string[] }
+  | { kind: 'status'; status: 'ACTIVE' | 'BLOCKED' };
+
+/**
+ * Xếp kế hoạch thành các bước gọi API theo thứ tự an toàn.
+ * - Thường: roles -> teams -> status (nhóm cần vai trò MANAGER/STAFF mới có hiệu lực trước).
+ * - Quản trị TỰ bỏ role ADMIN của chính mình: `/teams`, `/status` chỉ ADMIN được gọi nên phải chạy TRƯỚC, còn `/roles` bỏ ADMIN
+ *   chạy CUỐI CÙNG (gọi trước thì bước sau bị 403, kẹt giữa chừng). Nếu cần nhóm mà hiện chưa có MANAGER/STAFF thì chèn thêm một
+ *   bước `/roles` tạm ở đầu (hợp role cũ + mới, vẫn còn ADMIN) rồi `/roles` cuối mới bỏ ADMIN.
+ */
+export const orderUserUpdateSteps = (user: AdminUser, plan: UserUpdatePlan, isSelf: boolean): UserUpdateStep[] => {
+  const rolesStep: UserUpdateStep[] = plan.roles ? [{ kind: 'roles', roles: plan.roles }] : [];
+  const teamsStep: UserUpdateStep[] = plan.teamIds ? [{ kind: 'teams', teamIds: plan.teamIds }] : [];
+  const statusStep: UserUpdateStep[] = plan.status ? [{ kind: 'status', status: plan.status }] : [];
+  const isLosingOwnAdmin = isSelf && user.roles.includes('ADMIN') && plan.roles !== undefined && !plan.roles.includes('ADMIN');
+  if (!isLosingOwnAdmin) return [...rolesStep, ...teamsStep, ...statusStep];
+  const needsInterimRoles = plan.teamIds !== undefined && !hasTeamRole(user.roles);
+  const interimStep: UserUpdateStep[] = needsInterimRoles ? [{ kind: 'roles', roles: normalizeRoles([...user.roles, ...(plan.roles ?? [])]) as AccountRole[], isInterim: true }] : [];
+  return [...interimStep, ...teamsStep, ...statusStep, ...rolesStep];
+};
+
+const STEP_LABELS: Record<UserUpdateStep['kind'], string> = { roles: 'vai trò', teams: 'nhóm', status: 'trạng thái' };
+const describeStep = (step: UserUpdateStep): string => (step.kind === 'roles' && step.isInterim ? 'vai trò mới thêm' : STEP_LABELS[step.kind]);
+
+/** Gộp nhãn các bước (bỏ trùng) thành "vai trò, nhóm". */
+const joinStepLabels = (steps: readonly UserUpdateStep[]): string => [...new Set(steps.map(describeStep))].join(', ');
+
+/** Thông báo lỗi của một bước: 403 chung chung được giải thích rõ hơn (thường do quyền Quản trị vừa đổi); lỗi khác giữ nguyên lời máy chủ (vd LAST_ADMIN_REQUIRED). */
+export const describeStepError = (error: ApiError): string =>
+  isGenericForbidden(error) ? 'Tài khoản của bạn không còn quyền Quản trị để thực hiện bước này. Hãy tải lại trang hoặc đăng nhập lại.' : error.message;
+
+/** Báo lỗi lưu nhiều bước: nêu rõ phần ĐÃ lưu, phần lỗi (kèm lý do) và phần chưa chạy, để người dùng biết bấm Lưu lại sẽ làm gì. */
+export const describeUserSaveFailure = (progress: { done: readonly UserUpdateStep[]; failed: UserUpdateStep; pending: readonly UserUpdateStep[]; reason: string }): string => {
+  const { done, failed, pending, reason } = progress;
+  // Lời máy chủ có thể có hoặc không có dấu chấm cuối: bỏ rồi tự thêm để câu nối luôn đúng dấu.
+  const cause = reason.trim().replace(/[.\s]+$/, '');
+  const saved = done.length > 0 ? `Đã lưu ${joinStepLabels(done)}; chưa lưu được ${describeStep(failed)}: ${cause}` : `Chưa lưu được ${describeStep(failed)}: ${cause}`;
+  return pending.length > 0 ? `${saved} (chưa thực hiện: ${joinStepLabels(pending)}). Bấm Lưu để thử lại phần còn lại.` : `${saved}. Bấm Lưu để thử lại.`;
 };
 
 export interface TeamDraft {
@@ -294,3 +380,6 @@ export const validateTeam = (draft: TeamDraft): string | null => {
   if (draft.id === null && !TEAM_CODE_PATTERN.test(draft.code.trim())) return 'Mã nhóm gồm chữ không dấu, số, "-" hoặc "_", tối đa 20 ký tự.';
   return null;
 };
+
+/** Người có thể thêm vào nhóm: đang hoạt động, có Quản lý/Nhân viên và chưa thuộc nhóm. */
+export const listAddableUsers = (users: readonly AdminUser[], teamId: string): AdminUser[] => users.filter((user) => user.isActive && hasTeamRole(user.roles) && !user.teamIds.includes(teamId));

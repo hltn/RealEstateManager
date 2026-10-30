@@ -3,7 +3,7 @@
  * Ô chọn nhanh ghi 1 giá trị vào mảng bộ lọc tương ứng; chọn nhiều giá trị/tiêu chí khác ở "Bộ lọc nâng cao".
  */
 import { Search, SlidersHorizontal } from 'lucide-react';
-import { useCatalogs, useProjectFilterOptions } from '@crm/api';
+import { useAssigneeFilterOptions, useCatalogs, useProjectFilterOptions } from '@crm/api';
 import { countActiveAdvancedFilters } from '@crm/lib/customerFilters';
 import { BUTTON_OUTLINE_BASE_CLASS, BUTTON_SOFT_BASE_CLASS, CAPTION_CLASS, FILTER_INPUT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
@@ -50,7 +50,8 @@ const QuickSelect = ({ id, label, values, options, onChange }: QuickSelectProps)
 
 export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
   const { filters, sort, setSort, updateFilters } = screen;
-  const { catalogs, users } = useCatalogs();
+  const { catalogs } = useCatalogs();
+  const assigneeOptions = useAssigneeFilterOptions();
   const projectOptions = useProjectFilterOptions();
   const { openAdvancedFilter } = useCrmActions();
   const advancedCount = countActiveAdvancedFilters(filters);
@@ -106,7 +107,7 @@ export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
         id="customer-assignee"
         label="Người chăm sóc"
         values={filters.assigneeIds}
-        options={users.filter((user) => user.isActive && user.role !== 'ADMIN').map((user) => ({ value: user.id, label: user.fullName }))}
+        options={assigneeOptions}
         onChange={(assigneeIds) => set({ assigneeIds })}
       />
 

@@ -11,6 +11,7 @@ import { Outlet } from 'react-router-dom';
 import { useCatalogs } from '@crm/api';
 import RedirectWithNotice from '../../components/auth/RedirectWithNotice';
 import { useAuthStore } from '../../stores/auth.store';
+import { hasCrmRole } from '../../utils/userRoles';
 import { CrmBottomNav } from './components/CrmBottomNav';
 import { CrmUnavailable } from './components/CrmUnavailable';
 import { GlobalModals } from './components/GlobalModals';
@@ -45,10 +46,10 @@ const CrmLayoutContent = () => {
   );
 };
 
-/** EDITOR (tài khoản tin tức) không có quyền CRM: backend trả 403 mọi route CRM, nên chặn sớm ở giao diện. */
+/** Tài khoản không có role CRM nào (chỉ EDITOR/tin tức) không có quyền CRM: backend trả 403 mọi route CRM, nên chặn sớm ở giao diện. */
 const CrmRoleGate = () => {
-  const role = useAuthStore((state) => state.user?.role);
-  if (role === 'EDITOR') return <CrmUnavailable error={{ statusCode: 403, errorCode: 'INSUFFICIENT_ROLE', message: 'Tài khoản của bạn không có quyền sử dụng module Quản lý khách hàng.' }} />;
+  const user = useAuthStore((state) => state.user);
+  if (user && !hasCrmRole(user)) return <CrmUnavailable error={{ statusCode: 403, errorCode: 'INSUFFICIENT_ROLE', message: 'Tài khoản của bạn không có quyền sử dụng module Quản lý khách hàng.' }} />;
   return <CrmLayoutContent />;
 };
 

@@ -86,6 +86,13 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
         return { version };
       }),
 
+    /** Xóa mềm một khách (nên chỉ gọi cho khách "Bỏ" mà `permissions.canDelete`). */
+    deleteCustomer: (customerId: string, reason: string) => write(() => customerApi.deleteCustomerById(customerId, reason)),
+    /** Khôi phục khách đã xóa mềm (chỉ Quản trị). */
+    restoreCustomer: (customerId: string) => write(() => customerApi.postCustomerRestoration(customerId)),
+    /** Xóa VĨNH VIỄN khách đã xóa mềm (chỉ Quản trị, không hoàn tác). */
+    purgeDeletedCustomer: (customerId: string) => write(() => customerApi.deletePurgeCustomer(customerId)),
+
     // --- Nhóm chăm sóc ----------------------------------------------------------------------------------------------
     addCareTeamMembers: (customerId: string, body: { userIds: string[]; primaryUserId?: string }) => write(() => care.postCareTeamMembers(customerId, body)),
     removeCareTeamMember: (customerId: string, userId: string, newPrimaryUserId?: string) => write(() => care.deleteCareTeamMember(customerId, userId, newPrimaryUserId)),
@@ -124,8 +131,10 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     deleteCatalogItem: (endpoint: admin.CatalogEndpoint, id: string) => write(() => admin.deleteCatalogItem(endpoint, id), { shouldIncludeCatalogs: true }),
     createUser: (body: Parameters<typeof admin.postUser>[0]) => write(() => admin.postUser(body), { shouldIncludeCatalogs: true }),
     updateUserStatus: (id: string, status: 'ACTIVE' | 'BLOCKED') => write(() => admin.patchUserStatus(id, status), { shouldIncludeCatalogs: true }),
-    updateUserRole: (id: string, role: string) => write(() => admin.patchUserRole(id, role), { shouldIncludeCatalogs: true }),
-    updateUserTeam: (id: string, teamId: string | null) => write(() => admin.patchUserTeam(id, teamId), { shouldIncludeCatalogs: true }),
+    updateUserRoles: (id: string, roles: Parameters<typeof admin.patchUserRoles>[1]) => write(() => admin.patchUserRoles(id, roles), { shouldIncludeCatalogs: true }),
+    updateUserTeams: (id: string, teamIds: string[]) => write(() => admin.patchUserTeams(id, teamIds), { shouldIncludeCatalogs: true }),
+    addTeamMember: (teamId: string, userId: string) => write(() => admin.postTeamMember(teamId, userId), { shouldIncludeCatalogs: true }),
+    removeTeamMember: (teamId: string, userId: string) => write(() => admin.deleteTeamMember(teamId, userId), { shouldIncludeCatalogs: true }),
     createTeam: (body: Parameters<typeof admin.postTeam>[0]) => write(() => admin.postTeam(body), { shouldIncludeCatalogs: true }),
     updateTeam: (id: string, body: Parameters<typeof admin.patchTeam>[1]) => write(() => admin.patchTeam(id, body), { shouldIncludeCatalogs: true }),
     deleteTeam: (id: string) => write(() => admin.deleteTeam(id), { shouldIncludeCatalogs: true }),

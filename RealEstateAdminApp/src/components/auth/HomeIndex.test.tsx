@@ -32,12 +32,21 @@ const renderApp = () =>
     </MemoryRouter>,
   );
 
-const login = (role: (typeof UserRole)[keyof typeof UserRole]) =>
-  useAuthStore.setState({ accessToken: 't', user: { _id: 'u', email: 'a@b.vn', displayName: 'A', role }, isInitialized: true });
+const login = (role: (typeof UserRole)[keyof typeof UserRole], roles?: (typeof UserRole)[keyof typeof UserRole][]) =>
+  useAuthStore.setState({ accessToken: 't', user: { _id: 'u', email: 'a@b.vn', displayName: 'A', role, roles }, isInitialized: true });
 
 beforeEach(() => {
   (globalThis as { __navCount?: number }).__navCount = 0;
   flags.isPrototypeEnabled = false;
+});
+
+describe('HomeIndex nhiều role (STAFF và EDITOR cùng có hiệu lực)', () => {
+  it('STAFF+EDITOR vẫn vào Raw Articles (không bị đẩy sang CRM) kể cả khi cờ CRM bật', () => {
+    flags.isPrototypeEnabled = true;
+    login(UserRole.STAFF, [UserRole.STAFF, UserRole.EDITOR]);
+    renderApp();
+    expect(screen.getByText('RAW ARTICLES')).toBeInTheDocument();
+  });
 });
 
 describe('HomeIndex khi cờ CRM tắt (hồi quy vòng chuyển hướng vô hạn)', () => {

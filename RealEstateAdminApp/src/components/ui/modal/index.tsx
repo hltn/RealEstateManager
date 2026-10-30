@@ -7,6 +7,8 @@ interface ModalProps {
   children: React.ReactNode;
   showCloseButton?: boolean; // New prop to control close button visibility
   isFullscreen?: boolean; // Default to false for backwards compatibility
+  /** Nhấp nền có đóng hộp không (mặc định có). Tắt cho hộp có nội dung đang nhập dở; Esc vẫn đóng. */
+  isBackdropClosable?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -16,6 +18,7 @@ export const Modal: React.FC<ModalProps> = ({
   className,
   showCloseButton = true, // Default to true for backwards compatibility
   isFullscreen = false,
+  isBackdropClosable = true,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +61,7 @@ export const Modal: React.FC<ModalProps> = ({
       {!isFullscreen && (
         <div
           className="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"
-          onClick={onClose}
+          onClick={isBackdropClosable ? onClose : undefined}
         ></div>
       )}
       <div

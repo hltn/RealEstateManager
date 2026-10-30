@@ -105,7 +105,9 @@ export const postBulkOperation = (operation: BulkOperation): Promise<BulkResult>
       ? { statusId: operation.statusId }
       : operation.type === 'ASSIGN'
         ? { memberIds: operation.memberIds, ...(operation.primaryUserId ? { primaryUserId: operation.primaryUserId } : {}) }
-        : { tagIds: operation.tagIds };
+        : operation.type === 'DELETE'
+          ? { reason: operation.reason }
+          : { tagIds: operation.tagIds };
   return crmHttp.post<BulkResult>('/crm/customer-bulk-operations', { type, customerIds, payload }, { isIdempotent: true });
 };
 

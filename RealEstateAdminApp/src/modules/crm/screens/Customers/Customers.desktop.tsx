@@ -6,7 +6,7 @@ import { Download, Plus, SearchX } from 'lucide-react';
 import { TableSkeletonRows } from '../../../../components/common/TableSkeletonRows';
 import { Pagination } from '../../../../components/common/Pagination';
 import { DEFAULT_PAGE_SIZE } from '../../../../types/pagination';
-import { canExportCustomers, canImportCustomers, useCrmActor } from '@crm/api';
+import { canExportCustomers, canImportCustomers, useCrmActor, type BulkResult, type CustomerListItem } from '@crm/api';
 import { useCustomerExport } from '@crm/api/mockHooks';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
@@ -15,6 +15,7 @@ import { hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHECKBOX_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import { BulkActionBar } from './components/BulkActionBar';
+import { BulkDeleteResultDialog } from './components/BulkDeleteResultDialog';
 import { CustomerListEmptyState } from './components/CustomerListEmptyState';
 import { CustomerStatusPills } from './components/CustomerStatusPills';
 import { CustomerTableRow } from './components/CustomerTableRow';
@@ -44,9 +45,11 @@ export const CustomersDesktop = () => {
   const actor = useCrmActor();
   const exportCustomers = useCustomerExport();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  /** Tình trạng của khách ở các trang đã xem (để Hoàn tác đổi tình trạng hàng loạt). */
-  const statusById = useRef(new Map<string, string>());
-  list.data.forEach((customer) => statusById.current.set(customer.id, customer.status.id));
+  /** Kết quả xóa hàng loạt có khách lỗi: giữ ở đây (không trong thanh chọn) vì thanh biến mất khi không còn khách nào được chọn. */
+  const [deleteResult, setDeleteResult] = useState<BulkResult | null>(null);
+  /** Khách ở các trang đã xem (chọn được xuyên trang): Hoàn tác đổi tình trạng, xét quyền Xóa hàng loạt, tên khách trong kết quả. */
+  const customerById = useRef(new Map<string, CustomerListItem>());
+  list.data.forEach((customer) => customerById.current.set(customer.id, customer));
   const pageIds = list.data.map((customer) => customer.id);
   const isPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
 
@@ -94,10 +97,19 @@ export const CustomersDesktop = () => {
       <div className="flex flex-col gap-4">
         <CustomerStatusPills activeTab={filters.listGroup} counts={counts} onChange={(listGroup) => updateFilters({ listGroup })} />
         <CustomerToolbar screen={screen} />
-        {selectedIds.length > 0 && <BulkActionBar selectedIds={selectedIds} onClear={() => setSelectedIds([])} getStatusId={(id) => statusById.current.get(id)} />}
+        {selectedIds.length > 0 && (
+          <BulkActionBar
+            selectedIds={selectedIds}
+            onClear={() => setSelectedIds([])}
+            onDeselect={(ids) => setSelectedIds((current) => current.filter((id) => !ids.includes(id)))}
+            onDeleteResult={setDeleteResult}
+            getCustomer={(id) => customerById.current.get(id)}
+          />
+        )}
       </div>
 
-      <div className="flex flex-col gap-2">
+      {/* `data-focus-fallback`: đóng hộp kết quả mà thanh chọn đã biến mất thì tiêu điểm về vùng danh sách (không rơi về BODY). */}
+      <div data-focus-fallback tabIndex={-1} className="flex flex-col gap-2 outline-none">
         <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]">
           <div className="custom-scrollbar overflow-x-auto">
             <table className="min-w-full">
@@ -159,6 +171,8 @@ export const CustomersDesktop = () => {
 
         <Pagination meta={list.meta} onPageChange={setPage} onLimitChange={setPageSize} itemLabel="khách hàng" />
       </div>
+
+      <BulkDeleteResultDialog result={deleteResult} getCustomerName={(id) => customerById.current.get(id)?.fullName ?? 'Khách không rõ'} onClose={() => setDeleteResult(null)} />
     </div>
   );
 };

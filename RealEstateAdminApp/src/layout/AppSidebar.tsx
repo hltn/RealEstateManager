@@ -28,7 +28,7 @@ const HorizontaLDotsAny = HorizontaLDots as any;
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
 import { useAuth } from "../hooks/useAuth";
-import { UserRole } from "../types/user";
+import { hasAnyRole, hasCrmRole, isCrmOnlyAccount } from "../utils/userRoles";
 
 type NavItem = {
   name: string;
@@ -114,12 +114,13 @@ const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
   const { user } = useAuth();
-  const isAdmin = user?.role === UserRole.ADMIN;
+  const isAdmin = hasAnyRole(user, ["ADMIN"]);
   // [Prototype] Submenu CRM ẩn mục không đủ quyền (Báo cáo: Quản lý/Quản trị; Dự án, Cài đặt: Quản trị).
   const crmSubItems = useCrmSidebarSubItems();
   // MANAGER/STAFF chỉ dùng CRM; EDITOR không có quyền CRM (backend 403) -> ẩn mục tương ứng (UX; backend mới là nguồn sự thật).
-  const isCrmOnlyRole = user?.role === UserRole.MANAGER || user?.role === UserRole.STAFF;
-  const isEditor = user?.role === UserRole.EDITOR;
+  // Quyền là HỢP của mọi role: STAFF+EDITOR thấy cả CRM lẫn tin tức; chỉ khi KHÔNG có role nào của phía kia mới ẩn.
+  const isCrmOnlyRole = isCrmOnlyAccount(user);
+  const isEditor = hasAnyRole(user, ["EDITOR"]) && !hasCrmRole(user);
   const mainItems = useMemo(
     () =>
       withCrmMenu(navItems, crmSubItems, CRM_FEATURE_FLAGS.isPrototypeEnabled).filter((item) =>
@@ -127,8 +128,7 @@ const AppSidebar: React.FC = () => {
       ),
     [crmSubItems, isCrmOnlyRole, isEditor],
   );
-  const canManagePrompts =
-    user?.role === UserRole.ADMIN || user?.role === UserRole.EDITOR;
+  const canManagePrompts = hasAnyRole(user, ["ADMIN", "EDITOR"]);
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";

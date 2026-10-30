@@ -37,6 +37,7 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
     return validateImportRows(parsed.rows, mapping, { catalogs, users, isPhoneTaken, preset });
   }, [parsed, mapping, isPhoneTaken, catalogs, users, preset]);
   const validCount = results.filter((result) => result.data).length;
+  const areaWarningCount = results.filter((result) => result.data && result.warnings.length > 0).length;
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -163,6 +164,7 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
               <div className="space-y-2">
                 <p className="text-theme-sm text-gray-700 dark:text-gray-300">
                   <strong>{validCount}</strong> dòng hợp lệ / {results.length} dòng.{' '}
+                  {areaWarningCount > 0 && <span className="text-warning-700 dark:text-warning-400">{areaWarningCount} dòng không khớp khu vực — để trống. </span>}
                   {results.length > PREVIEW_LIMIT && <span className="text-gray-500">Hiển thị {PREVIEW_LIMIT} dòng đầu.</span>}
                 </p>
                 <div className="custom-scrollbar max-h-80 overflow-auto rounded-xl border border-gray-200 dark:border-white/[0.05]">
@@ -183,7 +185,14 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
                           <td className="px-3 py-2 tabular-nums text-gray-700 dark:text-gray-300">{parsed.rows[result.rowNumber - 2]?.[mapping.phone] ?? ''}</td>
                           <td className="px-3 py-2">
                             {result.errors.length === 0 ? (
-                              <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.success}`}>Hợp lệ</span>
+                              <div className="space-y-0.5">
+                                <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.success}`}>Hợp lệ</span>
+                                {result.warnings.map((warning) => (
+                                  <p key={warning} className="text-warning-700 dark:text-warning-400">
+                                    {warning}
+                                  </p>
+                                ))}
+                              </div>
                             ) : (
                               <ul className="space-y-0.5 text-error-600 dark:text-error-500">
                                 {result.errors.map((error) => (

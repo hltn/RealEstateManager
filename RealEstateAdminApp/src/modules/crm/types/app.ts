@@ -15,7 +15,7 @@ export const CRM_SUB_VIEWS = [
 export type CrmSubView = (typeof CRM_SUB_VIEWS)[number];
 
 /** Màn chỉ dành cho Quản trị (tài liệu 02 §3: Cài đặt — danh mục, danh sách dự án, người dùng). */
-export const ADMIN_ONLY_VIEWS = ['projects', 'settings'] as const;
+export const ADMIN_ONLY_VIEWS = ['projects', 'settings', 'deleted_customers'] as const;
 export type AdminOnlyView = (typeof ADMIN_ONLY_VIEWS)[number];
 
 /** Toàn bộ màn hình của module CRM. Mỗi ViewId ứng với 1 route `/crm/...` (xem `modules/crm/routes.ts`). */

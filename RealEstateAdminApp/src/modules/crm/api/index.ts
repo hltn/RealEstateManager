@@ -10,6 +10,7 @@ export {
   canExportCustomers,
   canImportCustomers,
   canManageProjects,
+  canViewDeletedCustomers,
   canViewProjectCatalog,
   canViewReports,
   canViewSettings,

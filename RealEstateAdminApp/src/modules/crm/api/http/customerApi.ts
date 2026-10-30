@@ -11,20 +11,23 @@ import type {
   CustomerListItem,
   CustomerListQuery,
   CustomerPersonaView,
+  DeletedCustomerItem,
+  DeletedCustomerQuery,
   HistoryEntry,
   ListCounts,
   NationalIdViewEntry,
   Paginated,
   PersonaValueInput,
   PhoneLookupResult,
+  PurgeResult,
   UpdateCustomerInput,
   UpdateStatusResult,
 } from '../types';
-import type { CareLogDto, CustomerDetailDto, CustomerListItemDto, CustomerPersonaDto, HistoryEntryDto } from './dto';
+import type { CareLogDto, CustomerDetailDto, CustomerListItemDto, CustomerPersonaDto, DeletedCustomerDto, HistoryEntryDto } from './dto';
 import { crmHttp, type QueryParams } from './crmHttp';
 import { toStatusRef } from './catalogMappers';
 import { buildCustomerFilterParams, buildCustomerListParams } from './customerQuery';
-import { toCareLog, toCustomerDetail, toCustomerListItem, toCustomerPersona, toHistoryEntry, toNationalIdView, toPersonaValueBody, type DetailMappingContext } from './customerMappers';
+import { toCareLog, toCustomerDetail, toCustomerListItem, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toNationalIdView, toPersonaValueBody, type DetailMappingContext } from './customerMappers';
 
 const BASE = '/crm/customers';
 
@@ -124,6 +127,25 @@ export const patchStatus = async (customerId: string, body: { statusId: string; 
 
 export const patchCriteria = (customerId: string, version: number, criteria: CriteriaPatch): Promise<{ progress: number; version: number; lastUpdatedAt: string }> =>
   crmHttp.patch(`${BASE}/${encodeURIComponent(customerId)}/criteria`, { version, ...criteria });
+
+/** `DELETE /crm/customers/:id?reason=` -> 204: xóa mềm (lý do bắt buộc). */
+export const deleteCustomerById = (customerId: string, reason: string): Promise<void> => crmHttp.del(`${BASE}/${encodeURIComponent(customerId)}`, { params: { reason } });
+
+// --- Khách đã xóa (chỉ Quản trị) -----------------------------------------------------------------------------------------
+
+const DELETED_BASE = '/crm/deleted-customers';
+
+export const fetchDeletedCustomers = async (query: DeletedCustomerQuery, signal?: AbortSignal): Promise<Paginated<DeletedCustomerItem>> => {
+  const result = await crmHttp.list<DeletedCustomerDto>(DELETED_BASE, { params: { page: query.page, limit: query.limit, q: query.q }, signal });
+  return { data: result.data.map(toDeletedCustomer), meta: result.meta };
+};
+
+/** `POST /crm/customer-restorations` (409 `CUSTOMER_ANONYMIZED` nếu khách đã ẩn danh hóa). */
+export const postCustomerRestoration = (customerId: string): Promise<{ id: string }> => crmHttp.post<{ id: string }>('/crm/customer-restorations', { customerId });
+
+/** `DELETE /crm/deleted-customers/:id` -> 200 `{ data: PurgeResult }`: KHÔNG hoàn tác; 503 = kho tệp lỗi, chưa xóa gì ở CSDL. */
+export const deletePurgeCustomer = async (customerId: string): Promise<PurgeResult> =>
+  (await crmHttp.raw<{ data: PurgeResult }>('delete', `${DELETED_BASE}/${encodeURIComponent(customerId)}`)).data;
 
 export const putNationalIdValue = (customerId: string, nationalId: string): Promise<{ hasNationalId: boolean; nationalIdMasked: string | null }> =>
   crmHttp.put(`${BASE}/${encodeURIComponent(customerId)}/national-id`, { nationalId });

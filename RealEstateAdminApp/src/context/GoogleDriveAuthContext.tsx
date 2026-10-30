@@ -13,7 +13,7 @@ import {
 } from "../api/google-drive.api";
 import type { GoogleDriveStatus } from "../api/google-drive.api";
 import { useAuthStore } from "../stores/auth.store";
-import { UserRole } from "../types/user";
+import { isCrmOnlyAccount } from "../utils/userRoles";
 
 interface GoogleDriveAuthState {
   /** true nếu user đã kết nối Google Drive. */
@@ -54,8 +54,8 @@ export const GoogleDriveAuthProvider: React.FC<{
   const queryClient = useQueryClient();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   // MANAGER/STAFF chỉ dùng CRM: backend trả 403 cho Google Drive nên không gọi (tránh lỗi/nhiễu console).
-  const role = useAuthStore((state) => state.user?.role);
-  const isCrmOnlyRole = role === UserRole.MANAGER || role === UserRole.STAFF;
+  const user = useAuthStore((state) => state.user);
+  const isCrmOnlyRole = isCrmOnlyAccount(user);
 
   const { data: status, isLoading } = useQuery<GoogleDriveStatus>({
     enabled: !isCrmOnlyRole,

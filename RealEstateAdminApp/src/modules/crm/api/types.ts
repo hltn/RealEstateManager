@@ -194,7 +194,31 @@ export type BulkOperation =
   | { type: 'CHANGE_STATUS'; customerIds: string[]; statusId: string }
   | { type: 'ADD_TAGS'; customerIds: string[]; tagIds: string[] }
   | { type: 'REMOVE_TAGS'; customerIds: string[]; tagIds: string[] }
-  | { type: 'ASSIGN'; customerIds: string[]; memberIds: string[]; primaryUserId?: string };
+  | { type: 'ASSIGN'; customerIds: string[]; memberIds: string[]; primaryUserId?: string }
+  /** Xóa mềm khách thuộc nhóm "Bỏ"; một lý do chung (bắt buộc, ≤ 500 ký tự), tối đa 200 khách. */
+  | { type: 'DELETE'; customerIds: string[]; reason: string };
+
+/** Khách ĐÃ XÓA MỀM trong `GET /crm/deleted-customers` (chỉ Quản trị): `deleteReason` null khi đã ẩn danh hóa. */
+export interface DeletedCustomerItem extends CustomerListItem {
+  deletedAt: string;
+  deletedBy: UserRef | null;
+  anonymizedAt: string | null;
+  deleteReason: string | null;
+  /** Đang/đã dở dang xóa vĩnh viễn (lỗi kho tệp): KHÔNG khôi phục được nữa, chỉ bấm Xóa vĩnh viễn lại để hoàn tất. */
+  purgeInProgress: boolean;
+}
+
+/** Kết quả `DELETE /crm/deleted-customers/:id`: số dữ liệu con đã xóa vĩnh viễn. */
+export interface PurgeResult {
+  customerId: string;
+  purged: { careLogs: number; attachments: number; files: number; appointments: number; careTeamRequests: number; reminders: number; notifications: number; auditLogs: number };
+}
+
+export interface DeletedCustomerQuery {
+  page?: number;
+  limit?: number;
+  q?: string;
+}
 
 export type CriteriaPatch = Partial<Record<CriterionKey, { isDone?: boolean; description?: string }>>;
 

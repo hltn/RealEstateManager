@@ -7,12 +7,9 @@ import { getNotificationTypeLabel, resolveNotificationPath } from "@crm/lib/noti
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { useAuth } from "../../hooks/useAuth";
-import { UserRole } from "../../types/user";
+import { hasCrmRole } from "../../utils/userRoles";
 
 const PREVIEW_LIMIT = 8;
-
-/** Vai trò có hộp thông báo (EDITOR không có quyền CRM: backend trả 403). */
-const hasInbox = (role: string | undefined): boolean => role === UserRole.ADMIN || role === UserRole.MANAGER || role === UserRole.STAFF;
 
 /**
  * Chuông thông báo trên header: số chưa đọc (làm mới mỗi phút), xem nhanh 8 thông báo mới nhất, đánh dấu đã đọc,
@@ -20,7 +17,7 @@ const hasInbox = (role: string | undefined): boolean => role === UserRole.ADMIN 
  */
 export default function NotificationDropdown() {
   const { user } = useAuth();
-  const isEnabled = CRM_FEATURE_FLAGS.isPrototypeEnabled && hasInbox(user?.role);
+  const isEnabled = CRM_FEATURE_FLAGS.isPrototypeEnabled && hasCrmRole(user) /* EDITOR thuần không có quyền CRM: backend trả 403 */;
   const [isOpen, setIsOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount(isEnabled);
   const { data, isLoading, error } = useNotifications({ limit: PREVIEW_LIMIT }, isEnabled && isOpen);

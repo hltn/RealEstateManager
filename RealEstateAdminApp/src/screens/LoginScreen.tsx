@@ -11,6 +11,7 @@ import { AxiosError } from 'axios';
 import { login } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
 import { resolvePostLoginPath } from '../components/auth/postLoginPath';
+import { rolesOf } from '../utils/userRoles';
 import { EnvelopeIcon as EnvelopeIconRaw, LockIcon as LockIconRaw, EyeIcon as EyeIconRaw, EyeCloseIcon as EyeCloseIconRaw } from '../icons';
 
 // Cast icon svgr sang typed FC để truyền className (type gốc của svgr client
@@ -88,7 +89,7 @@ const LoginScreen: React.FC = () => {
       toast.success(`Xin chào, ${user.displayName}!`);
       // Quay lại trang đang định vào (do ProtectedRoute giữ trong state.from; chỉ nhận đường dẫn nội bộ), không có thì vào màn mặc định theo vai trò.
       const returnTo = (location.state as { from?: unknown } | null)?.from;
-      navigate(resolvePostLoginPath({ returnTo, role: user.role, isCrmEnabled: CRM_FEATURE_FLAGS.isPrototypeEnabled, crmDefaultPath: CRM_DEFAULT_PATH }), { replace: true });
+      navigate(resolvePostLoginPath({ returnTo, roles: rolesOf(user), isCrmEnabled: CRM_FEATURE_FLAGS.isPrototypeEnabled, crmDefaultPath: CRM_DEFAULT_PATH }), { replace: true });
     } catch (error) {
       const message = getLoginErrorMessage(error);
       setLoginError(message);

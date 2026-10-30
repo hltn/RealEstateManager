@@ -3,6 +3,7 @@
  * Hàm thuần, không đọc store/mạng -> test được.
  */
 import type {
+  AdminUser,
   Area,
   CatalogItem,
   ContactResult,
@@ -16,8 +17,11 @@ import type {
   StatusTone,
   Tag,
   Team,
+  TeamMember,
+  UserRole,
 } from '@crm/types/crm';
-import type { AreaDto, AssignableUserDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, StatusRefDto, TagDto, TeamDto, UserDto } from './dto';
+import { rolesOf } from '../../../../utils/userRoles';
+import type { AreaDto, AssignableUserDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, StatusRefDto, TagDto, TeamDto, TeamMemberDto, UserDto } from './dto';
 
 const STATUS_TONES: readonly StatusTone[] = ['gray', 'success', 'warning', 'error', 'brand'];
 
@@ -107,20 +111,23 @@ export const toPersonaField = (dto: PersonaFieldDto): PersonaFieldDefinition => 
   isActive: dto.isActive,
 });
 
-/** Người có thể phân chăm sóc (assignable-users) -> `CrmUser` dùng cho ô chọn/bộ lọc. */
+/** Role CRM của UI: chỉ ADMIN/MANAGER/STAFF; EDITOR (ngang STAFF, không có quyền CRM) và giá trị lạ -> STAFF. */
+export const toCrmRole = (role: string | undefined): UserRole => (role === 'ADMIN' || role === 'MANAGER' ? role : 'STAFF');
+
+/** Người có thể phân chăm sóc / người trong bộ lọc phụ trách (assignable-users) -> `CrmUser`. */
 export const assignableToUser = (dto: AssignableUserDto): CrmUser => ({
   id: dto.id,
   fullName: dto.displayName,
   displayName: dto.displayName,
-  role: dto.role,
+  role: toCrmRole(dto.role),
   jobTitle: '',
   teamId: dto.team?.id ?? null,
   teamName: dto.team?.label,
   isActive: true,
 });
 
-/** Tài khoản từ `GET /users` (chỉ Quản trị) -> `CrmUser`. */
-export const userDtoToUser = (dto: UserDto): CrmUser => ({
+/** Tài khoản từ `/users` (chỉ Quản trị) -> `AdminUser` (EDITOR ngang STAFF nên `role` EDITOR đổi thành STAFF; `roles` giữ nguyên EDITOR). */
+export const userDtoToUser = (dto: UserDto): AdminUser => ({
   id: dto._id,
   fullName: dto.displayName,
   displayName: dto.displayName,
@@ -128,6 +135,17 @@ export const userDtoToUser = (dto: UserDto): CrmUser => ({
   jobTitle: '',
   teamId: dto.teamId,
   isActive: dto.status === 'ACTIVE',
+  roles: rolesOf(dto),
+  teamIds: dto.teamIds ?? (dto.teamId ? [dto.teamId] : []),
+});
+
+export const toTeamMember = (dto: TeamMemberDto): TeamMember => ({
+  id: dto.id,
+  displayName: dto.displayName,
+  role: dto.role,
+  roles: dto.roles?.length ? dto.roles : [dto.role],
+  isActive: dto.status === 'ACTIVE',
+  isManager: dto.isManager,
 });
 
 export const toTeam = (dto: TeamDto): Team & { code: string; memberCount: number; isActive: boolean } => ({

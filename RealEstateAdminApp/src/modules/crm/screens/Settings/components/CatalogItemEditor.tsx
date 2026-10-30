@@ -28,16 +28,17 @@ interface SwitchRowProps {
   label: string;
   description: string;
   isChecked: boolean;
+  isDisabled?: boolean;
   onChange: (isChecked: boolean) => void;
 }
 
-export const SwitchRow = ({ label, description, isChecked, onChange }: SwitchRowProps) => (
+export const SwitchRow = ({ label, description, isChecked, isDisabled, onChange }: SwitchRowProps) => (
   <div className="flex items-center justify-between gap-3">
     <div className="min-w-0">
       <p className="text-sm font-medium text-gray-800 dark:text-white/90">{label}</p>
       <p className="text-theme-xs text-gray-500 dark:text-gray-400">{description}</p>
     </div>
-    <ToggleSwitch isChecked={isChecked} onChange={onChange} label={label} size="sm" />
+    <ToggleSwitch isChecked={isChecked} onChange={onChange} label={label} size="sm" isDisabled={isDisabled} />
   </div>
 );
 

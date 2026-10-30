@@ -42,12 +42,15 @@ export async function updateUserStatus(
   return data;
 }
 
-/** Đổi role — `PATCH /users/:id/role` (ADMIN only). */
-export async function updateUserRole(
+/**
+ * Đặt toàn bộ role — `PATCH /users/:id/roles` (ADMIN only, ≥1 role). Gỡ MANAGER/STAFF cuối cùng thì backend xóa luôn nhóm;
+ * gỡ ADMIN cuối cùng → 409 LAST_ADMIN_REQUIRED. (Không dùng `/role` đơn: nó thu mọi role về một.)
+ */
+export async function updateUserRoles(
   id: string,
-  role: UserRole,
+  roles: UserRole[],
 ): Promise<UserListItem> {
-  const { data } = await apiAxios.patch<UserListItem>(`/users/${id}/role`, { role });
+  const { data } = await apiAxios.patch<UserListItem>(`/users/${id}/roles`, { roles });
   return data;
 }
 

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import UserManagementScreen from './UserManagementScreen';
 import toast from 'react-hot-toast';
-import { fetchUsers, resetUserPassword, updateUser } from '../api/users.api';
+import { createUser, fetchUsers, resetUserPassword, updateUser, updateUserRoles } from '../api/users.api';
 import { logout } from '../api/auth.api';
 import type { UserListItem } from '../types/user';
 
@@ -11,7 +11,7 @@ vi.mock('../api/users.api', () => ({
   fetchUsers: vi.fn(),
   createUser: vi.fn(),
   updateUserStatus: vi.fn(),
-  updateUserRole: vi.fn(),
+  updateUserRoles: vi.fn(),
   updateUser: vi.fn(),
   resetUserPassword: vi.fn(),
 }));
@@ -30,10 +30,11 @@ const editor: UserListItem = {
   email: 'editor@example.com',
   displayName: 'Editor One',
   role: 'EDITOR',
+  roles: ['EDITOR'],
   status: 'ACTIVE',
 };
 
-const self: UserListItem = { _id: 'u-admin', email: 'admin@example.com', displayName: 'Admin', role: 'ADMIN', status: 'ACTIVE' };
+const self: UserListItem = { _id: 'u-admin', email: 'admin@example.com', displayName: 'Admin', role: 'ADMIN', roles: ['ADMIN'], status: 'ACTIVE' };
 
 async function openSelfEditModal() {
   vi.mocked(fetchUsers).mockResolvedValue({ data: [self], meta: { total: 1, page: 1, limit: 20, totalPages: 1 } });
@@ -187,5 +188,111 @@ describe('UserManagementScreen - sửa tài khoản', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Sửa tài khoản' })).not.toBeInTheDocument());
     expect(clearAuth).not.toHaveBeenCalled();
     expect(logout).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserManagementScreen - nhiều vai trò', () => {
+  const multi: UserListItem = { _id: 'u-multi', email: 'multi@example.com', displayName: 'Multi One', role: 'MANAGER', roles: ['MANAGER', 'STAFF', 'EDITOR'], status: 'ACTIVE' };
+  const staff: UserListItem = { _id: 'u-staff', email: 'staff@example.com', displayName: 'Staff One', role: 'STAFF', roles: ['STAFF'], status: 'ACTIVE' };
+
+  const mockList = (...users: UserListItem[]) =>
+    vi.mocked(fetchUsers).mockResolvedValue({ data: users, meta: { total: users.length, page: 1, limit: 20, totalPages: 1 } });
+
+  beforeEach(() => {
+    vi.mocked(fetchUsers).mockReset();
+    vi.mocked(updateUserRoles).mockReset();
+    vi.mocked(createUser).mockReset();
+    setUser.mockReset();
+    vi.mocked(toast.success).mockClear();
+  });
+
+  it('hiển thị đủ mọi vai trò của tài khoản theo thứ tự quyền (không chỉ vai trò cao nhất)', async () => {
+    mockList(multi);
+    renderScreen();
+    const list = await screen.findByRole('list', { name: 'Vai trò của Multi One' });
+    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['MANAGER', 'STAFF', 'EDITOR']);
+  });
+
+  it('đặt toàn bộ vai trò qua /roles (không dùng /role đơn), đóng popup và báo thành công', async () => {
+    mockList(staff);
+    vi.mocked(updateUserRoles).mockResolvedValue({ ...staff, role: 'MANAGER', roles: ['MANAGER', 'STAFF'] });
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa tài khoản Staff One' }));
+
+    const saveRoles = await screen.findByRole('button', { name: 'Lưu vai trò' });
+    expect(saveRoles).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'MANAGER' }));
+    expect(saveRoles).toBeEnabled();
+    fireEvent.click(saveRoles);
+
+    await waitFor(() => expect(updateUserRoles).toHaveBeenCalledWith('u-staff', ['MANAGER', 'STAFF']));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Sửa tài khoản' })).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith('Đã cập nhật vai trò: MANAGER, STAFF.');
+  });
+
+  it('cảnh báo gỡ nhóm khi bỏ cả MANAGER lẫn STAFF; không cho lưu khi bỏ hết vai trò', async () => {
+    mockList(staff);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa tài khoản Staff One' }));
+    await screen.findByRole('button', { name: 'Lưu vai trò' });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'STAFF' }));
+    expect(screen.getByText('Chọn ít nhất một vai trò.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Lưu vai trò' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'EDITOR' }));
+    expect(screen.getByText(/gỡ tài khoản này khỏi mọi nhóm/)).toBeInTheDocument();
+  });
+
+  it('409 LAST_ADMIN_REQUIRED hiện nguyên thông báo máy chủ trong popup, giữ lựa chọn và không đóng popup', async () => {
+    mockList(self);
+    vi.mocked(updateUserRoles).mockRejectedValue({ response: { status: 409, data: { message: 'Không thể bỏ ADMIN cuối cùng', errorCode: 'LAST_ADMIN_REQUIRED' } } });
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa tài khoản Admin' }));
+    await screen.findByRole('button', { name: 'Lưu vai trò' });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'EDITOR' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ADMIN' }));
+    expect(screen.getByText(/mất quyền quản trị/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu vai trò' }));
+
+    expect(await screen.findByText('Không thể bỏ ADMIN cuối cùng')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'EDITOR' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'ADMIN' })).not.toBeChecked();
+    expect(setUser).not.toHaveBeenCalled();
+  });
+
+  it('403 hiện thông báo không đủ quyền; Admin tự đổi vai trò của mình (thành công) thì đồng bộ role/roles vào store', async () => {
+    mockList(self);
+    vi.mocked(updateUserRoles).mockRejectedValueOnce({ response: { status: 403, data: { message: 'Insufficient role' } } });
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa tài khoản Admin' }));
+    await screen.findByRole('button', { name: 'Lưu vai trò' });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'EDITOR' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu vai trò' }));
+    expect(await screen.findByText('Bạn không có quyền thực hiện thao tác này.')).toBeInTheDocument();
+
+    vi.mocked(updateUserRoles).mockResolvedValueOnce({ ...self, role: 'ADMIN', roles: ['ADMIN', 'EDITOR'] });
+    // Lưu lại thành công với ADMIN + EDITOR: store nhận đủ roles (role cao nhất vẫn ADMIN).
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu vai trò' }));
+    await waitFor(() => expect(updateUserRoles).toHaveBeenLastCalledWith('u-admin', ['ADMIN', 'EDITOR']));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Sửa tài khoản của bạn' })).not.toBeInTheDocument());
+    expect(setUser).toHaveBeenCalledWith({ ...currentUser, role: 'ADMIN', roles: ['ADMIN', 'EDITOR'] });
+  });
+
+  it('tạo tài khoản gửi roles[] (sắp theo quyền) chứ không gửi role đơn', async () => {
+    mockList(staff);
+    vi.mocked(createUser).mockResolvedValue({ ...staff, role: 'MANAGER', roles: ['MANAGER', 'EDITOR'] });
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo tài khoản' }));
+
+    fireEvent.change(screen.getByPlaceholderText('Nguyễn Văn A'), { target: { value: 'Người Mới' } });
+    fireEvent.change(screen.getByPlaceholderText('editor@example.com'), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('Tối thiểu 8 ký tự'), { target: { value: 'Matkhau@123' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'MANAGER' }));
+    fireEvent.submit(screen.getByPlaceholderText('Nguyễn Văn A').closest('form')!);
+
+    await waitFor(() => expect(createUser).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(createUser).mock.calls[0][0]).toEqual({ email: 'new@example.com', password: 'Matkhau@123', displayName: 'Người Mới', roles: ['MANAGER', 'EDITOR'] });
   });
 });

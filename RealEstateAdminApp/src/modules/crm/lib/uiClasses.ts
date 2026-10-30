@@ -96,6 +96,21 @@ export const ICON_BUTTON_CLASS =
 export const ICON_BUTTON_OUTLINE_CLASS =
   'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-brand-500 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-brand-400';
 
+/**
+ * Nút NGUY HIỂM (xóa, xóa vĩnh viễn): nền error-600 (chữ trắng đạt tương phản AA ≥ 4.5:1; error-500 chỉ ~3.8:1), sáng và tối.
+ * Chỉ dùng cho phần xóa khách; không đổi token chung của theme.
+ */
+export const DANGER_BUTTON_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-error-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-error-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
+
+/** Nút nguy hiểm kiểu viền (chữ + viền error, nền trong), thay cho `ICON_BUTTON_OUTLINE_CLASS` có `text-gray-500` đè màu chữ. */
+export const DANGER_OUTLINE_BUTTON_CLASS =
+  'inline-flex items-center justify-center gap-1.5 rounded-lg border border-error-200 text-error-600 transition-colors hover:bg-error-50 dark:border-error-500/40 dark:text-error-400 dark:hover:bg-error-500/10';
+
+/** Nút nhỏ kiểu "soft" nguy hiểm (hàng trong danh sách). */
+export const DANGER_SOFT_SM_BUTTON_CLASS =
+  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-error-100 bg-error-50 px-2.5 py-1.5 text-xs font-medium text-error-600 transition-colors hover:bg-error-100 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-400 dark:hover:bg-error-500/20';
+
 /** Nút điều hướng nhỏ 32px (tháng/tuần trước - sau). */
 export const NAV_ICON_BUTTON_CLASS =
   'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-200';

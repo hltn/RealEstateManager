@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { queryClient } from '../queryClient';
 import type { AuthUser } from '../types/user';
+import { rolesOf } from '../utils/userRoles';
 
 /**
  * Auth state toàn cục — Access Token lưu RAM (Zustand), Refresh Token lưu httpOnly cookie
@@ -39,6 +40,9 @@ const clearCacheIfUserChanged = (previous: AuthUser | null, next: AuthUser): voi
   if (previous && previous._id !== next._id) queryClient.clear();
 };
 
+/** Luôn có `roles` (đủ từ API; thiếu thì suy ra từ `role`) để mọi nơi kiểm quyền dùng chung một nguồn. */
+const withResolvedRoles = (user: AuthUser): AuthUser => ({ ...user, roles: rolesOf(user) });
+
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
   user: null,
@@ -46,12 +50,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAuth: (token, user) => {
     clearCacheIfUserChanged(useAuthStore.getState().user, user);
-    set({ accessToken: token, user });
+    set({ accessToken: token, user: withResolvedRoles(user) });
   },
 
   setUser: (user) => {
     clearCacheIfUserChanged(useAuthStore.getState().user, user);
-    set({ user });
+    set({ user: withResolvedRoles(user) });
   },
 
   clearAuth: () => {

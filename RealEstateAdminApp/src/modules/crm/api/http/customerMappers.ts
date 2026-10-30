@@ -12,6 +12,7 @@ import type {
   CustomerDetail,
   CustomerListItem,
   CustomerPersonaView,
+  DeletedCustomerItem,
   DailyTask,
   HistoryEntry,
   NationalIdViewEntry,
@@ -25,6 +26,7 @@ import type {
   CustomerDetailDto,
   CustomerListItemDto,
   CustomerPersonaDto,
+  DeletedCustomerDto,
   DailyTaskDto,
   HistoryEntryDto,
   PersonaValueDto,
@@ -54,6 +56,15 @@ export const toCustomerListItem = (dto: CustomerListItemDto): CustomerListItem =
   lastCareLogAt: dto.lastCareLogAt,
   lastUpdatedAt: dto.lastUpdatedAt,
   personaCompleteness: dto.personaCompleteness,
+});
+
+export const toDeletedCustomer = (dto: DeletedCustomerDto): DeletedCustomerItem => ({
+  ...toCustomerListItem(dto),
+  deletedAt: dto.deletedAt,
+  deletedBy: dto.deletedBy ? toUserRef(dto.deletedBy) : null,
+  anonymizedAt: dto.anonymizedAt ?? null,
+  deleteReason: dto.deleteReason ?? null,
+  purgeInProgress: dto.purgeInProgress,
 });
 
 const toCriterion = (dto: CriterionDto): CriterionView => ({

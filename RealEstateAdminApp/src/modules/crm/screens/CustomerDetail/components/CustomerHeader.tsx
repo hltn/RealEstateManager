@@ -9,6 +9,7 @@ import { getInitials } from '@crm/lib/staff';
 import { BUTTON_PRIMARY_LG_CLASS, BUTTON_SUCCESS_LG_CLASS, CARD_CLASS, ICON_BUTTON_OUTLINE_CLASS } from '@crm/lib/uiClasses';
 import { buildCrmPath } from '@crm/routes';
 import { useCrmActions } from '@crm/store';
+import { DeleteCustomerButton } from './DeleteCustomerButton';
 import { PhoneDisplay, StatusDropdown } from './DetailParts';
 
 interface CustomerHeaderProps {
@@ -56,6 +57,7 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
             <CalendarPlus size={16} aria-hidden="true" />
             Hẹn nhắc
           </button>
+          <DeleteCustomerButton customer={customer} variant="mobile" />
         </div>
       </section>
     );
@@ -94,6 +96,7 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
           <button type="button" onClick={() => openCreateAppointment({ customerId: customer.id })} aria-label="Đặt lịch hẹn" title="Đặt lịch hẹn" className={ICON_BUTTON_OUTLINE_CLASS}>
             <CalendarPlus size={18} aria-hidden="true" />
           </button>
+          <DeleteCustomerButton customer={customer} variant="desktop" />
         </div>
       </section>
     </div>
