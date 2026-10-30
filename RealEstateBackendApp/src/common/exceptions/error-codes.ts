@@ -26,6 +26,12 @@ export enum ErrorCode {
   // 409
   CUSTOMER_PHONE_DUPLICATED = 'CUSTOMER_PHONE_DUPLICATED',
   CUSTOMER_ANONYMIZED = 'CUSTOMER_ANONYMIZED',
+  /** Thêm ở v1.0.3 mục D: xóa khách không thuộc nhóm "Bỏ" (hàng loạt, hoặc STAFF xóa đơn). */
+  CUSTOMER_NOT_DROPPED = 'CUSTOMER_NOT_DROPPED',
+  /** Thêm ở v1.0.3 mục D: xóa vĩnh viễn khách chưa bị xóa mềm. */
+  CUSTOMER_NOT_DELETED = 'CUSTOMER_NOT_DELETED',
+  /** Thêm ở v1.0.3 mục D: khách đang trong quá trình xóa vĩnh viễn nên không khôi phục/ẩn danh hóa/xóa vĩnh viễn song song được. */
+  CUSTOMER_PURGE_IN_PROGRESS = 'CUSTOMER_PURGE_IN_PROGRESS',
   VERSION_CONFLICT = 'VERSION_CONFLICT',
   IDEMPOTENCY_IN_PROGRESS = 'IDEMPOTENCY_IN_PROGRESS',
   JOIN_REQUEST_EXISTS = 'JOIN_REQUEST_EXISTS',

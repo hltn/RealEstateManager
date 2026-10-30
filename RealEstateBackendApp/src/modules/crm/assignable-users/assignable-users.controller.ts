@@ -25,7 +25,8 @@ export class AssignableUsersController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Người có thể được phân chăm sóc (Quản trị: tất cả; Quản lý/Nhân viên: theo nhóm của mình)',
+      'Người có thể được phân chăm sóc (Quản trị: tất cả; Quản lý: nhóm mình quản lý; Nhân viên: cùng nhóm). ' +
+      'purpose=filter: nguồn ô lọc Người phụ trách (Quản lý: người trong careTeam của khách mình được thấy)',
   })
   @ApiPaginatedResponse(AssignableUserResponseDto)
   list(

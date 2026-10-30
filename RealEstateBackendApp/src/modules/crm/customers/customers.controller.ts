@@ -27,14 +27,14 @@ import {
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/decorators/roles.decorator';
-import { CRM_ROLES, UserRole } from '../../../common/enums/user-role.enum';
+import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { runCrmIdempotent } from '../common/idempotency.helper';
 import { CustomerCriteriaService } from './customer-criteria.service';
 import { CustomerListService } from './customer-list.service';
-import { CustomerLifecycleService } from './customer-lifecycle.service';
+import { CustomerDeletionService } from './customer-deletion.service';
 import { CustomerPhoneService } from './customer-phone.service';
 import { CustomerStatusChangeService } from './customer-status-change.service';
 import { CustomersService } from './customers.service';
@@ -79,7 +79,7 @@ export class CustomersController {
     private readonly phones: CustomerPhoneService,
     private readonly statusChanges: CustomerStatusChangeService,
     private readonly criteria: CustomerCriteriaService,
-    private readonly lifecycle: CustomerLifecycleService,
+    private readonly deletion: CustomerDeletionService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -233,19 +233,27 @@ export class CustomersController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  @Roles(...CRM_ROLES)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Xóa mềm khách (Quản trị, Quản lý trong phạm vi); bắt buộc query reason',
+      'Xóa mềm khách; bắt buộc query reason. Quản trị: mọi khách; Quản lý: khách thuộc NHÓM MÌNH QUẢN LÝ (chỉ có mặt trong nhóm chăm sóc thì không đủ); Nhân viên: khách "Bỏ" mà mình là người phụ trách chính hiện tại',
   })
   @ApiResponse({ status: 204, description: 'Đã xóa mềm' })
+  @ApiResponse({
+    status: 403,
+    description: 'INSUFFICIENT_ROLE: thấy khách nhưng không đủ quyền xóa',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'CUSTOMER_NOT_DROPPED: Nhân viên xóa khách không thuộc "Bỏ"',
+  })
   async remove(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,
     @Query() query: DeleteCustomerQueryDto,
     @Headers(CLIENT_TYPE_HEADER) clientType?: string,
   ): Promise<void> {
-    await this.lifecycle.softDelete(user, id, query.reason, clientType);
+    await this.deletion.softDelete(user, id, query.reason, clientType);
   }
 }

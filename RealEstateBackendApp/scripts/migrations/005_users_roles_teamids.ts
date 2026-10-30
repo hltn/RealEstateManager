@@ -72,6 +72,19 @@ async function main(): Promise<void> {
           ? ` — _id (tối đa ${result.driftIds.length}): ${result.driftIds.join(', ')}`
           : ''),
     );
+    if (result.driftBefore > 0 && reconcile) {
+      log(
+        'CẢNH BÁO --reconcile: sẽ THU GỌN các tài khoản lệch về roles=[role], teamIds=[teamId] (mất các role/nhóm thêm).',
+      );
+      if (result.driftClearsTeamIds.length > 0) {
+        log(
+          `CẢNH BÁO --reconcile: sẽ XÓA teamIds của các _id có teamId=null nhưng teamIds còn giá trị: ${result.driftClearsTeamIds.join(', ')}`,
+        );
+      }
+      log(
+        'Lưu ý: số lệch đếm TRƯỚC backfill; bản ghi vừa chưa migrate vừa lệch có thể làm số "đã reconcile" lớn hơn số lệch.',
+      );
+    }
     if (result.driftBefore > 0 && !(apply && reconcile)) {
       log(
         'Có tài khoản LỆCH: thêm --apply --reconcile (sau khi mọi pod cũ đã tắt) để ghi lại theo role/teamId đơn.',

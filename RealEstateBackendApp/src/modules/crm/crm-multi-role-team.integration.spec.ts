@@ -702,10 +702,8 @@ describe('Nhiều role + nhiều nhóm — HTTP + MongoDB Replica Set', () => {
       return res.body.data.map((u: any) => u.id).sort();
     };
 
-    it('Quản lý chỉ thấy người thuộc nhóm mình QUẢN LÝ + chính mình; thành viên nhóm B (chỉ là thành viên) không có trong danh sách', async () => {
-      expect(await assignableIds('mgrX')).toEqual(
-        sorted([ids.staffC, ids.mgrX]),
-      );
+    it('Quản lý chỉ thấy người thuộc nhóm mình QUẢN LÝ; thành viên nhóm B (chỉ là thành viên) không có trong danh sách', async () => {
+      expect(await assignableIds('mgrX')).toEqual([ids.staffC]);
       // Lọc theo nhóm B (ngoài phạm vi phân) → rỗng, không dùng để dò người.
       expect(await assignableIds('mgrX', `&teamId=${ids.teamB}`)).toEqual([]);
     });

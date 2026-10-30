@@ -3,9 +3,11 @@ import { HydratedDocument, Types } from 'mongoose';
 import { CrmAuditChange, CrmAuditEntityType } from '../crm-audit.constants';
 
 /**
- * Nhật ký audit CRM — chỉ ghi thêm, không có API sửa/xóa (tài liệu 04 mục 3.7). Chỉ có HAI thao tác nội bộ được ghi đè
- * giá trị nhạy cảm trong `changes`: ẩn danh hóa khách (`CustomerLifecycleService`) và xóa giá trị chân dung theo yêu cầu
- * (`redactPersonaFieldAudit` ở `audit-redaction.util.ts`); không thao tác nào khác sửa hay xóa bản ghi.
+ * Nhật ký audit CRM — chỉ ghi thêm, không có API sửa/xóa (tài liệu 04 mục 3.7). Chỉ có BA thao tác nội bộ được ghi đè
+ * hay xóa bản ghi: ẩn danh hóa khách (`CustomerLifecycleService`) và xóa giá trị chân dung theo yêu cầu
+ * (`redactPersonaFieldAudit` ở `audit-redaction.util.ts`) ghi đè giá trị nhạy cảm trong `changes`; xóa vĩnh viễn khách
+ * (`CustomerPurgeService`, tài liệu 09 mục 7) xóa mọi bản ghi của khách đó rồi để lại đúng một dòng `CUSTOMER_PURGED`
+ * không chứa PII; không thao tác nào khác sửa hay xóa bản ghi.
  * Lưu >= 2 năm (D11), vì vậy KHÔNG đặt TTL.
  *
  * Mỗi bản ghi được ghi trong CÙNG transaction với thay đổi nghiệp vụ.

@@ -26,6 +26,33 @@ export const versionConflict = (currentVersion: number): BusinessException =>
 export const insufficientRole = (): ForbiddenException =>
   new ForbiddenException('Insufficient role');
 
+/** 409: xóa khách không thuộc nhóm "Bỏ" (xóa hàng loạt, hoặc STAFF xóa đơn). */
+export const customerNotDropped = (): BusinessException =>
+  new BusinessException(
+    ErrorCode.CUSTOMER_NOT_DROPPED,
+    'Chỉ xóa được khách thuộc nhóm "Bỏ"',
+    HttpStatus.CONFLICT,
+  );
+
+/** 409: xóa vĩnh viễn khách chưa bị xóa mềm. */
+export const customerNotDeleted = (): BusinessException =>
+  new BusinessException(
+    ErrorCode.CUSTOMER_NOT_DELETED,
+    'Chỉ xóa vĩnh viễn được khách đã xóa mềm',
+    HttpStatus.CONFLICT,
+  );
+
+/**
+ * 409: khách đang trong quá trình xóa vĩnh viễn (`purgingAt` có giá trị): không khôi phục, không ẩn danh hóa, không
+ * chạy xóa vĩnh viễn thứ hai song song. Lối thoát duy nhất là bấm "Xóa vĩnh viễn" lại để hoàn tất.
+ */
+export const customerPurgeInProgress = (): BusinessException =>
+  new BusinessException(
+    ErrorCode.CUSTOMER_PURGE_IN_PROGRESS,
+    'Khách hàng đang được xóa vĩnh viễn; hãy bấm "Xóa vĩnh viễn" lại để hoàn tất thay vì khôi phục hoặc ẩn danh hóa',
+    HttpStatus.CONFLICT,
+  );
+
 /** Chuẩn hóa SĐT, sai định dạng => 400 `INVALID_PHONE`. */
 export const normalizePhoneOrThrow = (input: string): string => {
   const phone = normalizePhone(input);

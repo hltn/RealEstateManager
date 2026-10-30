@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { ListGroup } from '../catalogs/catalog.enums';
 import { CareRole } from './customer.constants';
 import { toDetail, toListItem, toPhoneMasked } from './customer.mapper';
 import type { RefMaps } from './customer-refs.service';
@@ -83,6 +84,38 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
     expect(
       toDetail(doc, refs, actor(UserRole.ADMIN)).permissions.canDelete,
     ).toBe(true);
+  });
+
+  it('permissions.canDelete theo quyền xóa thật: STAFF phụ trách chính chỉ khi khách "Bỏ"; Manager chỉ khi khách thuộc nhóm mình quản lý', () => {
+    const team = new Types.ObjectId();
+    const withStatus = (listGroup: ListGroup): RefMaps => ({
+      ...refs,
+      statuses: new Map([
+        [
+          String(doc.statusId),
+          {
+            id: String(doc.statusId),
+            code: 'S',
+            label: 'S',
+            listGroup,
+            color: null,
+          },
+        ],
+      ]),
+    });
+    const canDelete = (role: UserRole, group: ListGroup, d = doc, a = {}) =>
+      toDetail(d, withStatus(group), { ...actor(role), ...a }).permissions
+        .canDelete;
+    expect(canDelete(UserRole.STAFF, ListGroup.DROPPED)).toBe(true);
+    expect(canDelete(UserRole.STAFF, ListGroup.INTERESTED)).toBe(false);
+    const inTeam = { ...doc, teamIds: [team] } as unknown as CustomerLean;
+    expect(
+      canDelete(UserRole.MANAGER, ListGroup.INTERESTED, inTeam, {
+        managedTeamIds: [team],
+      }),
+    ).toBe(true);
+    // Manager là phụ trách chính nhưng khách không thuộc nhóm mình quản lý: không xóa được.
+    expect(canDelete(UserRole.MANAGER, ListGroup.DROPPED)).toBe(false);
   });
 
   it('khách đã ẩn danh: phoneMasked không dựa trên số giả', () => {

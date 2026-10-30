@@ -15,7 +15,15 @@ export interface BackfillUserRolesTeamIdsResult {
   driftBefore: number;
   /** Tối đa 20 `_id` đầu tiên bị lệch (để điều tra). */
   driftIds: string[];
-  /** Số tài khoản được ghi lại theo `role`/`teamId` đơn (0 khi dry-run hoặc không có `reconcile`). */
+  /**
+   * Tối đa 20 `_id` bị lệch có `teamId = null` nhưng `teamIds` còn giá trị: `reconcile` sẽ XÓA `teamIds` của họ
+   * (nguồn đúng là `teamId` đơn).
+   */
+  driftClearsTeamIds: string[];
+  /**
+   * Số tài khoản được ghi lại theo `role`/`teamId` đơn (0 khi dry-run hoặc không có `reconcile`). `driftBefore` đếm
+   * TRƯỚC backfill nên bản ghi vừa chưa migrate vừa lệch (lệch lộ ra sau backfill) có thể làm `reconciled` > `driftBefore`.
+   */
   reconciled: number;
 }
 
@@ -65,7 +73,8 @@ const highestRoleExpression = ROLE_PRECEDENCE.reduceRight<unknown>(
 const DRIFT_FILTER = {
   roles: { $exists: true, $not: { $size: 0 } },
   teamIds: { $exists: true },
-  role: { $exists: true },
+  // role hợp lệ: `role: null`/giá trị lạ không bị coi là nguồn đúng (tránh ghi roles:[null]).
+  role: { $in: [...ROLE_PRECEDENCE] },
   teamId: { $exists: true },
   $expr: {
     $or: [
@@ -116,10 +125,19 @@ export async function backfillUserRolesTeamIds(
     USERS_PENDING_ROLES_TEAM_IDS_FILTER,
   );
   const drifted = await users
-    .find(DRIFT_FILTER, { projection: { _id: 1 } })
+    .find(DRIFT_FILTER, { projection: { _id: 1, teamId: 1, teamIds: 1 } })
     .toArray();
   const driftBefore = drifted.length;
   const driftIds = drifted
+    .slice(0, DRIFT_SAMPLE_SIZE)
+    .map((user) => String(user._id));
+  const driftClearsTeamIds = drifted
+    .filter(
+      (user) =>
+        (user.teamId ?? null) === null &&
+        Array.isArray(user.teamIds) &&
+        user.teamIds.length > 0,
+    )
     .slice(0, DRIFT_SAMPLE_SIZE)
     .map((user) => String(user._id));
   if (!apply) {
@@ -129,6 +147,7 @@ export async function backfillUserRolesTeamIds(
       roleCounts,
       driftBefore,
       driftIds,
+      driftClearsTeamIds,
       reconciled: 0,
     };
   }
@@ -187,6 +206,7 @@ export async function backfillUserRolesTeamIds(
     roleCounts,
     driftBefore,
     driftIds,
+    driftClearsTeamIds,
     reconciled,
   };
 }

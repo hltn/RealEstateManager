@@ -16,6 +16,8 @@ import { ToBoolean } from '../../../common/decorators/to-boolean.decorator';
 import { Trim } from '../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { UserRefDto } from '../../../common/dto/ref.dto';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { UserStatus } from '../../../common/enums/user-status.enum';
 
 /** Mã nhóm: chữ/số/`-`/`_`, tối đa 20 ký tự; lưu chữ HOA nên so trùng không phân biệt hoa thường. */
 export const TEAM_CODE_PATTERN = /^[A-Za-z0-9_-]{1,20}$/;
@@ -115,4 +117,43 @@ export class TeamResponseDto {
 
   @ApiProperty()
   isActive: boolean;
+}
+
+export class AddTeamMemberDto {
+  @ApiProperty({
+    example: '66f1a2b3c4d5e6f708192a3b',
+    description: 'Id người dùng (phải có role MANAGER hoặc STAFF)',
+  })
+  @IsMongoId()
+  userId: string;
+}
+
+export class ListTeamMembersQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: 'Tìm theo tên hiển thị', maxLength: 100 })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+}
+
+/** Một thành viên của nhóm (không lộ email). */
+export class TeamMemberResponseDto extends UserRefDto {
+  @ApiProperty({
+    enum: UserRole,
+    description: 'Role cao nhất của tài khoản',
+  })
+  role: UserRole;
+
+  @ApiProperty({ enum: UserRole, isArray: true })
+  roles: UserRole[];
+
+  @ApiProperty({ enum: UserStatus })
+  status: UserStatus;
+
+  @ApiProperty({
+    description:
+      'Người này đồng thời là Quản lý của nhóm (nằm trong managerIds). Chỉ để hiển thị: gỡ thành viên KHÔNG gỡ quyền Quản lý',
+  })
+  isManager: boolean;
 }

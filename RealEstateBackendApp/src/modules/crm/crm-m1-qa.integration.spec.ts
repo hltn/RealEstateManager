@@ -277,7 +277,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
 
   // ---------------------------------------------------------------------------
   describe('Swagger', () => {
-    it('dựng được tài liệu OpenAPI và có đủ 31 route CRM/teams của M1', () => {
+    it('dựng được tài liệu OpenAPI và có đủ 34 route CRM/teams của M1 + thành viên nhóm', () => {
       const doc = SwaggerModule.createDocument(
         app,
         new DocumentBuilder().setTitle('qa').addBearerAuth().build(),
@@ -301,13 +301,16 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
             op.includes('/users/{id}/team')) &&
           !isM2Route(op),
       );
-      // teams 4 + users/:id/team 1 + users/:id/teams 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 31
-      expect(crmOps).toHaveLength(31);
+      // teams 4 + members 3 (v1.0.3 mục C) + users/:id/team 1 + users/:id/teams 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 34
+      expect(crmOps).toHaveLength(34);
       for (const op of [
         'POST /api/v1/crm/project-restorations',
         'PATCH /api/v1/users/{id}/team',
         'PATCH /api/v1/users/{id}/teams',
         'DELETE /api/v1/teams/{id}',
+        'GET /api/v1/teams/{id}/members',
+        'POST /api/v1/teams/{id}/members',
+        'DELETE /api/v1/teams/{id}/members/{userId}',
       ]) {
         expect(ops).toContain(op);
       }

@@ -410,8 +410,8 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       }
       for (const who of ['staffB', 'manager2']) {
         const res = await call('DELETE', `/crm/customers/${c1}?reason=x`, who);
-        // STAFF không có quyền xóa (403 trước); Quản lý ngoài phạm vi => 404.
-        expect(res.status).toBe(who === 'staffB' ? 403 : 404);
+        // Ngoài phạm vi xem thì 404 cho mọi vai (kể cả Nhân viên: không lộ sự tồn tại của khách).
+        expect(res.status).toBe(404);
       }
       const ids404 = await call('GET', '/crm/customers/not-an-id', 'admin');
       expect(ids404.status).toBe(400);
@@ -455,10 +455,11 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
 
     it('race: 6 yêu cầu tạo cùng SĐT đồng thời => đúng 1 khách được tạo, còn lại 409 (unique index, không dựa kiểm tra trước)', async () => {
       const phone = nextPhone();
+      // Cùng MỘT người gọi: người thắng không phụ thuộc thứ tự đến trước, nên khách "Race" luôn thuộc staffA và không
+      // làm lệch các test sau (lọc theo người phụ trách, PHONE_LOOKUP của người ngoài phạm vi...).
       const results = await Promise.all(
-        ['staffA', 'staffB', 'staffC', 'manager1', 'admin', 'staffA'].map(
-          (who) =>
-            call('POST', '/crm/customers', who, { fullName: 'Race', phone }),
+        Array.from({ length: 6 }, () =>
+          call('POST', '/crm/customers', 'staffA', { fullName: 'Race', phone }),
         ),
       );
       const statuses = results.map((res) => res.status).sort();
@@ -1585,11 +1586,16 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
     });
 
-    it('xóa mềm: Nhân viên 403; Quản lý trong phạm vi/Quản trị 204 bắt buộc reason; khách biến khỏi list/chi tiết; SĐT vẫn bị giữ (không tạo lại)', async () => {
-      expect(
-        (await call('DELETE', `/crm/customers/${id}?reason=x`, 'staffA'))
-          .status,
-      ).toBe(403);
+    it('xóa mềm: Nhân viên chỉ khi khách "Bỏ" (khách này chưa "Bỏ" nên 409); Quản lý trong nhóm mình quản lý/Quản trị 204 bắt buộc reason; khách biến khỏi list/chi tiết; SĐT vẫn bị giữ (không tạo lại)', async () => {
+      const staffDelete = await call(
+        'DELETE',
+        `/crm/customers/${id}?reason=x`,
+        'staffA',
+      );
+      expect([staffDelete.status, staffDelete.body.errorCode]).toEqual([
+        409,
+        'CUSTOMER_NOT_DROPPED',
+      ]);
       expect(
         (await call('DELETE', `/crm/customers/${id}`, 'manager1')).status,
       ).toBe(400);

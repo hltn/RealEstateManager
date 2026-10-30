@@ -244,6 +244,7 @@ export class CustomersService {
       deletedAt: null,
       deletedBy: null,
       anonymizedAt: null,
+      purgingAt: null,
     };
     await this.repo.insert(doc, session);
 

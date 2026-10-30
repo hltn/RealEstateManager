@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Team, TeamSchema } from '../../teams/schemas/team.schema';
 import { User, UserSchema } from '../../users/schemas/user.schema';
+import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
 import { CrmCommonModule } from '../common/crm-common.module';
 import { AssignableUsersController } from './assignable-users.controller';
 import { AssignableUsersService } from './assignable-users.service';
@@ -11,6 +12,7 @@ import { AssignableUsersService } from './assignable-users.service';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Team.name, schema: TeamSchema },
+      { name: Customer.name, schema: CustomerSchema },
     ]),
     CrmCommonModule,
   ],

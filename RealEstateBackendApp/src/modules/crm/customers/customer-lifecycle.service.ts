@@ -15,7 +15,6 @@ import { CustomerCareAnonymizerService } from './customer-care-anonymizer.servic
 import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
 import { CustomerSchedulingAnonymizerService } from './customer-scheduling-anonymizer.service';
 import { RemindersWriterService } from '../reminders/reminders-writer.service';
-import { isAdminOrManager } from './access/customer-scope';
 import {
   ANONYMIZED_NAME,
   ANONYMIZED_PLACEHOLDER,
@@ -23,7 +22,7 @@ import {
 } from './customer.constants';
 import {
   customerNotFound,
-  insufficientRole,
+  customerPurgeInProgress,
   resolveClientSource,
 } from './customer.errors';
 import { CustomersRepository } from './customers.repository';
@@ -58,8 +57,8 @@ export const PII_AUDIT_FIELD_PATTERNS = [
 const KEEP_REASON_ACTIONS = ['PHONE_VIEWED'];
 
 /**
- * Xóa mềm / khôi phục / ẩn danh hóa khách (tài liệu 04 mục 7.3, 05 mục 2.3).
- * - Xóa mềm: Quản trị và Quản lý (trong phạm vi); khôi phục và ẩn danh hóa: chỉ Quản trị.
+ * Khôi phục / ẩn danh hóa khách (tài liệu 04 mục 7.3, 05 mục 2.3); xóa mềm ở `CustomerDeletionService`, xóa vĩnh viễn
+ * ở `CustomerPurgeService`. Khôi phục và ẩn danh hóa: chỉ Quản trị.
  * - Ẩn danh hóa KHÔNG hoàn tác được: ghi đè PII, giữ khung thống kê (tình trạng, nguồn, khu vực, dự án, nhóm chăm
  *   sóc, tiến độ) và tự xóa mềm; đồng thời ghi đè dữ liệu cá nhân trong `changes` của audit CỦA KHÁCH ĐÓ — đây là
  *   một trong HAI thao tác được sửa `crm_audit_logs` (thao tác kia là `redactPersonaFieldAudit` ở `audit-redaction.util.ts`),
@@ -79,55 +78,6 @@ export class CustomerLifecycleService {
     private readonly reminders: RemindersWriterService,
   ) {}
 
-  async softDelete(
-    jwt: JwtPayload,
-    id: string,
-    reason: string,
-    clientType?: string,
-  ): Promise<void> {
-    const ctx = await this.access.resolve(jwt);
-    if (!isAdminOrManager(ctx.actor)) throw insufficientRole();
-    const { auditSource } = resolveClientSource(clientType);
-
-    await withTransaction(this.connection, async (session) => {
-      const exists = await this.repo.findOne(ctx.scope, id, {
-        session,
-        projection: { _id: 1 },
-      });
-      if (!exists) throw customerNotFound();
-      const now = new Date();
-      await this.repo.updateOne(
-        ctx.scope,
-        id,
-        {},
-        {
-          $set: {
-            deletedAt: now,
-            deletedBy: ctx.actor.userId,
-            lastUpdatedAt: now,
-            lastUpdatedBy: ctx.actor.userId,
-          },
-          $inc: { __v: 1 },
-        },
-        { session },
-      );
-      // Khách đã xóa mềm thì không nhắc nữa (nhắc chưa gửi bị hủy; khôi phục sẽ dựng lại cho lịch còn hiệu lực).
-      await this.reminders.cancelForCustomer(oid(id), now, session);
-      await this.audit.record(
-        {
-          entityType: CrmAuditEntityType.CUSTOMER,
-          entityId: id,
-          customerId: id,
-          action: CrmAuditAction.CUSTOMER_DELETED,
-          actor: { sub: String(ctx.actor.userId) },
-          reason,
-          source: auditSource,
-        },
-        session,
-      );
-    });
-  }
-
   async restore(
     jwt: JwtPayload,
     dto: RestoreCustomerDto,
@@ -140,16 +90,19 @@ export class CustomerLifecycleService {
       const deleted = await this.repo.findOne(ctx.scope, dto.customerId, {
         session,
         deleted: 'only',
-        projection: { anonymizedAt: 1 },
+        projection: { anonymizedAt: 1, purgingAt: 1 },
       });
       if (!deleted) throw customerNotFound();
       if (deleted.anonymizedAt) throw this.anonymizedError();
+      // Đang xóa vĩnh viễn dở: không khôi phục (file ảnh có thể đã bị xóa một phần).
+      if (deleted.purgingAt) throw customerPurgeInProgress();
 
       const now = new Date();
-      await this.repo.updateOne(
+      // `purgingAt: null` trong bộ lọc ghi: nếu xóa vĩnh viễn kịp đặt cờ giữa lúc đọc và ghi thì không khớp => 409.
+      const matched = await this.repo.updateOne(
         ctx.scope,
         dto.customerId,
-        {},
+        { purgingAt: null },
         {
           $set: {
             deletedAt: null,
@@ -161,6 +114,7 @@ export class CustomerLifecycleService {
         },
         { session, deleted: 'only' },
       );
+      if (!matched) throw customerPurgeInProgress();
       await this.reminders.resyncCustomer(oid(dto.customerId), now, session);
       await this.audit.record(
         {
@@ -196,20 +150,22 @@ export class CustomerLifecycleService {
         const customer = await this.repo.findOne(ctx.scope, customerId, {
           session,
           deleted: 'any',
-          projection: { anonymizedAt: 1, deletedAt: 1 },
+          projection: { anonymizedAt: 1, deletedAt: 1, purgingAt: 1 },
         });
         if (!customer) throw customerNotFound();
         if (customer.anonymizedAt) throw this.anonymizedError();
+        if (customer.purgingAt) throw customerPurgeInProgress();
 
         const now = new Date();
         await this.overwriteAuditPii(customerId, session);
         await this.careData.anonymize(customerId, now, session);
         await this.personaData.anonymize(customerId, session);
         await this.schedulingData.anonymize(customerId, now, session);
-        await this.repo.updateOne(
+        // `purgingAt: null` trong bộ lọc ghi: xóa vĩnh viễn kịp đặt cờ giữa chừng thì không khớp => 409, rollback.
+        const matched = await this.repo.updateOne(
           ctx.scope,
           customerId,
-          {},
+          { purgingAt: null },
           {
             $set: {
               fullName: ANONYMIZED_NAME,
@@ -236,6 +192,7 @@ export class CustomerLifecycleService {
           },
           { session, deleted: 'any' },
         );
+        if (!matched) throw customerPurgeInProgress();
         await this.audit.record(
           {
             entityType: CrmAuditEntityType.CUSTOMER,

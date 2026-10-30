@@ -4,12 +4,18 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
+  IsDefined,
   IsEnum,
   IsMongoId,
   IsOptional,
+  IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
+import { HasVisibleChar } from '../../../../common/decorators/has-visible-char.decorator';
+import { Trim } from '../../../../common/decorators/trim.decorator';
+import { CUSTOMER_REASON_MAX_LENGTH } from '../../customers/customer.constants';
 
 /** Tối đa 200 khách mỗi lần (tài liệu 05 mục 2.3), xử lý đồng bộ. */
 export const BULK_MAX_CUSTOMERS = 200;
@@ -23,6 +29,8 @@ export enum BulkOperationType {
   /** Gỡ thẻ (M4): bỏ qua khách chưa có thẻ. */
   REMOVE_TAGS = 'REMOVE_TAGS',
   ASSIGN = 'ASSIGN',
+  /** Xóa mềm hàng loạt (v1.0.3 mục D): chỉ khách thuộc nhóm "Bỏ", kiểm quyền từng khách, cần `payload.reason`. */
+  DELETE = 'DELETE',
 }
 
 export class BulkOperationPayloadDto {
@@ -58,6 +66,18 @@ export class BulkOperationPayloadDto {
   @IsOptional()
   @IsMongoId()
   primaryUserId?: string;
+
+  @ApiPropertyOptional({
+    maxLength: CUSTOMER_REASON_MAX_LENGTH,
+    description:
+      'DELETE: lý do xóa chung cho cả lô (bắt buộc, ghi vào audit CUSTOMER_DELETED của từng khách)',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(CUSTOMER_REASON_MAX_LENGTH)
+  @HasVisibleChar()
+  reason?: string;
 }
 
 export class BulkOperationDto {
@@ -72,7 +92,12 @@ export class BulkOperationDto {
   @IsMongoId({ each: true })
   customerIds: string[];
 
-  @ApiProperty({ type: BulkOperationPayloadDto })
+  @ApiProperty({
+    type: BulkOperationPayloadDto,
+    description:
+      'Bắt buộc có (kể cả `{}`): mọi loại thao tác đều đọc payload; thiếu thì 400 thay vì lỗi 500',
+  })
+  @IsDefined()
   @ValidateNested()
   @Type(() => BulkOperationPayloadDto)
   payload: BulkOperationPayloadDto;

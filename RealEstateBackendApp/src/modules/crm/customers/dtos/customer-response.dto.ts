@@ -120,6 +120,18 @@ export class DeletedCustomerListItemDto extends CustomerListItemDto {
   @ApiProperty({ nullable: true, type: UserRefDto })
   deletedBy: UserRefDto | null;
   @ApiProperty({ nullable: true, type: String }) anonymizedAt: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Lý do xóa (từ audit CUSTOMER_DELETED mới nhất); null nếu khách đã ẩn danh hóa (lý do bị xóa cùng PII)',
+  })
+  deleteReason: string | null;
+  @ApiProperty({
+    description:
+      'true khi đang xóa vĩnh viễn dở (lần xóa trước lỗi hoặc đang chạy): FE hiện "đang xóa dở, bấm Xóa vĩnh viễn để hoàn tất" và vô hiệu nút Khôi phục (khôi phục sẽ bị 409 CUSTOMER_PURGE_IN_PROGRESS)',
+  })
+  purgeInProgress: boolean;
 }
 
 export class CustomerListCountsDto {
@@ -189,4 +201,23 @@ export class NationalIdViewEntryDto {
 export class AnonymizeResponseDto {
   @ApiProperty() customerId: string;
   @ApiProperty() anonymizedAt: string;
+}
+
+/** Số bản ghi con đã xóa cùng khách khi xóa vĩnh viễn (không chứa dữ liệu cá nhân). */
+export class PurgedCountsDto {
+  @ApiProperty() careLogs: number;
+  @ApiProperty() attachments: number;
+  @ApiProperty({ description: 'File đã xóa khỏi kho lưu trữ (MinIO)' })
+  files: number;
+  @ApiProperty() appointments: number;
+  @ApiProperty() careTeamRequests: number;
+  @ApiProperty() reminders: number;
+  @ApiProperty() notifications: number;
+  @ApiProperty({ description: 'Dòng audit cũ của khách đã xóa' })
+  auditLogs: number;
+}
+
+export class PurgeCustomerResponseDto {
+  @ApiProperty() customerId: string;
+  @ApiProperty({ type: PurgedCountsDto }) purged: PurgedCountsDto;
 }

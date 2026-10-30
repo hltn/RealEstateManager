@@ -19,6 +19,7 @@ import {
   resolveClientSource,
 } from '../customers/customer.errors';
 import { CustomerStatusChangeService } from '../customers/customer-status-change.service';
+import { CustomerDeletionService } from '../customers/customer-deletion.service';
 import { BulkTaggingService } from './bulk-tagging.service';
 import {
   BulkOperationDto,
@@ -66,6 +67,7 @@ export class BulkOperationsService {
     private readonly statusChanges: CustomerStatusChangeService,
     private readonly careTeam: CareTeamService,
     private readonly tagging: BulkTaggingService,
+    private readonly deletion: CustomerDeletionService,
     private readonly rateLimit: CrmRateLimitService,
   ) {}
 
@@ -126,6 +128,8 @@ export class BulkOperationsService {
       }
       case BulkOperationType.ASSIGN:
         return this.buildAssign(ctx, payload, source);
+      case BulkOperationType.DELETE:
+        return this.buildDelete(ctx, payload, source);
       default:
         return this.buildTagging(ctx, dto, source);
     }
@@ -154,6 +158,28 @@ export class BulkOperationsService {
         source,
         session,
       );
+  }
+
+  /**
+   * DELETE: một `reason` chung (bắt buộc, 400 cho cả lô). Từng khách đi qua `CustomerDeletionService.applyDelete` nên
+   * quyền được kiểm RIÊNG từng khách (ngoài phạm vi xem -> `CUSTOMER_NOT_FOUND`, không thuộc "Bỏ" ->
+   * `CUSTOMER_NOT_DROPPED`, không đủ quyền xóa -> `INSUFFICIENT_ROLE`); một khách lỗi không làm hỏng khách khác.
+   */
+  private buildDelete(
+    ctx: AccessContext,
+    payload: BulkOperationPayloadDto,
+    source: CrmAuditSource,
+  ) {
+    if (!payload.reason) {
+      throw validationFailed('DELETE cần payload.reason', {
+        field: 'payload.reason',
+      });
+    }
+    const { reason } = payload;
+    return (customerId: string, session: ClientSession) =>
+      this.deletion.applyDelete(ctx, customerId, reason, source, session, {
+        requireDropped: true,
+      });
   }
 
   private buildAssign(

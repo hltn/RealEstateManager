@@ -5,6 +5,7 @@ import { CrmCommonModule } from '../crm/common/crm-common.module';
 import { CustomerTeamSyncModule } from '../crm/customers/customer-team-sync.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Team, TeamSchema } from './schemas/team.schema';
+import { TeamMembersService } from './team-members.service';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
 
@@ -20,7 +21,7 @@ import { TeamsService } from './teams.service';
     CustomerTeamSyncModule,
   ],
   controllers: [TeamsController],
-  providers: [TeamsService],
+  providers: [TeamsService, TeamMembersService],
   exports: [TeamsService],
 })
 export class TeamsModule {}

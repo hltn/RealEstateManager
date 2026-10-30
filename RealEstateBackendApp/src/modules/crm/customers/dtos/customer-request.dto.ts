@@ -18,6 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
+import { HasVisibleChar } from '../../../../common/decorators/has-visible-char.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
 import {
   ConsentMethod,
@@ -301,6 +302,7 @@ export class DeleteCustomerQueryDto {
   @IsString()
   @MinLength(1)
   @MaxLength(CUSTOMER_REASON_MAX_LENGTH)
+  @HasVisibleChar()
   reason: string;
 }
 

@@ -36,7 +36,7 @@ export const sharesAnyTeam = (
  * - MANAGER (role cao nhất): CHỈ các nhóm mình quản lý (không gồm nhóm mình chỉ là thành viên).
  * - STAFF: các nhóm mình thuộc về.
  * - Vai trò khác: rỗng.
- * Ngoài ra chính actor luôn được phân cho chính mình (xử lý riêng ở nơi dùng).
+ * Ngoài ra chính actor luôn được phân cho chính mình (`assertAssignable` cho qua riêng; danh sách không thêm mục này).
  */
 export const resolveAssignableTeamIds = (
   actor: CrmActor,

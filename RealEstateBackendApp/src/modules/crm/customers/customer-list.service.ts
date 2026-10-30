@@ -11,6 +11,11 @@ import {
   endOfDayUtc,
   startOfDayUtc,
 } from '../../../common/utils/timezone.util';
+import { CrmAuditAction } from '../audit-logs/crm-audit.constants';
+import {
+  CrmAuditLog,
+  CrmAuditLogDocument,
+} from '../audit-logs/schemas/crm-audit-log.schema';
 import { ListGroup } from '../catalogs/catalog.enums';
 import { Area, AreaDocument } from '../catalogs/schemas/area.schema';
 import {
@@ -67,6 +72,8 @@ export class CustomerListService {
     @InjectModel(CustomerStatus.name)
     private readonly statusModel: Model<CustomerStatusDocument>,
     @InjectModel(Area.name) private readonly areaModel: Model<AreaDocument>,
+    @InjectModel(CrmAuditLog.name)
+    private readonly auditModel: Model<CrmAuditLogDocument>,
     private readonly repo: CustomersRepository,
     private readonly access: CustomerAccessService,
     private readonly refs: CustomerRefsService,
@@ -172,11 +179,42 @@ export class CustomerListService {
       }),
       this.repo.count(ctx.scope, filter, mode),
     ]);
-    const refMaps = await this.refs.resolve(collectRefIds(docs));
+    const [refMaps, reasons] = await Promise.all([
+      this.refs.resolve(collectRefIds(docs)),
+      this.findDeleteReasons(docs.map((doc) => doc._id)),
+    ]);
     return {
-      data: docs.map((doc) => toDeletedListItem(doc, refMaps)),
+      data: docs.map((doc) =>
+        toDeletedListItem(doc, refMaps, reasons.get(String(doc._id)) ?? null),
+      ),
       meta: buildPaginationMeta(total, page, limit),
     };
+  }
+
+  /**
+   * Lý do xóa mềm của một trang khách (một truy vấn `$in` theo `customerId`, không N+1): lấy từ audit `CUSTOMER_DELETED`
+   * MỚI NHẤT của từng khách (khách xóa, khôi phục rồi xóa lại thì lấy lần sau cùng). Khách đã ẩn danh hóa bị xóa
+   * `reason` khỏi audit nên không có kết quả (trả `null`).
+   */
+  private async findDeleteReasons(
+    customerIds: Types.ObjectId[],
+  ): Promise<Map<string, string>> {
+    if (customerIds.length === 0) return new Map();
+    const rows = await this.auditModel
+      .find({
+        customerId: { $in: customerIds },
+        action: CrmAuditAction.CUSTOMER_DELETED,
+      })
+      .sort({ createdAt: -1 })
+      .select('customerId reason')
+      .lean()
+      .exec();
+    const reasons = new Map<string, string>();
+    for (const row of rows) {
+      const key = String(row.customerId);
+      if (row.reason && !reasons.has(key)) reasons.set(key, row.reason);
+    }
+    return reasons;
   }
 
   /** Tìm kiếm có từ khóa: rate limit riêng (30/phút/người) + theo dõi dò số khi từ khóa toàn chữ số. */

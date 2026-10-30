@@ -46,11 +46,15 @@ export class BulkOperationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Thao tác hàng loạt (≤ 200 khách, đồng bộ, mỗi khách một transaction): CHANGE_STATUS, ASSIGN (Quản trị/Quản lý). Giới hạn 10 lần/phút/người. Hỗ trợ X-Idempotency-Key',
+      'Thao tác hàng loạt (≤ 200 khách, đồng bộ, mỗi khách một transaction): CHANGE_STATUS, ASSIGN (Quản trị/Quản lý), ADD_TAGS, REMOVE_TAGS, DELETE (xóa mềm khách "Bỏ", kiểm quyền từng khách, cần payload.reason). Giới hạn 10 lần/phút/người. Hỗ trợ X-Idempotency-Key',
   })
   @ApiHeader({ name: 'X-Idempotency-Key', required: false })
   @ApiDataResponse(BulkOperationResponseDto)
-  @ApiResponse({ status: 400, description: 'VALIDATION_FAILED' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'VALIDATION_FAILED (gồm DELETE thiếu payload.reason, > 200 khách)',
+  })
   @ApiResponse({ status: 403, description: 'INSUFFICIENT_ROLE (ASSIGN)' })
   @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
   run(

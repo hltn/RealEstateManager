@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { CrmActor } from '../common/access/crm-actor';
 import { maskPhone } from '../common/utils/phone-normalizer.util';
+import { ListGroup } from '../catalogs/catalog.enums';
+import { getDeleteDenial } from './access/customer-delete-policy';
 import { isAdminOrManager } from './access/customer-scope';
 import { CareRole, CRITERIA_KEYS } from './customer.constants';
 import type { CustomerLean } from './customers.repository';
@@ -21,7 +23,7 @@ import { maskNationalId } from './utils/customer-rules.util';
 
 /** Field cần đọc để dựng list item (KHÔNG gồm nationalId, searchText). */
 export const LIST_PROJECTION =
-  'fullName phone statusId sourceId interestedProjectIds areaId tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt';
+  'fullName phone statusId sourceId interestedProjectIds areaId tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
 
 const iso = (date: Date | null | undefined): string | null =>
   date ? new Date(date).toISOString() : null;
@@ -98,11 +100,14 @@ export const toListItem = (
 export const toDeletedListItem = (
   doc: CustomerLean,
   refs: RefMaps,
+  deleteReason: string | null,
 ): DeletedCustomerListItemDto => ({
   ...toListItem(doc, refs),
   deletedAt: iso(doc.deletedAt)!,
   deletedBy: toUserRef(doc.deletedBy, refs.users),
   anonymizedAt: iso(doc.anonymizedAt),
+  deleteReason,
+  purgeInProgress: doc.purgingAt != null,
 });
 
 const criteriaDone = (doc: CustomerLean): CriteriaDoneDto => ({
@@ -157,6 +162,7 @@ export const toDetail = (
 ): CustomerDetailDto => {
   const privileged = isAdminOrManager(actor);
   const primary = isPrimary(doc, actor);
+  const listItem = toListItem(doc, refs);
   const careTeam: CareTeamMemberDto[] = (doc.careTeam ?? []).map((member) => ({
     user: toUserRef(member.userId, refs.users)!,
     role: member.role,
@@ -164,7 +170,7 @@ export const toDetail = (
     addedBy: toUserRef(member.addedBy, refs.users),
   }));
   return {
-    ...toListItem(doc, refs),
+    ...listItem,
     email: doc.email ?? null,
     canViewPhone: true,
     criteria: toCriteriaResponse(doc, refs.users),
@@ -182,7 +188,12 @@ export const toDetail = (
       canEdit: true,
       canManageCareTeam: privileged || primary,
       canChangePrimary: privileged,
-      canDelete: privileged,
+      // Cùng một nguồn luật với route xóa (`getDeleteDenial`); FE chỉ hiện nút Xóa khi khách thuộc nhóm "Bỏ".
+      canDelete:
+        getDeleteDenial(actor, doc, {
+          isDropped: listItem.status.listGroup === ListGroup.DROPPED,
+          requireDropped: false,
+        }) === null,
     },
     version: doc.__v ?? 0,
   };

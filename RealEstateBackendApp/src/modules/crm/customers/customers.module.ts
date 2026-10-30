@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { RedisModule } from '../../../shared/redis/redis.module';
+import { StorageModule } from '../../../shared/storage/storage.module';
 import { User, UserSchema } from '../../users/schemas/user.schema';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
 import {
@@ -33,12 +34,14 @@ import { Tag, TagSchema } from '../tags/schemas/tag.schema';
 import { CustomerAccessService } from './access/customer-access.service';
 import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
 import { CustomerCriteriaService } from './customer-criteria.service';
+import { CustomerDeletionService } from './customer-deletion.service';
 import { CustomerHistoriesController } from './customer-histories.controller';
 import { CustomerHistoriesService } from './customer-histories.service';
 import { CustomerLifecycleController } from './customer-lifecycle.controller';
 import { CustomerLifecycleService } from './customer-lifecycle.service';
 import { CustomerListService } from './customer-list.service';
 import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
+import { CustomerPurgeService } from './customer-purge.service';
 import { CustomerSchedulingAnonymizerService } from './customer-scheduling-anonymizer.service';
 import { CustomerNationalIdService } from './customer-national-id.service';
 import { CustomerPhoneService } from './customer-phone.service';
@@ -77,6 +80,8 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CrmSettingsModule,
     PiiCryptoModule,
     RedisModule,
+    // Xóa file ảnh khỏi MinIO khi xóa vĩnh viễn khách (mục D).
+    StorageModule,
     CustomerTeamSyncModule,
     // Hủy/dựng lại nhắc việc khi xóa mềm/khôi phục và ẩn danh hóa khách (M5).
     RemindersCoreModule,
@@ -100,6 +105,8 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerCriteriaService,
     CustomerNationalIdService,
     CustomerLifecycleService,
+    CustomerDeletionService,
+    CustomerPurgeService,
     CustomerHistoriesService,
     CustomerCareAnonymizerService,
     CustomerTagsService,
@@ -111,6 +118,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerAccessService,
     CustomerRefsService,
     CustomerStatusChangeService,
+    CustomerDeletionService,
     CustomerTagsService,
   ],
 })

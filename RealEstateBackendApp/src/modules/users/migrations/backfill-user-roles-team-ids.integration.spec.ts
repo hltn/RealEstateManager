@@ -222,6 +222,24 @@ describe('backfillUserRolesTeamIds', () => {
       });
     });
 
+    it('role: null (kèm roles hợp lệ) không bị coi là lệch và không bị reconcile ghi thành roles:[null]', async () => {
+      await users().insertOne({
+        email: 'null-role',
+        role: null,
+        roles: ['STAFF'],
+        teamId: null,
+        teamIds: [teamId],
+      });
+      const before = await byEmail('null-role');
+
+      const result = await backfillUserRolesTeamIds(db(), true, {
+        reconcile: true,
+      });
+
+      expect(result.driftIds).not.toContain(String(before?._id));
+      expect(await byEmail('null-role')).toEqual(before);
+    });
+
     it('idempotent: sau reconcile chạy lại không còn lệch, không ghi thêm', async () => {
       await backfillUserRolesTeamIds(db(), true, { reconcile: true });
       const done = await snapshot();
