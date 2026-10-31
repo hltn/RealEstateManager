@@ -13,7 +13,7 @@
 | Nền tảng | Vite 8, React 19, TypeScript 6 | `../package.json` |
 | CSS | **Tailwind CSS v4** qua `@tailwindcss/vite`; cấu hình bằng `@theme` trong `index.css`, **không có** `tailwind.config.js`; có `@tailwindcss/typography` (lớp `prose`) | `index.css:4-5`, `../vite.config.ts:10` |
 | Phông | **Outfit** (Google Fonts 100–900), là phông duy nhất (`--font-*: initial`) | `index.css:1, 10-11, 190` |
-| Chế độ tối | Lớp `.dark` gắn vào **`<html>`** (`document.documentElement`), biến thể `@custom-variant dark (&:is(.dark *))`. **Mặc định là TỐI** khi chưa có `localStorage.theme` | `index.css:7`, `context/ThemeContext.tsx:18, 24, 34-36` |
+| Chế độ tối | Lớp `.dark` gắn vào **`<html>`** (`document.documentElement`), biến thể `@custom-variant dark (&:is(.dark *))`. **Mặc định là SÁNG** khi chưa có `localStorage.theme` (người đã chọn tối vẫn giữ tối; `index.html` gắn lớp `dark` trước khi vẽ để không nháy) | `index.css:7`, `context/ThemeContext.tsx`, `index.html` |
 | Biểu tượng | **2 bộ song song**: (1) SVG tùy biến của TailAdmin trong `src/icons/*.svg`, nạp bằng `vite-plugin-svgr` (`?react`) — dùng ở menu trái, Login, Quản lý tài khoản; (2) **lucide-react** — dùng ở hầu hết màn còn lại (18 tệp). Ngoài ra nhiều SVG viết thẳng (inline) ở header, modal, alert | `icons/index.ts:1-56`, `layout/AppSidebar.tsx:6-18`, `screens/LoginScreen.tsx`, `screens/UserManagementScreen.tsx:11`, `../vite.config.ts:11-15` |
 | Thông báo nhỏ (toast) | `react-hot-toast`, một `<Toaster position="top-right" duration=4000>` toàn cục (≈21 lời gọi `toast.*`) + **một toast tự viết** `ToastNotification` bị chép lặp ở 3 màn | `main.tsx:19`; `screens/ManageWpScreen.tsx:29-97`, `AiPromptConfigScreen.tsx:16`, `KnowledgeArticlesScreen.tsx:84` |
 | Biểu mẫu | react-hook-form + zod (Login, Tạo tài khoản); các màn khác dùng `useState` | `screens/UserManagementScreen.tsx:3-5, 30-38` |
@@ -175,7 +175,7 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 ## 7. Nên / Không nên (rút từ code)
 
 **Nên**
-- Dùng token `brand/gray/success/error/warning` cho mọi màu ngữ nghĩa; luôn viết cặp `dark:` (app mặc định chạy **tối**).
+- Dùng token `brand/gray/success/error/warning` cho mọi màu ngữ nghĩa; luôn viết cặp `dark:` (app mặc định chạy **sáng**, có chế độ tối).
 - Đầu trang theo mẫu mục 5 (`text-title-sm font-semibold` + mô tả + `pb-6 border-b`).
 - Bảng: vỏ `rounded-2xl border`, `thead` nền `gray-50`, chữ cột `text-theme-xs uppercase`, `TableSkeletonRows` khi tải, `Pagination` bên dưới.
 - Gọi API bằng React Query qua `apiAxios`/`fetchPaginated` (`utils/fetchPaginated.ts:59-79`); lỗi dùng `getApiErrorMessage` (`utils/fetchPaginated.ts:23`) + `toast.error`.
@@ -199,7 +199,7 @@ Chép **nguyên tệp** `src/index.css` (đã gồm đủ token, `menu-item*`, f
 | # | Bản cũ ghi | Thực tế trong code |
 |---|---|---|
 | 1 | Biểu tượng: **chỉ lucide-react**, "một bộ duy nhất" | Hai bộ: SVG TailAdmin (`src/icons`, svgr) cho menu/Login/Users + lucide-react cho các màn; thêm SVG inline (mục 1) |
-| 2 | Giao diện "sáng", có chế độ tối | **Mặc định tối** (`ThemeContext.tsx:18, 24`); lớp `.dark` trên `<html>` |
+| 2 | Giao diện "sáng", có chế độ tối | Từng là mặc định tối; đã đổi lại **mặc định sáng** (`ThemeContext.tsx`, `DEFAULT_THEME`); lớp `.dark` trên `<html>` |
 | 3 | Vòng focus dùng `shadow-focus-ring` | 0 lần dùng; thực tế `focus:ring-1/2/3` + `focus:border-brand-*` (mục 5) |
 | 4 | Ô chọn trong bảng dùng lớp `.tableCheckbox` | 0 lần dùng; checkbox gốc `accent-brand-500` |
 | 5 | "Quản lý tài khoản" dùng `text-theme-xl` | `text-xl font-bold` (`UserManagementScreen.tsx:196`); `text-theme-xl` 0 lần dùng |
