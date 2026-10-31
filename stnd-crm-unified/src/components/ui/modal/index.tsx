@@ -7,6 +7,8 @@ interface ModalProps {
   children: React.ReactNode;
   showCloseButton?: boolean; // New prop to control close button visibility
   isFullscreen?: boolean; // Default to false for backwards compatibility
+  /** Nhấp nền có đóng hộp không (mặc định có). Tắt cho hộp có nội dung đang nhập dở; Esc vẫn đóng. */
+  isBackdropClosable?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -16,6 +18,7 @@ export const Modal: React.FC<ModalProps> = ({
   className,
   showCloseButton = true, // Default to true for backwards compatibility
   isFullscreen = false,
+  isBackdropClosable = true,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -49,16 +52,17 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
+  // `my-auto` (thay cho `items-center` của khung ngoài): đủ chỗ thì căn giữa dọc, thiếu chỗ thì dính mép trên để cuộn tới được tiêu đề.
   const contentClasses = isFullscreen
-    ? "w-full h-full"
-    : "relative w-full rounded-3xl bg-white  dark:bg-gray-900";
+    ? "w-full h-full my-auto"
+    : "relative my-auto w-full rounded-3xl bg-white  dark:bg-gray-900";
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center overflow-y-auto modal z-99999">
+    <div className="fixed inset-0 flex items-start justify-center overflow-y-auto modal z-99999">
       {!isFullscreen && (
         <div
           className="fixed inset-0 h-full w-full bg-gray-400/50 backdrop-blur-[32px]"
-          onClick={onClose}
+          onClick={isBackdropClosable ? onClose : undefined}
         ></div>
       )}
       <div

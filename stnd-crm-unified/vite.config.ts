@@ -16,6 +16,8 @@ export default defineConfig({
       },
     }),
   ],
+  // Cổng cố định 5174 (khớp `.claude/launch.json`), tránh đụng cổng 5173 của app chính.
+  server: { port: 5174, strictPort: true },
   resolve: {
     alias: {
       // Module CRM: `@crm/store` -> src/modules/crm/store (code Admin chép sang dùng import tương đối).

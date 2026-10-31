@@ -16,16 +16,24 @@ interface MiniMonthCalendarProps {
   onSelectDate: (isoDate: string) => void;
 }
 
-/** Lớp của 1 ô ngày: ngày chọn > ngày tràn tháng > cao điểm > có lịch > thường; hôm nay thêm vòng brand. */
+/**
+ * Lớp của 1 ô ngày, ưu tiên: ngày chọn (brand) > ngày tràn tháng (nhạt, không cam) > cao điểm (cam đậm)
+ * > có lịch hẹn (cam nhạt) > thường; hôm nay thêm vòng brand.
+ * Tương phản (WCAG AA >= 4.5): có lịch = warning-700/warning-100 4.78, hover warning-800/warning-200 5.78,
+ * dark warning-300 trên warning-500/20 7.53 (hover /30: 6.13);
+ * cao điểm = gray-900/warning-500 7.56 (chữ trắng trên warning-500 chỉ 2.4 nên không dùng).
+ */
 const getDayClass = (isSelected: boolean, isInMonth: boolean, count: number, isToday: boolean): string => {
   if (isSelected) return 'bg-brand-500 font-semibold text-white';
   const todayRing = isToday ? ' ring-1 ring-brand-300 dark:ring-brand-500/50' : '';
   if (!isInMonth) return `text-gray-300 hover:bg-gray-50 dark:text-gray-600 dark:hover:bg-white/[0.03]${todayRing}`;
   if (isPeakDay(count)) {
-    return `bg-warning-50 font-semibold text-warning-700 hover:bg-warning-100 dark:bg-warning-500/10 dark:text-warning-500 dark:hover:bg-warning-500/20${todayRing}`;
+    return `bg-warning-500 font-bold text-gray-900 hover:bg-warning-400${todayRing}`;
   }
-  const weight = count > 0 ? 'font-semibold' : '';
-  return `${weight} text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5${todayRing}`;
+  if (count > 0) {
+    return `bg-warning-100 font-semibold text-warning-700 hover:bg-warning-200 hover:text-warning-800 dark:bg-warning-500/20 dark:text-warning-300 dark:hover:bg-warning-500/30 dark:hover:text-warning-300${todayRing}`;
+  }
+  return `text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5${todayRing}`;
 };
 
 export const MiniMonthCalendar = ({ selectedDate, todayIso, countsByDate, onSelectDate }: MiniMonthCalendarProps) => {
@@ -66,32 +74,34 @@ export const MiniMonthCalendar = ({ selectedDate, todayIso, countsByDate, onSele
         ))}
         {days.map((day) => {
           const isSelected = day.isoDate === selectedDate;
+          const count = countsByDate[day.isoDate] ?? 0;
           return (
             <button
               key={day.isoDate}
               type="button"
               aria-pressed={isSelected}
-              aria-label={`Chọn ngày ${formatIsoDateVi(day.isoDate)}`}
+              aria-label={`Chọn ngày ${formatIsoDateVi(day.isoDate)}${count > 0 ? `, có ${count} lịch hẹn` : ''}`}
               onClick={() => handleSelect(day.isoDate)}
-              className={`rounded-lg py-1.5 transition-colors ${getDayClass(
-                isSelected,
-                day.isInMonth,
-                countsByDate[day.isoDate] ?? 0,
-                day.isoDate === todayIso,
-              )}`}
+              className={`relative rounded-lg py-1.5 transition-colors ${getDayClass(isSelected, day.isInMonth, count, day.isoDate === todayIso)}`}
             >
               {day.dayNumber}
+              {isSelected && count > 0 && (
+                <span data-testid="selected-has-appointments" aria-hidden="true" className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-warning-400" />
+              )}
             </button>
           );
         })}
       </div>
 
-      <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3 text-theme-xs text-gray-500 dark:border-white/[0.05] dark:text-gray-400">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-gray-100 pt-3 text-theme-xs text-gray-500 dark:border-white/[0.05] dark:text-gray-400">
         <span className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-brand-500" /> Ngày chọn
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-brand-500" /> Ngày chọn
         </span>
         <span className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-warning-500" /> Ngày cao điểm
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-warning-100 ring-1 ring-warning-300 dark:bg-warning-500/20 dark:ring-warning-500/40" /> Có lịch hẹn
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-warning-500" /> Ngày cao điểm
         </span>
       </div>
     </div>

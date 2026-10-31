@@ -7,8 +7,6 @@
 import { useEffect, useState } from 'react';
 import { Building, PhoneOff, Save } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
-import type { CallResultInput } from '@crm/store';
-import type { Customer } from '@crm/types/crm';
 import {
   BUTTON_OUTLINE_CLASS,
   BUTTON_PRIMARY_CLASS,
@@ -34,10 +32,24 @@ export const formatCallDuration = (totalSeconds: number): string => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
+/** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
+export interface ContactTarget {
+  name: string;
+  phone: string;
+  preferredSalutation: string;
+  interestedProjects: string[];
+  staffName?: string;
+}
+
+export interface CallResultInput {
+  note: string;
+  callOutcome: string;
+}
+
 interface CallModalProps {
-  customer: Customer;
+  customer: ContactTarget;
   onClose: () => void;
-  onSaveLog: (input: Omit<CallResultInput, 'customerId'>) => void;
+  onSaveLog: (input: CallResultInput) => void;
 }
 
 export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {

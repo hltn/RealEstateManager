@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import AppLayout from './layout/AppLayout';
 import ManageWpScreen from './screens/ManageWpScreen';
 import CronjobScreen from './screens/CronjobScreen';
@@ -17,21 +18,30 @@ import UserManagementScreen from './screens/UserManagementScreen';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import RoleGuard from './components/auth/RoleGuard';
 import AuthInitializer from './components/auth/AuthInitializer';
+import { useAuth } from './hooks/useAuth';
+import { hasCrmRole } from './utils/userRoles';
 import { UserRole } from './types/user';
-// [Prototype] Module Quản lý khách hàng (CRM) — xem src/modules/crm và README.
-import CrmLayout from '@crm/CrmLayout';
-import { CRM_CHILD_ROUTES, CRM_DEFAULT_PATH } from '@crm/routes';
-import { DailyTasksScreen } from '@crm/screens/DailyTasks';
-import { CustomersScreen } from '@crm/screens/Customers';
-import { CreateCustomerScreen } from '@crm/screens/CreateCustomer';
-import { CustomerDetailScreen } from '@crm/screens/CustomerDetail';
-import { EditPersonaScreen } from '@crm/screens/EditPersona';
-import { EditInvestmentScreen } from '@crm/screens/EditInvestment';
-import { AppointmentsScreen } from '@crm/screens/Appointments';
-import { CreateAppointmentScreen } from '@crm/screens/CreateAppointment';
-import { ReportsScreen } from '@crm/screens/Reports';
-import { ProjectsScreen } from '@crm/screens/Projects';
-import { CrmAiConfigScreen } from '@crm/screens/CrmAiConfig';
+import HomeIndex from './components/auth/HomeIndex';
+// [Prototype] Module Quản lý khách hàng (CRM) — xem src/modules/crm
+import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
+import { buildCrmRoute, buildNotificationsRoute } from '@crm/crmRoute';
+import { CRM_DEFAULT_PATH } from '@crm/routes';
+
+/**
+ * [Prototype] `/` mở thẳng màn CRM mặc định cho tài khoản có role CRM (app chính: Quản trị/Biên tập vào Raw Articles, chỉ MANAGER/STAFF
+ * mới chuyển sang CRM). Tài khoản chỉ có EDITOR vẫn vào Raw Articles như app chính; Quản trị xem Raw Articles ở `/raw-articles`.
+ */
+const PrototypeHome = () => {
+  const { user } = useAuth();
+  return hasCrmRole(user) ? <Navigate to={CRM_DEFAULT_PATH} replace /> : <HomeIndex />;
+};
+
+/** Chặn route tin tức theo vai trò (EDITOR/ADMIN); vai trò CRM chuyển về /crm/today. */
+const NewsGuard = ({ children }: { children: ReactNode }) => (
+  <RoleGuard allowedRoles={[UserRole.ADMIN, UserRole.EDITOR]} fallback={<div className="flex min-h-[60vh] items-center justify-center text-gray-500">Bạn không có quyền truy cập trang này.</div>}>
+    {children}
+  </RoleGuard>
+);
 
 function App() {
   return (
@@ -51,30 +61,19 @@ function App() {
               </ProtectedRoute>
             }
           >
-            {/* [Prototype] Mặc định mở vào module CRM; Raw Articles chuyển sang /raw-articles */}
-            <Route index element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
-            <Route path="raw-articles" element={<RawArticlesScreen />} />
+            {/* [Prototype] Mặc định mở CRM (xem PrototypeHome); Raw Articles có thêm đường dẫn riêng /raw-articles */}
+            <Route index element={<PrototypeHome />} />
+            <Route path="raw-articles" element={<NewsGuard><RawArticlesScreen /></NewsGuard>} />
 
             {/* [Prototype] Module Quản lý khách hàng — CrmLayout bọc CrmProvider + bottom nav mobile */}
-            <Route path="crm" element={<CrmLayout />}>
-              <Route index element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
-              <Route path={CRM_CHILD_ROUTES.today} element={<DailyTasksScreen />} />
-              <Route path={CRM_CHILD_ROUTES.customers} element={<CustomersScreen />} />
-              <Route path={CRM_CHILD_ROUTES.createCustomer} element={<CreateCustomerScreen />} />
-              <Route path={CRM_CHILD_ROUTES.customerDetail} element={<CustomerDetailScreen />} />
-              <Route path={CRM_CHILD_ROUTES.editPersona} element={<EditPersonaScreen />} />
-              <Route path={CRM_CHILD_ROUTES.editInvestment} element={<EditInvestmentScreen />} />
-              <Route path={CRM_CHILD_ROUTES.appointments} element={<AppointmentsScreen />} />
-              <Route path={CRM_CHILD_ROUTES.createAppointment} element={<CreateAppointmentScreen />} />
-              <Route path={CRM_CHILD_ROUTES.reports} element={<ReportsScreen />} />
-              <Route path={CRM_CHILD_ROUTES.projects} element={<ProjectsScreen />} />
-              <Route path={CRM_CHILD_ROUTES.aiConfig} element={<CrmAiConfigScreen />} />
-              <Route path="*" element={<Navigate to={CRM_DEFAULT_PATH} replace />} />
-            </Route>
-            <Route path="manage-wp" element={<ManageWpScreen />} />
-            <Route path="market-analysis-workflow" element={<MarketAnalysisWorkflowScreen />} />
-            <Route path="news-detail/:id" element={<NewsDetailScreen />} />
-            <Route path="sources" element={<ManageSourcesScreen />} />
+            {buildCrmRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
+            {buildNotificationsRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
+
+            {/* Nhóm tin tức: ADMIN/EDITOR; MANAGER/STAFF bị chuyển về CRM (RoleGuard) */}
+            <Route path="manage-wp" element={<NewsGuard><ManageWpScreen /></NewsGuard>} />
+            <Route path="market-analysis-workflow" element={<NewsGuard><MarketAnalysisWorkflowScreen /></NewsGuard>} />
+            <Route path="news-detail/:id" element={<NewsGuard><NewsDetailScreen /></NewsGuard>} />
+            <Route path="sources" element={<NewsGuard><ManageSourcesScreen /></NewsGuard>} />
             {/* ADMIN only — cấu hình hệ thống */}
             <Route
               path="ai-config"
@@ -202,7 +201,7 @@ function App() {
           </Route>
 
           {/* Fallback — mọi route không khớp chuyển về vùng protected */}
-          <Route path="*" element={<ProtectedRoute><AppLayout /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthInitializer>
     </BrowserRouter>

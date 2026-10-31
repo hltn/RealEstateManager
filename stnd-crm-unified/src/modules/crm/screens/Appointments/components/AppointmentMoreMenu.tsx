@@ -3,6 +3,8 @@
  * (nguồn Stitch chỉ có nút trang trí). Mục menu = `DropdownItem` của Admin (đã bổ sung cặp `dark:` + `type="button"`).
  */
 import {
+  CalendarClock,
+  CalendarX2,
   CircleCheck,
   Ellipsis,
   EllipsisVertical,
@@ -15,10 +17,13 @@ import {
 import { useState } from 'react';
 import { Dropdown } from '../../../../../components/ui/dropdown/Dropdown';
 import { DropdownItem } from '../../../../../components/ui/dropdown/DropdownItem';
+import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { useCrmActions } from '@crm/store';
-import type { Appointment } from '@crm/types/crm';
-import { ICON_BUTTON_CLASS } from '@crm/lib/uiClasses';
+import { useAppointmentActions } from '../useAppointmentActions';
+import type { AppointmentView as Appointment } from '@crm/api';
+import { ICON_BUTTON_CLASS, SOLID_INPUT_CLASS } from '@crm/lib/uiClasses';
+import { RescheduleAppointmentDialog } from './RescheduleAppointmentDialog';
 
 interface AppointmentMoreMenuProps {
   appointment: Appointment;
@@ -34,21 +39,41 @@ interface MenuItem {
 
 export const AppointmentMoreMenu = ({ appointment, orientation = 'horizontal' }: AppointmentMoreMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { selectCustomer, toggleAppointmentCompleted } = useCrmActions();
+  const { selectCustomer } = useCrmActions();
+  const { toggleCompleted, cancelAppointment } = useAppointmentActions();
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const { messageZalo, openQuickNote } = useContactActions();
   const TriggerIcon = orientation === 'vertical' ? EllipsisVertical : Ellipsis;
   const closeMenu = () => setIsOpen(false);
 
   const items: MenuItem[] = [
-    { label: 'Xem hồ sơ khách', icon: UserRound, onSelect: () => selectCustomer(appointment.customerId) },
-    { label: 'Ghi chú nhanh', icon: NotebookPen, onSelect: () => openQuickNote(appointment.customerId) },
-    { label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customerId) },
+    { label: 'Xem hồ sơ khách', icon: UserRound, onSelect: () => selectCustomer(appointment.customer.id) },
+    { label: 'Ghi chú nhanh', icon: NotebookPen, onSelect: () => openQuickNote(appointment.customer.id) },
+    { label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customer.id) },
     {
-      label: appointment.isCompleted ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
-      icon: appointment.isCompleted ? Undo2 : CircleCheck,
-      onSelect: () => toggleAppointmentCompleted(appointment.id),
+      label: appointment.status === 'DONE' ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
+      icon: appointment.status === 'DONE' ? Undo2 : CircleCheck,
+      onSelect: () => toggleCompleted(appointment),
     },
+    // Đổi giờ / hủy chỉ áp dụng cho lịch đang chờ thực hiện (backend từ chối sửa lịch đã xong/đã hủy).
+    ...(appointment.status === 'SCHEDULED'
+      ? [
+          { label: 'Đổi giờ', icon: CalendarClock, onSelect: () => setIsRescheduling(true) },
+          { label: 'Hủy lịch hẹn', icon: CalendarX2, onSelect: () => setIsConfirmingCancel(true) },
+        ]
+      : []),
   ];
+
+  const closeCancelDialog = () => {
+    setIsConfirmingCancel(false);
+    setCancelReason('');
+  };
+  const confirmCancel = async () => {
+    const isCanceled = await cancelAppointment(appointment, cancelReason);
+    if (isCanceled) closeCancelDialog();
+  };
 
   return (
     <div className="relative shrink-0">
@@ -82,6 +107,27 @@ export const AppointmentMoreMenu = ({ appointment, orientation = 'horizontal' }:
           ))}
         </ul>
       </Dropdown>
+      {isRescheduling && <RescheduleAppointmentDialog appointment={appointment} onClose={() => setIsRescheduling(false)} />}
+      <ConfirmDialog
+        isOpen={isConfirmingCancel}
+        tone="danger"
+        title="Hủy lịch hẹn này?"
+        description="Lịch hẹn sẽ không còn hiện trên lịch và nhắc việc. Có thể bấm Hoàn tác ngay sau khi hủy."
+        confirmLabel="Xác nhận hủy lịch"
+        cancelLabel="Giữ lịch"
+        onConfirm={() => void confirmCancel()}
+        onCancel={closeCancelDialog}
+      >
+        <textarea
+          aria-label="Lý do hủy (tùy chọn)"
+          rows={2}
+          maxLength={500}
+          value={cancelReason}
+          onChange={(event) => setCancelReason(event.target.value)}
+          placeholder="Lý do hủy (tùy chọn)"
+          className={`${SOLID_INPUT_CLASS} w-full`}
+        />
+      </ConfirmDialog>
     </div>
   );
 };

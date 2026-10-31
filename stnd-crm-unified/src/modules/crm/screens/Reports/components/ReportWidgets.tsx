@@ -1,12 +1,9 @@
 /**
- * Khối nhỏ dùng chung của màn Báo cáo: thẻ KPI (bento Stitch trên vỏ thẻ Admin), điều khiển phân đoạn
- * Tuần/Tháng/Quý/Năm (Admin không có) và tiêu đề thẻ biểu đồ.
+ * Khối nhỏ dùng chung của màn Báo cáo: thẻ KPI (bento Stitch trên vỏ thẻ Admin) và tiêu đề thẻ biểu đồ.
  */
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { FilterTimeRange } from '@crm/types/crm';
 import { CAPTION_CLASS, CARD_CLASS } from '@crm/lib/uiClasses';
-import { TIME_RANGE_OPTIONS } from '../reportStats';
 
 interface ReportKpiCardProps {
   label: string;
@@ -18,6 +15,8 @@ interface ReportKpiCardProps {
   badge?: ReactNode;
   footnote: string;
   density?: 'default' | 'compact';
+  /** Lớp bố cục của ô lưới (vd span 2 cột trên mobile). */
+  className?: string;
 }
 
 export const ReportKpiCard = ({
@@ -29,10 +28,11 @@ export const ReportKpiCard = ({
   badge,
   footnote,
   density = 'default',
+  className = '',
 }: ReportKpiCardProps) => {
   const isCompact = density === 'compact';
   return (
-    <div className={`${CARD_CLASS} flex flex-col justify-between ${isCompact ? 'p-4' : 'p-5'}`}>
+    <div className={`${CARD_CLASS} flex flex-col justify-between ${isCompact ? 'p-4' : 'p-5'} ${className}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={`${CAPTION_CLASS} ${isCompact ? 'truncate' : ''}`}>{label}</span>
         <span className={`flex shrink-0 items-center justify-center ${isCompact ? 'h-8 w-8 rounded-lg' : 'h-10 w-10 rounded-xl'} ${iconBoxClass}`}>
@@ -47,34 +47,6 @@ export const ReportKpiCard = ({
     </div>
   );
 };
-
-interface TimeRangeSegmentedProps {
-  value: FilterTimeRange;
-  onChange: (value: FilterTimeRange) => void;
-}
-
-export const TimeRangeSegmented = ({ value, onChange }: TimeRangeSegmentedProps) => (
-  <div role="group" aria-label="Khoảng thời gian" className="inline-flex rounded-lg bg-gray-100 p-1 text-xs dark:bg-gray-900">
-    {TIME_RANGE_OPTIONS.map((option) => {
-      const isActive = option.value === value;
-      return (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={isActive}
-          onClick={() => onChange(option.value)}
-          className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-            isActive
-              ? 'bg-white text-brand-600 shadow-theme-xs dark:bg-gray-800 dark:text-brand-400'
-              : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-          }`}
-        >
-          {option.label}
-        </button>
-      );
-    })}
-  </div>
-);
 
 interface ChartCardHeaderProps {
   icon?: LucideIcon;

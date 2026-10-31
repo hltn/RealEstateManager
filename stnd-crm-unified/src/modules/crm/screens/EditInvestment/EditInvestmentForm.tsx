@@ -1,57 +1,21 @@
-import { buildCrmPath } from '@crm/routes';
-import { useSelectedCustomer } from '@crm/store';
-import type { Customer } from '@crm/types/crm';
-import { FormActionBar } from '@crm/components/form/FormActionBar';
-import { FormPageHeader } from '@crm/components/form/FormPageHeader';
-import { CustomerBadges } from '../EditPersona/components/CustomerBadges';
-import { CustomerNotFound } from '@crm/components/CustomerNotFound';
-import { InvestmentFormBody } from './InvestmentFormBody';
-import { useInvestmentForm } from './useInvestmentForm';
+import { EditPersonaForm, type PersonaScreenConfig } from '../EditPersona/EditPersonaForm';
 
-const TITLE = 'Cập nhật Thông tin đầu tư';
-
-interface InvestmentFormProps {
-  customer: Customer;
-  variant: 'desktop' | 'mobile';
-}
-
-const InvestmentForm = ({ customer, variant }: InvestmentFormProps) => {
-  const form = useInvestmentForm(customer);
-  const isMobile = variant === 'mobile';
-
-  return (
-    <form onSubmit={form.submit} noValidate aria-label={TITLE} className={`flex w-full flex-col ${isMobile ? 'gap-4' : 'gap-6'}`}>
-      <FormPageHeader
-        variant={variant}
-        title={TITLE}
-        description={isMobile ? undefined : 'Tiêu chí tài chính, loại hình BĐS, mục đích mua và tiến độ giao dịch phục vụ chốt deal.'}
-        badges={<CustomerBadges customer={customer} />}
-        breadcrumbs={[
-          { label: 'Quản lý khách hàng', to: buildCrmPath('customers') },
-          { label: customer.name, to: buildCrmPath('customer_detail', customer.id) },
-          { label: 'Cập nhật Thông tin đầu tư' },
-        ]}
-        onBack={form.cancel}
-      />
-      <InvestmentFormBody form={form} variant={variant} />
-      <FormActionBar
-        variant={variant}
-        submitLabel="Lưu thông tin đầu tư"
-        onCancel={form.cancel}
-        info="Thay đổi được áp dụng ngay vào hồ sơ khách hàng."
-      />
-    </form>
-  );
+/**
+ * Màn "Nhu cầu BĐS": nhóm trường chân dung có cấu trúc (loại hình, mục đích, ngân sách, thời điểm dự kiến mua...)
+ * dùng chung bộ form chân dung động. Không có trường bắt buộc (QT9); không tự đánh dấu tiêu chí khi chọn dự án.
+ */
+const INVESTMENT_SCREEN: PersonaScreenConfig = {
+  title: 'Cập nhật Nhu cầu BĐS',
+  breadcrumbLabel: 'Cập nhật nhu cầu BĐS',
+  description: 'Loại hình, mục đích mua, ngân sách và thời điểm dự kiến mua. Mọi trường đều không bắt buộc.',
+  groupCodes: ['REAL_ESTATE'],
+  hasBasicInfo: false,
+  submitLabel: 'Lưu nhu cầu',
+  successToastTitle: 'Đã cập nhật nhu cầu BĐS',
 };
 
 interface EditInvestmentFormProps {
   variant: 'desktop' | 'mobile';
 }
 
-/** Màn sửa thông tin đầu tư: lấy khách theo URL; `key` reset form khi đổi khách. */
-export const EditInvestmentForm = ({ variant }: EditInvestmentFormProps) => {
-  // `useSelectedCustomer` = khách theo id trên URL; null khi id không tồn tại (không rơi về khách khác).
-  const customer = useSelectedCustomer();
-  if (!customer) return <CustomerNotFound variant={variant} title={TITLE} />;
-  return <InvestmentForm key={customer.id} customer={customer} variant={variant} />;
-};
+export const EditInvestmentForm = ({ variant }: EditInvestmentFormProps) => <EditPersonaForm variant={variant} config={INVESTMENT_SCREEN} />;

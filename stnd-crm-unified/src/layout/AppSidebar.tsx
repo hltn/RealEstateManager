@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Logo from "../images/logo/logo.png";
 
@@ -18,7 +18,8 @@ import {
   GroupIcon,
 } from "../icons";
 // [Prototype] Submenu module Quản lý khách hàng (CRM)
-import { CRM_SIDEBAR_SUB_ITEMS } from "@crm/navigation";
+import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
+import { CRM_MENU_NAME, useCrmSidebarSubItems, withCrmMenu } from "@crm/navigation";
 import { CRM_BASE_PATH } from "@crm/routes";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
@@ -27,7 +28,7 @@ const HorizontaLDotsAny = HorizontaLDots as any;
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
 import { useAuth } from "../hooks/useAuth";
-import { UserRole } from "../types/user";
+import { hasAnyRole, hasCrmRole, isCrmOnlyAccount } from "../utils/userRoles";
 
 type NavItem = {
   name: string;
@@ -41,11 +42,13 @@ const navItems: NavItem[] = [
   {
     icon: <GroupIcon />,
     name: "Quản lý khách hàng",
-    subItems: CRM_SIDEBAR_SUB_ITEMS,
+    // Mục con CRM tính theo vai trò người dùng CRM hiện tại (xem `mainItems` trong component).
+    subItems: [],
   },
   {
     icon: <ListIcon />,
     name: "Raw Articles",
+    // [Prototype] `/` chuyển về /crm/today nên Raw Articles nằm ở /raw-articles.
     path: "/raw-articles",
   },
   {
@@ -112,9 +115,21 @@ const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
   const { user } = useAuth();
-  const isAdmin = user?.role === UserRole.ADMIN;
-  const canManagePrompts =
-    user?.role === UserRole.ADMIN || user?.role === UserRole.EDITOR;
+  const isAdmin = hasAnyRole(user, ["ADMIN"]);
+  // [Prototype] Submenu CRM ẩn mục không đủ quyền (Báo cáo: Quản lý/Quản trị; Dự án, Cài đặt: Quản trị).
+  const crmSubItems = useCrmSidebarSubItems();
+  // MANAGER/STAFF chỉ dùng CRM; EDITOR không có quyền CRM (backend 403) -> ẩn mục tương ứng (UX; backend mới là nguồn sự thật).
+  // Quyền là HỢP của mọi role: STAFF+EDITOR thấy cả CRM lẫn tin tức; chỉ khi KHÔNG có role nào của phía kia mới ẩn.
+  const isCrmOnlyRole = isCrmOnlyAccount(user);
+  const isEditor = hasAnyRole(user, ["EDITOR"]) && !hasCrmRole(user);
+  const mainItems = useMemo(
+    () =>
+      withCrmMenu(navItems, crmSubItems, CRM_FEATURE_FLAGS.isPrototypeEnabled).filter((item) =>
+        isCrmOnlyRole ? item.name === CRM_MENU_NAME : isEditor ? item.name !== CRM_MENU_NAME : true,
+      ),
+    [crmSubItems, isCrmOnlyRole, isEditor],
+  );
+  const canManagePrompts = hasAnyRole(user, ["ADMIN", "EDITOR"]);
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -126,19 +141,23 @@ const AppSidebar: React.FC = () => {
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // const isActive = (path: string) => location.pathname === path;
+  // [Prototype] Hỗ trợ submenu CRM: route con /crm/customers/:id cũng sáng mục /crm/customers
   const isActive = useCallback(
-    (path: string) =>
-      location.pathname === path ||
-      // [Prototype] Route con của CRM (vd /crm/customers/:id) vẫn sáng mục cha tương ứng
-      (path.startsWith(`${CRM_BASE_PATH}/`) &&
-        location.pathname.startsWith(`${path}/`)),
+    (path: string) => {
+      if (location.pathname === path) return true;
+      // CRM submenu: sáng cả khi ở màn con (vd /crm/customers/:id -> /crm/customers)
+      if (path.startsWith(CRM_BASE_PATH)) {
+        return location.pathname.startsWith(path);
+      }
+      return false;
+    },
     [location.pathname]
   );
 
   useEffect(() => {
     let submenuMatched = false;
     ["main", "others"].forEach((menuType) => {
-      const items = menuType === "main" ? navItems : othersItems;
+      const items = menuType === "main" ? mainItems : othersItems;
       items.forEach((nav, index) => {
         if (nav.subItems) {
           nav.subItems.forEach((subItem) => {
@@ -157,7 +176,7 @@ const AppSidebar: React.FC = () => {
     if (!submenuMatched) {
       setOpenSubmenu(null);
     }
-  }, [location, isActive]);
+  }, [location, isActive, mainItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -365,7 +384,7 @@ const AppSidebar: React.FC = () => {
                   <HorizontaLDotsAny className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(navItems, "main")}
+              {renderMenuItems(mainItems, "main")}
               {canManagePrompts && (
                 <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
                   {renderMenuItems(promptConfigItems, "main")}

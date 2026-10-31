@@ -8,7 +8,7 @@ interface FormPageHeaderProps {
   title: string;
   description?: string;
   breadcrumbs?: readonly CrmBreadcrumbItem[];
-  /** Chip cạnh tiêu đề (tên khách, VIP...). */
+  /** Chip cạnh tiêu đề (tên khách...). */
   badges?: ReactNode;
   /** Nút hành động bên phải (chỉ desktop/tablet). */
   actions?: ReactNode;

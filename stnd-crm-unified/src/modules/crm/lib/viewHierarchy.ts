@@ -18,7 +18,7 @@ export const isCrmSubView = (view: ViewId): view is CrmSubView =>
 
 /**
  * Khung giao diện mobile của từng màn:
- * - 'tabs': nội dung + CrmBottomNav (4 tab chính, Dự án, AI Config).
+ * - 'tabs': nội dung + CrmBottomNav (4 tab chính, Dự án).
  * - 'fullscreen': màn chi tiết/form tự vẽ header + nút quay lại + thanh CTA đáy → ẩn CrmBottomNav.
  */
 export type MobileChrome = 'tabs' | 'fullscreen';

@@ -5,7 +5,8 @@ import App from './App.tsx'
 import './index.css'
 import { AppWrapper } from './components/common/PageMeta.tsx'
 import { ThemeProvider } from './context/ThemeContext.tsx'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './queryClient'
 import apiAxios from './api/axios'
 import { useAuthStore } from './stores/auth.store'
 import { mockAdapter } from './mocks/mockAdapter'
@@ -16,8 +17,6 @@ apiAxios.defaults.adapter = mockAdapter
 
 // [Prototype] Seed phiên đăng nhập trước khi render để vào thẳng app (bỏ qua /login).
 useAuthStore.setState({ accessToken: MOCK_ACCESS_TOKEN, user: MOCK_USER, isInitialized: true })
-
-const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,9 +1,8 @@
 /**
  * 4 thẻ KPI (web) - bố cục "KPI Metric Cards" của Admin Stitch AppointmentsView,
- * vỏ thẻ + chip theo mẫu Admin (tài liệu 03 mục 5). Số đếm lấy từ store;
- * xu hướng "+15%" giữ nguyên nguồn vì prototype không có dữ liệu kỳ trước.
+ * vỏ thẻ + chip theo mẫu Admin (tài liệu 03 mục 5). Mọi số đếm lấy từ store — không hiển thị xu hướng/KPI giả.
  */
-import { BellRing, CalendarCheck, CalendarDays, CircleCheck, TrendingUp, type LucideIcon } from 'lucide-react';
+import { BellRing, CalendarCheck, CalendarDays, CircleCheck, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AppointmentStats } from '../appointmentSchedule';
 import { CAPTION_CLASS, CARD_CLASS, CHIP_CLASS } from '@crm/lib/uiClasses';
@@ -13,7 +12,7 @@ interface KpiCardProps {
   value: number;
   icon: LucideIcon;
   iconBoxClass: string;
-  badge: ReactNode;
+  badge?: ReactNode;
   footnote: string;
   isHighlighted?: boolean;
 }
@@ -60,13 +59,7 @@ export const AppointmentKpiCards = ({ stats, todayLabel, todaySummary }: Appoint
       value={stats.total}
       icon={CalendarDays}
       iconBoxClass="bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-400"
-      badge={
-        <span className={`${CHIP_CLASS} bg-success-50 text-success-600 dark:bg-success-500/10 dark:text-success-500`}>
-          <TrendingUp size={12} aria-hidden="true" />
-          +15%
-        </span>
-      }
-      footnote="So với cùng kỳ tháng trước"
+      footnote="Tất cả lịch hẹn đang có"
     />
     <KpiCard
       label={`Hôm nay (${todayLabel})`}
@@ -86,12 +79,7 @@ export const AppointmentKpiCards = ({ stats, todayLabel, todaySummary }: Appoint
       value={stats.upcomingWeekCount}
       icon={CalendarCheck}
       iconBoxClass="bg-blue-light-50 text-blue-light-600 dark:bg-blue-light-500/10 dark:text-blue-light-500"
-      badge={
-        <span className={`${CHIP_CLASS} bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400`}>
-          {stats.upcomingConfirmedPercent}% xác nhận
-        </span>
-      }
-      footnote="Đã đồng bộ Google Calendar"
+      footnote="Sau hôm nay đến hết Chủ nhật, chưa hoàn thành"
     />
     <KpiCard
       label="Hoàn thành tháng này"
@@ -103,7 +91,7 @@ export const AppointmentKpiCards = ({ stats, todayLabel, todaySummary }: Appoint
           {stats.monthCompletionPercent}% hoàn tất
         </span>
       }
-      footnote="Hiệu suất dẫn khách đạt chuẩn KPI"
+      footnote="Trên tổng lịch hẹn của tháng hiện tại"
     />
   </section>
 );

@@ -12,7 +12,7 @@ export const CreateCustomerMobile = () => {
     <form onSubmit={form.submit} noValidate aria-label="Thêm khách hàng mới" className="flex w-full flex-col gap-4">
       <FormPageHeader variant="mobile" title="Thêm khách hàng mới" onBack={form.cancel} />
       <CreateCustomerFormBody form={form} variant="mobile" />
-      <FormActionBar variant="mobile" submitLabel="Lưu khách hàng" onCancel={form.cancel} />
+      <FormActionBar variant="mobile" submitLabel="Lưu khách hàng" isSubmitting={form.isSubmitting} onCancel={form.cancel} />
     </form>
   );
 };

@@ -2,7 +2,7 @@
  * Biểu đồ của màn Báo cáo — SVG/CSS thuần (Admin App chưa cài thư viện biểu đồ), bố cục theo Stitch,
  * màu token Admin + cặp `dark:`. SVG dùng `stroke="currentColor"` + lớp `text-*` để đổi màu theo chế độ.
  */
-import type { LeadSourceStat, StatusSegment } from '../reportStats';
+import type { BreakdownRow, StatusSegment } from '../reportStats';
 
 const formatPercent = (percent: number): string => `${percent.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`;
 
@@ -21,7 +21,7 @@ export const SegmentedBar = ({ segments }: SegmentedBarProps) => (
       .filter((segment) => segment.count > 0)
       .map((segment) => (
         <div
-          key={segment.status}
+          key={segment.key}
           className={`h-full transition-[width] duration-700 ${segment.fillClass}`}
           style={{ width: `${segment.percent}%` }}
           title={`${segment.label}: ${formatPercent(segment.percent)}`}
@@ -58,7 +58,7 @@ export const StatusDonut = ({ segments, total, sizeClass = 'h-40 w-40' }: Status
         <circle cx="60" cy="60" r={DONUT_RADIUS} fill="none" stroke="currentColor" strokeWidth={DONUT_STROKE} className="text-gray-100 dark:text-gray-800" />
         {arcs.map(({ segment, arcLength, offset }) => (
           <circle
-            key={segment.status}
+            key={segment.key}
             cx="60"
             cy="60"
             r={DONUT_RADIUS}
@@ -89,7 +89,7 @@ export const StatusLegend = ({ segments, variant }: StatusLegendProps) => (
   <ul className={variant === 'boxed' ? 'w-full space-y-2.5' : 'w-full space-y-3'}>
     {segments.map((segment) => (
       <li
-        key={segment.status}
+        key={segment.key}
         className={`flex items-center justify-between gap-3 ${
           variant === 'boxed' ? 'rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-white/[0.05] dark:bg-white/[0.02]' : ''
         }`}
@@ -107,36 +107,38 @@ export const StatusLegend = ({ segments, variant }: StatusLegendProps) => (
   </ul>
 );
 
-/** Thanh xếp hạng nguồn khách. */
-interface LeadSourceBarsProps {
-  sources: LeadSourceStat[];
+/** Thanh xếp hạng theo một chiều (nguồn khách, dự án...). */
+interface BreakdownBarsProps {
+  rows: BreakdownRow[];
+  /** Thông báo khi chưa có dữ liệu. */
+  emptyText?: string;
 }
 
-export const LeadSourceBars = ({ sources }: LeadSourceBarsProps) => (
-  <ul className="space-y-4">
-    {sources.map((source) => (
-      <li key={source.key}>
-        <div className="mb-1.5 flex items-center justify-between gap-2 text-theme-sm">
-          <span className="flex min-w-0 items-center gap-2 font-medium text-gray-700 dark:text-gray-300">
-            <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-sm ${source.fillClass}`} />
-            <span className="truncate">{source.label}</span>
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            <span className="font-semibold text-gray-800 dark:text-white/90">{source.count} khách</span>
-            <span className={`text-theme-xs font-medium ${source.textClass}`}>({formatPercent(source.percent)})</span>
-          </span>
-        </div>
-        <div
-          role="progressbar"
-          aria-label={source.label}
-          aria-valuenow={source.percent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
-        >
-          <div className={`h-full rounded-full transition-[width] duration-700 ${source.fillClass}`} style={{ width: `${source.percent}%` }} />
-        </div>
-      </li>
-    ))}
-  </ul>
-);
+export const BreakdownBars = ({ rows, emptyText = 'Chưa có dữ liệu.' }: BreakdownBarsProps) =>
+  rows.length === 0 ? (
+    <p className="text-theme-sm text-gray-500 dark:text-gray-400">{emptyText}</p>
+  ) : (
+    <ul className="space-y-4">
+      {rows.map((row) => (
+        <li key={row.key}>
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-theme-sm">
+            <span className="truncate font-medium text-gray-700 dark:text-gray-300">{row.label}</span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <span className="font-semibold text-gray-800 dark:text-white/90">{row.count} khách</span>
+              <span className="text-theme-xs font-medium text-brand-600 dark:text-brand-400">({formatPercent(row.percent)})</span>
+            </span>
+          </div>
+          <div
+            role="progressbar"
+            aria-label={row.label}
+            aria-valuenow={row.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
+          >
+            <div className="h-full rounded-full bg-brand-500 transition-[width] duration-700" style={{ width: `${Math.min(row.percent, 100)}%` }} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );

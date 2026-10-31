@@ -10,6 +10,8 @@ interface ToggleSwitchProps {
    * - `sm`: công tắc nhỏ `AiConfigScreen.tsx:307-317` (`h-6 w-11`, bật `bg-brand-500`) cho hàng tuỳ chọn gọn.
    */
   size?: 'md' | 'sm';
+  /** Vô hiệu (không bấm được, mờ đi). */
+  isDisabled?: boolean;
 }
 
 const SIZE_CLASS = {
@@ -18,7 +20,7 @@ const SIZE_CLASS = {
 } as const;
 
 /** Công tắc `role="switch"` theo 2 mẫu công tắc của Admin; tắt luôn `bg-gray-300 dark:bg-gray-600`. */
-export const ToggleSwitch = ({ isChecked, onChange, label, labelledBy, describedBy, size = 'md' }: ToggleSwitchProps) => {
+export const ToggleSwitch = ({ isChecked, onChange, label, labelledBy, describedBy, size = 'md', isDisabled = false }: ToggleSwitchProps) => {
   const sizeClass = SIZE_CLASS[size];
   return (
     <button
@@ -29,7 +31,8 @@ export const ToggleSwitch = ({ isChecked, onChange, label, labelledBy, described
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
       onClick={() => onChange(!isChecked)}
-      className={`relative shrink-0 rounded-full transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${sizeClass.track} ${
+      disabled={isDisabled}
+      className={`relative shrink-0 rounded-full disabled:cursor-not-allowed disabled:opacity-50 transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${sizeClass.track} ${
         isChecked ? sizeClass.on : 'bg-gray-300 dark:bg-gray-600'
       }`}
     >

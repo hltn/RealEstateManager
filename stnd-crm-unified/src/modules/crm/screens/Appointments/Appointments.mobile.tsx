@@ -12,9 +12,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { toIsoDate } from '@crm/lib/dateTime';
-import { useCrmActions, useCrmState } from '@crm/store';
-import type { Appointment, DayPeriod } from '@crm/types/crm';
+import { getVnTodayKey } from '@crm/lib/dateTime';
+import { useAppointments, type AppointmentView } from '@crm/api';
+import { useAppointmentsAround } from './useAppointmentsAround';
+import { useCrmActions } from '@crm/store';
+import type { DayPeriod } from '@crm/types/crm';
 import {
   addDaysIso,
   countAppointmentsByDate,
@@ -84,7 +86,7 @@ const MetricTile = ({ label, value, icon: Icon, isHighlighted = false }: MetricT
 
 interface SessionGroupProps {
   period: DayPeriod;
-  appointments: Appointment[];
+  appointments: AppointmentView[];
 }
 
 const SessionGroup = ({ period, appointments }: SessionGroupProps) => {
@@ -110,21 +112,22 @@ const SessionGroup = ({ period, appointments }: SessionGroupProps) => {
 };
 
 export const AppointmentsMobile = () => {
-  const { appointments } = useCrmState();
+  const { data: appointments } = useAppointments();
   const { navigate } = useCrmActions();
-  const [todayIso] = useState(() => toIsoDate(new Date()));
+  const [todayIso] = useState(() => getVnTodayKey());
   const [selectedDate, setSelectedDate] = useState(todayIso);
+  const { data: browsed } = useAppointmentsAround(selectedDate);
   const [viewScope, setViewScope] = useState<ViewScope>('week');
 
-  const countsByDate = useMemo(() => countAppointmentsByDate(appointments), [appointments]);
+  const countsByDate = useMemo(() => countAppointmentsByDate(browsed), [browsed]);
   const todayCount = countsByDate[todayIso] ?? 0;
   const upcomingCount = useMemo(() => getUpcomingAppointments(appointments, todayIso).length, [appointments, todayIso]);
-  const dayAppointments = useMemo(() => getAppointmentsOnDate(appointments, selectedDate), [appointments, selectedDate]);
+  const dayAppointments = useMemo(() => getAppointmentsOnDate(browsed, selectedDate), [browsed, selectedDate]);
   const sessions = groupAppointmentsByPeriod(dayAppointments);
   const monthGroups = useMemo(() => {
     const { startIso, endIso } = getMonthRange(selectedDate);
-    return groupAppointmentsByDate(getAppointmentsInRange(appointments, startIso, endIso));
-  }, [appointments, selectedDate]);
+    return groupAppointmentsByDate(getAppointmentsInRange(browsed, startIso, endIso));
+  }, [browsed, selectedDate]);
 
   const visibleMonth = parseIsoDate(selectedDate) ?? new Date();
   const goToCreate = () => navigate('create_appointment');
@@ -139,7 +142,7 @@ export const AppointmentsMobile = () => {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className={PAGE_TITLE_MOBILE_CLASS}>Lịch hẹn &amp; Nhắc việc</h2>
-          <p className={`${PAGE_DESCRIPTION_CLASS} mt-0.5`}>Gặp khách, ký cọc và nhắc gọi</p>
+          <p className={`${PAGE_DESCRIPTION_CLASS} mt-0.5`}>Gặp khách, xem nhà, ký cọc và nhắc gọi lại</p>
         </div>
         <button type="button" onClick={goToCreate} className={`${BUTTON_PRIMARY_CLASS} shrink-0`}>
           <Plus size={18} aria-hidden="true" />

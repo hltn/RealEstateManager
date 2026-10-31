@@ -118,7 +118,8 @@ export const ChoiceGroup = <TValue extends string>({
 
 interface ChipMultiSelectProps {
   legend: ReactNode;
-  options: readonly string[];
+  /** Chuỗi (giá trị = nhãn) hoặc `{ value, label }` (vd chọn dự án theo id). */
+  options: readonly (string | { value: string; label: string })[];
   selected: readonly string[];
   onToggle: (value: string) => void;
   icon?: LucideIcon;
@@ -134,22 +135,23 @@ export const ChipMultiSelect = ({ legend, options, selected, onToggle, icon: Ico
       {isRequired && <span className="ml-0.5 text-error-500">*</span>}
     </legend>
     <div className="flex flex-wrap gap-2">
-      {options.map((option) => {
-        const isSelected = selected.includes(option);
+      {options.map((rawOption) => {
+        const option = typeof rawOption === 'string' ? { value: rawOption, label: rawOption } : rawOption;
+        const isSelected = selected.includes(option.value);
         return (
           <label
-            key={option}
+            key={option.value}
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500/40 ${
               isSelected ? BRAND_SOFT_CHIP_CLASS : `border ${OPTION_IDLE_CLASS}`
             }`}
           >
-            <input type="checkbox" checked={isSelected} onChange={() => onToggle(option)} className="sr-only" />
+            <input type="checkbox" checked={isSelected} onChange={() => onToggle(option.value)} className="sr-only" />
             {isSelected ? (
               <Check size={14} aria-hidden="true" />
             ) : (
               Icon && <Icon size={14} aria-hidden="true" className="text-gray-400 dark:text-gray-500" />
             )}
-            {option}
+            {option.label}
           </label>
         );
       })}

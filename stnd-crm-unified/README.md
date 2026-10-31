@@ -2,9 +2,9 @@
 
 Prototype **chỉ để thiết kế** (không backend, không test) cho module **Quản lý khách hàng (CRM)**, dựng **trên nền code thật** của `../RealEstateAdminApp/` (chỉ sao chép, không sửa bản gốc).
 
-- Khung (sidebar, header, theme sáng/tối, toast, modal, bảng, phân trang…) và **toàn bộ màn admin cũ** là bản sao nguyên vẹn từ Admin App.
-- Module CRM (port từ 2 template Stitch) nằm riêng trong `src/modules/crm/`, cắm vào khung Admin qua router + 1 mục sidebar.
-- Mọi request `axios` được **mock adapter** trả lời (`src/mocks/`).
+- Khung (sidebar, header, theme, toast, modal, bảng, phân trang…), **toàn bộ module CRM (giao diện + hành vi người dùng)** và các màn Admin là bản sao của Admin App ở commit `6eed7bf` (2026-10-31).
+- **Khác app chính ở đúng một chỗ: dữ liệu.** App chính gọi API thật (`modules/crm/api/http/*` + React Query); prototype giữ nguyên bề mặt `@crm/api` (tên hook/hàm, tham số, kiểu trả về, mã lỗi + thông điệp tiếng Việt) nhưng chạy trên **store mock** trong trình duyệt. Nhờ đó màn chép từ app chính chạy **nguyên văn**.
+- Mọi request `axios` còn lại (Admin: users, auth, tin tức…) được **mock adapter** trả lời (`src/mocks/`).
 - Chuẩn phong cách: [`docs/06_Module_Customer_Management/03_Design_System_Quy_Tac_Phong_Cach.md`](../docs/06_Module_Customer_Management/03_Design_System_Quy_Tac_Phong_Cach.md) (gọi tắt **tài liệu 03**).
 
 ---
@@ -13,52 +13,89 @@ Prototype **chỉ để thiết kế** (không backend, không test) cho module 
 
 ```bash
 npm install
-npm run dev      # vite — http://localhost:5173 (mở thẳng /crm/today, đã đăng nhập sẵn tài khoản mock ADMIN)
+npm run dev      # vite — http://localhost:5174 (cổng cố định `strictPort`, khớp .claude/launch.json, không đụng cổng 5173 của app chính); mở thẳng /crm/today, đã đăng nhập sẵn Quản trị
 npm run lint     # tsc -b (TypeScript, noUnusedLocals/Parameters, erasableSyntaxOnly)
 npm run build    # tsc -b && vite build -> dist/
 ```
 
-Stack (giống Admin App): Vite 8, React 19, TypeScript 6, Tailwind CSS v4 (`@tailwindcss/vite` + `@tailwindcss/typography`), react-router-dom 7, @tanstack/react-query 5, zustand 5, axios, lucide-react, react-hot-toast, react-helmet-async, flatpickr, react-hook-form + zod, react-markdown. **Không có** vitest/testing-library — prototype không viết test.
+Stack (giống Admin App): Vite 8, React 19, TypeScript 6, Tailwind CSS v4, react-router-dom 7, @tanstack/react-query 5, zustand 5, axios, lucide-react, react-hot-toast, react-helmet-async, flatpickr, react-hook-form + zod. **Không có** vitest/testing-library — prototype không viết test.
+
+**Giao diện mặc định SÁNG** (`ThemeContext` đọc theme đã lưu ngay trong initializer + script inline ở `index.html` để không nháy); chuyển tối bằng nút mặt trăng ở header (lưu `localStorage["theme"]`).
+
+### Tài khoản mẫu (đăng nhập giả)
+
+Mở app = đã đăng nhập **Admin**. Đổi tài khoản ngay trong app: menu avatar (góc phải header) → mục **"Tài khoản mẫu [Prototype]"** (đổi tức thì, không tải lại, tự chuyển về `/crm/today`). Nút **"Đặt lại dữ liệu mẫu"** cùng chỗ (có hộp xác nhận) chỉ xóa các khóa `stnd_crm_proto_*` của prototype rồi nạp lại bộ ban đầu; khóa của app chính (`stnd_crm_data`, `stnd_crm_session_v1`, `stnd_crm_pii_sim_v1`) không bao giờ bị đọc/ghi/xóa. **Vì sao cần nút này:** dữ liệu mẫu dựng TƯƠNG ĐỐI theo thời điểm nạp lần đầu và được lưu localStorage, nên sau vài ngày các cột Hôm nay / Quá hạn / Sắp tới bị lệch — đặt lại để dựng lại theo ngày hiện tại. Trang `/login` đăng nhập được bằng email dưới đây + **mật khẩu bất kỳ**; email lạ → 401, tài khoản khóa → 403.
+
+| Tài khoản | Email | Vai trò | Nhóm | Ghi chú xem gì |
+|---|---|---|---|---|
+| Admin | `admin@stnd.vn` | ADMIN | — | Thấy tất cả; Cài đặt, Dự án, Khách đã xóa, Quản lý tài khoản |
+| Admin2 (Trần Minh Khoa) | `tran.minh.khoa@stnd.vn` | ADMIN + EDITOR | — | Quản trị thứ 2 (để thử gỡ/khóa Quản trị) |
+| Hạnh | `hanh.tran@stnd.vn` | MANAGER | KD1 (quản lý KD1) | Quản lý nhóm 1 |
+| Minh | `minh.le@stnd.vn` | MANAGER | KD2 (quản lý KD2) | Quản lý nhóm 2; có đề nghị tham gia chờ duyệt |
+| **Huy** | `huy.bui@stnd.vn` | **MANAGER + STAFF** | KD3 (quản lý), KD1 | Nhiều vai trò + nhiều nhóm |
+| Thảo, Tuấn, Trang | `thao.phan@`, `tuan.nguyen@`, `trang.nguyen@stnd.vn` | STAFF | KD1 | Nhân viên |
+| Tùng, Vy, Quân | `tung.vu@`, `vy.do@`, `quan.tran@stnd.vn` | STAFF | KD2 | Nhân viên |
+| **Khoa** | `khoa.dang@stnd.vn` | STAFF | KD2 + KD3 | Nhân viên thuộc 2 nhóm |
+| **Lan** | `lan.ngo@stnd.vn` | **STAFF + EDITOR** | KD3 | Thấy cả CRM lẫn tin tức |
+| Phúc | `phuc.vo@stnd.vn` | STAFF | KD3 | **Đã khóa** (không đăng nhập được) |
+| Lê Thu Hà, Phạm Quốc Bảo | `le.thu.ha@`, `pham.quoc.bao@stnd.vn` | EDITOR | — | Không có quyền CRM (màn "không khả dụng") |
+
+Nhóm: **KD1, KD2, KD3** (đang dùng) và **DAGIAI** (đã ngừng, 0 thành viên). Dữ liệu CRM mẫu: 16 khách đang dùng (trong đó nhiều khách **Bỏ**, một khách **chưa phân công**, khách thuộc nhóm của Huy/Khoa/Lan), **3 khách đã xóa mềm** (bình thường / đã ẩn danh hóa / xóa vĩnh viễn dở dang), 10 lịch hẹn (có dự án, đã hủy, đã hoàn thành kèm kết quả), 1 đề nghị tham gia nhóm chăm sóc, thông báo cho từng tài khoản, **34 tỉnh/thành** ở danh mục Khu vực.
+
+---
 
 ## 2. Kiến trúc
 
 ```
 src/
-├── main.tsx              # = Admin + [Prototype] gắn mockAdapter vào apiAxios + seed phiên đăng nhập
-├── App.tsx               # = Admin + "/" -> /crm/today, Raw Articles -> /raw-articles, nhóm route /crm/*
-├── index.css             # = Admin (nguyên tệp) + khối "[Prototype] Bổ sung cho module CRM" ở cuối
-├── api/ components/{ui,common,auth,google-drive,header} context/ hooks/ icons/ images/
-│   layout/ screens/ stores/ types/ utils/      # CHÉP NGUYÊN từ RealEstateAdminApp/src (bỏ *.test.*)
+├── main.tsx              # = Admin + [Prototype] gắn mockAdapter vào apiAxios + seed phiên đăng nhập (Admin)
+├── App.tsx               # = Admin (buildCrmRoute/buildNotificationsRoute) + [Prototype] "/" -> /crm/today, Raw Articles ở /raw-articles
+├── index.css, layout/, components/{ui,common,auth,google-drive,header,users}, context/, hooks/, screens/, stores/, types/, utils/
+│                         # CHÉP từ RealEstateAdminApp/src (bỏ *.test.*); chỗ khác app chính đánh dấu [Prototype]
 ├── mocks/
-│   ├── mockAdapter.ts    # AxiosAdapter: chuẩn hoá request -> bảng route -> handler -> AxiosResponse/AxiosError
-│   ├── types.ts utils.ts # MockRoute/MockRequest/MockResponse; paginate(), filterBySearch(), ok(), fail()…
-│   ├── mockUser.ts       # tài khoản mock ADMIN dùng chung cho seed + /auth/*
-│   ├── data/             # dữ liệu mẫu: news.ts (nguồn, tin thô, bài WP, lịch sử phân tích), knowledge.ts
-│   └── handlers/         # 1 file / domain: auth, googleDrive, users, settings, newsSources,
-│                         # newsManager, knowledgeArticles, externalLogs (+ shared.ts); index.ts gộp bảng route
-└── modules/crm/          # MODULE CRM (alias import `@crm/*`)
-    ├── CrmLayout.tsx     # layout route /crm: CrmProvider + <Outlet/> + CrmBottomNav (mobile) + GlobalModals
-    ├── routes.ts         # ViewId <-> URL: buildCrmPath(), matchCrmPath(), CRM_CHILD_ROUTES
-    ├── navigation.ts     # VIEW_TITLES, MODULE_TAB_ITEMS (icon lucide), CRM_SIDEBAR_SUB_ITEMS
-    ├── components/       # CrmModuleTabs, CrmBottomNav, GlobalModals, Call/Zalo/QuickNote/Lightbox/AdvancedFilter modal
-    ├── store/            # CrmProvider (context + useReducer, localStorage), crmActions, selectors, hooks
-    ├── types/ data/ lib/ hooks/       # mô hình dữ liệu CRM, mock CRM, hàm thuần, useIsMobile/useContactActions…
-    └── screens/          # <Screen>/index.tsx + .desktop.tsx + .mobile.tsx (+ _placeholder cho màn chưa port)
+│   ├── mockAdapter.ts    # AxiosAdapter: chuẩn hoá request -> bảng route -> handler -> AxiosResponse/AxiosError (trễ 250ms)
+│   ├── mockUser.ts       # toAuthUser() + MOCK_USER: dựng phiên đăng nhập từ SEED_USERS của store CRM
+│   ├── data/ handlers/   # tin tức/knowledge/…; users.ts + auth.ts đọc CHUNG tài khoản với store CRM
+└── modules/crm/          # MODULE CRM (alias import `@crm/*`) — giao diện = app chính, dữ liệu = store mock
+    ├── crmRoute.tsx CrmLayout.tsx routes.ts navigation.ts   # = app chính
+    ├── api/              # LỚP DỮ LIỆU `@crm/api` — chạy trên store mock (xem mục 3)
+    │   ├── index.ts      # cùng bề mặt export với app chính
+    │   ├── hooks.ts      # useCatalogs, useCustomerList, useCrmApi… (đồng bộ, không React Query)
+    │   ├── crmWriteApi.ts# hàm ghi (createCustomer, deleteCustomer, addTeamMember…) -> Promise<ApiResult<T>> có trễ 180ms
+    │   ├── queries.ts dailyTasks.ts   # "máy chủ giả" đọc: lọc/sắp xếp/phân quyền phạm vi khách -> đúng kiểu view của app chính
+    │   ├── access.ts actor.ts catalogAdmin.ts assignable.ts
+    │   ├── dashboard.ts exports.ts mockHooks.ts mockCrmApi.ts  # Báo cáo + nhập/xuất file (mock có cờ cả ở app chính)
+    │   └── types.ts http/{crmErrors,projectBody}.ts   # giữ đường dẫn để màn chạy nguyên
+    ├── store/            # Zustand + reducer thuần + localStorage (khóa riêng `stnd_crm_proto_*`, schema v6)
+    ├── data/             # seedCatalogs (tài khoản, nhóm, danh mục, 34 tỉnh), mockData (khách, nhật ký, lịch hẹn, thông báo)
+    ├── components/ lib/ hooks/ types/ config/   # = app chính (+ trường [Prototype] ở types)
+    └── screens/          # = app chính (bản sao nguyên văn, xem mục 4)
 ```
 
-Các sửa đổi trên code chép từ Admin đều đánh dấu `[Prototype]` (tìm bằng `grep -rn "\[Prototype\]" src`):
+Các sửa đổi **cố ý** so với app chính đều đánh dấu `[Prototype]` (tìm bằng `grep -rn "\[Prototype\]" src`):
 
-| Tệp | Thay đổi |
+| Tệp | Khác app chính |
 |---|---|
-| `main.tsx` | `apiAxios.defaults.adapter = mockAdapter`; `useAuthStore.setState({ accessToken, user, isInitialized: true })` trước render |
-| `App.tsx` | index `/` -> `Navigate /crm/today`; Raw Articles chuyển sang `/raw-articles`; thêm nhóm route `/crm/*` |
-| `layout/AppSidebar.tsx` | thêm mục đầu "Quản lý khách hàng" (icon `GroupIcon` cùng bộ SVG sidebar) có submenu; Raw Articles trỏ `/raw-articles`; mục con CRM sáng cả với route con (`/crm/customers/:id`) |
-| `index.css` | nối thêm khối token CRM (typography Stitch, surface, `.material-symbols-outlined`) — ghi đè `--text-title-md` thành 18px (Admin không dùng token này) |
-| `index.html` | `lang="vi"`, đổi title, tạm giữ link font Material Symbols (TODO) |
-| `components/google-drive/ExportButton.tsx` | bỏ khối "Success" lặp (code chết gây TS2339) + `handleReset` không dùng (TS6133) — lỗi có sẵn ở bản gốc, bản gốc không lộ vì `tsc` dừng ở lỗi cú pháp của 1 file test |
-| `screens/MarketAnalysisWorkflowScreen.tsx` | biến `historyId` không tồn tại (TS2552) -> so với `item._id` của dòng đang export |
+| `main.tsx` | `apiAxios.defaults.adapter = mockAdapter`; seed `useAuthStore` (Admin) trước render |
+| `App.tsx` | `/` -> `/crm/today` cho tài khoản có role CRM (`PrototypeHome`); thêm `/raw-articles` |
+| `components/header/UserDropdown.tsx` + `MockAccountSwitcher.tsx` | Bộ chuyển tài khoản mẫu + "Đặt lại dữ liệu mẫu" (có hộp xác nhận `ConfirmDialog`); không có ở app chính |
+| `components/ui/dropdown/DropdownItem.tsx` | Thêm cặp `dark:` + `type="button"` (app chính còn thiếu) |
+| `components/ui/DatePicker.tsx` | Bỏ `dark:bg-dark-900` (token không tồn tại) |
+| `layout/AppSidebar.tsx` | Raw Articles trỏ `/raw-articles` (vì `/` về CRM) |
+| `layout/AppLayout.tsx` | Chỉ thêm chú thích về `min-w-0` (class đã có sẵn ở app chính: bảng rộng không đẩy trang tràn ngang) |
+| `modules/crm/lib/customerRules.ts` | `findNonAssignableUserIds`: người được phân chăm sóc = còn hoạt động VÀ có role Quản lý/Nhân viên, nên tài khoản ADMIN + STAFF vẫn được phân (app chính chặn mọi ADMIN) |
+| `modules/crm/screens/DailyTasks/DailyTasks.desktop.tsx` + `api/hooks.ts` (`useDailyTasks`, `useDailyTaskSummary`) | Quản trị mặc định xem phạm vi "Cả nhóm" (team, đúng nhãn ở UI) vì Admin không phụ trách khách riêng (app chính: mặc định "Việc của tôi" cho mọi vai trò) |
+| `mocks/mockUser.ts` | Dựng phiên đăng nhập (`AuthUser`) từ tài khoản mẫu `SEED_USERS` của store CRM (app chính nhận từ `/auth/*` thật) |
+| `modules/crm/lib/nationalIdVault.ts` | Khóa localStorage kho CCCD mô phỏng đổi thành `stnd_crm_proto_pii_sim_v1` (không trùng khóa app chính) |
+| `modules/crm/api/*` | **Toàn bộ lớp dữ liệu là mock** thay `api/http/*` + `httpCrmApi.ts` + React Query (mục 3) |
+| `modules/crm/config/featureFlags.ts` | Cờ là hằng số: module/Báo cáo/nhập-xuất BẬT; Zalo ZNS, gọi trong app, đồng bộ lịch, ảnh đính kèm TẮT |
+| `modules/crm/routes.ts` | `isValidCustomerId` nhận id mẫu `CUST-001`/`proj-1` (app chính: ObjectId 24 hex) |
+| `modules/crm/store/*` | Luôn nạp dữ liệu mẫu và LƯU localStorage; thêm action xóa/khôi phục/xóa vĩnh viễn khách, sửa/xóa nhật ký, dời/xóa lịch, nhóm, thông báo |
+| `modules/crm/types/crm.ts` | Trường tùy chọn thêm cho mock (xóa mềm khách, `projectId/outcome/version` lịch hẹn, `editedAt/createdAt` nhật ký, `email` tài khoản; `Team.code/isActive`; `NotificationItem`) |
+| `modules/crm/data/*` | Dữ liệu mẫu (không có ở app chính: app chính lấy từ backend) |
+| `mocks/handlers/{auth,users}.ts` | Đọc/ghi CHUNG tài khoản với store CRM; luật nghiệp vụ dùng lại `crmWriteApi` |
 
-### 2.1 Mock backend (`src/mocks`)
+### 2.1 Mock backend cho Admin (`src/mocks`)
 
 ```
 apiAxios.get('/users?page=1&limit=20')
@@ -70,69 +107,39 @@ apiAxios.get('/users?page=1&limit=20')
        └─ status < 400 -> AxiosResponse ; status >= 400 -> ném AxiosError (body { statusCode, message, timestamp, path })
 ```
 
-- Danh sách trả đúng `{ data, meta: { total, page, limit, totalPages } }` (`mocks/utils.ts#paginate`) như `utils/fetchPaginated.ts` mong đợi.
-- Dữ liệu mẫu là mảng trong bộ nhớ: POST/PUT/PATCH/DELETE sửa trực tiếp → thao tác trên màn có hiệu lực tới khi F5.
-- Job chạy nền (crawl, analyze, market analysis workflow, pipeline KB…) trả trạng thái **kết thúc** để polling dừng.
-- `/auth/login` luôn thành công (đăng xuất rồi đăng nhập lại bằng bất kỳ email/mật khẩu nào). `/google-drive/status` -> `{ connected: false }`.
+- `/users` (liệt kê, tạo, khóa, **đặt nhiều role `PATCH /users/:id/roles`**, nhóm `PATCH /users/:id/teams`, sửa tên/email, đặt lại mật khẩu) và `/auth/*` đọc/ghi **cùng danh sách tài khoản** với store CRM: đổi vai trò/nhóm ở "Quản lý tài khoản" hoặc Cài đặt CRM → phạm vi dữ liệu + menu đổi theo. Luật (Quản trị cuối cùng 409 `LAST_ADMIN_REQUIRED`, không tự khóa mình, bỏ MANAGER thì gỡ khỏi quản lý nhóm, mất cả MANAGER/STAFF thì mất nhóm…) nằm ở `crmWriteApi`, handler chỉ đổi sang JSON lỗi chuẩn.
 - Thêm endpoint: tạo/mở file trong `mocks/handlers/`, thêm `{ method, pattern: /^\/duong-dan\/([^/]+)$/, handler }` (route cụ thể đặt **trước** route có tham số), gộp vào `handlers/index.ts` nếu là file mới.
-- Tắt mock (khi có backend thật): bỏ 2 dòng `[Prototype]` trong `main.tsx`.
+- Tắt mock (khi có backend thật): bỏ 2 dòng `[Prototype]` trong `main.tsx` và thay `modules/crm/api` bằng bản của app chính.
 
-### 2.2 Module CRM trong khung Admin
+---
 
-| Viewport | Hành vi |
-|---|---|
-| `>= 1024px` | Khung Admin gốc: sidebar cố định 290px (thu gọn 90px), header 1 hàng. Màn CRM có `CrmModuleTabs` (tab gạch chân) |
-| `768–1023px` | Khung Admin gốc: sidebar dạng drawer, header 2 hàng |
-| `< 768px` | Header + drawer **của Admin** (`AppHeader`/`AppSidebar`). Thêm `CrmBottomNav` cố định đáy (chỉ trên `/crm/*`, ẩn ở màn chi tiết/form) + `pb-20` cho nội dung |
+## 3. Lớp dữ liệu CRM mock (`modules/crm/api`) — cách chép màn từ app chính
 
-**Route CRM** (khai báo trong `App.tsx`, đường dẫn sinh từ `modules/crm/routes.ts`):
+Màn của app chính chỉ import dữ liệu từ `@crm/api` (đọc: hook; ghi: `useCrmApi()`), `@crm/store` (trạng thái giao diện: bộ lọc, modal, điều hướng, toast) và vài deep-import (`@crm/api/access`, `@crm/api/mockHooks`, `@crm/api/http/crmErrors`, `@crm/api/http/projectBody`, `@crm/api/dashboard`, `@crm/api/queries`). Prototype giữ **đủ** các đường dẫn và tên đó, nên:
 
-| ViewId | URL | Màn |
-|---|---|---|
-| `today` | `/crm/today` (mặc định, `/` và `/crm` chuyển về đây) | `DailyTasks` |
-| `customers` | `/crm/customers` | `Customers` |
-| `create_customer` | `/crm/customers/new` | `CreateCustomer` |
-| `customer_detail` | `/crm/customers/:customerId` | `CustomerDetail` |
-| `edit_persona` | `/crm/customers/:customerId/persona` | `EditPersona` |
-| `edit_investment` | `/crm/customers/:customerId/investment` | `EditInvestment` |
-| `appointments` | `/crm/appointments` | `Appointments` |
-| `create_appointment` | `/crm/appointments/new` | `CreateAppointment` |
-| `reports` | `/crm/reports` | `Reports` |
-| `projects` | `/crm/projects` | `Projects` |
-| `ai_config` | `/crm/ai-config` | `CrmAiConfig` (khác màn `/ai-config` của Admin) |
+- **Chép nguyên văn** `RealEstateAdminApp/src/modules/crm/screens/<Màn>/**` (bỏ `*.test.*`, thư mục `test/`) vào `src/modules/crm/screens/` — không cần sửa import.
+- Hook đọc trả `{ data, isLoading, isFetching, isError, error, refetch }` như app chính; vì tính **đồng bộ** từ store nên `isLoading`/`isError` luôn `false` (nhánh Skeleton/lỗi của màn vẫn có trong code, chỉ không bật). Hook quản trị (`useAdminUsers`, `useTeamMembers`, `useDeletedCustomers`) trả **403 giả** khi người dùng không đủ quyền.
+- Hàm ghi (`useCrmApi()`) trả `Promise<ApiResult<T>>` sau 180ms; **kiểm quyền + phạm vi + khóa lạc quan `version` (409 `VERSION_CONFLICT`) + mã lỗi nghiệp vụ** giống backend (`CUSTOMER_PHONE_DUPLICATED`, `CUSTOMER_NOT_DROPPED`, `USER_OUT_OF_TEAM`, `TEAM_NOT_EMPTY`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_PURGE_IN_PROGRESS`, `LAST_ADMIN_REQUIRED`…).
+- Người thao tác = **tài khoản mẫu đang đăng nhập** (`auth.store`), đọc LÚC GỌI nên đổi tài khoản có hiệu lực ngay; hồ sơ vai trò/nhóm lấy từ store CRM (`api/actor.ts`).
+- **Chưa mô phỏng**: ảnh đính kèm nhật ký (cờ TẮT như app chính mặc định; upload trả 404), Zalo ZNS/gọi trong app, đồng bộ lịch (cờ TẮT), job nền (nhập file chạy đồng bộ ở `mockCrmApi.ts`).
 
-**Store CRM điều hướng bằng react-router (cầu nối `CrmRouterBridge`)** — màn KHÔNG đổi API, vẫn gọi `navigate(view)`, `goBack()`, `selectCustomer(id)`:
+### Đồng bộ lại khi app chính đổi tiếp
 
-1. `CrmProvider` nằm trong `BrowserRouter` (layout route `/crm`), lấy `useNavigate()` + `useLocation()` và truyền `router = { navigateTo(path), goBack() }` vào `createCrmActions`.
-2. `navigate(view)` → `router.navigateTo(buildCrmPath(view, selectedCustomerId))`; `selectCustomer(id)` → `/crm/customers/:id`.
-3. `goBack()` → `navigate(-1)` nếu còn lịch sử trong app (`history.state.idx > 0`), ngược lại về màn cha (`PARENT_VIEW_BY_VIEW`) bằng `replace`.
-4. **URL là nguồn sự thật**: `useCurrentView()` = `matchCrmPath(location.pathname)`; `selectedCustomerId` bị ghi đè bởi `:customerId` trên URL → F5 / copy link ở màn chi tiết vẫn đúng khách. Reducer không còn `currentView`, `viewHistory`, `toasts`.
-5. `showToast({ title, message?, type })` của store gọi `react-hot-toast` (Toaster toàn cục ở `main.tsx`).
+```bash
+git diff <commit-đã-đồng-bộ> HEAD -- RealEstateAdminApp/src/modules/crm   # xem app chính đổi gì
+```
 
-## 3. Quy ước khi port màn CRM (bước sau)
+Chép phần **giao diện/hành vi** (screens, components, lib, hooks, types, navigation/routes); **không** chép `api/http/*`, `httpCrmApi.ts`, `api/hooks.ts` (React Query), `api/mockHooks` đã khác có chủ đích (xem bảng). Nếu app chính thêm hook/hàm ghi mới vào `@crm/api` → thêm bản mock tương ứng ở `api/hooks.ts` / `api/crmWriteApi.ts` (+ action ở `store/crmReducer.ts` nếu cần), cùng tên + chữ ký. Đã đồng bộ tới app chính commit **`6eed7bf`**.
 
-Nguồn chuẩn: **tài liệu 03** (mục 2, 4, 5, 7). Nguồn tham khảo bố cục: 2 template Stitch (`screens/screenSources.ts`).
+## 4. Trạng thái màn CRM (`src/modules/crm/screens/`)
 
-1. **Ưu tiên component có sẵn của Admin**, chỉ làm mới thứ tài liệu 03 mục 10 ghi "Làm mới":
-   - Bảng: vỏ `overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]`, `thead tr.bg-gray-50.dark:bg-gray-900`, `th.px-5.py-3.text-theme-xs.font-medium.text-gray-500.uppercase`, `tbody.divide-y.divide-gray-100.dark:divide-white/[0.05]`; tải: `components/common/TableSkeletonRows`; phân trang: `components/common/Pagination`.
-   - Hộp thoại: `components/ui/modal` (`<Modal isOpen onClose className="max-w-lg p-6">`). Dropdown: `components/ui/dropdown`. Chọn ngày: `components/ui/DatePicker`.
-   - Toast: `react-hot-toast` (`toast.success/error`) hoặc `useCrmActions().showToast`. **Không** viết toast/hộp thoại tự chế.
-   - Tab module: `@crm/components/CrmModuleTabs` (mẫu `KnowledgeConfigScreen.tsx:672-689`).
-2. **Mẫu lớp Tailwind** (tài liệu 03 mục 5): đầu trang `h2.text-title-sm.font-semibold.text-gray-800.dark:text-white/90` + mô tả `text-theme-sm text-gray-500 dark:text-gray-400`; thẻ `rounded-2xl border border-gray-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]`; nút chính `rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600`; nút viền `border border-gray-200 … dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5`; chip trạng thái `rounded-full px-2.5 py-1 text-xs font-medium bg-success-50 text-success-600 dark:bg-success-500/10`; ô nhập lọc `px-3 py-2 border border-gray-200 dark:border-white/[0.1] rounded-lg bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-brand-500`.
-3. **Bắt buộc cặp `dark:` cho mọi màu** (app mặc định chạy **tối**). Chỉ dùng token `brand/gray/success/error/warning`; không dùng `red/emerald/amber/blue/indigo` cho ý nghĩa trạng thái; không dùng `info-*`, `dark-900` (không tồn tại).
-4. **Icon: lucide-react** (import từng icon, vd `import { Phone } from 'lucide-react'`). Không thêm Material Symbols; khi màn cuối cùng hết `material-symbols-outlined` thì xoá link font trong `index.html` + khối CSS cuối `index.css`.
-5. Typography: `text-title-sm` (tiêu đề trang), `text-theme-sm` (thân, ô bảng), `text-theme-xs` (nhãn/cột). Token Stitch (`text-body-md`, `text-label-xs`, `text-headline-sm`, `bg-surface-container-*`) chỉ để màn cũ chạy — không dùng cho code mới.
-6. z-index: hộp thoại dùng `Modal` (z-99999); thanh đáy `z-40`; không đặt `z-[100]`, `z-[60]`.
-7. Dữ liệu CRM: qua hook `@crm/store` (`useCrmState`, `useCrmActions`, `useFilteredCustomers`, `useSelectedCustomer`…); điều hướng qua `navigate(view)` / `<Link to={buildCrmPath(view, id)}>`; không gọi API trong `useEffect`.
-8. Mobile: màn chi tiết/form (ViewId trong `CRM_SUB_VIEWS`) không có bottom nav, tự vẽ thanh CTA đáy; màn tab chính có bottom nav — đừng đặt nội dung `fixed bottom-0` ở các màn này.
-9. **Không viết test.** Không sửa `RealEstateAdminApp/`. Sửa code chép từ Admin chỉ khi bắt buộc và đánh dấu `[Prototype]`.
+Hiện là **bản sao nguyên văn từ app chính** (`DailyTasks`, `Customers`, `CreateCustomer`, `CustomerDetail`, `EditPersona`, `EditInvestment`, `Appointments`, `CreateAppointment`, `Reports`, `Projects`, `Settings`, `DeletedCustomers`, `Notifications`) chạy trên lớp mock ở trên; `npm run lint` + `npm run build` sạch, đã mở thử mọi route với 6 tài khoản mẫu, không lỗi console. Màn Stitch cũ (`CrmAiConfig`, `*.desktop/mobile` kiểu cũ) không còn (route `/crm/ai-config` bỏ; thay bằng `/crm/settings`, `/crm/deleted-customers`, `/notifications`).
 
-## 4. TODO còn lại
+## 5. TODO còn lại
 
-- Port nội dung các màn CRM còn placeholder (`DailyTasks`, `Appointments.mobile`, `CreateAppointment`, `EditPersona`, `EditInvestment`, `Reports`, `Projects`, `CrmAiConfig`) theo mục 3.
-- Đổi `material-symbols-outlined` → lucide-react trong `src/modules/crm` (≈50 tệp), rồi xoá link font + khối CSS tạm.
-- Thêm cặp `dark:` cho các màn CRM đã port (Customers, CustomerDetail, CreateCustomer…) và nội dung Call/Zalo/QuickNote modal.
-- `LightboxModal`, `AdvancedFilterModal`, bottom sheet `QuickNoteModal` (mobile) còn vỏ tự viết theo Stitch.
-- Màn chi tiết/form CRM trên mobile đang có 2 header (header Admin + header riêng của màn) — quyết định giữ/bỏ header riêng khi port.
-- Ở `npm run dev`, `/market-analysis-workflow` in 1 dòng đỏ `Query error: CanceledError` — do chính màn Admin `console.error` khi React Query huỷ request lần mount đầu của StrictMode (bản gốc cũng vậy; không xuất hiện ở bản build). `ManageWpScreen` còn `console.log` debug của bản gốc.
-- `NotificationDropdown` (chép từ Admin) dùng ảnh `/images/user/*.jpg` không tồn tại → ảnh hỏng khi mở chuông (lỗi có sẵn ở Admin).
+- Skeleton: Skeleton "do dữ liệu" (đang tải danh sách/chi tiết) **không hiện** vì hook mock tính đồng bộ; Skeleton của **Suspense** (nạp chunk màn lười, `ScreenSkeleton`/"Đang tải…") vẫn thoáng hiện lần đầu vào mỗi màn. Muốn xem Skeleton dữ liệu: thêm trễ giả có điều khiển ở `api/hooks.ts`.
+- Badge số việc ở tab "Việc hôm nay" luôn dùng phạm vi mặc định theo vai trò (Quản trị: "Cả nhóm") nên có thể lệch với danh sách khi Quản trị chọn "Việc của tôi" (chấp nhận trong prototype).
+- Giai đoạn rà soát màn: so sánh từng màn với app chính ở các trạng thái rỗng/lỗi.
+- Chọn giữ/bỏ các màn Admin ít liên quan (Cronjob, Knowledge, Request Logs…) trong bản prototype.
+- `NotificationDropdown` đã đổi sang thông báo thật (mock); ảnh `/images/user/*.jpg` cũ không còn dùng.
+- `/market-analysis-workflow` có thể in lỗi `CanceledError` ở dev do React Query StrictMode (bản gốc cũng vậy).

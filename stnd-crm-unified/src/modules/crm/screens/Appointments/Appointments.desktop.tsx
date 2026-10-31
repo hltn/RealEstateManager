@@ -4,9 +4,11 @@
 import { Plus, Sun, Sunrise, type LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
-import { formatIsoDateVi, toIsoDate } from '@crm/lib/dateTime';
-import { useCrmActions, useCrmState } from '@crm/store';
-import type { Appointment, DayPeriod } from '@crm/types/crm';
+import { formatIsoDateVi, getVnTodayKey } from '@crm/lib/dateTime';
+import { useAppointments, type AppointmentView } from '@crm/api';
+import { useAppointmentsAround } from './useAppointmentsAround';
+import { useCrmActions } from '@crm/store';
+import type { DayPeriod } from '@crm/types/crm';
 import {
   addDaysIso,
   countAppointmentsByDate,
@@ -17,7 +19,6 @@ import {
   summarizeAppointmentTypes,
 } from './appointmentSchedule';
 import { BUTTON_PRIMARY_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
-import { AiSuggestionCard } from './components/AiSuggestionCard';
 import { AppointmentCardDesktop } from './components/AppointmentCardDesktop';
 import { AppointmentKpiCards } from './components/AppointmentKpiCards';
 import { MiniMonthCalendar } from './components/MiniMonthCalendar';
@@ -33,7 +34,7 @@ const SESSION_META: Record<DayPeriod, { icon: LucideIcon; iconClass: string; lab
 
 interface DaySessionProps {
   period: DayPeriod;
-  appointments: Appointment[];
+  appointments: AppointmentView[];
 }
 
 const DaySession = ({ period, appointments }: DaySessionProps) => {
@@ -58,18 +59,20 @@ const DaySession = ({ period, appointments }: DaySessionProps) => {
 };
 
 export const AppointmentsDesktop = () => {
-  const { appointments } = useCrmState();
+  const { data: appointments, isLoading, error, refetch } = useAppointments();
   const { navigate } = useCrmActions();
-  const [todayIso] = useState(() => toIsoDate(new Date()));
+  const [todayIso] = useState(() => getVnTodayKey());
   const [selectedDate, setSelectedDate] = useState(todayIso);
+  // Lịch hiển thị theo ngày đang chọn (cửa sổ ±30 ngày); số liệu KPI/sắp tới dùng cửa sổ quanh hôm nay.
+  const { data: browsed } = useAppointmentsAround(selectedDate);
 
   const stats = useMemo(() => getAppointmentStats(appointments, todayIso), [appointments, todayIso]);
-  const countsByDate = useMemo(() => countAppointmentsByDate(appointments), [appointments]);
+  const countsByDate = useMemo(() => countAppointmentsByDate(browsed), [browsed]);
   const todaySummary = useMemo(
     () => summarizeAppointmentTypes(getAppointmentsOnDate(appointments, todayIso)),
     [appointments, todayIso],
   );
-  const dayAppointments = useMemo(() => getAppointmentsOnDate(appointments, selectedDate), [appointments, selectedDate]);
+  const dayAppointments = useMemo(() => getAppointmentsOnDate(browsed, selectedDate), [browsed, selectedDate]);
   const sessions = groupAppointmentsByPeriod(dayAppointments);
 
   return (
@@ -91,10 +94,19 @@ export const AppointmentsDesktop = () => {
       {/* 2. Tab module */}
       <CrmModuleTabs />
 
+      {error && !isLoading && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-2xl border border-error-100 bg-error-50 p-4 text-theme-sm text-error-600 dark:border-error-500/25 dark:bg-error-500/10 dark:text-error-400">
+          <span>{error.message}</span>
+          <button type="button" onClick={refetch} className="font-semibold underline">
+            Thử lại
+          </button>
+        </div>
+      )}
+
       {/* 3. KPI */}
       <AppointmentKpiCards stats={stats} todayLabel={formatIsoDateVi(todayIso).slice(0, 5)} todaySummary={todaySummary} />
 
-      {/* 4. Lịch tuần + ca trong ngày | lịch tháng + AI + sắp tới */}
+      {/* 4. Lịch tuần + ca trong ngày | lịch tháng + sắp tới */}
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
         <div className="min-w-0 space-y-6 xl:col-span-8">
           <WeekRibbon
@@ -112,10 +124,7 @@ export const AppointmentsDesktop = () => {
 
         <div className="grid min-w-0 grid-cols-1 items-start gap-6 md:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
           <MiniMonthCalendar selectedDate={selectedDate} todayIso={todayIso} countsByDate={countsByDate} onSelectDate={setSelectedDate} />
-          <AiSuggestionCard appointments={dayAppointments} selectedDate={selectedDate} todayIso={todayIso} />
-          <div className="md:col-span-2 xl:col-span-1">
-            <UpcomingAppointmentsCard todayIso={todayIso} />
-          </div>
+          <UpcomingAppointmentsCard todayIso={todayIso} />
         </div>
       </div>
     </div>
