@@ -6,7 +6,7 @@
  * news-article.service.saveArticles. Tuy nhiên luồng Bulk Move copy thẳng
  * `article.urlHash` (MD5) sang NewsArticle → tồn tại NewsArticle.urlHash dạng MD5.
  * 2 collection lệch thuật toán hash → khó join/đối chiếu. Migration này đồng bộ
- * CẢ raw_articles VÀ news_articles sang SHA-256 (xem NEWS_MODULE_DATA_MODEL.md
+ * CẢ raw_articles VÀ news_articles sang SHA-256 (xem docs/03_Module_News/02_News_Module_Data_Model.md
  * mục 7 — changelog migration 002).
  *
  * Backward Compatible: KHÔNG — giá trị urlHash thay đổi (32→64 hex). Mọi consumer

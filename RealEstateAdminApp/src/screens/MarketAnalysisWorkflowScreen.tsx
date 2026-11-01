@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Circle, History, RotateCcw, Eye, ChevronDown, ChevronUp, ClipboardCopy } from "lucide-react";
 import { DatePicker } from "../components/ui/DatePicker";
 import GoogleDriveStatusBadge from "../components/google-drive/GoogleDriveStatusBadge";
 import ExportButton from "../components/google-drive/ExportButton";
@@ -19,6 +20,12 @@ interface MarketAnalysisHistoryItem {
   content: string;
   articleIds: string[];
   createdAt: string;
+  googleDriveExport?: {
+    documentId: string;
+    documentUrl: string;
+    title: string;
+    exportedAt: string; // String từ API response
+  } | null;
 }
 
 interface MarketAnalysisHistoryPage {
@@ -26,6 +33,33 @@ interface MarketAnalysisHistoryPage {
   meta: {
     hasMore: boolean;
     nextCursor: string | null;
+  };
+}
+
+type HistoryExportInfo = NonNullable<MarketAnalysisHistoryItem["googleDriveExport"]>;
+
+/**
+ * Trả về cache lịch sử (InfiniteData) mới với `googleDriveExport` được gắn vào đúng mục có `_id = historyId`.
+ * Các mục khác giữ nguyên tham chiếu; cache chưa có (undefined) thì giữ nguyên.
+ */
+function applyGoogleDriveExportToHistory(
+  oldData: InfiniteData<MarketAnalysisHistoryPage, string | null> | undefined,
+  historyId: string,
+  googleDriveExport: HistoryExportInfo,
+): InfiniteData<MarketAnalysisHistoryPage, string | null> | undefined {
+  if (!oldData?.pages) return oldData;
+
+  return {
+    ...oldData,
+    pages: oldData.pages.map((page) => {
+      if (!Array.isArray(page?.data)) return page;
+      return {
+        ...page,
+        data: page.data.map((historyItem) =>
+          historyItem._id === historyId ? { ...historyItem, googleDriveExport } : historyItem,
+        ),
+      };
+    }),
   };
 }
 
@@ -234,8 +268,10 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
     retryError,
     resetJob,
   } = useMarketAnalysisWorkflowJob();
+  const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<string>(getTodayVNString());
   const [selectedHistoryContent, setSelectedHistoryContent] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
   const historyLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const isFetchingHistoryPageRef = useRef(false);
 
@@ -249,57 +285,40 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
     data: historyData,
     isLoading: isHistoryLoading,
     isError: isHistoryError,
+    isFetchNextPageError,
     error: historyError,
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
     refetch: refetchHistory,
   } = useInfiniteQuery({
-    // Initial state protection
-    enabled: true,
     retry: 1,
     queryKey: ["market-analysis-history"],
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
-      try {
-        // Handle null/undefined pageParam for first page
-        const params = pageParam ? { cursor: pageParam } : {};
-        const { data } = await apiAxios.get<MarketAnalysisHistoryPage>(
-          "/news-manager/articles/market-analysis-history",
-          { signal, params }
-        );
+      // Không nuốt lỗi ở đây: để React Query đặt isError thì UI mới hiển thị được thông báo lỗi + nút thử lại.
+      const params = pageParam ? { cursor: pageParam } : {};
+      const { data } = await apiAxios.get<MarketAnalysisHistoryPage>(
+        "/news-manager/articles/market-analysis-history",
+        { signal, params }
+      );
 
-        // Ensure we return the correct structure
-        return {
-          data: Array.isArray(data?.data) ? data.data : [],
-          meta: data?.meta || { hasMore: false, nextCursor: null }
-        };
-      } catch (error) {
-        console.error("Query error:", error);
-        return {
-          data: [],
-          meta: { hasMore: false, nextCursor: null }
-        };
-      }
+      // Chuẩn hóa response thiếu data/meta về đúng cấu trúc trang
+      return {
+        data: Array.isArray(data?.data) ? data.data : [],
+        meta: data?.meta || { hasMore: false, nextCursor: null }
+      };
     },
     getNextPageParam: (lastPage) => {
       if (!lastPage?.meta) return undefined;
       return lastPage.meta.hasMore ? lastPage.meta.nextCursor : undefined;
     },
-    // TanStack Query v5: placeholderData ensures pages is always an array
-    // internally, preventing "Cannot read properties of undefined (reading 'length')"
-    placeholderData: { pages: [], pageParams: [] },
   });
 
-  // Helper function to safely extract history from paginated data
-  const getHistoryFromPages = (pages: unknown) => {
-    if (!Array.isArray(pages)) return [];
-    return pages.flatMap((page: unknown) =>
-      Array.isArray((page as any)?.data) ? (page as any).data.filter((item: any) => item && item._id && item.createdAt) : []
-    );
-  };
-
-  const history = historyData ? getHistoryFromPages(historyData.pages) : [];
+  // Gộp các trang lịch sử, bỏ qua mục thiếu _id/createdAt (dữ liệu hỏng) và trang thiếu `data`.
+  const history: MarketAnalysisHistoryItem[] = (historyData?.pages ?? []).flatMap((page) =>
+    Array.isArray(page?.data) ? page.data.filter((item) => item && item._id && item.createdAt) : [],
+  );
   const loadMoreHistory = useCallback(() => {
     if (!hasNextPage || isFetchingNextPage || isFetchingHistoryPageRef.current) return;
     isFetchingHistoryPageRef.current = true;
@@ -310,7 +329,8 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
 
   useEffect(() => {
     const sentinel = historyLoadMoreRef.current;
-    if (!sentinel || !hasNextPage || isFetchingNextPage || typeof IntersectionObserver === "undefined") return;
+    // Dừng tự tải trang kế khi trang trước vừa lỗi (tránh vòng lặp retry vô hạn); user bấm "Thử tải lại" thủ công.
+    if (!sentinel || !hasNextPage || isFetchingNextPage || isFetchNextPageError || typeof IntersectionObserver === "undefined") return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -320,7 +340,7 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, loadMoreHistory]);
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, loadMoreHistory]);
 
   const resultContent = useMemo(() => {
     if (!isDone) return null;
@@ -332,6 +352,25 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
       await startJob(selectedDate);
     } catch {
       // startError đã được set trong context — không cần xử lý thêm ở đây.
+    }
+  };
+
+  // Hàm copy nội dung markdown
+  const handleCopyContent = async () => {
+    if (!selectedHistoryContent) return;
+
+    try {
+      // Format lại nội dung để copy (giữ nguyên markdown)
+      const contentToCopy = selectedHistoryContent.replace(/\\\\n/g, "\n");
+      await navigator.clipboard.writeText(contentToCopy);
+      setIsCopied(true);
+      toast.success("Đã sao chép nội dung vào clipboard!");
+
+      // Reset trạng thái sau 2 giây
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy content:", error);
+      toast.error("Không thể sao chép nội dung. Vui lòng thử lại.");
     }
   };
 
@@ -431,7 +470,8 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           <div className="flex justify-center items-center h-24" role="status" aria-label="Đang tải lịch sử phân tích">
             <Loader2 className="w-6 h-6 animate-spin text-brand-500" />
           </div>
-        ) : isHistoryError ? (
+        ) : isHistoryError && history.length === 0 ? (
+          // Chỉ thay cả khu vực bằng khối lỗi khi chưa có dữ liệu nào; nếu đã có cache thì giữ danh sách.
           <div className="flex flex-col items-center justify-center h-32 gap-3 text-center">
             <p className="text-sm text-red-600 dark:text-red-400" role="alert">
               Không thể tải lịch sử phân tích{historyError instanceof Error && historyError.message ? `: ${historyError.message}` : "."}
@@ -472,7 +512,25 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
                     </div>
                   </button>
                   <div className="shrink-0 flex items-center gap-2">
-                    {item._id && <ExportButton historyId={item._id} />}
+                    {item._id && (
+                      <ExportButton
+                        historyId={item._id}
+                        googleDriveExport={item.googleDriveExport}
+                        onExportSuccess={(result) => {
+                          // Cập nhật googleDriveExport của đúng mục vừa export trong cache lịch sử.
+                          queryClient.setQueryData<InfiniteData<MarketAnalysisHistoryPage, string | null>>(
+                            ["market-analysis-history"],
+                            (oldData) =>
+                              applyGoogleDriveExportToHistory(oldData, item._id, {
+                                documentId: result.data.documentId,
+                                documentUrl: result.data.documentUrl,
+                                title: result.data.title,
+                                exportedAt: new Date().toISOString(),
+                              }),
+                          );
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => item.content && setSelectedHistoryContent(item.content)}
@@ -487,7 +545,21 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
               )
             ))}
             <div ref={historyLoadMoreRef} aria-live="polite" className="py-2 text-center">
-              {isFetchingNextPage ? (
+              {isHistoryError && !isFetchingNextPage ? (
+                // Đã có dữ liệu nhưng tải trang kế / làm mới nền bị lỗi: giữ danh sách, báo lỗi nhỏ + nút thử lại.
+                <div className="inline-flex items-center gap-3">
+                  <span className="text-sm text-red-600 dark:text-red-400" role="alert">
+                    {isFetchNextPageError ? "Không thể tải thêm lịch sử." : "Không thể làm mới lịch sử."}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void (isFetchNextPageError ? fetchNextPage() : refetchHistory())}
+                    className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded"
+                  >
+                    Thử tải lại
+                  </button>
+                </div>
+              ) : isFetchingNextPage ? (
                 <span className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400" role="status">
                   <Loader2 className="w-4 h-4 animate-spin" /> Đang tải thêm...
                 </span>
@@ -513,13 +585,35 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800">
             <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">Chi tiết phân tích</h3>
-              <button
-                type="button"
-                onClick={() => setSelectedHistoryContent(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyContent}
+                  disabled={isCopied}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Sao chép nội dung"
+                >
+                  {isCopied ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Đã sao chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardCopy className="w-4 h-4" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryContent(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  title="Đóng"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
               <ReactMarkdown>{selectedHistoryContent.replace(/\\\\n/g, "\n")}</ReactMarkdown>
@@ -531,16 +625,4 @@ const MarketAnalysisWorkflowScreen: React.FC = () => {
   );
 };
 
-// Wrap with error boundary for debugging
-export default function MarketAnalysisWorkflowScreenWrapper() {
-  try {
-    return <MarketAnalysisWorkflowScreen />;
-  } catch (error) {
-    console.error("Component error:", error);
-    return (
-      <div className="p-8 text-center">
-        <p>Component error occurred. Check console for details.</p>
-      </div>
-    );
-  }
-}
+export default MarketAnalysisWorkflowScreen;

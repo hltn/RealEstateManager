@@ -143,6 +143,42 @@ describe('CreateUserDto (mục 16.4 — class-validator exact)', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
+  describe('roles[] / teamIds[] (nhiều role, nhiều nhóm)', () => {
+    const withoutRole = {
+      email: valid.email,
+      password: valid.password,
+      displayName: valid.displayName,
+    };
+    const teamId = '65e1f0a1b2c3d4e5f6a7b8c9';
+
+    it('roles[] thay được role đơn; role đơn/teamId đơn vẫn hợp lệ (tương thích ngược)', async () => {
+      const multi = plainToInstance(CreateUserDto, {
+        ...withoutRole,
+        roles: [UserRole.MANAGER, UserRole.STAFF],
+        teamIds: [teamId],
+      });
+      expect(await validate(multi)).toHaveLength(0);
+      const legacy = plainToInstance(CreateUserDto, { ...valid, teamId });
+      expect(await validate(legacy)).toHaveLength(0);
+    });
+
+    it.each([
+      ['roles rỗng', { roles: [] }],
+      ['roles trùng', { roles: [UserRole.STAFF, UserRole.STAFF] }],
+      ['roles giá trị lạ', { roles: ['SUPERADMIN'] }],
+      [
+        'teamIds có id sai định dạng',
+        { roles: [UserRole.STAFF], teamIds: ['abc'] },
+      ],
+      ['teamIds trùng', { roles: [UserRole.STAFF], teamIds: [teamId, teamId] }],
+    ])('%s → fail', async (_name, extra) => {
+      const errors = await validate(
+        plainToInstance(CreateUserDto, { ...withoutRole, ...extra }),
+      );
+      expect(errors.length).toBeGreaterThan(0);
+    });
+  });
+
   it('email non-string (number) → fail IsEmail', async () => {
     const errors = await validate(
       plainToInstance(CreateUserDto, { ...valid, email: 12345 }),

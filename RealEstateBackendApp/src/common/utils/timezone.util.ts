@@ -78,3 +78,37 @@ export function startOfDayUtcDaysAgo(days: number): Date {
   const dateStr = nowInVn.toISOString().slice(0, 10); // YYYY-MM-DD theo giờ VN
   return startOfDayUtc(dateStr);
 }
+
+/** Ngày theo giờ Việt Nam (`YYYY-MM-DD`) của một mốc thời gian UTC. */
+export function vnDateKey(date: Date): string {
+  const shifted = new Date(
+    date.getTime() + getTimezoneOffsetHours() * MS_PER_HOUR,
+  );
+  return shifted.toISOString().slice(0, 10);
+}
+
+/** Cộng/trừ ngày lịch cho khóa ngày `YYYY-MM-DD` (không phụ thuộc múi giờ máy chủ; xử lý đúng cuối tháng/năm nhuận). */
+export function addDaysToDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Số ngày lịch từ `fromKey` đến `toKey` (dương nếu `toKey` sau). */
+export function diffDateKeys(fromKey: string, toKey: string): number {
+  return Math.round(
+    (new Date(`${toKey}T00:00:00.000Z`).getTime() -
+      new Date(`${fromKey}T00:00:00.000Z`).getTime()) /
+      (24 * MS_PER_HOUR),
+  );
+}
+
+/** Giờ-phút theo giờ Việt Nam của một mốc UTC, dạng `HH:mm dd/MM/yyyy` (dùng trong nội dung thông báo). */
+export function formatVnDateTime(date: Date): string {
+  const [year, month, day] = vnDateKey(date).split('-');
+  const shifted = new Date(
+    date.getTime() + getTimezoneOffsetHours() * MS_PER_HOUR,
+  );
+  const time = shifted.toISOString().slice(11, 16);
+  return `${time} ${day}/${month}/${year}`;
+}

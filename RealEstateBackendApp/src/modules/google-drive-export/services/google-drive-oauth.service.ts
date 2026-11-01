@@ -144,6 +144,11 @@ export class GoogleDriveOAuthService {
    * Load token từ DB → tạo OAuth2Client → setCredentials.
    * Lắng nghe event 'tokens' một lần (removeListener sau khi fired) để auto-save khi refresh.
    * Throw UnauthorizedException nếu user chưa connect.
+   *
+   * Xử lý TTL index fix:
+   - Access token hết hạn → auto refresh ngay trong getOAuth2Client()
+   - Nếu refresh_token bị revoke (invalid_grant) → xóa token + throw error
+   - Refresh thành công → tiếp tục normal flow với event listener
    */
   async getOAuth2Client(userId: string): Promise<OAuth2Client> {
     const tokenDoc = await this.tokenModel.findOne({ userId }).exec();
@@ -202,7 +207,48 @@ export class GoogleDriveOAuthService {
       }
     };
 
-    // Use 'once' instead of 'on' to prevent listener accumulation.
+    // TTL Index Fix: access token hết hạn → proactive refresh ngay tại đây.
+    // Nếu refresh_token bị revoke (invalid_grant) → xoá token khỏi DB + throw để
+    // caller yêu cầu user reconnect. Các lỗi refresh khác → throw lỗi gốc.
+    if (tokenDoc.expiresAt.getTime() <= Date.now()) {
+      try {
+        // getAccessToken() trigger refresh bằng refresh_token bên trong library.
+        // Cast any vì test mock trả tokens object; real library trả {token,res}.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const refreshed: any = await oauth2Client.getAccessToken();
+
+        // Refresh thành công → persist tokens mới (giữ refresh_token cũ nếu
+        // Google không trả lại refresh_token mới).
+        await this.tokenModel.findOneAndUpdate(
+          { userId },
+          {
+            $set: {
+              accessToken: refreshed.access_token || refreshed.token,
+              refreshToken: refreshed.refresh_token || tokenDoc.refreshToken,
+              expiresAt: new Date(
+                refreshed.expiry_date || Date.now() + 3600_000,
+              ),
+            },
+          },
+          { upsert: true, new: true },
+        );
+        this.logger.log(`Access token refreshed proactively for user ${userId}`);
+      } catch (refreshErr: any) {
+        if (refreshErr?.code === 'invalid_grant') {
+          // Refresh token bị revoke (user đổi mật khẩu / revoke / quá hạn 6 tháng).
+          await this.tokenModel.deleteOne({ userId }).exec();
+          throw new UnauthorizedException(
+            'Google Drive token expired or revoked. Please reconnect.',
+          );
+        }
+        throw refreshErr;
+      }
+    }
+
+    // Đăng ký listener auto-save cho các lần refresh trong tương lai (khi client
+    // được dùng gọi API Google). Dùng once() để tránh listener leak (M-03).
+    // Lưu ý: lần refresh proactive ở trên đã persist token trực tiếp qua
+    // findOneAndUpdate, không phụ thuộc event này.
     oauth2Client.once('tokens', tokensListener);
 
     return oauth2Client;

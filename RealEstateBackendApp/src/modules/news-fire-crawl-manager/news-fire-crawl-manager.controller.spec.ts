@@ -19,6 +19,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import * as fs from 'fs';
+import { Types } from 'mongoose';
 
 // Controller import NewsArticleService → ArticleExtractorUtil → jsdom →
 // @exodus/bytes (ESM) làm Jest parse fail. Mock jsdom rỗng để break chain,
@@ -101,7 +102,7 @@ describe('NewsFireCrawlManagerController', () => {
     idempotencyService = {
       get: jest.fn(),
       set: jest.fn(),
-      isInFlight: jest.fn(),
+      tryMarkInFlight: jest.fn().mockResolvedValue(true),
       markInFlight: jest.fn(),
       clearInFlight: jest.fn(),
     } as unknown as jest.Mocked<IdempotencyService>;
@@ -166,7 +167,8 @@ describe('NewsFireCrawlManagerController', () => {
 
   describe('getRawArticles — Response Format phân trang chuẩn', () => {
     it('trả { data, meta: { total, page, limit, totalPages } } đúng shape', async () => {
-      customCrawlerService.getRawArticles.mockResolvedValue({ data: [{ _id: 'a' }], total: 25 });
+      const rawArticleId = new Types.ObjectId();
+      customCrawlerService.getRawArticles.mockResolvedValue({ data: [{ _id: rawArticleId }] as any, total: 25 });
 
       const result = await controller.getRawArticles({
         page: 2, limit: 10,
@@ -175,7 +177,7 @@ describe('NewsFireCrawlManagerController', () => {
       // Service nhận page/limit đã chuẩn hóa (2, 10).
       expect(customCrawlerService.getRawArticles).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, 2, 10);
       expect(result.meta).toEqual({ total: 25, page: 2, limit: 10, totalPages: 3 });
-      expect(result.data).toEqual([{ _id: 'a' }]);
+      expect(result.data).toEqual([{ _id: rawArticleId }]);
     });
 
     it('total=0 → totalPages=0 (không NaN/Infinity)', async () => {
@@ -277,13 +279,13 @@ describe('NewsFireCrawlManagerController', () => {
       analyzeJobService.createJob.mockReturnValue('job-1');
       customCrawlerService.crawlData.mockResolvedValue({
         filePath: '/tmp/x.json',
-        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [{ url: 'https://src', count: 2 }], failedDetails: [] },
       });
       (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ a: 1 }, { b: 2 }]));
 
       const result = await controller.triggerManualCrawl({ days: 3 } as any);
 
-      expect(idempotencyService.markInFlight).toHaveBeenCalledWith('crawl:global');
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith('crawl:global');
       expect(analyzeJobService.createJob).toHaveBeenCalled();
       expect(result).toEqual({ message: 'Crawl started', jobId: 'job-1' });
       expect(auditLogService.log).toHaveBeenCalledWith(
@@ -295,11 +297,9 @@ describe('NewsFireCrawlManagerController', () => {
       );
     });
 
-    it('lock in-flight → ConflictException, không tạo job / không audit', () => {
-      idempotencyService.isInFlight.mockReturnValue(true);
-      expect(() =>
-        controller.triggerManualCrawl({ days: 3 } as any),
-      ).toThrow(ConflictException);
+    it('lock in-flight → ConflictException, không tạo job / không audit', async () => {
+      idempotencyService.tryMarkInFlight.mockResolvedValue(false);
+      await expect(controller.triggerManualCrawl({ days: 3 } as any)).rejects.toThrow(ConflictException);
       expect(analyzeJobService.createJob).not.toHaveBeenCalled();
       expect(auditLogService.log).not.toHaveBeenCalled();
     });
@@ -308,7 +308,7 @@ describe('NewsFireCrawlManagerController', () => {
       analyzeJobService.createJob.mockReturnValue('job-2');
       customCrawlerService.crawlData.mockResolvedValue({
         filePath: '/tmp/y.json',
-        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [{ url: 'https://src', count: 2 }], failedDetails: [] },
       });
       (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify([{ a: 1 }, { b: 2 }]));
 
@@ -318,7 +318,7 @@ describe('NewsFireCrawlManagerController', () => {
 
       expect(customCrawlerService.crawlData).toHaveBeenCalledWith(3, undefined, undefined);
       expect(analyzeJobService.markDone).toHaveBeenCalledWith('job-2', {
-        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2 },
+        stats: { successfulSources: 1, failedSources: 0, totalArticles: 2, successfulDetails: [{ url: 'https://src', count: 2 }], failedDetails: [] },
         count: 2,
         filePath: '/tmp/y.json',
       });
@@ -438,7 +438,7 @@ describe('NewsFireCrawlManagerController', () => {
 
   describe('getArticles — Response Format phân trang', () => {
     it('truyền date/status xuống service và trả 10 record ở trang 2 khi toàn bộ tập đã lọc có 30 record', async () => {
-      const pageRecords = Array.from({ length: 10 }, (_, index) => ({ _id: `article-${index + 21}` }));
+      const pageRecords = Array.from({ length: 10 }, (_, index) => ({ _id: `article-${index + 21}` })) as any;
       newsArticleService.getSavedArticles.mockResolvedValue({ data: pageRecords, total: 30 });
 
       const result = await controller.getArticles({
@@ -484,31 +484,29 @@ describe('NewsFireCrawlManagerController', () => {
   describe('analyzeMarketTrends (async job) — Idempotency lock chống double-submit', () => {
     const LOCK_KEY = 'analyze-market-trends:global';
 
-    it('ids rỗng → trả message, không tạo job, không check lock', () => {
-      const result = controller.analyzeMarketTrends({ ids: [] } as any);
+    it('ids rỗng → trả message, không tạo job, không check lock', async () => {
+      const result = await controller.analyzeMarketTrends({ ids: [] } as any);
       expect(result).toEqual({ message: 'No articles to analyze' });
       expect(analyzeJobService.createJob).not.toHaveBeenCalled();
-      expect(idempotencyService.isInFlight).not.toHaveBeenCalled();
+      expect(idempotencyService.tryMarkInFlight).not.toHaveBeenCalled();
     });
 
-    it('ids có giá trị, không có job nào đang chạy → markInFlight + tạo job, trả jobId ngay lập tức (fire-and-forget)', () => {
-      idempotencyService.isInFlight.mockReturnValue(false);
+    it('ids có giá trị, không có job nào đang chạy → markInFlight + tạo job, trả jobId ngay lập tức (fire-and-forget)', async () => {
+      idempotencyService.tryMarkInFlight.mockResolvedValue(true);
       analyzeJobService.createJob.mockReturnValue('job-mt-1');
-      const result = controller.analyzeMarketTrends({ ids: ['1', '2'] } as any);
-      expect(idempotencyService.isInFlight).toHaveBeenCalledWith(LOCK_KEY);
-      expect(idempotencyService.markInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      const result = await controller.analyzeMarketTrends({ ids: ['1', '2'] } as any);
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith(LOCK_KEY);
       expect(analyzeJobService.createJob).toHaveBeenCalled();
       expect(result).toEqual({ message: 'Market trends analysis started', jobId: 'job-mt-1' });
       // Không await job nền trong request handler — service chưa chắc đã được gọi ngay tick này.
     });
 
-    it('đang có job phân tích thị trường khác chạy (double-submit) → ConflictException, KHÔNG tạo job mới', () => {
-      idempotencyService.isInFlight.mockReturnValue(true);
-      expect(() =>
-        controller.analyzeMarketTrends({ ids: ['1', '2'] } as any),
-      ).toThrow(ConflictException);
+    it('đang có job phân tích thị trường khác chạy (double-submit) → ConflictException, KHÔNG tạo job mới', async () => {
+      idempotencyService.tryMarkInFlight.mockResolvedValue(false);
+      await expect(controller.analyzeMarketTrends({ ids: ['1', '2'] } as any)).rejects.toThrow(ConflictException);
       expect(analyzeJobService.createJob).not.toHaveBeenCalled();
-      expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+      expect(idempotencyService.clearInFlight).not.toHaveBeenCalled();
     });
 
     it('job nền: gọi analyzeMarketTrendsByAI(ids) rồi markDone với kết quả markdown + clearInFlight lock', async () => {
@@ -543,20 +541,20 @@ describe('NewsFireCrawlManagerController', () => {
   describe('analyzeMarketBulk (async job) — Idempotency lock chống double-submit', () => {
     const LOCK_KEY = 'crawl:global';
 
-    it('ids rỗng → trả message, không tạo job, không check lock, không audit', () => {
-      const result = controller.analyzeMarketBulk({ ids: [] } as any);
+    it('ids rỗng → trả message, không tạo job, không check lock, không audit', async () => {
+      const result = await controller.analyzeMarketBulk({ ids: [] } as any);
       expect(result).toEqual({ message: 'No articles to analyze' });
       expect(analyzeJobService.createJob).not.toHaveBeenCalled();
-      expect(idempotencyService.isInFlight).not.toHaveBeenCalled();
+      expect(idempotencyService.tryMarkInFlight).not.toHaveBeenCalled();
       expect(auditLogService.log).not.toHaveBeenCalled();
     });
 
-    it('ids có giá trị, không có job nào đang chạy → markInFlight + tạo job, trả jobId ngay lập tức (fire-and-forget) + audit MARKET_ANALYSIS_BULK', () => {
-      idempotencyService.isInFlight.mockReturnValue(false);
+    it('ids có giá trị, không có job nào đang chạy → markInFlight + tạo job, trả jobId ngay lập tức (fire-and-forget) + audit MARKET_ANALYSIS_BULK', async () => {
+      idempotencyService.tryMarkInFlight.mockResolvedValue(true);
       analyzeJobService.createJob.mockReturnValue('job-mab-1');
-      const result = controller.analyzeMarketBulk({ ids: ['1', '2'] } as any);
-      expect(idempotencyService.isInFlight).toHaveBeenCalledWith(LOCK_KEY);
-      expect(idempotencyService.markInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      const result = await controller.analyzeMarketBulk({ ids: ['1', '2'] } as any);
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith(LOCK_KEY);
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith(LOCK_KEY);
       expect(analyzeJobService.createJob).toHaveBeenCalled();
       expect(result).toEqual({ jobId: 'job-mab-1', message: 'Bulk market analysis started' });
       // Audit fire-and-forget ngay khi trigger thành công (sau lock, trước job nền).
@@ -570,13 +568,11 @@ describe('NewsFireCrawlManagerController', () => {
       // Fire-and-forget: request handler không await job nền — trả ngay jobId.
     });
 
-    it('đang có job bulk khác chạy (double-submit) → ConflictException, KHÔNG tạo job mới, KHÔNG audit', () => {
-      idempotencyService.isInFlight.mockReturnValue(true);
-      expect(() =>
-        controller.analyzeMarketBulk({ ids: ['1', '2'] } as any),
-      ).toThrow(ConflictException);
+    it('đang có job bulk khác chạy (double-submit) → ConflictException, KHÔNG tạo job mới, KHÔNG audit', async () => {
+      idempotencyService.tryMarkInFlight.mockResolvedValue(false);
+      await expect(controller.analyzeMarketBulk({ ids: ['1', '2'] } as any)).rejects.toThrow(ConflictException);
       expect(analyzeJobService.createJob).not.toHaveBeenCalled();
-      expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+      expect(idempotencyService.clearInFlight).not.toHaveBeenCalled();
       expect(auditLogService.log).not.toHaveBeenCalled();
     });
 
@@ -654,12 +650,12 @@ describe('NewsFireCrawlManagerController', () => {
       expect(newsArticleService.publishToWordPress).toHaveBeenCalledWith('1');
       expect(auditLogService.log).toHaveBeenCalledWith(AuditAction.PUBLISH, 'news_articles', ['1'], 'system', { wpPostId: 999 });
       expect(result).toMatchObject({ message: 'Article published to WordPress successfully', data: { wpPostId: 999 } });
-      expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+      expect(idempotencyService.tryMarkInFlight).not.toHaveBeenCalled();
     });
 
     it('có key + cache hit → trả cached, KHÔNG gọi service', async () => {
       const cached = { message: 'cached', data: { wpPostId: 1 } };
-      idempotencyService.get.mockReturnValue(cached);
+      idempotencyService.get.mockResolvedValue(cached);
       const result = await controller.publishArticle('1', 'key-abc');
       expect(idempotencyService.get).toHaveBeenCalledWith('single:key-abc');
       expect(newsArticleService.publishToWordPress).not.toHaveBeenCalled();
@@ -667,25 +663,25 @@ describe('NewsFireCrawlManagerController', () => {
     });
 
     it('có key + in-flight → ConflictException', async () => {
-      idempotencyService.get.mockReturnValue(null);
-      idempotencyService.isInFlight.mockReturnValue(true);
+      idempotencyService.get.mockResolvedValue(null);
+      idempotencyService.tryMarkInFlight.mockResolvedValue(false);
       await expect(controller.publishArticle('1', 'key-abc')).rejects.toThrow(ConflictException);
       expect(newsArticleService.publishToWordPress).not.toHaveBeenCalled();
     });
 
     it('có key, mới → markInFlight → publish → set cache → clearInFlight trong finally', async () => {
-      idempotencyService.get.mockReturnValue(null);
-      idempotencyService.isInFlight.mockReturnValue(false);
+      idempotencyService.get.mockResolvedValue(null);
+      idempotencyService.tryMarkInFlight.mockResolvedValue(true);
       newsArticleService.publishToWordPress.mockResolvedValue({ wpPostId: 5 } as any);
       await controller.publishArticle('1', 'key-abc');
-      expect(idempotencyService.markInFlight).toHaveBeenCalledWith('single:key-abc');
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith('single:key-abc');
       expect(idempotencyService.set).toHaveBeenCalledWith('single:key-abc', expect.objectContaining({ message: 'Article published to WordPress successfully' }));
       expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('single:key-abc');
     });
 
     it('publish throw → vẫn clearInFlight trong finally, KHÔNG set cache', async () => {
-      idempotencyService.get.mockReturnValue(null);
-      idempotencyService.isInFlight.mockReturnValue(false);
+      idempotencyService.get.mockResolvedValue(null);
+      idempotencyService.tryMarkInFlight.mockResolvedValue(true);
       newsArticleService.publishToWordPress.mockRejectedValue(new Error('wp down'));
       await expect(controller.publishArticle('1', 'key-abc')).rejects.toThrow('wp down');
       expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('single:key-abc');
@@ -709,7 +705,7 @@ describe('NewsFireCrawlManagerController', () => {
 
     it('có key + cache hit → trả cached', async () => {
       const cached = { message: 'cached-bulk', data: [] };
-      idempotencyService.get.mockReturnValue(cached);
+      idempotencyService.get.mockResolvedValue(cached);
       const result = await controller.publishBulkArticles({ ids: ['1'] } as any, 'bkey');
       expect(idempotencyService.get).toHaveBeenCalledWith('bulk:bkey');
       expect(newsArticleService.publishToWordPress).not.toHaveBeenCalled();
@@ -717,17 +713,17 @@ describe('NewsFireCrawlManagerController', () => {
     });
 
     it('có key + in-flight → Conflict', async () => {
-      idempotencyService.get.mockReturnValue(null);
-      idempotencyService.isInFlight.mockReturnValue(true);
+      idempotencyService.get.mockResolvedValue(null);
+      idempotencyService.tryMarkInFlight.mockResolvedValue(false);
       await expect(controller.publishBulkArticles({ ids: ['1'] } as any, 'bkey')).rejects.toThrow(ConflictException);
     });
 
     it('có key, mới → markInFlight + set cache + clearInFlight', async () => {
-      idempotencyService.get.mockReturnValue(null);
-      idempotencyService.isInFlight.mockReturnValue(false);
+      idempotencyService.get.mockResolvedValue(null);
+      idempotencyService.tryMarkInFlight.mockResolvedValue(true);
       newsArticleService.publishToWordPress.mockResolvedValue({ wpPostId: 1 } as any);
       await controller.publishBulkArticles({ ids: ['1'] } as any, 'bkey');
-      expect(idempotencyService.markInFlight).toHaveBeenCalledWith('bulk:bkey');
+      expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith('bulk:bkey');
       expect(idempotencyService.set).toHaveBeenCalledWith('bulk:bkey', expect.any(Object));
       expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('bulk:bkey');
     });
@@ -771,11 +767,10 @@ describe('NewsFireCrawlManagerController', () => {
     });
 
     describe('POST /market-analysis-workflow', () => {
-      it('trả { message, jobId }, markInFlight lock riêng + set state ban đầu pending', () => {
-        const result = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+      it('trả { message, jobId }, markInFlight lock riêng + set state ban đầu pending', async () => {
+        const result = await controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
 
-        expect(idempotencyService.isInFlight).toHaveBeenCalledWith('workflow:market-analysis');
-        expect(idempotencyService.markInFlight).toHaveBeenCalledWith('workflow:market-analysis');
+        expect(idempotencyService.tryMarkInFlight).toHaveBeenCalledWith('workflow:market-analysis');
         expect(result).toEqual({ message: 'Phân tích thị trường đã bắt đầu', jobId: expect.any(String) });
 
         // runWorkflow là async fire-and-forget: phần đồng bộ trước await đầu tiên
@@ -784,21 +779,22 @@ describe('NewsFireCrawlManagerController', () => {
         const job = fakeJobs.get(result.jobId);
         expect(job.status).toBe('pending');
         expect(job.result.steps).toHaveLength(5);
-        expect(job.result.steps[0]).toMatchObject({ step: 1, status: 'running' });
+        // Handler này async (await khóa Redis) nên job nền đã kịp chạy thêm vài bước trước khi
+        // assert: không ép trạng thái 'running' mà kiểm tra pipeline đã thực sự khởi động.
+        expect(customCrawlerService.crawlData).toHaveBeenCalledTimes(1);
+        expect(job.result.steps[0].status).not.toBe('pending');
         expect(job.result.date).toBe('2026-08-06');
       });
 
-      it('không truyền date → dùng getTodayVNString() mặc định', () => {
-        const result = controller.triggerMarketAnalysisWorkflow({} as any);
+      it('không truyền date → dùng getTodayVNString() mặc định', async () => {
+        const result = await controller.triggerMarketAnalysisWorkflow({} as any);
         const job = fakeJobs.get(result.jobId);
         expect(job.result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       });
 
-      it('lock đang in-flight → 409 ConflictException, KHÔNG tạo job', () => {
-        idempotencyService.isInFlight.mockReturnValue(true);
-        expect(() =>
-          controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any),
-        ).toThrow(ConflictException);
+      it('lock đang in-flight → 409 ConflictException, KHÔNG tạo job', async () => {
+        idempotencyService.tryMarkInFlight.mockResolvedValue(false);
+        await expect(controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any)).rejects.toThrow(ConflictException);
         expect(analyzeJobService.createJob).not.toHaveBeenCalled();
       });
     });
@@ -897,7 +893,7 @@ describe('NewsFireCrawlManagerController', () => {
         newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
         newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# step 1 retried' as any);
 
-        const response = controller.retryMarketAnalysisWorkflow(jobId);
+        const response = await controller.retryMarketAnalysisWorkflow(jobId);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
@@ -923,7 +919,7 @@ describe('NewsFireCrawlManagerController', () => {
         fakeJobs.set(jobId, { status: 'error', error: 'old', result: state });
         customCrawlerService.getRawArticlesByDate.mockResolvedValue([] as any);
 
-        const response = controller.retryMarketAnalysisWorkflow(jobId);
+        const response = await controller.retryMarketAnalysisWorkflow(jobId);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
 
@@ -959,7 +955,7 @@ describe('NewsFireCrawlManagerController', () => {
         newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
         newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# retried' as any);
 
-        const response = controller.retryMarketAnalysisWorkflow(jobId);
+        const response = await controller.retryMarketAnalysisWorkflow(jobId);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
 
@@ -973,26 +969,28 @@ describe('NewsFireCrawlManagerController', () => {
         expect(fakeJobs.get(jobId).status).toBe('done');
       });
 
-      it('lock/checkpoint errors không đổi state', () => {
+      it('lock/checkpoint errors không đổi state', async () => {
         const lockedState = failedState(4);
         fakeJobs.set('locked', { status: 'error', error: 'old', result: lockedState });
-        idempotencyService.isInFlight.mockReturnValue(true);
-        expect(() => controller.retryMarketAnalysisWorkflow('locked')).toThrow(ConflictException);
+        idempotencyService.tryMarkInFlight.mockResolvedValue(false);
+        await expect(controller.retryMarketAnalysisWorkflow('locked')).rejects.toThrow(ConflictException);
         expect(fakeJobs.get('locked')).toMatchObject({ status: 'error', error: 'old' });
-        expect(idempotencyService.markInFlight).not.toHaveBeenCalled();
+        expect(idempotencyService.clearInFlight).not.toHaveBeenCalled();
 
-        idempotencyService.isInFlight.mockReturnValue(false);
+        idempotencyService.tryMarkInFlight.mockResolvedValue(true);
         const missing = failedState(3);
         (missing.steps[1] as any).result = undefined;
         fakeJobs.set('missing', { status: 'error', error: 'original', result: missing });
-        expect(() => controller.retryMarketAnalysisWorkflow('missing')).toThrow(BadRequestException);
+        await expect(controller.retryMarketAnalysisWorkflow('missing')).rejects.toThrow(BadRequestException);
         expect(fakeJobs.get('missing').result.steps[2]).toMatchObject({ status: 'error', error: 'step 3 failed' });
+        // Đã giành khóa trước khi phát hiện thiếu checkpoint ⇒ phải nhả lại, không để khóa kẹt 30 phút.
+        expect(idempotencyService.clearInFlight).toHaveBeenCalledWith('workflow:market-analysis');
       });
 
       it('retry fail giữ state/checkpoint, đánh dấu đúng step lỗi và clear lock', async () => {
         fakeJobs.set('retry-fail', { status: 'error', error: 'old', result: failedState(4) });
         newsArticleService.analyzeMarketBulk.mockRejectedValue(new Error('rate limit again'));
-        controller.retryMarketAnalysisWorkflow('retry-fail');
+        await controller.retryMarketAnalysisWorkflow('retry-fail');
         await new Promise(setImmediate);
 
         const job = fakeJobs.get('retry-fail');
@@ -1032,7 +1030,7 @@ describe('NewsFireCrawlManagerController', () => {
         newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
         newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# Market report' as any);
 
-        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        const { jobId } = await controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
@@ -1064,7 +1062,7 @@ describe('NewsFireCrawlManagerController', () => {
         customCrawlerService.crawlData.mockResolvedValue({ filePath: '/tmp/e.json', stats: {} } as any);
         customCrawlerService.getRawArticlesByDate.mockResolvedValue([] as any);
 
-        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        const { jobId } = await controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
 
@@ -1083,7 +1081,7 @@ describe('NewsFireCrawlManagerController', () => {
         aiFilterService.filterRawArticles.mockResolvedValue([] as any);
         customCrawlerService.deleteRawArticlesInSetNotIn.mockResolvedValue(undefined as any);
 
-        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        const { jobId } = await controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
@@ -1117,7 +1115,7 @@ describe('NewsFireCrawlManagerController', () => {
         newsArticleService.analyzeMarketBulk.mockResolvedValue({ processed: 1, failed: 0 } as any);
         newsArticleService.analyzeMarketTrendsByAI.mockResolvedValue('# report' as any);
 
-        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        const { jobId } = await controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
@@ -1150,7 +1148,7 @@ describe('NewsFireCrawlManagerController', () => {
         newsArticleService.getArticleIdsByUrlHashes.mockResolvedValue(['a1']);
         newsArticleService.analyzeMarketBulk.mockRejectedValue(new Error('Firecrawl rate limit'));
 
-        const { jobId } = controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
+        const { jobId } = await controller.triggerMarketAnalysisWorkflow({ date: '2026-08-06' } as any);
         await new Promise(setImmediate);
         await new Promise(setImmediate);
         await new Promise(setImmediate);

@@ -154,16 +154,14 @@ interface MarketAnalysisHistoryItem {
 }
 
 const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boolean, onClose: () => void, onShowDetail: (content: string) => void }) => {
-  const { data: historyData, isLoading: loading } = useQuery<MarketAnalysisHistoryItem[]>(
+  const { data: historyData, isLoading: loading, isError, refetch } = useQuery<MarketAnalysisHistoryItem[]>(
     {
-      queryKey: ['market-analysis-history'],
+      // Key con của ['market-analysis-history'] để invalidate theo prefix vẫn hoạt động, nhưng không
+      // đụng cache dạng InfiniteData của MarketAnalysisWorkflowScreen (cùng key gốc, khác shape dữ liệu).
+      queryKey: ['market-analysis-history', 'modal-list'],
       queryFn: async ({ signal }) => {
-        console.log('🔍 [DEBUG] Starting API call for market-analysis-history');
         const { data } = await apiAxios.get<{ message?: string; data?: MarketAnalysisHistoryItem[]; meta?: any }>('/news-manager/articles/market-analysis-history', { signal });
-        console.log('🔍 [DEBUG] API Response:', data);
-        const result = Array.isArray(data?.data) ? data.data : [];
-        console.log('🔍 [DEBUG] Parsed result:', result);
-        return result;
+        return Array.isArray(data?.data) ? data.data : [];
       },
       enabled: isOpen,
       refetchOnWindowFocus: false,
@@ -172,7 +170,6 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
   );
 
   const history = Array.isArray(historyData) ? historyData : [];
-  console.log('🔍 [DEBUG] Final history array:', history, 'Length:', history.length);
 
   if (!isOpen) return null;
 
@@ -187,8 +184,19 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
         </div>
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-             <div className="flex justify-center items-center h-32">
+             <div className="flex justify-center items-center h-32" role="status" aria-label="Đang tải lịch sử phân tích">
                <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
+             </div>
+          ) : isError ? (
+             <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+               <p className="text-sm text-red-600 dark:text-red-400" role="alert">Không thể tải lịch sử phân tích.</p>
+               <button
+                 type="button"
+                 onClick={() => void refetch()}
+                 className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+               >
+                 Thử lại
+               </button>
              </div>
           ) : history.length === 0 ? (
              <div className="flex flex-col items-center justify-center h-48 gap-3">
@@ -211,7 +219,7 @@ const AnalysisHistoryModal = ({ isOpen, onClose, onShowDetail }: { isOpen: boole
                       </div>
                       <button
                         onClick={() => {
-                          item.content && onShowDetail(item.content);
+                          if (item.content) onShowDetail(item.content);
                         }}
                         className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shrink-0 shadow-sm"
                       >

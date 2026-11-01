@@ -1,12 +1,18 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { AxiosError } from 'axios';
 import { Modal } from '../components/ui/modal';
 import { Pagination } from '../components/common/Pagination';
+import { EditUserModal } from '../components/users/EditUserModal';
+import {
+  displayNameSchema,
+  emailSchema,
+  passwordSchema,
+} from '../components/users/userFormSchemas';
 import { TableSkeletonRows } from '../components/common/TableSkeletonRows';
 import { PlusIcon as PlusIconRaw, CloseIcon as CloseIconRaw } from '../icons';
 
@@ -18,23 +24,25 @@ import {
   fetchUsers,
   createUser,
   updateUserStatus,
-  updateUserRole,
+  updateUserRoles,
+  updateUser,
+  resetUserPassword,
 } from '../api/users.api';
 import { logout } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
+import { MultiChoiceChips } from '@crm/components/form/MultiChoiceChips';
+import { crmKeys } from '@crm/api';
 import { UserRole, UserStatus } from '../types/user';
-import type { UserListItem, CreateUserPayload } from '../types/user';
+import { ROLE_OPTIONS, isSameSet, normalizeRoles, rolesOf, withRoles } from '../utils/userRoles';
+import type { UserListItem, CreateUserPayload, UpdateUserPayload } from '../types/user';
 import { DEFAULT_PAGE_SIZE } from '../types/pagination';
 
 /** Schema validate form tạo user — đồng bộ với CreateUserDto backend (mục 16.4). */
 const createUserSchema = z.object({
-  email: z.string().min(1, 'Vui lòng nhập email').email('Email không đúng định dạng'),
-  password: z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự'),
-  displayName: z
-    .string()
-    .min(2, 'Tên hiển thị tối thiểu 2 ký tự')
-    .max(50, 'Tên hiển thị tối đa 50 ký tự'),
-  role: z.nativeEnum(UserRole),
+  email: emailSchema,
+  password: passwordSchema,
+  displayName: displayNameSchema,
+  roles: z.array(z.enum(['ADMIN', 'EDITOR', 'MANAGER', 'STAFF'])).min(1, 'Chọn ít nhất một vai trò'),
 });
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 
@@ -51,33 +59,35 @@ const extractApiMessage = (error: unknown, fallback: string): string => {
   return Array.isArray(body.message) ? body.message.join(', ') : body.message;
 };
 
-/** Toast lỗi cho thao tác user management — phân theo mã lỗi (mục 6.3). */
-const handleMutationError = (error: unknown, fallback: string): void => {
+/** Message lỗi tiếng Việt cho thao tác user management — phân theo mã lỗi (mục 6.3). */
+const getMutationErrorMessage = (error: unknown, fallback: string, conflictMessage = 'Email đã tồn tại. Vui lòng dùng email khác.'): string => {
   const axiosError = error as AxiosError<ApiErrorBody>;
   const status = axiosError.response?.status;
   const message = extractApiMessage(error, fallback);
 
-  if (status === 401) {
-    toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  } else if (status === 403) {
-    // Phân biệt "Insufficient role" vs "Cannot block your own account".
-    toast.error(message || 'Bạn không có quyền thực hiện thao tác này.');
-  } else if (status === 409) {
-    toast.error('Email đã tồn tại. Vui lòng dùng email khác.');
-  } else if (status === 400) {
-    toast.error(message);
-  } else {
-    toast.error(message);
-  }
+  if (status === 401) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+  // Phân biệt "Insufficient role" vs "Cannot block your own account".
+  if (status === 403) return !message || message === 'Insufficient role' || message === 'Forbidden' ? 'Bạn không có quyền thực hiện thao tác này.' : message;
+  if (status === 404) return 'Tài khoản không còn tồn tại. Vui lòng tải lại danh sách.';
+  if (status === 409) return conflictMessage;
+  return message;
+};
+
+/** Toast lỗi cho thao tác user management. */
+const handleMutationError = (error: unknown, fallback: string): void => {
+  toast.error(getMutationErrorMessage(error, fallback));
 };
 
 const UserManagementScreen: React.FC = () => {
   const queryClient = useQueryClient();
-  const { user: currentUser, clearAuth } = useAuth();
+  const { user: currentUser, clearAuth, setUser } = useAuth();
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserListItem | null>(null);
+  // Chặn kết thúc phiên 2 lần khi submit đúp (validate form bất đồng bộ nên nút chưa kịp disabled).
+  const isEndingOwnSessionRef = useRef(false);
 
   const queryKey = ['users', page, limit] as const;
 
@@ -90,9 +100,11 @@ const UserManagementScreen: React.FC = () => {
   const users = data?.data ?? [];
   const meta = data?.meta ?? { total: 0, page, limit, totalPages: 0 };
 
-  /** Invalidate danh sách user để refetch sau mỗi mutation. */
+  /** Invalidate danh sách user để refetch sau mỗi mutation (kèm dữ liệu CRM: vai trò/nhóm đổi ảnh hưởng người phụ trách, nhóm). */
   const invalidateUsers = () => {
     void queryClient.invalidateQueries({ queryKey: ['users'] });
+    void queryClient.invalidateQueries({ queryKey: crmKeys.data });
+    void queryClient.invalidateQueries({ queryKey: crmKeys.catalogs });
   };
 
   // --- Mutation: đổi trạng thái Active/Block (Optimistic UI) ---
@@ -125,13 +137,20 @@ const UserManagementScreen: React.FC = () => {
     },
   });
 
-  // --- Mutation: đổi role ---
+  // --- Mutation: đặt toàn bộ vai trò (nhiều role) — `PATCH /users/:id/roles` ---
+  // Lỗi hiện ngay trong popup (giữ lựa chọn đang nhập); 409 là LAST_ADMIN_REQUIRED nên hiện nguyên thông báo máy chủ.
   const roleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: UserRole }) =>
-      updateUserRole(id, role),
-    onError: (error) => handleMutationError(error, 'Không thể đổi vai trò.'),
+    mutationFn: ({ id, roles }: { id: string; roles: UserRole[] }) => updateUserRoles(id, roles),
     onSuccess: (updated) => {
-      toast.success(`Đã đổi vai trò thành ${updated.role}.`);
+      setEditingUser(null);
+      toast.success(`Đã cập nhật vai trò: ${rolesOf(updated).join(', ')}.`);
+      queryClient.setQueryData(queryKey, (old: typeof data | undefined) =>
+        old ? { ...old, data: old.data.map((u) => (u._id === updated._id ? updated : u)) } : old,
+      );
+      // Admin tự đổi vai trò của mình: đồng bộ role hiển thị/guard của client (mất ADMIN thì RoleGuard đưa ra khỏi trang quản trị).
+      if (currentUser?._id === updated._id && !isSameSet(rolesOf(currentUser), rolesOf(updated))) {
+        setUser(withRoles(currentUser, rolesOf(updated)));
+      }
       invalidateUsers();
     },
   });
@@ -147,9 +166,74 @@ const UserManagementScreen: React.FC = () => {
     },
   });
 
+  /**
+   * Kết thúc phiên của chính Admin sau khi tự đổi email/mật khẩu (backend đã thu hồi refresh token).
+   * Dùng đúng luồng đăng xuất sẵn có: `logout()` (best-effort, xóa cookie) rồi `clearAuth()`;
+   * ProtectedRoute tự điều hướng mềm về /login — không reload trang nên toast ở <Toaster> gốc vẫn
+   * hiển thị trên trang login, và không có request 401 nào bị gọi lại.
+   */
+  const endOwnSession = async (message: string) => {
+    if (isEndingOwnSessionRef.current) return;
+    isEndingOwnSessionRef.current = true;
+    toast.success(message, { duration: 6000 });
+    try {
+      await logout();
+    } catch {
+      // Logout idempotent — bỏ qua lỗi (vd. 401 do phiên đã bị thu hồi), vẫn clear client state.
+    } finally {
+      clearAuth();
+    }
+  };
+
+  // --- Mutation: sửa tên hiển thị / email ---
+  // Giữ nguyên page/limit (state của màn) nên sau khi lưu vẫn ở đúng trang danh sách.
+  const updateMutation = useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: UpdateUserPayload }) =>
+      updateUser(id, changes),
+    onError: (error) => handleMutationError(error, 'Không thể cập nhật tài khoản.'),
+    onSuccess: (updated) => {
+      setEditingUser(null);
+      // Admin tự đổi email của mình: backend đã thu hồi mọi refresh token → đăng xuất ngay (có thông báo).
+      const isOwnEmailChanged =
+        currentUser?._id === updated._id &&
+        updated.email.trim().toLowerCase() !== currentUser.email.trim().toLowerCase();
+      if (isOwnEmailChanged) {
+        void endOwnSession('Đã đổi email, vui lòng đăng nhập lại bằng email mới.');
+        return;
+      }
+      toast.success('Đã cập nhật tài khoản.');
+      // Cập nhật ngay dòng trong cache rồi mới refetch nền → bảng không nhấp nháy.
+      queryClient.setQueryData(queryKey, (old: typeof data | undefined) =>
+        old ? { ...old, data: old.data.map((u) => (u._id === updated._id ? updated : u)) } : old,
+      );
+      // Admin tự sửa mình: đồng bộ tên/email hiển thị ở header.
+      if (currentUser?._id === updated._id) {
+        setUser({ ...currentUser, displayName: updated.displayName, email: updated.email });
+      }
+      invalidateUsers();
+    },
+  });
+
+  // --- Mutation: đặt lại mật khẩu (backend thu hồi phiên của tài khoản đó) ---
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) =>
+      resetUserPassword(id, newPassword),
+    onError: (error) => handleMutationError(error, 'Không thể đặt lại mật khẩu.'),
+    onSuccess: (_data, { id }) => {
+      setEditingUser(null);
+      // Admin tự đặt lại mật khẩu của mình: phiên hiện tại cũng bị thu hồi → đăng xuất ngay.
+      if (currentUser?._id === id) {
+        void endOwnSession('Đã đổi mật khẩu, vui lòng đăng nhập lại.');
+        return;
+      }
+      toast.success('Đã đặt lại mật khẩu. Các phiên đăng nhập của tài khoản đó đã bị đăng xuất.');
+    },
+  });
+
   const {
     register,
     handleSubmit,
+    control,
     reset,
     formState: { errors },
   } = useForm<CreateUserFormData>({
@@ -158,12 +242,12 @@ const UserManagementScreen: React.FC = () => {
       email: '',
       password: '',
       displayName: '',
-      role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
     },
   });
 
   const onCreateSubmit = (formData: CreateUserFormData) => {
-    createMutation.mutate(formData);
+    createMutation.mutate({ ...formData, roles: normalizeRoles(formData.roles) });
   };
 
   const handleLogout = async () => {
@@ -177,15 +261,18 @@ const UserManagementScreen: React.FC = () => {
     }
   };
 
+  const handleOpenEdit = (user: UserListItem) => {
+    // Xóa lỗi của lần mở trước để popup không hiện lại lỗi cũ.
+    updateMutation.reset();
+    resetPasswordMutation.reset();
+    roleMutation.reset();
+    setEditingUser(user);
+  };
+
   const handleToggleStatus = (user: UserListItem) => {
     const next =
       user.status === UserStatus.ACTIVE ? UserStatus.BLOCKED : UserStatus.ACTIVE;
     statusMutation.mutate({ id: user._id, status: next });
-  };
-
-  const handleRoleChange = (user: UserListItem, role: UserRole) => {
-    if (user.role === role) return;
-    roleMutation.mutate({ id: user._id, role });
   };
 
   return (
@@ -197,7 +284,7 @@ const UserManagementScreen: React.FC = () => {
             Quản lý tài khoản
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Tạo tài khoản, khóa/mở và phân quyền Editor/Admin.
+            Tạo, sửa thông tin, đặt lại mật khẩu, khóa/mở và phân quyền tài khoản.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -284,15 +371,16 @@ const UserManagementScreen: React.FC = () => {
                         {user.email}
                       </td>
                       <td className="px-5 py-4">
-                        <select
-                          value={user.role}
-                          onChange={(e) => handleRoleChange(user, e.target.value as UserRole)}
-                          disabled={roleMutation.isPending}
-                          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-                        >
-                          <option value={UserRole.EDITOR}>EDITOR</option>
-                          <option value={UserRole.ADMIN}>ADMIN</option>
-                        </select>
+                        <ul className="flex flex-wrap gap-1.5" aria-label={`Vai trò của ${user.displayName}`}>
+                          {normalizeRoles(rolesOf(user)).map((role) => (
+                            <li
+                              key={role}
+                              className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                            >
+                              {role}
+                            </li>
+                          ))}
+                        </ul>
                       </td>
                       <td className="px-5 py-4">
                         <span
@@ -311,25 +399,35 @@ const UserManagementScreen: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStatus(user)}
-                          disabled={isSelf || statusMutation.isPending}
-                          title={
-                            isSelf
-                              ? 'Không thể khóa chính tài khoản của bạn'
-                              : isBlocked
-                                ? 'Mở khóa tài khoản'
-                                : 'Khóa tài khoản'
-                          }
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                            isBlocked
-                              ? 'bg-success-500/10 text-success-600 hover:bg-success-500/20 dark:text-success-500'
-                              : 'bg-error-500/10 text-error-600 hover:bg-error-500/20 dark:text-error-500'
-                          }`}
-                        >
-                          {isBlocked ? 'Mở khóa' : 'Khóa'}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(user)}
+                            aria-label={`Sửa tài khoản ${user.displayName}`}
+                            className="rounded-lg bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-500/20 dark:text-brand-400"
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStatus(user)}
+                            disabled={isSelf || statusMutation.isPending}
+                            title={
+                              isSelf
+                                ? 'Không thể khóa chính tài khoản của bạn'
+                                : isBlocked
+                                  ? 'Mở khóa tài khoản'
+                                  : 'Khóa tài khoản'
+                            }
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                              isBlocked
+                                ? 'bg-success-500/10 text-success-600 hover:bg-success-500/20 dark:text-success-500'
+                                : 'bg-error-500/10 text-error-600 hover:bg-error-500/20 dark:text-error-500'
+                            }`}
+                          >
+                            {isBlocked ? 'Mở khóa' : 'Khóa'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -418,13 +516,21 @@ const UserManagementScreen: React.FC = () => {
             <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
               Vai trò
             </label>
-            <select
-              {...register('role')}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-            >
-              <option value={UserRole.EDITOR}>EDITOR</option>
-              <option value={UserRole.ADMIN}>ADMIN</option>
-            </select>
+            <Controller
+              control={control}
+              name="roles"
+              render={({ field }) => (
+                <MultiChoiceChips
+                  legend="Vai trò"
+                  isRequired
+                  options={ROLE_OPTIONS}
+                  values={field.value}
+                  onChange={(next) => field.onChange(next)}
+                  hint="Chọn được nhiều vai trò; quyền theo vai trò cao nhất. Gán nhóm sau khi tạo, ở Cài đặt CRM."
+                />
+              )}
+            />
+            {errors.roles && <p className="mt-1 text-xs text-error-500">{errors.roles.message}</p>}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -448,6 +554,44 @@ const UserManagementScreen: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Modal sửa user */}
+      <EditUserModal
+        user={editingUser}
+        isSelf={currentUser?._id === editingUser?._id}
+        onClose={() => setEditingUser(null)}
+        onSaveProfile={(changes) => {
+          if (editingUser) updateMutation.mutate({ id: editingUser._id, changes });
+        }}
+        isSavingProfile={updateMutation.isPending}
+        profileErrorMessage={
+          updateMutation.isError
+            ? getMutationErrorMessage(updateMutation.error, 'Không thể cập nhật tài khoản.')
+            : null
+        }
+        onResetPassword={(newPassword) => {
+          if (editingUser) resetPasswordMutation.mutate({ id: editingUser._id, newPassword });
+        }}
+        isResettingPassword={resetPasswordMutation.isPending}
+        passwordErrorMessage={
+          resetPasswordMutation.isError
+            ? getMutationErrorMessage(resetPasswordMutation.error, 'Không thể đặt lại mật khẩu.')
+            : null
+        }
+        onSaveRoles={(roles) => {
+          if (editingUser) roleMutation.mutate({ id: editingUser._id, roles });
+        }}
+        isSavingRoles={roleMutation.isPending}
+        rolesErrorMessage={
+          roleMutation.isError
+            ? getMutationErrorMessage(
+                roleMutation.error,
+                'Không thể đổi vai trò.',
+                extractApiMessage(roleMutation.error, 'Không thể đổi vai trò do xung đột dữ liệu.'),
+              )
+            : null
+        }
+      />
 
       {/* Nút đăng xuất (gọn cho UX ADMIN) */}
       <div className="flex justify-end pt-2">

@@ -5,6 +5,8 @@ import { Calendar } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
 export interface DatePickerProps {
+  /** id của ô nhập — để `<label htmlFor>` gắn nhãn truy cập cho ô ngày. */
+  id?: string;
   value?: string | Date | string[] | Date[];
   onChange?: (dateStr: string) => void;
   placeholder?: string;
@@ -14,11 +16,12 @@ export interface DatePickerProps {
 }
 
 export const DatePicker = forwardRef<any, DatePickerProps>(
-  ({ value, onChange, placeholder = "Select date", className = "", inputClassName = "", mode = "single" }, ref) => {
+  ({ id, value, onChange, placeholder = "Select date", className = "", inputClassName = "", mode = "single" }, ref) => {
     return (
       <div className={`flatpickr-wrapper relative ${className}`}>
         <Flatpickr
           ref={ref}
+          id={id}
           value={value as any}
           onChange={(_, dateStr) => {
             if (onChange) {

@@ -21,8 +21,11 @@ export class UserPublicDto {
   @ApiProperty()
   displayName: string;
 
-  @ApiProperty({ enum: UserRole })
+  @ApiProperty({ enum: UserRole, description: 'Role cao nhất của tài khoản' })
   role: UserRole;
+
+  @ApiProperty({ enum: UserRole, isArray: true })
+  roles: UserRole[];
 }
 
 export class AuthResponseDto {

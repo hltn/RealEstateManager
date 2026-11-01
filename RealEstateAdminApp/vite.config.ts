@@ -1,5 +1,7 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import svgr from 'vite-plugin-svgr'
@@ -15,6 +17,12 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: {
+    alias: {
+      // [Prototype] Module CRM alias
+      '@crm': fileURLToPath(new URL('./src/modules/crm', import.meta.url)),
+    },
+  },
   server: {
     proxy: {
       '/api': {
@@ -28,6 +36,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Spec Playwright (e2e/) chạy bằng `npm run e2e`, không phải vitest.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     pool: 'forks',
+    // Màn hình nặng (ManageWp...) render chậm khi chạy song song cả suite; 5s mặc định gây flaky.
+    testTimeout: 15_000,
   },
 })

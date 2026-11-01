@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ManageWpScreen from './ManageWpScreen';
@@ -21,6 +21,10 @@ vi.mock('../context/MarketAnalysisJobContext', () => ({
 }));
 vi.mock('../context/BulkCrawlJobContext', () => ({ useBulkCrawlJob: () => ({ startJob: vi.fn() }) }));
 vi.mock('../hooks/useHeaderStatusReset', () => ({ useHeaderStatusReset: () => vi.fn() }));
+
+// Màn ManageWp render nặng (bảng + nhiều control); khi máy tải hoặc chạy song song cả suite thì
+// timeout mặc định của findBy/waitFor (1s) gây flaky. Timeout của test (15s) cấu hình ở vite.config.ts.
+configure({ asyncUtilTimeout: 8_000 });
 
 const mockedFetchPaginated = vi.mocked(fetchPaginated);
 const articles = Array.from({ length: 20 }, (_, index) => ({
@@ -111,190 +115,131 @@ const mockHistoryData = Array.from({ length: 5 }, (_, index) => ({
   createdAt: `2026-08-${String((index % 9) + 1).padStart(2, '0')}T12:00:00.000Z`,
 }));
 
+const HISTORY_ENDPOINT = '/news-manager/articles/market-analysis-history';
+
+function renderHistoryScreen() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <ManageWpScreen />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+/** Mock riêng endpoint lịch sử; các endpoint khác trả data rỗng. */
+function mockHistoryEndpoint(handler: () => Promise<unknown>) {
+  vi.mocked(apiAxios.get).mockImplementation(((url: string) =>
+    url.includes(HISTORY_ENDPOINT) ? handler() : Promise.resolve({ data: null })) as typeof apiAxios.get);
+}
+
+// Modal lịch sử chỉ mount nội dung sau khi bấm nút "Xem lịch sử phân tích" trong header
+// (query `enabled: isOpen`), nên mọi test phải mở modal bằng click thay vì chỉ render màn hình.
+async function openHistoryModal() {
+  renderHistoryScreen();
+  fireEvent.click(await screen.findByRole('button', { name: /xem lịch sử phân tích/i }));
+}
+
 describe('ManageWpScreen AnalysisHistoryModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock API response for market analysis history
-    vi.mocked(apiAxios.get).mockImplementation((url) => {
-      if (url.includes('/news-manager/articles/market-analysis-history')) {
-        return Promise.resolve({
-          data: mockHistoryData,
-        });
-      }
-      return Promise.resolve({ data: null });
-    });
+    mockedFetchPaginated.mockReset();
+    mockedFetchPaginated.mockResolvedValue(pageResponse(1, 30));
+    mockHistoryEndpoint(() => Promise.resolve({ data: { data: mockHistoryData } }));
   });
 
-  it('should not render modal when isOpen is false', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const { container } = render(
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
+  it('không render modal và không gọi API lịch sử khi chưa bấm nút mở', async () => {
+    renderHistoryScreen();
+    await screen.findByText('Bài viết 21');
 
-    // Modal should not be in DOM
-    expect(container.querySelector('[data-testid="analysis-history-modal"]')).toBeNull();
+    expect(screen.queryByText('Lịch sử phân tích thị trường')).not.toBeInTheDocument();
+    expect(vi.mocked(apiAxios.get)).not.toHaveBeenCalledWith(HISTORY_ENDPOINT, expect.anything());
   });
 
-  it('should render modal when isOpen is true', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const { container } = render(
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
+  it('bấm nút mở thì hiển thị modal lịch sử', async () => {
+    await openHistoryModal();
 
-    // Simulate modal opening (normally triggered by button click)
-    const modal = container.querySelector('[data-testid="analysis-history-modal"]');
-    expect(modal).toBeInTheDocument();
+    expect(await screen.findByText('Lịch sử phân tích thị trường')).toBeInTheDocument();
   });
 
-  it('should show loading state when fetching history', async () => {
-    vi.mocked(apiAxios.get).mockImplementationOnce(() =>
-      new Promise(resolve => setTimeout(() => resolve({ data: mockHistoryData }), 100))
-    );
+  it('hiển thị trạng thái đang tải trong lúc fetch lịch sử', async () => {
+    mockHistoryEndpoint(() => new Promise(() => {}));
+    await openHistoryModal();
 
-    const client = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false }
-      }
-    });
-
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
-
-    // Should show loading indicator
-    await waitFor(() => {
-      const loading = screen.getByText(/Đang tải/i);
-      expect(loading).toBeInTheDocument();
-    });
+    expect(await screen.findByRole('status', { name: /đang tải lịch sử phân tích/i })).toBeInTheDocument();
   });
 
-  it('should show "Chưa có lịch sử phân tích" when history is empty', async () => {
-    // Mock empty response
-    vi.mocked(apiAxios.get).mockImplementation((url) => {
-      if (url.includes('/news-manager/articles/market-analysis-history')) {
-        return Promise.resolve({
-          data: [], // Empty array
-        });
-      }
-      return Promise.resolve({ data: null });
-    });
+  it('hiển thị "Chưa có lịch sử phân tích." khi API trả mảng rỗng', async () => {
+    mockHistoryEndpoint(() => Promise.resolve({ data: { data: [] } }));
+    await openHistoryModal();
 
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Chưa có lịch sử phân tích')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Chưa có lịch sử phân tích.')).toBeInTheDocument();
   });
 
-  it('should render history items when data is available', async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
+  it('render đủ các mục lịch sử kèm số bài viết nguồn', async () => {
+    await openHistoryModal();
 
-    await waitFor(() => {
-      // Check if history items are rendered
-      expect(screen.getByText('Phân tích lúc')).toBeInTheDocument();
-
-      // Check if specific content is displayed
-      mockHistoryData.forEach((item, index) => {
-        const date = new Date(item.createdAt).toLocaleString('vi-VN');
-        expect(screen.getByText(`${index + 1}. ${date}`)).toBeInTheDocument();
-      });
-    });
+    const items = await screen.findAllByText(/^Phân tích lúc /);
+    expect(items).toHaveLength(mockHistoryData.length);
+    // Mỗi mock có đúng 2 articleIds
+    expect(screen.getAllByText('Từ 2 bài viết')).toHaveLength(mockHistoryData.length);
+    expect(screen.getAllByRole('button', { name: /xem chi tiết/i })).toHaveLength(mockHistoryData.length);
   });
 
-  it('should handle API errors gracefully', async () => {
-    // Mock API error
-    vi.mocked(apiAxios.get).mockImplementationOnce(() =>
-      Promise.reject(new Error('API Error'))
+  it('hiển thị lỗi (role=alert) và cho phép thử lại khi API lịch sử thất bại', async () => {
+    let shouldFail = true;
+    mockHistoryEndpoint(() =>
+      shouldFail ? Promise.reject(new Error('API Error')) : Promise.resolve({ data: { data: mockHistoryData } }),
     );
+    await openHistoryModal();
 
-    const client = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false }
-      }
-    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/không thể tải lịch sử phân tích/i);
+    // Không được báo nhầm là "chưa có lịch sử" khi thực chất là lỗi
+    expect(screen.queryByText('Chưa có lịch sử phân tích.')).not.toBeInTheDocument();
 
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
+    shouldFail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
 
-    // Should handle error without crashing
-    await waitFor(() => {
-      const errorElement = screen.getByText(/lỗi/i);
-      expect(errorElement).toBeInTheDocument();
-    });
+    expect(await screen.findAllByText(/^Phân tích lúc /)).toHaveLength(mockHistoryData.length);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('should call onShowDetail when "Xem chi tiết" button is clicked', async () => {
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-          <ManageWpScreen />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
+  it('bấm "Xem chi tiết" mở modal kết quả với nội dung của đúng mục', async () => {
+    await openHistoryModal();
 
-    // Wait for history to load
-    await waitFor(() => {
-      expect(screen.getByText('Phân tích lúc')).toBeInTheDocument();
-    });
+    const detailButtons = await screen.findAllByRole('button', { name: /xem chi tiết/i });
+    fireEvent.click(detailButtons[1]);
 
-    // Find and click Xem chi tiết button
-    const detailButtons = screen.getAllByText('Xem chi tiết');
-    expect(detailButtons.length).toBeGreaterThan(0);
-
-    fireEvent.click(detailButtons[0]);
-
-    // Check if onShowDetail was called (this depends on implementation)
-    // The actual call happens inside AnalysisHistoryModal
+    expect(await screen.findByText('Kết quả Phân tích Thị trường')).toBeInTheDocument();
+    expect(screen.getByText(/Nội dung phân tích thị trường 2\.\.\./)).toBeInTheDocument();
   });
 
-  it('should render with fallback key when item._id is missing', async () => {
-    // Mock data with missing _id
+  it('vẫn render đủ mục (key dự phòng theo index) khi một mục thiếu _id', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const incompleteData = mockHistoryData.map((item, index) => ({
       ...item,
-      _id: index === 0 ? undefined : item._id, // First item has no _id
+      _id: index === 0 ? undefined : item._id,
     }));
+    mockHistoryEndpoint(() => Promise.resolve({ data: { data: incompleteData } }));
+    await openHistoryModal();
 
-    vi.mocked(apiAxios.get).mockImplementation((url) => {
-      if (url.includes('/news-manager/articles/market-analysis-history')) {
-        return Promise.resolve({
-          data: incompleteData,
-        });
-      }
-      return Promise.resolve({ data: null });
-    });
+    expect(await screen.findAllByText(/^Phân tích lúc /)).toHaveLength(incompleteData.length);
+    // Không có cảnh báo React về key thiếu/trùng
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes('unique "key"'))).toBe(false);
+    errorSpy.mockRestore();
+  });
 
+  // Hồi quy: trước đây modal dùng chung key ['market-analysis-history'] với màn Phân tích thị trường
+  // (dạng InfiniteData) nhưng lưu mảng phẳng -> hai màn đè cache của nhau.
+  it('không ghi đè cache InfiniteData ["market-analysis-history"] của màn Workflow khi mở modal', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const workflowCache = {
+      pages: [{ data: [{ _id: 'wf-1', content: 'c', articleIds: [], createdAt: '2026-08-01T00:00:00.000Z' }], meta: { hasMore: false, nextCursor: null } }],
+      pageParams: [null],
+    };
+    client.setQueryData(['market-analysis-history'], workflowCache);
+
     render(
       <MemoryRouter>
         <QueryClientProvider client={client}>
@@ -302,10 +247,12 @@ describe('ManageWpScreen AnalysisHistoryModal', () => {
         </QueryClientProvider>
       </MemoryRouter>,
     );
+    fireEvent.click(await screen.findByRole('button', { name: /xem lịch sử phân tích/i }));
 
-    await waitFor(() => {
-      // Should still render without crashing
-      expect(screen.getAllByText('Phân tích lúc')).toHaveLength(incompleteData.length);
-    });
+    expect(await screen.findAllByText(/^Phân tích lúc /)).toHaveLength(mockHistoryData.length);
+    // Cache của màn Workflow giữ nguyên (cùng tham chiếu, vẫn là InfiniteData) ...
+    expect(client.getQueryData(['market-analysis-history'])).toBe(workflowCache);
+    // ... còn dữ liệu của modal nằm ở key riêng, dạng mảng phẳng.
+    expect(client.getQueryData(['market-analysis-history', 'modal-list'])).toEqual(mockHistoryData);
   });
 });

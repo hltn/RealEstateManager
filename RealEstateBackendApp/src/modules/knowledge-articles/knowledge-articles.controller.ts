@@ -38,6 +38,7 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { IdempotencyService } from '../../common/services/idempotency.service';
+import { runIdempotent } from '../../common/utils/idempotent-request.util';
 import { AuditLogService } from '../news-fire-crawl-manager/services/audit-log.service';
 import { AuditAction } from '../news-fire-crawl-manager/schemas/audit-log.schema';
 
@@ -198,35 +199,26 @@ export class KnowledgeArticlesController {
   ) {
     // C-03: Idempotency guard
     const iKey = idempotencyKey ? `publish:${idempotencyKey}` : undefined;
-    if (iKey) {
-      const cached = this.idempotencyService.get(iKey);
-      if (cached) return cached;
-      if (this.idempotencyService.isInFlight(iKey)) {
-        return { message: 'Request already in progress' };
-      }
-      this.idempotencyService.markInFlight(iKey);
-    }
+    return runIdempotent(
+      this.idempotencyService,
+      iKey,
+      async () => {
+        const result = await this.knowledgeArticleService.publishToWordPress(id);
+        const response = { message: 'Article published', data: result };
 
-    try {
-      const result = await this.knowledgeArticleService.publishToWordPress(id);
-      const response = { message: 'Article published', data: result };
+        // C-03: Audit log
+        this.auditLogService.log(
+          AuditAction.KNOWLEDGE_PUBLISH,
+          'news_articles',
+          [id],
+          'system',
+          { wpPostId: result.wpPostId },
+        );
 
-      // C-03: Audit log
-      this.auditLogService.log(
-        AuditAction.KNOWLEDGE_PUBLISH,
-        'news_articles',
-        [id],
-        'system',
-        { wpPostId: result.wpPostId },
-      );
-
-      if (iKey) this.idempotencyService.set(iKey, response);
-      return response;
-    } catch (error: any) {
-      throw error;
-    } finally {
-      if (iKey) this.idempotencyService.clearInFlight(iKey);
-    }
+        return response;
+      },
+      () => ({ message: 'Request already in progress' }),
+    );
   }
 
   @Roles(UserRole.ADMIN)
@@ -239,36 +231,27 @@ export class KnowledgeArticlesController {
   ) {
     // C-03: Idempotency guard
     const iKey = idempotencyKey ? `republish:${idempotencyKey}` : undefined;
-    if (iKey) {
-      const cached = this.idempotencyService.get(iKey);
-      if (cached) return cached;
-      if (this.idempotencyService.isInFlight(iKey)) {
-        return { message: 'Request already in progress' };
-      }
-      this.idempotencyService.markInFlight(iKey);
-    }
+    return runIdempotent(
+      this.idempotencyService,
+      iKey,
+      async () => {
+        const result =
+          await this.knowledgeArticleService.republishToWordPress(id);
+        const response = { message: 'Article republished', data: result };
 
-    try {
-      const result =
-        await this.knowledgeArticleService.republishToWordPress(id);
-      const response = { message: 'Article republished', data: result };
+        // C-03: Audit log
+        this.auditLogService.log(
+          AuditAction.KNOWLEDGE_REPUBLISH,
+          'news_articles',
+          [id],
+          'system',
+          { wpPostId: result.wpPostId },
+        );
 
-      // C-03: Audit log
-      this.auditLogService.log(
-        AuditAction.KNOWLEDGE_REPUBLISH,
-        'news_articles',
-        [id],
-        'system',
-        { wpPostId: result.wpPostId },
-      );
-
-      if (iKey) this.idempotencyService.set(iKey, response);
-      return response;
-    } catch (error: any) {
-      throw error;
-    } finally {
-      if (iKey) this.idempotencyService.clearInFlight(iKey);
-    }
+        return response;
+      },
+      () => ({ message: 'Request already in progress' }),
+    );
   }
 
   @Roles(UserRole.ADMIN)
@@ -297,39 +280,30 @@ export class KnowledgeArticlesController {
   ) {
     // C-03: Idempotency guard
     const iKey = idempotencyKey ? `bulk:delete:${idempotencyKey}` : undefined;
-    if (iKey) {
-      const cached = this.idempotencyService.get(iKey);
-      if (cached) return cached;
-      if (this.idempotencyService.isInFlight(iKey)) {
-        return { message: 'Request already in progress' };
-      }
-      this.idempotencyService.markInFlight(iKey);
-    }
+    return runIdempotent(
+      this.idempotencyService,
+      iKey,
+      async () => {
+        const result =
+          await this.knowledgeArticleService.deleteBulkArticles(body.ids);
+        const response = {
+          message: `${result.deletedCount} articles deleted`,
+          data: result,
+        };
 
-    try {
-      const result =
-        await this.knowledgeArticleService.deleteBulkArticles(body.ids);
-      const response = {
-        message: `${result.deletedCount} articles deleted`,
-        data: result,
-      };
+        // C-03: Audit log
+        this.auditLogService.log(
+          AuditAction.KNOWLEDGE_BULK_DELETE,
+          'news_articles',
+          body.ids,
+          'system',
+          { deletedCount: result.deletedCount },
+        );
 
-      // C-03: Audit log
-      this.auditLogService.log(
-        AuditAction.KNOWLEDGE_BULK_DELETE,
-        'news_articles',
-        body.ids,
-        'system',
-        { deletedCount: result.deletedCount },
-      );
-
-      if (iKey) this.idempotencyService.set(iKey, response);
-      return response;
-    } catch (error: any) {
-      throw error;
-    } finally {
-      if (iKey) this.idempotencyService.clearInFlight(iKey);
-    }
+        return response;
+      },
+      () => ({ message: 'Request already in progress' }),
+    );
   }
 
   @Roles(UserRole.ADMIN)
@@ -341,51 +315,42 @@ export class KnowledgeArticlesController {
   ) {
     // C-03: Idempotency guard
     const iKey = idempotencyKey ? `bulk:publish:${idempotencyKey}` : undefined;
-    if (iKey) {
-      const cached = this.idempotencyService.get(iKey);
-      if (cached) return cached;
-      if (this.idempotencyService.isInFlight(iKey)) {
-        return { message: 'Request already in progress' };
-      }
-      this.idempotencyService.markInFlight(iKey);
-    }
-
-    try {
-      // Start pipeline for each article — collect results
-      const results: Array<{ id: string; success: boolean; error?: string }> =
-        [];
-      for (const id of body.ids) {
-        try {
-          await this.knowledgeArticleService.publishToWordPress(id);
-          results.push({ id, success: true });
-        } catch (error: any) {
-          results.push({ id, success: false, error: error.message });
+    return runIdempotent(
+      this.idempotencyService,
+      iKey,
+      async () => {
+        // Start pipeline for each article — collect results
+        const results: Array<{ id: string; success: boolean; error?: string }> =
+          [];
+        for (const id of body.ids) {
+          try {
+            await this.knowledgeArticleService.publishToWordPress(id);
+            results.push({ id, success: true });
+          } catch (error: any) {
+            results.push({ id, success: false, error: error.message });
+          }
         }
-      }
-      const response = {
-        message: `${results.filter((r) => r.success).length}/${body.ids.length} articles published`,
-        data: results,
-      };
+        const response = {
+          message: `${results.filter((r) => r.success).length}/${body.ids.length} articles published`,
+          data: results,
+        };
 
-      // C-03: Audit log
-      this.auditLogService.log(
-        AuditAction.KNOWLEDGE_BULK_PUBLISH,
-        'news_articles',
-        body.ids,
-        'system',
-        {
-          publishedCount: results.filter((r) => r.success).length,
-          failedCount: results.filter((r) => !r.success).length,
-        },
-      );
+        // C-03: Audit log
+        this.auditLogService.log(
+          AuditAction.KNOWLEDGE_BULK_PUBLISH,
+          'news_articles',
+          body.ids,
+          'system',
+          {
+            publishedCount: results.filter((r) => r.success).length,
+            failedCount: results.filter((r) => !r.success).length,
+          },
+        );
 
-      if (iKey) this.idempotencyService.set(iKey, response);
-      return response;
-    } catch (error: any) {
-      throw error;
-    } finally {
-      if (iKey) this.idempotencyService.clearInFlight(iKey);
-    }
+        return response;
+      },
+      () => ({ message: 'Request already in progress' }),
+    );
   }
 
   // ── Pipeline Endpoints ──────────────────────────────────

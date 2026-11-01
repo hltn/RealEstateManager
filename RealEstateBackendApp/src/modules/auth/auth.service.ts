@@ -12,12 +12,15 @@ import * as argon2 from 'argon2';
 import { createHash, randomUUID } from 'crypto';
 import { CustomLogger } from '../../common/logger/custom-logger.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { Team, TeamDocument } from '../teams/schemas/team.schema';
 import {
   RefreshToken,
   RefreshTokenDocument,
 } from './schemas/refresh-token.schema';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { highestRole, rolesOf } from '../../common/utils/user-roles.util';
+import { teamIdsOf } from '../users/user-public-profile';
 import type { UserPublicDto } from './dtos/auth-response.dto';
 import { LoginDto } from './dtos/login.dto';
 
@@ -54,6 +57,7 @@ export class AuthService implements OnModuleInit {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(RefreshToken.name)
     private readonly refreshTokenModel: Model<RefreshTokenDocument>,
+    @InjectModel(Team.name) private readonly teamModel: Model<TeamDocument>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly logger: CustomLogger,
@@ -69,14 +73,23 @@ export class AuthService implements OnModuleInit {
   }
 
   /** Parse chuỗi thời gian dạng '15m'/'7d'/'1h'/'30s'/'3600' sang ms. */
-  private parseDurationToMs(value: string | undefined, fallbackMs: number): number {
+  private parseDurationToMs(
+    value: string | undefined,
+    fallbackMs: number,
+  ): number {
     if (!value) return fallbackMs;
     const match = value.trim().match(/^(\d+)\s*(s|m|h|d)?$/i);
     if (!match) return fallbackMs;
     const num = parseInt(match[1], 10);
     const unit = (match[2] || 's').toLowerCase();
     const multiplier =
-      unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+      unit === 's'
+        ? 1000
+        : unit === 'm'
+          ? 60_000
+          : unit === 'h'
+            ? 3_600_000
+            : 86_400_000;
     return num * multiplier;
   }
 
@@ -92,6 +105,7 @@ export class AuthService implements OnModuleInit {
       email: doc.email,
       displayName: doc.displayName,
       role: doc.role,
+      roles: rolesOf(doc) as UserRole[],
     };
   }
 
@@ -99,7 +113,10 @@ export class AuthService implements OnModuleInit {
    * Verify email+password. Trả UserDocument (kèm password) hoặc null.
    * KHÔNG throw khi sai — để login quyết định exception.
    */
-  async validateUser(email: string, password: string): Promise<UserDocument | null> {
+  async validateUser(
+    email: string,
+    password: string,
+  ): Promise<UserDocument | null> {
     const user = await this.userModel
       .findOne({ email: email.toLowerCase(), deletedAt: null })
       .select('+password')
@@ -108,7 +125,7 @@ export class AuthService implements OnModuleInit {
     if (!user) return null;
     const valid = await argon2.verify(user.password, password);
     if (!valid) return null;
-    return user as unknown as UserDocument;
+    return user;
   }
 
   /**
@@ -134,16 +151,28 @@ export class AuthService implements OnModuleInit {
     this.userModel
       .updateOne({ _id: user._id }, { $set: { lastLoginAt: new Date() } })
       .exec()
-      .catch((err) => this.logger.error(`Failed to update lastLoginAt: ${String(err)}`));
+      .catch((err) =>
+        this.logger.error(`Failed to update lastLoginAt: ${String(err)}`),
+      );
 
-    return { accessToken, user: this.buildUserPublic(user), refreshToken: rawToken };
+    return {
+      accessToken,
+      user: this.buildUserPublic(user),
+      refreshToken: rawToken,
+    };
   }
 
+  /**
+   * Payload access token: `roles` đủ bộ + `role` = role cao nhất (token cũ chỉ có `role` vẫn được RolesGuard chấp nhận).
+   * Bản ghi chưa migrate (chỉ có `role`) được coi như `roles = [role]`.
+   */
   private async signAccessToken(user: UserDocument): Promise<string> {
+    const roles = rolesOf(user);
     const payload = {
       sub: String(user._id),
       email: user.email,
-      role: user.role,
+      role: highestRole(roles) ?? user.role,
+      roles,
     };
     return this.jwtService.signAsync(payload);
   }
@@ -247,7 +276,7 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const accessToken = await this.signAccessToken(user as unknown as UserDocument);
+    const accessToken = await this.signAccessToken(user);
     return { accessToken, refreshToken: newRawToken };
   }
 
@@ -273,13 +302,22 @@ export class AuthService implements OnModuleInit {
       .exec();
   }
 
-  /** Lấy profile cho /auth/me (kèm status). */
+  /**
+   * Lấy profile cho /auth/me (kèm status).
+   * Mở rộng cho CRM (tài liệu 05 mục 2.1): `teamId`/`teamIds` và `managedTeamIds` (nhóm user là Quản lý).
+   * `role`/`teamId` là role cao nhất / nhóm chính (giữ cho client cũ); `roles`/`teamIds` là danh sách đầy đủ.
+   * `managedTeamIds` chỉ tra khi có role MANAGER; các tài khoản khác luôn trả mảng rỗng.
+   */
   async getMe(userId: string): Promise<{
     _id: string;
     email: string;
     displayName: string;
     role: UserRole;
+    roles: UserRole[];
     status: UserStatus;
+    teamId: string | null;
+    teamIds: string[];
+    managedTeamIds: string[];
   }> {
     const user = await this.userModel
       .findOne({ _id: new Types.ObjectId(userId), deletedAt: null })
@@ -288,12 +326,25 @@ export class AuthService implements OnModuleInit {
     if (!user) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+    const roles = rolesOf(user) as UserRole[];
+    const teamIds = teamIdsOf(user);
+    const managedTeams = roles.includes(UserRole.MANAGER)
+      ? await this.teamModel
+          .find({ managerIds: user._id, deletedAt: null })
+          .select('_id')
+          .lean()
+          .exec()
+      : [];
     return {
       _id: String(user._id),
       email: user.email,
       displayName: user.displayName,
-      role: user.role,
+      role: highestRole(roles) ?? user.role,
+      roles,
       status: user.status,
+      teamId: teamIds[0] ?? null,
+      teamIds,
+      managedTeamIds: managedTeams.map((team) => String(team._id)),
     };
   }
 
@@ -323,9 +374,7 @@ export class AuthService implements OnModuleInit {
     const missingCredentials = !email || !password;
 
     if (isProduction && missingCredentials) {
-      throw new Error(
-        'ADMIN_EMAIL/ADMIN_PASSWORD must be set in production',
-      );
+      throw new Error('ADMIN_EMAIL/ADMIN_PASSWORD must be set in production');
     }
 
     const finalEmail = email || DEFAULT_ADMIN_EMAIL;
@@ -353,6 +402,7 @@ export class AuthService implements OnModuleInit {
       password: passwordHash,
       displayName,
       role: UserRole.ADMIN,
+      roles: [UserRole.ADMIN],
       status: UserStatus.ACTIVE,
       deletedAt: null,
       lastLoginAt: null,

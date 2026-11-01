@@ -4,6 +4,9 @@ dist/
 build/
 .env
 .env.*
+!.env.example
+!.env.docker.example
+!**/.env.example
 .DS_Store
 *.log
 npm-debug.log*
@@ -30,3 +33,13 @@ CLAUDE.md
 deploy.sh
 get-docker.sh
 start.sh
+
+.ua/
+
+# E2E Playwright (RealEstateAdminApp/e2e)
+test-results/
+playwright-report/
+RealEstateAdminApp/e2e/.runtime/
+# Build backend RIÊNG của E2E (khác dist dùng chung với backend dev)
+RealEstateBackendApp/.e2e-dist/
+!RealEstateAdminApp/e2e/.env.e2e.example

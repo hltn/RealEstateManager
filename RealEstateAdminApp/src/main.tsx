@@ -5,9 +5,8 @@ import App from './App.tsx'
 import './index.css'
 import { AppWrapper } from './components/common/PageMeta.tsx'
 import { ThemeProvider } from './context/ThemeContext.tsx'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-
-const queryClient = new QueryClient()
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './queryClient'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

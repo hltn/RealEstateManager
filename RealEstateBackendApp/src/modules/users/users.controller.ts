@@ -7,16 +7,25 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
+import { CrmFeatureGuard } from '../../common/guards/crm-feature.guard';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
+import { TeamsService } from '../teams/teams.service';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dtos/create-user.dto';
+import { UpdateUserDto } from './dtos/update-user.dto';
+import { ResetUserPasswordDto } from './dtos/reset-user-password.dto';
 import { UpdateUserStatusDto } from './dtos/update-user-status.dto';
 import { UpdateUserRoleDto } from './dtos/update-user-role.dto';
+import { UpdateUserRolesDto } from './dtos/update-user-roles.dto';
+import { UpdateUserTeamDto } from './dtos/update-user-team.dto';
+import { UpdateUserTeamsDto } from './dtos/update-user-teams.dto';
+import { ListUsersQueryDto } from './dtos/list-users-query.dto';
+import { AdminOnly } from '../crm/common/access/admin-only.decorator';
 
 /**
  * UsersController — quản lý tài khoản (ADMIN only).
@@ -26,27 +35,62 @@ import { UpdateUserRoleDto } from './dtos/update-user-role.dto';
 @ApiTags('Users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly teamsService: TeamsService,
+  ) {}
 
   @Get()
-  @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'List users (paginated, ADMIN only)' })
-  findAll(@Query('page') page?: number, @Query('limit') limit?: number) {
-    return this.usersService.findAll(page, limit);
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'List users (paginated, ADMIN only); lọc theo role (có role đó), teamId (thuộc nhóm đó), status, q',
+  })
+  findAll(@Query() query: ListUsersQueryDto) {
+    const { page, limit, role, teamId, status, q } = query;
+    return this.usersService.findAll(page, limit, { role, teamId, status, q });
   }
 
   @Post()
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @ApiOperation({ summary: 'Create a user (ADMIN only)' })
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
   }
 
+  @Patch(':id')
+  @AdminOnly()
+  @ApiOperation({
+    summary: 'Sửa tên hiển thị và/hoặc email của tài khoản (ADMIN only)',
+  })
+  updateProfile(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.updateProfile(id, dto, currentUser);
+  }
+
+  /** Admin được đặt lại mật khẩu của chính mình hoặc người khác; mọi phiên (refresh token) của tài khoản bị thu hồi. */
+  @Patch(':id/password')
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Đặt lại mật khẩu tài khoản và thu hồi mọi phiên đăng nhập (ADMIN only)',
+  })
+  resetPassword(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: ResetUserPasswordDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.resetPassword(id, dto, currentUser);
+  }
+
   @Patch(':id/status')
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @ApiOperation({ summary: 'Update user status (block/unblock), ADMIN only' })
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
     @CurrentUser() currentUser: JwtPayload,
   ) {
@@ -56,13 +100,78 @@ export class UsersController {
     if (String(currentUser?.sub) === String(id)) {
       throw new ForbiddenException('Cannot block your own account');
     }
-    return this.usersService.updateStatus(id, dto);
+    return this.usersService.updateStatus(id, dto, currentUser);
   }
 
   @Patch(':id/role')
-  @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Update user role (ADMIN only)' })
-  updateRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
-    return this.usersService.updateRole(id, dto);
+  @AdminOnly()
+  @ApiOperation({
+    summary: 'Đặt tài khoản về MỘT role (roles=[role]), ADMIN only',
+  })
+  updateRole(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserRoleDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.updateRole(id, dto, currentUser);
+  }
+
+  /** Đặt toàn bộ role (nhiều role). Quyền theo role cao nhất trong phân vùng CRM; STAFF và EDITOR cùng có hiệu lực. */
+  @Patch(':id/roles')
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Đặt toàn bộ role của tài khoản (≥1, không trùng); gỡ MANAGER thì gỡ khỏi managerIds, không còn MANAGER/STAFF thì xóa nhóm (ADMIN only)',
+  })
+  updateRoles(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserRolesDto,
+    @CurrentUser() currentUser: JwtPayload,
+  ) {
+    return this.usersService.updateRoles(id, dto, currentUser);
+  }
+
+  /** Gán/gỡ nhóm cho tài khoản (CRM). Nằm sau cổng FEATURE_CRM_ENABLED vì là endpoint mới của CRM. */
+  @Patch(':id/team')
+  @UseGuards(CrmFeatureGuard)
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Gán người dùng vào nhóm hoặc gỡ khỏi nhóm (teamId=null), ADMIN only',
+  })
+  async updateTeam(
+    @CurrentUser() currentUser: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserTeamDto,
+  ) {
+    return {
+      data: await this.teamsService.assignUserToTeam(
+        currentUser,
+        id,
+        dto.teamId,
+      ),
+    };
+  }
+
+  /** Đặt toàn bộ nhóm của tài khoản (nhiều nhóm; phần tử đầu là nhóm chính). Cùng cổng CRM như `:id/team`. */
+  @Patch(':id/teams')
+  @UseGuards(CrmFeatureGuard)
+  @AdminOnly()
+  @ApiOperation({
+    summary:
+      'Đặt toàn bộ nhóm của người dùng (teamIds, rỗng = gỡ khỏi mọi nhóm); chỉ role MANAGER/STAFF, ADMIN only',
+  })
+  async updateTeams(
+    @CurrentUser() currentUser: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserTeamsDto,
+  ) {
+    return {
+      data: await this.teamsService.updateUserTeams(
+        currentUser,
+        id,
+        dto.teamIds,
+      ),
+    };
   }
 }
