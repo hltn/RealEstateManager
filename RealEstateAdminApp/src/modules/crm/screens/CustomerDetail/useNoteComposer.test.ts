@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CareLogView } from '@crm/api';
 import { useNoteComposer } from './useNoteComposer';
 
@@ -126,5 +126,36 @@ describe('useNoteComposer: không làm mất bản nháp âm thầm', () => {
     rerender({ customerId: 'c2' });
     expect(result.current.state).toEqual({ kind: 'closed' });
     expect(result.current.pending).toBeNull();
+  });
+});
+
+describe('useNoteComposer: dùng trong hộp thoại ở màn khác (initialState + onClosed)', () => {
+  const dirty = { isDirty: true, isSaving: false };
+
+  it('initialState dựng sẵn form thêm mới', () => {
+    const { result } = renderHook(() => useNoteComposer('c1', { initialState: { kind: 'create' } }));
+    expect(result.current.state).toEqual({ kind: 'create' });
+  });
+
+  it('onClosed chỉ gọi khi form ĐÓNG: sau lưu (close), Hủy khi sạch, xác nhận bỏ nháp; KHÔNG gọi khi hỏi lại/giữ nháp hay đổi sang form khác', () => {
+    const onClosed = vi.fn();
+    const { result } = renderHook(() => useNoteComposer('c1', { initialState: { kind: 'create' }, onClosed }));
+    act(() => result.current.reportGuard(dirty));
+    act(() => result.current.requestClose());
+    expect(onClosed).not.toHaveBeenCalled();
+    act(() => result.current.cancelPending());
+    expect(onClosed).not.toHaveBeenCalled();
+    act(() => result.current.requestClose());
+    act(() => result.current.confirmPending());
+    expect(onClosed).toHaveBeenCalledTimes(1);
+
+    const second = renderHook(() => useNoteComposer('c1', { initialState: { kind: 'create' }, onClosed }));
+    act(() => second.result.current.requestClose()); // sạch -> đóng ngay
+    expect(onClosed).toHaveBeenCalledTimes(2);
+    const third = renderHook(() => useNoteComposer('c1', { initialState: { kind: 'create' }, onClosed }));
+    act(() => third.result.current.close()); // sau khi lưu xong
+    expect(onClosed).toHaveBeenCalledTimes(3);
+    act(() => third.result.current.openEdit(log));
+    expect(onClosed).toHaveBeenCalledTimes(3);
   });
 });

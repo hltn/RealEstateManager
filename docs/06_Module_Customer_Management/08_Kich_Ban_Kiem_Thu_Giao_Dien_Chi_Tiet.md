@@ -137,14 +137,14 @@ Màn: `/crm/customers` (tiêu đề "Khách hàng", ô tìm "Tên (có/không d�
 
 ### F2-06 Tự đổi tình trạng khi tiến độ đạt 3/4 (P1, PT-023 v1.0.3; kịch bản đề xuất, **chưa có spec chạy thật**)
 - **Tiền điều kiện:** khách ở tình trạng "Chưa tiếp cận" hoặc "Có quan tâm", đang 2/4 tiêu chí; tài khoản có quyền sửa tiêu chí của khách.
-- **Bước:** (1) tick tiêu chí thứ 3 -> (2) bỏ tick một tiêu chí về 2/4 -> (3) đổi tay sang "Khách net", tick lên 3/4 rồi bỏ tick xuống 2/4 -> (4) khách "Bỏ" tick đủ 3/4 -> (5) tick đủ 4/4 từ 3/4.
-- **Kết quả trên giao diện:** (1) chip tình trạng thành "Khách net" và toast 6 giây nêu tình trạng cũ/mới kèm lý do đạt 3/4, **không có nút Hoàn tác**; (2) về "Có quan tâm" kèm toast lý do xuống dưới 3/4; (3) luôn giữ "Khách net" (do đổi tay), không toast tự đổi ở cả hai lần tick; (4) không đổi tình trạng, không toast; (5) không đổi tình trạng.
+- **Bước:** (1) tick tiêu chí thứ 3 -> (2) bỏ tick một tiêu chí về 2/4 -> (3) đổi tay sang "Khách net", tick lên 3/4 rồi bỏ tick xuống 2/4 -> (4) khách "Bỏ" tick đủ 3/4 -> (5) tick đủ 4/4 từ 3/4 -> (6) khách "Có quan tâm" đang 4/4 (đổi tay), bỏ tick một tiêu chí xuống 3/4.
+- **Kết quả trên giao diện:** (1) chip tình trạng thành "Khách net" và toast 6 giây nêu tình trạng cũ/mới kèm lý do đạt 3/4, **không có nút Hoàn tác**; (2) về "Có quan tâm" kèm toast lý do xuống dưới 3/4; (3) luôn giữ "Khách net" (do đổi tay), không toast tự đổi ở cả hai lần tick; (4) không đổi tình trạng, không toast; (5) không đổi tình trạng; (6) **tự lên "Khách net"** kèm toast 6 giây đạt 3/4 (quy tắc mới, Oniichan chốt 2026-11-02, mục 7 câu 19 của tài liệu phiên bản: tiến độ mới = 75 và cũ khác 75, gồm 100 xuống 75).
 - **Hậu trường (nếu có):** lịch sử thay đổi có 2 dòng (tiêu chí, tình trạng) cùng người thực hiện là người tick, chip "Tự động theo tiến độ" ở dòng tình trạng; lần tick kế tiếp dùng `version` mới (không báo xung đột 409).
 - **UX kiểm kèm:** CN, PH (người dùng có hiểu vì sao tình trạng đổi không?), thử cả mobile (tab Tiến độ).
 
 ## 4. F3 - Nhật ký chăm sóc và ảnh (spec `f3-care-log.spec.ts`)
 
-Form: thẻ "Ghi chú chăm sóc" (`form` có nhãn "Thêm nhật ký chăm sóc") ở chi tiết khách: "Nội dung trao đổi *", "Kênh liên hệ", "Kết quả liên hệ" (mặc định "— Chưa chọn —"), nhóm "Nhắc việc tiếp theo" ("Việc cần làm tiếp theo", "Thời điểm nhắc", hộp "Tạo lịch hẹn "Nhắc gọi lại" vào thời điểm này"), khung "Ảnh đính kèm (tuỳ chọn)" với nút "Thêm ảnh", nút "Lưu nhật ký" (khóa khi nội dung rỗng; đang lưu hiện "Đang lưu…", đang tải ảnh hiện "Đang tải ảnh…").
+Form (từ v1.0.3, PT-020): không hiện sẵn mà mở khi bấm "Ghi chú"; ở Việc hôm nay, danh sách khách và lịch hẹn, mục menu "Ghi chú nhanh" (nhãn giữ nguyên) mở hộp thoại `CareLogDialog` dùng **cùng form đầy đủ** (không còn `QuickNoteModal` rút gọn), có hỏi xác nhận khi bỏ bản nháp (spec cần cập nhật theo luồng mở form). Thẻ "Ghi chú chăm sóc" (`form` có nhãn "Thêm nhật ký chăm sóc") ở chi tiết khách: "Nội dung trao đổi *", "Kênh liên hệ", "Kết quả liên hệ" (mặc định "— Chưa chọn —"), nhóm "Nhắc việc tiếp theo" ("Việc cần làm tiếp theo", "Thời điểm nhắc", hộp "Tạo lịch hẹn "Nhắc gọi lại" vào thời điểm này"), khung "Ảnh đính kèm (tuỳ chọn)" với nút "Thêm ảnh", nút "Lưu nhật ký" (khóa khi nội dung rỗng; đang lưu hiện "Đang lưu…", đang tải ảnh hiện "Đang tải ảnh…").
 
 ### F3-01 Ghi nhật ký có nhắc việc, hiện ngay (P0)
 - **Bước:** vào chi tiết khách mồi -> gõ "Nội dung trao đổi" -> chọn "Kênh liên hệ" -> chọn "Kết quả liên hệ" -> gõ "Việc cần làm tiếp theo" + chọn "Thời điểm nhắc" (hôm nay, giờ sau) -> bấm "Lưu nhật ký".
@@ -175,7 +175,7 @@ Form: thẻ "Ghi chú chăm sóc" (`form` có nhãn "Thêm nhật ký chăm sóc
 
 ## 5. F4 - Lịch hẹn và nhắc việc (spec `f4-appointments.spec.ts` và `f4b-appointment-context.spec.ts`)
 
-Form: `/crm/appointments/new` ("Tạo lịch hẹn mới"). Khối: "Khách hàng" (chọn bằng "Chọn khách hàng"), "Loại cuộc hẹn & Mục đích làm việc", "Dự án" (có "Không chọn", nhóm "Khách quan tâm", "Dự án khác", chip "Nên chọn"), "Ngày diễn ra", "Giờ (giờ Việt Nam)", "Địa điểm", "Ghi chú / chuẩn bị", "Người thực hiện", "Nhắc trước"; nút "Xác nhận tạo lịch hẹn", nút "Hủy bỏ" (**[Chưa rõ]** chữ chính xác của nút hủy trong `FormActionBar`), dòng thông tin "Còn N trường bắt buộc cần kiểm tra" / "Đã đủ thông tin bắt buộc". Thông báo thành công: "Tạo lịch hẹn thành công" + "Lịch hẹn với <tên> đã được lưu."
+Form: `/crm/appointments/new` ("Tạo lịch hẹn mới"). Khối: "Khách hàng" (chọn bằng "Chọn khách hàng"), "Loại cuộc hẹn & Mục đích làm việc", "Dự án" (từ v1.0.3 là ô chọn có tìm kiếm `SearchableSelect`: một lựa chọn, gõ tìm không dấu, có "Không chọn"; không còn nhãn nhóm "Khách quan tâm" / "Dự án khác" nhưng dự án khách quan tâm xếp đầu khi chưa gõ; chưa có trạng thái loading/lỗi riêng; chip "Nên chọn" và gợi ý vẫn giữ như cũ), "Ngày diễn ra", "Giờ (giờ Việt Nam)", "Địa điểm", "Ghi chú / chuẩn bị", "Người thực hiện", "Nhắc trước"; nút "Xác nhận tạo lịch hẹn", nút "Hủy bỏ" (**[Chưa rõ]** chữ chính xác của nút hủy trong `FormActionBar`), dòng thông tin "Còn N trường bắt buộc cần kiểm tra" / "Đã đủ thông tin bắt buộc". Thông báo thành công: "Tạo lịch hẹn thành công" + "Lịch hẹn với <tên> đã được lưu."
 
 Ba hồi quy nặng nhất (G5, G6, G7, G2) gom vào `f4b`, chạy trước trong CI.
 
@@ -228,7 +228,7 @@ Ba hồi quy nặng nhất (G5, G6, G7, G2) gom vào `f4b`, chạy trước tron
 - **UX kiểm kèm:** PH, RG, TT.
 
 ### F4-08 Đánh dấu hoàn thành, chuông thông báo (P1)
-- **Bước:** màn Lịch hẹn -> ở một thẻ mở "Thao tác khác" -> chọn "Đánh dấu hoàn thành" (có cả "Xem hồ sơ khách", "Ghi chú nhanh", "Nhắn Zalo") -> chọn lại để "Bỏ đánh dấu hoàn thành"; ở "Việc hôm nay" bấm "Hoàn thành" trên việc lịch hẹn; mở chuông thông báo trên header trước và sau khi tạo một lịch có nhắc trước.
+- **Bước:** màn Lịch hẹn -> ở một thẻ mở "Thao tác khác" -> chọn "Đánh dấu hoàn thành" (có cả "Xem hồ sơ khách", "Ghi chú nhanh" (mở `CareLogDialog`, form đầy đủ), "Nhắn Zalo") -> chọn lại để "Bỏ đánh dấu hoàn thành"; ở "Việc hôm nay" bấm "Hoàn thành" trên việc lịch hẹn; mở chuông thông báo trên header trước và sau khi tạo một lịch có nhắc trước.
 - **Kết quả:** trạng thái thẻ đổi tức thì và khớp sau tải lại; KPI "Hoàn thành tháng này" tăng/giảm đúng; "Xem hồ sơ khách" mở đúng khách; chuông tăng số khi có nhắc đến hạn **[Chưa rõ]** cơ chế đến hạn (cần seed nhắc đã quá hạn để kiểm được trong thời gian test).
 - **Hậu trường:** `appointments.status` = DONE/SCHEDULED theo thao tác, `version` tăng; `reminders` đúng.
 - **UX kiểm kèm:** PH, ĐH, CN.

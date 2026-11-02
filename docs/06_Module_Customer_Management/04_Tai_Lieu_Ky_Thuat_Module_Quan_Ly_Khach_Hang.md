@@ -574,14 +574,14 @@ Lưu ý (v1.0.3, PT-023): lệnh `PATCH /status`, đổi hàng loạt và Hoàn 
 
 ### 6.2a Tự đổi tình trạng theo tiến độ (PT-023, v1.0.3)
 
-**Quy tắc nghiệp vụ** (Oniichan chốt 2026-11-02; 3 điểm (a) không thông báo, (b) chỉ đè khi nhóm `NOT_CONTACTED`/`INTERESTED`, (c) không lùi/đè trạng thái cao hơn là **giả định tạm đã áp dụng**, chờ xác nhận, xem `docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mục 7 câu 9, 19, 20):
+**Quy tắc nghiệp vụ** (Oniichan chốt 2026-11-02; 3 điểm (a) không thông báo, (b) chỉ đè khi nhóm `NOT_CONTACTED`/`INTERESTED`, (c) không lùi/đè trạng thái cao hơn là **giả định tạm đã áp dụng**, chờ xác nhận, xem `docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mục 7 câu 9. Câu 19 (4/4 rồi bỏ một tiêu chí xuống 3/4 thì **tự lên "Khách net"**) và câu 20 (tình trạng tùy biến bị đè, hạ thì về `INTERESTED` hệ thống) **Oniichan đã chốt 2026-11-02**):
 
 - Chỉ xét khi lần cập nhật làm `progress` **thực sự đổi**. Đủ **3/4** tiêu chí bất kỳ (`progress = 75`):
-  - `progress` **VƯỢT LÊN đúng 75** (từ dưới 75) và tình trạng hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED` ⇒ tự chuyển hẳn sang `NET` ("Khách net") và đặt `statusAutoSource = 'CRITERIA_PROGRESS'`.
+  - `progress` **mới = 75** và `progress` cũ **khác 75** (từ 0/25/50 lên 75, **hoặc từ 100 xuống 75**, tức 4/4 bỏ một tiêu chí) và tình trạng hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED` ⇒ tự chuyển hẳn sang `NET` ("Khách net") và đặt `statusAutoSource = 'CRITERIA_PROGRESS'`.
   - `progress` tụt từ 75 trở lên xuống **dưới 75** và tình trạng hiện tại là `NET` **do cơ chế này đặt** (có `statusAutoSource`) ⇒ tự về `INTERESTED` ("Có quan tâm"), xóa dấu. Hạ từ 3/4 hoặc 4/4 xuống 1/4 hay 0/4 cũng là dưới ngưỡng.
-- **Không làm gì** khi: đủ 4/4 (kể cả 0/25/50 lên 100); 100 xuống 75 (không phải "vượt lên", tránh đè tình trạng đã đổi tay); khách đang `DROPPED` hoặc ở nhóm cao hơn; `NET` do đổi tay hoặc có sẵn (không có dấu) khi hạ tiêu chí; `progress` không đổi (chỉ sửa mô tả).
+- **Không làm gì** khi: đủ 4/4 (kể cả 0/25/50 lên 100); khách đang `DROPPED` hoặc ở nhóm cao hơn (kể cả khi 100 xuống 75); `NET` do đổi tay hoặc có sẵn (không có dấu) khi hạ tiêu chí; `progress` không đổi (chỉ sửa mô tả).
 - **Chỉ** `PATCH /crm/customers/:id/criteria` kích hoạt. Nhập CSV và đổi hàng loạt **không** kích hoạt. **Lưu ý:** backend hiện **chưa có** nhập CSV (M8); khi làm M8 phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
-- Tình trạng cũ dạng tùy biến (Quản trị thêm) thuộc nhóm `INTERESTED`/`NOT_CONTACTED` vẫn bị đè thành `NET`, và khi hạ thì khách về `INTERESTED` của hệ thống chứ không về tình trạng cũ (mục 7 câu 20 của tài liệu phiên bản).
+- Tình trạng cũ dạng tùy biến (Quản trị thêm) thuộc nhóm `INTERESTED`/`NOT_CONTACTED` vẫn bị đè thành `NET`, và khi hạ thì khách về `INTERESTED` của hệ thống chứ không về tình trạng cũ (mục 7 câu 20 của tài liệu phiên bản; Oniichan đã chấp nhận 2026-11-02).
 
 **Cơ chế (backend):**
 

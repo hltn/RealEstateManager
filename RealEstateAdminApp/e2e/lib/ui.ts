@@ -41,6 +41,24 @@ export function queryParam(url: string, name: string): string | null {
 /** Ô "Khách hàng" của form tạo lịch hẹn khi bị khóa (thẻ chỉ-đọc, role=group). */
 export const lockedCustomerCard = (page: Page): Locator => page.getByRole('group', { name: 'Khách hàng' });
 
+/**
+ * Ô "Dự án" của form tạo lịch hẹn là combobox có tìm kiếm (không còn là <select>): ô hiện TÊN dự án (không phải id), chọn bằng cách mở danh sách
+ * rồi bấm dòng theo tên ("Không chọn" = bỏ dự án).
+ */
+export async function selectAppointmentProject(page: Page, projectName: string): Promise<void> {
+  await page.getByLabel('Dự án', { exact: true }).click();
+  await page.getByRole('listbox', { name: 'Danh sách dự án' }).getByRole('option', { name: projectName, exact: true }).click();
+}
+
+/** Tên các dòng trong danh sách dự án của form tạo lịch hẹn theo thứ tự hiển thị (mở danh sách rồi đóng lại bằng Esc). */
+export async function listAppointmentProjectOptions(page: Page): Promise<string[]> {
+  const input = page.getByLabel('Dự án', { exact: true });
+  await input.click();
+  const names = await page.getByRole('listbox', { name: 'Danh sách dự án' }).getByRole('option').allTextContents();
+  await input.press('Escape');
+  return names;
+}
+
 /** JPEG hợp lệ do chính trình duyệt vẽ (canvas) để không phải đưa file nhị phân vào repo; luôn < 1 MB. */
 export async function makeJpeg(page: Page, seed = 0): Promise<Buffer> {
   const b64 = await page.evaluate((n) => {

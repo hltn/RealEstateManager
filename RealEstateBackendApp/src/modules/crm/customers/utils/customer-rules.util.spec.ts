@@ -118,7 +118,7 @@ describe('decideAutoStatus (PT-023)', () => {
       ...over,
     });
 
-  describe('vượt lên đúng 3/4 (75)', () => {
+  describe('về đúng 3/4 (75) từ mức khác 75', () => {
     it.each([
       [ListGroup.NOT_CONTACTED, 'NOT_CONTACTED'],
       [ListGroup.INTERESTED, 'INTERESTED'],
@@ -153,8 +153,26 @@ describe('decideAutoStatus (PT-023)', () => {
       expect(decide(0, 100)).toBeNull();
     });
 
-    it('100->75 (đang ở 4/4 rồi hạ) -> null, không đè tình trạng đã đổi tay', () => {
-      expect(decide(100, 75)).toBeNull();
+    it('100->75 (đang ở 4/4 rồi hạ) với NOT_CONTACTED/INTERESTED -> NET', () => {
+      expect(decide(100, 75)).toBe('NET');
+      expect(
+        decide(100, 75, {
+          currentGroup: ListGroup.NOT_CONTACTED,
+          currentCode: 'NOT_CONTACTED',
+        }),
+      ).toBe('NET');
+    });
+
+    it('100->75 với NET (đổi tay/có sẵn) / DROPPED -> null', () => {
+      expect(
+        decide(100, 75, { currentGroup: ListGroup.NET, currentCode: 'NET' }),
+      ).toBeNull();
+      expect(
+        decide(100, 75, {
+          currentGroup: ListGroup.DROPPED,
+          currentCode: 'DROPPED',
+        }),
+      ).toBeNull();
     });
 
     it('tiến độ không đổi ở 75 (sửa mô tả) -> null', () => {
@@ -216,8 +234,8 @@ describe('decideAutoStatus — ma trận đầy đủ prev x next x nhóm x mark
     [ListGroup.DROPPED, 'DROPPED'],
   ] as const;
 
-  // Kỳ vọng viết tay (KHÔNG suy ra từ chính hàm): chỉ 3 cặp lên 75 và 4 cặp xuống dưới 75 là có tự chuyển.
-  const UP = new Set(['0>75', '25>75', '50>75']);
+  // Kỳ vọng viết tay (KHÔNG suy ra từ chính hàm): 4 cặp về đúng 75 (gồm 100>75) và 6 cặp xuống dưới 75 là có tự chuyển.
+  const UP = new Set(['0>75', '25>75', '50>75', '100>75']);
   const DOWN = new Set(['75>0', '75>25', '75>50', '100>0', '100>25', '100>50']);
 
   it.each(
@@ -281,10 +299,90 @@ describe('crossesAutoStatusThreshold (PT-023)', () => {
     [50, 25, false],
     [75, 75, false],
     [75, 100, false],
-    [100, 75, false],
+    [100, 75, true],
     [0, 100, false],
     [50, 100, false],
   ])('%i -> %i = %s', (prev, next, expected) => {
     expect(crossesAutoStatusThreshold(prev, next)).toBe(expected);
+  });
+});
+
+describe('crossesAutoStatusThreshold — toàn bộ 25 cặp & nhất quán với decideAutoStatus (PT-023)', () => {
+  const STEPS = [0, 25, 50, 75, 100] as const;
+  // Kỳ vọng viết tay: chỉ về đúng 75 từ mức khác (0/25/50/100) hoặc từ >= 75 xuống dưới 75 mới "đi qua mốc".
+  const CROSSING = new Set([
+    '0>75',
+    '25>75',
+    '50>75',
+    '100>75',
+    '75>0',
+    '75>25',
+    '75>50',
+    '100>0',
+    '100>25',
+    '100>50',
+  ]);
+
+  it.each(STEPS.flatMap((prev) => STEPS.map((next) => [prev, next] as const)))(
+    '%i -> %i khớp bảng kỳ vọng viết tay',
+    (prev, next) => {
+      expect(crossesAutoStatusThreshold(prev, next)).toBe(
+        CROSSING.has(`${prev}>${next}`),
+      );
+    },
+  );
+
+  it('decide trả khác null thì crosses PHẢI true (không bỏ sót), mọi nhóm x marker', () => {
+    const groups = [
+      [ListGroup.NOT_CONTACTED, 'NOT_CONTACTED'],
+      [ListGroup.INTERESTED, 'INTERESTED'],
+      [ListGroup.NET, 'NET'],
+      [ListGroup.DROPPED, 'DROPPED'],
+    ] as const;
+    for (const prev of STEPS) {
+      for (const next of STEPS) {
+        for (const [currentGroup, currentCode] of groups) {
+          for (const isAutoSet of [false, true]) {
+            const target = decideAutoStatus({
+              prevProgress: prev,
+              nextProgress: next,
+              currentGroup,
+              currentCode,
+              isAutoSet,
+            });
+            if (target !== null) {
+              expect(crossesAutoStatusThreshold(prev, next)).toBe(true);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('mỗi cặp crosses=true đều có ít nhất 1 tổ hợp nhóm/marker khiến decide đổi (không truy vấn thừa vô nghĩa)', () => {
+    const groups = [
+      [ListGroup.NOT_CONTACTED, 'NOT_CONTACTED'],
+      [ListGroup.INTERESTED, 'INTERESTED'],
+      [ListGroup.NET, 'NET'],
+      [ListGroup.DROPPED, 'DROPPED'],
+    ] as const;
+    for (const prev of STEPS) {
+      for (const next of STEPS) {
+        if (!crossesAutoStatusThreshold(prev, next)) continue;
+        const anyChange = groups.some(([currentGroup, currentCode]) =>
+          [false, true].some(
+            (isAutoSet) =>
+              decideAutoStatus({
+                prevProgress: prev,
+                nextProgress: next,
+                currentGroup,
+                currentCode,
+                isAutoSet,
+              }) !== null,
+          ),
+        );
+        expect(anyChange).toBe(true);
+      }
+    }
   });
 });

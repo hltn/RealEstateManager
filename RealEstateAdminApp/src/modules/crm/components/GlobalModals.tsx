@@ -12,8 +12,8 @@ import { getPersonaText } from '@crm/lib/customerRules';
 import { useCrmActions, useCrmState, useCurrentUser } from '@crm/store';
 import { AdvancedFilterModal } from './AdvancedFilterModal';
 import { CallModal, type ContactTarget } from './CallModal';
+import { CareLogDialog } from './CareLogDialog';
 import { LightboxModal } from './LightboxModal';
-import { QuickNoteModal } from './QuickNoteModal';
 import { ZaloModal } from './ZaloModal';
 
 export const GlobalModals = () => {
@@ -66,9 +66,9 @@ export const GlobalModals = () => {
         />
       ) : null;
 
-    case 'quick_note':
+    case 'quick_note': // ghi chú tại chỗ: form ĐẦY ĐỦ (như tab Nhật ký) trong hộp thoại/bottom sheet
       return customer ? (
-        <QuickNoteModal key={customer.id} customer={customer} variant={isMobile ? 'sheet' : 'dialog'} onClose={actions.closeModal} />
+        <CareLogDialog key={customer.id} customer={customer} variant={isMobile ? 'sheet' : 'dialog'} onClose={actions.closeModal} />
       ) : null;
 
     case 'lightbox':

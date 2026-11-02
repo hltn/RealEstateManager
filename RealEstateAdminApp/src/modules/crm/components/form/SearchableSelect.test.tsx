@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAreaSearchTerms } from '@crm/lib/areaMatch';
 import { SearchableSelect } from './SearchableSelect';
 
@@ -174,5 +174,70 @@ describe('SearchableSelect (ô chọn khu vực có tìm kiếm)', () => {
     await user.keyboard('d');
     expect(input).toHaveValue('d');
     expect(optionLabels()).toEqual(['Đà Nẵng']);
+  });
+});
+
+describe('SearchableSelect: isViewportAware (thân thiện điện thoại, mặc định tắt)', () => {
+  const renderSelect = (isViewportAware?: boolean) =>
+    render(<SearchableSelect id="x" aria-label="Chọn" options={OPTIONS} value="" onChange={vi.fn()} isViewportAware={isViewportAware} />);
+
+  it('mặc định giữ nguyên giao diện cũ (chữ text-sm, dòng không ép cao 44px)', async () => {
+    renderSelect();
+    const input = screen.getByRole('combobox');
+    expect(input.className.split(/\s+/)).toContain('text-sm');
+    expect(input.className.split(/\s+/)).not.toContain('text-base');
+    await userEvent.setup().click(input);
+    expect(screen.getAllByRole('option')[0].className).not.toContain('min-h-11');
+  });
+
+  it('bật: chữ 16px trên điện thoại (text-base md:text-sm, không còn text-sm trần) và dòng cao tối thiểu 44px', async () => {
+    renderSelect(true);
+    const input = screen.getByRole('combobox');
+    expect(input.className.split(/\s+/)).toEqual(expect.arrayContaining(['text-base', 'md:text-sm', 'pl-4']));
+    expect(input.className.split(/\s+/)).not.toContain('text-sm');
+    await userEvent.setup().click(input);
+    expect(screen.getAllByRole('option')[0].className).toContain('min-h-11');
+  });
+
+  describe('chiều cao danh sách theo visualViewport (bàn phím ảo iOS)', () => {
+    const installViewport = (height: number) => {
+      const addEventListener = vi.fn();
+      const removeEventListener = vi.fn();
+      Object.defineProperty(window, 'visualViewport', { configurable: true, value: { height, offsetTop: 0, scale: 1, addEventListener, removeEventListener } });
+      return { addEventListener, removeEventListener };
+    };
+    afterEach(() => {
+      Object.defineProperty(window, 'visualViewport', { configurable: true, value: undefined });
+    });
+
+    it('bật: vùng nhìn thấy thấp (bàn phím che) thì danh sách bị giới hạn theo chỗ trống, tối thiểu 144px; còn rộng thì tối đa 256px', async () => {
+      installViewport(200); // jsdom: đáy ô nhập = 0 -> chỗ trống = 200 - 8 = 192
+      const { unmount } = renderSelect(true);
+      await userEvent.setup().click(screen.getByRole('combobox'));
+      expect(screen.getByRole('listbox')).toHaveStyle({ maxHeight: '192px' });
+      unmount();
+      installViewport(100); // chỗ trống 92 < 144 -> nâng lên mức tối thiểu dùng được
+      renderSelect(true);
+      await userEvent.setup().click(screen.getByRole('combobox'));
+      expect(screen.getByRole('listbox')).toHaveStyle({ maxHeight: '144px' });
+    });
+
+    it('bật: đóng danh sách / gỡ ô thì gỡ listener visualViewport (không rò)', async () => {
+      const { addEventListener, removeEventListener } = installViewport(600);
+      const { unmount } = renderSelect(true);
+      expect(addEventListener).not.toHaveBeenCalled(); // đóng: chưa theo dõi
+      await userEvent.setup().click(screen.getByRole('combobox'));
+      expect(addEventListener).toHaveBeenCalledTimes(2);
+      unmount();
+      expect(removeEventListener).toHaveBeenCalledTimes(2);
+    });
+
+    it('mặc định tắt: không đăng ký listener và không gán maxHeight inline', async () => {
+      const { addEventListener } = installViewport(200);
+      renderSelect();
+      await userEvent.setup().click(screen.getByRole('combobox'));
+      expect(addEventListener).not.toHaveBeenCalled();
+      expect(screen.getByRole('listbox').style.maxHeight).toBe('');
+    });
   });
 });

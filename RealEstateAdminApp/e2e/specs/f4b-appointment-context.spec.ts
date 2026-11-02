@@ -12,7 +12,7 @@
  */
 import { test, expect } from '../fixtures';
 import { tomorrowSlot } from '../lib/api';
-import { MOBILE_VIEWPORT, note, openCustomerDetail, setSchedule, todaySlot, toast } from '../lib/ui';
+import { MOBILE_VIEWPORT, listAppointmentProjectOptions, note, openCustomerDetail, selectAppointmentProject, setSchedule, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
 const SUBMIT = 'Xác nhận tạo lịch hẹn';
@@ -22,17 +22,6 @@ const customerCard = (page: Page) => page.getByRole('group', { name: /^Khách h�
 const locationInput = (page: Page) => page.getByRole('textbox', { name: /^Địa điểm/ });
 const assigneeSelect = (page: Page) => page.getByRole('combobox', { name: /^Người thực hiện/ });
 const projectSelect = (page: Page) => page.getByLabel('Dự án', { exact: true });
-
-async function projectGroups(page: Page): Promise<Array<{ group: string; options: string[] }>> {
-  return projectSelect(page).evaluate((el) => {
-    const select = el as HTMLSelectElement;
-    return Array.from(select.children).map((child) =>
-      child.tagName === 'OPTGROUP'
-        ? { group: (child as HTMLOptGroupElement).label, options: Array.from(child.children).map((o) => o.textContent ?? '') }
-        : { group: '', options: [child.textContent ?? ''] },
-    );
-  });
-}
 
 test.describe('f4b-appointment-context', () => {
   test('F4-01 đặt lịch từ chi tiết khách: mang khách + dự án, khóa trường khách, giữ sau F5 (G5, G2, G7)', async ({ loginAs, api, seed, backstage }, testInfo) => {
@@ -54,7 +43,7 @@ test.describe('f4b-appointment-context', () => {
       await expect(page.getByText(LOCKED_HINT)).toBeVisible();
       await expect(page.getByRole('button', { name: /Thay đổi khách|Chọn khách/ })).toHaveCount(0);
       // 3. Dự án duy nhất khách quan tâm được gợi ý sẵn.
-      await expect(projectSelect(page)).toHaveValue(A.id);
+      await expect(projectSelect(page)).toHaveValue(A.name);
       // 4. Người thực hiện mặc định theo nhóm chăm sóc, chỉ có người trong nhóm.
       await expect(assigneeSelect(page)).toHaveValue(seed.users.staff1.id);
       await expect(assigneeSelect(page).locator('option')).toHaveCount(1);
@@ -97,11 +86,10 @@ test.describe('f4b-appointment-context', () => {
     await expect(customerCard(page)).toContainText(customer.fullName);
 
     await expect(projectSelect(page)).toHaveValue('');
-    const groups = await projectGroups(page);
-    expect(groups[0]).toEqual({ group: '', options: ['Không chọn'] });
-    expect(groups[1].group).toBe('Khách quan tâm');
-    expect([...groups[1].options].sort()).toEqual([A.name, B.name].sort());
-    expect(groups[2]?.group).toBe('Dự án khác');
+    // Combobox không còn nhóm có tiêu đề: "Không chọn" đứng đầu, rồi đúng các dự án khách quan tâm, rồi các dự án khác.
+    const options = await listAppointmentProjectOptions(page);
+    expect(options[0]).toBe('Không chọn');
+    expect(options.slice(1, 3).sort()).toEqual([A.name, B.name].sort());
   });
 
   test('F4-01 id khách sai định dạng hoặc ngoài phạm vi: form về "chưa chọn khách", không khóa, không lộ tên', async ({ loginAs, api }) => {
@@ -230,7 +218,7 @@ test.describe('f4b-appointment-context', () => {
     await expect(customerCard(page)).toContainText(customer.fullName);
     await expect(page.getByText(LOCKED_HINT)).toBeVisible();
     await expect(page.getByRole('button', { name: /Thay đổi khách|Chọn khách/ })).toHaveCount(0);
-    await expect(projectSelect(page)).toHaveValue(A.id);
+    await expect(projectSelect(page)).toHaveValue(A.name);
     await expect(page.getByRole('button', { name: 'Quay lại' })).toBeVisible();
 
     // Lưu: về chi tiết khách; thẻ lịch hẹn di động hiện dự án.
@@ -315,7 +303,7 @@ test.describe('f4b-appointment-context', () => {
     await expect(cardB).toHaveCount(1);
     await cardB.getByRole('button', { name: /Dẫn khách xem/ }).click();
     await expect(page).toHaveURL(new RegExp(`/crm/appointments/new\\?projectId=${B.id}$`));
-    await expect(projectSelect(page)).toHaveValue(B.id);
+    await expect(projectSelect(page)).toHaveValue(B.name);
     await expect(page.getByText('Chưa chọn khách hàng.')).toBeVisible(); // chưa có ngữ cảnh khách
     await expect(page.getByRole('button', { name: 'Chọn khách' })).toBeVisible();
 
@@ -324,7 +312,7 @@ test.describe('f4b-appointment-context', () => {
     await page.getByLabel('Tìm khách hàng').fill(customer.fullName);
     await page.getByRole('listbox', { name: 'Danh sách khách hàng' }).getByRole('button', { name: new RegExp(customer.fullName) }).click();
     await expect(customerCard(page)).toHaveCount(0);
-    await expect(projectSelect(page)).toHaveValue(B.id); // dự án mang sang thắng gợi ý theo khách (khách quan tâm A)
+    await expect(projectSelect(page)).toHaveValue(B.name); // dự án mang sang thắng gợi ý theo khách (khách quan tâm A)
     await setSchedule(page, tomorrowSlot());
     await locationInput(page).fill('Sa bàn dự án B');
     await page.getByRole('button', { name: SUBMIT }).click();
@@ -346,7 +334,7 @@ test.describe('f4b-appointment-context', () => {
     await page.goto(`/crm/appointments/new?customerId=${customer.id}&projectId=${B.id}`);
     await expect(customerCard(page)).toContainText(customer.fullName);
     await expect(page.getByText(LOCKED_HINT)).toBeVisible();
-    await expect(projectSelect(page)).toHaveValue(B.id);
+    await expect(projectSelect(page)).toHaveValue(B.name);
   });
 
   test('F4-06 dự án bị ngừng giữa chừng: lỗi hiện cạnh ô Dự án, focus, không mất dữ liệu, sửa dự án rồi lưu được (G7)', async ({ loginAs, api, backstage }) => {
@@ -355,7 +343,7 @@ test.describe('f4b-appointment-context', () => {
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
     await page.getByRole('button', { name: 'Đặt lịch hẹn' }).click();
-    await expect(projectSelect(page)).toHaveValue(C.id);
+    await expect(projectSelect(page)).toHaveValue(C.name);
     const slot = tomorrowSlot();
     await setSchedule(page, slot);
     await locationInput(page).fill('Giữ nguyên địa điểm này');
@@ -378,7 +366,7 @@ test.describe('f4b-appointment-context', () => {
     expect((await backstage.find('appointments')).filter((r) => String(r.customerId) === customer.id)).toHaveLength(0);
 
     // Đổi sang "Không chọn": lỗi biến mất, lưu được.
-    await projectSelect(page).selectOption('');
+    await selectAppointmentProject(page, 'Không chọn');
     await expect(fieldError).toHaveCount(0);
     await page.getByRole('button', { name: SUBMIT }).click();
     await expect(page).toHaveURL(new RegExp(`/crm/customers/${customer.id}$`));

@@ -12,9 +12,11 @@ interface CareLogComposerProps {
   customer: CustomerDetail;
   variant: 'desktop' | 'mobile';
   composer: NoteComposer;
+  /** 'dialog' = form nằm trong hộp thoại/bottom sheet (không khung thẻ); xem `CareLogForm`. */
+  layout?: 'card' | 'dialog';
 }
 
-export const CareLogComposer = ({ customer, variant, composer }: CareLogComposerProps) => {
+export const CareLogComposer = ({ customer, variant, composer, layout }: CareLogComposerProps) => {
   const { state, pending, openCreate, close, requestClose, confirmPending, cancelPending, reportGuard } = composer;
 
   if (state.kind === 'closed') {
@@ -35,6 +37,7 @@ export const CareLogComposer = ({ customer, variant, composer }: CareLogComposer
         key={state.kind === 'edit' ? state.log.id : 'create'}
         customer={customer}
         variant={variant}
+        layout={layout}
         editingLog={state.kind === 'edit' ? state.log : undefined}
         onClose={close}
         onCancel={requestClose}

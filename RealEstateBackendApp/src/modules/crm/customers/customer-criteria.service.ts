@@ -57,8 +57,8 @@ export class CustomerCriteriaService {
   /**
    * Cập nhật 1-4 tiêu chí; `progress` = số tiêu chí hoàn thành x 25 do server tính và ghi CÙNG lệnh update.
    * Gửi giá trị trùng giá trị hiện có là no-op (không tăng version, không audit).
-   * PT-023: khi tiến độ đổi, tự chuyển tình trạng (vượt lên 3/4 -> NET; xuống dưới 3/4 -> INTERESTED nếu NET do
-   * cơ chế tự động đặt) CÙNG transaction; lỗi ở bước đổi tình trạng làm rollback cả tiêu chí.
+   * PT-023: khi tiến độ đổi, tự chuyển tình trạng (về đúng 3/4 từ mức khác, kể cả 100 -> 75 -> NET; xuống dưới
+   * 3/4 -> INTERESTED nếu NET do cơ chế tự động đặt) CÙNG transaction; lỗi ở bước đổi tình trạng làm rollback cả tiêu chí.
    */
   async updateCriteria(
     jwt: JwtPayload,

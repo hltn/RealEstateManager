@@ -50,9 +50,19 @@ interface OwnedState {
 const isSameForm = (current: NoteComposerState, target: NoteComposerState): boolean =>
   current.kind === target.kind && (current.kind !== 'edit' || target.kind !== 'edit' || current.log.id === target.log.id);
 
-export const useNoteComposer = (customerId: string): NoteComposer => {
-  const [owned, setOwned] = useState<OwnedState>({ customerId, state: CLOSED, pending: null });
+export interface NoteComposerOptions {
+  /** Trạng thái lúc dựng (mặc định đóng). Hộp thoại ghi chú ở các màn khác dựng sẵn `{ kind: 'create' }`. */
+  initialState?: NoteComposerState;
+  /** Gọi khi form được ĐÓNG (sau lưu, Hủy/X, hoặc xác nhận bỏ nháp) — để chỗ chứa (hộp thoại/bottom sheet) tự gỡ mình. */
+  onClosed?: () => void;
+}
+
+export const useNoteComposer = (customerId: string, options: NoteComposerOptions = {}): NoteComposer => {
+  const [owned, setOwned] = useState<OwnedState>({ customerId, state: options.initialState ?? CLOSED, pending: null });
   const guardRef = useRef<NoteComposerGuard>(IDLE_GUARD);
+  // Giữ callback mới nhất mà không làm đổi danh tính các hàm trả về.
+  const onClosedRef = useRef(options.onClosed);
+  onClosedRef.current = options.onClosed;
   const isCurrent = owned.customerId === customerId;
   const state = isCurrent ? owned.state : CLOSED;
   const pending = isCurrent ? owned.pending : null;
@@ -61,6 +71,7 @@ export const useNoteComposer = (customerId: string): NoteComposer => {
     (target: NoteComposerState) => {
       guardRef.current = IDLE_GUARD;
       setOwned({ customerId, state: target, pending: null });
+      if (target.kind === 'closed') onClosedRef.current?.();
     },
     [customerId],
   );
