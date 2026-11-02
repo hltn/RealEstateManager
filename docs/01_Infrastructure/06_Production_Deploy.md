@@ -5,6 +5,7 @@ Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài li
 > Trạng thái kiểm chứng:
 > - **Đã chạy thật** (máy dev, project tạm, mật khẩu giả): Mongo/Redis/MinIO/minio-init; nâng cấp tại chỗ từ standalone; mongodump/mongorestore; `mc mirror`; ký URL bằng host công khai. QA đã dựng và chạy **backend thật** trên stack này: readiness 200 (database/redis/storage up), đăng nhập, tạo khách hàng có transaction, idempotency, upload ảnh + presigned URL (Host khớp trả 200, Host sai trả 403), dữ liệu còn sau restart và `down`/`up`. Với `NODE_ENV=production` đã chạy thật lại: backend khởi động, readiness 200, đăng nhập admin OK, `Set-Cookie` refresh có `Secure`, thiếu `ADMIN_*` trên DB trống thì backend thoát với lỗi rõ ràng.
 > - **Chưa kiểm chứng**: frontend nginx; cloudflared và Tunnel thật; đường lui 5.8 và khôi phục từ tar volume; hành vi trên server Linux thật (đặc biệt quyền ghi `./logs`, xem mục 4); đăng nhập qua HTTPS thật phía sau nginx + Cloudflare.
+> - **Mới thêm, chưa chạy trên server thật**: service `nine-router` (9Router) trong compose, `scripts/run-migration.sh`, `scripts/check-disk.sh`, `deploy.sh` (mục 11) và thư viện `scripts/lib/ops-common.sh`. **Đã thử thật ở máy dev** (qa-agent và devops-agent): `docker compose config` (kể cả thiếu từng biến bắt buộc); `docker build --target builder` rồi `bash scripts/run-migration.sh` 005 (3 user) và 006 (xóa 3 area, tạo 34 tỉnh) trên Mongo replica set có xác thực tạm; mô phỏng nâng cấp 5.1-5.5 trên volume mẫu; `git_update` của `deploy.sh` trong repo tạm; `deploy.sh` trong container Linux cô lập (Mongo thật, `docker` giả: mongodump, `mongorestore --dryRun`, đếm user chưa migrate 005, cổng dung lượng đĩa, chặn backup rác/rỗng/DB khác); logic chặn của khối 5.8.3. **Vẫn chưa thử**: `compose up` toàn stack, build frontend, stage `production` của backend, `deploy.sh` nguyên vẹn với Docker thật, rollback 5.8 bằng `up` thật, 5.0a trên container thật của VPS, `sudo -n chown`, và môi trường bash 5.2/Docker 29 của VPS.
 
 ## 1. Kiến trúc stack
 
@@ -14,6 +15,7 @@ Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài li
 | `redis` | `realestate_redis` | `redis:7-alpine` | `redis_data:/data` | không | AOF `everysec`, `noeviction`, `requirepass` |
 | `minio` | `realestate_minio` | `${MINIO_IMAGE}` (mặc định `cgr.dev/chainguard/minio:latest`) | `minio_data:/data` | không | S3 nội bộ `http://minio:9000` |
 | `minio-init` | `realestate_minio_init` | như `minio` | không | không | Chạy 1 lần, tạo 2 bucket riêng tư + hạn 7 ngày cho `crm-exports` |
+| `nine-router` | `realestate_9router` | `decolua/9router:latest` | `nine_router_data:/app/data` | `127.0.0.1:20128` (mặc định, đổi bằng `NINE_ROUTER_BIND_ADDR`) | 9Router, cổng định tuyến AI (một phần sản phẩm). Backend gọi `http://nine-router:20128/v1` trong network nội bộ |
 | `backend` | `realestate_backend` | build `RealEstateBackendApp` | bind `./logs`, `./.env` | không | Chờ mongo + redis healthy, minio-init xong |
 | `frontend` | `realestate_frontend` | build `RealEstateAdminApp` (nginx) | không | `80` | Proxy `/api/` sang backend; `client_max_body_size 6m` (upload ảnh CRM tối đa 5 MB, phải >= giới hạn backend) |
 | `cloudflared` | `realestate_cloudflared` | `cloudflare/cloudflared` | không | không | Tunnel token, hostname cấu hình ở dashboard Cloudflare |
@@ -24,7 +26,13 @@ Internet ── Cloudflare ── cloudflared ─┬─ <domain-admin> ─> fron
                                        └─ <domain-file>  ─> minio:9000 <─────────────────┘   minio:9000 (S3, nội bộ)
 ```
 
-Tất cả nằm trong network `realestate_net` (subnet cố định `10.213.77.0/24`, cloudflared giữ IP tĩnh `10.213.77.250`, xem mục 2.1); **chỉ frontend publish cổng 80**. Cổng Mongo `27017` đã bị bỏ (trước đây mở ra mọi interface mà không có xác thực).
+Tất cả nằm trong network `realestate_net` (subnet cố định `10.213.77.0/24`, cloudflared giữ IP tĩnh `10.213.77.250`, xem mục 2.1); **chỉ frontend publish cổng 80 ra mọi interface**, ngoài ra chỉ có cổng `20128` của 9Router (dashboard + API), mặc định bind **`127.0.0.1`** (chỉ vào được từ chính máy chủ). Cổng Mongo `27017` đã bị bỏ (trước đây mở ra mọi interface mà không có xác thực).
+
+**9Router (`nine-router`)**: backend dùng thật (`ACTIVE_AI_PLATFORM=9Router`, `NINEROUTER_BASE_URL=http://nine-router:20128/v1` trong `.env` của backend). Tên service **phải giữ là `nine-router`** (tên DNS nội bộ). Vì backend gọi qua tên service trong network nội bộ nên **không phụ thuộc** cổng publish ra host. Vào dashboard từ xa bằng SSH tunnel: `ssh -L 20128:localhost:20128 <user>@<host>` rồi mở `http://localhost:20128`.
+
+- **Chuyển từ cấu hình cũ (`0.0.0.0`, mọi interface) sang mặc định `127.0.0.1`:** truy cập dashboard trực tiếp qua IP/Tailscale của VPS sẽ **ngừng hoạt động**; muốn giữ thì đặt `NINE_ROUTER_BIND_ADDR=0.0.0.0` trong `.env.docker` (dashboard lộ ra mạng đó, cân nhắc kỹ).
+- Cổng `127.0.0.1:20128` chỉ bind **IPv4 loopback** (bản cũ `20128:20128` bind cả IPv4 và IPv6). Trước khi đổi, xác nhận **không có Cloudflare Tunnel ingress hay `tailscale serve`/`funnel` nào đang trỏ vào IP của host ở cổng 20128** (Zero Trust > Tunnels > Public Hostname; `tailscale serve status`): ingress kiểu đó sẽ hỏng khi chuyển sang loopback. Ingress trỏ `nine-router:20128` (tên service) thì vẫn chạy.
+- **Khóa API:** image 9Router **không đọc** biến `NINEROUTER_API_KEY` (đó là tên biến phía backend), nên compose không còn đặt biến này. API key mà backend dùng gọi 9Router là key tạo trong dashboard 9Router, lưu ở cấu hình/`.env` của backend; không liên quan tới compose. Các biến image có đọc (`API_KEY_SECRET`, `JWT_SECRET`, `MACHINE_ID_SALT`, `REQUIRE_API_KEY`, `AUTH_COOKIE_SECURE`...) hiện không đặt (dùng mặc định của image); nếu bản đang chạy trên VPS có đặt thì phải mang sang compose trước khi tạo lại container (mục 5.0a). `INITIAL_PASSWORD` theo README chỉ có tác dụng khi volume chưa có mật khẩu đã lưu.
 
 Quyết định thiết kế chính:
 
@@ -34,6 +42,7 @@ Quyết định thiết kế chính:
 | Mongo xác thực | root từ env + keyFile 400 user `mongodb`, tạo lại mỗi lần khởi động từ `MONGO_KEYFILE` | Replica set có auth bắt buộc keyFile; không để file secret trong repo/image |
 | Healthcheck Mongo | tự `rs.initiate` (idempotent) rồi chỉ healthy khi PRIMARY | Không cần bước khởi tạo thủ công khi triển khai mới |
 | Volume Mongo | giữ tên `mongo_data` | Dữ liệu production cũ không mất |
+| Volume 9Router | giữ tên khóa `nine_router_data` (volume thật `realestatemanager_nine_router_data`) | Volume đang có dữ liệu 9Router; đổi tên khóa/project là mất dấu dữ liệu |
 | Database | giữ `realestate` | Khớp dữ liệu cũ |
 | Redis | noeviction + AOF | BullMQ yêu cầu noeviction; job/idempotency sống qua restart |
 | MinIO | credential bắt buộc từ env, không cổng ra host | Không còn `minioadmin`, không lộ S3 ra mạng ngoài |
@@ -63,8 +72,11 @@ Mẫu toàn placeholder: `.env.docker.example`. Biến mới cần thêm vào `.
 | `CRM_ENABLED`, `CRM_ATTACHMENTS_ENABLED` | không | cờ CRM dùng chung backend (`FEATURE_CRM_*`) và build frontend (`VITE_*`) | mặc định `false`; xem mục 10. **Không** đặt `FEATURE_CRM_*` trong `.env.docker` (compose ghi đè) |
 | `FRONTEND_URL` | nên có | CORS và chuyển hướng sau Google Drive OAuth | `https://<domain-admin>`; thiếu thì compose dùng `http://localhost` (OAuth sẽ về localhost) |
 | `CRM_PII_ENCRYPTION_KEY` | **có khi bật CRM** | mã hóa CCCD (AES-256-GCM) | `openssl rand -base64 32`; **mất khóa = không giải mã lại được CCCD đã lưu**, sao lưu ngoài máy chủ |
+| `CLOUDFLARE_TUNNEL_TOKEN` | **có** | token Cloudflare Tunnel (`cloudflared`) | lấy ở Cloudflare Zero Trust; thiếu thì `docker compose` báo lỗi ngay (trước đây thiếu thì cloudflared chạy với token rỗng và lỗi âm thầm) |
+| `NINE_ROUTER_INITIAL_PASSWORD` | có | mật khẩu dashboard 9Router (`INITIAL_PASSWORD` của container `nine-router`) | `openssl rand -hex 16`; theo README chỉ có tác dụng khi volume `nine_router_data` chưa có mật khẩu đã lưu (VPS đang chạy: không đổi được mật khẩu hiện có, nhưng vẫn phải điền); không ghi vào repo/chat |
+| `NINE_ROUTER_BIND_ADDR` | không | địa chỉ host mà cổng `20128` bind | mặc định `127.0.0.1` (chỉ từ máy chủ; vào từ xa bằng SSH tunnel). `0.0.0.0` = mọi interface, chỉ khi thật sự cần vào qua IP/Tailscale |
 
-Compose tự dựng (đặt qua `environment`, ghi đè `env_file`) nên **không cần** khai báo tay trong `.env.docker`: `MONGODB_URI` (`mongodb://<user>:<pwd>@mongo:27017/realestate?authSource=admin&replicaSet=rs0`), `REDIS_URL` (`redis://:<pwd>@redis:6379`), `S3_ENDPOINT`, `S3_REGION`, `S3_FORCE_PATH_STYLE`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, 2 tên bucket. Dòng `MONGODB_URI` cũ trong `.env.docker` có thể xóa.
+Compose tự dựng (đặt qua `environment`, ghi đè `env_file`) nên **không cần** khai báo tay trong `.env.docker`: `MONGODB_URI` (`mongodb://<user>:<pwd>@mongo:27017/realestate?authSource=admin&replicaSet=rs0`), `REDIS_URL` (`redis://:<pwd>@redis:6379`), `S3_ENDPOINT`, `S3_REGION`, `S3_FORCE_PATH_STYLE`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, 2 tên bucket. Dòng `MONGODB_URI` cũ trong `.env.docker` có thể xóa, **nhưng giữ lại cho tới hết bước 5.7 nếu còn cần đường lui 5.8** (backend cũ cần nó để nối Mongo standalone).
 
 Lưu ý ký tự đặc biệt trong mật khẩu:
 
@@ -180,7 +192,11 @@ Backend seed admin theo `ADMIN_EMAIL`/`ADMIN_PASSWORD` (bắt buộc ở product
 
 Áp dụng khi production đang chạy `mongo:7` standalone (không xác thực) với dữ liệu thật ở volume `mongo_data`. `MONGO_INITDB_ROOT_*` chỉ chạy khi thư mục dữ liệu **rỗng**, nên chỉ đổi compose rồi `up` sẽ không tạo user: Mongo khởi động nhưng healthcheck/backend báo `Authentication failed`. Quy trình sau tạo user và khởi tạo replica set ngay trên dữ liệu cũ.
 
-Rủi ro: có **downtime vài phút** (dừng backend/mongo). Tính chất: có đường lui (bước 5.8), miễn là bước 5.1 và 5.2 đã làm. Không bỏ qua hai bước này.
+Rủi ro: có **downtime vài phút** (dừng backend/mongo). Tính chất: có đường lui (bước 5.8), miễn là bước 5.0a (nếu áp dụng), 5.1 và 5.2 đã làm. Không bỏ qua các bước này.
+
+Lần nâng cấp này **không dùng `deploy.sh`** (mục 11 chỉ dành cho cập nhật stack đã ở trạng thái mới). Phiên bản backend mới còn đòi **migration dữ liệu 005 và 006 chạy TRƯỚC khi backend khởi động** (bước 5.4a), nên `up` cả stack một lần như trước đây sẽ làm backend mới không lên.
+
+> **Chạy cả quy trình trong `tmux` (hoặc `screen`/`nohup`).** SSH rớt giữa chừng (nhất là sau 5.2 khi stack đã dừng, hoặc lúc `docker build` ở 5.4a/5.4b) có thể để hệ thống nửa vời. Rớt thì vào lại, `tmux attach`, xem `docker ps -a`, rồi làm tiếp từ đúng bước dở (các bước đều dừng được an toàn, trừ 5.3: nếu container `realestate_mongo_upgrade` còn tồn tại thì xem `docker logs` trước khi chạy lại).
 
 Quy ước: chạy ở thư mục gốc repo trên máy production.
 
@@ -188,12 +204,14 @@ Quy ước: chạy ở thư mục gốc repo trên máy production.
 >
 > **Quy tắc tự kiểm tra:** sau MỖI bước backup phải chạy `ls -l` và thấy file có kích thước **> 0 byte** mới đi tiếp. Báo `No such file` hoặc 0 byte: DỪNG, chưa được làm bước kế.
 
-Đã kiểm chứng toàn bộ chuỗi bước trên volume mẫu (2 document còn nguyên sau nâng cấp), trừ đường lui 5.8.
+**Mức kiểm chứng:** các bước của bản quy trình cũ (backup 5.1, `stop` 5.2, bật replica set + tạo user trên dữ liệu cũ 5.3, `up`, kiểm dữ liệu 5.5) đã chạy thật trên volume mẫu (2 document còn nguyên sau nâng cấp), trừ đường lui 5.8. **Chuỗi MỚI chưa từng chạy end-to-end**: 5.0a (gỡ sửa tay, chuyển nhánh), chỉ `up` 4 service ở 5.4, migration 005/006 qua `scripts/run-migration.sh` ở 5.4a (ts-node và migration 005/006 đã chạy thật trên image `builder` ở máy dev, chưa chạy trên VPS), 5.4b với `nine-router`, và đường lui 5.8 mới (dùng compose cũ đã lưu). Làm trên VPS từng bước, thấy điều lạ thì dừng.
 
 **5.0 Chuẩn bị**
 
 ```bash
-git pull                                                      # lấy docker-compose.yml mới (CHƯA up)
+git status --short                                            # phải trống; còn dòng nào (vd ` M docker-compose.yml`) thì làm 5.0a thay cho `git pull`
+git branch --show-current                                     # phải in `production`; in ra trống = HEAD detached: làm 5.0a
+git pull --ff-only origin production                          # CHỈ khi hai dòng trên đạt; đã làm 5.0a thì BỎ QUA dòng này. CHƯA up
 docker volume ls | grep mongo_data                            # ghi lại tên volume thật, vd realestatemanager_mongo_data
 VOL=realestatemanager_mongo_data                              # đặt đúng tên vừa thấy
 docker inspect realestate_mongo --format '{{.Config.Image}}'  # xác nhận đang mongo:7
@@ -203,24 +221,120 @@ docker compose --env-file .env.docker config -q
 
 Không đổi tên thư mục dự án và không thêm `name:` vào compose: project khác tên sẽ tạo volume mới rỗng.
 
+**5.0a Nếu VPS có bản sửa tay (`nine-router` thêm tay vào `docker-compose.yml`), đang ở HEAD detached, hoặc còn `deploy.sh` cũ: làm bước này THAY cho `git pull` ở 5.0**
+
+Hiện trạng đã xác minh: VPS chạy compose bản cũ + service `nine-router` thêm tay (không có trong repo), đang ở HEAD detached nên `git pull` thẳng sẽ lỗi. 9Router nay nằm sẵn trong compose của repo. Stack cũ **vẫn đang chạy** trong bước này. Làm đúng thứ tự:
+
+```bash
+# (a) Ghi lại hiện trạng 9Router đang chạy: CHỈ TÊN biến (không in giá trị), mounts, image.
+#     Tìm container THEO VOLUME, không giả định tên:
+C9=$(docker ps -a --filter volume=realestatemanager_nine_router_data --format '{{.Names}}')
+echo "$C9"                                                    # phải đúng MỘT tên (kỳ vọng realestate_9router). Rỗng hoặc nhiều tên: DỪNG, xem `docker ps -a`
+IMG=$(docker inspect "$C9" --format '{{.Config.Image}}')
+( umask 077                                                   # các file ghi chép dưới đây quyền 600 (chỉ chứa TÊN biến/mounts, vẫn nên riêng tư)
+  docker inspect "$C9" --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | sort > ~/9router.env-names.txt
+  docker image inspect "$IMG" --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1 | sort > ~/9router.image-env-names.txt
+  docker inspect "$C9" --format '{{json .Mounts}}' > ~/9router.mounts.json )
+comm -23 ~/9router.env-names.txt ~/9router.image-env-names.txt   # tên biến do bản sửa tay đặt (không phải của image)
+docker inspect "$C9" --format 'container-image-id={{.Image}}'
+docker image inspect "$IMG" --format 'local-latest-id={{.Id}} digests={{json .RepoDigests}}'
+```
+
+Đối chiếu với service `nine-router` mới (xem `docker-compose.yml`: chỉ đặt `INITIAL_PASSWORD`, `DATA_DIR`, `NODE_ENV`, mount `nine_router_data:/app/data`):
+
+- Kỳ vọng từ `comm`: `DATA_DIR`, `INITIAL_PASSWORD`, `NINEROUTER_API_KEY` (và có thể `NODE_ENV`).
+- **Có tên nào khác, đặc biệt `API_KEY_SECRET`, `JWT_SECRET`, `MACHINE_ID_SALT`, `REQUIRE_API_KEY`, `AUTH_COOKIE_SECURE`, `BASE_URL`, `ENABLE_REQUEST_LOGS`, `HTTP_PROXY`/`HTTPS_PROXY`: DỪNG** và báo để sửa compose mang chúng sang (qua `.env.docker`) trước khi đi tiếp. Mất `API_KEY_SECRET`/`MACHINE_ID_SALT` làm API key backend đang dùng ngừng hợp lệ; mất `REQUIRE_API_KEY` làm `/v1/*` mở không cần key; mất `JWT_SECRET` đặt tay làm phiên dashboard hiện có bị đăng xuất.
+- **`comm` chỉ so TÊN biến.** Nó KHÔNG thấy trường hợp image đã định nghĩa sẵn biến đó nhưng bản sửa tay đặt GIÁ TRỊ KHÁC (vd `NODE_ENV`, `PORT`, `HOSTNAME`). Nghi ngờ thì đối chiếu giá trị thủ công mà không in bí mật: biến không bí mật in thẳng (`docker inspect "$C9" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(NODE_ENV|DATA_DIR|PORT|HOSTNAME)='`); biến bí mật chỉ so BĂM cắt ngắn (`... | grep '^TÊN_BIẾN=' | sha256sum | cut -c1-12`), chạy cùng lệnh trên container cũ và trên container mới sau 5.4b, hai băm phải bằng nhau.
+- **`NINEROUTER_API_KEY` bị bỏ có chủ đích vì README image KHÔNG liệt kê biến này.** "Không được liệt kê trong README" khác với "image không đọc": quyết định dựa trên README, rủi ro thấp nhưng chưa chứng minh bằng mã nguồn image. Nếu `comm` hiện `NINEROUTER_API_KEY`, xác nhận bằng bước "Thử nhanh một thao tác AI" ở 5.4b. Nếu 9Router báo lỗi key/401 sau đó: thêm lại biến vào `environment` của service `nine-router` với đúng giá trị cũ (xem `~/docker-compose.pre-upgrade.yml`, giá trị đưa qua biến trong `.env.docker`, không ghi vào repo) rồi `docker compose --env-file .env.docker up -d nine-router` (sửa compose: báo kiến trúc/devops).
+- **Rủi ro `JWT_SECRET`:** theo README, nếu không đặt thì 9Router tự sinh và lưu vào `~/.9router/jwt-secret`. Nếu file này nằm NGOÀI volume `/app/data`, tạo lại container sẽ sinh secret mới: phiên đăng nhập dashboard bị đăng xuất (không mất dữ liệu; đăng nhập lại bằng mật khẩu). Chấp nhận được. Không tự đặt biến mới khi chưa kiểm chứng.
+- `container-image-id` khác `local-latest-id`: container đang chạy dùng bản image khác với `decolua/9router:latest` trong máy; khi tạo lại, compose sẽ dùng `latest` trong máy. Ghi nhận, và cân nhắc pin digest (mục 9).
+- `~/9router.mounts.json` phải có `nine_router_data` (tên đầy đủ `realestatemanager_nine_router_data`) gắn vào `/app/data`.
+
+```bash
+# (b) Lưu compose đang chạy và .env.docker ra NGOÀI repo (quyền 600): đây là ĐƯỜNG LUI ở 5.8. Chúng chứa mật khẩu: không commit, không gửi chat
+install -m 600 docker-compose.yml ~/docker-compose.pre-upgrade.yml
+install -m 600 .env.docker ~/env.docker.pre-upgrade
+
+# (c) Gắn thẻ image backend/frontend ĐANG CHẠY: đường lui cần đúng image cũ (build lại ở 5.4b sẽ ghi đè :latest).
+#     Tên image ghi vào ~/pre-upgrade.images (mỗi dòng: dịch-vụ tên-image) để 5.8.3 dùng ĐÚNG các tên này
+: > ~/pre-upgrade.images
+for c in backend frontend; do
+  img=$(docker inspect "realestate_$c" --format '{{.Config.Image}}'); img=${img%%:*}
+  docker tag "$(docker inspect "realestate_$c" --format '{{.Image}}')" "$img:pre-upgrade"
+  echo "$c $img" >> ~/pre-upgrade.images
+done
+cat ~/pre-upgrade.images                                      # 2 dòng, vd: backend realestatemanager-backend
+# BẮT BUỘC có đủ cả hai dịch vụ (đường lui 5.8.3 cần cả hai); thiếu thì in THIẾU và DỪNG, đừng đi tiếp
+grep -q '^backend ' ~/pre-upgrade.images && grep -q '^frontend ' ~/pre-upgrade.images && [ "$(wc -l < ~/pre-upgrade.images)" -ge 2 ] || echo "THIẾU: ~/pre-upgrade.images phải có đủ 2 dòng (backend và frontend): DỪNG, kiểm tra tên container realestate_backend/realestate_frontend"
+docker image ls --filter 'reference=*:pre-upgrade'            # phải thấy 2 dòng: ...-backend và ...-frontend
+
+# (d) Bỏ bản sửa tay, chuyển sang nhánh production, lấy code mới
+git status --short                                            # chỉ nên thấy ` M docker-compose.yml`; thấy file khác thì DỪNG và xem kỹ
+git checkout -- docker-compose.yml                            # KHÔNG dùng `git stash` rồi để đó: bản stash nằm trong .git và chứa mật khẩu dạng chữ thường
+mv deploy.sh ~/deploy.sh.old && chmod 600 ~/deploy.sh.old     # script cũ ghi cứng CLOUDFLARE_TUNNEL_TOKEN; bản mới của repo thế chỗ
+git fetch origin && git checkout production                   # VPS đang detached HEAD
+git pull --ff-only origin production
+git status                                                    # phải thấy "On branch production", working tree sạch
+git log -1 --oneline                                          # đối chiếu với commit mới nhất của nhánh production trên GitHub
+
+# (e) Điền .env.docker: biến mới (mục 2), gồm NINE_ROUTER_INITIAL_PASSWORD (mật khẩu 9Router lấy từ ~/docker-compose.pre-upgrade.yml).
+#     Token Cloudflare: nếu .env.docker chưa có giá trị, chép từ deploy.sh cũ MÀ KHÔNG in ra màn hình:
+chmod 600 .env.docker
+TOKEN=$(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?CLOUDFLARE_TUNNEL_TOKEN=[\"']?([^\"' ]+).*/\2/p" ~/deploy.sh.old | head -n 1)
+if ! grep -q '^CLOUDFLARE_TUNNEL_TOKEN=.\+' .env.docker && [ -n "$TOKEN" ]; then
+  sed -i '/^CLOUDFLARE_TUNNEL_TOKEN=$/d' .env.docker           # bỏ dòng rỗng (nếu có) để không bị trùng khóa
+  [ -n "$(tail -c1 .env.docker)" ] && echo >> .env.docker      # file KHÔNG có newline cuối thì thêm, kẻo token bị nối dính vào dòng cuối (vd ADMIN_PASSWORD=...CLOUDFLARE_TUNNEL_TOKEN=...)
+  printf 'CLOUDFLARE_TUNNEL_TOKEN=%s\n' "$TOKEN" >> .env.docker   # printf là builtin: token không lên danh sách tiến trình
+fi
+unset TOKEN
+grep -c '^CLOUDFLARE_TUNNEL_TOKEN=.\+' .env.docker             # BẮT BUỘC in 1 (không in giá trị). In 0: mở deploy.sh.old bằng tay, dán vào .env.docker
+# Kiểm DẠNG token (không in giá trị): >= 40 ký tự thuộc [A-Za-z0-9_=+/.-], không có \r, khoảng trắng hay nháy
+VAL=$(grep '^CLOUDFLARE_TUNNEL_TOKEN=' .env.docker | tail -n 1 | cut -d= -f2-)
+printf '%s' "$VAL" | grep -Eq '^[A-Za-z0-9_=+/.-]{40,}$' && echo "dạng token: OK" || echo "dạng token: SAI (quá ngắn, hoặc có \r/nháy/khoảng trắng): sửa .env.docker TRƯỚC khi đi tiếp"
+unset VAL
+grep -c '=.*CLOUDFLARE_TUNNEL_TOKEN=' .env.docker                 # phải in 0: không có dòng nào bị nối dính (khóa token nằm sau một dấu = khác); không in giá trị
+```
+
+Điều cần biết:
+
+- Volume `realestatemanager_nine_router_data` **giữ nguyên**: compose mới khai báo khóa `nine_router_data` (cùng tên khóa với bản sửa tay) nên project `realestatemanager` tự ánh xạ vào đúng volume cũ. Tuyệt đối không đổi tên thư mục dự án, không thêm `name:`. Volume này được sao lưu ở 5.2 (stack đã dừng) **trước** khi container 9Router được tạo lại ở 5.4b.
+- `CLOUDFLARE_TUNNEL_TOKEN` nay là biến **bắt buộc** (`${...:?}`): thiếu thì mọi lệnh compose báo lỗi, nên phải có trong `.env.docker` TRƯỚC 5.4b. Chỉ xóa `~/deploy.sh.old` sau khi tunnel đã lên (5.4b) và chạy ổn (5.7).
+- Cổng 20128 mặc định giờ là `127.0.0.1`: dashboard truy cập qua IP/Tailscale sẽ ngừng, dùng SSH tunnel (mục 1) hoặc đặt `NINE_ROUTER_BIND_ADDR=0.0.0.0`. Kiểm tra trước không có Cloudflare ingress/`tailscale serve` trỏ vào host:20128 (mục 1).
+- Giữ nguyên dòng `MONGODB_URI` cũ trong `.env.docker` cho tới hết 5.7 (đường lui cần). Nếu lỡ xóa, lấy lại từ `~/env.docker.pre-upgrade`.
+
 **5.1 Backup logic bằng mongodump (stack cũ vẫn đang chạy)**
 
 ```bash
-mkdir -p backups
-docker exec realestate_mongo mongodump --archive=/tmp/pre-upgrade.archive.gz --gzip      # standalone cũ không cần mật khẩu
-docker cp realestate_mongo:/tmp/pre-upgrade.archive.gz ./backups/pre-upgrade.archive.gz
-ls -l backups/pre-upgrade.archive.gz                                                      # BẮT BUỘC thấy file > 0 byte, không thì DỪNG
+install -d -m 700 backups                                     # thư mục 700: bảo vệ mọi file bên trong (backup chứa dữ liệu khách hàng)
+( umask 077; docker exec realestate_mongo mongodump --archive --gzip > backups/pre-upgrade.archive.gz )   # standalone cũ không cần mật khẩu; ghi thẳng ra host, file quyền 600
+ls -l backups/pre-upgrade.archive.gz                          # BẮT BUỘC thấy file > 0 byte, không thì DỪNG
+# Kiểm NỘI DUNG (chỉ đọc, không ghi gì): phải thấy dòng có `realestate.users`; không thấy thì backup vô dụng, DỪNG
+docker exec -i realestate_mongo mongorestore --dryRun -v --archive --gzip --nsInclude 'realestate.*' < backups/pre-upgrade.archive.gz 2>&1 | grep 'realestate.users'
+# Ghi số document từng collection TRƯỚC nâng cấp, để 5.5 so sánh
+docker exec realestate_mongo mongosh --quiet --eval 'const d = db.getSiblingDB("realestate"); d.getCollectionNames().sort().forEach(n => print(n + ": " + d.getCollection(n).countDocuments()))' > backups/counts-pre-upgrade.txt
+cat backups/counts-pre-upgrade.txt
 # Chép file ra NGOÀI máy chủ (scp/rclone) trước khi đi tiếp.
 ```
 
 **5.2 Dừng stack cũ và sao nguyên volume (đường lui chính)**
 
 ```bash
-docker compose stop                                           # KHÔNG dùng down -v
+# Volume PHẢI tồn tại: `docker run -v TÊN_SAI:/data` TỰ TẠO một volume rỗng rồi tar ra file rỗng vô nghĩa. Hai lệnh dưới phải thành công (không báo lỗi), không thì DỪNG
+docker volume inspect "$VOL" >/dev/null
+docker volume inspect realestatemanager_nine_router_data >/dev/null
+docker compose --env-file .env.docker stop                   # KHÔNG dùng down -v (compose mới bắt buộc --env-file; dừng cả nine-router, volume giữ nguyên)
 docker run --rm -v "$VOL":/data:ro -v "$PWD/backups":/backup alpine \
   tar czf /backup/mongo_data-pre-upgrade.tar.gz -C /data .
 ls -l backups/mongo_data-pre-upgrade.tar.gz       # BẮT BUỘC thấy file > 0 byte (vài trăm KB trở lên với dữ liệu thật), không thì DỪNG
+tar tzf backups/mongo_data-pre-upgrade.tar.gz | grep -m1 WiredTiger   # BẮT BUỘC in 1 dòng (dữ liệu Mongo thật); không in gì = sai volume, DỪNG
+# Volume 9Router (stack đã dừng nên dữ liệu nhất quán): sao lưu TRƯỚC khi container 9Router được tạo lại ở 5.4b
+docker run --rm -v realestatemanager_nine_router_data:/data:ro -v "$PWD/backups":/backup alpine \
+  tar czf /backup/nine_router_data-pre-upgrade.tar.gz -C /data .
+ls -l backups/nine_router_data-pre-upgrade.tar.gz # BẮT BUỘC > 0 byte, không thì DỪNG
+tar tzf backups/nine_router_data-pre-upgrade.tar.gz | grep -vx './' | head -5   # phải thấy ít nhất 1 entry (theo README: ./db/data.sqlite); trống hẳn = sai volume, DỪNG
 ```
+
+(File `.tar.gz` do container tạo thuộc root; thư mục `backups/` quyền 700 vẫn chặn người dùng khác. Đọc để chép ra ngoài máy cần `sudo`.)
 
 **5.3 Bật replica set + tạo user root trên dữ liệu cũ (container tạm, chưa có auth)**
 
@@ -239,12 +353,16 @@ for i in $(seq 1 30); do
 done
 docker exec realestate_mongo_upgrade mongosh --quiet --eval "db.hello().ok"   # phải in 1, nếu lỗi thì xem `docker logs realestate_mongo_upgrade` và DỪNG
 
-docker exec -e U="$U" -e P="$P" realestate_mongo_upgrade mongosh --quiet --eval "
+# Mật khẩu root đi qua file env tạm quyền 600 + `docker exec --env-file`, KHÔNG dùng `-e P=...` (sẽ hiện trên `ps` của host)
+ENVF=$(mktemp) && chmod 600 "$ENVF"
+printf 'U=%s\nP=%s\n' "$U" "$P" > "$ENVF"                     # printf là builtin: không lên danh sách tiến trình
+docker exec --env-file "$ENVF" realestate_mongo_upgrade mongosh --quiet --eval "
 rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] });
 while (!db.hello().isWritablePrimary) { sleep(500); }
 db.getSiblingDB('admin').createUser({ user: process.env.U, pwd: process.env.P, roles: [{ role: 'root', db: 'admin' }] });
 print(rs.status().members.map(m => m.name + ' ' + m.stateStr));
 "
+rm -f "$ENVF"; unset P
 # Kỳ vọng: [ 'mongo:27017 PRIMARY' ]
 
 docker exec realestate_mongo_upgrade mongosh --quiet --eval "try { db.adminCommand({ shutdown: 1 }) } catch (e) {}"
@@ -252,24 +370,98 @@ timeout 60 docker wait realestate_mongo_upgrade      # chờ mongod tắt hẳn 
 docker rm -f realestate_mongo_upgrade
 ```
 
-**5.4 Khởi động stack mới (auth + keyFile + replica set)**
+**5.4 Khởi động hạ tầng của stack mới (auth + keyFile + replica set), CHƯA khởi động backend**
+
+```bash
+docker compose --env-file .env.docker up -d mongo redis minio minio-init
+docker compose --env-file .env.docker ps -a        # mongo phải "healthy" (PRIMARY); minio-init "Exited (0)" là bình thường
+```
+
+Container `realestate_mongo` cũ (đã `stop`) được compose tạo lại theo cấu hình mới; volume `mongo_data` giữ nguyên. Chỉ 4 service trên được khởi động: backend/frontend/cloudflared/nine-router **chưa** lên (xem lý do ở 5.4a).
+
+**5.4a Chạy migration dữ liệu 005 rồi 006 (trước khi backend mới khởi động)**
+
+Vì sao phải làm ở bước này:
+
+- Backend mới **không khởi động** nếu còn tài khoản chưa migrate 005 (`UserRolesMigrationGuard`: code mới lọc theo `roles[]`/`teamIds[]`). Vì vậy 005 phải xong trước khi `backend` lên.
+- Image backend production chỉ có `dist/` + `node_modules` production, **không có `ts-node` và không có `scripts/`**, nên không chạy migration bằng `docker exec` vào backend được. `scripts/run-migration.sh` dựng image tạm từ stage `builder` của `RealEstateBackendApp/Dockerfile`, chạy migration bằng `docker run --rm` trong network của compose.
+- 006 cần Replica Set + transaction (đã có từ 5.3) và **xóa vĩnh viễn** khu vực cũ (không hoàn tác bằng script, chỉ khôi phục bằng backup).
+
+```bash
+# Dry-run trước (mặc định, không ghi gì), đọc kỹ số liệu
+bash scripts/run-migration.sh 005
+bash scripts/run-migration.sh 006
+
+# Backup MỚI bằng mongodump theo mục 6 (khối "MongoDB"), NGAY trước khi --apply, rồi `ls -l` thấy > 0 byte.
+# Script từ chối --apply nếu không có *.archive.gz trong ./backups/ mới hơn 60 phút (BACKUP_MAX_AGE_MINUTES),
+# hoặc file đó hỏng/không phải dump của DB realestate (kiểm bằng gzip -t và mongorestore --dryRun, thấy realestate.users).
+
+# Ghi thật: 005 TRƯỚC, rồi 006
+bash scripts/run-migration.sh 005 --apply
+bash scripts/run-migration.sh 005                          # dry-run lại: không còn tài khoản cần bổ sung
+bash scripts/run-migration.sh 006 --apply --cleanup        # hỏi xác nhận (gõ XOA-KHU-VUC-CU); --cleanup xóa image tạm VÀ chạy `docker builder prune -f`
+
+# Nếu KHÔNG dùng --cleanup (hoặc không chắc đã dọn): giải phóng build cache của lần build builder (~2.2 GB; `docker image rm` một mình
+# KHÔNG giải phóng phần này, chỉ prune mới trả đĩa về mức ban đầu). Prune xóa mọi build cache không dùng nên build kế tiếp chậm hơn.
+docker image ls --format '{{.Repository}}:{{.Tag}}' | grep '^realestate-migrate:'   # nếu còn: docker image rm <tên:thẻ>
+docker builder prune -f
+```
+
+**Về `--cleanup`:** nó xóa image tạm `realestate-migrate:<tag>` rồi chạy `docker builder prune -f`, và chạy **kể cả khi migration lỗi** (trong `trap` thoát). `docker builder prune -f` xóa **TOÀN BỘ** build cache không dùng (không chỉ phần của migration), nên bước 5.4b `up --build` ngay sau đó phải dựng lại từ đầu: chậm hơn và lại tốn đĩa cho build cache mới (xem "Kẹt đĩa" ở 5.4b). Không muốn vậy thì đừng dùng `--cleanup`, tự dọn bằng hai lệnh ở trên khi cần.
+
+Ghi chú: script đọc `MONGO_ROOT_USERNAME`/`MONGO_ROOT_PASSWORD` từ `.env.docker` (phải quyền `600`), dựng `MONGODB_URI` vào file env tạm quyền 600 (xóa khi thoát; mật khẩu không nằm trên dòng lệnh, không hiện trên màn hình hay `ps` của host), tự tìm network `<project>_realestate_net` (ghi đè bằng `NETWORK=<tên>`). Cần trống >= 5 GB (`MIGRATE_MIN_FREE_GB`, ghi đè được): đã đo ở máy dev, build stage `builder` tốn ~3.75 GB (image ~2.2 GB + build cache ~2.2 GB); thiếu thì script dừng, in `docker system df` và gợi ý dọn (mục 5.7). Migration idempotent: chạy lại an toàn. Lần dựng image đầu mất vài phút. Cờ `--reconcile` của 005 (xem đầu file migration) script không bọc: nếu cần thì chạy tay theo hướng dẫn trong file đó.
+
+**5.4b Khởi động phần còn lại (backend, frontend, cloudflared, nine-router)**
+
+Kiểm tra TRƯỚC khi `up`:
+
+```bash
+grep -c '^CLOUDFLARE_TUNNEL_TOKEN=.\+' .env.docker       # phải in 1 (không in giá trị). 0 thì quay lại 5.0a (e): thiếu token thì compose báo lỗi và tunnel không lên
+docker compose --env-file .env.docker config -q            # gồm cả biến bắt buộc NINE_ROUTER_INITIAL_PASSWORD
+df -h . "$(docker info -f '{{.DockerRootDir}}')" 2>/dev/null   # xem dung lượng trống (đường dẫn Docker có thể cần sudo)
+bash scripts/check-disk.sh 5                               # thoát mã 1 nếu trống < 5 GB: `up --build` dựng backend (3 stage) + frontend, để lại image + build cache vài GB
+docker builder prune -f                                    # nếu thiếu đĩa: dọn build cache trước (cũng dọn được sau migration 5.4a), rồi chạy lại dòng trên
+```
+
+**Kẹt đĩa (đã `docker builder prune -f` mà `check-disk.sh 5` vẫn báo thiếu):** nhu cầu đỉnh đã đo ở máy dev: dựng backend (3 stage) để lại ~+3.49 GB image, thêm frontend tổng ~+4.1 GB; riêng stage `builder` của migration ~+3.75 GB. Chọn một trong các cách (theo thứ tự nên thử):
+
+1. **Dọn thêm, an toàn:** `docker image prune -f` (image mồ côi); xóa **từng** image cũ cụ thể không còn dùng (`docker image ls`, rồi `docker image rm <tên:thẻ>`, gồm thẻ `realestate-migrate:*`, `realestatemanager-backend:pre-*` của các lần deploy cũ; GIỮ `*:pre-upgrade` nếu còn cần đường lui 5.8); dọn log/`backups/` cũ đã chép ra ngoài máy chủ. **Tuyệt đối KHÔNG** chạy `docker volume prune`, `docker system prune --volumes`, `docker volume rm` hay `docker compose down -v` (xóa dữ liệu `mongo_data`, `redis_data`, `minio_data`, `nine_router_data`), và **không** `docker image prune -a` (xóa cả image `*:pre-upgrade` của đường lui).
+2. **Hạ ngưỡng CÓ Ý THỨC** khi đã thấy số liệu trống thật sự đủ cho nhu cầu đỉnh ~4.1 GB: `bash scripts/check-disk.sh 4`, hoặc `MIGRATE_MIN_FREE_GB=4 bash scripts/run-migration.sh ...`. Ngưỡng 5 GB có dư an toàn; hạ xuống 4 là chấp nhận rủi ro đầy đĩa giữa chừng khi build.
+3. **Dựng image ở máy khác** (CI hoặc máy dev) rồi đưa lên VPS (`docker save | docker load`, hoặc registry riêng); khi đó compose phải dùng image có sẵn thay vì `build` (cần sửa compose, báo kiến trúc/devops).
+
+Đối chiếu một lần nữa service `nine-router` mới với ghi chép ở 5.0a (không có biến lạ bị bỏ sót). Rồi:
 
 ```bash
 docker compose --env-file .env.docker up -d --build
-docker compose --env-file .env.docker ps -a        # mongo phải "healthy" (PRIMARY)
+docker compose --env-file .env.docker ps -a        # tất cả Up; mongo/redis/minio healthy
+docker logs --tail 20 realestate_cloudflared       # thấy tunnel đã đăng ký kết nối; truy cập web qua domain OK
+docker inspect realestate_9router --format '{{json .Mounts}}'    # phải có nine_router_data -> /app/data (dữ liệu 9Router còn nguyên)
+# Backend tới được 9Router qua tên service (200 hoặc 401 đều chứng tỏ tới được; lỗi DNS/ECONNREFUSED là hỏng):
+docker exec realestate_backend node -e "fetch('http://nine-router:20128/v1/models').then(r => console.log(r.status)).catch(e => { console.error(e.cause ? e.cause.code : e.message); process.exit(1); })"
 ```
 
-Container `realestate_mongo` cũ (đã `stop`) được compose tạo lại theo cấu hình mới; volume `mongo_data` giữ nguyên.
+Nếu `nine-router` đã tồn tại từ bản sửa tay (5.0a), compose tạo lại nó theo cấu hình mới (cùng tên container, volume giữ nguyên); 9Router gián đoạn ngắn lúc này.
+
+**Thử nhanh một thao tác AI qua backend:** đăng nhập web admin, vào Cấu hình AI và tải danh sách model 9Router (hoặc chạy một thao tác AI thật, vd tóm tắt/tạo tin). Kỳ vọng không báo lỗi 401/5xx. Lỗi thì xem `docker logs --tail 50 realestate_9router realestate_backend`, đối chiếu lại biến ở 5.0a; **không** xóa volume `nine_router_data`.
 
 **5.5 Kiểm tra dữ liệu**
 
 ```bash
-docker exec realestate_mongo sh -c 'mongosh --quiet admin -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "rs.status().members.map(m => m.name + \" \" + m.stateStr)"'
-docker exec realestate_mongo sh -c 'mongosh --quiet admin -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.getSiblingDB(\"realestate\").getCollectionNames().map(n => n + \": \" + db.getSiblingDB(\"realestate\").getCollection(n).countDocuments())"'
+# Mật khẩu root xác thực TRONG script qua biến môi trường của container (không có `-p ...` trên dòng lệnh)
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+print(rs.status().members.map(m => m.name + " " + m.stateStr));
+EOF
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin > backups/counts-post-upgrade.txt <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+d.getCollectionNames().sort().forEach(n => print(n + ": " + d.getCollection(n).countDocuments()));
+EOF
+diff backups/counts-pre-upgrade.txt backups/counts-post-upgrade.txt   # chỉ nên khác ở collection do migration 006 đổi (`areas`) hoặc collection mới do backend tự tạo
 docker logs --tail 50 realestate_backend            # không có lỗi kết nối Mongo/Redis/S3
 ```
 
-So số document với bản trước nâng cấp. Thử đăng nhập web admin, mở một khách hàng, tạo thử một thao tác ghi.
+So số document với bản trước nâng cấp (file `counts-pre-upgrade.txt` ở 5.1; `areas` đổi hợp lệ sau 006). Thử đăng nhập web admin, mở một khách hàng, tạo thử một thao tác ghi. Nếu dùng AI qua 9Router, kiểm tra `docker logs --tail 20 realestate_9router` và thử một thao tác AI.
 
 **5.6 Đóng cổng cũ (đã xong khi dùng compose mới)**
 
@@ -281,23 +473,42 @@ Nếu máy có firewall/NAT từng mở cổng 27017 ra ngoài, hãy đóng lạ
 
 **5.7 Dọn sau khi ổn định (sau vài ngày)**
 
-Giữ `backups/` cho đến khi chắc chắn; không xóa volume nào.
+Giữ `backups/` cho đến khi chắc chắn; không xóa volume nào. Khi hết nhu cầu đường lui 5.8:
 
-**5.8 Đường lui (nếu bước 5.4 hoặc 5.5 thất bại)**
+```bash
+# Xóa bản sao chứa bí mật nằm ngoài repo (token Cloudflare, mật khẩu 9Router...): CHỈ sau khi tunnel đã chạy ổn
+shred -u ~/deploy.sh.old ~/docker-compose.pre-upgrade.yml ~/env.docker.pre-upgrade
 
-> Chưa kiểm chứng trên server thật. **Khối lệnh xóa volume (5.8.3) chỉ chạy khi cả hai file backup ở 5.8.2 và 5.2 đã có (`ls -l` > 0 byte).** Không chạy từng dòng rời rạc.
+# Dọn image dự phòng và image migration (tốn dung lượng: image builder vài GB). Xem danh sách TRƯỚC rồi xóa từng cái:
+docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(realestatemanager-(backend|frontend):pre-|realestate-migrate:)'
+docker image rm <tên:thẻ>            # lặp cho từng dòng cần xóa (KHÔNG xóa :latest đang chạy)
+docker image prune -f                # image mồ côi (dangling)
+docker builder prune -f              # build cache (thường chiếm nhiều nhất: ~2.2 GB cho mỗi lần build builder); image rm KHÔNG giải phóng phần này
+```
+
+Nếu `~/9router.*.txt/json` và `~/pre-upgrade.images` không còn cần đối chiếu thì xóa luôn (không chứa bí mật).
+
+**5.8 Đường lui (nếu bước 5.4, 5.4a, 5.4b hoặc 5.5 thất bại)**
+
+> Chưa kiểm chứng trên server thật (khối lệnh 5.8.3 đã thử logic chặn trong container cô lập với `docker` giả: thiếu `CUR`, thiếu file, file hỏng, volume không tồn tại đều dừng TRƯỚC khi xóa gì). **Khối lệnh xóa volume (5.8.3) chỉ chạy khi cả hai file backup ở 5.8.2 và 5.2 tồn tại, > 0 byte và đọc được trọn bằng `tar tzf`.** Không chạy từng dòng rời rạc.
 
 | Tình huống | Cách |
 |---|---|
 | Chưa có dữ liệu mới, muốn về đúng trạng thái trước nâng cấp | 5.8.1 + 5.8.2 + 5.8.3 |
 | Có dữ liệu mới và muốn giữ | Trước 5.8.1, khi stack mới còn chạy: `mongodump` từ stack mới (mục 6); sau 5.8.3 dùng `mongorestore` phần mới |
-| Chỉ hỏng vài collection | Không cần đường lui: `mongorestore --nsInclude` từ `backups/pre-upgrade.archive.gz` (mục 6) |
+| Chỉ hỏng vài collection | Không cần đường lui: `mongorestore --nsInclude` từ `backups/pre-upgrade.archive.gz` (mục 6; luôn kèm `--nsInclude 'realestate.*'`) |
+
+**Phạm vi:** 5.8 (khôi phục volume) chỉ dành cho sự cố **ngay sau lần nâng cấp standalone này**: nó đưa cả DB về đúng ngày nâng cấp, mất mọi dữ liệu phát sinh sau đó. Các lần deploy thường lệ về sau (mục 11) KHÔNG dùng 5.8; sự cố dữ liệu lúc đó chỉ xử lý bằng `mongorestore` từ file `backups/deploy-pre-*` (mục 6).
+
+Đường lui dựng lại đúng stack CŨ (có 9Router sửa tay) từ **compose cũ và image cũ đã lưu ở 5.0a** (`~/docker-compose.pre-upgrade.yml`, thẻ `*:pre-upgrade`), không dùng `git checkout` về commit cũ (compose của commit cũ không có `nine-router`, và nó sẽ build lại bằng mã nguồn mới).
 
 **5.8.1 Dừng stack mới (không `-v`)**
 
 ```bash
 docker compose --env-file .env.docker down
 ```
+
+(`down` xóa container, gồm cả `realestate_9router`; volume `nine_router_data` vẫn còn, 5.8.3 dựng lại container từ compose cũ.)
 
 **5.8.2 Sao lưu volume ở trạng thái HIỆN TẠI (sau nâng cấp) TRƯỚC khi xóa bất cứ thứ gì**
 
@@ -307,17 +518,50 @@ docker run --rm -v "$VOL":/data:ro -v "$PWD/backups":/backup alpine   tar czf "/
 ls -l "backups/$CUR" backups/mongo_data-pre-upgrade.tar.gz     # CẢ HAI phải thấy file > 0 byte, không thì DỪNG
 ```
 
-**5.8.3 Khôi phục volume về trạng thái trước nâng cấp (chỉ khi 5.8.2 đủ điều kiện)**
+Giữ nguyên shell này cho 5.8.3 (biến `CUR` và `VOL` phải còn). Mở shell mới thì đặt lại `VOL=...` và `CUR=<tên file post-upgrade vừa tạo>` trước khi chạy 5.8.3; thiếu một trong hai là khối dưới dừng ngay.
+
+**5.8.3 Khôi phục về trạng thái trước nâng cấp (chỉ khi 5.8.2 đủ điều kiện)**
 
 ```bash
-if [ -n "$VOL" ] && [ -s "backups/$CUR" ] && [ -s backups/mongo_data-pre-upgrade.tar.gz ]; then
-  docker volume rm "$VOL"   && docker volume create "$VOL"   && docker run --rm -v "$VOL":/data -v "$PWD/backups":/backup alpine        tar xzf /backup/mongo_data-pre-upgrade.tar.gz -C /data   && git checkout <commit-cũ> -- docker-compose.yml   && docker compose up -d
-else
-  echo "THIẾU VOL hoặc file backup: KHÔNG xóa volume. Dừng lại."
-fi
+(
+  set -euo pipefail                                   # chạy trong subshell: lỗi thì dừng khối này, không đóng shell của bạn
+  : "${VOL:?VOL chưa đặt (xem 5.0): dừng, chưa xóa gì}"
+  : "${CUR:?CUR chưa đặt (xem 5.8.2): dừng, chưa xóa gì}"
+  PRE=backups/mongo_data-pre-upgrade.tar.gz
+  OLD_COMPOSE="$HOME/docker-compose.pre-upgrade.yml"
+
+  # --- Kiểm tra TRƯỚC KHI xóa bất cứ thứ gì ---
+  docker volume inspect "$VOL" >/dev/null || { echo "VOL='$VOL' không phải volume có thật: dừng"; exit 1; }
+  for f in "backups/$CUR" "$PRE"; do
+    [ -f "$f" ] && [ -s "$f" ] || { echo "THIẾU hoặc RỖNG: $f: dừng"; exit 1; }
+    tar tzf "$f" >/dev/null || { echo "HỎNG (tar không đọc được trọn): $f: dừng"; exit 1; }
+    [ -n "$(tar tzf "$f" | grep -m1 WiredTiger || true)" ] || { echo "KHÔNG thấy file WiredTiger trong $f (không phải dữ liệu Mongo?): dừng"; exit 1; }
+  done
+  [ -f "$OLD_COMPOSE" ] || { echo "THIẾU $OLD_COMPOSE (bản compose cũ lưu ở 5.0a): dừng"; exit 1; }
+  IMAGES="$HOME/pre-upgrade.images"                   # tên image do 5.0a (c) ghi: dùng chung đúng các tên đó
+  [ -s "$IMAGES" ] || { echo "THIẾU $IMAGES (ghi ở 5.0a (c)): dừng"; exit 1; }
+  # phải có ĐỦ cả backend và frontend (file 1 dòng hoặc thiếu dịch vụ nghĩa là chỉ dựng lại được một nửa stack): dừng TRƯỚC khi xóa gì
+  { grep -q '^backend ' "$IMAGES" && grep -q '^frontend ' "$IMAGES" && [ "$(wc -l < "$IMAGES")" -ge 2 ]; } || { echo "$IMAGES phải có đủ 2 dòng (backend và frontend): dừng, chưa xóa gì"; exit 1; }
+  while read -r svc img; do
+    docker image inspect "$img:pre-upgrade" >/dev/null || { echo "THIẾU image $img:pre-upgrade ($svc, gắn ở 5.0a): dừng"; exit 1; }
+  done < "$IMAGES"
+
+  # --- Khôi phục volume Mongo về trước nâng cấp ---
+  docker volume rm "$VOL"
+  docker volume create "$VOL"      # compose có thể cảnh báo "volume ... was not created by compose": vô hại
+  docker run --rm -v "$VOL":/data -v "$PWD/backups":/backup:ro alpine tar xzf /backup/mongo_data-pre-upgrade.tar.gz -C /data
+
+  # --- Dựng lại stack CŨ từ compose cũ + image cũ (không build, không đụng git) ---
+  while read -r svc img; do
+    docker tag "$img:pre-upgrade" "$img:latest"
+  done < "$IMAGES"
+  docker compose --project-directory "$PWD" -f "$OLD_COMPOSE" --env-file .env.docker up -d --no-build
+)
 ```
 
-Sau khi ổn định, trả compose về bản mới khi sẵn sàng nâng cấp lại: `git checkout HEAD -- docker-compose.yml`.
+Ghi chú: `--project-directory "$PWD"` giữ project là `realestatemanager` (nếu không, project bị đặt theo thư mục chứa file `-f` và tạo ra bộ volume/network mới). Compose cũ gồm cả service `nine-router` sửa tay, nên 9Router được dựng lại trên volume `nine_router_data` còn nguyên. Backend cũ cần dòng `MONGODB_URI` cũ trong `.env.docker` (xem ghi chú 5.0a). Kiểm tra bằng `docker compose --project-directory "$PWD" -f ~/docker-compose.pre-upgrade.yml --env-file .env.docker ps`, đăng nhập web và so số document với `backups/counts-pre-upgrade.txt`.
+
+Repo vẫn ở commit mới (không đụng git). Muốn nâng cấp lại: xử lý nguyên nhân thất bại, đưa volume về trạng thái standalone (vừa làm xong), rồi làm lại từ 5.2.
 
 ## 6. Backup và restore
 
@@ -331,16 +575,18 @@ Sau khi ổn định, trả compose về bản mới khi sẵn sàng nâng cấp
 | MinIO (`crm-attachments`) | Cao | `mc mirror` hằng ngày |
 | MinIO (`crm-exports`) | Thấp (tự xóa sau 7 ngày, tạo lại được) | Có thể bỏ qua |
 | Redis | Phụ (queue nhắc việc + idempotency, tạo lại được) | Sao chép AOF, không bắt buộc |
+| 9Router (`nine_router_data`) | Trung bình (cấu hình provider/tài khoản; mất thì phải cấu hình lại) | `tar` volume giống 5.2: `docker run --rm -v realestatemanager_nine_router_data:/data:ro -v "$PWD/backups":/backup alpine tar czf /backup/nine_router_data.tar.gz -C /data .` rồi `ls -l` > 0 byte |
 | `CRM_PII_ENCRYPTION_KEY`, `.env.docker` | Cao | Lưu ở secret manager, tách khỏi máy chủ |
 
 ```bash
-D=backups/$(date +%F); mkdir -p "$D"
+install -d -m 700 backups; D=backups/$(date +%F); install -d -m 700 "$D"      # thư mục 700 (backup chứa dữ liệu khách hàng)
 
-# MongoDB (đã chạy thử)
-docker exec realestate_mongo sh -c 'mongodump -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --db realestate --archive=/tmp/mongo.archive.gz --gzip'
-docker cp realestate_mongo:/tmp/mongo.archive.gz "$D"/mongo.archive.gz
-docker exec realestate_mongo rm /tmp/mongo.archive.gz
+# MongoDB (đã chạy thử trong container Mongo cô lập). Mật khẩu root đọc từ biến môi trường TRONG container và đưa cho
+# mongodump qua pipe `--config <(...)`: không nằm trên dòng lệnh (không lộ trên `ps` của host), không ghi ra đĩa. File ghi thẳng ra host, quyền 600.
+( umask 077; docker exec realestate_mongo bash -c 'mongodump --config <(printf "password: %s\n" "$MONGO_INITDB_ROOT_PASSWORD") -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --db realestate --archive --gzip' > "$D"/mongo.archive.gz )
 ls -l "$D"/mongo.archive.gz                                  # phải > 0 byte, không thì DỪNG
+# Kiểm NỘI DUNG (chỉ đọc, `--dryRun`): phải thấy dòng `archive prelude `realestate.users``, không thì backup vô dụng, DỪNG
+docker exec -i realestate_mongo bash -c 'mongorestore --config <(printf "password: %s\n" "$MONGO_INITDB_ROOT_PASSWORD") -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --dryRun -v --archive --gzip --nsInclude "realestate.*" 2>&1' < "$D"/mongo.archive.gz | grep 'realestate.users'
 
 # MinIO: mirror bucket ra thư mục (đã chạy thử). Cần S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY trong shell:
 export S3_ACCESS_KEY_ID=$(grep '^S3_ACCESS_KEY_ID=' .env.docker | cut -d= -f2-)
@@ -369,13 +615,15 @@ ls -l "$D"/redis-data
 
 Khuyến nghị lịch: cron hằng ngày (đêm), giữ 14 bản ngày + 8 bản tuần, **thử khôi phục định kỳ** vào một máy khác.
 
+Về mật khẩu trên dòng lệnh: các lệnh Mongo trong tài liệu này dùng pipe/biến môi trường/stdin nên mật khẩu root không nằm trên dòng lệnh (không lộ trên `ps` của host). **Rủi ro còn lại:** healthcheck của service `mongo` trong `docker-compose.yml` vẫn truyền `-p "$MONGO_INITDB_ROOT_PASSWORD"` trên dòng lệnh TRONG container mỗi 10 giây (thấy được bằng `ps` trên host, chỉ với người dùng có quyền xem tiến trình); `redis-cli` dùng `REDISCLI_AUTH` nên không bị. Máy chủ chỉ có người quản trị tin cậy thì chấp nhận được; muốn triệt để thì đổi healthcheck sang cách đọc mật khẩu qua pipe (chưa làm). **Việc có thể làm sau (tách riêng, cần thử kỹ):** thay `-p` bằng xác thực trong script `db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD)`; phải thử cả nhánh `NotYetInitialized` (healthcheck tự `rs.initiate` lần đầu, lúc chưa có user nào để xác thực) trước khi đổi.
+
 Restore:
 
 ```bash
-# MongoDB (đã chạy thử; --drop xóa collection hiện có trước khi nạp: chỉ dùng khi thực sự muốn ghi đè)
-docker cp "$D"/mongo.archive.gz realestate_mongo:/tmp/restore.archive.gz
-docker exec realestate_mongo sh -c 'mongorestore --archive=/tmp/restore.archive.gz --gzip --drop -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'
-docker exec realestate_mongo rm /tmp/restore.archive.gz
+# MongoDB (đã chạy thử trong container Mongo cô lập). LUÔN kèm --nsInclude 'realestate.*': file `pre-upgrade.archive.gz` (5.1) là dump
+# TOÀN instance (có cả DB admin, user/role): không giới hạn namespace thì --drop có thể ghi đè cả DB admin. Chạy --dryRun -v trước để xem sẽ nạp gì.
+# --drop xóa collection hiện có trước khi nạp: chỉ dùng khi thực sự muốn ghi đè. Archive đọc từ stdin (không cần docker cp, không file tạm trong container).
+docker exec -i realestate_mongo bash -c 'mongorestore --config <(printf "password: %s\n" "$MONGO_INITDB_ROOT_PASSWORD") -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --archive --gzip --drop --nsInclude "realestate.*"' < "$D"/mongo.archive.gz
 
 # MinIO: mirror ngược (đã chạy thử), dùng cùng lệnh docker run ở trên, thay dòng mc mirror bằng:
 #   mc mirror --overwrite /backup/crm-attachments local/crm-attachments
@@ -385,13 +633,16 @@ docker exec realestate_mongo rm /tmp/restore.archive.gz
 
 ```bash
 docker compose --env-file .env.docker ps -a
-docker exec realestate_mongo sh -c 'mongosh --quiet admin -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "rs.status().members.map(m => m.name + \" \" + m.stateStr)"'   # [ 'mongo:27017 PRIMARY' ]
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'   # [ 'mongo:27017 PRIMARY' ]  (mật khẩu xác thực trong script, không có -p trên dòng lệnh)
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+print(rs.status().members.map(m => m.name + " " + m.stateStr));
+EOF
 docker exec realestate_redis redis-cli ping                                                       # PONG
 docker exec realestate_redis redis-cli config get maxmemory-policy                                # noeviction
 docker exec realestate_minio sh -c 'MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@localhost:9000" mc ready local'
 docker exec realestate_minio sh -c 'MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@localhost:9000" mc ilm rule ls local/crm-exports'   # 1 rule, 7 ngày
-docker ps --format '{{.Names}} {{.Ports}}'                                                        # chỉ frontend có 0.0.0.0:80
-docker volume ls | grep -E 'mongo_data|redis_data|minio_data'                                     # 3 volume tồn tại
+docker ps --format '{{.Names}} {{.Ports}}'                                                        # frontend 0.0.0.0:80; realestate_9router 127.0.0.1:20128 (mặc định)
+docker volume ls | grep -E 'mongo_data|redis_data|minio_data|nine_router_data'                    # 4 volume tồn tại
 ```
 
 Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên web, URL phải có host `<domain-file>` và chạy được trong 15 phút.
@@ -421,12 +672,16 @@ Sau khi bật `S3_PUBLIC_ENDPOINT` và CRM: mở một ảnh đính kèm trên w
 1. Sinh mật khẩu/keyFile và điền `.env.docker` theo mục 2; **sao lưu `.env.docker` và `CRM_PII_ENCRYPTION_KEY` ra ngoài máy chủ**.
 2. Bật CRM: làm theo mục 10 (cờ `CRM_ENABLED`/`CRM_ATTACHMENTS_ENABLED`).
 3. Cloudflare: thêm hostname `<domain-file>` -> `http://minio:9000` (mục 3), đặt `S3_PUBLIC_ENDPOINT`.
-4. Nếu production đang có dữ liệu: thực hiện mục 5 theo thứ tự, không bỏ bước backup.
+4. Nếu production đang có dữ liệu: thực hiện mục 5 theo thứ tự (gồm 5.0a nếu VPS có bản sửa tay/HEAD detached/`deploy.sh` cũ, và migration 005 rồi 006 ở 5.4a trước khi khởi động backend), không bỏ bước backup, chạy trong `tmux`.
 5. Pin `MINIO_IMAGE` theo digest; thiết lập cron backup + chép ra ngoài máy chủ.
 6. `NODE_ENV=production` **đã được đặt** cho backend trong compose (Oniichan đã quyết định). Bắt buộc `ADMIN_EMAIL`/`ADMIN_PASSWORD` trong `.env.docker` khi DB chưa có user. Cookie refresh có cờ `Secure` nên truy cập qua HTTPS (Cloudflare) hoặc `http://localhost`; truy cập HTTP qua IP/hostname thường sẽ không giữ được cookie đăng nhập. Chi tiết và bảng hành vi ở mục 2.
 7. **Chưa xử lý, chờ Oniichan quyết:** (a) Swagger luôn mở công khai tại `/api/v1/docs` (không gắn `NODE_ENV`): nên chặn đường dẫn này ở Cloudflare (WAF/Access) hoặc nginx; (b) đặt `FRONTEND_URL=https://<domain-admin>` trong `.env.docker` (compose đã đọc biến này; trước đây bị đặt cứng `http://localhost`).
 8. Server Linux: `mkdir -p logs && chown 1000:1000 logs` trước `up` lần đầu (backend chạy uid 1000).
 9. Cân nhắc sau này: tạo user Mongo riêng quyền `readWrite` trên DB `realestate` cho backend (hiện backend dùng root, theo thiết kế đơn giản ban đầu) và access key MinIO riêng thay vì root.
+10. 9Router: điền `NINE_ROUTER_INITIAL_PASSWORD` (bắt buộc) vào `.env.docker`; đối chiếu biến môi trường của container đang chạy với service mới (mục 5.0a), mang sang compose mọi biến image có đọc mà bản sửa tay đã đặt (`API_KEY_SECRET`, `JWT_SECRET`, `MACHINE_ID_SALT`, `REQUIRE_API_KEY`...); cổng `20128` mặc định `127.0.0.1` (dashboard qua SSH tunnel; qua IP/Tailscale cần `NINE_ROUTER_BIND_ADDR=0.0.0.0`; xác nhận không có Cloudflare ingress/`tailscale serve` trỏ vào host:20128); thêm volume `nine_router_data` vào lịch backup (mục 6); cân nhắc pin tag/digest cho image `decolua/9router` (hiện `:latest`).
+11. Token Cloudflare: `CLOUDFLARE_TUNNEL_TOKEN` là biến bắt buộc trong `.env.docker` (mục 5.0a (e) hướng dẫn chép từ `deploy.sh` cũ mà không in ra). Chỉ xóa/`shred` `~/deploy.sh.old` sau khi tunnel đã lên và chạy ổn (5.7).
+12. Từ nay cập nhật bằng `deploy.sh` trong repo (mục 11), thay script cũ trên VPS. Người commit `deploy.sh` từ Windows chạy `git add --chmod=+x deploy.sh scripts/run-migration.sh` để giữ bit thực thi (tài liệu vẫn dùng `bash deploy.sh` nên không phụ thuộc bit này).
+13. Dọn định kỳ thẻ image dự phòng `realestatemanager-backend:pre-*` và image `realestate-migrate:*` (mục 5.7/11); script từ chối chạy khi dung lượng đĩa thấp.
 
 ## 10. Bật CRM trên production
 
@@ -459,5 +714,52 @@ Rồi đăng nhập web: thấy menu "Quản lý khách hàng"; tạo thử mộ
 **Tắt lại:** đặt `CRM_ENABLED=false` (và `CRM_ATTACHMENTS_ENABLED=false`), chạy lại lệnh ở bước 5. Dữ liệu CRM đã tạo vẫn nằm trong Mongo/MinIO (không bị xóa); theo thiết kế (CrmFeatureGuard) các route `/crm/*` của backend trả 404 và menu ẩn (phần tắt lại chưa chạy thử). **Giữ nguyên `CRM_PII_ENCRYPTION_KEY`** trong `.env.docker` kể cả khi tắt, để bật lại vẫn giải mã được.
 
 **Lỗi thường gặp khi bật:** CRM bật nhưng thiếu `CRM_PII_ENCRYPTION_KEY` thì backend không khởi động (đã thử: container restart liên tục). Lưu ý nhật ký lỗi hiện chỉ in `ERROR [ExceptionHandler] {}` mà không in nguyên nhân, nên khi thấy restart loop kèm dòng đó hãy kiểm tra khóa trước (đúng 32 byte, base64/hex, không có khoảng trắng/dấu nháy). Menu CRM không hiện sau khi đổi cờ: quên `--build` frontend, hoặc trình duyệt giữ bản JS cũ (tải lại cứng).
+
+## 11. Cập nhật stack bằng `deploy.sh`
+
+`deploy.sh` (thư mục gốc repo, thay script cũ trên VPS) cập nhật stack **đang chạy ổn định ở cấu hình mới** lên commit mới nhất của nhánh `production`. Chạy trên server Linux (Ubuntu 24.04), trong thư mục repo, **trong `tmux`/`nohup`** (rớt SSH giữa chừng không làm gián đoạn):
+
+```bash
+bash deploy.sh              # git pull --ff-only origin production, rồi backup + build + up + chờ healthy
+bash deploy.sh --no-pull    # không pull, deploy đúng commit đang checkout
+bash deploy.sh --help
+```
+
+Dùng `bash deploy.sh` (không `./deploy.sh`): commit từ Windows có thể làm mất bit thực thi. Người commit chạy `git add --chmod=+x deploy.sh scripts/run-migration.sh` nếu muốn giữ bit. Script `source` thêm `scripts/lib/ops-common.sh` (hàm dùng chung với `scripts/run-migration.sh`), nên phải chạy trong bản repo đầy đủ.
+
+**Không phải công cụ nâng cấp standalone lần đầu.** Lần đó làm theo mục 5, từng bước (tạo user/replica set trên dữ liệu cũ, migration 005/006 trước khi backend lên). `deploy.sh` từ chối chạy nếu thấy container Mongo đang ở cấu hình cũ (không xác thực).
+
+Thứ tự các bước của script:
+
+| # | Bước | Dừng khi |
+|---|---|---|
+| 1 | Kiểm tra `docker`, `docker compose`, `curl`, `gzip`; `.env.docker` tồn tại, quyền **không rộng hơn 600**, **không còn giá trị mẫu `<...>`** (chỉ in TÊN biến, không in giá trị); `./.env` là file (tạo rỗng nếu thiếu) | thiếu lệnh, quyền rộng hơn 600 (`chmod 600 .env.docker`), còn `<...>`, `./.env` là thư mục |
+| 1b | Dung lượng trống >= `DEPLOY_MIN_FREE_GB` (mặc định 5 GB) ở thư mục repo và thư mục dữ liệu Docker | thiếu dung lượng: in `docker system df` và gợi ý dọn (5.7) |
+| 2 | `git pull --ff-only origin production` (bỏ qua với `--no-pull`); khóa `.git/realestate-deploy.lock` chống chạy chồng | không ở nhánh `production` hoặc HEAD detached (script **không tự đổi nhánh**: xem 5.0a), working tree có file đã theo dõi bị sửa (vd `docker-compose.yml` sửa tay: xem 5.0a; **đừng `git stash`**), pull không fast-forward |
+| 3 | `docker compose --env-file .env.docker config -q` | thiếu/sai biến bắt buộc (gồm `CLOUDFLARE_TUNNEL_TOKEN`, `NINE_ROUTER_INITIAL_PASSWORD`); stack chưa bị đổi |
+| 3b | Mongo đang healthy thì **đếm (chỉ đọc)** user chưa có `roles[]`/`teamIds[]` bằng cùng bộ lọc với `UserRolesMigrationGuard` | còn user chưa migrate 005: in hướng dẫn `bash scripts/run-migration.sh 005` (tránh backend mới crash-loop). Không đếm được thì chỉ cảnh báo |
+| 4 | Tạo `logs/`, chown `1000:1000` (backend chạy uid 1000; compose chỉ mount `./logs`): thử trực tiếp, rồi `sudo -n`; không được thì **in lệnh `sudo chown ...` để bạn chạy** | không chown được |
+| 5 | `mongodump` DB `realestate` ra `backups/deploy-pre-<thời-gian>.archive.gz` (quyền 600, thư mục 700) qua `docker exec`; mật khẩu đọc từ biến môi trường TRONG container, đưa qua pipe; kiểm **nội dung** (> 0 byte, `gzip -t`, `mongorestore --dryRun` thấy `realestate.users`) | mongo không chạy, mongodump lỗi hoặc quá `DUMP_TIMEOUT` (mặc định 900 giây), file rỗng/hỏng/không phải dump DB `realestate` (bước kiểm nội dung có thời hạn `OPS_EXEC_TIMEOUT`, mặc định 300 giây) |
+| 6 | Gắn thẻ image backend đang chạy thành `<project>-backend:pre-<thời-gian>` (bản dự phòng) | |
+| 7 | `docker compose --env-file .env.docker up -d --build` | build/up lỗi |
+| 8 | Chờ `realestate_mongo` healthy (mặc định 120 giây) và backend liveness `http://localhost/api/v1/health/liveness` (mặc định 120 giây) | quá hạn, hoặc container backend `exited` |
+
+Biến tùy chọn: `MONGO_TIMEOUT`, `HEALTH_TIMEOUT` (giây), `HEALTH_URL`, `DEPLOY_MIN_FREE_GB`, `DUMP_TIMEOUT`, `OPS_EXEC_TIMEOUT`. Chưa có container `realestate_mongo` (triển khai mới): script bỏ qua backup (không có dữ liệu) và nói rõ.
+
+**Vì sao KHÔNG rollback bằng `git checkout` (khác `deploy.sh` cũ):** khi dữ liệu Mongo đã được nâng cấp (replica set + xác thực, migration 005/006), compose và code của commit cũ **không đọc được volume mới**; quay code về commit cũ rồi build lại có thể làm hỏng thêm đúng lúc cần ổn định nhất. Vì vậy khi lỗi script chỉ **in hướng dẫn** rồi thoát mã khác 0:
+
+1. Xem nguyên nhân: `docker compose --env-file .env.docker logs --tail 100 backend`.
+2. Dữ liệu **chưa đổi** (chưa chạy migration `--apply`, chưa nâng cấp Mongo): dùng lại image dự phòng, không đụng git:
+   ```bash
+   docker tag <project>-backend:pre-<thời-gian> <project>-backend:latest
+   docker compose --env-file .env.docker up -d --no-build --no-deps backend
+   ```
+3. Dữ liệu **đã đổi**: không quay về bản cũ. Với deploy thường lệ (lâu sau lần nâng cấp standalone) **chỉ** dùng `mongorestore` từ file `backups/deploy-pre-*.archive.gz` (mục 6; luôn kèm `--nsInclude 'realestate.*'`). Mục 5.8 (khôi phục volume) chỉ dành cho sự cố **ngay sau** lần nâng cấp standalone, vì nó đưa cả DB về ngày nâng cấp và mất mọi dữ liệu phát sinh sau đó.
+
+Việc script KHÔNG làm: chạy migration (xem dưới), chép backup ra ngoài máy chủ, dọn image dự phòng, đổi Cloudflare, pin image. **Dọn dung lượng:** mỗi lần deploy để lại một thẻ `realestatemanager-backend:pre-*` (và `scripts/run-migration.sh` để lại `realestate-migrate:*` nếu không dùng `--cleanup`). Dọn định kỳ theo 5.7: liệt kê `docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(realestatemanager-backend:pre-|realestate-migrate:)'`, giữ vài thẻ gần nhất, xóa phần còn lại bằng `docker image rm`, rồi `docker image prune -f`.
+
+**Release có migration dữ liệu mới:** `deploy.sh` build và khởi động backend trong cùng một lần. Cổng 3b chỉ biết migration 005; với migration khác, nếu code mới chặn khởi động khi chưa migrate, làm theo thứ tự: `git pull` -> `bash scripts/run-migration.sh <số>` (dry-run, backup, `--apply`) -> `bash deploy.sh --no-pull`. `scripts/run-migration.sh` hiện nhận `005` và `006`; migration mới cần thêm vào `case` trong script.
+
+`deploy.sh` trước đây nằm trong `.gitignore` (là script cục bộ của VPS); nay là file được quản lý trong repo, và `/backups/`, `/logs/`, `/tmp/` ở gốc repo được ignore (backup chứa dữ liệu khách hàng, không được commit).
 
 [← Về chỉ mục Hạ tầng](README.md)
