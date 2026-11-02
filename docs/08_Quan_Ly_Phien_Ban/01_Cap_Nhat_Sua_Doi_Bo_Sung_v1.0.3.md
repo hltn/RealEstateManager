@@ -30,7 +30,7 @@
 | Thao tác AI qua 9Router | Oniichan báo đã xong (2026-11-02), chưa ghi chi tiết kết quả (xem PT-005) |
 | Ảnh đính kèm CRM | Đã bật ngày 2026-11-02 (xem PT-003); Oniichan đã thử đính kèm ảnh trên web: OK |
 
-**Hệ quả:** ngày 2026-11-02 Oniichan đã test web trên production (mobile) và ghi nhận **10 mục giao diện/tính năng** `PT-017` đến `PT-026`; chưa có lỗi nghiệp vụ về dữ liệu nào (lần thử đính kèm ảnh đạt). Các mục `PT-001` đến `PT-012` ở mục 5 là **phát hiện lúc nâng cấp** (hạ tầng, cấu hình, tài liệu, dọn dẹp); `PT-013` đến `PT-016` do **QA đề xuất** khi rà tài liệu. `PT-017` đến `PT-026` là **10 mục do Oniichan tự test web trên production ngày 2026-11-02** (điện thoại iPhone Safari và giả lập iPhone SE 375x667), đều thuộc nhóm FE (giao diện, một mục tính năng mới). `PT-027` là **hạng mục bổ sung do Oniichan yêu cầu** (nền tảng lưu phiên bản hệ thống và tự chạy migration), không phải lỗi test. Lỗi test thật tiếp theo bắt đầu từ `PT-028`.
+**Hệ quả:** ngày 2026-11-02 Oniichan đã test web trên production (mobile) và ghi nhận **10 mục giao diện/tính năng** `PT-017` đến `PT-026`; chưa có lỗi nghiệp vụ về dữ liệu nào (lần thử đính kèm ảnh đạt). Các mục `PT-001` đến `PT-012` ở mục 5 là **phát hiện lúc nâng cấp** (hạ tầng, cấu hình, tài liệu, dọn dẹp); `PT-013` đến `PT-016` do **QA đề xuất** khi rà tài liệu. `PT-017` đến `PT-026` là **10 mục do Oniichan tự test web trên production ngày 2026-11-02** (điện thoại iPhone Safari và giả lập iPhone SE 375x667), chủ yếu thuộc nhóm FE (giao diện, một mục tính năng mới; PT-022 mở rộng sang BE và tài liệu, PT-023 cần thêm BE). `PT-027` là **hạng mục bổ sung do Oniichan yêu cầu** (nền tảng lưu phiên bản hệ thống và tự chạy migration), không phải lỗi test. Lỗi test thật tiếp theo bắt đầu từ `PT-028`.
 
 ## 3. Quy ước ghi nhận
 
@@ -47,7 +47,7 @@
 
 **Nhóm:** `BE` · `FE` · `DevOps` · `Dữ liệu` · `Tài liệu`.
 
-**Trạng thái:** `Mới` → `Đã xác nhận` → `Đang sửa` → `Xong một phần` (đã làm một phần, còn việc dở ghi rõ trong mục) → `Xong`; hoặc `Hoãn` (ghi lý do).
+**Trạng thái:** `Mới` → `Đã xác nhận` → `Đang sửa` → `Xong một phần` (đã làm một phần, còn việc dở ghi rõ trong mục) → `Xong`; hoặc `Hoãn` (ghi lý do), hoặc `Bỏ` (Oniichan quyết định không làm, ghi ngày và ghi chú).
 
 ### Mẫu một mục
 
@@ -72,32 +72,32 @@ Khi thêm lỗi mới, chép khối này và điền đủ các dòng:
 
 ## 4. Bảng tổng hợp
 
-Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**. Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02: 3 mục `Xong` (PT-003, PT-010, PT-013), 0 mục `Xong một phần`, 0 mục `Đang sửa`, 24 mục `Mới` (tổng 27).
+Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**. Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02: 4 mục `Xong` (PT-003, PT-010, PT-011, PT-013), 1 mục `Xong một phần` (PT-004), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 19 mục `Mới` (tổng 27).
 
 | Mã | Tiêu đề | Mức độ | Nhóm | Trạng thái |
 |---|---|---|---|---|
 | [PT-001](#pt-001--thiếu-healthcheck-cho-backend-và-route-health-chưa-ghi-vào-tài-liệu) | Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu | Minor | DevOps / Tài liệu | Mới |
 | [PT-002](#pt-002--healthcheck-của-mongo-còn-đặt-mật-khẩu-trên-dòng-lệnh) | Healthcheck Mongo còn đặt mật khẩu trên dòng lệnh | Minor | DevOps | Mới |
 | [PT-003](#pt-003--bật-ảnh-đính-kèm-crm) | Bật ảnh đính kèm CRM | Cải tiến | DevOps | Xong |
-| [PT-004](#pt-004--xác-nhận-giá-trị-s3_bucket_exports) | Xác nhận giá trị `S3_BUCKET_EXPORTS` | Minor | DevOps | Mới |
+| [PT-004](#pt-004--xác-nhận-giá-trị-s3_bucket_exports) | Xác nhận giá trị `S3_BUCKET_EXPORTS` | Minor | DevOps | Xong một phần |
 | [PT-005](#pt-005--chưa-kiểm-chứng-thao-tác-ai-qua-9router) | Chưa kiểm chứng thao tác AI qua 9Router | Major | BE / DevOps | Mới |
 | [PT-006](#pt-006--dung-lượng-đĩa-vps-căng) | Dung lượng đĩa VPS căng (chặn `deploy.sh` kế tiếp) | Major | DevOps | Mới |
 | [PT-007](#pt-007--bổ-sung-kinh-nghiệm-thực-tế-vào-06_production_deploymd) | Bổ sung kinh nghiệm thực tế vào `06_Production_Deploy.md` | Minor | Tài liệu | Mới |
 | [PT-008](#pt-008--swagger-công-khai-trên-production) | Swagger công khai trên production | Major | BE | Mới |
 | [PT-009](#pt-009--ghim-phiên-bản-các-image-theo-digest) | Ghim phiên bản các image theo digest | Cải tiến | DevOps | Mới |
 | [PT-010](#pt-010--dọn-dẹp-sau-vài-ngày-mục-57) | Dọn dẹp sau vài ngày (mục 5.7) | Minor | DevOps | Xong |
-| [PT-011](#pt-011--rà-soát-bảo-mật-token-cloudflare-tunnel) | Rà soát bảo mật token Cloudflare tunnel | Minor | DevOps | Mới |
-| [PT-012](#pt-012--khách-và-dự-án-trỏ-khu-vực-cũ-bị-bỏ-trống-khu-vực) | Khách và dự án trỏ khu vực cũ bị bỏ trống khu vực | Minor | Dữ liệu | Mới |
+| [PT-011](#pt-011--rà-soát-bảo-mật-token-cloudflare-tunnel) | Rà soát bảo mật token Cloudflare tunnel | Minor | DevOps | Xong |
+| [PT-012](#pt-012--khách-và-dự-án-trỏ-khu-vực-cũ-bị-bỏ-trống-khu-vực) | Khách và dự án trỏ khu vực cũ bị bỏ trống khu vực | Minor | Dữ liệu | Bỏ |
 | [PT-013](#pt-013--sao-lưu-crm_pii_encryption_key-ra-ngoài-máy-chủ) | Sao lưu `CRM_PII_ENCRYPTION_KEY` ra ngoài máy chủ (làm ngay) | Major | DevOps | Xong |
-| [PT-014](#pt-014--hiển-thị-số-phiên-bản-đang-chạy-thật) | Hiển thị số phiên bản đang chạy thật | Cải tiến | BE / DevOps | Mới |
-| [PT-015](#pt-015--backup-định-kỳ-chép-ra-ngoài-vps-và-thử-khôi-phục) | Backup định kỳ, chép ra ngoài VPS và thử khôi phục | Major | DevOps | Mới |
+| [PT-014](#pt-014--hiển-thị-số-phiên-bản-đang-chạy-thật) | Hiển thị số phiên bản đang chạy thật | Cải tiến | BE / DevOps | Bỏ |
+| [PT-015](#pt-015--backup-định-kỳ-chép-ra-ngoài-vps-và-thử-khôi-phục) | Backup định kỳ, chép ra ngoài VPS và thử khôi phục | Major | DevOps | Bỏ |
 | [PT-016](#pt-016--các-việc-bảo-mật-còn-tồn-ở-mục-9) | Các việc bảo mật còn tồn ở mục 9 | Minor | DevOps / BE | Mới |
 | [PT-017](#pt-017--màn-hình-mobile-bỏ-hiển-thị-tên-khách-hàng-ở-breadcrumb) | Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb | Minor | FE | Mới |
 | [PT-018](#pt-018--tab-thông-tin-bỏ-sđt-và-ẩn-các-trường-chưa-có-dữ-liệu) | Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu | Cải tiến | FE | Mới |
 | [PT-019](#pt-019--dự-án-quan-tâm-chuyển-sang-selectbox-có-ô-tìm-kiếm) | Dự án quan tâm chuyển sang selectbox có ô tìm kiếm | Cải tiến | FE | Mới |
 | [PT-020](#pt-020--nhật-ký-chỉ-hiện-form-ghi-chú-khi-bấm-nút-ghi-chú) | Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú | Minor | FE | Mới |
 | [PT-021](#pt-021--lịch-sử-thay-đổi-thu-gọn-và-tải-khi-bấm-xem) | Lịch sử thay đổi: thu gọn và tải khi bấm xem | Cải tiến | FE | Mới |
-| [PT-022](#pt-022--nhật-ký-chăm-sóc-thiếu-nút-sửa) | Nhật ký chăm sóc thiếu nút Sửa | Major | FE | Mới |
+| [PT-022](#pt-022--nhật-ký-chăm-sóc-thiếu-nút-sửa) | Nhật ký chăm sóc thiếu nút Sửa; bỏ quy tắc tác giả sửa trong 24 giờ | Major | BE / FE / Tài liệu | Mới |
 | [PT-023](#pt-023--tiến-độ-đủ-34-tiêu-chí-thì-tự-chuyển-trạng-thái-khách) | Tiến độ đủ 3/4 tiêu chí thì tự chuyển trạng thái khách | Cải tiến | FE (+ BE, cần thiết kế) | Mới |
 | [PT-024](#pt-024--sidebar-mobile-chưa-phủ-kín-từ-mép-trên-màn-hình) | Sidebar mobile chưa phủ kín từ mép trên màn hình | Minor | FE | Mới |
 | [PT-025](#pt-025--sidebar-mobile-không-tự-đóng-sau-khi-chọn-mục-chuyển-nút-x-sang-phải) | Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải | Major | FE | Mới |
@@ -123,7 +123,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | `docker compose ps` chỉ biết container chạy chứ không biết ứng dụng sẵn sàng; người vận hành dễ gọi nhầm `/api/v1/health`, thấy 404 rồi tưởng backend hỏng |
 | Đề xuất | Thêm `healthcheck` cho `backend` gọi liveness (kiểm công cụ có sẵn trong image trước khi chọn lệnh; cân nhắc ảnh hưởng tới `depends_on` của service khác); ghi hai route vào mục 7 |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Mới. Kiểm ngày 2026-11-02: chưa xong. `docker-compose.yml` chưa có `healthcheck` cho service `backend`, container backend không có health status, `06_Production_Deploy.md` mục 7 chưa ghi hai route health |
 
 #### PT-002 — Healthcheck của Mongo còn đặt mật khẩu trên dòng lệnh
 
@@ -140,7 +140,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Lộ mật khẩu root cho ai xem được tiến trình trong container hoặc trên host; phạm vi hẹp nhưng trái nguyên tắc của tài liệu triển khai |
 | Đề xuất | Đổi healthcheck sang `mongosh` đọc mật khẩu từ biến môi trường trong script (không `-p ...`); kiểm lại `rs.initiate` idempotent vẫn đúng; thử trên volume mẫu trước |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Mới. Kiểm ngày 2026-11-02: chưa xong. `docker-compose.yml` dòng 66 vẫn truyền `-p "$$MONGO_INITDB_ROOT_PASSWORD"` trên dòng lệnh |
 
 #### PT-003 — Bật ảnh đính kèm CRM
 
@@ -168,13 +168,13 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Mô tả | Giá trị mặc định của `S3_BUCKET_EXPORTS` là `crm-exports`. VPS cũ từng gõ nhầm thành `crm-export` (thiếu chữ `s`) |
 | Màn hình / API | `.env.docker` trên VPS; bucket MinIO dùng cho xuất file CRM |
 | Bước tái hiện | 1. Đọc **tên biến** và giá trị (không phải giá trị bí mật) `S3_BUCKET_EXPORTS` trong `.env.docker`. 2. Đối chiếu với bucket có thật và rule vòng đời 7 ngày |
-| Kết quả thực tế | Chưa xác nhận |
+| Kết quả thực tế | Đã xác nhận ngày 2026-11-02: giá trị đúng `crm-exports`, bucket có thật. Còn thiếu cảnh báo trong tài liệu (xem dòng Trạng thái) |
 | Kết quả mong đợi | Giá trị là `crm-exports`, trùng bucket do `minio-init` tạo |
 | Mức độ | Minor |
 | Ảnh hưởng | Sai tên thì tính năng xuất file CRM lỗi hoặc ghi vào bucket không có rule xóa sau 7 ngày |
 | Đề xuất | Kiểm và sửa nếu sai; ghi cảnh báo "đúng `crm-exports`" vào mục 2 của `06_Production_Deploy.md` |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần. Kiểm ngày 2026-11-02: trên production `S3_BUCKET_EXPORTS` đặt đúng `crm-exports` và bucket `crm-exports` có thật trong MinIO. Còn thiếu: cảnh báo "đúng `crm-exports`" trong `06_Production_Deploy.md` mục 2 (có thể gộp vào PT-007) |
 
 #### PT-005 — Chưa kiểm chứng thao tác AI qua 9Router
 
@@ -239,7 +239,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Kết quả thực tế | Xem được toàn bộ tài liệu API |
 | Kết quả mong đợi | **Đã chốt (Oniichan, 2026-11-02): tắt Swagger khi `NODE_ENV=production`**, tức không còn `/api/v1/docs` trên production. Dev/staging vẫn bật |
 | Mức độ | Major |
-| Ảnh hưởng | Hiện tại: lộ danh sách endpoint, kiểu dữ liệu, mã lỗi nghiệp vụ cho người ngoài, giúp dò tấn công. Sau khi sửa: **không còn trang docs công khai trên production**; tài liệu API chỉ xem được ở dev/staging, và số phiên bản hiển thị ở Swagger (PT-014) cũng chỉ thấy ở đó (production xem qua health) |
+| Ảnh hưởng | Hiện tại: lộ danh sách endpoint, kiểu dữ liệu, mã lỗi nghiệp vụ cho người ngoài, giúp dò tấn công. Sau khi sửa: **không còn trang docs công khai trên production**; tài liệu API chỉ xem được ở dev/staging |
 | Đề xuất | **Quyết định:** chỉ gọi `SwaggerModule.setup` khi `NODE_ENV` khác `production` (hiện `RealEstateBackendApp/src/main.ts:77-85` luôn bật). Cập nhật bảng "Hành vi khi `NODE_ENV=production`" trong `06_Production_Deploy.md`; kiểm thử không làm hỏng test đếm route Swagger; thêm test production không có route docs, môi trường khác có. **Cần xác minh trước khi coi là xong:** `docker-compose.yml:242` đặt `NODE_ENV=production` cho service `backend`, nhưng chưa kiểm giá trị thật trong container production đang chạy (`realestate_backend`) và chưa rõ staging (nếu có) đặt `NODE_ENV` là gì, để "dev/staging vẫn bật" đúng. Không chọn phương án chặn ở nginx/Cloudflare Access |
 | Người phụ trách | `coder-backend-agent` (`devops-agent` xác minh `NODE_ENV` thật trên production) |
 | Trạng thái | Mới |
@@ -259,7 +259,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Nâng cấp bất ngờ khi pull lại; khó tái hiện sự cố |
 | Đề xuất | Lấy digest đang chạy của cả năm image, ghim vào `.env.docker` hoặc compose; ghi quy trình nâng cấp image có chủ đích vào tài liệu |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Mới. Kiểm ngày 2026-11-02: chưa xong. `MINIO_IMAGE` trên VPS để trống; cả 5 image (minio, 9router, cloudflared, `mongo:7`, `redis:7-alpine`) vẫn dùng tag trôi |
 
 #### PT-010 — Dọn dẹp sau vài ngày (mục 5.7)
 
@@ -287,13 +287,13 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Mô tả | File `deploy.sh` cũ trên VPS từng chứa token Cloudflare tunnel viết cứng trong file |
 | Màn hình / API | VPS: `~/deploy.sh.old`; biến token tunnel trong `.env.docker` |
 | Bước tái hiện | Xác định file `deploy.sh` cũ từng được sao chép, gửi hoặc xem ở đâu ngoài VPS (chat, backup, ảnh chụp) |
-| Kết quả thực tế | Chưa rà soát |
+| Kết quả thực tế | Đã rà soát ngày 2026-11-02: `deploy.sh.old` đã `shred` (PT-010); Oniichan xác nhận token không lộ ra ngoài VPS |
 | Kết quả mong đợi | Biết token có từng ra ngoài VPS hay không; nếu có thì đã xoay (rotate) |
 | Mức độ | Minor (nâng lên Major nếu xác nhận từng lộ ra ngoài VPS) |
 | Ảnh hưởng | Người có token có thể dựng tunnel giả mạo vào hạ tầng của dự án |
 | Đề xuất | Oniichan xác nhận phạm vi lộ. Nếu từng lộ: tạo token tunnel mới trong Cloudflare, cập nhật `.env.docker` trên VPS, khởi động lại `cloudflared`, vô hiệu token cũ. Xóa `deploy.sh.old` theo PT-010 |
 | Người phụ trách | Oniichan (xác nhận), `devops-agent` (xoay token) |
-| Trạng thái | Mới |
+| Trạng thái | Xong. Kiểm ngày 2026-11-02: `deploy.sh.old` đã `shred` (PT-010); Oniichan xác nhận token không lộ ra ngoài VPS (2026-11-02), không cần xoay token |
 
 #### PT-012 — Khách và dự án trỏ khu vực cũ bị bỏ trống khu vực
 
@@ -310,7 +310,9 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Khách không có khu vực sẽ lọt khỏi bộ lọc theo khu vực |
 | Đề xuất | Khi nhập khách cần bổ sung khu vực; theo dõi kết quả nhập CSV (tên khu vực không khớp để trống); cân nhắc báo cáo/đánh dấu khách thiếu khu vực (đã là điểm còn mở ở mục 10 của tài liệu `09_Bo_Sung_Sua_Doi_Tinh_Nang.md`) |
 | Người phụ trách | `coder-frontend-agent` / `coder-backend-agent` nếu làm báo cáo; Oniichan khi nhập liệu |
-| Trạng thái | Mới |
+| Trạng thái | Bỏ. Oniichan quyết định bỏ (2026-11-02) |
+
+Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ làm. Production hiện 0 khách và 0 dự án bị ảnh hưởng; không làm phần đánh dấu khách thiếu khu vực.
 
 #### PT-013 — Sao lưu `CRM_PII_ENCRYPTION_KEY` ra ngoài máy chủ
 
@@ -344,7 +346,9 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Khó đối chiếu production với bản phát hành, khó hỗ trợ khi có sự cố |
 | Đề xuất | Swagger đọc `version` từ `package.json`; thêm `version` (và commit ngắn qua biến build) vào response health; cân nhắc hiện số phiên bản ở chân trang web admin |
 | Người phụ trách | `coder-backend-agent` (+ `devops-agent` cho biến build commit) |
-| Trạng thái | Mới |
+| Trạng thái | Bỏ. Oniichan quyết định bỏ (2026-11-02) |
+
+Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ làm. Phần đưa số phiên bản app vào image Docker (cần cho runner của PT-027) chuyển sang phạm vi PT-027.
 
 #### PT-015 — Backup định kỳ, chép ra ngoài VPS và thử khôi phục
 
@@ -360,8 +364,8 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Mức độ | Major |
 | Ảnh hưởng | Mất VPS hoặc đầy đĩa thì mất cả dữ liệu lẫn backup; backup chưa từng thử khôi phục thì chưa chắc dùng được |
 | Đề xuất | Lập cron theo mục 6, chép ra ngoài bằng `rclone` hoặc công cụ tương đương, đặt lịch thử khôi phục (ví dụ hằng tháng); ghi lịch thật vào tài liệu |
-| Người phụ trách | `devops-agent`; Oniichan chọn nơi lưu ngoài máy chủ |
-| Trạng thái | Mới |
+| Người phụ trách | `devops-agent`; Oniichan chọn nơi lưu ngoài máy chủ (không còn áp dụng vì mục đã bỏ) |
+| Trạng thái | Bỏ. Oniichan quyết định bỏ (2026-11-02). Lưu ý rủi ro: không có cron backup/chép ra ngoài; chỉ còn backup thủ công và backup tự động trước mỗi lần deploy của `deploy.sh` |
 
 #### PT-016 — Các việc bảo mật còn tồn ở mục 9
 
@@ -476,17 +480,38 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 
 | Trường | Nội dung |
 |---|---|
-| Mô tả | Nhật ký chăm sóc đang thiếu nút Sửa |
-| Nhóm | FE |
-| Màn hình / API | Chi tiết khách, tab "Nhật ký". API sửa đã có: `PATCH /crm/customers/:id/care-logs/:logId` (tác giả sửa trong 24 giờ kể từ lúc tạo; Quản trị, Quản lý trong phạm vi sửa mọi lúc; theo tài liệu 05) và hàm `updateCareLog` trong `RealEstateAdminApp/src/modules/crm/api/httpCrmApi.ts`. Lúc viết, `grep` trong `.../CareTimeline.tsx` không thấy điều khiển "Sửa" |
-| Bước tái hiện | 1. Mở tab "Nhật ký". 2. Tìm nút Sửa ở một nhật ký do chính mình vừa ghi. (Môi trường: Oniichan test trên điện thoại (iPhone, Safari) và giả lập iPhone SE 375x667 trên desktop. Khi sửa phải thử lại đúng hai môi trường này) |
-| Kết quả thực tế | Không có nút Sửa |
-| Kết quả mong đợi | Có nút Sửa theo đúng quyền (tác giả trong 24 giờ, Quản trị/Quản lý mọi lúc); hết hạn sửa thì ẩn hoặc báo rõ `CARE_LOG_EDIT_WINDOW_EXPIRED` |
+| Mô tả | Nhật ký chăm sóc đang thiếu nút Sửa trên giao diện. **Mở rộng theo quyết định của Oniichan (2026-11-02): bỏ quy tắc "tác giả chỉ sửa được trong 24 giờ kể từ lúc tạo"**, tức tác giả sửa (và xóa) nhật ký bất cứ lúc nào, không còn cửa sổ 24 giờ. Quy tắc này là **code và tài liệu thật** (đã grep xác minh), không chỉ là lỗi giao diện, nên mục này gồm BE, FE và tài liệu. **Đây là thay đổi quy tắc nghiệp vụ** (nới quyền của tác giả), không phải sửa lỗi thuần túy |
+| Nhóm | BE, FE, Tài liệu |
+| Màn hình / API | Chi tiết khách, tab "Nhật ký". API: `PATCH /crm/customers/:id/care-logs/:logId` (sửa), `DELETE /crm/customers/:id/care-logs/:logId` (xóa mềm), `DELETE /crm/customers/:id/care-log-attachments/:attachmentId` (gỡ ảnh đã gắn); hiện cả ba cùng dùng cửa sổ 24 giờ. Hàm `updateCareLog` đã có trong `RealEstateAdminApp/src/modules/crm/api/httpCrmApi.ts`. Lúc viết, `grep` trong `.../CareTimeline.tsx` không thấy điều khiển "Sửa". Danh sách file BE, FE và tài liệu cần đổi ở mục "Phạm vi thay đổi PT-022" ngay dưới bảng |
+| Bước tái hiện | 1. Mở tab "Nhật ký". 2. Tìm nút Sửa ở một nhật ký do chính mình vừa ghi. 3. (BE) Với một nhật ký do chính mình ghi cách đây hơn 24 giờ, gọi sửa/xóa. (Môi trường: Oniichan test trên điện thoại (iPhone, Safari) và giả lập iPhone SE 375x667 trên desktop. Khi sửa phải thử lại đúng hai môi trường này) |
+| Kết quả thực tế | Không có nút Sửa trên giao diện. Ở BE, tác giả (Nhân viên) quá 24 giờ kể từ lúc tạo nhận 403 `CARE_LOG_EDIT_WINDOW_EXPIRED` khi sửa, xóa hoặc gỡ ảnh |
+| Kết quả mong đợi | Tác giả sửa và xóa nhật ký của mình **bất cứ lúc nào** (không còn giới hạn 24 giờ), có nút Sửa trên giao diện; Quản trị và Quản lý trong phạm vi vẫn sửa/xóa mọi lúc; người **không phải tác giả** (và không phải Quản trị/Quản lý trong phạm vi) vẫn nhận 403; **không còn mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED`** ở bất kỳ API, mã nguồn hay tài liệu hiện hành nào |
 | Mức độ | Major |
-| Ảnh hưởng | Ghi sai nhật ký thì không sửa được trên giao diện dù backend cho phép |
-| Đề xuất | Thêm nút Sửa (mở lại form với dữ liệu cũ, gồm ảnh đính kèm), xử lý xung đột và lỗi hết hạn 24 giờ; thêm test |
-| Người phụ trách | `coder-frontend-agent` |
+| Ảnh hưởng | Ghi sai nhật ký thì không sửa được trên giao diện dù backend cho phép; quy tắc 24 giờ còn chặn tác giả sửa nhật ký cũ. Sau khi đổi: tác giả có thêm quyền (nới quyền), nhật ký có thể bị sửa/xóa lâu sau khi ghi; lịch sử/audit hiện có vẫn ghi lại các lần sửa/xóa |
+| Đề xuất | (1) FE: thêm nút Sửa (mở lại form với dữ liệu cũ, gồm ảnh đính kèm), xử lý xung đột; hiển thị theo `canEdit` từ BE, không kiểm 24 giờ ở FE. (2) BE: bỏ kiểm tra 24 giờ (`isWithinEditWindow`), bỏ ném `CARE_LOG_EDIT_WINDOW_EXPIRED`, bỏ hằng `CARE_LOG_EDIT_WINDOW_MS`; tác giả luôn được sửa/xóa/gỡ ảnh. (3) Bỏ khai báo ApiResponse 403 `CARE_LOG_EDIT_WINDOW_EXPIRED` ở controller. (4) Cập nhật test BE (bỏ/viết lại ca "quá 24 giờ", thêm ca tác giả sửa nhật ký rất cũ vẫn được, người khác vẫn 403) và test FE. (5) Sửa tài liệu API và kỹ thuật (liệt kê bên dưới). **Đây là thay đổi quy tắc nghiệp vụ; API tương thích ngược:** nới quyền, không đổi hợp đồng (cùng endpoint, cùng body, cùng mã thành công; chỉ bớt một nhánh 403), client cũ vẫn chạy. Xóa hay giữ hằng `ErrorCode.CARE_LOG_EDIT_WINDOW_EXPIRED`: mục 7 câu 18 |
+| Người phụ trách | `coder-backend-agent` (bỏ quy tắc, mã lỗi, test BE) + `coder-frontend-agent` (nút Sửa, bỏ xử lý mã lỗi nếu có, test FE); `qa-agent` review code và test; tài liệu API/kỹ thuật cập nhật cùng đợt |
 | Trạng thái | Mới |
+
+##### Phạm vi thay đổi PT-022 (chỉ liệt kê, chưa sửa)
+
+**Code BE** (`RealEstateBackendApp/src/`, đã grep xác minh 2026-11-02):
+
+- `modules/crm/care-logs/care-log.constants.ts:36`: hằng `CARE_LOG_EDIT_WINDOW_MS`. **Giữ nguyên** hằng `ORPHAN_ATTACHMENT_TTL_MS` ngay dưới (cùng giá trị 24 giờ nhưng là hạn dọn ảnh chưa gắn, không liên quan).
+- `modules/crm/care-logs/care-log.rules.ts:9,21,37-46`: import hằng, hàm `isWithinEditWindow`, và `assertCanModifyCareLog` ném `CARE_LOG_EDIT_WINDOW_EXPIRED` (kèm `canModifyCareLog` ở dòng 24-34 đang gọi kiểm hết hạn).
+- Nơi gọi các hàm trên, cần rà khi đổi: `care-logs.service.ts:363` (sửa) và `:505` (xóa); `care-log-attachments.service.ts:259` (gỡ ảnh đã gắn); `care-log.mapper.ts:55` (tính `canEdit` trả cho FE).
+- `modules/crm/care-logs/care-logs.controller.ts:108,126`: `@ApiResponse` 403 `CARE_LOG_EDIT_WINDOW_EXPIRED`.
+- `common/exceptions/error-codes.ts:21`: `CARE_LOG_EDIT_WINDOW_EXPIRED` (xóa hay giữ: mục 7 câu 18).
+- Test: `modules/crm/care-logs/care-log.rules.spec.ts:30-40` và `modules/crm/crm-m3.integration.spec.ts:1199-1250`.
+
+**Code FE** (`RealEstateAdminApp/src/modules/crm/`): `screens/CustomerDetail/components/CareTimeline.tsx` (+ `CareTimeline.test.tsx`, `CareLogForm.tsx`), `api/httpCrmApi.ts` (`updateCareLog`), `api/access.ts` và `api/http/*` (nơi dùng `canEdit`). Lúc viết, `grep` trong `RealEstateAdminApp/src` không thấy FE xử lý mã `CARE_LOG_EDIT_WINDOW_EXPIRED`; coder-frontend-agent xác minh lại.
+
+**Tài liệu cần đổi khi triển khai** (thư mục `docs/06_Module_Customer_Management/`; **không sửa bây giờ**):
+
+- `05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`: dòng 159 (PATCH sửa nhật ký: bỏ "tác giả trong 24 giờ tính từ lúc TẠO" và 403 `CARE_LOG_EDIT_WINDOW_EXPIRED`, giữ "không phải tác giả: 403"); dòng 160 (DELETE nhật ký: quyền "TG (24 giờ)" thành "TG", bỏ 403 `CARE_LOG_EDIT_WINDOW_EXPIRED`); dòng 162 (DELETE ảnh đã gắn: bỏ "trong 24 giờ" và 403 `CARE_LOG_EDIT_WINDOW_EXPIRED`); dòng 352 (bảng mã lỗi: xóa hàng 403 `CARE_LOG_EDIT_WINDOW_EXPIRED`). **Không** đụng chữ "24 giờ" ở dòng 161 (ảnh chưa gắn bị dọn) và dòng 214 (`endAt` tối đa 24 giờ).
+- `04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`: ma trận quyền, dòng 422 ("Sửa / xóa nhật ký": hai ô "TG (trong 24 giờ)" thành "TG") và dòng 423 ("gỡ: TG (24 giờ)" ở hai ô thành "gỡ: TG"); hai dòng này cùng dẫn chiếu quy tắc C2. Tài liệu 01 định nghĩa C2 và X4 **không** nêu giới hạn 24 giờ nên không cần sửa. **Lưu ý đếm:** grep "24 giờ" trong tài liệu 04 ra 6 dòng (339, 422, 423, 725, 802, 913) nhưng chỉ **422 và 423** (4 chỗ trong 2 dòng) là quy tắc sửa 24 giờ; 339 và 725 là job dọn ảnh `PENDING` chưa gắn, 802 là RPO sao lưu, 913 là `endAt` lịch hẹn, **giữ nguyên**.
+- `02_Thiet_Ke_Giao_Dien__module_Quan_Ly_Khach_Hang.md`: grep "24 giờ" chỉ ra dòng 173 ("giờ 24 giờ" là định dạng giờ, **không** liên quan quy tắc sửa nhật ký); lúc viết **chưa tìm thấy chỗ nào** nói về cửa sổ sửa 24 giờ trong file này, cần rà lại phần nhật ký khi sửa tài liệu.
+- `08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md`: dòng 163 (`canEdit`: "tác giả trong 24 giờ, Quản trị, Quản lý trong phạm vi" thành "tác giả, Quản trị, Quản lý trong phạm vi"). `07_Ke_Hoach_Kiem_Thu_Giao_Dien_Tu_Dong.md` dòng 95 chỉ nhắc `canEdit`, không nêu 24 giờ nên có thể giữ.
+- Khi phát hành: cập nhật dòng "Phiên bản tài liệu" của các file đổi nội dung và hàng tương ứng ở `README.md` mục 4.
 
 #### PT-023 — Tiến độ đủ 3/4 tiêu chí thì tự chuyển trạng thái khách
 
@@ -574,7 +599,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Kết quả mong đợi | (1) DB ghi hệ thống đang ở phiên bản nào và migration nào đã chạy. (2) Nâng cấp thì **chỉ migration chưa chạy** được chạy, đúng thứ tự, không chạy song song. (3) Migration lỗi thì dừng và ghi lỗi, không tự lặp, không tự hoàn tác dữ liệu. (4) Migration cũ 002 đến 006 (đã chạy tay, có bước xóa) **không bao giờ bị runner tự chạy lại** |
 | Mức độ | Major (**đề xuất**, Oniichan quyết; về bản chất là cải tiến nền tảng). Lý do: mọi thay đổi schema về sau dựa vào nó, và hiện việc "migration nào đã chạy" chỉ nằm trong đầu người vận hành |
 | Ảnh hưởng | Không có sổ thì dễ chạy sót hoặc chạy lại migration có bước xóa (006 xóa khu vực cũ), khó biết production đang ở trạng thái dữ liệu nào, và `deploy.sh` phải viết riêng một cổng cho từng migration (như `check_users_migrated`) |
-| Đề xuất | Một collection `system`, một runner CLI trong image backend do `deploy.sh` gọi, dry-run mặc định, 002 đến 006 ghi "đã áp dụng" bằng lệnh `baseline` một lần. Chi tiết ở 6 mục thiết kế bên dưới; các điểm cần Oniichan quyết ở mục 7 (câu 11 đến 17) |
+| Đề xuất | Một collection `system`, một runner CLI trong image backend do `deploy.sh` gọi, dry-run mặc định, 002 đến 006 ghi "đã áp dụng" bằng lệnh `baseline` một lần. Chi tiết ở 6 mục thiết kế bên dưới; các điểm cần Oniichan quyết ở mục 7 (câu 11 đến 17). Phạm vi gồm cả việc **đưa số phiên bản app vào image Docker** (Dockerfile sao chép `package.json` vào image, hoặc sinh `dist/version.json` lúc build) để runner đọc được; trước đây phần này tách sang PT-014, nay PT-014 đã `Bỏ` nên thuộc PT-027 |
 | Người phụ trách | `architect-agent` (thiết kế, xong); `coder-backend-agent` (runner, test); `devops-agent` (`deploy.sh`, Dockerfile, tài liệu `06_Production_Deploy.md`); `qa-agent` (review code và test) |
 | Trạng thái | Mới |
 
@@ -607,7 +632,7 @@ Chọn "mỗi migration một document" thay vì một mảng `applied[]` vì gh
 **5. Việc kỹ thuật bắt buộc** (từ review QA, đã xác minh):
 
 - Image production không có `ts-node`, `package.json`, `scripts/` (`RealEstateBackendApp/Dockerfile:17-27`), nên runner phải là **code TS dưới `src/`** biên dịch vào `dist/` (build SWC xuất mọi file trong `src`; đường dẫn dự kiến `dist/migrations/cli.js`, coder kiểm lại sau build). Runner dùng driver `mongodb` đi kèm mongoose trong `node_modules` production (coder xác minh trong image).
-- **Dockerfile phải đưa số phiên bản vào image**: copy `package.json` vào stage production, hoặc sinh `dist/version.json` ở stage `builder`; thêm `ARG GIT_COMMIT` nếu muốn lưu commit. Phần này PT-014 dùng chung.
+- **Dockerfile phải đưa số phiên bản vào image**: copy `package.json` vào stage production, hoặc sinh `dist/version.json` ở stage `builder`; thêm `ARG GIT_COMMIT` nếu muốn lưu commit. Phần này thuộc phạm vi PT-027 (trước đây tách sang PT-014; PT-014 đã `Bỏ` ngày 2026-11-02).
 - Dry-run **không ghi gì** (không `createIndex`, không khóa). Runner **từ chối `--apply` nếu Mongo không phải replica set** (như 006, vốn yêu cầu replica set để chạy trong transaction).
 
 **6. Nghiệm thu** (test tích hợp dùng `createMemoryReplSet` như `migrate-areas-to-34-provinces.integration.spec.ts`, chạy `npm run test:integration`):
@@ -617,14 +642,14 @@ Chọn "mỗi migration một document" thay vì một mảng `applied[]` vì gh
 3. Migration lỗi (giả lập ném lỗi ở cái thứ 2 trong 3): cái 1 vào sổ, cái 2 **không** vào sổ và có `migration-last-error` (không chứa `mongodb://` hay mật khẩu), cái 3 không chạy, thoát mã khác 0.
 4. Hai runner chạy song song: chỉ một bên chạy, bên kia thoát mã khác 0; khóa còn sót thì `unlock` gỡ được.
 5. `system` chưa có `version` mà `users` đã có dữ liệu: runner **không chạy 002 đến 006**, báo cần `baseline`; sau `baseline` thì chỉ chạy từ 007; DB rỗng chạy được ngay.
-6. Chạy xong thì `version` trong `system` bằng phiên bản app; `deploy.sh` (thử trên môi trường thử, không thử thẳng VPS): có migration chờ mà không có `--migrate` thì dừng **trước** `up` (stack không đổi), có `--migrate` thì apply rồi `up`.
+6. Chạy xong thì `version` trong `system` bằng phiên bản app, và số phiên bản đọc được từ image production (có `package.json` hoặc `dist/version.json` trong image, kiểm bằng chạy `status` từ container backend); `deploy.sh` (thử trên môi trường thử, không thử thẳng VPS): có migration chờ mà không có `--migrate` thì dừng **trước** `up` (stack không đổi), có `--migrate` thì apply rồi `up`.
 
 **Ranh giới với các mục liên quan:**
 
-- **PT-014** (hiển thị số phiên bản): PT-014 là phiên bản **mã** đang chạy (từ `package.json`, hiện ở Swagger/health), không cần DB; PT-027 chỉ ghi `version` vào `system`. Hai mục làm cùng đợt, dùng chung phần Dockerfile ở mục 5 (**PT-014 là phụ thuộc kỹ thuật**).
+- **PT-014** (hiển thị số phiên bản): `Bỏ` (Oniichan quyết định, 2026-11-02), không làm phần hiện số phiên bản ở Swagger, health hay chân trang web. Phần **đưa số phiên bản app vào image Docker** (cần để runner ghi `version` vào `system`) thuộc PT-027, ghi ở mục 5; PT-027 không còn phụ thuộc kỹ thuật vào PT-014.
 - **PT-006** (đĩa): **điều kiện để deploy**: đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được. Runner chạy bằng image backend đã build nên bỏ được bước `docker build --target builder` riêng của `run-migration.sh`.
 - **PT-001** (healthcheck): không đổi ý nghĩa liveness/readiness; backend không chạy migration nên không ảnh hưởng `start_period`.
-- **PT-007** (tài liệu triển khai) và **PT-015** (backup): cập nhật `06_Production_Deploy.md` (mục 5.4a, 11) cùng đợt; runner không tự backup, dựa vào backup của `deploy.sh`.
+- **PT-007** (tài liệu triển khai): cập nhật `06_Production_Deploy.md` (mục 5.4a, 11) cùng đợt. **PT-015** (backup định kỳ) đã `Bỏ` (Oniichan, 2026-11-02) nên không có việc cập nhật tài liệu theo PT-015; runner vẫn không tự backup và dựa vào backup tự động trước mỗi lần deploy của `deploy.sh`.
 
 **Không làm:**
 
@@ -641,13 +666,13 @@ Chỉ là gợi ý, **chưa giao việc**. Mọi nhóm FE đều phải thử tr
 
 | Nhóm | Mục | Gợi ý |
 |---|---|---|
-| (a) Màn chi tiết khách | PT-017 đến PT-022 | `coder-frontend-agent`; riêng PT-022 dùng API sửa nhật ký đã có |
+| (a) Màn chi tiết khách | PT-017 đến PT-022 | `coder-frontend-agent`; riêng PT-022 **cần thêm `coder-backend-agent`** (bỏ quy tắc 24 giờ và mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED` ở BE, cập nhật test và tài liệu API/kỹ thuật) cùng với nút Sửa ở FE |
 | (b) Tiến độ tự chuyển trạng thái | PT-023 | Tính năng mới: `architect-agent` thiết kế, rồi `coder-backend-agent` và `coder-frontend-agent`; chờ Oniichan trả lời mục 7 |
 | (c) Sidebar mobile | PT-024, PT-025 | `coder-frontend-agent` |
 | (d) Form lịch hẹn mobile | PT-026 | `coder-frontend-agent`; rà luôn các form mobile khác cùng kiểu |
-| (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được). Phụ thuộc kỹ thuật: PT-014 (Dockerfile đưa số phiên bản vào image). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
+| (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được). Dockerfile đưa số phiên bản vào image nằm trong phạm vi PT-027 (PT-014 đã `Bỏ`). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
 
-Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý, vì mọi thay đổi schema/dữ liệu về sau sẽ dựa vào nó (hiện chưa mục PT nào bắt buộc migration, nhưng PT-023 và PT-012 có thể phát sinh); **điều kiện để deploy được là xử lý PT-006 (đĩa) trước**. Nhóm (a), (c), (d) thuần giao diện không phụ thuộc vào nhóm (e).
+Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý, vì mọi thay đổi schema/dữ liệu về sau sẽ dựa vào nó (hiện chưa mục PT nào bắt buộc migration, nhưng PT-023 có thể phát sinh); **điều kiện để deploy được là xử lý PT-006 (đĩa) trước**. Nhóm (a), (c), (d) thuần giao diện không phụ thuộc vào nhóm (e).
 
 ## 6. Kết quả test production do Oniichan ghi nhận
 
@@ -662,7 +687,7 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 | 5 | Thao tác nhóm | Thêm và gỡ thành viên của một nhóm | | |
 | 6 | Xóa và khôi phục khách "Bỏ" | Xóa một khách ở trạng thái "Bỏ", khôi phục bằng tài khoản Admin (chỉ làm nếu bản giao diện đã có chức năng này) | | |
 | 7 | Bộ lọc "Người phụ trách" | Lọc theo người phụ trách ở danh sách khách, kiểm kết quả đúng phạm vi quyền | | |
-| 8 | Khu vực 34 tỉnh thành | Mở select khu vực, thấy đủ 34 tỉnh/thành, chọn thử cho một khách (liên quan PT-012) | | |
+| 8 | Khu vực 34 tỉnh thành | Mở select khu vực, thấy đủ 34 tỉnh/thành, chọn thử cho một khách (PT-012 đã `Bỏ`) | | |
 | 9 | Health sau deploy | Gọi `GET /api/v1/health/liveness` và `GET /api/v1/health/readiness` (liên quan PT-001); readiness phải 200 khi MongoDB, Redis, S3/MinIO sẵn sàng | | |
 | 10 | Đường lui 5.8 còn dùng được | Trước khi làm PT-010, kiểm các điều kiện của đường lui 5.8 (image `*:pre-upgrade`, backup volume, dump `pre-upgrade`) còn nguyên và dùng được. Ngày dự kiến hết thời hạn giữ đường lui: không còn cần (xem cột Kết quả) | Không còn áp dụng: image `*:pre-upgrade` đã xóa ngày 2026-11-02 theo yêu cầu Oniichan (PT-010), nên đường lui 5.8 không còn dùng được | PT-010 |
 | 11 | Ảnh đính kèm | Đính kèm một ảnh vào nhật ký/chi tiết khách và xem lại ảnh (liên quan PT-003) | OK (2026-11-02) | Không |
@@ -676,6 +701,11 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 - **Câu 1, 2, 3, 4: Oniichan báo "Đã xong" (2026-11-02):** (1) cất `CRM_PII_ENCRYPTION_KEY` vào password manager và xác nhận đủ 44 ký tự; (2) xóa tunnel trống `minio.stnd.vn`; (3) thẻ git `v1.0.2`; (4) test đăng nhập web và thao tác AI. Đây là lời báo của Oniichan; **Neptune sẽ kiểm lại cụ thể từng việc** (đặc biệt câu 3: thẻ `v1.0.2` đang trỏ commit nào, đã push chưa), kết quả kiểm chưa ghi ở đây. Đã cập nhật theo lời báo: PT-013 `Xong`, PT-003 (việc còn lại: không còn), mục 2 và mục 6 (dòng 1 và 4 ghi "Oniichan báo đã xong, chưa ghi chi tiết"). PT-005 chưa đổi vì Oniichan chưa ghi kết quả cụ thể. Riêng câu 3: hướng (a) hay (b) Oniichan đã chọn chưa ghi, Neptune sẽ kiểm `git tag` để ghi lại.
 - **Câu 5 (PT-010 dọn dẹp): đã xong (2026-11-02).** Oniichan đồng ý "Làm đi" cả 4 bước; Neptune đã thực hiện xong trên VPS (chi tiết ở PT-010), PT-010 `Xong`. Phần còn mở của câu 5 xem bên dưới.
 - **Câu 7 (PT-008):** chốt **tắt Swagger khi `NODE_ENV=production`**.
+- **Câu 8 (PT-015):** **Oniichan quyết định bỏ PT-015 (2026-11-02)**, không còn cần chọn nơi lưu ngoài máy chủ.
+- **Câu 6 (PT-011):** Oniichan xác nhận token Cloudflare cũ **không lộ** ra ngoài VPS (2026-11-02), không cần xoay token; PT-011 `Xong`.
+- **PT-012 (khu vực bị bỏ trống):** **Oniichan quyết định bỏ (2026-11-02)**; không làm phần đánh dấu khách thiếu khu vực.
+- **PT-014 (hiển thị số phiên bản đang chạy thật):** **Oniichan quyết định bỏ (2026-11-02)**. Phần đưa số phiên bản app vào image Docker chuyển sang PT-027 (xem câu 11).
+- **PT-004 (`S3_BUCKET_EXPORTS`):** Oniichan đồng ý trạng thái `Xong một phần` (2026-11-02); phần còn thiếu là cảnh báo trong `06_Production_Deploy.md` mục 2.
 - **Câu 9 (PT-023):** chốt 6 quy tắc (ghi ở PT-023); còn 3 điểm mở ở câu 9 bên dưới.
 - **Câu 17:** chốt tên collection là **`system`** (một collection, lưu cả phiên bản và các biến hệ thống khác); phần baseline còn mở ở câu 17 bên dưới.
 
@@ -686,9 +716,9 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 3. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** thẻ git `v1.0.2` đặt lên đâu. Oniichan báo đã xong (2026-11-02); hướng đã chọn chưa ghi, Neptune sẽ kiểm `git tag` để ghi lại. Bối cảnh để Neptune kiểm: production chạy `e6099c0` nhưng manifest ở commit đó còn cũ (backend 0.0.1, admin 0.0.0, mobile 1.0.0); hai hướng (a) đặt thẻ lên `e6099c0` và ghi rõ manifest lệch số, (b) đặt thẻ lên commit nâng 1.0.2 rồi triển khai lại; thẻ cục bộ `v1.0.2` từng trỏ `ad59c4b`, thẻ `v1.0.1` trên remote trỏ `932db04` (2026-08-24). **Push thẻ chỉ làm khi Oniichan đồng ý.**
 4. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** test đăng nhập web và thao tác AI (PT-005, mục 6). Mục 6 (dòng 1 và 4) đã ghi "Oniichan báo đã xong (2026-11-02), chưa ghi chi tiết"; kết quả cụ thể chưa có và PT-005 chưa đổi.
 5. **Dọn dẹp ở PT-010: đã xong (2026-11-02).** Còn mở: nới đĩa VPS (PT-006: đĩa còn khoảng 4,4 GB, vẫn dưới ngưỡng 5 GB nên chặn `deploy.sh` kế tiếp; Oniichan đang chuẩn bị nới đĩa VM VirtualBox 25 -> 50 GB, chưa xong). Ý "ngày hết thời hạn giữ đường lui 5.8" không còn cần (đường lui 5.8 đã không còn).
-6. **Token Cloudflare tunnel (PT-011):** `deploy.sh` cũ có từng bị chép ra ngoài VPS không; nếu có thì xoay token.
+6. **Đã chốt (2026-11-02):** token Cloudflare tunnel (PT-011) không lộ ra ngoài VPS, không cần xoay; PT-011 `Xong`.
 7. **Đã chốt (2026-11-02):** Swagger (PT-008) **tắt khi `NODE_ENV=production`**.
-8. **Backup định kỳ (PT-015):** chọn nơi lưu ngoài máy chủ.
+8. **Đã chốt: bỏ PT-015 (Oniichan, 2026-11-02).** Mục PT-015 giữ lại với trạng thái `Bỏ`; không làm backup định kỳ. Lưu ý rủi ro: không có cron backup/chép ra ngoài; chỉ còn backup thủ công và backup tự động trước mỗi lần deploy của `deploy.sh`.
 9. **PT-023 (tiến độ tự chuyển trạng thái):** Oniichan đã chốt 6 quy tắc (ghi ở PT-023: 3/4 tiêu chí bất kỳ thì tự chuyển hẳn sang "Khách net"; 4/4 không làm gì; hạ xuống 2/4 thì về "Có quan tâm"; không áp dụng cho "Bỏ"; audit ghi người tick, không cần lý do; không áp dụng cho CSV và hàng loạt). **Còn 3 điểm chưa trả lời, đang dùng giả định tạm, cần Oniichan xác nhận.** Mã trạng thái thật trong code (`RealEstateBackendApp/src/modules/crm/seed/crm-seed.data.ts`): `NOT_CONTACTED` "Chưa tiếp cận", `INTERESTED` **"Có quan tâm"** (Oniichan gọi là "Khách đang quan tâm"), `NET` "Khách net", `DROPPED` "Bỏ". Hệ thống **chưa có** trạng thái "Khách hẹn" hay "Đã chốt"; Quản trị có thể thêm trạng thái tùy chọn, mỗi trạng thái thuộc một trong 4 nhóm danh sách (`ListGroup`).
    - (a) Có thông báo cho người cùng chăm sóc không? Giả định tạm: **không** (chỉ ghi audit).
    - (b) Khi khách đang ở trạng thái khác, đủ 3/4 có đè không? Giả định tạm: chỉ tự chuyển sang `NET` khi trạng thái hiện tại thuộc nhóm `INTERESTED` (hoặc `NOT_CONTACTED`, thấp hơn `NET` trong luồng); chỉ tự chuyển ngược về `INTERESTED` khi trạng thái hiện tại đang là `NET` **do chính cơ chế này đặt**. Nếu một lần cập nhật hạ từ 3/4 hoặc 4/4 xuống còn 1/4 hoặc 0/4 thì cũng coi là dưới ngưỡng và chuyển về `INTERESTED`.
@@ -701,15 +731,17 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 15. **PT-027, `down`/rollback:** đề xuất **không có**; hoàn tác bằng khôi phục từ backup (đúng nguyên tắc "đã đổi dữ liệu thì không quay code cũ"). Đồng ý?
 16. **PT-027, tự backup:** đề xuất runner **không** tự backup (`deploy.sh` đã backup trước khi chạy). Đồng ý?
 17. **PT-027, tên collection đã chốt là `system`.** Còn mở: **phiên bản baseline** ghi cho production hiện tại, đề xuất `1.0.2`, commit `e6099c0` (liên quan câu 3 về thẻ git); và Oniichan có biết production từng chạy migration 002, 003, 004 chưa? (Không chắc cũng được: devops kiểm chỉ-đọc trước khi chạy `baseline`.)
+18. **PT-022 (bỏ quy tắc 24 giờ), cần xác nhận hai giả định:** (a) quy tắc bỏ áp dụng cho **cả ba thao tác**: sửa nhật ký, xóa nhật ký và gỡ ảnh đã gắn (hiện cả ba cùng dùng cửa sổ 24 giờ). Đề xuất: **cả ba**. (b) Hằng `ErrorCode.CARE_LOG_EDIT_WINDOW_EXPIRED` sau khi bỏ: giữ hay xóa hẳn? Đề xuất: **xóa** vì không còn dùng (báo FE bỏ xử lý mã này nếu có).
 
 ## 8. Definition of Done của v1.0.3
 
-- Mọi mục `PT-NNN` ở trạng thái `Xong` hoặc `Hoãn` có lý do được Oniichan đồng ý; không còn mục `Blocker`.
-- Các mục `Major` (PT-005, PT-006, PT-008, PT-013, PT-015, PT-022, PT-025, PT-026, PT-027 nếu Oniichan giữ mức Major, và mọi lỗi test thật mức Major) đã `Xong`.
+- Mọi mục `PT-NNN` ở trạng thái `Xong`, `Hoãn` có lý do được Oniichan đồng ý, hoặc `Bỏ` (Oniichan quyết định không làm, đã ghi ngày và ghi chú; hiện có PT-012, PT-014 và PT-015); không còn mục `Blocker`.
+- Các mục `Major` (PT-005, PT-006, PT-008, PT-013, PT-022, PT-025, PT-026, PT-027 nếu Oniichan giữ mức Major, và mọi lỗi test thật mức Major) đã `Xong` (PT-015 là Major nhưng đã `Bỏ`, được chấp nhận).
 - Mục 6 đã được Oniichan điền đủ các dòng áp dụng; mỗi dòng lỗi có mã `PT-NNN`.
 - Mỗi mục sửa code có test đi kèm và đã qua `qa-agent` review; mọi mục giao diện (FE) đã thử trên iPhone SE 375x667 và Safari iOS.
-- `06_Production_Deploy.md` đã cập nhật theo PT-007 và các thay đổi hạ tầng (PT-001, PT-002, PT-008, PT-009, PT-015).
-- Nếu Oniichan duyệt PT-027: 6 tiêu chí nghiệm thu của mục đó đã đạt (qua `qa-agent`); lệnh `baseline` đã chạy một lần trên production (Oniichan/devops xác nhận sau khi kiểm chỉ-đọc); checklist phát hành ở [`README.md`](README.md) mục 5 đã bổ sung bước migration.
+- `06_Production_Deploy.md` đã cập nhật theo PT-007 và các thay đổi hạ tầng (PT-001, PT-002, PT-008, PT-009; PT-015 đã `Bỏ` nên không có phần cập nhật).
+- PT-022: BE đã bỏ kiểm 24 giờ và mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED` (test cập nhật), FE có nút Sửa, tài liệu 04, 05, 08 đã sửa đúng các dòng liệt kê ở mục PT-022; `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành không còn kết quả (trừ ghi chú lịch sử trong file này).
+- Nếu Oniichan duyệt PT-027: 6 tiêu chí nghiệm thu của mục đó đã đạt (qua `qa-agent`), gồm việc Dockerfile đưa số phiên bản app vào image (PT-014 đã `Bỏ`, phần này thuộc PT-027); lệnh `baseline` đã chạy một lần trên production (Oniichan/devops xác nhận sau khi kiểm chỉ-đọc); checklist phát hành ở [`README.md`](README.md) mục 5 đã bổ sung bước migration.
 - Số phiên bản đã nâng lên 1.0.3 trong `package.json` và lockfile của ba ứng dụng, và trong `app.json` (chỉ `RealEstateApp` có file này); bảng ở [`README.md`](README.md) đã cập nhật; tài liệu đổi nội dung đã cập nhật dòng "Phiên bản tài liệu".
 
 [← Về mục lục phiên bản](README.md)
