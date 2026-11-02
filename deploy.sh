@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # deploy.sh — cập nhật stack production ĐANG CHẠY ổn định lên commit mới nhất của nhánh `production`.
 #
-# Chạy ở máy chủ (Ubuntu 24.04), trong thư mục repo:   bash deploy.sh [--no-pull] [--help]
+# Chạy ở máy chủ (Ubuntu 24.04), trong thư mục repo:   bash deploy.sh [--no-pull] [--migrate] [--help]
 # (Dùng `bash deploy.sh`, không phụ thuộc bit thực thi: commit từ Windows có thể làm mất bit này.)
 # Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md (mục 11). Chạy trong tmux/nohup để rớt SSH không làm
 # gián đoạn giữa chừng.
@@ -12,7 +12,8 @@
 #
 # Các bước: tiền điều kiện (+ dung lượng đĩa) -> git pull (ff-only) -> `compose config -q` -> kiểm tra migration 005
 # -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung) -> gắn thẻ image backend hiện tại làm bản dự phòng
-# -> `up -d --build` -> chờ mongo healthy + backend liveness.
+# -> build backend (kèm GIT_COMMIT) -> `status` của runner migration (PT-027): còn migration chờ thì DỪNG trước `up` và
+# in lệnh, có cờ --migrate thì `up --apply` ngay sau backup -> `up -d --build` -> chờ mongo healthy + backend liveness.
 #
 # KHÔNG rollback bằng `git checkout`: khi dữ liệu Mongo đã được nâng cấp (replica set/auth, migration),
 # compose và code cũ không đọc được volume mới, nên quay code về commit cũ có thể làm hỏng thêm.
@@ -20,8 +21,8 @@
 #
 # Bí mật: script KHÔNG chứa bí mật. Mọi lệnh compose kèm `--env-file .env.docker`. Mật khẩu root Mongo chỉ được đọc
 # từ biến môi trường BÊN TRONG container và đưa cho mongodump/mongorestore qua pipe (không nằm trên dòng lệnh, không
-# ghi ra đĩa, không in ra màn hình/log). Lưu ý: các lệnh `mongosh -p ...` trong tài liệu và healthcheck của compose vẫn
-# để mật khẩu trên dòng lệnh TRONG container (thấy được bằng `ps` trên host trong thời gian ngắn), xem tài liệu mục 6.
+# ghi ra đĩa, không in ra màn hình/log). Healthcheck Mongo của compose cũng xác thực trong script mongosh (PT-002),
+# không có `-p` trên dòng lệnh. Runner migration nhận MONGODB_URI từ môi trường của container backend (compose dựng).
 #
 # Biến môi trường tùy chọn (không bí mật):
 #   MONGO_TIMEOUT       giây chờ mongo healthy           (mặc định 120)
@@ -62,15 +63,19 @@ NEW_COMMIT=""
 BACKUP_FILE=""
 PREV_IMAGE_TAG=""
 PREV_IMAGE_REPO=""
-STACK_TOUCHED=0   # =1 ngay trước `up`: từ đây stack đang chạy có thể đã bị thay đổi
+STACK_TOUCHED=0   # =1 ngay trước `up` (hoặc trước `up --apply` của migration): từ đây stack/dữ liệu có thể đã bị thay đổi
+MIGRATE=0         # =1 khi có --migrate: tự chạy migration chờ (up --apply) sau backup
+MIGRATION_GATE_RAN=0   # =1 khi đã đọc được trạng thái migration (Mongo healthy): chỉ khi đó mới ghi phiên bản sau deploy
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash deploy.sh [--no-pull] [--help]
+Cách dùng: bash deploy.sh [--no-pull] [--migrate] [--help]
 
 Cập nhật stack production đang chạy lên bản mới nhất của nhánh `production`.
 
   --no-pull   Không git pull; build và deploy đúng commit đang checkout.
+  --migrate   Có migration chờ (collection `system`, runner trong image backend) thì tự `up --apply` SAU backup, TRƯỚC `up`.
+              Không có cờ này: còn migration chờ thì script DỪNG trước `up` (stack không đổi) và in lệnh để chạy tay.
   -h, --help  Hiện trợ giúp này.
 
 Điều kiện: chạy trong thư mục repo; có .env.docker với quyền không rộng hơn 600 (chmod 600 .env.docker) và đã điền
@@ -79,7 +84,9 @@ hết giá trị mẫu <...>; đủ dung lượng đĩa (DEPLOY_MIN_FREE_GB, m�
 
 Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không còn user chưa migrate 005
 -> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users) -> gắn thẻ image backend hiện tại thành
-<project>-backend:pre-<thời-gian> -> up -d --build -> chờ mongo healthy và backend liveness.
+<project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `status` (dừng nếu còn
+migration chờ và không có --migrate; cần `baseline` một lần thì dừng và in lệnh) -> up -d --build -> chờ mongo healthy và
+backend liveness -> ghi phiên bản vào collection `system`.
 
 KHÔNG dùng cho lần nâng cấp standalone đầu tiên (xem mục 5 tài liệu). KHÔNG rollback bằng git checkout.
 Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT.
@@ -196,6 +203,18 @@ git_update() {
 check_compose() {
   log "Kiểm tra docker compose config (cú pháp + biến bắt buộc)..."
   compose config -q || die "docker compose config lỗi: thiếu/sai biến trong $ENV_FILE (đối chiếu .env.docker.example). Stack chưa bị đổi."
+  check_credential_pair MONGO_APP_USERNAME MONGO_APP_PASSWORD
+  check_credential_pair S3_APP_ACCESS_KEY_ID S3_APP_SECRET_ACCESS_KEY
+}
+
+# Cặp thông tin đăng nhập tùy chọn (PT-016) phải đặt CẢ HAI hoặc KHÔNG đặt: compose ghép từng biến với giá trị dự phòng
+# riêng (`${A:-root}`), nên đặt lệch một nửa sẽ tạo cặp user-app + mật khẩu-root và backend xác thực lỗi khi khởi động.
+# Chỉ kiểm có/không (không đọc giá trị ra màn hình).
+check_credential_pair() {
+  local first="$1" second="$2" has_first=0 has_second=0
+  grep -qE "^${first}=[^[:space:]]" "$ENV_FILE" && has_first=1
+  grep -qE "^${second}=[^[:space:]]" "$ENV_FILE" && has_second=1
+  (( has_first == has_second )) || die "$ENV_FILE đặt $first và $second lệch nhau (chỉ một trong hai có giá trị). Đặt cả hai hoặc xóa cả hai. Stack chưa bị đổi."
 }
 
 # ── 3b) Cổng migration 005: code mới không khởi động nếu còn user chưa có roles[]/teamIds[] ──
@@ -309,6 +328,114 @@ tag_current_backend_image() {
   log "Đã gắn thẻ image backend hiện tại: $PREV_IMAGE_TAG"
 }
 
+# ── 6b) Build backend + kiểm tra migration chờ (PT-027) ──────────────────────
+# Runner nằm TRONG image backend (dist/migrations/cli.js, không cần ts-node) nên chạy bằng `compose run --rm --no-deps
+# backend`: dùng image vừa build, MONGODB_URI do compose dựng (mật khẩu không nằm trên dòng lệnh host), cùng network
+# với mongo. `-T` tắt TTY để chạy được trong nohup/tmux. Mã thoát của runner: 0 ok | 1 lỗi | 3 đang có khóa | 4 cần baseline.
+run_migration_cli() { compose run --rm --no-deps -T backend node dist/migrations/cli.js "$@"; }
+
+mongo_is_healthy() {
+  [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)" == "healthy" ]]
+}
+
+# Build image backend MỚI (gắn GIT_COMMIT). Chưa đụng stack đang chạy: container cũ giữ image cũ theo ID; thẻ :latest
+# bị ghi đè nhưng bản cũ đã gắn thẻ pre-<thời-gian> ở bước 6.
+build_backend() {
+  log "docker compose build backend (GIT_COMMIT=${GIT_COMMIT:-unknown}) ..."
+  compose build backend
+}
+
+# Đọc `status --json` (chỉ đọc). Còn migration chờ: không có --migrate thì DỪNG (stack không đổi) và in lệnh; có --migrate
+# thì đặt STACK_TOUCHED=1 rồi `up --apply`. Cần baseline hoặc đang có khóa: dừng và in lệnh. Không đọc được trạng thái:
+# dừng (không đoán), vì deploy mù với migration là rủi ro lớn hơn một lần chạy lại.
+migration_gate() {
+  local cli="docker compose --env-file $ENV_FILE run --rm --no-deps backend node dist/migrations/cli.js"
+  if ! mongo_is_healthy; then
+    # Container Mongo ĐÃ TỒN TẠI mà không healthy (đang khởi động, mất primary...): không đoán, không deploy mù với
+    # migration (backup_mongo đã bắt buộc nó đang chạy). Chỉ khi chưa có container (triển khai mới) mới bỏ qua.
+    if docker inspect "$MONGO_CONTAINER" >/dev/null 2>&1; then
+      die "Mongo ($MONGO_CONTAINER) đang chạy nhưng chưa healthy: không đọc được trạng thái migration. Chờ nó healthy (docker compose --env-file $ENV_FILE ps) rồi chạy lại. Stack chưa bị đổi."
+    fi
+    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua kiểm tra migration. Sau khi stack lên, xem: $cli status"
+    (( MIGRATE == 0 )) || warn "--migrate bị bỏ qua vì chưa có Mongo lúc này."
+    return 0
+  fi
+
+  log "Kiểm tra migration chờ (runner: status, chỉ đọc) ..."
+  local out rc=0 json ids
+  out="$(run_migration_cli status --json 2>&1)" || rc=$?
+  case "$rc" in
+    0) ;;
+    3)
+      printf '%s\n' "$out" >&2
+      die "Runner migration báo đang có KHÓA (có runner khác đang chạy, hoặc tiến trình chết để lại khóa). Chắc chắn không còn runner nào chạy rồi gỡ: $cli unlock . Stack chưa bị đổi."
+      ;;
+    4)
+      printf '%s\n' "$out" >&2
+      {
+        echo "Collection \`system\` chưa có phiên bản nhưng DB đã có dữ liệu: cần chạy \`baseline\` MỘT LẦN (ghi sổ 002..006 đã áp dụng, không chạy lại)."
+        echo "  Dry-run:  $cli baseline --version <x.y.z> --commit <sha>"
+        echo "  Ghi thật: $cli baseline --apply --version <x.y.z> --commit <sha>"
+        echo "Làm đúng thứ tự ở $DOC mục 11.1 (kiểm chỉ-đọc 005/006, backup, dry-run, rồi baseline), sau đó chạy lại: bash deploy.sh --no-pull"
+      } >&2
+      die "Cần baseline. Stack chưa bị đổi."
+      ;;
+    *)
+      printf '%s\n' "$out" >&2
+      die "Không đọc được trạng thái migration (mã $rc; xem output ở trên: kết nối Mongo, image backend thiếu dist/migrations/cli.js?). Stack chưa bị đổi."
+      ;;
+  esac
+
+  json="$(grep -m1 '^{' <<<"$out" || true)"
+  if [[ -z "$json" ]]; then
+    printf '%s\n' "$out" >&2
+    die "Runner không trả JSON trạng thái. Stack chưa bị đổi."
+  fi
+  MIGRATION_GATE_RAN=1
+
+  # JSON.stringify không có khoảng trắng: danh sách rỗng là đúng chuỗi "pending":[]
+  if grep -q '"pending":\[\]' <<<"$json"; then
+    log "Không có migration chờ."
+    return 0
+  fi
+  ids="$(grep -oE '"pending":\[.*\]' <<<"$json" | grep -oE '"id":"[^"]+"' | cut -d'"' -f4 | paste -sd ' ' - || true)"
+  warn "Có migration chờ: ${ids:-?}"
+
+  if (( MIGRATE == 0 )); then
+    {
+      echo
+      echo "════════════ DỪNG TRƯỚC KHI CẬP NHẬT: còn migration chờ (${ids:-?}) ════════════"
+      echo "Đã backup: ${BACKUP_FILE:-không có}. Stack đang chạy CHƯA bị đổi (image backend mới đã build nhưng chưa chạy)."
+      echo "Chọn một cách:"
+      echo "  A) Tự động:  bash deploy.sh --no-pull --migrate     (backup mới -> up --apply -> up)"
+      echo "  B) Bằng tay: $cli up            # dry-run, đọc kỹ"
+      echo "               $cli up --apply --by cli"
+      echo "               rồi: bash deploy.sh --no-pull"
+      echo "Chi tiết: $DOC mục 11.1."
+    } >&2
+    exit 1
+  fi
+
+  [[ -n "$BACKUP_FILE" ]] || die "--migrate cần backup Mongo vừa tạo ở bước trước (BACKUP_FILE rỗng). Dừng, chưa chạy migration."
+  # Từ đây dữ liệu có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
+  STACK_TOUCHED=1
+  log "--migrate: chạy up --apply (backup: $BACKUP_FILE) ..."
+  if ! run_migration_cli up --apply --by deploy; then
+    die "Migration thất bại, runner đã dừng (không chạy migration sau, không ghi sổ cho migration lỗi, không tự rollback). Dữ liệu có thể đã đổi MỘT PHẦN. Xem: $cli status . Sửa nguyên nhân rồi chạy lại; KHÔNG quay về code cũ."
+  fi
+  log "Migration xong."
+}
+
+# Sau khi backend sống: ghi phiên bản app vào collection `system` (nếu chưa khớp). Không có migration chờ nên chỉ ghi `version`.
+# Không làm deploy thất bại: lỗi chỉ cảnh báo (backend vẫn chạy bình thường).
+sync_system_version() {
+  (( MIGRATION_GATE_RAN == 1 )) || { log "Bỏ qua ghi phiên bản vào \`system\` (chưa đọc được trạng thái migration trước deploy)."; return 0; }
+  mongo_is_healthy || return 0
+  if ! run_migration_cli up --apply --by deploy; then
+    warn "Không ghi được phiên bản vào collection \`system\` (backend vẫn chạy). Ghi lại sau: docker compose --env-file $ENV_FILE run --rm --no-deps backend node dist/migrations/cli.js up --apply --by cli"
+  fi
+}
+
 # ── 7) Chờ healthy ───────────────────────────────────────────────────────────
 wait_mongo_healthy() {
   log "Chờ $MONGO_CONTAINER healthy (tối đa ${MONGO_TIMEOUT}s)..."
@@ -346,6 +473,7 @@ main() {
   for arg in "$@"; do
     case "$arg" in
       --no-pull) NO_PULL=1 ;;
+      --migrate) MIGRATE=1 ;;
       -h|--help) trap - EXIT; usage; exit 0 ;;
       *) trap - EXIT; printf '[deploy] Tham số không hợp lệ: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
     esac
@@ -363,11 +491,16 @@ main() {
   require_free_disk_gb "$DEPLOY_MIN_FREE_GB"
   acquire_lock
   git_update
+  # Commit ngắn ghi vào dist/version.json của image (build arg GIT_COMMIT trong docker-compose.yml); phải export TRƯỚC mọi
+  # lệnh compose build/run để cache khớp. Không có .git (--no-pull) thì để compose dùng `unknown`.
+  export GIT_COMMIT="${NEW_COMMIT:-unknown}"
   check_compose
   check_users_migrated
   ensure_runtime_dirs
   backup_mongo
   tag_current_backend_image
+  build_backend
+  migration_gate
 
   STACK_TOUCHED=1
   log "docker compose up -d --build ..."
@@ -375,6 +508,7 @@ main() {
 
   wait_mongo_healthy
   wait_backend_liveness
+  sync_system_version
 
   echo
   compose ps

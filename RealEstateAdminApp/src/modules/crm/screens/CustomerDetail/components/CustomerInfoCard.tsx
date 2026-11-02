@@ -1,11 +1,13 @@
-// Khối "THÔNG TIN" (02 §4.3, C1): Khu vực (nơi ở), Nguồn khách, Dự án (chip), Thẻ, CCCD che, liên hệ, ngày tạo.
+// Khối "THÔNG TIN" (02 §4.3, C1): Khu vực (nơi ở), Nguồn khách, Dự án (chip), Thẻ, CCCD che, Email, ngày tạo.
+// PT-018: KHÔNG hiện SĐT ở đây (SĐT che + "Hiện số" + nút Gọi/Zalo vẫn ở `CustomerHeader`/`MobileContactFooter`, giữ C14 + log `PHONE_VIEWED`);
+// trường chưa có dữ liệu thì ẩn ở chế độ xem (muốn nhập thì bấm "Sửa" — màn sửa luôn hiện đủ trường).
 import { Info, Pencil } from 'lucide-react';
 import type { CustomerDetail } from '@crm/api';
 import { formatVnDateTime } from '@crm/lib/dateTime';
 import { BUTTON_SOFT_SM_CLASS, CARD_CLASS, CHIP_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
-import { orEmptyText } from '../customerDetailUtils';
-import { CardHeading, InfoField, NationalIdField, PhoneDisplay } from './DetailParts';
+import { hasText } from '../customerDetailUtils';
+import { CardHeading, InfoField, NationalIdField } from './DetailParts';
 
 interface CustomerInfoCardProps {
   customer: CustomerDetail;
@@ -26,12 +28,10 @@ export const CustomerInfoCard = ({ customer }: CustomerInfoCardProps) => {
         }
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
-        <InfoField label="Khu vực (nơi ở)">{orEmptyText(customer.area?.label)}</InfoField>
-        <InfoField label="Nguồn khách">{orEmptyText(customer.source?.label)}</InfoField>
-        <InfoField label="Dự án quan tâm" className="sm:col-span-2 xl:col-span-1">
-          {customer.projects.length === 0 ? (
-            'Chưa cập nhật'
-          ) : (
+        {hasText(customer.area?.label) && <InfoField label="Khu vực (nơi ở)">{customer.area?.label}</InfoField>}
+        {hasText(customer.source?.label) && <InfoField label="Nguồn khách">{customer.source?.label}</InfoField>}
+        {customer.projects.length > 0 && (
+          <InfoField label="Dự án quan tâm" className="sm:col-span-2 xl:col-span-1">
             <span className="mt-1 flex flex-wrap gap-1.5">
               {customer.projects.map((project) => (
                 <span key={project.id} className={`${CHIP_CLASS} ${CHIP_TONE_CLASS.brand}`}>
@@ -39,12 +39,10 @@ export const CustomerInfoCard = ({ customer }: CustomerInfoCardProps) => {
                 </span>
               ))}
             </span>
-          )}
-        </InfoField>
-        <InfoField label="Thẻ sở thích / nghề nghiệp" className="sm:col-span-2 xl:col-span-1">
-          {customer.tags.length === 0 ? (
-            'Chưa gắn thẻ'
-          ) : (
+          </InfoField>
+        )}
+        {customer.tags.length > 0 && (
+          <InfoField label="Thẻ sở thích / nghề nghiệp" className="sm:col-span-2 xl:col-span-1">
             <span className="mt-1 flex flex-wrap gap-1.5">
               {customer.tags.map((tag) => (
                 <span key={tag.id} className={`${CHIP_CLASS} ${CHIP_TONE_CLASS.gray}`}>
@@ -52,13 +50,14 @@ export const CustomerInfoCard = ({ customer }: CustomerInfoCardProps) => {
                 </span>
               ))}
             </span>
-          )}
-        </InfoField>
-        <InfoField label="CCCD">
-          <NationalIdField customer={customer} />
-        </InfoField>
-        <InfoField label="Số điện thoại"><PhoneDisplay customer={customer} /></InfoField>
-        <InfoField label="Email">{orEmptyText(customer.email)}</InfoField>
+          </InfoField>
+        )}
+        {customer.hasNationalId && (
+          <InfoField label="CCCD">
+            <NationalIdField customer={customer} />
+          </InfoField>
+        )}
+        {hasText(customer.email) && <InfoField label="Email">{customer.email}</InfoField>}
         <InfoField label="Tạo lúc">
           {formatVnDateTime(customer.createdAt)} · {customer.createdBy.displayName}
         </InfoField>

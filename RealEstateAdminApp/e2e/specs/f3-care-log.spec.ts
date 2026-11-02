@@ -1,14 +1,17 @@
 /**
- * F3 - Nhật ký chăm sóc và ảnh đính kèm (doc 08 mục 4: F3-01..04).
+ * F3 - Nhật ký chăm sóc và ảnh đính kèm (doc 08 mục 4: F3-01..04; PT-020/PT-022: F3-05..08).
  * Mỗi test tự tạo khách riêng bằng API. Ảnh hợp lệ do trình duyệt tự vẽ (canvas) nên không cần file nhị phân trong repo;
  * "ảnh quá lớn" và "PDF" là buffer giả (FE chặn trước khi tải lên, không đi tới máy chủ).
+ *
+ * PT-020: form ghi chú KHÔNG hiện sẵn ở tab Nhật ký, chỉ hiện sau khi bấm "Ghi chú" (xem `openCareLogComposer`) và ĐÓNG lại sau khi lưu xong
+ * (mở lại là form trống). PT-022: nhật ký có nút "Sửa" khi BE trả `canEdit` (tác giả sửa bất cứ lúc nào); sửa xong hiện "(đã sửa)".
  *
  * Quyết định [Chưa rõ]:
  * - F3-04b: mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ khi người xem còn quyền sửa nhật ký) + hộp xác nhận "Xác nhận gỡ ảnh";
  *   nút "Xóa ảnh N" ở khay trước khi lưu là điều khiển khác (F3-04a).
  */
 import { test, expect } from '../fixtures';
-import { MOBILE_VIEWPORT, bigPng, makeJpeg, note, openCustomerDetail, pdfFile, todaySlot, toast } from '../lib/ui';
+import { MOBILE_VIEWPORT, bigPng, makeJpeg, note, openCareLogComposer, openCustomerDetail, pdfFile, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
 const photoInput = (page: Page) => page.getByLabel('Thêm ảnh');
@@ -16,6 +19,8 @@ const saveButton = (page: Page) => page.getByRole('button', { name: /^(Lưu nh�
 const contentBox = (page: Page) => page.getByRole('textbox', { name: /^Nội dung trao đổi/ });
 const timeline = (page: Page) => page.getByRole('region', { name: 'Nhật ký chăm sóc' });
 const photoHint = (n: number) => `Đã chọn ${n}/5 ảnh.`;
+const addForm = (page: Page) => page.getByRole('form', { name: 'Thêm nhật ký chăm sóc' });
+const editForm = (page: Page) => page.getByRole('form', { name: 'Sửa nhật ký chăm sóc' });
 
 async function expectNoPendingUpload(page: Page) {
   await expect(page.getByRole('status', { name: 'Đang tải ảnh lên' })).toHaveCount(0);
@@ -27,6 +32,15 @@ test.describe('f3-care-log', () => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
+
+    // PT-020: form KHÔNG hiện sẵn; chỉ hiện (đầy đủ) sau khi bấm "Ghi chú".
+    await expect(addForm(page)).toHaveCount(0);
+    await expect(contentBox(page)).toHaveCount(0);
+    await openCareLogComposer(page);
+    await expect(page.getByLabel('Kênh liên hệ')).toBeVisible();
+    await expect(page.getByLabel('Kết quả liên hệ')).toBeVisible();
+    await expect(page.getByLabel('Việc cần làm tiếp theo')).toBeVisible();
+    await expect(page.getByLabel('Thêm ảnh')).toBeAttached();
 
     // Nút lưu khóa khi nội dung rỗng.
     await expect(saveButton(page)).toBeDisabled();
@@ -44,9 +58,8 @@ test.describe('f3-care-log', () => {
     await saveButton(page).click();
 
     await expect(toast(page, 'Đã lưu nhật ký chăm sóc')).toBeVisible();
-    // Form dọn trống, ở lại chi tiết khách.
-    await expect(contentBox(page)).toHaveValue('');
-    await expect(page.getByLabel('Việc cần làm tiếp theo')).toHaveValue('');
+    // Form đóng lại sau khi lưu (mở lại là form trống), ở lại chi tiết khách.
+    await expect(addForm(page)).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/crm/customers/${customer.id}$`));
     // Mục mới ở đầu dòng thời gian, không cần tải lại trang.
     const first = timeline(page).getByRole('article').first();
@@ -54,6 +67,10 @@ test.describe('f3-care-log', () => {
     await expect(first).toContainText('Zalo');
     await expect(first).toContainText('Hẹn xem sa bàn / nhà mẫu');
     await expect(first).toContainText(`Tiếp theo: ${nextStep}`);
+    await openCareLogComposer(page);
+    await expect(contentBox(page)).toHaveValue('');
+    await expect(page.getByLabel('Việc cần làm tiếp theo')).toHaveValue('');
+    await expect(page.getByLabel('Kết quả liên hệ')).toHaveValue('');
 
     // Hậu trường.
     const logs = (await backstage.find('care_logs')).filter((l) => String(l.customerId) === customer.id);
@@ -79,8 +96,9 @@ test.describe('f3-care-log', () => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
+    await openCareLogComposer(page);
 
-    // Khung "Ảnh đính kèm" và nút "Thêm ảnh" hiện ngay (cờ FE bật), kèm gợi ý giới hạn.
+    // Khung "Ảnh đính kèm" và nút "Thêm ảnh" hiện khi mở form (cờ FE bật), kèm gợi ý giới hạn.
     await expect(page.getByText('Ảnh đính kèm', { exact: false }).first()).toBeVisible();
     await expect(page.getByText('Thêm ảnh')).toBeVisible();
     await expect(page.getByText(`JPEG, PNG hoặc WebP, tối đa 5 MB mỗi ảnh, tối đa 5 ảnh. ${photoHint(0)}`)).toBeVisible();
@@ -105,6 +123,8 @@ test.describe('f3-care-log', () => {
 
     await saveButton(page).click();
     await expect(toast(page, 'Đã lưu nhật ký chăm sóc')).toBeVisible();
+    await expect(addForm(page)).toHaveCount(0); // form đóng sau khi lưu
+    await openCareLogComposer(page);
     await expect(page.getByText(photoHint(0))).toBeVisible(); // khay dọn sau khi lưu
 
     // Ảnh hiện trong đúng mục nhật ký vừa lưu và tải được (naturalWidth > 0).
@@ -142,6 +162,7 @@ test.describe('f3-care-log', () => {
     await page.goto(`/crm/customers/${customer.id}`);
     await expect(page.getByRole('heading', { name: customer.fullName }).first()).toBeVisible();
     await page.getByRole('tab', { name: /^Nhật ký/ }).click();
+    await openCareLogComposer(page);
     await expect(page.getByText('Thêm ảnh')).toBeVisible();
     const jpeg = await makeJpeg(page, 2);
     await photoInput(page).setInputFiles({ name: 'anh-hop-le.jpg', mimeType: 'image/jpeg', buffer: jpeg });
@@ -159,6 +180,7 @@ test.describe('f3-care-log', () => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
+    await openCareLogComposer(page);
     await contentBox(page).fill('Nội dung đã gõ phải được giữ');
     const keysBefore = await backstage.s3Keys();
     const warning = 'Chỉ nhận ảnh JPEG/PNG/WebP ≤ 5 MB, tối đa 5 ảnh.';
@@ -197,6 +219,7 @@ test.describe('f3-care-log', () => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
+    await openCareLogComposer(page);
     await photoInput(page).setInputFiles([
       { name: 'anh-1.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg(page, 1) },
       { name: 'anh-2.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg(page, 2) },
@@ -226,6 +249,7 @@ test.describe('f3-care-log', () => {
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
+    await openCareLogComposer(page);
     await photoInput(page).setInputFiles({ name: 'anh-hop-le.jpg', mimeType: 'image/jpeg', buffer: await makeJpeg(page, 1) });
     await expectNoPendingUpload(page);
     await contentBox(page).fill('Nhật ký có ảnh cần gỡ');
@@ -238,5 +262,112 @@ test.describe('f3-care-log', () => {
     await removeButton.click();
     await page.getByRole('button', { name: /Xác nhận|Đồng ý|Gỡ/ }).click();
     await expect(entry.getByTestId('care-log-photo')).toHaveCount(0);
+  });
+
+  test('F3-05 (PT-020) form chỉ hiện khi bấm "Ghi chú"; có bản nháp mà bấm Hủy thì được hỏi lại, bỏ rồi mở lại là form trống, không tạo nhật ký', async ({ loginAs, api, backstage }) => {
+    const customer = await api.createCustomer();
+    const page = await loginAs('staff1');
+    await openCustomerDetail(page, customer.id, customer.fullName);
+    await expect(addForm(page)).toHaveCount(0);
+    await expect(timeline(page)).toContainText('Chưa có nhật ký chăm sóc nào cho khách hàng này.');
+
+    await openCareLogComposer(page);
+    // Form sạch: Hủy đóng ngay, không hỏi.
+    await page.getByRole('button', { name: 'Hủy', exact: true }).click();
+    await expect(addForm(page)).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    // Có bản nháp: Hủy -> hộp "Bỏ thay đổi chưa lưu?"; "Tiếp tục nhập" giữ nguyên nội dung.
+    await openCareLogComposer(page);
+    await contentBox(page).fill('Nháp chưa lưu');
+    await page.getByRole('button', { name: 'Hủy', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Bỏ thay đổi chưa lưu?');
+    await dialog.getByRole('button', { name: 'Tiếp tục nhập' }).click();
+    await expect(contentBox(page)).toHaveValue('Nháp chưa lưu');
+
+    // "Bỏ thay đổi": form đóng; mở lại là form trống; backend không có nhật ký nào.
+    await page.getByRole('button', { name: 'Hủy', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Bỏ thay đổi' }).click();
+    await expect(addForm(page)).toHaveCount(0);
+    await openCareLogComposer(page);
+    await expect(contentBox(page)).toHaveValue('');
+    expect((await backstage.find('care_logs')).filter((l) => String(l.customerId) === customer.id)).toHaveLength(0);
+  });
+
+  test('F3-06 (PT-022) nhật ký của chính mình có nút "Sửa": mở form điền sẵn, lưu xong hiện nội dung mới và "(đã sửa)"', async ({ loginAs, api, backstage }) => {
+    const customer = await api.createCustomer();
+    await api.createCareLog({ customerId: customer.id, content: 'Nội dung ban đầu', channel: 'CALL' });
+    const page = await loginAs('staff1');
+    await openCustomerDetail(page, customer.id, customer.fullName);
+    const entry = timeline(page).getByRole('article').first();
+    await expect(entry).toContainText('Nội dung ban đầu');
+    await expect(entry).not.toContainText('(đã sửa)');
+
+    await entry.getByRole('button', { name: /^Sửa nhật ký/ }).click();
+    await expect(editForm(page)).toBeVisible();
+    await expect(contentBox(page)).toHaveValue('Nội dung ban đầu');
+    await expect(page.getByLabel('Kênh liên hệ')).toHaveValue('CALL');
+    // Form sửa không có "Nhắc việc tiếp theo" (PATCH không nhận), chỉ báo giữ nguyên.
+    await expect(page.getByLabel('Việc cần làm tiếp theo')).toHaveCount(0);
+
+    await contentBox(page).fill('Nội dung đã sửa');
+    await page.getByLabel('Kênh liên hệ').selectOption({ label: 'Zalo' });
+    await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
+    await expect(toast(page, 'Đã cập nhật nhật ký chăm sóc')).toBeVisible();
+    await expect(editForm(page)).toHaveCount(0);
+    const after = timeline(page).getByRole('article').first();
+    await expect(after).toContainText('Nội dung đã sửa');
+    await expect(after).toContainText('Zalo');
+    await expect(after).toContainText('(đã sửa)');
+    await expect(timeline(page).getByRole('article')).toHaveCount(1); // sửa tại chỗ, không tạo thêm
+
+    const logs = (await backstage.find('care_logs')).filter((l) => String(l.customerId) === customer.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0].content).toBe('Nội dung đã sửa');
+    expect(logs[0].contactChannel).toBe('ZALO');
+    expect(logs[0].editedAt).toBeTruthy();
+  });
+
+  test('F3-07 (PT-020/PT-022) đang soạn mà bấm "Sửa" nhật ký khác thì được hỏi lại; "Tiếp tục nhập" giữ bản nháp, "Bỏ thay đổi" mở form sửa', async ({ loginAs, api }) => {
+    const customer = await api.createCustomer();
+    await api.createCareLog({ customerId: customer.id, content: 'Nhật ký cũ cần sửa' });
+    const page = await loginAs('staff1');
+    await openCustomerDetail(page, customer.id, customer.fullName);
+    await openCareLogComposer(page);
+    await contentBox(page).fill('Bản nháp quan trọng');
+
+    await timeline(page).getByRole('article').first().getByRole('button', { name: /^Sửa nhật ký/ }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Bỏ thay đổi chưa lưu?');
+    await expect(editForm(page)).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Tiếp tục nhập' }).click();
+    await expect(addForm(page)).toBeVisible();
+    await expect(contentBox(page)).toHaveValue('Bản nháp quan trọng');
+
+    await timeline(page).getByRole('article').first().getByRole('button', { name: /^Sửa nhật ký/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Bỏ thay đổi' }).click();
+    await expect(editForm(page)).toBeVisible();
+    await expect(contentBox(page)).toHaveValue('Nhật ký cũ cần sửa');
+  });
+
+  test('F3-08 (PT-020) [+mobile] đang soạn ghi chú rồi đổi sang tab Thông tin/Tiến độ và quay lại: bản nháp còn nguyên; nút "Ghi chú" ở thẻ tóm tắt tự sang tab Nhật ký', async ({ loginAs, api }) => {
+    const customer = await api.createCustomer();
+    const page = await loginAs('staff1');
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await page.goto(`/crm/customers/${customer.id}`);
+    await expect(page.getByRole('heading', { name: customer.fullName }).first()).toBeVisible();
+
+    // Đang ở tab Thông tin: nút "Ghi chú" ở thẻ tóm tắt mở form và tự sang tab Nhật ký.
+    await page.getByRole('region', { name: 'Tóm tắt hồ sơ' }).getByRole('button', { name: 'Ghi chú' }).click();
+    await expect(page.getByRole('tab', { name: /^Nhật ký/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(addForm(page)).toBeVisible();
+    await contentBox(page).fill('Nháp giữ qua đổi tab');
+
+    await page.getByRole('tab', { name: /^Thông tin/ }).click();
+    await expect(addForm(page)).toHaveCount(0); // ẩn khỏi tab khác
+    await page.getByRole('tab', { name: /^Tiến độ/ }).click();
+    await page.getByRole('tab', { name: /^Nhật ký/ }).click();
+    await expect(contentBox(page)).toHaveValue('Nháp giữ qua đổi tab');
   });
 });

@@ -41,3 +41,23 @@ describe('nhãn truy cập của ô ngày (U-A11Y-01)', () => {
     expect(screen.getByLabelText(/Ngày diễn ra/)).toHaveValue('2026-10-26');
   });
 });
+
+describe('ô Giờ và Địa điểm: chữ không đè icon trái, placeholder đọc hết (PT-026)', () => {
+  it('ô Giờ (type=time) có padding trái cho icon và reset giao diện gốc của Safari iOS', () => {
+    render(<ScheduleFields form={makeForm('')} />);
+    const timeInput = screen.getByLabelText(/Giờ \(giờ Việt Nam\)/);
+    expect(timeInput).toHaveAttribute('type', 'time');
+    const classes = timeInput.className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(['pl-11', 'appearance-none', '[&::-webkit-date-and-time-value]:text-left']));
+    expect(classes).not.toContain('pl-4');
+  });
+
+  it('ô Địa điểm: placeholder ngắn (<= 28 ký tự) để vừa màn 375px khi đã chừa icon 2 bên', () => {
+    render(<ScheduleFields form={makeForm('')} />);
+    const locationInput = screen.getByLabelText(/Địa điểm/);
+    const placeholder = locationInput.getAttribute('placeholder') ?? '';
+    expect(placeholder.length).toBeGreaterThan(0);
+    expect(placeholder.length).toBeLessThanOrEqual(28);
+    expect(locationInput.className.split(/\s+/)).toEqual(expect.arrayContaining(['pl-11', 'pr-10']));
+  });
+});

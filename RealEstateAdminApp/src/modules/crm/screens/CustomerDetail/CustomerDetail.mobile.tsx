@@ -5,7 +5,7 @@ import { useCareLogs, useCustomerDetail } from '@crm/api';
 import { CustomerLoadState } from '@crm/components/CustomerLoadState';
 import { TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmState } from '@crm/store';
-import { CareLogForm } from './components/CareLogForm';
+import { CareLogComposer } from './components/CareLogComposer';
 import { CareTeamCard } from './components/CareTeamCard';
 import { CareTimeline } from './components/CareTimeline';
 import { CriteriaBoard } from './components/CriteriaBoard';
@@ -17,6 +17,7 @@ import { MobileContactFooter } from './components/MobileContactFooter';
 import { MobileDetailHeader } from './components/MobileDetailHeader';
 import { UpcomingAppointmentsSection } from './components/UpcomingAppointmentsSection';
 import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
+import { useNoteComposer } from './useNoteComposer';
 
 type MobileTab = 'info' | 'logs' | 'progress';
 
@@ -33,13 +34,22 @@ export const CustomerDetailMobile = () => {
   const careLogsState = useCareLogs(selectedCustomerId, primaryUserId);
   const careLogs = careLogsState.data;
   const [activeTab, setActiveTab] = useState<MobileTab>('info');
+  const noteComposer = useNoteComposer(selectedCustomerId ?? '');
 
   if (!customer) return <CustomerLoadState variant="mobile" title="Chi tiết khách hàng" isLoading={isLoading} isNotFound={isNotFound} error={error} onRetry={refetch} />;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 pb-24" data-testid="customer-detail-mobile">
-      <MobileDetailHeader customerName={customer.fullName} />
-      <CustomerHeader customer={customer} variant="mobile" />
+      <MobileDetailHeader />
+      <CustomerHeader
+        customer={customer}
+        variant="mobile"
+        onAddNote={() => {
+          // Nút "Ghi chú" ở đầu hồ sơ: sang tab Nhật ký và mở form đầy đủ (PT-020).
+          setActiveTab('logs');
+          noteComposer.openCreate();
+        }}
+      />
 
       <div role="tablist" aria-label="Thông tin khách hàng" className="flex border-b border-gray-200 dark:border-white/[0.05]">
         {TAB_ITEMS.map((tab) => {
@@ -68,11 +78,15 @@ export const CustomerDetailMobile = () => {
         </>
       )}
 
+      {/* Form ghi chú LUÔN được dựng (chỉ ẩn khi không ở tab Nhật ký): đổi tab giữa chừng không làm mất bản nháp/ảnh đã tải lên. */}
+      <div hidden={activeTab !== 'logs'}>
+        <CareLogComposer key={customer.id} customer={customer} variant="mobile" composer={noteComposer} />
+      </div>
+
       {activeTab === 'logs' && (
         <>
-          <CareLogForm key={customer.id} customer={customer} variant="mobile" />
-          <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} />
-          <HistoryList customerId={customer.id} />
+          <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} onEdit={noteComposer.openEdit} />
+          <HistoryList customerId={customer.id} isCollapsible />
         </>
       )}
 

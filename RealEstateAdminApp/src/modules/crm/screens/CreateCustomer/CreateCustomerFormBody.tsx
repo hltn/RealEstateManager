@@ -10,6 +10,7 @@ import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
 import { MaskedIdInput } from '@crm/components/form/MaskedIdInput';
 import { SectionCard } from '@crm/components/form/SectionCard';
+import { SearchableMultiSelect } from '@crm/components/form/SearchableMultiSelect';
 import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
@@ -160,9 +161,12 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
 
   const demandSection = (
     <SectionCard icon={Target} title="Dự án & Tình trạng" description="Phân loại ban đầu">
-      <ChipMultiSelect
+      <SearchableMultiSelect
+        id={fieldId('projects')}
         legend="Dự án quan tâm (chọn được nhiều)"
         icon={Building2}
+        listLabel="Danh sách dự án"
+        placeholder="Gõ để tìm dự án…"
         options={catalogs.projects.filter((project) => project.isActive).map((project) => ({ value: project.id, label: project.name }))}
         selected={values.interestedProjectIds}
         onToggle={toggleProject}

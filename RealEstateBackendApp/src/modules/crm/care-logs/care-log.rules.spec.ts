@@ -9,8 +9,8 @@ import {
   diffAttachmentIds,
 } from './care-log.rules';
 
-const HOUR = 3_600_000;
 const NOW = new Date('2026-10-23T12:00:00Z');
+const DAY = 86_400_000;
 const actorOf = (role: UserRole, userId = new Types.ObjectId()): CrmActor => ({
   userId,
   role,
@@ -20,38 +20,42 @@ const actorOf = (role: UserRole, userId = new Types.ObjectId()): CrmActor => ({
   teamIds: [],
   managedTeamIds: [],
 });
-const logBy = (authorId: Types.ObjectId, hoursAgo: number) => ({
+const logBy = (authorId: Types.ObjectId, daysAgo: number) => ({
   authorId,
-  createdAt: new Date(NOW.getTime() - hoursAgo * HOUR),
+  createdAt: new Date(NOW.getTime() - daysAgo * DAY),
 });
 
 describe('care-log.rules', () => {
   describe('sửa/xóa nhật ký (ma trận 4.2)', () => {
-    it('Nhân viên tác giả: được trong 24 giờ, đúng mốc 24 giờ vẫn được, quá mốc => CARE_LOG_EDIT_WINDOW_EXPIRED', () => {
+    it('Nhân viên tác giả: luôn được, kể cả nhật ký rất cũ (PT-022: không còn cửa sổ 24 giờ)', () => {
       const staff = actorOf(UserRole.STAFF);
 
-      expect(canModifyCareLog(staff, logBy(staff.userId, 23.9), NOW)).toBe(
-        true,
-      );
-      expect(canModifyCareLog(staff, logBy(staff.userId, 24), NOW)).toBe(true);
-      expect(() =>
-        assertCanModifyCareLog(staff, logBy(staff.userId, 24.1), NOW),
-      ).toThrow(
-        expect.objectContaining({ errorCode: 'CARE_LOG_EDIT_WINDOW_EXPIRED' }),
-      );
+      for (const daysAgo of [0, 1, 1.1, 30, 365 * 3]) {
+        const log = logBy(staff.userId, daysAgo);
+        expect(canModifyCareLog(staff, log)).toBe(true);
+        expect(() => assertCanModifyCareLog(staff, log)).not.toThrow();
+      }
     });
 
-    it('Nhân viên không phải tác giả: 403 dù nhật ký còn mới', () => {
+    it('Nhân viên không phải tác giả: 403, mới hay cũ đều vậy', () => {
       const staff = actorOf(UserRole.STAFF);
-      expect(() =>
-        assertCanModifyCareLog(staff, logBy(new Types.ObjectId(), 1), NOW),
-      ).toThrow(expect.objectContaining({ status: 403 }));
+
+      for (const daysAgo of [0, 1, 365]) {
+        const log = logBy(new Types.ObjectId(), daysAgo);
+        expect(canModifyCareLog(staff, log)).toBe(false);
+        expect(() => assertCanModifyCareLog(staff, log)).toThrow(
+          expect.objectContaining({ status: 403 }),
+        );
+      }
     });
 
     it('Quản trị và Quản lý sửa mọi nhật ký, mọi lúc', () => {
-      const old = logBy(new Types.ObjectId(), 24 * 90);
-      expect(canModifyCareLog(actorOf(UserRole.ADMIN), old, NOW)).toBe(true);
-      expect(canModifyCareLog(actorOf(UserRole.MANAGER), old, NOW)).toBe(true);
+      const old = logBy(new Types.ObjectId(), 90);
+      for (const role of [UserRole.ADMIN, UserRole.MANAGER]) {
+        const actor = actorOf(role);
+        expect(canModifyCareLog(actor, old)).toBe(true);
+        expect(() => assertCanModifyCareLog(actor, old)).not.toThrow();
+      }
     });
   });
 

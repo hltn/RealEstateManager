@@ -44,7 +44,7 @@ const CLIENT_TYPE_HEADER = 'x-client-type';
 
 /**
  * Nhật ký chăm sóc (tài liệu 05 mục 2.6). Quyền: Quản trị, Quản lý (trong phạm vi), Nhân viên trong nhóm chăm sóc;
- * sửa/xóa: tác giả trong 24 giờ, Quản trị, Quản lý (trong phạm vi) — do service kiểm.
+ * sửa/xóa: tác giả, Quản trị, Quản lý (trong phạm vi) — do service kiểm.
  */
 @ApiTags('CRM - Care logs')
 @ApiBearerAuth()
@@ -101,11 +101,9 @@ export class CareLogsController {
   @Patch(':logId')
   @Roles(...CRM_ROLES)
   @ApiOperation({
-    summary:
-      'Sửa nhật ký (tác giả trong 24 giờ, Quản trị, Quản lý trong phạm vi)',
+    summary: 'Sửa nhật ký (tác giả, Quản trị, Quản lý trong phạm vi)',
   })
   @ApiDataResponse(CareLogResponseDto)
-  @ApiResponse({ status: 403, description: 'CARE_LOG_EDIT_WINDOW_EXPIRED' })
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,
@@ -123,7 +121,6 @@ export class CareLogsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Xóa mềm nhật ký (cùng quyền với sửa)' })
   @ApiResponse({ status: 204, description: 'Đã xóa mềm' })
-  @ApiResponse({ status: 403, description: 'CARE_LOG_EDIT_WINDOW_EXPIRED' })
   async remove(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

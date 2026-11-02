@@ -104,6 +104,23 @@ export class CustomerRefsService {
     return status._id;
   }
 
+  /**
+   * Tìm tình trạng đang hoạt động theo mã (PT-023: `NET`/`INTERESTED` cho cơ chế tự chuyển).
+   * Trả `null` nếu không có/đã ngừng/đã xóa mềm để caller bỏ qua việc tự chuyển thay vì làm hỏng lệnh chính.
+   */
+  async findActiveStatusByCode(
+    code: string,
+    session: ClientSession,
+  ): Promise<Types.ObjectId | null> {
+    const status = await this.statusModel
+      .findOne({ code, isActive: true, deletedAt: null })
+      .select('_id')
+      .session(session)
+      .lean()
+      .exec();
+    return status?._id ?? null;
+  }
+
   /** Kiểm các danh mục mới gán còn hoạt động và khóa ghi chúng; ném 400 nếu có cái không hợp lệ. */
   async lockAndAssert(
     refs: RefsToAssign,

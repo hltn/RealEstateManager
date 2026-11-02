@@ -29,10 +29,29 @@ export const CRITERIA_ITEMS: ReadonlyArray<{ key: CriterionKey; label: string }>
   label: `${index + 1}. ${CRITERION_LABELS[key]}`,
 }));
 
-export const EMPTY_VALUE_TEXT = 'Chưa cập nhật';
+/** Có chữ thật để hiển thị (không null/undefined/toàn khoảng trắng): dùng để ẩn trường trống ở chế độ xem (PT-018). */
+export const hasText = (value: string | null | undefined): boolean => Boolean(value?.trim());
 
-/** Giá trị trống -> "Chưa cập nhật". */
-export const orEmptyText = (value: string | null | undefined): string => (value?.trim() ? value : EMPTY_VALUE_TEXT);
+/** Giá trị người dùng đang nhập ở form ghi chú (dùng để biết còn thay đổi chưa lưu hay không). */
+export interface CareLogDraft {
+  content: string;
+  contactChannel: string;
+  contactResultId: string;
+  nextSuggestion: string;
+  nextDueLocal: string;
+  /** Có ảnh mới thêm hoặc đã gỡ ảnh cũ so với lúc mở form. */
+  hasPhotoChanges: boolean;
+}
+
+/**
+ * Form ghi chú còn thay đổi CHƯA LƯU? Thêm mới: có nội dung/kết quả/nhắc việc (kênh liên hệ mặc định không tính); sửa: khác với
+ * nhật ký gốc (`original`). Có đổi ảnh thì luôn tính. Dùng để hỏi lại trước khi bỏ form (không để mất bản nháp âm thầm).
+ */
+export const isCareLogDraftDirty = (draft: CareLogDraft, original?: Pick<CareLogDraft, 'content' | 'contactChannel' | 'contactResultId'>): boolean => {
+  if (draft.hasPhotoChanges) return true;
+  if (original) return draft.content !== original.content || draft.contactChannel !== original.contactChannel || draft.contactResultId !== original.contactResultId;
+  return draft.content.trim() !== '' || draft.contactResultId !== '' || draft.nextSuggestion.trim() !== '' || draft.nextDueLocal !== '';
+};
 
 /** Giờ mặc định cho mốc hẹn nhắc gợi ý từ kết quả liên hệ. */
 export const DEFAULT_FOLLOW_UP_TIME = '09:00';

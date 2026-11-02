@@ -3,7 +3,7 @@ import type { InputHTMLAttributes, KeyboardEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { INPUT_ICON_CLASS, getInputClass } from '@crm/lib/uiClasses';
-import { normalizeVietnamese } from '@crm/lib/text';
+import { filterOptionsByKeyword } from './searchMatch';
 import type { SelectOption } from './SelectInput';
 
 interface SearchableSelectProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'role' | 'children'> {
@@ -25,19 +25,6 @@ interface SearchableSelectProps extends Omit<InputHTMLAttributes<HTMLInputElemen
 
 const defaultSearchTerms = (label: string): readonly string[] => [label];
 
-/** Độ khớp của 1 nhãn với từ khoá (đã bỏ dấu): 0 = bắt đầu bằng từ khoá, 1 = đầu một từ, 2 = chỉ chứa; null = không khớp. */
-const getMatchRank = (terms: readonly string[], keyword: string): number | null => {
-  let best: number | null = null;
-  for (const term of terms) {
-    const text = normalizeVietnamese(term);
-    const index = text.indexOf(keyword);
-    if (index < 0) continue;
-    const rank = index === 0 ? 0 : text[index - 1] === ' ' ? 1 : 2;
-    if (best === null || rank < best) best = rank;
-  }
-  return best;
-};
-
 /** Danh sách chọn có ô tìm kiếm (combobox theo WAI-ARIA): gõ để lọc, bỏ dấu tiếng Việt ("ha noi" khớp "Hà Nội"). */
 export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, hasError = false, emptyLabel, listLabel = 'Danh sách lựa chọn', getSearchTerms = defaultSearchTerms, placeholder, className, disabled, ...inputProps }: SearchableSelectProps) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -51,13 +38,8 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
 
   // Dòng "bỏ chọn" chỉ hiện khi chưa gõ từ khoá. Có từ khoá: lọc không dấu, mục bắt đầu bằng từ khoá lên trước, rồi mục có từ bắt đầu bằng từ khoá (sắp ổn định, giữ thứ tự gốc trong cùng nhóm).
   const items = useMemo<SelectOption[]>(() => {
-    const keyword = normalizeVietnamese(query);
-    if (!keyword) return emptyLabel !== undefined ? [{ value: '', label: emptyLabel }, ...options] : [...options];
-    return options
-      .map((option) => ({ option, rank: getMatchRank(getSearchTerms(option.label), keyword) }))
-      .filter((entry): entry is { option: SelectOption; rank: number } => entry.rank !== null)
-      .sort((first, second) => first.rank - second.rank)
-      .map((entry) => entry.option);
+    if (!query.trim()) return emptyLabel !== undefined ? [{ value: '', label: emptyLabel }, ...options] : [...options];
+    return filterOptionsByKeyword(options, query, getSearchTerms);
   }, [options, query, emptyLabel, getSearchTerms]);
 
   const open = () => {

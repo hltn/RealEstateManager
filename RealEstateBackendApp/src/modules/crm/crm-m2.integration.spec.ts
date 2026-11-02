@@ -35,6 +35,8 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
 import { PiiCryptoService } from './common/crypto/pii-crypto.service';
 import { CrmModule } from './crm.module';
+import { CrmRateLimitService } from './common/security/crm-rate-limit.service';
+import { CustomerStatusChangeService } from './customers/customer-status-change.service';
 import { CrmSeedService } from './seed/crm-seed.service';
 
 jest.setTimeout(300_000);
@@ -2085,6 +2087,491 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       );
       expect(assign.status).toBe(400);
       expect(assign.body.errorCode).toBe('VALIDATION_FAILED');
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  describe('PT-023: tự chuyển tình trạng theo tiến độ 3/4 tiêu chí', () => {
+    const CRITERIA = ['demand', 'motivation', 'finance', 'timing'] as const;
+    type CriterionKey = (typeof CRITERIA)[number];
+
+    /** Tạo khách mới (staffA) và trả `version` hiện tại. */
+    const newCustomer = async (): Promise<{ id: string; version: number }> => {
+      const created = await createCustomer('staffA');
+      return { id: created.id, version: created.res.body.data.version };
+    };
+
+    /** Đặt đúng bộ tiêu chí hoàn thành theo danh sách khóa (các khóa còn lại = chưa xong). */
+    const setDone = (
+      id: string,
+      version: number,
+      done: readonly CriterionKey[],
+      headers: Record<string, string> = {},
+      as = 'staffA',
+    ) =>
+      call(
+        'PATCH',
+        `/crm/customers/${id}/criteria`,
+        as,
+        {
+          version,
+          ...Object.fromEntries(
+            CRITERIA.map((key) => [key, { isDone: done.includes(key) }]),
+          ),
+        },
+        headers,
+      );
+
+    const THREE: CriterionKey[] = ['demand', 'motivation', 'finance'];
+    const TWO: CriterionKey[] = ['demand', 'motivation'];
+
+    const rawCustomer = (id: string) =>
+      customers().findOne({ _id: new Types.ObjectId(id) });
+
+    const changeStatus = (id: string, version: number, statusId: string) =>
+      call('PATCH', `/crm/customers/${id}/status`, 'staffA', {
+        statusId,
+        version,
+      });
+
+    const statusCollection = () => connection.collection('customer_statuses');
+
+    it('(1) tick tiêu chí thứ 3 -> NET, đặt marker, trả autoStatusChange, version +2, đủ 2 audit đúng actor/source', async () => {
+      const { id, version } = await newCustomer();
+      const res = await setDone(id, version, THREE, {
+        'x-client-type': 'mobile',
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.progress).toBe(75);
+      expect(res.body.data.version).toBe(version + 2);
+      expect(res.body.data.autoStatusChange).toMatchObject({
+        from: { id: status.NOT_CONTACTED, code: 'NOT_CONTACTED' },
+        to: { id: status.NET, code: 'NET', listGroup: 'NET' },
+      });
+      const raw = (await rawCustomer(id))!;
+      expect(String(raw.statusId)).toBe(status.NET);
+      expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
+      expect(raw.__v).toBe(version + 2);
+      expect(res.body.data.lastUpdatedAt).toBe(
+        (raw.lastUpdatedAt as Date).toISOString(),
+      );
+
+      expect(await auditOf(id, 'CRITERIA_UPDATED')).toHaveLength(1);
+      const [statusAudit, ...rest] = await auditOf(id, 'STATUS_CHANGED');
+      expect(rest).toHaveLength(0);
+      expect(statusAudit).toMatchObject({
+        actorId: new Types.ObjectId(ids.staffA),
+        reason: null,
+        source: 'MOBILE',
+      });
+      expect(statusAudit.changes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'status',
+            to: expect.objectContaining({ listGroup: 'NET' }),
+          }),
+          { field: 'statusAutoSource', from: null, to: 'CRITERIA_PROGRESS' },
+        ]),
+      );
+
+      // Version trả về dùng được ngay cho lần PATCH kế tiếp (tick đủ 4/4 -> không đổi tình trạng).
+      const next = await setDone(id, res.body.data.version, [...CRITERIA]);
+      expect(next.status).toBe(200);
+      expect(next.body.data.autoStatusChange).toBeUndefined();
+    });
+
+    it('khách đang INTERESTED tick tới 3/4 cũng -> NET', async () => {
+      const { id, version } = await newCustomer();
+      const moved = await changeStatus(id, version, status.INTERESTED);
+      const res = await setDone(id, moved.body.data.version, THREE);
+      expect(res.body.data.autoStatusChange).toMatchObject({
+        from: { code: 'INTERESTED' },
+        to: { code: 'NET' },
+      });
+    });
+
+    it('(2) bỏ tick xuống 2/4 -> INTERESTED, xóa marker, trả autoStatusChange', async () => {
+      const { id, version } = await newCustomer();
+      const up = await setDone(id, version, THREE);
+      const down = await setDone(id, up.body.data.version, TWO);
+
+      expect(down.status).toBe(200);
+      expect(down.body.data.progress).toBe(50);
+      expect(down.body.data.version).toBe(up.body.data.version + 2);
+      expect(down.body.data.autoStatusChange).toMatchObject({
+        from: { code: 'NET' },
+        to: { code: 'INTERESTED', id: status.INTERESTED },
+      });
+      const raw = (await rawCustomer(id))!;
+      expect(String(raw.statusId)).toBe(status.INTERESTED);
+      expect(raw.statusAutoSource).toBeUndefined();
+      const audits = await auditOf(id, 'STATUS_CHANGED');
+      expect(audits).toHaveLength(2);
+      // Lùi tự động không ghi marker vào audit.
+      expect(
+        audits[1].changes.some(
+          (c: { field: string }) => c.field === 'statusAutoSource',
+        ),
+      ).toBe(false);
+    });
+
+    it('(3) NET đổi tay qua PATCH /status rồi hạ 2/4 -> giữ NET', async () => {
+      const { id, version } = await newCustomer();
+      const manual = await changeStatus(id, version, status.NET);
+      const up = await setDone(id, manual.body.data.version, THREE);
+      expect(up.body.data.autoStatusChange).toBeUndefined();
+      const down = await setDone(id, up.body.data.version, TWO);
+      expect(down.status).toBe(200);
+      expect(down.body.data.autoStatusChange).toBeUndefined();
+      expect(String((await rawCustomer(id))!.statusId)).toBe(status.NET);
+    });
+
+    it('(4) NET tự đặt rồi đổi tay sang trạng thái khác -> xóa marker; đổi tay lại thành NET không dựng lại marker', async () => {
+      const { id, version } = await newCustomer();
+      const up = await setDone(id, version, THREE);
+      expect((await rawCustomer(id))!.statusAutoSource).toBe(
+        'CRITERIA_PROGRESS',
+      );
+
+      const toInterested = await changeStatus(
+        id,
+        up.body.data.version,
+        status.INTERESTED,
+      );
+      expect(toInterested.status).toBe(200);
+      expect((await rawCustomer(id))!.statusAutoSource).toBeUndefined();
+
+      const toNet = await changeStatus(
+        id,
+        toInterested.body.data.version,
+        status.NET,
+      );
+      expect((await rawCustomer(id))!.statusAutoSource).toBeUndefined();
+      const down = await setDone(id, toNet.body.data.version, TWO);
+      expect(down.body.data.autoStatusChange).toBeUndefined();
+      expect(String((await rawCustomer(id))!.statusId)).toBe(status.NET);
+    });
+
+    it('(5) DROPPED tick đủ 3/4 -> không đổi', async () => {
+      const { id, version } = await newCustomer();
+      const dropped = await changeStatus(id, version, status.DROPPED);
+      const res = await setDone(id, dropped.body.data.version, THREE);
+      expect(res.status).toBe(200);
+      expect(res.body.data.autoStatusChange).toBeUndefined();
+      expect(res.body.data.version).toBe(dropped.body.data.version + 1);
+      expect(String((await rawCustomer(id))!.statusId)).toBe(status.DROPPED);
+    });
+
+    it('(6) 0 -> 4/4 không đổi tình trạng; 100 -> 75 không đổi', async () => {
+      const { id, version } = await newCustomer();
+      const full = await setDone(id, version, [...CRITERIA]);
+      expect(full.body.data.progress).toBe(100);
+      expect(full.body.data.autoStatusChange).toBeUndefined();
+      expect(full.body.data.version).toBe(version + 1);
+      expect(String((await rawCustomer(id))!.statusId)).toBe(
+        status.NOT_CONTACTED,
+      );
+
+      const back = await setDone(id, full.body.data.version, THREE);
+      expect(back.body.data.progress).toBe(75);
+      expect(back.body.data.autoStatusChange).toBeUndefined();
+      expect(String((await rawCustomer(id))!.statusId)).toBe(
+        status.NOT_CONTACTED,
+      );
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(0);
+    });
+
+    it('(7) khách NET sẵn có (không marker, dữ liệu cũ) hạ 2/4 -> giữ NET', async () => {
+      const { id, version } = await newCustomer();
+      // Mô phỏng dữ liệu trước PT-023: NET + 4/4 nhưng KHÔNG có field statusAutoSource.
+      await customers().updateOne(
+        { _id: new Types.ObjectId(id) },
+        {
+          $set: {
+            statusId: new Types.ObjectId(status.NET),
+            progress: 100,
+            'criteria.demand.isDone': true,
+            'criteria.motivation.isDone': true,
+            'criteria.finance.isDone': true,
+            'criteria.timing.isDone': true,
+          },
+          $unset: { statusAutoSource: '' },
+        },
+      );
+      const res = await setDone(id, version, TWO);
+      expect(res.status).toBe(200);
+      expect(res.body.data.progress).toBe(50);
+      expect(res.body.data.autoStatusChange).toBeUndefined();
+      expect(String((await rawCustomer(id))!.statusId)).toBe(status.NET);
+    });
+
+    it.each([
+      ['NET bị ngừng hoạt động', { isActive: false }],
+      ['NET bị xóa mềm', { deletedAt: new Date() }],
+    ])(
+      '(8) %s -> tiêu chí vẫn lưu, 200, không đổi tình trạng',
+      async (_label, patch) => {
+        const { id, version } = await newCustomer();
+        const original = (await statusCollection().findOne({ code: 'NET' }))!;
+        await statusCollection().updateOne({ code: 'NET' }, { $set: patch });
+        try {
+          const res = await setDone(id, version, THREE);
+          expect(res.status).toBe(200);
+          expect(res.body.data.progress).toBe(75);
+          expect(res.body.data.version).toBe(version + 1);
+          expect(res.body.data.autoStatusChange).toBeUndefined();
+          const raw = (await rawCustomer(id))!;
+          expect(raw.progress).toBe(75);
+          expect(String(raw.statusId)).toBe(status.NOT_CONTACTED);
+          expect(raw.statusAutoSource ?? null).toBeNull();
+        } finally {
+          await statusCollection().updateOne(
+            { code: 'NET' },
+            {
+              $set: {
+                isActive: original.isActive,
+                deletedAt: original.deletedAt ?? null,
+              },
+            },
+          );
+        }
+      },
+    );
+
+    it('(8b) INTERESTED bị ngừng hoạt động: NET tự đặt hạ 2/4 vẫn lưu tiêu chí, giữ NET', async () => {
+      const { id, version } = await newCustomer();
+      const up = await setDone(id, version, THREE);
+      await statusCollection().updateOne(
+        { code: 'INTERESTED' },
+        { $set: { isActive: false } },
+      );
+      try {
+        const down = await setDone(id, up.body.data.version, TWO);
+        expect(down.status).toBe(200);
+        expect(down.body.data.autoStatusChange).toBeUndefined();
+        const raw = (await rawCustomer(id))!;
+        expect(raw.progress).toBe(50);
+        expect(String(raw.statusId)).toBe(status.NET);
+      } finally {
+        await statusCollection().updateOne(
+          { code: 'INTERESTED' },
+          { $set: { isActive: true } },
+        );
+      }
+    });
+
+    it('(9) version sai -> 409 VERSION_CONFLICT, không đổi gì', async () => {
+      const { id, version } = await newCustomer();
+      const res = await setDone(id, version + 5, THREE);
+      expect(res.status).toBe(409);
+      expect(res.body.errorCode).toBe('VERSION_CONFLICT');
+      const raw = (await rawCustomer(id))!;
+      expect(raw.progress).toBe(0);
+      expect(raw.__v).toBe(version);
+      expect(String(raw.statusId)).toBe(status.NOT_CONTACTED);
+      expect(await auditOf(id, 'CRITERIA_UPDATED')).toHaveLength(0);
+    });
+
+    it('(10) lỗi trong applyChange -> rollback cả tiêu chí lẫn trạng thái', async () => {
+      const { id, version } = await newCustomer();
+      const spy = jest
+        .spyOn(app.get(CustomerStatusChangeService), 'applyChange')
+        .mockRejectedValueOnce(new Error('boom'));
+      try {
+        const res = await setDone(id, version, THREE);
+        expect(res.status).toBe(500);
+      } finally {
+        spy.mockRestore();
+      }
+      const raw = (await rawCustomer(id))!;
+      expect(raw.progress).toBe(0);
+      expect(raw.__v).toBe(version);
+      expect(raw.criteria.demand.isDone).toBe(false);
+      expect(String(raw.statusId)).toBe(status.NOT_CONTACTED);
+      expect(await auditOf(id, 'CRITERIA_UPDATED')).toHaveLength(0);
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(0);
+    });
+
+    it('(11) hàng loạt CHANGE_STATUS không kích hoạt tự chuyển và xóa marker', async () => {
+      const { id, version } = await newCustomer();
+      const up = await setDone(id, version, THREE);
+      expect(up.body.data.autoStatusChange).toBeDefined();
+      expect((await rawCustomer(id))!.statusAutoSource).toBe(
+        'CRITERIA_PROGRESS',
+      );
+
+      // Rate limit hàng loạt dùng Redis; stub để case này chỉ kiểm hành vi tình trạng/marker.
+      const rateLimit = jest
+        .spyOn(app.get(CrmRateLimitService), 'consume')
+        .mockResolvedValue(undefined);
+      const bulk = await call(
+        'POST',
+        '/crm/customer-bulk-operations',
+        'staffA',
+        {
+          type: 'CHANGE_STATUS',
+          customerIds: [id],
+          payload: { statusId: status.INTERESTED },
+        },
+      );
+      rateLimit.mockRestore();
+      expect(bulk.status).toBe(200);
+      expect(bulk.body.data.succeeded).toEqual([id]);
+      const raw = (await rawCustomer(id))!;
+      expect(String(raw.statusId)).toBe(status.INTERESTED);
+      expect(raw.statusAutoSource).toBeUndefined();
+      // 1 lần tự đổi (NET) + 1 lần hàng loạt; hàng loạt không sinh thêm tự chuyển nào.
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(2);
+
+      // Marker đã xóa: hạ tiêu chí không đổi tình trạng.
+      const down = await setDone(id, raw.__v, ['demand']);
+      expect(down.body.data.autoStatusChange).toBeUndefined();
+    });
+
+    it('(12) 2 PATCH đồng thời cùng version: 1 thành công, 1 409, tình trạng chỉ đổi một lần', async () => {
+      const { id, version } = await newCustomer();
+      const base = await call(
+        'PATCH',
+        `/crm/customers/${id}/criteria`,
+        'staffA',
+        { version, demand: { isDone: true }, motivation: { isDone: true } },
+      );
+      const current = base.body.data.version as number;
+      const results = await Promise.all([
+        call('PATCH', `/crm/customers/${id}/criteria`, 'staffA', {
+          version: current,
+          finance: { isDone: true },
+        }),
+        call('PATCH', `/crm/customers/${id}/criteria`, 'staffA', {
+          version: current,
+          timing: { isDone: true },
+        }),
+      ]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      const ok = results.find((r) => r.status === 200)!;
+      expect(ok.body.data.autoStatusChange.to.code).toBe('NET');
+      expect((await rawCustomer(id))!.__v).toBe(current + 2);
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
+    });
+
+    it('(13) response không có autoStatusChange khi không đổi tình trạng (client cũ vẫn hợp lệ); marker không lộ ra API', async () => {
+      const { id, version } = await newCustomer();
+      const res = await setDone(id, version, ['demand']);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data).sort()).toEqual(
+        ['criteria', 'lastUpdatedAt', 'progress', 'version'].sort(),
+      );
+      const detail = await call('GET', `/crm/customers/${id}`, 'staffA');
+      expect(detail.body.data.statusAutoSource).toBeUndefined();
+    });
+
+    it('(14) audit ghi đúng người tick (không phải người tạo); người ngoài phạm vi 404 và không đổi gì; Quản lý trong phạm vi hạ tiêu chí -> actor là Quản lý', async () => {
+      const created = await createCustomer('manager1', {
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const id = created.id;
+      const version: number = created.res.body.data.version;
+
+      const outsider = await setDone(id, version, THREE, {}, 'staffC');
+      expect(outsider.status).toBe(404);
+      const untouched = (await rawCustomer(id))!;
+      expect(untouched.progress).toBe(0);
+      expect(untouched.__v).toBe(version);
+      expect(String(untouched.statusId)).toBe(status.NOT_CONTACTED);
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(0);
+
+      const up = await setDone(id, version, THREE, {}, 'staffB');
+      expect(up.status).toBe(200);
+      expect(up.body.data.autoStatusChange.to.code).toBe('NET');
+      const staffBId = new Types.ObjectId(ids.staffB);
+      const [criteriaAudit] = await auditOf(id, 'CRITERIA_UPDATED');
+      const [netAudit] = await auditOf(id, 'STATUS_CHANGED');
+      expect(criteriaAudit.actorId).toEqual(staffBId);
+      expect(netAudit.actorId).toEqual(staffBId);
+      expect((await rawCustomer(id))!.lastUpdatedBy).toEqual(staffBId);
+
+      const down = await setDone(id, up.body.data.version, TWO, {}, 'manager1');
+      expect(down.status).toBe(200);
+      expect(down.body.data.autoStatusChange.to.code).toBe('INTERESTED');
+      const managerId = new Types.ObjectId(ids.manager1);
+      const statusAudits = await auditOf(id, 'STATUS_CHANGED');
+      expect(statusAudits).toHaveLength(2);
+      expect(statusAudits[1].actorId).toEqual(managerId);
+      expect(statusAudits[1].reason).toBeNull();
+      expect((await rawCustomer(id))!.lastUpdatedBy).toEqual(managerId);
+    });
+
+    it('(15) nhảy 25 -> 75 trong một PATCH cũng tự chuyển; danh sách theo nhóm và đếm tab phản ánh NET ngay (không cache)', async () => {
+      const { id, version } = await newCustomer();
+      const first = await setDone(id, version, ['demand']);
+      expect(first.body.data.autoStatusChange).toBeUndefined();
+      const countsBefore = (
+        await call('GET', '/crm/customers/list-counts', 'staffA')
+      ).body.data;
+
+      const up = await setDone(id, first.body.data.version, THREE);
+      expect(up.body.data.autoStatusChange.to.code).toBe('NET');
+
+      const countsAfter = (
+        await call('GET', '/crm/customers/list-counts', 'staffA')
+      ).body.data;
+      expect(countsAfter.NET).toBe(countsBefore.NET + 1);
+      expect(countsAfter.NOT_CONTACTED).toBe(countsBefore.NOT_CONTACTED - 1);
+      expect(countsAfter.ALL).toBe(countsBefore.ALL);
+      expect(await listIds('staffA', '&listGroup=NET')).toContain(id);
+      expect(await listIds('staffA', '&listGroup=NOT_CONTACTED')).not.toContain(
+        id,
+      );
+      const detail = await call('GET', `/crm/customers/${id}`, 'staffA');
+      expect(detail.body.data.status.code).toBe('NET');
+      expect(detail.body.data.version).toBe(up.body.data.version);
+    });
+
+    it('(16) histories trả đủ 2 bản ghi (CRITERIA_UPDATED + STATUS_CHANGED) kể cả changes có field statusAutoSource', async () => {
+      const { id, version } = await newCustomer();
+      await setDone(id, version, THREE);
+      const res = await call(
+        'GET',
+        `/crm/customers/${id}/histories?limit=100`,
+        'staffA',
+      );
+      expect(res.status).toBe(200);
+      const actions = res.body.data.map((row: any) => row.action);
+      expect(actions).toEqual(
+        expect.arrayContaining(['CRITERIA_UPDATED', 'STATUS_CHANGED']),
+      );
+      const statusEntry = res.body.data.find(
+        (row: any) => row.action === 'STATUS_CHANGED',
+      );
+      expect(statusEntry.actor.id).toBe(ids.staffA);
+      expect(statusEntry.reason).toBeNull();
+      expect(statusEntry.changes.map((c: any) => c.field)).toEqual([
+        'status',
+        'statusAutoSource',
+      ]);
+    });
+
+    it('(17) PATCH criteria đồng thời với PATCH /status cùng version: đúng 1 thắng; marker khớp bên thắng', async () => {
+      const { id, version } = await newCustomer();
+      const base = await setDone(id, version, TWO);
+      const current: number = base.body.data.version;
+      const [criteria, manual] = await Promise.all([
+        setDone(id, current, THREE),
+        changeStatus(id, current, status.INTERESTED),
+      ]);
+      expect([criteria.status, manual.status].sort()).toEqual([200, 409]);
+      const raw = (await rawCustomer(id))!;
+      if (criteria.status === 200) {
+        expect(String(raw.statusId)).toBe(status.NET);
+        expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
+        expect(raw.__v).toBe(current + 2);
+      } else {
+        expect(String(raw.statusId)).toBe(status.INTERESTED);
+        expect(raw.statusAutoSource).toBeUndefined();
+        expect(raw.progress).toBe(50);
+        expect(raw.__v).toBe(current + 1);
+      }
     });
   });
 });

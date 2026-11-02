@@ -120,6 +120,7 @@ Mở thành trang riêng, có đường dẫn "Quản lý khách hàng › Nguy�
 - Mục **Lịch sử thay đổi** hiện SĐT cũ → mới đầy đủ cho người xem được khách.
 - **CCCD** chỉ hiện 4 số cuối; nút "Hiện" chỉ có với người được cấp quyền và ghi lại mỗi lần xem.
 - Tiến độ là **4 chấm**, thay cho thanh ký tự █░ của Sheets.
+- **Tự đổi tình trạng theo tiến độ (v1.0.3, PT-023):** khi tick tiêu chí làm tiến độ đạt 3/4 (hoặc tụt xuống dưới 3/4) và hệ thống tự đổi tình trạng, hiện toast **6 giây** "Đã tự chuyển tình trạng: "cũ" -> "mới"" kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí). **Không có nút Hoàn tác** (khác với đổi tình trạng bằng tay); muốn đảo thì bỏ tick hoặc đổi tình trạng bằng tay. Mục Lịch sử thay đổi hiện chip "Tự động theo tiến độ" ở các lần đổi này. Quy tắc: tài liệu 04 mục 6.2a.
 
 ### 4.4 Lịch hẹn, Báo cáo, Cài đặt
 - **Lịch hẹn:** lịch tuần/tháng; bấm vào cuộc hẹn mở nhanh hồ sơ khách.

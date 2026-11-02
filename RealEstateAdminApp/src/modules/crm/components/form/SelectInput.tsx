@@ -1,6 +1,7 @@
 import type { SelectHTMLAttributes } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { INPUT_ICON_CLASS, getSelectClass } from '@crm/lib/uiClasses';
+import { SelectChevron } from './SelectChevron';
 
 export interface SelectOption {
   value: string;
@@ -30,5 +31,7 @@ export const SelectInput = ({ options, icon: Icon, hasError = false, emptyLabel,
         </option>
       ))}
     </select>
+    {/* Select có icon đã bỏ giao diện gốc -> tự vẽ mũi tên. */}
+    {Icon && <SelectChevron />}
   </div>
 );

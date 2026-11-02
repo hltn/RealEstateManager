@@ -103,3 +103,43 @@ describe('CareTimeline: gỡ ảnh khỏi nhật ký đã lưu', () => {
     expect(screen.queryAllByTestId('care-log-photo-remove')).toHaveLength(0);
   });
 });
+
+describe('CareTimeline: nút Sửa nhật ký (PT-022) theo canEdit do BE trả, không kiểm 24 giờ ở FE', () => {
+  const renderWithEdit = (careLog: CareLogView, onEdit?: (log: CareLogView) => void) => {
+    const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
+    return render(
+      <MemoryRouter>
+        <CrmProvider store={store}>
+          <CareTimeline careLogs={[careLog]} customerId="c1" onEdit={onEdit} />
+        </CrmProvider>
+      </MemoryRouter>,
+    );
+  };
+
+  it('canEdit = true: hiện nút Sửa, bấm gọi onEdit với đúng nhật ký (kể cả nhật ký rất cũ, FE không có giới hạn giờ)', () => {
+    const onEdit = vi.fn();
+    const oldLog: CareLogView = { ...makeLog(true), occurredAt: '2025-01-01T02:00:00.000Z' };
+    renderWithEdit(oldLog, onEdit);
+    fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith(oldLog);
+  });
+
+  it('canEdit = false: KHÔNG có nút Sửa (dù nhật ký vừa tạo)', () => {
+    renderWithEdit({ ...makeLog(false), occurredAt: new Date().toISOString() }, vi.fn());
+    expect(screen.queryByRole('button', { name: /^Sửa nhật ký/ })).toBeNull();
+  });
+
+  it('không truyền onEdit (nơi chỉ xem): ẩn nút Sửa dù canEdit = true', () => {
+    renderWithEdit(makeLog(true));
+    expect(screen.queryByRole('button', { name: /^Sửa nhật ký/ })).toBeNull();
+  });
+
+  it('nhật ký đã sửa có chữ "(đã sửa)"; chưa sửa thì không', () => {
+    const { unmount } = renderWithEdit({ ...makeLog(true), editedAt: '2026-10-27T02:00:00.000Z' });
+    expect(screen.getByText('(đã sửa)')).toBeInTheDocument();
+    unmount();
+    renderWithEdit(makeLog(true));
+    expect(screen.queryByText('(đã sửa)')).toBeNull();
+  });
+});

@@ -82,7 +82,7 @@ export class CareLogAttachmentsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Gỡ ảnh: chưa gắn => người tải lên/Quản trị/Quản lý; đã gắn => tác giả trong 24 giờ/Quản trị/Quản lý',
+      'Gỡ ảnh: chưa gắn => người tải lên/Quản trị/Quản lý; đã gắn => tác giả/Quản trị/Quản lý',
   })
   @ApiResponse({ status: 204, description: 'Đã gỡ' })
   async remove(

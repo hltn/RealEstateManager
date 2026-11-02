@@ -11,6 +11,8 @@ export interface CrmBreadcrumbItem {
   label: string;
   /** URL đích (`buildCrmPath(...)`); bỏ trống = mục hiện tại / không bấm được. */
   to?: string;
+  /** Ẩn mục này (cùng mũi tên liền trước) ở viewport mobile < 768px, vd tên khách dài chiếm chỗ (PT-017). Desktop/tablet giữ nguyên. */
+  shouldHideOnMobile?: boolean;
 }
 
 interface CrmBreadcrumbProps {
@@ -28,8 +30,10 @@ export const CrmBreadcrumb = ({ items, className = '' }: CrmBreadcrumbProps) => 
       <ol className="flex flex-wrap items-center gap-1.5 text-sm">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
+          // Mũi tên đứng SAU mục hiện tại: ẩn trên mobile nếu mục kế tiếp bị ẩn (không để lại mũi tên "treo").
+          const isNextHiddenOnMobile = items[index + 1]?.shouldHideOnMobile === true;
           return (
-            <li key={`${item.label}-${index}`} className="flex min-w-0 items-center gap-1.5">
+            <li key={`${item.label}-${index}`} className={`min-w-0 items-center gap-1.5 ${item.shouldHideOnMobile ? 'hidden md:flex' : 'flex'}`}>
               {item.to && !isLast ? (
                 <Link to={item.to} className={LINK_CLASS}>
                   {item.label}
@@ -39,7 +43,9 @@ export const CrmBreadcrumb = ({ items, className = '' }: CrmBreadcrumbProps) => 
                   {item.label}
                 </span>
               )}
-              {!isLast && <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-gray-400 dark:text-gray-500" />}
+              {!isLast && (
+                <ChevronRight size={16} aria-hidden="true" className={`shrink-0 text-gray-400 dark:text-gray-500 ${isNextHiddenOnMobile ? 'hidden md:block' : ''}`} />
+              )}
             </li>
           );
         })}

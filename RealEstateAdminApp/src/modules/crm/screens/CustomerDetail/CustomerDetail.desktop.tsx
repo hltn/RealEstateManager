@@ -6,7 +6,7 @@ import { useCareLogs, useCustomerDetail } from '@crm/api';
 import { CustomerLoadState } from '@crm/components/CustomerLoadState';
 import { TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
 import { useCrmState } from '@crm/store';
-import { CareLogForm } from './components/CareLogForm';
+import { CareLogComposer } from './components/CareLogComposer';
 import { CareTeamCard } from './components/CareTeamCard';
 import { CareTimeline } from './components/CareTimeline';
 import { CriteriaBoard } from './components/CriteriaBoard';
@@ -16,6 +16,7 @@ import { NextStepNotice } from './components/DetailParts';
 import { HistoryList } from './components/HistoryList';
 import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
 import { UpcomingAppointmentsSection } from './components/UpcomingAppointmentsSection';
+import { useNoteComposer } from './useNoteComposer';
 
 type CenterTab = 'logs' | 'history';
 
@@ -31,12 +32,21 @@ export const CustomerDetailDesktop = () => {
   const careLogsState = useCareLogs(selectedCustomerId, primaryUserId);
   const careLogs = careLogsState.data;
   const [centerTab, setCenterTab] = useState<CenterTab>('logs');
+  const noteComposer = useNoteComposer(selectedCustomerId ?? '');
 
   if (!customer) return <CustomerLoadState variant="desktop" title="Chi tiết khách hàng" isLoading={isLoading} isNotFound={isNotFound} error={error} onRetry={refetch} />;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6" data-testid="customer-detail-desktop">
-      <CustomerHeader customer={customer} variant="desktop" />
+      <CustomerHeader
+        customer={customer}
+        variant="desktop"
+        onAddNote={() => {
+          // Nút "Ghi chú" ở đầu hồ sơ: sang tab Nhật ký và mở form đầy đủ (PT-020).
+          setCenterTab('logs');
+          noteComposer.openCreate();
+        }}
+      />
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(0,21rem)_minmax(0,1fr)_minmax(0,21rem)]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -64,11 +74,12 @@ export const CustomerDetailDesktop = () => {
               );
             })}
           </div>
+          {/* Form ghi chú LUÔN được dựng (chỉ ẩn khi sang tab Lịch sử): đổi tab giữa chừng không làm mất bản nháp/ảnh đã tải lên. */}
+          <div hidden={centerTab !== 'logs'}>
+            <CareLogComposer key={customer.id} customer={customer} variant="desktop" composer={noteComposer} />
+          </div>
           {centerTab === 'logs' ? (
-            <>
-              <CareLogForm key={customer.id} customer={customer} variant="desktop" />
-              <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} />
-            </>
+            <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} onEdit={noteComposer.openEdit} />
           ) : (
             <HistoryList customerId={customer.id} />
           )}

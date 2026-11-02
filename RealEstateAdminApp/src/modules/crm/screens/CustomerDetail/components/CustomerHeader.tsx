@@ -15,11 +15,13 @@ import { PhoneDisplay, StatusDropdown } from './DetailParts';
 interface CustomerHeaderProps {
   customer: CustomerDetail;
   variant: 'desktop' | 'mobile';
+  /** Bấm "Ghi chú": mở form ghi chú/chăm sóc đầy đủ ở tab Nhật ký (PT-020). */
+  onAddNote: () => void;
 }
 
-export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
+export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderProps) => {
   const { openCreateAppointment } = useCrmActions();
-  const { callCustomer, messageZalo, openQuickNote } = useContactActions();
+  const { callCustomer, messageZalo } = useContactActions();
   const isDesktop = variant === 'desktop';
   const updatedText = formatVnRelative(customer.lastUpdatedAt);
 
@@ -44,12 +46,12 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
     return (
       <section aria-label="Tóm tắt hồ sơ" className={`${CARD_CLASS} space-y-3 p-4`}>
         <div className="flex items-start justify-between gap-2">
-          <h2 className="min-w-0 text-xl font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</h2>
+          <h1 className="min-w-0 text-xl font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</h1>
           <StatusDropdown customer={customer} align="right" />
         </div>
         {meta}
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => openQuickNote(customer.id)} className={`${ICON_BUTTON_OUTLINE_CLASS} w-full gap-1.5 text-sm`}>
+          <button type="button" onClick={onAddNote} className={`${ICON_BUTTON_OUTLINE_CLASS} w-full gap-1.5 text-sm`}>
             <NotebookPen size={16} aria-hidden="true" />
             Ghi chú
           </button>
@@ -65,7 +67,7 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
 
   return (
     <div className="flex flex-col gap-4">
-      <CrmBreadcrumb items={[{ label: 'Quản lý khách hàng', to: buildCrmPath('customers') }, { label: customer.fullName }]} />
+      <CrmBreadcrumb items={[{ label: 'Quản lý khách hàng', to: buildCrmPath('customers') }, { label: customer.fullName, shouldHideOnMobile: true }]} />
       <section aria-label="Hồ sơ khách hàng" className={`${CARD_CLASS} flex flex-col justify-between gap-5 p-5 md:p-6 xl:flex-row xl:items-center`}>
         <div className="flex min-w-0 items-start gap-4">
           <span aria-hidden="true" className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-500 text-lg font-semibold text-white">
@@ -90,7 +92,7 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
             <MessageCircle size={18} aria-hidden="true" />
             Zalo
           </button>
-          <button type="button" onClick={() => openQuickNote(customer.id)} aria-label="Ghi chú nhanh" title="Ghi chú nhanh" className={ICON_BUTTON_OUTLINE_CLASS}>
+          <button type="button" onClick={onAddNote} aria-label="Ghi chú" title="Ghi chú" className={ICON_BUTTON_OUTLINE_CLASS}>
             <NotebookPen size={18} aria-hidden="true" />
           </button>
           <button type="button" onClick={() => openCreateAppointment({ customerId: customer.id })} aria-label="Đặt lịch hẹn" title="Đặt lịch hẹn" className={ICON_BUTTON_OUTLINE_CLASS}>

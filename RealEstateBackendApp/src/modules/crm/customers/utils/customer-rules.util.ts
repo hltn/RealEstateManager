@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
+import { ListGroup } from '../../catalogs/catalog.enums';
 import {
+  AUTO_STATUS_PROGRESS_THRESHOLD,
   CRITERIA_KEYS,
   CriteriaKey,
   NATIONAL_ID_MASK_PREFIX,
@@ -71,4 +73,63 @@ export const mergeCriteria = (
     }
   }
   return { next, changedKeys };
+};
+
+/** Mã tình trạng hệ thống mà cơ chế tự chuyển (PT-023) có thể đặt. */
+export type AutoStatusTarget = 'NET' | 'INTERESTED';
+
+export interface AutoStatusInput {
+  prevProgress: number;
+  nextProgress: number;
+  currentGroup: ListGroup;
+  currentCode: string;
+  /** Tình trạng NET hiện tại do cơ chế tự động đặt (`statusAutoSource` có giá trị). */
+  isAutoSet: boolean;
+}
+
+/**
+ * PT-023: tiến độ có đi qua mốc 3/4 (75) không (vượt lên đúng 75 hoặc từ >= 75 xuống dưới 75). Dùng để bỏ qua sớm,
+ * không tốn truy vấn tra tình trạng khi chắc chắn không có gì để tự chuyển (vd 0 -> 25, 75 -> 100).
+ */
+export const crossesAutoStatusThreshold = (
+  prevProgress: number,
+  nextProgress: number,
+): boolean =>
+  (nextProgress === AUTO_STATUS_PROGRESS_THRESHOLD &&
+    prevProgress < AUTO_STATUS_PROGRESS_THRESHOLD) ||
+  (nextProgress < AUTO_STATUS_PROGRESS_THRESHOLD &&
+    prevProgress >= AUTO_STATUS_PROGRESS_THRESHOLD);
+
+/**
+ * PT-023: quyết định tự chuyển tình trạng khi tiến độ đổi. Hàm thuần, không đụng DB.
+ * - VƯỢT LÊN đúng 75 (từ dưới 75) và khách đang ở nhóm Chưa tiếp cận/Có quan tâm -> `NET`.
+ *   100 -> 75 không kích hoạt (tránh đè tình trạng đã đổi tay); 4/4 (100) không kích hoạt.
+ * - Xuống dưới 75 (từ >= 75) và khách đang NET do cơ chế tự động đặt -> `INTERESTED`.
+ * - Còn lại (DROPPED, nhóm cao hơn, NET đổi tay, tiến độ không đổi...) -> `null` (không đổi).
+ */
+export const decideAutoStatus = ({
+  prevProgress,
+  nextProgress,
+  currentGroup,
+  currentCode,
+  isAutoSet,
+}: AutoStatusInput): AutoStatusTarget | null => {
+  const threshold = AUTO_STATUS_PROGRESS_THRESHOLD;
+  if (
+    nextProgress === threshold &&
+    prevProgress < threshold &&
+    (currentGroup === ListGroup.NOT_CONTACTED ||
+      currentGroup === ListGroup.INTERESTED)
+  ) {
+    return 'NET';
+  }
+  if (
+    nextProgress < threshold &&
+    prevProgress >= threshold &&
+    currentCode === 'NET' &&
+    isAutoSet
+  ) {
+    return 'INTERESTED';
+  }
+  return null;
 };

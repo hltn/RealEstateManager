@@ -360,7 +360,7 @@ export class CareLogsService {
         if (!customer) throw customerNotFound();
         const log = await this.findLog(customerId, logId, session);
         const now = new Date();
-        assertCanModifyCareLog(ctx.actor, log, now);
+        assertCanModifyCareLog(ctx.actor, log);
 
         const set: Record<string, unknown> = {};
         const changes: CrmAuditChange[] = [];
@@ -502,7 +502,7 @@ export class CareLogsService {
         if (!customer) throw customerNotFound();
         const log = await this.findLog(customerId, logId, session);
         const now = new Date();
-        assertCanModifyCareLog(ctx.actor, log, now);
+        assertCanModifyCareLog(ctx.actor, log);
 
         await this.careLogModel
           .updateOne(
@@ -660,9 +660,6 @@ export class CareLogsService {
       }),
       this.attachments.signUrls(logs),
     ]);
-    const now = new Date();
-    return logs.map((log) =>
-      toCareLogResponse(log, ctx.actor, now, maps, urls),
-    );
+    return logs.map((log) => toCareLogResponse(log, ctx.actor, maps, urls));
   }
 }

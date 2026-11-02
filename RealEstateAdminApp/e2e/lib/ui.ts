@@ -15,6 +15,18 @@ export async function openCustomerDetail(page: Page, customerId: string, fullNam
   await expect(page.getByRole('heading', { name: fullName }).first()).toBeVisible();
 }
 
+/**
+ * Mở form ghi chú chăm sóc ĐẦY ĐỦ ở chi tiết khách (PT-020): form KHÔNG hiện sẵn, chỉ hiện sau khi bấm nút "Ghi chú"
+ * (desktop có 2 nút cùng tên: biểu tượng ở đầu hồ sơ và nút ở đầu tab Nhật ký, bấm nút nào cũng mở cùng form; mobile phải đang ở tab "Nhật ký"
+ * hoặc bấm nút ở thẻ tóm tắt, nút đó tự chuyển sang tab Nhật ký).
+ */
+export async function openCareLogComposer(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: 'Ghi chú', exact: true }).first().click();
+  const form = page.getByRole('form', { name: 'Thêm nhật ký chăm sóc' });
+  await expect(form).toBeVisible();
+  return form;
+}
+
 /** Ghi số liệu/quan sát UX vào báo cáo Playwright (annotation) để đối chiếu khi viết báo cáo phát hiện. */
 export function note(info: TestInfo, type: string, description: string): void {
   info.annotations.push({ type, description });

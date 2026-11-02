@@ -37,8 +37,12 @@ services:
   #   liệu (standalone, không xác thực) thì phải nâng cấp thủ công: xem tài liệu mục "Nâng cấp từ standalone".
   # - Healthcheck tự rs.initiate (idempotent) với host `mongo:27017` (tên service trong network nội bộ,
   #   nên backend nối bằng replicaSet=rs0, không cần directConnection) và chỉ healthy khi là PRIMARY.
+  #   Xác thực NGAY TRONG script mongosh bằng process.env.MONGO_INITDB_ROOT_* (không có -u/-p trên dòng lệnh,
+  #   nên mật khẩu không hiện trong `ps`). rs.initiate chạy sau khi đã xác thực root (user root do initdb tạo
+  #   từ MONGO_INITDB_ROOT_* trước khi mongod thật khởi động), nên nhánh NotYetInitialized vẫn đúng (PT-002).
+  # Image: biến MONGO_IMAGE (mặc định mongo:7 = tag hiện tại). Ghim theo digest: xem PT-009, tài liệu mục 12.
   mongo:
-    image: mongo:7
+    image: ${MONGO_IMAGE:-mongo:7}
     container_name: realestate_mongo
     restart: unless-stopped
     environment:
@@ -63,7 +67,8 @@ services:
       test:
         - CMD-SHELL
         - |
-          mongosh --quiet --norc admin -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "
+          mongosh --quiet --norc admin --eval "
+          try { db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD); } catch (e) { quit(1); }
           let s;
           try { s = rs.status(); } catch (e) {
             if (e.codeName === 'NotYetInitialized') { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }); }
@@ -81,7 +86,7 @@ services:
   # AOF (appendonly + everysec): job/idempotency key sống qua restart, mất tối đa ~1 giây khi sập nguồn.
   # Mật khẩu: chỉ dùng ký tự an toàn cho URL (vd `openssl rand -hex 32`), vì backend ghép vào REDIS_URL.
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: realestate_redis
     restart: unless-stopped
     # Mật khẩu đi qua biến môi trường của container (không nằm trong Cmd/argv của `docker inspect`).
@@ -108,9 +113,9 @@ services:
   # ── MinIO (S3-compatible: ảnh đính kèm CRM, file export) ─────────────────────
   # Image mặc định là Chainguard (build từ upstream MinIO, đã kèm `mc` + sh); minio/minio trên
   # Docker Hub/quay.io không còn pull được. Chainguard free chỉ có tag `latest` => KHUYẾN NGHỊ production:
-  # pin digest qua MINIO_IMAGE=cgr.dev/chainguard/minio@sha256:<digest> (lấy bằng `docker image inspect
-  # --format '{{index .RepoDigests 0}}' cgr.dev/chainguard/minio:latest`) để deploy tái lập được và
-  # không bị đổi phiên bản âm thầm khi `pull`.
+  # pin digest qua MINIO_IMAGE=cgr.dev/chainguard/minio@sha256:<digest> để deploy tái lập được và
+  # không bị đổi phiên bản âm thầm khi `pull`. Digest phải là của bản ĐANG CHẠY: lấy bằng
+  # `bash scripts/print-image-digests.sh` (tài liệu mục 12).
   # Credential BẮT BUỘC từ env (không có mặc định). Không publish cổng 9000/9001; backend vào qua
   # http://minio:9000. Trình duyệt tải ảnh/export qua S3_PUBLIC_ENDPOINT (hostname công khai Cloudflare
   # Tunnel trỏ tới http://minio:9000), xem tài liệu mục "S3_PUBLIC_ENDPOINT".
@@ -189,9 +194,10 @@ services:
   # - Cổng 20128: địa chỉ bind theo NINE_ROUTER_BIND_ADDR, mặc định 127.0.0.1 (chỉ loopback máy chủ; vào dashboard
   #   từ xa bằng SSH tunnel). Đặt 0.0.0.0 nếu thật sự cần truy cập trực tiếp qua IP/Tailscale của máy chủ.
   #   Backend gọi qua tên service nine-router:20128 trong network nội bộ, không phụ thuộc cổng publish này.
-  # - image :latest theo đúng bản đang chạy; muốn tái lập được thì pin tag/digest khi chủ dự án quyết định.
+  # - Image: biến NINE_ROUTER_IMAGE (mặc định decolua/9router:latest = tag hiện tại, trùng bản đang chạy khi chưa pull lại).
+  #   Muốn tái lập được thì ghim digest của bản ĐANG CHẠY trong .env.docker (PT-009, tài liệu mục 12), không ghim bừa.
   nine-router:
-    image: decolua/9router:latest
+    image: ${NINE_ROUTER_IMAGE:-decolua/9router:latest}
     container_name: realestate_9router
     restart: unless-stopped
     ports:
@@ -210,6 +216,10 @@ services:
     build:
       context: ./RealEstateBackendApp
       dockerfile: Dockerfile
+      args:
+        # Commit ngắn ghi vào dist/version.json của image (PT-027). deploy.sh export GIT_COMMIT trước khi build;
+        # chạy compose tay không đặt thì `commit` trong file là null. Arg chỉ ảnh hưởng một lớp nhỏ cuối stage builder (không mất cache build).
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: realestate_backend
     restart: unless-stopped
     env_file:
@@ -217,13 +227,16 @@ services:
     environment:
       # `environment` ghi đè env_file. Mật khẩu Mongo/Redis và key S3 lấy từ CÙNG biến với service tương ứng
       # nên không thể lệch nhau. Mật khẩu Mongo/Redis phải an toàn cho URL (hex/base64url), xem tài liệu.
-      - MONGODB_URI=mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/realestate?authSource=admin&replicaSet=rs0
+      # Quyền tối thiểu (PT-016, tùy chọn): đặt MONGO_APP_USERNAME/MONGO_APP_PASSWORD (user readWrite trên DB realestate,
+      # tạo theo tài liệu mục 13) thì backend dùng user đó; KHÔNG đặt thì giữ nguyên hành vi cũ (dùng root). Root vẫn dùng
+      # cho mongo/healthcheck/mongodump/deploy.sh. Tương tự S3_APP_ACCESS_KEY_ID/S3_APP_SECRET_ACCESS_KEY cho MinIO.
+      - MONGODB_URI=mongodb://${MONGO_APP_USERNAME:-${MONGO_ROOT_USERNAME}}:${MONGO_APP_PASSWORD:-${MONGO_ROOT_PASSWORD}}@mongo:27017/realestate?authSource=admin&replicaSet=rs0
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - S3_ENDPOINT=http://minio:9000
       - S3_REGION=us-east-1
       - S3_FORCE_PATH_STYLE=true
-      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
-      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_ACCESS_KEY_ID=${S3_APP_ACCESS_KEY_ID:-${S3_ACCESS_KEY_ID}}
+      - S3_SECRET_ACCESS_KEY=${S3_APP_SECRET_ACCESS_KEY:-${S3_SECRET_ACCESS_KEY}}
       - S3_BUCKET_ATTACHMENTS=${S3_BUCKET_ATTACHMENTS:-crm-attachments}
       - S3_BUCKET_EXPORTS=${S3_BUCKET_EXPORTS:-crm-exports}
       # Cờ CRM: CÙNG MỘT biến cho backend và bản build frontend (xem build args của frontend) để hai phía không lệch.
@@ -263,6 +276,21 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+    # Healthcheck (PT-001): gọi liveness (chỉ cho biết tiến trình còn sống, KHÔNG kiểm dependency nên Mongo/Redis/MinIO
+    # chập chờn không làm backend bị đánh dấu unhealthy). Image node:slim KHÔNG có curl/wget nên dùng `node` + fetch
+    # (Node 24 có sẵn). Cổng đọc từ $PORT (mặc định 3000). start_period 40s cho NestJS khởi động + kết nối DB.
+    # `depends_on` của service khác (frontend, cloudflared) dùng service_started nên KHÔNG bị ảnh hưởng; trạng thái
+    # healthy chỉ hiện ở `docker compose ps`. Readiness (dependency) xem `/api/v1/health/readiness`, tài liệu mục 7.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/v1/health/liveness', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
       - ./.env:/app/.env
       # Log file (daily-rotation) persist ra host tại <repo>/logs/
@@ -297,7 +325,7 @@ services:
   # Cần 2 hostname: <domain-admin> -> http://frontend:80 và <domain-file> -> http://minio:9000
   # (hostname thứ 2 chính là S3_PUBLIC_ENDPOINT). Xem tài liệu.
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
     container_name: realestate_cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run

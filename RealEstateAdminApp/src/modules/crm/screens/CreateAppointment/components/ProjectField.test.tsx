@@ -52,3 +52,16 @@ describe('ô "Dự án" của form tạo lịch hẹn (G7)', () => {
     expect(select).toBeInvalid();
   });
 });
+
+describe('ô "Dự án": không để chữ đè icon trái (PT-026)', () => {
+  it('select chừa padding trái cho icon, bỏ giao diện gốc (iOS Safari) và có mũi tên tự vẽ', () => {
+    const { container } = render(<ProjectField form={makeForm()} />);
+    const select = screen.getByRole('combobox', { name: /Dự án/ });
+    expect(select.className.split(/\s+/)).toEqual(expect.arrayContaining(['pl-11', 'appearance-none', 'pr-10']));
+    expect(select.className.split(/\s+/)).not.toContain('pl-4');
+    // Icon Building2 + mũi tên ChevronDown, đều trang trí (aria-hidden), không bắt chuột.
+    const icons = container.querySelectorAll('svg[aria-hidden="true"]');
+    expect(icons.length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector('svg.pointer-events-none.right-3')).not.toBeNull();
+  });
+});

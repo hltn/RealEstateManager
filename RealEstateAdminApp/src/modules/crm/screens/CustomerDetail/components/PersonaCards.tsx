@@ -80,20 +80,18 @@ export const PersonaCard = ({ customer }: PersonaCardProps) => {
         </div>
       )}
 
+      {/* PT-018: nhóm/trường chưa có dữ liệu thì ẩn ở chế độ xem; nhập thêm ở màn "Sửa" (luôn hiện đủ trường). */}
       {groups.map((group) => {
         const filled = group.fields.filter((field) => field.value);
+        if (filled.length === 0) return null;
         return (
           <div key={group.code} className="space-y-1">
             <div className={CAPTION_CLASS}>{group.label}</div>
-            {filled.length === 0 ? (
-              <p className={MUTED_TEXT_CLASS}>Chưa có thông tin.</p>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                {filled.map((field) => (
-                  <PersonaValueRow key={field.fieldKey} field={field} />
-                ))}
-              </div>
-            )}
+            <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+              {filled.map((field) => (
+                <PersonaValueRow key={field.fieldKey} field={field} />
+              ))}
+            </div>
           </div>
         );
       })}

@@ -13,6 +13,7 @@ import {
   AccessContext,
   CustomerAccessService,
 } from './access/customer-access.service';
+import type { AutoStatusSource } from './customer.constants';
 import {
   customerNotFound,
   resolveClientSource,
@@ -63,16 +64,22 @@ export class CustomerStatusChangeService {
   /**
    * Đổi tình trạng trong một transaction có sẵn (dùng chung cho API đơn lẻ và thao tác hàng loạt).
    * `version` vắng mặt (hàng loạt) thì không kiểm khóa lạc quan.
+   * `autoSource` (PT-023): có -> đặt dấu `statusAutoSource` (tình trạng do cơ chế tự động đặt) và ghi vào audit;
+   * vắng (PATCH /status, hàng loạt, hoàn tác, lùi tự động về INTERESTED) -> xóa dấu.
    */
   async applyChange(
     ctx: AccessContext,
     id: string,
     targetId: Types.ObjectId,
-    options: { version?: number; reason?: string },
+    options: {
+      version?: number;
+      reason?: string;
+      autoSource?: AutoStatusSource;
+    },
     auditSource: CrmAuditSource,
     session: ClientSession,
   ): Promise<ChangeStatusResponseDto> {
-    const { version, reason } = options;
+    const { version, reason, autoSource } = options;
     const before = await this.repo.findOne(ctx.scope, id, {
       session,
       projection: { statusId: 1, lastUpdatedAt: 1, __v: 1 },
@@ -105,8 +112,10 @@ export class CustomerStatusChangeService {
           statusChangedAt: now,
           lastUpdatedAt: now,
           lastUpdatedBy: ctx.actor.userId,
+          ...(autoSource ? { statusAutoSource: autoSource } : {}),
         },
         $inc: { __v: 1 },
+        ...(autoSource ? {} : { $unset: { statusAutoSource: '' } }),
       },
       { session },
     );
@@ -147,6 +156,9 @@ export class CustomerStatusChangeService {
               listGroup: toStatus.listGroup,
             },
           },
+          ...(autoSource
+            ? [{ field: 'statusAutoSource', from: null, to: autoSource }]
+            : []),
         ],
         reason: reason ?? null,
         source: auditSource,

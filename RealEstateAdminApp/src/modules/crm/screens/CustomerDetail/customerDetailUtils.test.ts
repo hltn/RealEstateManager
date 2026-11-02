@@ -6,7 +6,8 @@ import {
   getHiddenImageCount,
   getShortCaption,
   getSuggestedFollowUpIso,
-  orEmptyText,
+  hasText,
+  isCareLogDraftDirty,
   selectUpcomingAppointments,
   toDateTimeLocalValue,
 } from './customerDetailUtils';
@@ -27,10 +28,12 @@ describe('customerDetailUtils', () => {
     expect(getHiddenImageCount(2, 3)).toBe(0);
   });
 
-  it('orEmptyText thay giá trị trống', () => {
-    expect(orEmptyText('  ')).toBe('Chưa cập nhật');
-    expect(orEmptyText(null)).toBe('Chưa cập nhật');
-    expect(orEmptyText('Hà Nội')).toBe('Hà Nội');
+  it('hasText: chỉ true khi có chữ thật (null/undefined/rỗng/toàn khoảng trắng đều là không có)', () => {
+    expect(hasText('  ')).toBe(false);
+    expect(hasText('')).toBe(false);
+    expect(hasText(null)).toBe(false);
+    expect(hasText(undefined)).toBe(false);
+    expect(hasText('Hà Nội')).toBe(true);
   });
 
   it('mốc hẹn gợi ý = hôm nay (giờ VN) + N ngày lúc 09:00; N null -> không gợi ý', () => {
@@ -58,5 +61,40 @@ describe('customerDetailUtils', () => {
       { id: 'soon', status: 'SCHEDULED', startAt: '2026-10-26T04:00:00.000Z' },
     ];
     expect(selectUpcomingAppointments(items, now).map((item) => item.id)).toEqual(['edge', 'justCreated', 'soon', 'late']);
+  });
+
+  describe('isCareLogDraftDirty: còn thay đổi chưa lưu ở form ghi chú?', () => {
+    const empty = { content: '', contactChannel: 'CALL', contactResultId: '', nextSuggestion: '', nextDueLocal: '', hasPhotoChanges: false };
+    const original = { content: 'Đã gọi', contactChannel: 'ZALO', contactResultId: 'r1' };
+
+    it('thêm mới: form mới mở (kênh mặc định, chưa nhập gì) và chỉ có khoảng trắng đều KHÔNG phải bản nháp', () => {
+      expect(isCareLogDraftDirty(empty)).toBe(false);
+      expect(isCareLogDraftDirty({ ...empty, content: '   ' })).toBe(false);
+      expect(isCareLogDraftDirty({ ...empty, contactChannel: 'ZALO' })).toBe(false);
+    });
+
+    it('thêm mới: có nội dung, kết quả liên hệ, việc tiếp theo, thời điểm nhắc hoặc ảnh thì là bản nháp', () => {
+      expect(isCareLogDraftDirty({ ...empty, content: 'a' })).toBe(true);
+      expect(isCareLogDraftDirty({ ...empty, contactResultId: 'r1' })).toBe(true);
+      expect(isCareLogDraftDirty({ ...empty, nextSuggestion: 'Gọi lại' })).toBe(true);
+      expect(isCareLogDraftDirty({ ...empty, nextDueLocal: '2026-10-24T09:00' })).toBe(true);
+      expect(isCareLogDraftDirty({ ...empty, hasPhotoChanges: true })).toBe(true);
+    });
+
+    it('sửa: giống nhật ký gốc thì KHÔNG dirty (kể cả nội dung gốc rỗng/khác khoảng trắng so sánh đúng từng ký tự)', () => {
+      expect(isCareLogDraftDirty({ ...empty, ...original }, original)).toBe(false);
+    });
+
+    it('sửa: đổi nội dung, kênh, kết quả (kể cả bỏ kết quả) hoặc đổi ảnh thì dirty', () => {
+      const same = { ...empty, ...original };
+      expect(isCareLogDraftDirty({ ...same, content: 'Đã gọi.' }, original)).toBe(true);
+      expect(isCareLogDraftDirty({ ...same, contactChannel: 'CALL' }, original)).toBe(true);
+      expect(isCareLogDraftDirty({ ...same, contactResultId: '' }, original)).toBe(true);
+      expect(isCareLogDraftDirty({ ...same, hasPhotoChanges: true }, original)).toBe(true);
+    });
+
+    it('sửa: ô "việc tiếp theo" không áp dụng (form sửa không có) nên không làm dirty', () => {
+      expect(isCareLogDraftDirty({ ...empty, ...original, nextSuggestion: 'x' }, original)).toBe(false);
+    });
   });
 });

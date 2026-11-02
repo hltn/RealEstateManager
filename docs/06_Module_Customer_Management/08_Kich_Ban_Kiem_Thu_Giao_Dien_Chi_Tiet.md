@@ -135,6 +135,13 @@ Màn: `/crm/customers` (tiêu đề "Khách hàng", ô tìm "Tên (có/không d�
 
 ---
 
+### F2-06 Tự đổi tình trạng khi tiến độ đạt 3/4 (P1, PT-023 v1.0.3; kịch bản đề xuất, **chưa có spec chạy thật**)
+- **Tiền điều kiện:** khách ở tình trạng "Chưa tiếp cận" hoặc "Có quan tâm", đang 2/4 tiêu chí; tài khoản có quyền sửa tiêu chí của khách.
+- **Bước:** (1) tick tiêu chí thứ 3 -> (2) bỏ tick một tiêu chí về 2/4 -> (3) đổi tay sang "Khách net", tick lên 3/4 rồi bỏ tick xuống 2/4 -> (4) khách "Bỏ" tick đủ 3/4 -> (5) tick đủ 4/4 từ 3/4.
+- **Kết quả trên giao diện:** (1) chip tình trạng thành "Khách net" và toast 6 giây nêu tình trạng cũ/mới kèm lý do đạt 3/4, **không có nút Hoàn tác**; (2) về "Có quan tâm" kèm toast lý do xuống dưới 3/4; (3) luôn giữ "Khách net" (do đổi tay), không toast tự đổi ở cả hai lần tick; (4) không đổi tình trạng, không toast; (5) không đổi tình trạng.
+- **Hậu trường (nếu có):** lịch sử thay đổi có 2 dòng (tiêu chí, tình trạng) cùng người thực hiện là người tick, chip "Tự động theo tiến độ" ở dòng tình trạng; lần tick kế tiếp dùng `version` mới (không báo xung đột 409).
+- **UX kiểm kèm:** CN, PH (người dùng có hiểu vì sao tình trạng đổi không?), thử cả mobile (tab Tiến độ).
+
 ## 4. F3 - Nhật ký chăm sóc và ảnh (spec `f3-care-log.spec.ts`)
 
 Form: thẻ "Ghi chú chăm sóc" (`form` có nhãn "Thêm nhật ký chăm sóc") ở chi tiết khách: "Nội dung trao đổi *", "Kênh liên hệ", "Kết quả liên hệ" (mặc định "— Chưa chọn —"), nhóm "Nhắc việc tiếp theo" ("Việc cần làm tiếp theo", "Thời điểm nhắc", hộp "Tạo lịch hẹn "Nhắc gọi lại" vào thời điểm này"), khung "Ảnh đính kèm (tuỳ chọn)" với nút "Thêm ảnh", nút "Lưu nhật ký" (khóa khi nội dung rỗng; đang lưu hiện "Đang lưu…", đang tải ảnh hiện "Đang tải ảnh…").
@@ -160,7 +167,7 @@ Form: thẻ "Ghi chú chăm sóc" (`form` có nhãn "Thêm nhật ký chăm sóc
 
 ### F3-04 Gỡ ảnh (P1)
 - **Phần a (trước khi lưu):** chọn 2 ảnh -> bấm nút "Xóa ảnh 1" -> khay còn 1 ảnh, đếm "Đã chọn 1/5 ảnh"; lưu thì chỉ ảnh còn lại được lên.
-- **Phần b (sau khi lưu):** Mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ khi `canEdit`: tác giả trong 24 giờ, Quản trị, Quản lý trong phạm vi) + hộp xác nhận "Xác nhận gỡ ảnh"; nút "Xóa ảnh N" ở khay trước khi lưu là điều khiển khác (F3-04a). Kịch bản: gỡ ảnh ở mục đã lưu rồi kiểm ảnh biến mất (trước 2026-10-26 chưa có nút này, đã ghi nhóm *Thiếu chức năng* rồi sửa). Lịch sử có loại "Gỡ ảnh đính kèm" (`HistoryList.tsx:37`).
+- **Phần b (sau khi lưu):** Mục nhật ký đã lưu có nút "Xóa ảnh N khỏi nhật ký" (chỉ khi `canEdit`: tác giả, Quản trị, Quản lý trong phạm vi) + hộp xác nhận "Xác nhận gỡ ảnh"; nút "Xóa ảnh N" ở khay trước khi lưu là điều khiển khác (F3-04a). Kịch bản: gỡ ảnh ở mục đã lưu rồi kiểm ảnh biến mất (trước 2026-10-26 chưa có nút này, đã ghi nhóm *Thiếu chức năng* rồi sửa). Lịch sử có loại "Gỡ ảnh đính kèm" (`HistoryList.tsx:37`).
 - **Hậu trường (nếu có):** `crm_attachments` đánh dấu đã gỡ (không xóa cứng), lịch sử có "Gỡ ảnh đính kèm".
 - **UX kiểm kèm:** CN, PH (hỏi xác nhận trước khi gỡ?).
 

@@ -2,7 +2,7 @@
 
 > **Phiên bản tài liệu:** v1.0.3
 
-> Bản nháp kế hoạch, chưa phát hành (phiên bản đang chạy production là v1.0.2).
+> Bản nháp kế hoạch, chưa phát hành (phiên bản đang chạy production là v1.0.2). Ngày 2026-11-02: phần lớn mục đã được code và test trong repo (chưa commit, chưa deploy); trạng thái từng mục ở mục 4.
 
 > **Mục đích file:** gom **mọi việc cần sửa hoặc bổ sung phát hiện sau khi chạy test trên production** vào một chỗ, theo mã mục `PT-NNN`, để giao việc cho từng agent và nghiệm thu. File này là **kế hoạch của v1.0.3**; phiên bản đang chạy production là **v1.0.2**.
 > **Tài liệu liên quan:** [`README.md`](README.md) (mục lục phiên bản), [`../01_Infrastructure/06_Production_Deploy.md`](../01_Infrastructure/06_Production_Deploy.md) (triển khai, nâng cấp, backup), [`../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) (đợt A–D thuộc v1.0.2).
@@ -72,37 +72,37 @@ Khi thêm lỗi mới, chép khối này và điền đủ các dòng:
 
 ## 4. Bảng tổng hợp
 
-Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**. Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02: 4 mục `Xong` (PT-003, PT-010, PT-011, PT-013), 1 mục `Xong một phần` (PT-004), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 19 mục `Mới` (tổng 27).
+Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**. Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
 
 | Mã | Tiêu đề | Mức độ | Nhóm | Trạng thái |
 |---|---|---|---|---|
-| [PT-001](#pt-001--thiếu-healthcheck-cho-backend-và-route-health-chưa-ghi-vào-tài-liệu) | Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu | Minor | DevOps / Tài liệu | Mới |
-| [PT-002](#pt-002--healthcheck-của-mongo-còn-đặt-mật-khẩu-trên-dòng-lệnh) | Healthcheck Mongo còn đặt mật khẩu trên dòng lệnh | Minor | DevOps | Mới |
+| [PT-001](#pt-001--thiếu-healthcheck-cho-backend-và-route-health-chưa-ghi-vào-tài-liệu) | Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu | Minor | DevOps / Tài liệu | Xong một phần |
+| [PT-002](#pt-002--healthcheck-của-mongo-còn-đặt-mật-khẩu-trên-dòng-lệnh) | Healthcheck Mongo còn đặt mật khẩu trên dòng lệnh | Minor | DevOps | Xong một phần |
 | [PT-003](#pt-003--bật-ảnh-đính-kèm-crm) | Bật ảnh đính kèm CRM | Cải tiến | DevOps | Xong |
-| [PT-004](#pt-004--xác-nhận-giá-trị-s3_bucket_exports) | Xác nhận giá trị `S3_BUCKET_EXPORTS` | Minor | DevOps | Xong một phần |
+| [PT-004](#pt-004--xác-nhận-giá-trị-s3_bucket_exports) | Xác nhận giá trị `S3_BUCKET_EXPORTS` | Minor | DevOps | Xong |
 | [PT-005](#pt-005--chưa-kiểm-chứng-thao-tác-ai-qua-9router) | Chưa kiểm chứng thao tác AI qua 9Router | Major | BE / DevOps | Mới |
 | [PT-006](#pt-006--dung-lượng-đĩa-vps-căng) | Dung lượng đĩa VPS căng (chặn `deploy.sh` kế tiếp) | Major | DevOps | Mới |
-| [PT-007](#pt-007--bổ-sung-kinh-nghiệm-thực-tế-vào-06_production_deploymd) | Bổ sung kinh nghiệm thực tế vào `06_Production_Deploy.md` | Minor | Tài liệu | Mới |
-| [PT-008](#pt-008--swagger-công-khai-trên-production) | Swagger công khai trên production | Major | BE | Mới |
-| [PT-009](#pt-009--ghim-phiên-bản-các-image-theo-digest) | Ghim phiên bản các image theo digest | Cải tiến | DevOps | Mới |
+| [PT-007](#pt-007--bổ-sung-kinh-nghiệm-thực-tế-vào-06_production_deploymd) | Bổ sung kinh nghiệm thực tế vào `06_Production_Deploy.md` | Minor | Tài liệu | Xong |
+| [PT-008](#pt-008--swagger-công-khai-trên-production) | Swagger công khai trên production | Major | BE | Xong một phần |
+| [PT-009](#pt-009--ghim-phiên-bản-các-image-theo-digest) | Ghim phiên bản các image theo digest | Cải tiến | DevOps | Xong một phần |
 | [PT-010](#pt-010--dọn-dẹp-sau-vài-ngày-mục-57) | Dọn dẹp sau vài ngày (mục 5.7) | Minor | DevOps | Xong |
 | [PT-011](#pt-011--rà-soát-bảo-mật-token-cloudflare-tunnel) | Rà soát bảo mật token Cloudflare tunnel | Minor | DevOps | Xong |
 | [PT-012](#pt-012--khách-và-dự-án-trỏ-khu-vực-cũ-bị-bỏ-trống-khu-vực) | Khách và dự án trỏ khu vực cũ bị bỏ trống khu vực | Minor | Dữ liệu | Bỏ |
 | [PT-013](#pt-013--sao-lưu-crm_pii_encryption_key-ra-ngoài-máy-chủ) | Sao lưu `CRM_PII_ENCRYPTION_KEY` ra ngoài máy chủ (làm ngay) | Major | DevOps | Xong |
 | [PT-014](#pt-014--hiển-thị-số-phiên-bản-đang-chạy-thật) | Hiển thị số phiên bản đang chạy thật | Cải tiến | BE / DevOps | Bỏ |
 | [PT-015](#pt-015--backup-định-kỳ-chép-ra-ngoài-vps-và-thử-khôi-phục) | Backup định kỳ, chép ra ngoài VPS và thử khôi phục | Major | DevOps | Bỏ |
-| [PT-016](#pt-016--các-việc-bảo-mật-còn-tồn-ở-mục-9) | Các việc bảo mật còn tồn ở mục 9 | Minor | DevOps / BE | Mới |
-| [PT-017](#pt-017--màn-hình-mobile-bỏ-hiển-thị-tên-khách-hàng-ở-breadcrumb) | Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb | Minor | FE | Mới |
-| [PT-018](#pt-018--tab-thông-tin-bỏ-sđt-và-ẩn-các-trường-chưa-có-dữ-liệu) | Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu | Cải tiến | FE | Mới |
-| [PT-019](#pt-019--dự-án-quan-tâm-chuyển-sang-selectbox-có-ô-tìm-kiếm) | Dự án quan tâm chuyển sang selectbox có ô tìm kiếm | Cải tiến | FE | Mới |
-| [PT-020](#pt-020--nhật-ký-chỉ-hiện-form-ghi-chú-khi-bấm-nút-ghi-chú) | Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú | Minor | FE | Mới |
-| [PT-021](#pt-021--lịch-sử-thay-đổi-thu-gọn-và-tải-khi-bấm-xem) | Lịch sử thay đổi: thu gọn và tải khi bấm xem | Cải tiến | FE | Mới |
-| [PT-022](#pt-022--nhật-ký-chăm-sóc-thiếu-nút-sửa) | Nhật ký chăm sóc thiếu nút Sửa; bỏ quy tắc tác giả sửa trong 24 giờ | Major | BE / FE / Tài liệu | Mới |
-| [PT-023](#pt-023--tiến-độ-đủ-34-tiêu-chí-thì-tự-chuyển-trạng-thái-khách) | Tiến độ đủ 3/4 tiêu chí thì tự chuyển trạng thái khách | Cải tiến | FE (+ BE, cần thiết kế) | Mới |
-| [PT-024](#pt-024--sidebar-mobile-chưa-phủ-kín-từ-mép-trên-màn-hình) | Sidebar mobile chưa phủ kín từ mép trên màn hình | Minor | FE | Mới |
-| [PT-025](#pt-025--sidebar-mobile-không-tự-đóng-sau-khi-chọn-mục-chuyển-nút-x-sang-phải) | Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải | Major | FE | Mới |
-| [PT-026](#pt-026--form-tạo-lịch-hẹn-mobile-icon-đè-lên-chữ-ở-ô-giờ-và-dự-án) | Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án | Major | FE | Mới |
-| [PT-027](#pt-027--lưu-phiên-bản-hệ-thống-trong-db-và-cơ-chế-tự-chạy-migration-khi-nâng-cấp) | Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp | Major (đề xuất; cải tiến nền tảng) | BE / DevOps / Dữ liệu | Mới |
+| [PT-016](#pt-016--các-việc-bảo-mật-còn-tồn-ở-mục-9) | Các việc bảo mật còn tồn ở mục 9 | Minor | DevOps / BE | Xong một phần |
+| [PT-017](#pt-017--màn-hình-mobile-bỏ-hiển-thị-tên-khách-hàng-ở-breadcrumb) | Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb | Minor | FE | Xong một phần |
+| [PT-018](#pt-018--tab-thông-tin-bỏ-sđt-và-ẩn-các-trường-chưa-có-dữ-liệu) | Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu | Cải tiến | FE | Xong một phần |
+| [PT-019](#pt-019--dự-án-quan-tâm-chuyển-sang-selectbox-có-ô-tìm-kiếm) | Dự án quan tâm chuyển sang selectbox có ô tìm kiếm | Cải tiến | FE | Xong một phần |
+| [PT-020](#pt-020--nhật-ký-chỉ-hiện-form-ghi-chú-khi-bấm-nút-ghi-chú) | Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú | Minor | FE | Xong một phần |
+| [PT-021](#pt-021--lịch-sử-thay-đổi-thu-gọn-và-tải-khi-bấm-xem) | Lịch sử thay đổi: thu gọn và tải khi bấm xem | Cải tiến | FE | Xong một phần |
+| [PT-022](#pt-022--nhật-ký-chăm-sóc-thiếu-nút-sửa) | Nhật ký chăm sóc thiếu nút Sửa; bỏ quy tắc tác giả sửa trong 24 giờ | Major | BE / FE / Tài liệu | Xong một phần |
+| [PT-023](#pt-023--tiến-độ-đủ-34-tiêu-chí-thì-tự-chuyển-trạng-thái-khách) | Tiến độ đủ 3/4 tiêu chí thì tự chuyển trạng thái khách | Cải tiến | FE (+ BE, cần thiết kế) | Xong một phần |
+| [PT-024](#pt-024--sidebar-mobile-chưa-phủ-kín-từ-mép-trên-màn-hình) | Sidebar mobile chưa phủ kín từ mép trên màn hình | Minor | FE | Xong một phần |
+| [PT-025](#pt-025--sidebar-mobile-không-tự-đóng-sau-khi-chọn-mục-chuyển-nút-x-sang-phải) | Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải | Major | FE | Xong một phần |
+| [PT-026](#pt-026--form-tạo-lịch-hẹn-mobile-icon-đè-lên-chữ-ở-ô-giờ-và-dự-án) | Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án | Major | FE | Xong một phần |
+| [PT-027](#pt-027--lưu-phiên-bản-hệ-thống-trong-db-và-cơ-chế-tự-chạy-migration-khi-nâng-cấp) | Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp | Major (đề xuất; cải tiến nền tảng) | BE / DevOps / Dữ liệu | Xong một phần |
 
 ## 5. Chi tiết các mục
 
@@ -123,7 +123,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | `docker compose ps` chỉ biết container chạy chứ không biết ứng dụng sẵn sàng; người vận hành dễ gọi nhầm `/api/v1/health`, thấy 404 rồi tưởng backend hỏng |
 | Đề xuất | Thêm `healthcheck` cho `backend` gọi liveness (kiểm công cụ có sẵn trong image trước khi chọn lệnh; cân nhắc ảnh hưởng tới `depends_on` của service khác); ghi hai route vào mục 7 |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới. Kiểm ngày 2026-11-02: chưa xong. `docker-compose.yml` chưa có `healthcheck` cho service `backend`, container backend không có health status, `06_Production_Deploy.md` mục 7 chưa ghi hai route health |
+| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): `docker-compose.yml` có `healthcheck` cho service `backend`; `06_Production_Deploy.md` mục 7 đã ghi hai route health. **Còn lại:** sau khi deploy, kiểm `docker inspect realestate_backend` ra trạng thái `healthy` |
 
 #### PT-002 — Healthcheck của Mongo còn đặt mật khẩu trên dòng lệnh
 
@@ -140,7 +140,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Lộ mật khẩu root cho ai xem được tiến trình trong container hoặc trên host; phạm vi hẹp nhưng trái nguyên tắc của tài liệu triển khai |
 | Đề xuất | Đổi healthcheck sang `mongosh` đọc mật khẩu từ biến môi trường trong script (không `-p ...`); kiểm lại `rs.initiate` idempotent vẫn đúng; thử trên volume mẫu trước |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới. Kiểm ngày 2026-11-02: chưa xong. `docker-compose.yml` dòng 66 vẫn truyền `-p "$$MONGO_INITDB_ROOT_PASSWORD"` trên dòng lệnh |
+| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): healthcheck của `mongo` không còn mật khẩu trên dòng lệnh (đã thử trên `mongo:7` thật). **Còn lại:** deploy, kiểm container `mongo` ra `healthy` và `docker top` không còn ` -p `. **Ghi chú:** `up -d` sẽ tạo lại container `mongo` một lần (do đổi cấu hình healthcheck), gián đoạn vài chục giây |
 
 #### PT-003 — Bật ảnh đính kèm CRM
 
@@ -174,7 +174,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Sai tên thì tính năng xuất file CRM lỗi hoặc ghi vào bucket không có rule xóa sau 7 ngày |
 | Đề xuất | Kiểm và sửa nếu sai; ghi cảnh báo "đúng `crm-exports`" vào mục 2 của `06_Production_Deploy.md` |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Xong một phần. Kiểm ngày 2026-11-02: trên production `S3_BUCKET_EXPORTS` đặt đúng `crm-exports` và bucket `crm-exports` có thật trong MinIO. Còn thiếu: cảnh báo "đúng `crm-exports`" trong `06_Production_Deploy.md` mục 2 (có thể gộp vào PT-007) |
+| Trạng thái | Xong (2026-11-02). Kiểm ngày 2026-11-02: trên production `S3_BUCKET_EXPORTS` đặt đúng `crm-exports` và bucket `crm-exports` có thật trong MinIO. Đã thêm cảnh báo "đúng `crm-exports`" vào `06_Production_Deploy.md` mục 2 |
 
 #### PT-005 — Chưa kiểm chứng thao tác AI qua 9Router
 
@@ -225,7 +225,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Lần nâng cấp sau dễ vấp lại cùng chỗ (không biết có `--yes`, đánh giá sai thời gian và đáy đĩa) |
 | Đề xuất | Bổ sung ba điểm trên; số liệu lấy từ lần nâng cấp 2026-11-02 |
 | Người phụ trách | `devops-agent` (hoặc `pm-agent` ghi tài liệu) |
-| Trạng thái | Mới |
+| Trạng thái | Xong (2026-11-02). Đã bổ sung đủ ba điểm vào `06_Production_Deploy.md` (cờ `--yes`, đáy đĩa 1,9 GB, thời gian build khoảng 13 phút: mục 5.4a, 5.4b) |
 
 #### PT-008 — Swagger công khai trên production
 
@@ -242,7 +242,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Hiện tại: lộ danh sách endpoint, kiểu dữ liệu, mã lỗi nghiệp vụ cho người ngoài, giúp dò tấn công. Sau khi sửa: **không còn trang docs công khai trên production**; tài liệu API chỉ xem được ở dev/staging |
 | Đề xuất | **Quyết định:** chỉ gọi `SwaggerModule.setup` khi `NODE_ENV` khác `production` (hiện `RealEstateBackendApp/src/main.ts:77-85` luôn bật). Cập nhật bảng "Hành vi khi `NODE_ENV=production`" trong `06_Production_Deploy.md`; kiểm thử không làm hỏng test đếm route Swagger; thêm test production không có route docs, môi trường khác có. **Cần xác minh trước khi coi là xong:** `docker-compose.yml:242` đặt `NODE_ENV=production` cho service `backend`, nhưng chưa kiểm giá trị thật trong container production đang chạy (`realestate_backend`) và chưa rõ staging (nếu có) đặt `NODE_ENV` là gì, để "dev/staging vẫn bật" đúng. Không chọn phương án chặn ở nginx/Cloudflare Access |
 | Người phụ trách | `coder-backend-agent` (`devops-agent` xác minh `NODE_ENV` thật trên production) |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test xong trong repo (chưa commit, chưa deploy). **Quy tắc thực tế chặt hơn câu đã chốt ở trên:** Swagger chỉ bật khi `NODE_ENV` (sau khi trim và hạ chữ thường) thuộc allowlist `development`, `test`, `staging`, `local`; giá trị lạ, chưa đặt hoặc `production` thì **tắt** (fail-safe). Lý do: bản đầu viết kiểu "khác `production` thì bật" (fail-open, gõ nhầm `prod` hay `Production` là lộ docs) do QA phát hiện nên đã đổi. Đã cập nhật bảng "Hành vi khi `NODE_ENV=production`" trong `06_Production_Deploy.md` để nêu allowlist. **Còn lại:** deploy rồi kiểm `NODE_ENV` thật trong container production (`docker exec realestate_backend printenv NODE_ENV`) và `/api/v1/docs` trả 404 |
 
 #### PT-009 — Ghim phiên bản các image theo digest
 
@@ -259,7 +259,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Nâng cấp bất ngờ khi pull lại; khó tái hiện sự cố |
 | Đề xuất | Lấy digest đang chạy của cả năm image, ghim vào `.env.docker` hoặc compose; ghi quy trình nâng cấp image có chủ đích vào tài liệu |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Mới. Kiểm ngày 2026-11-02: chưa xong. `MINIO_IMAGE` trên VPS để trống; cả 5 image (minio, 9router, cloudflared, `mongo:7`, `redis:7-alpine`) vẫn dùng tag trôi |
+| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): cơ chế biến `MONGO_IMAGE`, `REDIS_IMAGE`, `NINE_ROUTER_IMAGE`, `CLOUDFLARED_IMAGE`, `MINIO_IMAGE` trong compose và script `scripts/print-image-digests.sh`. **Chưa ghim digest nào** (cả 5 image vẫn dùng tag trôi cho tới khi có digest). **Còn lại (việc của Oniichan):** chạy script trên VPS, dán các dòng `*_IMAGE=` vào `.env.docker`, rồi `up -d --no-deps` từng service |
 
 #### PT-010 — Dọn dẹp sau vài ngày (mục 5.7)
 
@@ -382,7 +382,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Backend lộ quyền root nếu bị khai thác; sai `FRONTEND_URL` có thể gây lỗi liên kết/CORS; cổng DB mở ra ngoài là rủi ro lớn nếu có |
 | Đề xuất | Làm lần lượt (c), (a), (b); (b) cần đổi cấu hình kết nối cẩn thận và thử trên môi trường thử trước |
 | Người phụ trách | `devops-agent` (+ `coder-backend-agent` cho (b)) |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): runbook mục 13 của `06_Production_Deploy.md`; compose hỗ trợ biến `MONGO_APP_*` và `S3_APP_*` (mặc định để trống thì vẫn dùng root, nên không đổi hành vi nếu Oniichan chưa làm). **Còn lại (việc của Oniichan):** chạy 13.1 và 13.2, quyết 13.3 và 13.4. Lưu ý: lệnh `mc admin` ở 13.4 **chưa được kiểm** với phiên bản `mc` có trong image |
 
 #### PT-017 — Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb
 
@@ -400,7 +400,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Tên dài chiếm chỗ trên màn hình hẹp |
 | Đề xuất | Ẩn đoạn tên khách trong breadcrumb ở viewport mobile; kiểm các màn khác dùng cùng breadcrumb (sửa khách, tạo lịch hẹn) để không lệch |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy). **Còn lại:** Oniichan thử trên iPhone Safari thật |
 
 #### PT-018 — Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu
 
@@ -418,7 +418,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Màn hình dài, nhiều dòng trống, khó đọc trên mobile |
 | Đề xuất | Ẩn trường rỗng ở chế độ xem (chế độ sửa vẫn phải hiện đủ để nhập). **Cần xác nhận với Oniichan:** quy tắc C14 trong tài liệu 01 cho thành viên nhóm xem số đầy đủ và gọi (ghi `PHONE_VIEWED`), và thiết kế mobile có nút Gọi/Zalo cố định; bỏ SĐT khỏi section "Thông tin" nhưng vẫn phải còn đường xem/gọi số |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy). **Cách đã làm với SĐT:** SĐT chỉ bị bỏ khỏi section "Thông tin"; vẫn còn ở thẻ tóm tắt (số được che, nút "Hiện số" ghi `PHONE_VIEWED`) và ở nút Gọi/Zalo. **Còn lại:** Oniichan thử trên iPhone Safari thật |
 
 #### PT-019 — Dự án quan tâm chuyển sang selectbox có ô tìm kiếm
 
@@ -436,7 +436,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Chọn dự án chậm khi có nhiều dự án |
 | Đề xuất | Dùng selectbox đa chọn có tìm kiếm (không dấu nếu có thể); dùng chung cho màn tạo khách và các nơi chọn dự án; kiểm bàn phím ảo trên iOS Safari không che danh sách |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm combobox bằng preview Chromium 375x667. **Còn lại:** Oniichan thử trên iPhone Safari thật, đặc biệt bàn phím iOS có che danh sách không. Ô "Dự án" ở form tạo lịch hẹn vẫn là `<select>` (mục 7 câu 22) |
 
 #### PT-020 — Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú
 
@@ -454,7 +454,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Chiếm chỗ trên màn hình hẹp; giao diện thiếu phần có thể khiến không ghi đủ thông tin |
 | Đề xuất | Xác minh trước phần "giao diện không đầy đủ" trên iPhone Safari và 375x667 (chụp ảnh); nếu đó là lỗi khiến không ghi được nhật ký thì nâng mức độ lên Major; sau đó đổi sang hiển thị theo nút |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm form ghi chú bằng preview Chromium 375x667. **Nguyên nhân lỗi "giao diện không đầy đủ":** nút "Ghi chú" trước đây mở `QuickNoteModal` rút gọn; nay mở form đầy đủ ở tab Nhật ký, và có hỏi xác nhận khi bỏ bản nháp. `QuickNoteModal` bản rút gọn vẫn còn ở màn Việc hôm nay, danh sách khách và lịch hẹn (mục 7 câu 21). **Còn lại:** Oniichan thử trên iPhone Safari thật (bàn phím iOS) |
 
 #### PT-021 — Lịch sử thay đổi: thu gọn và tải khi bấm xem
 
@@ -472,7 +472,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Tải thừa dữ liệu, màn hình dài, chậm hơn trên mạng di động |
 | Đề xuất | Thu gọn mặc định (accordion), bật `enabled` của truy vấn khi mở; giữ nguyên dữ liệu sau khi đóng lại để không tải lại |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy): thu gọn mặc định, chỉ gọi API khi mở, `staleTime` của lịch sử là 5 phút. **Còn lại:** Oniichan thử trên iPhone Safari thật |
 
 #### PT-022 — Nhật ký chăm sóc thiếu nút Sửa
 
@@ -490,7 +490,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Ghi sai nhật ký thì không sửa được trên giao diện dù backend cho phép; quy tắc 24 giờ còn chặn tác giả sửa nhật ký cũ. Sau khi đổi: tác giả có thêm quyền (nới quyền), nhật ký có thể bị sửa/xóa lâu sau khi ghi; lịch sử/audit hiện có vẫn ghi lại các lần sửa/xóa |
 | Đề xuất | (1) FE: thêm nút Sửa (mở lại form với dữ liệu cũ, gồm ảnh đính kèm), xử lý xung đột; hiển thị theo `canEdit` từ BE, không kiểm 24 giờ ở FE. (2) BE: bỏ kiểm tra 24 giờ (`isWithinEditWindow`), bỏ ném `CARE_LOG_EDIT_WINDOW_EXPIRED`, bỏ hằng `CARE_LOG_EDIT_WINDOW_MS`; tác giả luôn được sửa/xóa/gỡ ảnh. (3) Bỏ khai báo ApiResponse 403 `CARE_LOG_EDIT_WINDOW_EXPIRED` ở controller. (4) Cập nhật test BE (bỏ/viết lại ca "quá 24 giờ", thêm ca tác giả sửa nhật ký rất cũ vẫn được, người khác vẫn 403) và test FE. (5) Sửa tài liệu API và kỹ thuật (liệt kê bên dưới). **Đây là thay đổi quy tắc nghiệp vụ; API tương thích ngược:** nới quyền, không đổi hợp đồng (cùng endpoint, cùng body, cùng mã thành công; chỉ bớt một nhánh 403), client cũ vẫn chạy. Xóa hay giữ hằng `ErrorCode.CARE_LOG_EDIT_WINDOW_EXPIRED`: mục 7 câu 18 |
 | Người phụ trách | `coder-backend-agent` (bỏ quy tắc, mã lỗi, test BE) + `coder-frontend-agent` (nút Sửa, bỏ xử lý mã lỗi nếu có, test FE); `qa-agent` review code và test; tài liệu API/kỹ thuật cập nhật cùng đợt |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). BE, FE và tài liệu 04, 05, 08 đã xong trong repo (chưa commit, chưa deploy); `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành rỗng (trừ ghi chú lịch sử trong file này). Giả định ở mục 7 câu 18 đã được áp dụng: bỏ quy tắc cho cả ba thao tác (sửa, xóa, gỡ ảnh đã gắn) và xóa hẳn mã lỗi. **Còn lại:** Oniichan thử nút Sửa trên máy thật (iPhone Safari) |
 
 ##### Phạm vi thay đổi PT-022 (chỉ liệt kê, chưa sửa)
 
@@ -523,13 +523,41 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Nhóm | FE (+ BE, cần thiết kế) |
 | Màn hình / API | Chi tiết khách, tab "Tiến độ" (file nghi liên quan: `.../CustomerDetail/components/CriteriaBoard.tsx`); `PATCH /crm/customers/:id/criteria`; `PATCH /crm/customers/:id/status` |
 | Bước tái hiện | Không áp dụng (tính năng mới) |
-| Kết quả thực tế | **Đã tra tài liệu 01, 04, 05:** (1) 4 tiêu chí là **Nhu cầu, Động cơ, Tài chính, Thời gian** (`criteria.demand/motivation/finance/timing`, mỗi cái có `isDone` và `description`). (2) `progress` = số tiêu chí `isDone` x 25, nhận giá trị 0/25/50/75/100, **server tính** cùng lệnh cập nhật tiêu chí; vậy "3/4" tương ứng `progress = 75`. (3) Tình trạng khách hiện có 4 trạng thái hệ thống: **Chưa tiếp cận, Có quan tâm, Khách net, Bỏ** (code `NOT_CONTACTED`, `INTERESTED`, `NET`, `DROPPED`; Quản trị thêm được trạng thái mới và chọn nhóm danh sách). **"Khách net" đã tồn tại** (code `NET`, nhóm danh sách `NET`, màu `warning`, thứ tự 3; có trong tài liệu 04 và trong seed `RealEstateBackendApp/src/modules/crm/seed/crm-seed.data.ts`), nên không cần thêm vào danh mục trạng thái. (4) Hiện tiến độ **không** tự đổi tình trạng; đổi tình trạng chỉ qua `PATCH /crm/customers/:id/status` (cần `version`, `reason?`), audit `STATUS_CHANGED { from, to, reason }`, giao diện có Hoàn tác trong 10 giây. (5) `linkedCriterion` của trường chân dung cũng không tự đánh dấu hoàn thành tiêu chí |
+| Kết quả thực tế | **Đã tra tài liệu 01, 04, 05:** (1) 4 tiêu chí là **Nhu cầu, Động cơ, Tài chính, Thời gian** (`criteria.demand/motivation/finance/timing`, mỗi cái có `isDone` và `description`). (2) `progress` = số tiêu chí `isDone` x 25, nhận giá trị 0/25/50/75/100, **server tính** cùng lệnh cập nhật tiêu chí; vậy "3/4" tương ứng `progress = 75`. (3) Tình trạng khách hiện có 4 trạng thái hệ thống: **Chưa tiếp cận, Có quan tâm, Khách net, Bỏ** (code `NOT_CONTACTED`, `INTERESTED`, `NET`, `DROPPED`; Quản trị thêm được trạng thái mới và chọn nhóm danh sách). **"Khách net" đã tồn tại** (code `NET`, nhóm danh sách `NET`, màu `warning`, thứ tự 3; có trong tài liệu 04 và trong seed `RealEstateBackendApp/src/modules/crm/seed/crm-seed.data.ts`), nên không cần thêm vào danh mục trạng thái. (4) **Trước v1.0.3** tiến độ **không** tự đổi tình trạng (nay đã đổi theo PT-023); đổi tình trạng chỉ qua `PATCH /crm/customers/:id/status` (cần `version`, `reason?`), audit `STATUS_CHANGED { from, to, reason }`, giao diện có Hoàn tác trong 10 giây. (5) `linkedCriterion` của trường chân dung cũng không tự đánh dấu hoàn thành tiêu chí |
 | Kết quả mong đợi | **Quy tắc đã chốt (Oniichan, 2026-11-02):** (1) khi đủ **3/4 tiêu chí bất kỳ** (không phụ thuộc tiêu chí cụ thể; `progress = 75`) thì **tự động chuyển hẳn** (không chỉ gợi ý) sang "Khách net" (code `NET`); (2) đủ **4/4 thì không làm gì cả** (không đổi trạng thái thêm); (3) **hạ xuống 2/4 thì tự chuyển về "Có quan tâm"** (code `INTERESTED`; Oniichan gọi là "Khách đang quan tâm", tên thật trong seed là "Có quan tâm"); (4) **không áp dụng cho khách đang ở "Bỏ"** (`DROPPED`); (5) **audit ghi người tick tiêu chí là người thực hiện, không cần lý do**; (6) **không áp dụng cho khách nhập từ CSV và thao tác hàng loạt** (chỉ `PATCH /crm/customers/:id/criteria` kích hoạt; `CustomerCriteriaService` chỉ được `customers.controller.ts` gọi, nên CSV và hàng loạt không đi qua đường này). Còn 3 điểm chưa trả lời, đang dùng giả định tạm: mục 7 câu 9 |
 | Mức độ | Cải tiến |
 | Ảnh hưởng | Đổi quy tắc nghiệp vụ: tình trạng khách và các danh sách (tab theo nhóm) có thể đổi mà người dùng không thao tác trực tiếp; ảnh hưởng thống kê, bộ lọc, thông báo và audit |
-| Đề xuất | Chưa code. `architect-agent` thiết kế trước, rồi `coder-backend-agent` và `coder-frontend-agent`. Gợi ý cho thiết kế: kích hoạt ở backend trong cùng transaction với cập nhật tiêu chí (`customer-criteria.service.ts`, `withTransaction`), tái dùng `CustomerStatusChangeService.applyChange` (nhận `session`, ghi audit `STATUS_CHANGED`, kiểm khóa lạc quan `version`); audit lấy người tick làm người thực hiện, không cần `reason`; cần một dấu hiệu cho biết trạng thái hiện tại do cơ chế này đặt (phục vụ chiều ngược lại, giả định (b) ở mục 7 câu 9); thiết kế quyết giao diện báo thế nào khi trạng thái tự đổi và Hoàn tác 10 giây có áp dụng không. Các điểm còn mở ở mục 7 câu 9 |
+| Đề xuất | (Đề xuất ban đầu lúc lập kế hoạch; **đã triển khai** theo mục "Thiết kế PT-023" ngay dưới bảng.) `architect-agent` thiết kế trước, rồi `coder-backend-agent` và `coder-frontend-agent`. Gợi ý cho thiết kế: kích hoạt ở backend trong cùng transaction với cập nhật tiêu chí (`customer-criteria.service.ts`, `withTransaction`), tái dùng `CustomerStatusChangeService.applyChange` (nhận `session`, ghi audit `STATUS_CHANGED`, kiểm khóa lạc quan `version`); audit lấy người tick làm người thực hiện, không cần `reason`; cần một dấu hiệu cho biết trạng thái hiện tại do cơ chế này đặt (phục vụ chiều ngược lại, giả định (b) ở mục 7 câu 9); thiết kế quyết giao diện báo thế nào khi trạng thái tự đổi và Hoàn tác 10 giây có áp dụng không. Các điểm còn mở ở mục 7 câu 9 |
 | Người phụ trách | `architect-agent` (thiết kế), sau đó `coder-backend-agent` + `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). BE, FE và test xong trong repo (chưa commit, chưa deploy). **Còn lại:** (1) Oniichan xác nhận 3 điểm mở ở mục 7 câu 9 (đã áp dụng theo giả định tạm) và 2 câu mới 19, 20; (2) Oniichan thử trên iPhone Safari thật; (3) khi làm nhập CSV (M8) phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng" (xem ghi chú trong mục thiết kế bên dưới) |
+
+##### Thiết kế PT-023 (tóm tắt, đã triển khai)
+
+Do `architect-agent` soạn; đây là bản tóm tắt thiết kế **đã áp dụng** (file nháp thiết kế tạm đã xóa). Áp dụng đúng 6 quy tắc đã chốt ở dòng "Kết quả mong đợi" và 3 giả định tạm ở mục 7 câu 9.
+
+**1. Dữ liệu: field `statusAutoSource`, không cần migration.**
+
+- Thêm vào schema khách hàng một field tùy chọn `statusAutoSource` (enum `['CRITERIA_PROGRESS']`, mặc định `null`). Field này là dấu hiệu "trạng thái hiện tại do cơ chế tiến độ tự đặt". Không có index (không dùng để lọc), không trả ra API.
+- **Không cần migration:** field mới, thiếu hoặc `null` nghĩa là "không phải do tự động" (tương thích ngược, đúng Zero-Downtime). Khách đang ở NET sẵn có (đổi tay hoặc nhập từ trước) không bị tự lùi.
+- Vòng đời của dấu hiệu: được đặt khi cơ chế tự động đưa khách lên NET; bị xóa mỗi khi trạng thái đổi bằng đường khác (`PATCH /crm/customers/:id/status`, đổi hàng loạt, Hoàn tác) và khi cơ chế tự động hạ khách về INTERESTED. Nhờ vậy mọi lần đổi tay đều gỡ dấu hiệu, kể cả đổi tay thành NET.
+
+**2. Quy tắc quyết định (backend, trong cùng transaction với cập nhật tiêu chí).**
+
+- Chỉ xét khi `progress` thực sự đổi. Tự lên **NET** khi tiến độ **VƯỢT LÊN đúng 75** từ dưới 75 và trạng thái hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED`. Các trường hợp 100 xuống 75, 0/25/50 lên 100 (4/4), khách `DROPPED` hoặc đã ở nhóm cao hơn đều **không** kích hoạt.
+- Tự về **INTERESTED** khi tiến độ tụt từ 75 trở lên xuống dưới 75, trạng thái hiện tại là NET **và** NET do cơ chế tự động đặt (có `statusAutoSource`). NET đặt tay hoặc có sẵn thì giữ nguyên.
+- Tái dùng `CustomerStatusChangeService.applyChange` (cùng `session`, kiểm khóa lạc quan `version`); lỗi trong bước này làm rollback cả cập nhật tiêu chí (tiêu chí và trạng thái nguyên tử). Nếu danh mục thiếu trạng thái `NET`/`INTERESTED` đang hoạt động thì bỏ qua tự đổi (tiêu chí vẫn lưu, trả 200, ghi log cảnh báo).
+- **Audit:** hai bản ghi `CRITERIA_UPDATED` và `STATUS_CHANGED`, cùng người thực hiện là người tick tiêu chí, `reason` null; bản `STATUS_CHANGED` có thêm phần tử `changes` về `statusAutoSource`. Không đổi schema audit.
+- **API:** response của `PATCH /crm/customers/:id/criteria` thêm field tùy chọn `autoStatusChange` (chỉ có khi tình trạng vừa tự đổi); `version` và `lastUpdatedAt` trả về là giá trị **sau cùng** (version gửi lên cộng 2 khi có tự đổi). Request không đổi, tương thích ngược. Chi tiết: tài liệu 05 và 04.
+
+**3. Giao diện.**
+
+- Khi response có `autoStatusChange`, hiện toast **6 giây** nêu tình trạng cũ và mới, kèm lý do "do tiến độ đạt 3/4 tiêu chí" hoặc "do tiến độ xuống dưới 3/4 tiêu chí"; **không có nút Hoàn tác 10 giây** (hoàn tác riêng trạng thái sẽ làm lệch quy tắc 3/4 và dấu hiệu bị xóa nên không tự khôi phục; muốn đảo thì bỏ tick tiêu chí hoặc đổi tình trạng bằng tay).
+- Lịch sử thay đổi hiện chip **"Tự động theo tiến độ"** ở các lần đổi tình trạng do cơ chế này.
+- Không cần thêm bước làm mới dữ liệu: ghi dữ liệu CRM ở FE đã làm mới toàn bộ truy vấn liên quan (chi tiết khách, danh sách, tab nhóm, đếm, lịch sử).
+
+**4. Lưu ý khi làm nhập CSV (M8).** Backend **hiện chưa có** tính năng nhập CSV (M8). Quy tắc chốt "CSV không kích hoạt tự đổi tình trạng" hiện đúng vì chỉ `PATCH /crm/customers/:id/criteria` đi qua cơ chế này; khi làm M8 phải **nhớ giữ** quy tắc đó (nhập CSV không được gọi đường cập nhật tiêu chí có kèm tự đổi tình trạng).
+
+**5. Test đã có** (theo thiết kế): hàm quyết định thuần (các ca ngưỡng 75, 4/4, 100 xuống 75, NET đổi tay, DROPPED), test tích hợp BE (2 audit, version +2, xung đột phiên bản, rollback, hàng loạt xóa dấu hiệu...), test FE (toast đúng nhãn và nội dung, không có Hoàn tác, lỗi 409, lần tick kế tiếp dùng version mới).
 
 #### PT-024 — Sidebar mobile chưa phủ kín từ mép trên màn hình
 
@@ -547,7 +575,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Giao diện thiếu chỉn chu; có thể do header đè hoặc `z-index` và vùng an toàn (safe area) của iOS |
 | Đề xuất | Kiểm vị trí, `z-index` và chiều cao panel so với header; thử cả iPhone thật (Safari, thanh địa chỉ co giãn) lẫn giả lập |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm sidebar bằng preview Chromium 375x667. **Còn lại:** Oniichan thử trên iPhone Safari thật, đặc biệt thanh địa chỉ co giãn |
 
 #### PT-025 — Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải
 
@@ -565,7 +593,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Phải đóng tay mới thấy màn hình đã chuyển; điều hướng mobile khó dùng |
 | Đề xuất | Đóng sidebar khi đổi route (kể cả mục có mục con); đặt nút X trong panel, góc phải; thử trên iPhone Safari và 375x667 |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm sidebar bằng preview Chromium 375x667. **Còn lại:** Oniichan thử trên iPhone Safari thật. Điểm a11y có từ trước, chưa xử lý: sidebar mobile khi đóng vẫn nằm trong thứ tự Tab (mục 7 câu 24) |
 
 #### PT-026 — Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án
 
@@ -583,7 +611,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Khó đọc giá trị đã chọn, thao tác sai; thấy rõ trên màn hẹp |
 | Đề xuất | Thêm padding trái cho mọi ô có icon (chung một lớp tiện ích), kiểm ô `time` và ô select riêng của Safari iOS vì chúng hay bỏ qua kiểu mặc định; rà các form mobile khác cùng kiểu |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm bằng preview Chromium 375x667. Sửa bằng **lớp dùng chung** nên các form mobile khác có icon cũng được sửa theo; placeholder ô "Địa điểm" đổi thành "Nhập địa chỉ gặp khách". Ô "Dự án" ở form tạo lịch hẹn vẫn là `<select>` (mục 7 câu 22); `index.html` thiếu `viewport-fit=cover` (mục 7 câu 23). **Còn lại:** Oniichan thử trên iPhone Safari thật, đặc biệt ô `time` và ô select (Safari iOS hay bỏ qua kiểu mặc định) |
 
 #### PT-027 — Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp
 
@@ -601,7 +629,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Không có sổ thì dễ chạy sót hoặc chạy lại migration có bước xóa (006 xóa khu vực cũ), khó biết production đang ở trạng thái dữ liệu nào, và `deploy.sh` phải viết riêng một cổng cho từng migration (như `check_users_migrated`) |
 | Đề xuất | Một collection `system`, một runner CLI trong image backend do `deploy.sh` gọi, dry-run mặc định, 002 đến 006 ghi "đã áp dụng" bằng lệnh `baseline` một lần. Chi tiết ở 6 mục thiết kế bên dưới; các điểm cần Oniichan quyết ở mục 7 (câu 11 đến 17). Phạm vi gồm cả việc **đưa số phiên bản app vào image Docker** (Dockerfile sao chép `package.json` vào image, hoặc sinh `dist/version.json` lúc build) để runner đọc được; trước đây phần này tách sang PT-014, nay PT-014 đã `Bỏ` nên thuộc PT-027 |
 | Người phụ trách | `architect-agent` (thiết kế, xong); `coder-backend-agent` (runner, test); `devops-agent` (`deploy.sh`, Dockerfile, tài liệu `06_Production_Deploy.md`); `qa-agent` (review code và test) |
-| Trạng thái | Mới |
+| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): runner `src/migrations/**` (lệnh `status`, `up`, `unlock`, `baseline`; sổ trong collection `system`); Dockerfile sinh `dist/version.json`; `deploy.sh` có cổng `migration_gate` và cờ `--migrate`. QA đã build image thật và chạy runner trong container. **Còn lại (việc của Oniichan):** (1) làm 5 bước baseline ở mục 11.1 của `06_Production_Deploy.md`: kiểm chỉ-đọc, backup, dry-run baseline, chạy baseline `--version 1.0.2 --commit e6099c0`, deploy lại; (2) thử `deploy.sh` đầu-cuối trên môi trường thử. **Lưu ý:** lần deploy đầu tiên sẽ dừng ở mã 4 "cần baseline", đúng thiết kế (chưa có `version` trong `system` mà `users` đã có dữ liệu nên runner không tự chạy migration). Khóa mồ côi (tiến trình chết để lại khóa) chỉ gỡ bằng `unlock` |
 
 ##### Thiết kế PT-027 (bản tối giản)
 
@@ -691,7 +719,7 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 | 9 | Health sau deploy | Gọi `GET /api/v1/health/liveness` và `GET /api/v1/health/readiness` (liên quan PT-001); readiness phải 200 khi MongoDB, Redis, S3/MinIO sẵn sàng | | |
 | 10 | Đường lui 5.8 còn dùng được | Trước khi làm PT-010, kiểm các điều kiện của đường lui 5.8 (image `*:pre-upgrade`, backup volume, dump `pre-upgrade`) còn nguyên và dùng được. Ngày dự kiến hết thời hạn giữ đường lui: không còn cần (xem cột Kết quả) | Không còn áp dụng: image `*:pre-upgrade` đã xóa ngày 2026-11-02 theo yêu cầu Oniichan (PT-010), nên đường lui 5.8 không còn dùng được | PT-010 |
 | 11 | Ảnh đính kèm | Đính kèm một ảnh vào nhật ký/chi tiết khách và xem lại ảnh (liên quan PT-003) | OK (2026-11-02) | Không |
-| 12 | Giao diện mobile | Dùng web admin trên iPhone (Safari) và giả lập iPhone SE 375x667: chi tiết khách, nhật ký, sidebar, tạo lịch hẹn | Có lỗi: xem PT-017 đến PT-026 (2026-11-02) | PT-017 đến PT-026 |
+| 12 | Giao diện mobile | Dùng web admin trên iPhone (Safari) và giả lập iPhone SE 375x667: chi tiết khách, nhật ký, sidebar, tạo lịch hẹn | Có lỗi: xem PT-017 đến PT-026 (2026-11-02). Code sửa xong (2026-11-02), chờ Oniichan thử lại trên iPhone | PT-017 đến PT-026 |
 
 ## 7. Điều cần Oniichan quyết
 
@@ -719,7 +747,7 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 6. **Đã chốt (2026-11-02):** token Cloudflare tunnel (PT-011) không lộ ra ngoài VPS, không cần xoay; PT-011 `Xong`.
 7. **Đã chốt (2026-11-02):** Swagger (PT-008) **tắt khi `NODE_ENV=production`**.
 8. **Đã chốt: bỏ PT-015 (Oniichan, 2026-11-02).** Mục PT-015 giữ lại với trạng thái `Bỏ`; không làm backup định kỳ. Lưu ý rủi ro: không có cron backup/chép ra ngoài; chỉ còn backup thủ công và backup tự động trước mỗi lần deploy của `deploy.sh`.
-9. **PT-023 (tiến độ tự chuyển trạng thái):** Oniichan đã chốt 6 quy tắc (ghi ở PT-023: 3/4 tiêu chí bất kỳ thì tự chuyển hẳn sang "Khách net"; 4/4 không làm gì; hạ xuống 2/4 thì về "Có quan tâm"; không áp dụng cho "Bỏ"; audit ghi người tick, không cần lý do; không áp dụng cho CSV và hàng loạt). **Còn 3 điểm chưa trả lời, đang dùng giả định tạm, cần Oniichan xác nhận.** Mã trạng thái thật trong code (`RealEstateBackendApp/src/modules/crm/seed/crm-seed.data.ts`): `NOT_CONTACTED` "Chưa tiếp cận", `INTERESTED` **"Có quan tâm"** (Oniichan gọi là "Khách đang quan tâm"), `NET` "Khách net", `DROPPED` "Bỏ". Hệ thống **chưa có** trạng thái "Khách hẹn" hay "Đã chốt"; Quản trị có thể thêm trạng thái tùy chọn, mỗi trạng thái thuộc một trong 4 nhóm danh sách (`ListGroup`).
+9. **PT-023 (tiến độ tự chuyển trạng thái):** Oniichan đã chốt 6 quy tắc (ghi ở PT-023: 3/4 tiêu chí bất kỳ thì tự chuyển hẳn sang "Khách net"; 4/4 không làm gì; hạ xuống 2/4 thì về "Có quan tâm"; không áp dụng cho "Bỏ"; audit ghi người tick, không cần lý do; không áp dụng cho CSV và hàng loạt). **Còn 3 điểm chưa trả lời, đang dùng giả định tạm, cần Oniichan xác nhận.** **Cả 3 điểm (a), (b), (c) đã được áp dụng trong code theo giả định tạm (2026-11-02), chờ Oniichan xác nhận; nếu Oniichan đổi ý thì phải sửa code.** Mã trạng thái thật trong code (`RealEstateBackendApp/src/modules/crm/seed/crm-seed.data.ts`): `NOT_CONTACTED` "Chưa tiếp cận", `INTERESTED` **"Có quan tâm"** (Oniichan gọi là "Khách đang quan tâm"), `NET` "Khách net", `DROPPED` "Bỏ". Hệ thống **chưa có** trạng thái "Khách hẹn" hay "Đã chốt"; Quản trị có thể thêm trạng thái tùy chọn, mỗi trạng thái thuộc một trong 4 nhóm danh sách (`ListGroup`).
    - (a) Có thông báo cho người cùng chăm sóc không? Giả định tạm: **không** (chỉ ghi audit).
    - (b) Khi khách đang ở trạng thái khác, đủ 3/4 có đè không? Giả định tạm: chỉ tự chuyển sang `NET` khi trạng thái hiện tại thuộc nhóm `INTERESTED` (hoặc `NOT_CONTACTED`, thấp hơn `NET` trong luồng); chỉ tự chuyển ngược về `INTERESTED` khi trạng thái hiện tại đang là `NET` **do chính cơ chế này đặt**. Nếu một lần cập nhật hạ từ 3/4 hoặc 4/4 xuống còn 1/4 hoặc 0/4 thì cũng coi là dưới ngưỡng và chuyển về `INTERESTED`.
    - (c) Khi đủ 3/4 nhưng trạng thái đã được người dùng chuyển cao hơn bằng tay (ví dụ đã ở nhóm `NET` hoặc `DROPPED`)? Giả định tạm: **không lùi, không đè**.
@@ -731,7 +759,13 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 15. **PT-027, `down`/rollback:** đề xuất **không có**; hoàn tác bằng khôi phục từ backup (đúng nguyên tắc "đã đổi dữ liệu thì không quay code cũ"). Đồng ý?
 16. **PT-027, tự backup:** đề xuất runner **không** tự backup (`deploy.sh` đã backup trước khi chạy). Đồng ý?
 17. **PT-027, tên collection đã chốt là `system`.** Còn mở: **phiên bản baseline** ghi cho production hiện tại, đề xuất `1.0.2`, commit `e6099c0` (liên quan câu 3 về thẻ git); và Oniichan có biết production từng chạy migration 002, 003, 004 chưa? (Không chắc cũng được: devops kiểm chỉ-đọc trước khi chạy `baseline`.)
-18. **PT-022 (bỏ quy tắc 24 giờ), cần xác nhận hai giả định:** (a) quy tắc bỏ áp dụng cho **cả ba thao tác**: sửa nhật ký, xóa nhật ký và gỡ ảnh đã gắn (hiện cả ba cùng dùng cửa sổ 24 giờ). Đề xuất: **cả ba**. (b) Hằng `ErrorCode.CARE_LOG_EDIT_WINDOW_EXPIRED` sau khi bỏ: giữ hay xóa hẳn? Đề xuất: **xóa** vì không còn dùng (báo FE bỏ xử lý mã này nếu có).
+18. **PT-022 (bỏ quy tắc 24 giờ), cần xác nhận hai giả định:** (a) quy tắc bỏ áp dụng cho **cả ba thao tác**: sửa nhật ký, xóa nhật ký và gỡ ảnh đã gắn (hiện cả ba cùng dùng cửa sổ 24 giờ). Đề xuất: **cả ba**. (b) Hằng `ErrorCode.CARE_LOG_EDIT_WINDOW_EXPIRED` sau khi bỏ: giữ hay xóa hẳn? Đề xuất: **xóa** vì không còn dùng (báo FE bỏ xử lý mã này nếu có). **Đã áp dụng cả hai giả định (2026-11-02):** bỏ quy tắc cho cả ba thao tác và xóa hẳn mã lỗi; chờ Oniichan xác nhận.
+19. **PT-023, khách 4/4 rồi bỏ một tiêu chí:** một khách đang ở `INTERESTED` (do từng đổi tay) có đủ 4/4 tiêu chí; sau đó bỏ một tiêu chí xuống 3/4. Hệ thống **không** tự lên `NET` vì chỉ lên khi tiến độ **vượt lên đúng 75** từ dưới 75 (chủ ý, tránh đè trạng thái đã đổi tay). Giữ hay đổi?
+20. **PT-023, trạng thái tùy biến bị đè:** khách đang ở một trạng thái tùy biến (do Quản trị thêm) thuộc nhóm `INTERESTED` hoặc `NOT_CONTACTED` sẽ bị đè thành `NET` khi đạt 3/4; và khi tiến độ tụt dưới 3/4, hệ thống đưa khách về `INTERESTED` chứ **không** về trạng thái tùy biến cũ. Chấp nhận?
+21. **`QuickNoteModal` bản rút gọn:** sau PT-020, nút "Ghi chú" ở chi tiết khách mở form đầy đủ ở tab Nhật ký, nhưng `QuickNoteModal` bản rút gọn vẫn còn ở màn Việc hôm nay, danh sách khách và lịch hẹn. Nâng các chỗ đó lên form đầy đủ, hay chuyển hướng về chi tiết khách?
+22. **Ô "Dự án" ở form tạo lịch hẹn:** vẫn là `<select>` thường (PT-019 chỉ đổi ô "Dự án quan tâm" của khách sang combobox có tìm kiếm). Có muốn đổi sang combobox tìm kiếm không?
+23. **`viewport-fit=cover`:** `index.html` của web admin thiếu `viewport-fit=cover`. Chỉ ảnh hưởng PWA và khi xoay ngang (vùng an toàn của iPhone). Có thêm không?
+24. **Sidebar mobile (a11y, có từ trước):** khi đóng, sidebar mobile vẫn nằm trong thứ tự phím Tab. Có muốn xử lý không?
 
 ## 8. Definition of Done của v1.0.3
 
@@ -740,7 +774,9 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 - Mục 6 đã được Oniichan điền đủ các dòng áp dụng; mỗi dòng lỗi có mã `PT-NNN`.
 - Mỗi mục sửa code có test đi kèm và đã qua `qa-agent` review; mọi mục giao diện (FE) đã thử trên iPhone SE 375x667 và Safari iOS.
 - `06_Production_Deploy.md` đã cập nhật theo PT-007 và các thay đổi hạ tầng (PT-001, PT-002, PT-008, PT-009; PT-015 đã `Bỏ` nên không có phần cập nhật).
-- PT-022: BE đã bỏ kiểm 24 giờ và mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED` (test cập nhật), FE có nút Sửa, tài liệu 04, 05, 08 đã sửa đúng các dòng liệt kê ở mục PT-022; `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành không còn kết quả (trừ ghi chú lịch sử trong file này).
+- PT-022: BE đã bỏ kiểm 24 giờ và mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED` (test cập nhật), FE có nút Sửa, tài liệu 04, 05, 08 đã sửa đúng các dòng liệt kê ở mục PT-022; `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành không còn kết quả (trừ ghi chú lịch sử trong file này). **Tình trạng 2026-11-02:** các điều kiện này đã đạt trong repo; còn Oniichan thử nút Sửa trên máy thật.
+- **Tình trạng đáp ứng DoD ngày 2026-11-02:** 16 mục `Xong một phần` chỉ chuyển sang `Xong` khi đã kiểm đúng việc còn lại ghi ở từng mục (kiểm sau deploy trên VPS, hoặc Oniichan thử trên iPhone Safari thật, hoặc việc của Oniichan như baseline PT-027, ghim digest PT-009, runbook PT-016); PT-005 và PT-006 còn `Mới`. Với PT-023, cần thêm Oniichan xác nhận mục 7 câu 9, 19, 20; khi làm nhập CSV (M8) phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
+- PT-023: tài liệu 04 (field `statusAutoSource`, quy tắc nghiệp vụ) và 05 (response `autoStatusChange` của `PATCH /crm/customers/:id/criteria`) đã cập nhật; không còn chỗ nào khẳng định tiến độ không tự đổi tình trạng.
 - Nếu Oniichan duyệt PT-027: 6 tiêu chí nghiệm thu của mục đó đã đạt (qua `qa-agent`), gồm việc Dockerfile đưa số phiên bản app vào image (PT-014 đã `Bỏ`, phần này thuộc PT-027); lệnh `baseline` đã chạy một lần trên production (Oniichan/devops xác nhận sau khi kiểm chỉ-đọc); checklist phát hành ở [`README.md`](README.md) mục 5 đã bổ sung bước migration.
 - Số phiên bản đã nâng lên 1.0.3 trong `package.json` và lockfile của ba ứng dụng, và trong `app.json` (chỉ `RealEstateApp` có file này); bảng ở [`README.md`](README.md) đã cập nhật; tài liệu đổi nội dung đã cập nhật dòng "Phiên bản tài liệu".
 

@@ -23,6 +23,7 @@ import { FeatureFlagModule } from './shared/feature-flags/feature-flag.module';
 import { PiiCryptoModule } from './modules/crm/common/crypto/pii-crypto.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { TeamsModule } from './modules/teams/teams.module';
+import { MigrationsWarningModule } from './migrations/migrations-warning.module';
 
 @Module({
   imports: [
@@ -48,6 +49,8 @@ import { TeamsModule } from './modules/teams/teams.module';
     StorageModule,
     FeatureFlagModule,
     PiiCryptoModule,
+    // Chỉ ghi log cảnh báo nếu còn migration chờ (PT-027); không chạy migration, không chặn khởi động.
+    MigrationsWarningModule,
     ExternalLogModule,
     SharedModule,
     NewsFireCrawlManagerModule,

@@ -6,6 +6,7 @@
 import { Building2 } from 'lucide-react';
 import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
+import { SelectChevron } from '@crm/components/form/SelectChevron';
 import { CHIP_CLASS, CHIP_TONE_CLASS, getSelectClass, INPUT_ICON_CLASS } from '@crm/lib/uiClasses';
 import { getFieldId, isProjectEmphasizedType } from '../createAppointmentForm';
 import type { CreateAppointmentForm } from '../useCreateAppointmentForm';
@@ -67,6 +68,7 @@ export const ProjectField = ({ form }: ProjectFieldProps) => {
             ))
           )}
         </select>
+        <SelectChevron />
       </div>
     </FormField>
   );

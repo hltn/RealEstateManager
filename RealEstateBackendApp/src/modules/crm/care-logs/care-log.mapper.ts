@@ -14,7 +14,6 @@ export type AttachmentUrls = Map<string, string>;
 export const toCareLogResponse = (
   log: CareLogLean,
   actor: CrmActor,
-  now: Date,
   maps: Pick<RefMaps, 'users' | 'contactResults'>,
   urls: AttachmentUrls,
 ): CareLogResponseDto => ({
@@ -52,5 +51,5 @@ export const toCareLogResponse = (
     : null,
   source: log.source,
   editedAt: log.editedAt ? log.editedAt.toISOString() : null,
-  canEdit: canModifyCareLog(actor, log, now),
+  canEdit: canModifyCareLog(actor, log),
 });

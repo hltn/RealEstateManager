@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
-import { Connection } from 'mongoose';
+import { ClientSession, Connection, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import {
   CrmAuditAction,
   CrmAuditChange,
   CrmAuditEntityType,
+  CrmAuditSource,
 } from '../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
-import { CustomerAccessService } from './access/customer-access.service';
-import { CRITERIA_KEYS } from './customer.constants';
+import {
+  AccessContext,
+  CustomerAccessService,
+} from './access/customer-access.service';
+import { AUTO_STATUS_SOURCE, CRITERIA_KEYS } from './customer.constants';
 import {
   customerNotFound,
   resolveClientSource,
@@ -18,31 +22,43 @@ import {
 } from './customer.errors';
 import { toConsentResponse, toCriteriaResponse } from './customer.mapper';
 import { CustomerRefsService } from './customer-refs.service';
+import { CustomerStatusChangeService } from './customer-status-change.service';
 import { CustomersRepository } from './customers.repository';
 import {
   UpdateCriteriaDto,
   UpdateDataConsentDto,
 } from './dtos/customer-request.dto';
 import {
+  AutoStatusChangeDto,
   CriteriaUpdateResponseDto,
   DataConsentResponseDto,
 } from './dtos/customer-response.dto';
-import { computeProgress, mergeCriteria } from './utils/customer-rules.util';
+import {
+  computeProgress,
+  crossesAutoStatusThreshold,
+  decideAutoStatus,
+  mergeCriteria,
+} from './utils/customer-rules.util';
 
 /** Tiêu chí/tiến độ (C4, C5) và đồng ý xử lý dữ liệu cá nhân (PUT data-consent). */
 @Injectable()
 export class CustomerCriteriaService {
+  private readonly logger = new Logger(CustomerCriteriaService.name);
+
   constructor(
     @InjectConnection() private readonly connection: Connection,
     private readonly repo: CustomersRepository,
     private readonly access: CustomerAccessService,
     private readonly refs: CustomerRefsService,
     private readonly audit: CrmAuditLogService,
+    private readonly statusChange: CustomerStatusChangeService,
   ) {}
 
   /**
    * Cập nhật 1-4 tiêu chí; `progress` = số tiêu chí hoàn thành x 25 do server tính và ghi CÙNG lệnh update.
    * Gửi giá trị trùng giá trị hiện có là no-op (không tăng version, không audit).
+   * PT-023: khi tiến độ đổi, tự chuyển tình trạng (vượt lên 3/4 -> NET; xuống dưới 3/4 -> INTERESTED nếu NET do
+   * cơ chế tự động đặt) CÙNG transaction; lỗi ở bước đổi tình trạng làm rollback cả tiêu chí.
    */
   async updateCriteria(
     jwt: JwtPayload,
@@ -57,7 +73,14 @@ export class CustomerCriteriaService {
     return withTransaction(this.connection, async (session) => {
       const before = await this.repo.findOne(ctx.scope, id, {
         session,
-        projection: { criteria: 1, progress: 1, lastUpdatedAt: 1, __v: 1 },
+        projection: {
+          criteria: 1,
+          progress: 1,
+          lastUpdatedAt: 1,
+          __v: 1,
+          statusId: 1,
+          statusAutoSource: 1,
+        },
       });
       if (!before) throw customerNotFound();
       if (before.__v !== version) throw versionConflict(before.__v);
@@ -148,6 +171,19 @@ export class CustomerCriteriaService {
         session,
       );
 
+      const autoChange =
+        (before.progress ?? 0) !== progress
+          ? await this.applyAutoStatus(
+              ctx,
+              id,
+              before,
+              progress,
+              version + 1,
+              auditSource,
+              session,
+            )
+          : null;
+
       const maps = await this.refs.resolve({
         userIds: [
           ctx.actor.userId,
@@ -157,10 +193,78 @@ export class CustomerCriteriaService {
       return {
         criteria: toCriteriaResponse({ criteria: next }, maps.users),
         progress,
-        version: version + 1,
-        lastUpdatedAt: now.toISOString(),
+        version: autoChange?.version ?? version + 1,
+        lastUpdatedAt: autoChange?.lastUpdatedAt ?? now.toISOString(),
+        ...(autoChange ? { autoStatusChange: autoChange.change } : {}),
       };
     });
+  }
+
+  /**
+   * PT-023: quyết định + áp dụng tự chuyển tình trạng sau khi tiêu chí đã ghi (cùng `session`).
+   * `criteriaVersion` là `__v` vừa `$inc` ở bước ghi tiêu chí nên khóa lạc quan vẫn chặt.
+   * Trả `null` khi không cần đổi, hoặc tình trạng đích (NET/INTERESTED) thiếu/ngừng hoạt động
+   * (lúc đó chỉ log cảnh báo, KHÔNG làm hỏng lệnh sửa tiêu chí).
+   */
+  private async applyAutoStatus(
+    ctx: AccessContext,
+    id: string,
+    before: {
+      progress?: number;
+      statusId: Types.ObjectId;
+      statusAutoSource?: string | null;
+    },
+    nextProgress: number,
+    criteriaVersion: number,
+    auditSource: CrmAuditSource,
+    session: ClientSession,
+  ): Promise<{
+    change: AutoStatusChangeDto;
+    version: number;
+    lastUpdatedAt: string;
+  } | null> {
+    if (!crossesAutoStatusThreshold(before.progress ?? 0, nextProgress)) {
+      return null;
+    }
+    const currentMap = await this.refs.resolve({
+      statusIds: [before.statusId],
+    });
+    const current = currentMap.statuses.get(String(before.statusId));
+    if (!current) return null;
+
+    const target = decideAutoStatus({
+      prevProgress: before.progress ?? 0,
+      nextProgress,
+      currentGroup: current.listGroup,
+      currentCode: current.code,
+      isAutoSet: !!before.statusAutoSource,
+    });
+    if (!target) return null;
+
+    const targetId = await this.refs.findActiveStatusByCode(target, session);
+    if (!targetId) {
+      this.logger.warn(
+        `Bỏ qua tự chuyển tình trạng khách ${id}: không có tình trạng "${target}" đang hoạt động`,
+      );
+      return null;
+    }
+
+    const result = await this.statusChange.applyChange(
+      ctx,
+      id,
+      targetId,
+      {
+        version: criteriaVersion,
+        autoSource: target === 'NET' ? AUTO_STATUS_SOURCE : undefined,
+      },
+      auditSource,
+      session,
+    );
+    return {
+      change: { from: current, to: result.status },
+      version: result.version,
+      lastUpdatedAt: result.lastUpdatedAt,
+    };
   }
 
   /** Ghi nhận/rút lại đồng ý xử lý dữ liệu cá nhân (không dùng khóa lạc quan; có audit). */

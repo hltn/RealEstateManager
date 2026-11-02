@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import {
+  AUTO_STATUS_SOURCE,
+  AutoStatusSource,
   CareRole,
   ConsentMethod,
   ConsentStatus,
@@ -178,6 +180,18 @@ export class Customer {
 
   @Prop({ type: Date, required: true })
   statusChangedAt: Date;
+
+  /**
+   * PT-023: dấu hiệu "tình trạng NET do cơ chế tự động (tiến độ 3/4 tiêu chí) đặt". Mọi lần đổi tình trạng thủ công
+   * (PATCH /status, hàng loạt, hoàn tác) xóa dấu này. Thiếu field = `null` = không do tự động (tương thích ngược,
+   * không cần migration). Không đánh index (không dùng để lọc), không expose ra API.
+   */
+  @Prop({
+    type: String,
+    enum: [AUTO_STATUS_SOURCE],
+    default: null,
+  })
+  statusAutoSource?: AutoStatusSource | null;
 
   @Prop({ type: Types.ObjectId, default: null })
   sourceId: Types.ObjectId | null;

@@ -189,6 +189,14 @@ export interface UpdateStatusResult {
   lastUpdatedAt: string;
 }
 
+/** Kết quả `PATCH /crm/customers/:id/criteria` (PT-023): `autoStatusChange` chỉ có khi tình trạng vừa TỰ đổi theo tiến độ; khi đó `version` là version SAU CÙNG. */
+export interface UpdateCriteriaResult {
+  progress: number;
+  version: number;
+  lastUpdatedAt: string;
+  autoStatusChange?: { from: StatusRef | null; to: StatusRef };
+}
+
 /** Thao tác hàng loạt (`POST /crm/customer-bulk-operations`, 05 §2.3). `primaryUserId` bắt buộc với khách chưa có phụ trách chính. */
 export type BulkOperation =
   | { type: 'CHANGE_STATUS'; customerIds: string[]; statusId: string }
@@ -274,7 +282,7 @@ export interface CareLogView {
   images: GalleryImage[];
   attachmentIds: string[];
   editedAt: string | null;
-  /** Người gọi còn quyền sửa/xóa (tác giả trong 24 giờ, Quản trị, Quản lý trong phạm vi). */
+  /** Người gọi còn quyền sửa/xóa (tác giả, Quản trị, Quản lý trong phạm vi; BE tính, FE không kiểm giờ). */
   canEdit: boolean;
 }
 

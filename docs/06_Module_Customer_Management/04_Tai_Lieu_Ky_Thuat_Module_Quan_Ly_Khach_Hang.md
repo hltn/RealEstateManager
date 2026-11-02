@@ -18,7 +18,7 @@
 | Thay 3 sheet DSKH / DSKH_DROP / DSKH_NET | Một collection `customers` + **tình trạng** (`statusId`) thuộc một nhóm danh sách (`NOT_CONTACTED` / `INTERESTED` / `NET` / `DROPPED`; thêm tab ảo `ALL`). Đổi tình trạng là đổi danh sách hiển thị (C6, quy tắc 2) |
 | Nhiều người cùng chăm sóc, đúng 1 phụ trách chính | `careTeam[]` nhúng trong khách + bất biến "đúng 1 PRIMARY" kiểm ở service (C8, quy tắc 7) |
 | Phân quyền theo khách được phân | Bộ lọc phạm vi (row-level scope) bắt buộc ở tầng repository, không chỉ guard (X1, quy tắc 6) |
-| Tự động hóa việc làm tay | Tiến độ (C5), `lastUpdatedAt` (C7), chống trùng SĐT (X2), nhắc lịch (C3, C13, X5) đều do server tính |
+| Tự động hóa việc làm tay | Tiến độ (C5), `lastUpdatedAt` (C7), chống trùng SĐT (X2), nhắc lịch (C3, C13, X5) đều do server tính; từ v1.0.3 tiến độ đạt 3/4 tiêu chí còn tự đổi tình trạng khách (mục 6.2a) |
 | Chân dung động | `persona_fields` do Quản trị cấu hình (X10) + giá trị lưu kiểu attribute pattern có metadata người/ngày/nguồn (quy tắc 9) |
 | Di động có đẩy thông báo | App Expo (iOS/Android) + FCM HTTP v1 (APNs qua Firebase) + hộp thông báo trong app (X5, X9). **Giai đoạn 1 chỉ có hộp thông báo trong app (Web Admin chạy API thật); FCM, `device_tokens` và app di động làm ở giai đoạn 2** (thiết kế giữ nguyên, chỉ để cấu hình/placeholder) |
 
@@ -195,6 +195,7 @@ erDiagram
 | `email` | string \| null (trim, lowercase, ≤ 254, định dạng email) | Không | Email khách (**không unique**, không bắt buộc). Là dữ liệu cá nhân: không ghi vào log ứng dụng, không đưa vào payload push | C1 |
 | `statusId` | ObjectId → `customer_statuses` | Có | Mặc định trạng thái `isDefault` ("Chưa tiếp cận") | C1, C6 |
 | `statusChangedAt` | Date | Có | Lần đổi tình trạng gần nhất | C6 |
+| `statusAutoSource` | enum `['CRITERIA_PROGRESS']` \| null | Không (mặc định `null`; **không index**; **không trả ra API**) | Dấu "tình trạng hiện tại do cơ chế tự đổi theo tiến độ đặt" (v1.0.3, PT-023). Thiếu hoặc `null` = không phải do tự động (tương thích ngược, **không cần migration**). Đặt khi tự lên `NET`; xóa mỗi khi tình trạng đổi bằng đường khác hoặc khi tự hạ về `INTERESTED`. Cơ chế: mục 6.2a | C6, PT-023 |
 | `sourceId` | ObjectId → `catalog_items` (LEAD_SOURCE) \| null | Không | Nguồn khách | C1 |
 | `interestedProjectIds` | ObjectId[] → `projects` | Không | Nhiều dự án | C1 |
 | `areaId` | ObjectId → `areas` \| null | Không | Nơi khách đang ở | C1 |
@@ -203,7 +204,7 @@ erDiagram
 | `nationalIdLast4` | string \| null | Không | 4 số cuối để hiển thị `••••1234` | C9 |
 | `hasNationalId` | boolean | Có | Cho UI biết có CCCD | C9 |
 | `criteria` | `{ demand, motivation, finance, timing }` mỗi cái `{ isDone: boolean, description: string ≤1000, updatedBy, updatedAt }` | Có (mặc định `isDone=false`) | 4 tiêu chí Nhu cầu / Động cơ / Tài chính / Thời gian | C4 |
-| `progress` | number ∈ {0,25,50,75,100} | Có | **Server tính** = số `isDone` × 25, ghi cùng lệnh update tiêu chí; không nhận từ client | C5, QT1 |
+| `progress` | number ∈ {0,25,50,75,100} | Có | **Server tính** = số `isDone` × 25, ghi cùng lệnh update tiêu chí; không nhận từ client. **Từ v1.0.3** khi `progress` đổi, server có thể tự đổi tình trạng khách theo tiến độ (mục 6.2a) | C5, QT1, PT-023 |
 | `careTeam` | `[{ userId, role: 'PRIMARY'\|'MEMBER', addedBy, addedAt }]` | Không | Nhóm chăm sóc. **Bất biến:** nếu không rỗng thì đúng 1 `PRIMARY`, `userId` không trùng | C8, QT7 |
 | `primaryAssigneeId` | ObjectId \| null | Không | Phi chuẩn hóa từ `careTeam` để lọc/sort/thống kê nhanh | C8, X3, X6 |
 | `teamIds` | ObjectId[] | Không | Hợp các `teamId` của thành viên `careTeam`; nếu `careTeam` rỗng thì = nhóm của người tạo. Dùng cho phạm vi Quản lý | QT6 |
@@ -419,8 +420,8 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Kiểm tra trùng SĐT (chỉ biết "do [tên] chăm sóc") | ✓ | ✓ | ✓ | ✓ | X2 |
 | Tạo khách (NV tạo ⇒ tự là phụ trách chính) | ✓ | ✓ | ✓ | ✓ | C1, QT7 |
 | Sửa hồ sơ, tiêu chí, chân dung, thẻ; ghi nhật ký; đổi tình trạng | ✓ | P | ✓ | ✓ | QT7 |
-| Sửa / xóa nhật ký | ✓ | P | TG (trong 24 giờ) | TG (trong 24 giờ) | C2 |
-| Đính kèm ảnh vào nhật ký (tối đa 5/ghi chú); gỡ ảnh | ✓ | P | ✓; gỡ: TG (24 giờ) | ✓; gỡ: TG (24 giờ) | C2 |
+| Sửa / xóa nhật ký | ✓ | P | TG | TG | C2 |
+| Đính kèm ảnh vào nhật ký (tối đa 5/ghi chú); gỡ ảnh | ✓ | P | ✓; gỡ: TG | ✓; gỡ: TG | C2 |
 | Thêm thành viên chăm sóc | ✓ | P | ✓ **[Giả định]** | — | C8 |
 | Gỡ thành viên (không phải phụ trách chính) | ✓ | P | ✓ **[Giả định]** | — | C8 |
 | Đổi phụ trách chính; gỡ phụ trách chính (bắt buộc chọn người thay) | ✓ | P | — | — | QT7 |
@@ -568,6 +569,31 @@ sequenceDiagram
   end
   Note over FE: React Query invalidate list-counts → khách tự xuất hiện ở tab đúng (không xóa, không chuyển dữ liệu)
 ```
+
+Lưu ý (v1.0.3, PT-023): lệnh `PATCH /status`, đổi hàng loạt và Hoàn tác **xóa** dấu `statusAutoSource` (đổi tay thì không còn là "do tự động đặt"), kể cả khi đổi tay thành `NET`.
+
+### 6.2a Tự đổi tình trạng theo tiến độ (PT-023, v1.0.3)
+
+**Quy tắc nghiệp vụ** (Oniichan chốt 2026-11-02; 3 điểm (a) không thông báo, (b) chỉ đè khi nhóm `NOT_CONTACTED`/`INTERESTED`, (c) không lùi/đè trạng thái cao hơn là **giả định tạm đã áp dụng**, chờ xác nhận, xem `docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mục 7 câu 9, 19, 20):
+
+- Chỉ xét khi lần cập nhật làm `progress` **thực sự đổi**. Đủ **3/4** tiêu chí bất kỳ (`progress = 75`):
+  - `progress` **VƯỢT LÊN đúng 75** (từ dưới 75) và tình trạng hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED` ⇒ tự chuyển hẳn sang `NET` ("Khách net") và đặt `statusAutoSource = 'CRITERIA_PROGRESS'`.
+  - `progress` tụt từ 75 trở lên xuống **dưới 75** và tình trạng hiện tại là `NET` **do cơ chế này đặt** (có `statusAutoSource`) ⇒ tự về `INTERESTED` ("Có quan tâm"), xóa dấu. Hạ từ 3/4 hoặc 4/4 xuống 1/4 hay 0/4 cũng là dưới ngưỡng.
+- **Không làm gì** khi: đủ 4/4 (kể cả 0/25/50 lên 100); 100 xuống 75 (không phải "vượt lên", tránh đè tình trạng đã đổi tay); khách đang `DROPPED` hoặc ở nhóm cao hơn; `NET` do đổi tay hoặc có sẵn (không có dấu) khi hạ tiêu chí; `progress` không đổi (chỉ sửa mô tả).
+- **Chỉ** `PATCH /crm/customers/:id/criteria` kích hoạt. Nhập CSV và đổi hàng loạt **không** kích hoạt. **Lưu ý:** backend hiện **chưa có** nhập CSV (M8); khi làm M8 phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
+- Tình trạng cũ dạng tùy biến (Quản trị thêm) thuộc nhóm `INTERESTED`/`NOT_CONTACTED` vẫn bị đè thành `NET`, và khi hạ thì khách về `INTERESTED` của hệ thống chứ không về tình trạng cũ (mục 7 câu 20 của tài liệu phiên bản).
+
+**Cơ chế (backend):**
+
+- Tái dùng `CustomerStatusChangeService.applyChange` (cùng `session`, kiểm khóa lạc quan `version`) trong **cùng transaction** với cập nhật tiêu chí; tiêu chí và tình trạng nguyên tử, lỗi bước đổi tình trạng làm rollback cả hai. Quyết định bằng một hàm thuần (`decideAutoStatus`) nhận tiến độ trước/sau, nhóm và mã tình trạng hiện tại, có dấu `statusAutoSource` hay không.
+- Tìm tình trạng đích theo `code` (`NET`, `INTERESTED`) đang hoạt động, chưa xóa. Nếu danh mục thiếu thì **bỏ qua** việc tự đổi (tiêu chí vẫn lưu, trả 200, log cảnh báo).
+- **Field `customers.statusAutoSource`:** optional, enum `['CRITERIA_PROGRESS']`, mặc định `null`, **không index**, **không trả ra API**; **không cần migration** (thiếu = `null`). Mọi đổi tay xóa dấu (xem 6.2); `applyChange` nhận tham số `autoSource` để đặt dấu.
+- **Audit:** 2 bản ghi `CRITERIA_UPDATED` và `STATUS_CHANGED` trong cùng transaction, **cùng actor là người tick tiêu chí**, `reason` null; `STATUS_CHANGED` có thêm phần tử `changes` `{ field: 'statusAutoSource', ... }`. Không đổi schema audit.
+- **Version:** cập nhật tiêu chí tăng `__v` một lần, đổi tình trạng tăng thêm một lần nên `version` trả về = `version` gửi lên + 2.
+
+**API:** response `PATCH /crm/customers/:id/criteria` thêm `autoStatusChange?: { from: StatusRef|null, to: StatusRef }` (chỉ khi vừa tự đổi); `version`/`lastUpdatedAt` là giá trị sau cùng. Request không đổi; tương thích ngược. Chi tiết ở tài liệu 05.
+
+**Frontend:** khi response có `autoStatusChange`, hiện toast 6 giây nêu tình trạng cũ và mới kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí); **không có Hoàn tác 10 giây** (hoàn tác riêng tình trạng làm lệch quy tắc 3/4 và dấu đã bị xóa; muốn đảo thì bỏ tick tiêu chí hoặc đổi tay). Lịch sử thay đổi hiện chip "Tự động theo tiến độ". Ghi dữ liệu CRM ở FE đã làm mới toàn bộ truy vấn liên quan nên không cần thêm bước làm mới.
 
 ### 6.3 Phân khách & gửi push (C8, QT7, QT8, X5)
 
