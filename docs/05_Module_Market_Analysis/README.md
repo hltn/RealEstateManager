@@ -1,5 +1,7 @@
 # 05 — Module Phân tích thị trường
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Báo cáo phân tích thị trường và xuất báo cáo lên Google Drive.
 
 | # | Tài liệu | Loại | Nội dung |

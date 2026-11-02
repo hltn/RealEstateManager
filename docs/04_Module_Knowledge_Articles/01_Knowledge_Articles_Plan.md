@@ -1,5 +1,7 @@
 # Kế hoạch: Knowledge Articles — Auto-Write & Publish to WordPress
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Ngày tạo: 2026-08-16
 > Module: knowledge-articles (mới) + settings (mở rộng)
 > Trạng thái: Draft

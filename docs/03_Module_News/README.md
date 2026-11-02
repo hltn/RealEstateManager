@@ -1,5 +1,7 @@
 # 03 — Module Tin tức (NewsFireCrawlManager)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Thu thập tin BĐS từ các trang báo, lọc bằng AI, biên tập và đăng lên WordPress; kèm tính năng phát hiện bài trùng nội dung.
 
 | # | Tài liệu | Loại | Nội dung |

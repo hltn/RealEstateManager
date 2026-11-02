@@ -1,5 +1,7 @@
 # NewsFireCrawlManager — Data Model
 
+> **Phiên bản tài liệu:** v1.0.1
+
   
 
 Tài liệu này mô tả **schema thật** (đã verify trực tiếp từ code tại thời điểm 2026-07-27) của module `news-fire-crawl-manager`. Đây là tài liệu tham chiếu duy nhất cho phần Database — `00_Project_Overview/02_Technical_Design.md` không nhắc lại code schema, chỉ trỏ sang file này.

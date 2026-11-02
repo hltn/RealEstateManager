@@ -1,5 +1,7 @@
 # Kế Hoạch Dự Án: Module NewsFireCrawlManager
 
+> **Phiên bản tài liệu:** v1.0.1
+
   
 
 > Tài liệu này là **Project Plan** (vai trò PM), mô tả mục tiêu, phạm vi, thứ tự triển khai và tiêu chí nghiệm thu. Chi tiết kỹ thuật (DB schema, API contract, kiến trúc service, luồng xử lý cronjob) không nằm trong tài liệu này — xem `00_Project_Overview/02_Technical_Design.md`.

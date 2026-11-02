@@ -1,5 +1,7 @@
 # Thiết kế Content Deduplication — Phát hiện bài viết trùng lặp nội dung
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Ngày tạo: 2026-08-14
 > Module: news-fire-crawl-manager
 > Trạng thái: Draft

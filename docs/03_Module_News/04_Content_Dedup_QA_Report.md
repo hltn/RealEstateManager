@@ -1,5 +1,7 @@
 # Content Dedup — QA Review Report
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Date: 2026-08-14
 > Reviewer: qa-agent
 > Branches reviewed: t_fccb88c8 (BE), t_e3246daf (FE)

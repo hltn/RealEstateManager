@@ -1,5 +1,7 @@
 # Thiết kế giao diện: Module Quản lý khách hàng (tích hợp vào app STND hiện có)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Tài liệu mô tả cách thiết kế giao diện để module **hòa vào app hiện có**, dựa trên ảnh chụp trang "Quản lý Đăng tin WordPress". Toàn bộ phần quản lý khách hàng nằm trong **một tab ở menu bên trái**. Các mục đánh dấu **[Đề xuất]** cần bạn chốt.
 
 ## 1. Nguyên tắc

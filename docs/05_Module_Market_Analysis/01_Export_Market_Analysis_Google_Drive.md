@@ -1,5 +1,7 @@
 # Kế hoạch: Export Báo Cáo Phân Tích Thị Trường lên Google Drive
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Ngày tạo: 2026-08-15
 > Module: news-fire-crawl-manager
 > Trạng thái: Draft

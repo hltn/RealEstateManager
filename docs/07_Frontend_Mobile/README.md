@@ -1,5 +1,7 @@
 # 07 — Frontend di động
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Ứng dụng di động React Native (Expo) và thiết kế giao diện.
 
 | # | Tài liệu | Loại | Nội dung |

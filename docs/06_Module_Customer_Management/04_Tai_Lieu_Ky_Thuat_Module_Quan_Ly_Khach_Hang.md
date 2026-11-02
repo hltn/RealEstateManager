@@ -1,5 +1,7 @@
 # Tài liệu kỹ thuật: Module Quản lý & chăm sóc khách hàng (CRM)
 
+> **Phiên bản tài liệu:** v1.0.2
+
 > **Phạm vi:** giai đoạn 1 của [`01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md`](01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md) (C1–C14, X1–X11, quy tắc mục 4, yêu cầu chung mục 5). **Nhập dữ liệu 3 sheet cũ (DSKH, DSKH_DROP, DSKH_NET) hoãn sang giai đoạn sau** (D7). Zalo (3.3) và ghi âm (3.4) chỉ phác thảo ở [mục 8](#8-giai-đoạn-sau-zalo-ghi-âm--phác-thảo).
 > **Danh sách API đầy đủ:** [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md).
 > **Chuẩn áp dụng:** skill `nodejs-react-mongo-coding-guidelines` (naming, `/api/v1`, Swagger, phân trang `{ data, meta }`, lỗi `{ statusCode, message, timestamp, path }`, soft delete, transaction, audit trail, queue, Correlation ID).
@@ -218,7 +220,7 @@ erDiagram
 | `createdVia` | `'WEB'\|'MOBILE'\|'IMPORT'` | Có | Kênh tạo (`IMPORT` = nhập file chung) | X8 |
 | `legacy` | `{ sheet, rowNumber, importJobId }` | Không | **Hoãn giai đoạn sau (D7)** — chưa tạo ở giai đoạn 1; thêm sau là tương thích ngược (field mới, tùy chọn). Truy vết dữ liệu cũ từ 3 sheet | X8 |
 | `deletedAt`, `deletedBy`, `anonymizedAt` | Date/ObjectId | Không | Soft delete; ẩn danh hóa khi khách yêu cầu xóa dữ liệu | §5 |
-| `purgingAt` | Date | Không (không index; bản ghi cũ không có thì coi như null) | v1.0.3 mục D: khách đang **xóa vĩnh viễn** (đặt nguyên tử trước khi xóa file; khôi phục/ẩn danh hóa bị chặn 409 `CUSTOMER_PURGE_IN_PROGRESS`; không hết hạn, chỉ mất khi bản ghi bị xóa) | tài liệu 09 §7 |
+| `purgingAt` | Date | Không (không index; bản ghi cũ không có thì coi như null) | v1.0.2 mục D: khách đang **xóa vĩnh viễn** (đặt nguyên tử trước khi xóa file; khôi phục/ẩn danh hóa bị chặn 409 `CUSTOMER_PURGE_IN_PROGRESS`; không hết hạn, chỉ mất khi bản ghi bị xóa) | tài liệu 09 §7 |
 | `__v` | number | — | Bật `optimisticConcurrency` — client gửi `version` khi PATCH, lệch thì 409 `VERSION_CONFLICT` (nhiều người cùng sửa) | QT7 |
 
 > **Không có mã khách hàng** (quyết định #2): không field `customerCode`, không unique/index, không cột trong import/export, không filter. Khách nhận diện bằng `_id` (nội bộ), họ tên và SĐT (duy nhất).
@@ -368,7 +370,7 @@ Mặc định bật tất cả, trừ `STALE_CUSTOMER` cho thành viên không p
 
 | Collection | Field chính | Index |
 |---|---|---|
-| `crm_audit_logs` (bất biến, không có API sửa/xóa; **ngoại lệ nội bộ**: ẩn danh hóa khách ghi đè PII trong audit của khách đó, xóa vĩnh viễn khách (v1.0.3 mục D) xóa mọi audit của khách đó và để lại đúng một dòng `CUSTOMER_PURGED` không PII) | `entityType: 'CUSTOMER'\|'CARE_LOG'\|'ATTACHMENT'\|'APPOINTMENT'\|'CATALOG'\|'PROJECT'\|'PERSONA_FIELD'\|'TAG'\|'TEAM'\|'USER'\|'IMPORT'\|'EXPORT'\|'SETTINGS'`, `entitySubtype?` (vd `CUSTOMER_STATUS`/`LEAD_SOURCE`/`CONTACT_RESULT`/`AREA` khi `entityType = CATALOG`), `entityId`, `customerId?`, `action` (3.7.1), `actorId`, `actorName`, `actorRole`, `changes: [{ field, from, to }]` (**lưu giá trị trường**, kể cả SĐT cũ → mới đầy đủ, xem 7.3; CCCD luôn che), `reason?`, `source: 'WEB'\|'MOBILE'\|'IMPORT'\|'SYSTEM'`, `requestId`, `ip?`, `userAgent?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ actorId: 1, createdAt: -1 }`; `{ action: 1, createdAt: -1 }`; `{ entityType: 1, entityId: 1, createdAt: -1 }` |
+| `crm_audit_logs` (bất biến, không có API sửa/xóa; **ngoại lệ nội bộ**: ẩn danh hóa khách ghi đè PII trong audit của khách đó, xóa vĩnh viễn khách (v1.0.2 mục D) xóa mọi audit của khách đó và để lại đúng một dòng `CUSTOMER_PURGED` không PII) | `entityType: 'CUSTOMER'\|'CARE_LOG'\|'ATTACHMENT'\|'APPOINTMENT'\|'CATALOG'\|'PROJECT'\|'PERSONA_FIELD'\|'TAG'\|'TEAM'\|'USER'\|'IMPORT'\|'EXPORT'\|'SETTINGS'`, `entitySubtype?` (vd `CUSTOMER_STATUS`/`LEAD_SOURCE`/`CONTACT_RESULT`/`AREA` khi `entityType = CATALOG`), `entityId`, `customerId?`, `action` (3.7.1), `actorId`, `actorName`, `actorRole`, `changes: [{ field, from, to }]` (**lưu giá trị trường**, kể cả SĐT cũ → mới đầy đủ, xem 7.3; CCCD luôn che), `reason?`, `source: 'WEB'\|'MOBILE'\|'IMPORT'\|'SYSTEM'`, `requestId`, `ip?`, `userAgent?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ actorId: 1, createdAt: -1 }`; `{ action: 1, createdAt: -1 }`; `{ entityType: 1, entityId: 1, createdAt: -1 }` |
 | `import_mapping_templates` | `code` (người dùng tự đặt; **mẫu hệ thống `DSKH`/`DSKH_DROP`/`DSKH_NET` hoãn giai đoạn sau, D7**), `name`, `defaultStatusCode`, `columns: [{ header, aliases[], target, transform? }]`, `isSystem` | `{ code: 1 }` unique |
 | `import_jobs` | `fileKey`, `originalFileName`, `mimeType`, `size`, `sheetName?`, `mappingTemplateId`, `mappingSnapshot`, `options: { duplicatePolicy: 'SKIP'\|'FILL_EMPTY'\|'OVERWRITE', assigneeMapping[], defaultPrimaryUserId?, defaultTeamId? }`, `isDryRun`, `status: 'UPLOADED'\|'VALIDATING'\|'VALIDATED'\|'IMPORTING'\|'COMPLETED'\|'FAILED'\|'CANCELED'`, `progress: { total, processed }`, `summary: { valid, created, updated, skipped, duplicateInFile, duplicateInDb, errors }`, `errorFileKey?`, `createdBy`, `startedAt?`, `finishedAt?` | `{ createdBy: 1, createdAt: -1 }`; `{ status: 1 }` |
 | `import_job_rows` (tạm) | `jobId`, `rowNumber`, `sheet`, `data` (đã map, **CCCD đã mã hóa/che**), `status: 'VALID'\|'ERROR'\|'DUPLICATE_IN_FILE'\|'DUPLICATE_IN_DB'\|'CREATED'\|'UPDATED'\|'SKIPPED'`, `messages[]`, `customerId?` | `{ jobId: 1, rowNumber: 1 }`; `{ jobId: 1, status: 1 }`; TTL 30 ngày |
@@ -390,7 +392,7 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 | `users` | Thêm enum `MANAGER`, `STAFF` vào `role`; thêm `teamId: ObjectId \| null` (default `null`), index `{ teamId: 1, status: 1 }` | Không — user cũ giữ `ADMIN`/`EDITOR`, `teamId=null`. M1 chỉ gán/gỡ nhóm + audit; **đồng bộ `customers.teamIds` khi đổi nhóm thuộc M2** |
 | — | Không đổi kiểu, không xóa field nào | — |
 
-> Cập nhật: `users` có thêm `roles[]`, `teamIds[]` (`role`/`teamId` thành trường suy ra) và khu vực đổi sang 34 tỉnh thành; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật: `users` có thêm `roles[]`, `teamIds[]` (`role`/`teamId` thành trường suy ra) và khu vực đổi sang 34 tỉnh thành; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 ---
 
@@ -405,7 +407,7 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 | Nhân viên chăm sóc | `STAFF` | Chỉ khách có mình trong `careTeam` (PRIMARY hoặc MEMBER) |
 | (Biên tập tin tức) | `EDITOR` | **Không có quyền CRM** — `@Roles(ADMIN, MANAGER, STAFF)` trên mọi controller CRM |
 
-> Cập nhật: một tài khoản có thể có nhiều role (quyền theo role CRM cao nhất) và STAFF có thêm quyền xóa khách "Bỏ" mình phụ trách chính; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật: một tài khoản có thể có nhiều role (quyền theo role CRM cao nhất) và STAFF có thêm quyền xóa khách "Bỏ" mình phụ trách chính; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 ### 4.2 Ma trận vai trò × hành động
 
@@ -463,7 +465,7 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Dữ liệu trả về | `.select()` tường minh (`nationalId` `select:false`; `searchText` không bao giờ trả); DTO response map tay (không ném nguyên document). SĐT trong list/detail luôn là `phoneMasked`; số đầy đủ chỉ qua `phone-views` (đã kiểm scope + ghi `PHONE_VIEWED`) |
 | Kiểm thử | E2E bảng ma trận 4.2 × 4 vai trò; test riêng "NV bị gỡ khỏi nhóm ⇒ 404 ở mọi endpoint con" |
 
-> Cập nhật: `CrmActor`/`buildScope` theo role CRM cao nhất khi có nhiều role, `customers.teamIds` = hợp `teamIds[]` của thành viên `careTeam`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật: `CrmActor`/`buildScope` theo role CRM cao nhất khi có nhiều role, `customers.teamIds` = hợp `teamIds[]` của thành viên `careTeam`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 ---
 

@@ -1,5 +1,5 @@
 /**
- * F9 - Thành viên nhóm (v1.0.3 mục C): Admin xem, thêm, gỡ thành viên ngay dưới dòng nhóm ở Cài đặt CRM > Nhóm.
+ * F9 - Thành viên nhóm (v1.0.2 mục C): Admin xem, thêm, gỡ thành viên ngay dưới dòng nhóm ở Cài đặt CRM > Nhóm.
  * Dùng tài khoản RIÊNG tạo bằng API; chỉ thêm/gỡ chính tài khoản đó vào nhóm 2 (không đụng tài khoản seed dùng chung).
  * Kiểm UX: panel mở tại chỗ (không rời màn), số thành viên của nhóm cập nhật, quản lý nhóm hiện badge, backend ghi đúng teamIds.
  */

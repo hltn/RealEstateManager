@@ -1,5 +1,7 @@
 # Design System của web admin STND Real Estate Manager (rút từ code)
 
+> **Phiên bản tài liệu:** v1.0.2
+
 > **Nguồn duy nhất:** mã nguồn `RealEstateAdminApp/` (đọc ngày 21/10/2026). Mọi quy tắc đều dẫn `file:dòng`, đường dẫn tính từ `RealEstateAdminApp/src/` nếu không ghi khác. Không suy từ ảnh chụp.
 >
 > **Phạm vi:** phong cách của toàn bộ web admin, dùng làm chuẩn cho module Quản lý khách hàng (CRM). Mục 9 so sánh với bản cũ, mục 10 liệt kê thứ mà 2 thiết kế Stitch cần nhưng Admin App chưa có.

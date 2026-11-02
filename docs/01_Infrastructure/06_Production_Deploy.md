@@ -1,5 +1,7 @@
 # 06 — Triển khai production (Docker Compose)
 
+> **Phiên bản tài liệu:** v1.0.2
+
 Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài liệu này mô tả kiến trúc, biến môi trường, cách triển khai mới, **quy trình nâng cấp từ bản Mongo standalone cũ**, sao lưu và xử lý sự cố. Stack dev (`RealEstateBackendApp/docker-compose.dev.yml`, project `realestate-dev`) là hệ thống riêng, không bị ảnh hưởng.
 
 > Trạng thái kiểm chứng:

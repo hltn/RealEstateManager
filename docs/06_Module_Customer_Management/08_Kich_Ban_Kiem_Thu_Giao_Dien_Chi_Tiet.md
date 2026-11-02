@@ -1,5 +1,7 @@
 # Kịch bản kiểm thử giao diện chi tiết - Module CRM
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Trạng thái (2026-10-26): **Đã có spec chạy thật** (`RealEstateAdminApp/e2e/specs/`, kết quả ở mục 7.3 và 8). Bổ sung cho [`07_Ke_Hoach_Kiem_Thu_Giao_Dien_Tu_Dong.md`](07_Ke_Hoach_Kiem_Thu_Giao_Dien_Tu_Dong.md) (kế hoạch, tiêu chí UX mục 1.1, bảng gap G1-G7, luồng F1-F7). Nhãn nút, đường dẫn, thông báo dưới đây lấy từ code ở `RealEstateAdminApp/src/modules/crm/` (đối chiếu 2026-10-25). Chỗ code chưa rõ ghi **[Chưa rõ]**, tổng hợp ở mục 7.
 
 ## 1. Quy ước chung

@@ -1,5 +1,7 @@
 # Theo dõi milestone: Module Quản lý & chăm sóc khách hàng (CRM)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Cập nhật lần cuối: **2026-10-24 (M5 xong dev, chờ QA; M4 đã qua QA vòng 1)**. Thiết kế chi tiết từng milestone ở [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) mục 10; quyết định đã chốt ở mục 11 của tài liệu 04; API ở [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) (116 endpoint).
 > Ký hiệu trạng thái: `[ ]` Chưa làm · `[~]` Đang làm · `[x]` Xong.
 

@@ -1,5 +1,7 @@
 # 02 — Module Xác thực (Auth)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Đăng nhập, phân quyền theo vai trò, JWT stateless (access + refresh token).
 
 | # | Tài liệu | Loại | Nội dung |

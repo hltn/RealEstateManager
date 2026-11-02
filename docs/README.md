@@ -1,6 +1,10 @@
 # Tài liệu dự án Real Estate Manager
 
+> **Phiên bản tài liệu:** v1.0.2
+
 Đây là chỉ mục tổng của toàn bộ tài liệu dự án. Tài liệu được tổ chức theo **Tổng thể → Hạ tầng → Từng module → Frontend**, mỗi thư mục và mỗi file đều đánh số để đọc theo thứ tự.
+
+**Phiên bản hiện tại: v1.0.2** (đang chạy production từ 2026-11-02). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
 
 ## Dự án gồm những gì
 
@@ -22,6 +26,7 @@
 | 📊 [`05_Module_Market_Analysis/`](05_Module_Market_Analysis/README.md) | Phân tích thị trường, xuất báo cáo lên Google Drive |
 | 👥 [`06_Module_Customer_Management/`](06_Module_Customer_Management/README.md) | Quản lý và chăm sóc khách hàng (module mới) |
 | 📱 [`07_Frontend_Mobile/`](07_Frontend_Mobile/README.md) | Ứng dụng di động React Native và thiết kế UI |
+| 🏷️ [`08_Quan_Ly_Phien_Ban/`](08_Quan_Ly_Phien_Ban/README.md) | Mục lục phiên bản (hệ thống, ứng dụng, tài liệu), quy trình phát hành, việc cần sửa sau test production |
 | 🗄️ [`archive/`](archive/README.md) | Tài liệu lịch sử: intent, spec/plan theo ngày, mockup |
 | 🧩 [`_templates/`](_templates/) | Mẫu cho tài liệu mới |
 
@@ -43,7 +48,8 @@ Plan (PM) → Research → Architecture / Design / Data Model → QA Report
 
 - **Tên thư mục:** `NN_Ten_Nhom/` — `NN` là số thứ tự 2 chữ số. Module nghiệp vụ bắt đầu bằng `Module_`.
 - **Tên file:** `NN_Ten_Tai_Lieu.md` — số thứ tự theo vòng đời (Plan trước, Design sau, QA cuối).
-- **Thêm module mới:** tạo `08_Module_Ten/`, kèm `README.md`, dùng mẫu trong `_templates/`.
+- **Thêm module mới:** tạo `09_Module_Ten/` (số 08 đã dành cho `08_Quan_Ly_Phien_Ban/`), kèm `README.md`, dùng mẫu trong `_templates/`.
+- **Phiên bản tài liệu:** mọi tài liệu có dòng `> **Phiên bản tài liệu:** vX.Y.Z` ngay dưới tiêu đề. Đổi nội dung tài liệu thì cập nhật dòng này **và** bảng phiên bản tài liệu ở [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
 - **Tham chiếu chéo:** ghi đường dẫn tính từ `docs/` (ví dụ `03_Module_News/02_News_Module_Data_Model.md`); với link markdown thì dùng đường dẫn tương đối.
 - **Tài liệu hết hiệu lực:** chuyển vào `archive/`, không xóa.
 - **Quy tắc đồng bộ dữ liệu:** khi sửa trường dữ liệu ở một trong các file Project Plan, Database Plan, Database Mongo Plan, UI Design Plan thì cập nhật các file còn lại (xem đầu mỗi file).

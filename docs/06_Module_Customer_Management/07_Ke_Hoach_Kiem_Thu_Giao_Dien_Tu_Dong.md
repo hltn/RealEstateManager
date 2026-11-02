@@ -1,5 +1,7 @@
 # Kế hoạch kiểm thử giao diện tự động (E2E) - Module CRM
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Trạng thái (2026-10-26): **Đã triển khai.** Bộ E2E Playwright chạy được bằng `npm run e2e` (12 lỗi UX đã ghi nhận đều đã sửa, hiện 0 test đỏ có chủ đích; kết quả rà soát ở mục 6; kịch bản chi tiết ở [`08`](08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md)). Sơ đồ vẽ bằng Giotto: [`diagrams/crm-e2e-flows.svg`](diagrams/crm-e2e-flows.svg) (các luồng) và [`diagrams/crm-e2e-rig.svg`](diagrams/crm-e2e-rig.svg) (bộ máy chạy). Bản có hoạt cảnh xem ở canvas Giotto `http://localhost:4321` (file gốc `~/.giotto/crm-e2e-*.json`).
 
 ## 1. Mục tiêu

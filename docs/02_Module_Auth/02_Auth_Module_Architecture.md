@@ -1,5 +1,7 @@
 # AUTH MODULE — Tài liệu Kiến trúc (Architect Agent Output)
 
+> **Phiên bản tài liệu:** v1.0.2
+
 
 > Tài liệu này được viết dựa trên `02_Module_Auth/01_Auth_Module_Plan.md` (pm-agent), audit codebase thực tế, và skill `nodejs-react-mongo-coding-guidelines`.  
 
@@ -443,7 +445,7 @@ Quy tắc cốt lõi (bắt buộc):
 - **Response 200:** User object đã cập nhật
 
 
-> Cập nhật (CRM): tài khoản có thêm `roles[]`, `teamIds[]`, JWT thêm claim `roles`, thêm `PATCH /users/:id/roles` và `PATCH /users/:id/teams`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật (CRM): tài khoản có thêm `roles[]`, `teamIds[]`, JWT thêm claim `roles`, thêm `PATCH /users/:id/roles` và `PATCH /users/:id/teams`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 
 ### 6.3 Error Messages — Exact (cho assert body `message`)

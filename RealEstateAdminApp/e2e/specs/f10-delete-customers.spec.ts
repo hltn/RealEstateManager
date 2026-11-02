@@ -1,5 +1,5 @@
 /**
- * F10 - Xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" (v1.0.3 mục D, doc 09 mục 7). Dùng khách RIÊNG tạo bằng API (tên có hậu tố ngẫu nhiên).
+ * F10 - Xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" (v1.0.2 mục D, doc 09 mục 7). Dùng khách RIÊNG tạo bằng API (tên có hậu tố ngẫu nhiên).
  * - F10-01 (Admin): chọn khách Bỏ -> Xóa hàng loạt kèm lý do -> thấy ở "Khách đã xóa" -> Khôi phục một khách -> Xóa vĩnh viễn khách còn lại
  *   (SĐT được giải phóng, backend không còn bản ghi).
  * - F10-02 (Nhân viên): option "Xóa" chỉ hiện khi MỌI khách Bỏ đang chọn do mình phụ trách chính; không vào được màn "Khách đã xóa".

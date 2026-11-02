@@ -1,5 +1,7 @@
 # Project Plan: Module quản lý & chăm sóc khách hàng (Web + Ứng dụng di động)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Bản này chỉ mô tả mục đích, tính năng và yêu cầu. Các mục đánh dấu **[Giả định]** đã được xác nhận ngày 22/10/2026 (xem **Nhật ký quyết định** ở [tài liệu 04, mục 11](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md#11-nhật-ký-quyết-định-2026-10-22)); riêng việc nhập dữ liệu từ 3 sheet cũ được **hoãn sang giai đoạn sau**.
 
 ## 1. Mục đích

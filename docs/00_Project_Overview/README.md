@@ -1,5 +1,7 @@
 # 00 — Tổng quan dự án
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Kế hoạch nghiệp vụ và thiết kế kỹ thuật tổng thể. Nên đọc đầu tiên.
 
 | # | Tài liệu | Loại | Nội dung |
