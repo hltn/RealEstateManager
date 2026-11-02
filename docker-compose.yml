@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Stack PRODUCTION: mongo (replica set rs0 + xác thực) + redis + minio (S3) + backend
-# + frontend (nginx) + cloudflared.  Tài liệu đầy đủ: docs/01_Infrastructure/06_Production_Deploy.md
+# Stack PRODUCTION: mongo (replica set rs0 + xác thực) + redis + minio (S3) + nine-router (9Router,
+# cổng AI nội bộ) + backend + frontend (nginx) + cloudflared.
+# Tài liệu đầy đủ: docs/01_Infrastructure/06_Production_Deploy.md
 #
 #   docker compose --env-file .env.docker up -d --build
 #   docker compose --env-file .env.docker ps
@@ -12,14 +13,18 @@
 # nằm trong .env.docker (env_file của backend); xem .env.docker.example.
 #
 # CẢNH BÁO DỮ LIỆU:
-#   - Dữ liệu nằm ở named volume: mongo_data, redis_data, minio_data.
+#   - Dữ liệu nằm ở named volume: mongo_data, redis_data, minio_data, nine_router_data.
 #   - `docker compose down` GIỮ dữ liệu; `docker compose down -v` hoặc `docker volume rm`
 #     XÓA VĨNH VIỄN. Named volume KHÔNG phải backup: phải sao lưu ra ngoài máy (xem tài liệu).
 #   - KHÔNG thêm `name:` ở đầu file và KHÔNG đổi tên thư mục dự án: tên volume thật có
 #     tiền tố theo tên project (vd realestatemanager_mongo_data); đổi project là mất dấu dữ liệu cũ.
 #
 # Không service hạ tầng nào publish cổng ra host (mongo, redis, minio chỉ có trong network
-# realestate_net). Cổng duy nhất ra host: frontend 80.
+# realestate_net). Cổng ra host: frontend 80 và nine-router 20128 (dashboard + API của 9Router).
+# Cổng 20128 chỉ bind loopback của máy chủ theo mặc định (NINE_ROUTER_BIND_ADDR=127.0.0.1): vào dashboard
+# 9Router từ xa bằng SSH tunnel (ssh -L 20128:localhost:20128 <user>@<host>). Backend gọi 9Router qua
+# http://nine-router:20128/v1 trong network nội bộ nên KHÔNG bị ảnh hưởng. Cần mở ra mọi interface (IP/Tailscale
+# của máy chủ) thì đặt NINE_ROUTER_BIND_ADDR=0.0.0.0 trong .env.docker (cân nhắc kỹ: dashboard lộ ra mạng ngoài).
 # ─────────────────────────────────────────────────────────────────────────────
 services:
 
@@ -169,6 +174,37 @@ services:
         mc ilm rule add --expire-days 7 "local/$$BUCKET_EXPORTS"
         echo "MinIO buckets ready"
 
+  # ── 9Router (cổng định tuyến AI, một phần sản phẩm) ──────────────────────────
+  # Backend gọi qua http://nine-router:20128/v1 (ACTIVE_AI_PLATFORM=9Router, NINEROUTER_BASE_URL trong .env của
+  # backend). Tên service PHẢI giữ là `nine-router` và nằm trong network realestate_net để tên này phân giải được.
+  # - Dữ liệu (tài khoản/provider đã cấu hình) ở volume nine_router_data: GIỮ NGUYÊN tên khóa này, volume thật
+  #   đang có dữ liệu (realestatemanager_nine_router_data). Không đổi project name / không thêm `name:`.
+  # - INITIAL_PASSWORD (mật khẩu dashboard) BẮT BUỘC từ .env.docker, không có mặc định, không ghi vào repo.
+  # - Image 9Router KHÔNG đọc biến NINEROUTER_API_KEY (README của image không có biến này; đó là tên biến phía
+  #   backend), nên đã gỡ khỏi service. API key mà backend dùng gọi 9Router là key tạo trong dashboard 9Router, lưu ở
+  #   cấu hình/.env của backend, không liên quan tới compose. Biến image có đọc (JWT_SECRET, API_KEY_SECRET,
+  #   MACHINE_ID_SALT, REQUIRE_API_KEY, AUTH_COOKIE_SECURE...) hiện KHÔNG đặt: dùng mặc định của image. Nếu bản đang
+  #   chạy có đặt chúng thì PHẢI mang sang đây trước khi tạo lại container (tài liệu mục 5.0a).
+  # - INITIAL_PASSWORD: theo README image chỉ có tác dụng khi CHƯA có mật khẩu đã lưu trong volume.
+  # - Cổng 20128: địa chỉ bind theo NINE_ROUTER_BIND_ADDR, mặc định 127.0.0.1 (chỉ loopback máy chủ; vào dashboard
+  #   từ xa bằng SSH tunnel). Đặt 0.0.0.0 nếu thật sự cần truy cập trực tiếp qua IP/Tailscale của máy chủ.
+  #   Backend gọi qua tên service nine-router:20128 trong network nội bộ, không phụ thuộc cổng publish này.
+  # - image :latest theo đúng bản đang chạy; muốn tái lập được thì pin tag/digest khi chủ dự án quyết định.
+  nine-router:
+    image: decolua/9router:latest
+    container_name: realestate_9router
+    restart: unless-stopped
+    ports:
+      - "${NINE_ROUTER_BIND_ADDR:-127.0.0.1}:20128:20128"
+    volumes:
+      - nine_router_data:/app/data
+    environment:
+      INITIAL_PASSWORD: ${NINE_ROUTER_INITIAL_PASSWORD:?Thiếu NINE_ROUTER_INITIAL_PASSWORD (xem .env.docker.example)}
+      DATA_DIR: /app/data
+      NODE_ENV: production
+    networks:
+      - realestate_net
+
   # ── NestJS Backend ────────────────────────────────────────────────────────────
   backend:
     build:
@@ -266,7 +302,7 @@ services:
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?Thiếu CLOUDFLARE_TUNNEL_TOKEN (xem .env.docker.example)}
     depends_on:
       - frontend
     networks:
@@ -285,9 +321,11 @@ networks:
         - subnet: 10.213.77.0/24
           ip_range: 10.213.77.0/25
 
-# CẢNH BÁO: `docker compose down -v` XÓA CẢ 3 VOLUME (toàn bộ dữ liệu Mongo, Redis, MinIO).
+# CẢNH BÁO: `docker compose down -v` XÓA CẢ 4 VOLUME (toàn bộ dữ liệu Mongo, Redis, MinIO, 9Router).
 volumes:
   mongo_data:
     driver: local
   redis_data:
   minio_data:
+  nine_router_data:
+    driver: local
