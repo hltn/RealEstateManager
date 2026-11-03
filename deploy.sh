@@ -2,7 +2,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # deploy.sh — cập nhật stack production ĐANG CHẠY ổn định lên commit mới nhất của nhánh `production`.
 #
-# Chạy ở máy chủ (Ubuntu 24.04), trong thư mục repo:   bash deploy.sh [--no-pull] [--migrate] [--help]
+# Chạy ở máy chủ (Ubuntu 24.04), trong thư mục repo:
+#   bash deploy.sh [--no-pull] [--no-migrate | --migrate] [--plan-only] [--help]
 # (Dùng `bash deploy.sh`, không phụ thuộc bit thực thi: commit từ Windows có thể làm mất bit này.)
 # Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md (mục 11). Chạy trong tmux/nohup để rớt SSH không làm
 # gián đoạn giữa chừng.
@@ -12,8 +13,18 @@
 #
 # Các bước: tiền điều kiện (+ dung lượng đĩa) -> git pull (ff-only) -> `compose config -q` -> kiểm tra migration 005
 # -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung) -> gắn thẻ image backend hiện tại làm bản dự phòng
-# -> build backend (kèm GIT_COMMIT) -> `status` của runner migration (PT-027): còn migration chờ thì DỪNG trước `up` và
-# in lệnh, có cờ --migrate thì `up --apply` ngay sau backup -> `up -d --build` -> chờ mongo healthy + backend liveness.
+# -> build backend (kèm GIT_COMMIT) -> runner migration `reconcile` (PT-027, bước 6b): dry-run xem kế hoạch, rồi
+# `reconcile --apply --skip-version` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
+# rồi chạy migration 007+ còn chờ) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply`
+# (bước 8b, chỉ còn ghi `version`).
+#
+# Tự migrate MẶC ĐỊNH BẬT (DEPLOY_AUTO_MIGRATE=1). Tắt bằng --no-migrate (giữ hành vi cũ: có việc chờ hoặc cần baseline
+# thì DỪNG trước `up`; cờ này chỉ chặn migrate TRƯỚC `up` ở 6b, còn 8b vẫn chạy `reconcile --apply` để ghi phiên bản khi DB sạch,
+# xem mục 11.1). --migrate là bí danh giữ lại cho tương thích. --plan-only: build + `reconcile` dry-run rồi thoát,
+# không backup, không `up`, stack không đổi (chạy một lần trước lần deploy 1.0.3 đầu tiên).
+# Mã thoát của runner `reconcile`: 0 ok | 1 lỗi hoặc từ chối | 3 có khóa | 4 cần xử lý tay (probe không đạt) | 5 downgrade.
+# Mã 1/3/4/5 ở dry-run: deploy DỪNG trước `up` (stack chưa đổi). Downgrade CỐ Ý cần DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua
+# migrate, KHÔNG ghi và KHÔNG hạ `version` trong DB.
 #
 # KHÔNG rollback bằng `git checkout`: khi dữ liệu Mongo đã được nâng cấp (replica set/auth, migration),
 # compose và code cũ không đọc được volume mới, nên quay code về commit cũ có thể làm hỏng thêm.
@@ -31,6 +42,8 @@
 #   DEPLOY_MIN_FREE_GB  dung lượng trống tối thiểu (GB) ở thư mục repo và thư mục dữ liệu Docker (mặc định 5: build backend + frontend
 #                       cần image + build cache vài GB)
 #   DUMP_TIMEOUT        giây tối đa cho mongodump (mặc định 900); OPS_EXEC_TIMEOUT giây tối đa cho bước kiểm nội dung backup (mặc định 300)
+#   DEPLOY_AUTO_MIGRATE   1 (mặc định) = tự baseline + migrate sau backup; 0 = như --no-migrate (cờ dòng lệnh thắng biến)
+#   DEPLOY_ALLOW_DOWNGRADE  1 = cho phép CỐ Ý deploy code có version thấp hơn DB (bỏ qua migrate, không hạ version); mặc định 0
 #   MONGO_CONTAINER, BACKEND_CONTAINER  tên container (mặc định realestate_mongo, realestate_backend; chỉ đổi khi thử nghiệm)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -63,20 +76,38 @@ NEW_COMMIT=""
 BACKUP_FILE=""
 PREV_IMAGE_TAG=""
 PREV_IMAGE_REPO=""
-STACK_TOUCHED=0   # =1 ngay trước `up` (hoặc trước `up --apply` của migration): từ đây stack/dữ liệu có thể đã bị thay đổi
-MIGRATE=0         # =1 khi có --migrate: tự chạy migration chờ (up --apply) sau backup
+STACK_TOUCHED=0   # =1 ngay trước `up` (hoặc trước `reconcile --apply`): từ đây stack/dữ liệu có thể đã bị thay đổi
+AUTO_MIGRATE="${DEPLOY_AUTO_MIGRATE:-1}"        # 1 = tự baseline + migrate sau backup (mặc định); 0 = --no-migrate
+ALLOW_DOWNGRADE="${DEPLOY_ALLOW_DOWNGRADE:-0}"  # 1 = chấp nhận CỐ Ý version code < version DB
+PLAN_ONLY=0       # =1 khi có --plan-only: chạy đến hết `reconcile` dry-run rồi thoát (không backup, không up)
+DOWNGRADE_ACTIVE=0     # =1 khi runner báo downgrade và DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua migrate và việc ghi version
 MIGRATION_GATE_RAN=0   # =1 khi đã đọc được trạng thái migration (Mongo healthy): chỉ khi đó mới ghi phiên bản sau deploy
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash deploy.sh [--no-pull] [--migrate] [--help]
+Cách dùng: bash deploy.sh [--no-pull] [--no-migrate | --migrate] [--plan-only] [--help]
 
 Cập nhật stack production đang chạy lên bản mới nhất của nhánh `production`.
 
-  --no-pull   Không git pull; build và deploy đúng commit đang checkout.
-  --migrate   Có migration chờ (collection `system`, runner trong image backend) thì tự `up --apply` SAU backup, TRƯỚC `up`.
-              Không có cờ này: còn migration chờ thì script DỪNG trước `up` (stack không đổi) và in lệnh để chạy tay.
-  -h, --help  Hiện trợ giúp này.
+  --no-pull     Không git pull; build và deploy đúng commit đang checkout.
+  --no-migrate  TẮT tự migrate (mặc định là BẬT, hoặc DEPLOY_AUTO_MIGRATE=0). Giữ hành vi cũ: runner `status`; còn migration
+                chờ hoặc cần baseline thì script DỪNG trước `up` (stack không đổi) và in lệnh để chạy tay. Cờ này chỉ chặn migrate
+                TRƯỚC `up` (6b); bước 8b sau khi backend sống vẫn chạy `reconcile --apply` và vẫn ghi phiên bản khi DB sạch.
+  --migrate     Bí danh của chế độ mặc định (tự migrate đã bật sẵn); giữ lại cho tương thích. Không dùng cùng --no-migrate.
+  --plan-only   Chạy đến hết `reconcile` dry-run (runner trong image backend vừa build) rồi THOÁT: không backup, không ghi
+                gì vào DB, không `up`, stack không đổi. Dùng một lần trước lần deploy 1.0.3 đầu tiên để xem kết quả probe.
+                Có git pull (trừ khi kèm --no-pull) và build image backend (vài phút, cần đĩa như deploy thường).
+                Kèm --no-migrate (hoặc DEPLOY_AUTO_MIGRATE=0): --plan-only VẪN thắng, vẫn chạy `reconcile` dry-run (script in một
+                dòng thông báo); cờ tắt chỉ áp dụng cho lần deploy thật sau đó. Không từ chối (mã 2) để khỏi vướng biến môi trường.
+  -h, --help    Hiện trợ giúp này.
+
+Tự migrate (mặc định): SAU backup, TRƯỚC `up`, runner `reconcile` (1) lập kế hoạch dry-run, (2) --apply --skip-version:
+  - DB đã có dữ liệu mà `system` chưa có `version`: probe CHỈ-ĐỌC cho 002..006; đạt hết thì ghi sổ baseline (không chạy lại
+    002..006), không đạt thì DỪNG (mã 4), không ghi gì;
+  - chạy migration 007 trở đi còn chờ (đúng thứ tự, dừng ở lỗi).
+Sau khi backend sống, bước 8b `reconcile --apply` chỉ còn ghi `version` (lỗi chỉ cảnh báo).
+Dừng TRƯỚC `up` (stack chưa đổi) khi runner trả: 3 có khóa | 4 probe không đạt | 5 downgrade | 1 lỗi hoặc từ chối.
+Downgrade CỐ Ý (khôi phục image cũ): DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh ... : bỏ qua migrate, KHÔNG ghi/hạ `version`.
 
 Điều kiện: chạy trong thư mục repo; có .env.docker với quyền không rộng hơn 600 (chmod 600 .env.docker) và đã điền
 hết giá trị mẫu <...>; đủ dung lượng đĩa (DEPLOY_MIN_FREE_GB, mặc định 5 GB); working tree sạch (với git pull);
@@ -84,12 +115,13 @@ hết giá trị mẫu <...>; đủ dung lượng đĩa (DEPLOY_MIN_FREE_GB, m�
 
 Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không còn user chưa migrate 005
 -> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users) -> gắn thẻ image backend hiện tại thành
-<project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `status` (dừng nếu còn
-migration chờ và không có --migrate; cần `baseline` một lần thì dừng và in lệnh) -> up -d --build -> chờ mongo healthy và
-backend liveness -> ghi phiên bản vào collection `system`.
+<project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `reconcile` (bước 6b, xem trên;
+với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần baseline) -> up -d --build -> chờ mongo healthy và
+backend liveness -> ghi phiên bản vào collection `system` (bước 8b).
 
 KHÔNG dùng cho lần nâng cấp standalone đầu tiên (xem mục 5 tài liệu). KHÔNG rollback bằng git checkout.
-Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT.
+Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT,
+DEPLOY_AUTO_MIGRATE (1|0, mặc định 1), DEPLOY_ALLOW_DOWNGRADE (1|0, mặc định 0). Chi tiết: tài liệu mục 11 và 11.1.
 EOF
 }
 
@@ -328,11 +360,15 @@ tag_current_backend_image() {
   log "Đã gắn thẻ image backend hiện tại: $PREV_IMAGE_TAG"
 }
 
-# ── 6b) Build backend + kiểm tra migration chờ (PT-027) ──────────────────────
+# ── 6b) Build backend + migration theo version (PT-027) ──────────────────────
 # Runner nằm TRONG image backend (dist/migrations/cli.js, không cần ts-node) nên chạy bằng `compose run --rm --no-deps
 # backend`: dùng image vừa build, MONGODB_URI do compose dựng (mật khẩu không nằm trên dòng lệnh host), cùng network
-# với mongo. `-T` tắt TTY để chạy được trong nohup/tmux. Mã thoát của runner: 0 ok | 1 lỗi | 3 đang có khóa | 4 cần baseline.
+# với mongo. `-T` tắt TTY để chạy được trong nohup/tmux. Mã thoát của runner: 0 ok | 1 lỗi hoặc từ chối | 3 đang có khóa |
+# 4 cần xử lý tay (probe baseline không đạt, hoặc cần baseline ở chế độ --no-migrate) | 5 downgrade (version code < DB).
 run_migration_cli() { compose run --rm --no-deps -T backend node dist/migrations/cli.js "$@"; }
+
+# Lệnh runner viết sẵn để IN cho người dùng chạy tay (không chạy ở đây).
+runner_cmd_hint() { printf 'docker compose --env-file %s run --rm --no-deps backend node dist/migrations/cli.js' "$ENV_FILE"; }
 
 mongo_is_healthy() {
   [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)" == "healthy" ]]
@@ -345,24 +381,112 @@ build_backend() {
   compose build backend
 }
 
-# Đọc `status --json` (chỉ đọc). Còn migration chờ: không có --migrate thì DỪNG (stack không đổi) và in lệnh; có --migrate
-# thì đặt STACK_TOUCHED=1 rồi `up --apply`. Cần baseline hoặc đang có khóa: dừng và in lệnh. Không đọc được trạng thái:
-# dừng (không đoán), vì deploy mù với migration là rủi ro lớn hơn một lần chạy lại.
-migration_gate() {
-  local cli="docker compose --env-file $ENV_FILE run --rm --no-deps backend node dist/migrations/cli.js"
-  if ! mongo_is_healthy; then
-    # Container Mongo ĐÃ TỒN TẠI mà không healthy (đang khởi động, mất primary...): không đoán, không deploy mù với
-    # migration (backup_mongo đã bắt buộc nó đang chạy). Chỉ khi chưa có container (triển khai mới) mới bỏ qua.
-    if docker inspect "$MONGO_CONTAINER" >/dev/null 2>&1; then
-      die "Mongo ($MONGO_CONTAINER) đang chạy nhưng chưa healthy: không đọc được trạng thái migration. Chờ nó healthy (docker compose --env-file $ENV_FILE ps) rồi chạy lại. Stack chưa bị đổi."
-    fi
-    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua kiểm tra migration. Sau khi stack lên, xem: $cli status"
-    (( MIGRATE == 0 )) || warn "--migrate bị bỏ qua vì chưa có Mongo lúc này."
+# Dừng deploy (die) kèm nguyên nhân và lệnh xử lý theo mã thoát của runner. Chỉ gọi khi runner BÁO LỖI mà chưa ghi gì
+# (mã 3, 4, 5 từ dry-run hoặc từ --apply: theo hợp đồng runner các mã này không ghi gì) hoặc mã 1 ở dry-run.
+reconcile_stop() {
+  local rc="$1" cli
+  cli="$(runner_cmd_hint)"
+  case "$rc" in
+    3)
+      die "Runner migration báo đang có KHÓA (có runner khác đang chạy, hoặc tiến trình chết để lại khóa). Kiểm 'docker ps' không còn lệnh '... node dist/migrations/cli.js' nào đang chạy, rồi gỡ: $cli unlock . Sau đó chạy lại deploy. Stack chưa bị đổi."
+      ;;
+    4)
+      {
+        echo "Runner dừng (mã 4): DB đã có dữ liệu nhưng probe chỉ-đọc cho thấy một trong 002..006 CHƯA xong (hoặc không xác minh được),"
+        echo "nên runner KHÔNG ghi gì và KHÔNG tự chạy lại migration cũ (002 và 006 có bước xóa). Output ở trên nêu id nào không đạt và số đếm."
+        echo "Xử lý (làm tay, có backup ${BACKUP_FILE:-trước đó}, đọc dry-run trước):"
+        echo "  005, 006:  bash scripts/run-migration.sh 005   rồi   bash scripts/run-migration.sh 006      # dry-run; thêm --apply để ghi"
+        echo "  002, 003, 004:  bash scripts/run-migration.sh 002   (hoặc 003, 004)                                  # dry-run; thêm --apply để ghi"
+        echo "  Probe 002 có TRẦN (1.000.000 doc mỗi collection hoặc 5 phút): vượt trần thì báo \"không xác minh được\" (mã 4), không phải dữ liệu hỏng."
+        echo "    Khi đó chạy dry-run script 002 ở trên và đọc kết quả; nếu báo 0 việc cần làm thì ghi baseline tay (lối thoát bên dưới)."
+        echo "Sau khi xử lý xong, chạy lại: bash deploy.sh --no-pull"
+        echo "Lối thoát (chỉ khi ĐÃ tự kiểm 002..006 xong): $cli baseline --version <x.y.z> --commit <sha>   (dry-run; thêm --apply để ghi)"
+        echo "  <x.y.z> là semver chuẩn, KHÔNG có số 0 đứng đầu (vd 1.0.3, không phải 1.0.03); sai định dạng thì runner thoát mã 2."
+      } >&2
+      die "Cần xử lý tay trước khi deploy. Stack chưa bị đổi."
+      ;;
+    5)
+      {
+        echo "Runner dừng (mã 5): version trong DB CAO HƠN version của code sắp deploy (downgrade). Thường do pull nhầm nhánh/commit cũ."
+        echo "Runner không ghi gì (không migrate, không hạ version)."
+        echo "Nếu đúng là muốn quay về bản cũ có chủ ý: DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh --no-pull"
+        echo "  (bỏ qua migrate, KHÔNG ghi/hạ version; code cũ có thể không đọc được dữ liệu đã migrate: đọc $DOC mục 11 trước)."
+      } >&2
+      die "Downgrade chưa được cho phép. Stack chưa bị đổi."
+      ;;
+    *)
+      die "Runner migration lỗi hoặc từ chối (mã $rc; xem output ở trên: kết nối Mongo, sổ không liền mạch, version sai định dạng, image thiếu dist/migrations/cli.js, Mongo không phải replica set khi --apply...). Stack chưa bị đổi (dry-run chỉ đọc)."
+      ;;
+  esac
+}
+
+# `reconcile` DRY-RUN (chỉ đọc, không khóa): in kế hoạch cho người dùng và dừng sớm khi runner báo mã khác 0, TRƯỚC khi
+# đụng STACK_TOUCHED. Nhờ vậy mã 3/4/5/1 luôn kết thúc với "stack chưa đổi". Tham số thêm (vd --skip-version) chuyển nguyên
+# cho runner. Downgrade (mã 5) kèm DEPLOY_ALLOW_DOWNGRADE=1: ghi DOWNGRADE_ACTIVE=1 rồi cho đi tiếp (không migrate, không ghi version).
+reconcile_dry_run() {
+  local rc=0
+  run_migration_cli reconcile --by deploy "$@" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    5)
+      if (( ALLOW_DOWNGRADE == 1 )); then
+        warn "Downgrade CỐ Ý (DEPLOY_ALLOW_DOWNGRADE=1): version trong DB cao hơn version code. Bỏ qua migrate, KHÔNG ghi và KHÔNG hạ version. Dữ liệu đã migrate có thể không tương thích code cũ."
+        DOWNGRADE_ACTIVE=1
+        return 0
+      fi
+      reconcile_stop 5
+      ;;
+    *) reconcile_stop "$rc" ;;
+  esac
+}
+
+# Chế độ mặc định (tự migrate): dry-run xem kế hoạch, rồi `reconcile --apply --skip-version` NGAY SAU backup (bước 5), TRƯỚC `up`.
+# Version thường chưa ghi ở đây (code mới chưa chạy): bước 8b làm việc đó. Ngoại lệ DB mới tinh (version null, users rỗng): runner
+# GHI version ngay ở bước này (kể cả --skip-version), nên 8b trên DB mới là no-op mã 0. STACK_TOUCHED=1 đặt ngay trước --apply; BACKUP_FILE rỗng
+# thì không chạy --apply. Mã 3/4/5 từ --apply: runner không ghi gì nên trả STACK_TOUCHED=0 trước khi dừng. Mã 1 từ --apply:
+# có thể một migration đã chạy dở (dữ liệu đổi một phần) nên GIỮ STACK_TOUCHED=1 (in hướng dẫn "không quay code cũ").
+auto_reconcile() {
+  local cli rc=0
+  cli="$(runner_cmd_hint)"
+  log "Lập kế hoạch migration (runner reconcile, dry-run, chỉ đọc) ..."
+  reconcile_dry_run --skip-version
+  MIGRATION_GATE_RAN=1
+  if (( DOWNGRADE_ACTIVE == 1 )); then
     return 0
   fi
 
-  log "Kiểm tra migration chờ (runner: status, chỉ đọc) ..."
-  local out rc=0 json ids
+  [[ -n "$BACKUP_FILE" ]] || die "Tự migrate cần backup Mongo vừa tạo ở bước 5 (BACKUP_FILE rỗng). Dừng, chưa ghi gì. Stack chưa bị đổi."
+  # Từ đây dữ liệu/sổ có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
+  STACK_TOUCHED=1
+  log "reconcile --apply --skip-version (baseline nếu cần + migration chờ; backup: $BACKUP_FILE) ..."
+  run_migration_cli reconcile --apply --by deploy --skip-version || rc=$?
+  case "$rc" in
+    0) ;;
+    5)
+      # Hiếm: dry-run vừa rồi không báo downgrade nhưng --apply thì có (DB đổi giữa hai lệnh). Runner không ghi gì.
+      STACK_TOUCHED=0
+      if (( ALLOW_DOWNGRADE == 1 )); then
+        warn "Downgrade CỐ Ý (DEPLOY_ALLOW_DOWNGRADE=1): bỏ qua migrate, KHÔNG ghi và KHÔNG hạ version."
+        DOWNGRADE_ACTIVE=1
+        return 0
+      fi
+      reconcile_stop 5
+      ;;
+    3|4) STACK_TOUCHED=0; reconcile_stop "$rc" ;;
+    *)
+      die "reconcile --apply thất bại (mã $rc): runner đã dừng (không chạy migration sau, không ghi sổ cho migration lỗi, không tự rollback). Nếu migration chạy dở thì dữ liệu có thể đã đổi MỘT PHẦN; nếu runner từ chối trước khi ghi (không phải replica set, sổ không liền mạch) thì dữ liệu chưa đổi. Xem: $cli status . Sửa nguyên nhân rồi chạy lại; KHÔNG quay về code cũ."
+      ;;
+  esac
+  log "Migration/baseline xong (version được ghi ở bước 8b sau khi backend sống; DB mới tinh thì runner đã ghi ngay ở bước này)."
+}
+
+# Chế độ --no-migrate (hành vi cũ): đọc `status --json` (chỉ đọc). Còn migration chờ hoặc cần baseline hoặc đang có khóa:
+# DỪNG trước `up` (stack không đổi) và in lệnh. Không đọc được trạng thái: dừng (không đoán), vì deploy mù với migration
+# là rủi ro lớn hơn một lần chạy lại. Không phát hiện downgrade ở chế độ này (chỉ bước 8b không bao giờ hạ version).
+legacy_status_gate() {
+  local cli out rc=0 json ids
+  cli="$(runner_cmd_hint)"
+  log "--no-migrate: kiểm tra migration chờ (runner: status, chỉ đọc) ..."
   out="$(run_migration_cli status --json 2>&1)" || rc=$?
   case "$rc" in
     0) ;;
@@ -373,10 +497,12 @@ migration_gate() {
     4)
       printf '%s\n' "$out" >&2
       {
-        echo "Collection \`system\` chưa có phiên bản nhưng DB đã có dữ liệu: cần chạy \`baseline\` MỘT LẦN (ghi sổ 002..006 đã áp dụng, không chạy lại)."
-        echo "  Dry-run:  $cli baseline --version <x.y.z> --commit <sha>"
-        echo "  Ghi thật: $cli baseline --apply --version <x.y.z> --commit <sha>"
-        echo "Làm đúng thứ tự ở $DOC mục 11.1 (kiểm chỉ-đọc 005/006, backup, dry-run, rồi baseline), sau đó chạy lại: bash deploy.sh --no-pull"
+        echo "Collection \`system\` chưa có phiên bản nhưng DB đã có dữ liệu: cần baseline MỘT LẦN (ghi sổ 002..006 đã áp dụng, không chạy lại)."
+        echo "  Cách A (khuyến nghị): bỏ --no-migrate: bash deploy.sh --no-pull   (probe chỉ-đọc rồi tự baseline nếu đạt; xem trước bằng --plan-only)"
+        echo "  Cách B (tay, lối thoát; chỉ khi ĐÃ tự kiểm 002..006 xong):"
+        echo "    Dry-run:  $cli baseline --version <x.y.z> --commit <sha>"
+        echo "    Ghi thật: $cli baseline --apply --version <x.y.z> --commit <sha>"
+        echo "Chi tiết: $DOC mục 11.1."
       } >&2
       die "Cần baseline. Stack chưa bị đổi."
       ;;
@@ -400,39 +526,60 @@ migration_gate() {
   fi
   ids="$(grep -oE '"pending":\[.*\]' <<<"$json" | grep -oE '"id":"[^"]+"' | cut -d'"' -f4 | paste -sd ' ' - || true)"
   warn "Có migration chờ: ${ids:-?}"
-
-  if (( MIGRATE == 0 )); then
-    {
-      echo
-      echo "════════════ DỪNG TRƯỚC KHI CẬP NHẬT: còn migration chờ (${ids:-?}) ════════════"
-      echo "Đã backup: ${BACKUP_FILE:-không có}. Stack đang chạy CHƯA bị đổi (image backend mới đã build nhưng chưa chạy)."
-      echo "Chọn một cách:"
-      echo "  A) Tự động:  bash deploy.sh --no-pull --migrate     (backup mới -> up --apply -> up)"
-      echo "  B) Bằng tay: $cli up            # dry-run, đọc kỹ"
-      echo "               $cli up --apply --by cli"
-      echo "               rồi: bash deploy.sh --no-pull"
-      echo "Chi tiết: $DOC mục 11.1."
-    } >&2
-    exit 1
-  fi
-
-  [[ -n "$BACKUP_FILE" ]] || die "--migrate cần backup Mongo vừa tạo ở bước trước (BACKUP_FILE rỗng). Dừng, chưa chạy migration."
-  # Từ đây dữ liệu có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
-  STACK_TOUCHED=1
-  log "--migrate: chạy up --apply (backup: $BACKUP_FILE) ..."
-  if ! run_migration_cli up --apply --by deploy; then
-    die "Migration thất bại, runner đã dừng (không chạy migration sau, không ghi sổ cho migration lỗi, không tự rollback). Dữ liệu có thể đã đổi MỘT PHẦN. Xem: $cli status . Sửa nguyên nhân rồi chạy lại; KHÔNG quay về code cũ."
-  fi
-  log "Migration xong."
+  {
+    echo
+    echo "════════════ DỪNG TRƯỚC KHI CẬP NHẬT: còn migration chờ (${ids:-?}) ════════════"
+    echo "Đã backup: ${BACKUP_FILE:-không có}. Stack đang chạy CHƯA bị đổi (image backend mới đã build nhưng chưa chạy)."
+    echo "Chọn một cách:"
+    echo "  A) Tự động (bỏ --no-migrate):  bash deploy.sh --no-pull     (backup mới -> reconcile --apply -> up)"
+    echo "  B) Bằng tay: $cli up            # dry-run, đọc kỹ"
+    echo "               $cli up --apply --by cli       # mã 5 = downgrade (version DB cao hơn code): không ghi gì, xem mục 11.1"
+    echo "               rồi: bash deploy.sh --no-pull --no-migrate"
+    echo "Chi tiết: $DOC mục 11.1."
+  } >&2
+  exit 1
 }
 
-# Sau khi backend sống: ghi phiên bản app vào collection `system` (nếu chưa khớp). Không có migration chờ nên chỉ ghi `version`.
-# Không làm deploy thất bại: lỗi chỉ cảnh báo (backend vẫn chạy bình thường).
+# Cổng migration của bước 6b. Mongo chưa có container (triển khai mới): bỏ qua. Container có mà chưa healthy: dừng.
+# Sau đó rẽ nhánh: --plan-only (chỉ dry-run) | tự migrate (mặc định) | --no-migrate (hành vi cũ).
+migration_gate() {
+  local cli
+  cli="$(runner_cmd_hint)"
+  if ! mongo_is_healthy; then
+    # Container Mongo ĐÃ TỒN TẠI mà không healthy (đang khởi động, mất primary...): không đoán, không deploy mù với
+    # migration (backup_mongo đã bắt buộc nó đang chạy). Chỉ khi chưa có container (triển khai mới) mới bỏ qua.
+    if docker inspect "$MONGO_CONTAINER" >/dev/null 2>&1; then
+      die "Mongo ($MONGO_CONTAINER) đang chạy nhưng chưa healthy: không đọc được trạng thái migration. Chờ nó healthy (docker compose --env-file $ENV_FILE ps) rồi chạy lại. Stack chưa bị đổi."
+    fi
+    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua migration. Sau khi stack lên, xem: $cli status"
+    return 0
+  fi
+
+  if (( PLAN_ONLY == 1 )); then
+    log "--plan-only: lập kế hoạch migration (reconcile dry-run, chỉ đọc; không backup, không ghi, không up) ..."
+    reconcile_dry_run
+  elif (( AUTO_MIGRATE == 1 )); then
+    auto_reconcile
+  else
+    legacy_status_gate
+  fi
+}
+
+# Sau khi backend sống (bước 8b): `reconcile --apply --by deploy` ghi `version` (và `commit`) của app vào `system`. Migration đã
+# xong ở bước 6b nên ở đây chỉ còn ghi version. KHÔNG làm deploy thất bại: lỗi chỉ cảnh báo (backend vẫn chạy bình thường).
+# Downgrade có chủ ý: bỏ qua hẳn (không ghi, không hạ version). Ở chế độ --no-migrate, nếu DB có version cao hơn thì runner
+# trả mã 5 và cũng không ghi gì: chỉ cảnh báo.
 sync_system_version() {
   (( MIGRATION_GATE_RAN == 1 )) || { log "Bỏ qua ghi phiên bản vào \`system\` (chưa đọc được trạng thái migration trước deploy)."; return 0; }
+  if (( DOWNGRADE_ACTIVE == 1 )); then
+    warn "Downgrade có chủ ý: KHÔNG ghi và KHÔNG hạ \`version\` trong \`system\` (DB giữ version cao hơn)."
+    return 0
+  fi
   mongo_is_healthy || return 0
-  if ! run_migration_cli up --apply --by deploy; then
-    warn "Không ghi được phiên bản vào collection \`system\` (backend vẫn chạy). Ghi lại sau: docker compose --env-file $ENV_FILE run --rm --no-deps backend node dist/migrations/cli.js up --apply --by cli"
+  local rc=0
+  run_migration_cli reconcile --apply --by deploy || rc=$?
+  if (( rc != 0 )); then
+    warn "Không ghi được phiên bản vào collection \`system\` (mã $rc; backend vẫn chạy). Ghi lại sau: $(runner_cmd_hint) reconcile --apply --by cli"
   fi
 }
 
@@ -469,16 +616,30 @@ wait_backend_liveness() {
 
 # ── Chạy ─────────────────────────────────────────────────────────────────────
 main() {
-  local arg
+  local arg flag_migrate=0 flag_no_migrate=0
   for arg in "$@"; do
     case "$arg" in
       --no-pull) NO_PULL=1 ;;
-      --migrate) MIGRATE=1 ;;
+      --migrate) flag_migrate=1 ;;
+      --no-migrate) flag_no_migrate=1 ;;
+      --plan-only) PLAN_ONLY=1 ;;
       -h|--help) trap - EXIT; usage; exit 0 ;;
       *) trap - EXIT; printf '[deploy] Tham số không hợp lệ: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
     esac
   done
+  if (( flag_migrate == 1 && flag_no_migrate == 1 )); then
+    trap - EXIT; echo "[deploy] --migrate và --no-migrate loại trừ nhau." >&2; exit 2
+  fi
+  # Cờ dòng lệnh thắng biến môi trường DEPLOY_AUTO_MIGRATE.
+  if (( flag_no_migrate == 1 )); then AUTO_MIGRATE=0; fi
+  if (( flag_migrate == 1 )); then AUTO_MIGRATE=1; fi
+  # --plan-only luôn dùng `reconcile` dry-run (không có nhánh `status`): nói rõ để khỏi âm thầm bỏ qua cờ tắt tự migrate.
+  if (( PLAN_ONLY == 1 && AUTO_MIGRATE == 0 )); then
+    log "--plan-only đi kèm --no-migrate/DEPLOY_AUTO_MIGRATE=0: --plan-only thắng, vẫn chạy reconcile dry-run (chỉ đọc). Cờ tắt tự migrate chỉ áp dụng cho lần deploy thật sau đó."
+  fi
 
+  [[ "$AUTO_MIGRATE" =~ ^[01]$ ]]    || die "DEPLOY_AUTO_MIGRATE phải là 0 hoặc 1 (nhận '$AUTO_MIGRATE')."
+  [[ "$ALLOW_DOWNGRADE" =~ ^[01]$ ]] || die "DEPLOY_ALLOW_DOWNGRADE phải là 0 hoặc 1 (nhận '$ALLOW_DOWNGRADE')."
   [[ "$MONGO_TIMEOUT" =~ ^[0-9]+$ ]]  || die "MONGO_TIMEOUT phải là số nguyên (giây)."
   [[ "$HEALTH_TIMEOUT" =~ ^[0-9]+$ ]] || die "HEALTH_TIMEOUT phải là số nguyên (giây)."
   [[ "$DUMP_TIMEOUT" =~ ^[0-9]+$ && "$OPS_EXEC_TIMEOUT" =~ ^[0-9]+$ ]] || die "DUMP_TIMEOUT/OPS_EXEC_TIMEOUT phải là số nguyên (giây)."
@@ -496,11 +657,21 @@ main() {
   export GIT_COMMIT="${NEW_COMMIT:-unknown}"
   check_compose
   check_users_migrated
-  ensure_runtime_dirs
-  backup_mongo
+  # --plan-only chỉ đọc: không chuẩn bị logs/ và KHÔNG backup (không có gì sẽ bị ghi). Vẫn gắn thẻ image đang chạy vì build
+  # sau đó ghi đè :latest (đường lui "image dự phòng" của deploy thật sau này vẫn đúng).
+  if (( PLAN_ONLY == 0 )); then
+    ensure_runtime_dirs
+    backup_mongo
+  fi
   tag_current_backend_image
   build_backend
   migration_gate
+
+  if (( PLAN_ONLY == 1 )); then
+    log "--plan-only xong: stack và dữ liệu KHÔNG đổi (chưa backup, chưa up). Image backend mới đã build (:latest); container đang chạy vẫn dùng image cũ."
+    log "Nếu kế hoạch ở trên đúng ý, deploy thật: bash deploy.sh --no-pull"
+    return 0
+  fi
 
   STACK_TOUCHED=1
   log "docker compose up -d --build ..."

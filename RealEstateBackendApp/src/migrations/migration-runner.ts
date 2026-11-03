@@ -1,5 +1,7 @@
 import { MongoClient, MongoServerError } from 'mongodb';
 import type { Db } from 'mongodb';
+import { runBaselineProbes } from './baseline-probes';
+import type { ProbeResult } from './baseline-probes';
 import { sanitizeErrorMessage } from './migration-error.util';
 import {
   assertValidRegistry,
@@ -8,6 +10,9 @@ import {
 } from './migration-state';
 import type { MigrationState } from './migration-state';
 import type { Migration, MigrationActor } from './migration.types';
+import { planReconcile } from './reconcile-plan';
+import type { ReconcilePlan } from './reconcile-plan';
+import { compareVersions, isValidVersion } from './version-compare.util';
 import {
   BASELINE_MIGRATION_IDS,
   MIGRATION_DOC_PREFIX,
@@ -24,6 +29,8 @@ export const EXIT_CODE = {
   USAGE: 2,
   LOCKED: 3,
   BASELINE_REQUIRED: 4,
+  /** App CŨ hơn DB (downgrade): `reconcile` không ghi gì. */
+  DOWNGRADE: 5,
 } as const;
 export type ExitCode = (typeof EXIT_CODE)[keyof typeof EXIT_CODE];
 
@@ -37,7 +44,55 @@ export interface RunnerOptions {
   err: (line: string) => void;
 }
 
-const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+/** Tùy chọn lệnh `reconcile` (dry-run mặc định khi `apply` = false). */
+export interface ReconcileOptions {
+  apply: boolean;
+  by: MigrationActor;
+  /** Không ghi `version` (deploy.sh pha trước `up` dùng cờ này; pha sau mới ghi version). */
+  skipVersion: boolean;
+  /** In ĐÚNG MỘT dòng JSON ra stdout; mọi log khác ra stderr. */
+  json: boolean;
+}
+
+export type ReconcileResultName =
+  | 'ok'
+  | 'locked'
+  | 'probe_failed'
+  | 'downgrade'
+  | 'refused'
+  | 'failed'
+  | 'error';
+
+/** Dòng JSON duy nhất `reconcile --json` in ra stdout (hợp đồng với deploy.sh). */
+export interface ReconcileReport {
+  mode: 'dry-run' | 'apply';
+  result: ReconcileResultName;
+  exitCode: ExitCode;
+  appVersion: string;
+  systemVersion: string | null;
+  /** Kế hoạch (null nếu bị từ chối trước khi lập được kế hoạch, ví dụ khóa/downgrade/probe fail). */
+  plan: {
+    baseline: string[];
+    migrations: string[];
+    versionToWrite: string | null;
+    noop: boolean;
+  } | null;
+  probes: Array<
+    Pick<ProbeResult, 'id' | 'passed' | 'counts'> & { reason: string | null }
+  >;
+  warnings: string[];
+  reason: string | null;
+  /** `true` nếu đã ghi bất cứ thứ gì vào `system` (sổ/version). */
+  applied: boolean;
+}
+
+const RESULT_BY_OUTCOME = {
+  LOCKED: { result: 'locked', code: EXIT_CODE.LOCKED },
+  PROBE_FAILED: { result: 'probe_failed', code: EXIT_CODE.BASELINE_REQUIRED },
+  DOWNGRADE: { result: 'downgrade', code: EXIT_CODE.DOWNGRADE },
+  REFUSED: { result: 'refused', code: EXIT_CODE.FAILURE },
+} as const;
+
 const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;
 const DUPLICATE_KEY_ERROR_CODE = 11000;
 
@@ -106,11 +161,15 @@ export class MigrationRunner {
     // Chốt chặn: tuyệt đối không tự chạy 002..006 / bỏ qua sổ chỉ vì `system` trống trên DB đã có dữ liệu.
     if (state.baselineRequired) {
       err(
-        'Từ chối: `system` chưa có `version` nhưng `users` đã có dữ liệu. Cần chạy `baseline` một lần trước ' +
+        'Từ chối: `system` chưa có `version` nhưng `users` đã có dữ liệu và sổ thiếu 002..006. Chạy ' +
+          '`reconcile --apply` (tự probe rồi baseline) hoặc `baseline` tay một lần trước ' +
           '(node dist/migrations/cli.js baseline --apply --version <x.y.z> --commit <sha>).',
       );
       return EXIT_CODE.BASELINE_REQUIRED;
     }
+
+    // Downgrade (app CŨ hơn DB): không migrate, không hạ version; áp dụng cả dry-run để báo trước.
+    if (this.isDowngrade(state)) return this.refuseDowngrade(state);
 
     const pending = selectPendingMigrations(
       this.options.migrations,
@@ -141,35 +200,13 @@ export class MigrationRunner {
     return this.withLock(by, async () => {
       // Đọc lại SAU khi giữ khóa: runner khác có thể vừa chạy xong giữa lúc đọc và lúc giành khóa.
       const fresh = await readMigrationState(this.db);
+      if (this.isDowngrade(fresh)) return this.refuseDowngrade(fresh);
       const toRun = selectPendingMigrations(
         this.options.migrations,
         fresh.applied,
       );
-      for (const migration of toRun) {
-        out(`Chạy ${migration.id}: ${migration.description}`);
-        try {
-          await migration.up({
-            client: this.options.client,
-            db: this.db,
-            log: (message) => out(`  ${message}`),
-          });
-        } catch (error) {
-          err(`LỖI ở ${migration.id}: ${sanitizeErrorMessage(error)}`);
-          // Ghi lỗi vào `system` là "cố gắng hết sức": nếu chính việc ghi cũng lỗi (DB chập chờn) thì không được che
-          // lỗi gốc và vẫn phải trả mã FAILURE (khóa vẫn được nhả ở `withLock`).
-          await this.recordError(migration.id, error).catch((writeError) =>
-            err(
-              `Không ghi được migration-last-error: ${sanitizeErrorMessage(writeError)}`,
-            ),
-          );
-          err(
-            'Dừng, không chạy migration sau, không ghi sổ cho migration lỗi. Sửa nguyên nhân rồi chạy lại `up --apply`.',
-          );
-          return EXIT_CODE.FAILURE;
-        }
-        await this.recordApplied(migration.id, by);
-        out(`Xong ${migration.id}.`);
-      }
+      const failure = await this.runMigrations(toRun, by, out);
+      if (failure !== null) return failure;
       await this.writeVersion(
         this.options.app.version,
         this.options.app.commit,
@@ -178,6 +215,316 @@ export class MigrationRunner {
       out(`Hoàn tất. Phiên bản hệ thống: ${this.options.app.version}.`);
       return EXIT_CODE.OK;
     });
+  }
+
+  /** App cũ hơn DB (cả hai đều là semver hợp lệ). Version DB sai định dạng không coi là downgrade (như trước đây). */
+  private isDowngrade(state: MigrationState): boolean {
+    const dbVersion = state.version?.value;
+    const appVersion = this.options.app.version;
+    return (
+      dbVersion !== undefined &&
+      isValidVersion(dbVersion) &&
+      isValidVersion(appVersion) &&
+      compareVersions(appVersion, dbVersion) === -1
+    );
+  }
+
+  private refuseDowngrade(state: MigrationState): ExitCode {
+    this.options.err(
+      `Từ chối: phiên bản app ${this.options.app.version} CŨ hơn DB ${state.version?.value} (downgrade). Không migrate, không hạ version trong DB.`,
+    );
+    return EXIT_CODE.DOWNGRADE;
+  }
+
+  /**
+   * Chạy tuần tự các migration trong registry (đã giữ khóa): lỗi thì ghi `migration-last-error`, DỪNG, không ghi sổ cho
+   * migration lỗi. Trả `null` nếu tất cả xong; trả `FAILURE` nếu có lỗi. `log` là kênh tiến trình (stdout, hoặc stderr
+   * khi `--json`).
+   */
+  private async runMigrations(
+    toRun: readonly Migration[],
+    by: MigrationActor,
+    log: (line: string) => void,
+  ): Promise<ExitCode | null> {
+    const { err } = this.options;
+    for (const migration of toRun) {
+      log(`Chạy ${migration.id}: ${migration.description}`);
+      try {
+        await migration.up({
+          client: this.options.client,
+          db: this.db,
+          log: (message) => log(`  ${message}`),
+        });
+      } catch (error) {
+        err(`LỖI ở ${migration.id}: ${sanitizeErrorMessage(error)}`);
+        // Ghi lỗi vào `system` là "cố gắng hết sức": nếu chính việc ghi cũng lỗi (DB chập chờn) thì không được che
+        // lỗi gốc và vẫn phải trả mã FAILURE (khóa vẫn được nhả ở `withLock`).
+        await this.recordError(migration.id, error).catch((writeError) =>
+          err(
+            `Không ghi được migration-last-error: ${sanitizeErrorMessage(writeError)}`,
+          ),
+        );
+        err(
+          'Dừng, không chạy migration sau, không ghi sổ cho migration lỗi. Sửa nguyên nhân rồi chạy lại `up --apply`.',
+        );
+        return EXIT_CODE.FAILURE;
+      }
+      await this.recordApplied(migration.id, by);
+      log(`Xong ${migration.id}.`);
+    }
+    return null;
+  }
+
+  /**
+   * `reconcile`: tự đối chiếu DB với phiên bản app (PT-027). Dry-run mặc định. Luồng: đọc trạng thái -> `planReconcile`
+   * (hàm thuần; nếu cần baseline thì chạy probe CHỈ ĐỌC cho id 002..006 còn thiếu) -> với `--apply`: giành khóa, ĐỌC LẠI
+   * trạng thái + probe SAU khóa, rồi ghi sổ baseline (kèm evidence), chạy migration chờ và ghi version. Không bao giờ
+   * chạy lại 002..006. Mã thoát: 0 ok | 1 lỗi/từ chối | 3 có khóa | 4 probe không đạt | 5 downgrade.
+   * `--json`: đúng MỘT dòng JSON (`ReconcileReport`) ra stdout, log khác ra stderr. Lỗi trước khi vào runner (kết nối)
+   * do `cli-app` xử lý và KHÔNG in JSON.
+   */
+  async reconcile(options: ReconcileOptions): Promise<ExitCode> {
+    const report: ReconcileReport = {
+      mode: options.apply ? 'apply' : 'dry-run',
+      result: 'ok',
+      exitCode: EXIT_CODE.OK,
+      appVersion: this.options.app.version,
+      systemVersion: null,
+      plan: null,
+      probes: [],
+      warnings: [],
+      reason: null,
+      applied: false,
+    };
+    let code: ExitCode;
+    try {
+      code = await this.runReconcile(options, report);
+    } catch (error) {
+      const message = sanitizeErrorMessage(error);
+      this.options.err(`LỖI: ${message}`);
+      report.result = 'error';
+      report.reason = message;
+      code = EXIT_CODE.FAILURE;
+    }
+    report.exitCode = code;
+    if (options.json) this.options.out(JSON.stringify(report));
+    return code;
+  }
+
+  private async runReconcile(
+    options: ReconcileOptions,
+    report: ReconcileReport,
+  ): Promise<ExitCode> {
+    assertValidRegistry(this.options.migrations);
+    const { err } = this.options;
+    const log = options.json ? err : this.options.out;
+
+    const state = await readMigrationState(this.db);
+    report.systemVersion = state.version?.value ?? null;
+    const plan = await this.resolveReconcilePlan(state, report);
+    const refused = this.reconcileRefusal(plan, report);
+    if (refused !== null) return refused;
+
+    this.fillPlanReport(plan, options, report);
+    this.logReconcilePlan(plan, options, report, log);
+    // Dry-run PHẢI trả cùng mã thoát như `--apply` sẽ trả (deploy.sh dùng dry-run để biết trước), kể cả việc
+    // `--apply` bị từ chối vì Mongo không phải replica set.
+    if (!(await this.isReplicaSet())) {
+      err(
+        options.apply
+          ? 'Từ chối --apply: MongoDB không phải replica set (migration cần transaction).'
+          : 'Từ chối: MongoDB không phải replica set nên --apply sẽ bị từ chối (migration cần transaction).',
+      );
+      report.result = 'refused';
+      report.reason = 'MongoDB không phải replica set.';
+      return EXIT_CODE.FAILURE;
+    }
+    if (!options.apply) {
+      log(
+        '[DRY-RUN] Không ghi gì vào DB. Chạy thật: thêm --apply (sau khi đã backup).',
+      );
+      return EXIT_CODE.OK;
+    }
+    if (this.isReconcileNoop(plan, options)) {
+      log('Không có gì để làm (sổ đủ, version đã khớp hoặc bỏ qua version).');
+      return EXIT_CODE.OK;
+    }
+
+    return this.withLock(options.by, async () => {
+      // Đọc lại SAU khi giữ khóa (và probe lại nếu cần baseline): runner khác có thể vừa chạy giữa lúc đọc và lúc giành
+      // khóa. Khóa trong ảnh chụp này là khóa CỦA TA nên bỏ qua.
+      const fresh = await readMigrationState(this.db);
+      report.systemVersion = fresh.version?.value ?? null;
+      const locked = await this.resolveReconcilePlan(
+        { ...fresh, lock: null },
+        report,
+      );
+      const lockedRefusal = this.reconcileRefusal(locked, report);
+      if (lockedRefusal !== null) return lockedRefusal;
+      this.fillPlanReport(locked, options, report);
+      return this.executeReconcile(locked, options, report, log);
+    });
+  }
+
+  /** Lập kế hoạch; nếu cần probe thì chạy probe chỉ-đọc rồi lập lại với kết quả. */
+  private async resolveReconcilePlan(
+    state: MigrationState,
+    report: ReconcileReport,
+  ): Promise<ReconcilePlan> {
+    const registryIds = this.options.migrations.map(({ id }) => id);
+    const input = { state, appVersion: this.options.app.version, registryIds };
+    let plan = planReconcile(input);
+    // Mỗi lần lập kế hoạch (trước khóa, rồi lại sau khóa) bắt đầu từ báo cáo sạch: nếu lần sau bị từ chối thì report
+    // không được còn kế hoạch/cảnh báo/probe của lần trước.
+    report.plan = null;
+    report.probes = [];
+    report.warnings = [];
+    if (plan.outcome === 'NEEDS_PROBES') {
+      const results = await runBaselineProbes(this.db, plan.probeIds);
+      report.probes = results.map(({ id, passed, counts, reason }) => ({
+        id,
+        passed,
+        counts,
+        reason: reason ?? null,
+      }));
+      for (const result of results) report.warnings.push(...result.warnings);
+      plan = planReconcile({ ...input, probeResults: results });
+    }
+    return plan;
+  }
+
+  /** Kết luận KHÁC READY: ghi vào report, in lý do, trả mã thoát; READY thì trả `null` để đi tiếp. */
+  private reconcileRefusal(
+    plan: ReconcilePlan,
+    report: ReconcileReport,
+  ): ExitCode | null {
+    if (plan.outcome === 'READY') return null;
+    // NEEDS_PROBES không bao giờ ra khỏi `resolveReconcilePlan` (đã chạy probe); nếu có thì là lỗi lập trình.
+    if (plan.outcome === 'NEEDS_PROBES') {
+      throw new Error('Kế hoạch reconcile còn thiếu kết quả probe.');
+    }
+    const { result, code } = RESULT_BY_OUTCOME[plan.outcome];
+    report.result = result;
+    report.reason = plan.reason;
+    const { err } = this.options;
+    err(`Từ chối: ${plan.reason}`);
+    if (plan.outcome === 'PROBE_FAILED') {
+      for (const probe of report.probes) {
+        err(
+          `  ${probe.id}: ${probe.passed ? 'đạt' : 'KHÔNG ĐẠT'} ${JSON.stringify(probe.counts)}${probe.reason ? ` - ${probe.reason}` : ''}`,
+        );
+      }
+      err(
+        'Xử lý tay: chạy script migration cũ tương ứng trong scripts/migrations/ (dry-run trước), hoặc nếu đã tự kiểm chứng thì `baseline --apply --version <x.y.z>`.',
+      );
+    }
+    return code;
+  }
+
+  /**
+   * Version sẽ thực sự ghi: `--skip-version` bỏ qua, TRỪ DB mới tinh (`forceVersionWrite`: version null + users rỗng).
+   */
+  private effectiveVersion(
+    plan: ReconcilePlan,
+    options: ReconcileOptions,
+  ): string | null {
+    if (options.skipVersion && !plan.forceVersionWrite) return null;
+    return plan.versionToWrite;
+  }
+
+  /** Không còn việc nào thực sự phải ghi (tính cả `--skip-version`). */
+  private isReconcileNoop(
+    plan: ReconcilePlan,
+    options: ReconcileOptions,
+  ): boolean {
+    return (
+      plan.baselineIds.length === 0 &&
+      plan.pendingIds.length === 0 &&
+      this.effectiveVersion(plan, options) === null
+    );
+  }
+
+  private fillPlanReport(
+    plan: ReconcilePlan,
+    options: ReconcileOptions,
+    report: ReconcileReport,
+  ): void {
+    report.plan = {
+      baseline: plan.baselineIds,
+      migrations: plan.pendingIds,
+      versionToWrite: this.effectiveVersion(plan, options),
+      noop: this.isReconcileNoop(plan, options),
+    };
+    report.warnings.push(...plan.warnings);
+  }
+
+  private logReconcilePlan(
+    plan: ReconcilePlan,
+    options: ReconcileOptions,
+    report: ReconcileReport,
+    log: (line: string) => void,
+  ): void {
+    for (const warning of report.warnings) log(`Cảnh báo: ${warning}`);
+    for (const probe of report.probes) {
+      log(`Probe ${probe.id}: đạt ${JSON.stringify(probe.counts)}`);
+    }
+    log(
+      plan.baselineIds.length > 0
+        ? `Sẽ ghi sổ baseline (by=baseline, kèm evidence): ${plan.baselineIds.join(', ')}`
+        : 'Baseline: không cần.',
+    );
+    log(
+      plan.pendingIds.length > 0
+        ? `Migration chờ (${plan.pendingIds.length}): ${plan.pendingIds.join(', ')}`
+        : 'Migration chờ: không có.',
+    );
+    const versionToWrite = report.plan?.versionToWrite;
+    log(
+      versionToWrite
+        ? `Phiên bản sẽ ghi: ${report.systemVersion ?? '(chưa có)'} -> ${versionToWrite}`
+        : `Phiên bản: không ghi (${options.skipVersion && plan.versionToWrite ? '--skip-version' : 'đã khớp'}).`,
+    );
+  }
+
+  /** Thực thi kế hoạch READY (đã giữ khóa): baseline -> migration chờ -> version. Dừng ở lỗi đầu tiên. */
+  private async executeReconcile(
+    plan: ReconcilePlan,
+    options: ReconcileOptions,
+    report: ReconcileReport,
+    log: (line: string) => void,
+  ): Promise<ExitCode> {
+    if (this.isReconcileNoop(plan, options)) {
+      log('Không có gì để làm (runner khác đã chạy xong trước đó).');
+      return EXIT_CODE.OK;
+    }
+
+    for (const id of plan.baselineIds) {
+      const probe = report.probes.find((candidate) => candidate.id === id);
+      await this.recordApplied(id, 'baseline', probe?.counts);
+      report.applied = true;
+      log(`Baseline ${id}: đã ghi sổ.`);
+    }
+
+    const toRun = this.options.migrations.filter((migration) =>
+      plan.pendingIds.includes(migration.id),
+    );
+    const failure = await this.runMigrations(toRun, options.by, log);
+    if (toRun.length > 0) report.applied = true;
+    if (failure !== null) {
+      report.result = 'failed';
+      report.reason = 'Migration lỗi (xem migration-last-error).';
+      return failure;
+    }
+
+    const versionToWrite = this.effectiveVersion(plan, options);
+    if (versionToWrite) {
+      await this.writeVersion(versionToWrite, this.options.app.commit);
+      report.applied = true;
+      log(`Đã ghi phiên bản hệ thống: ${versionToWrite}.`);
+    }
+    await this.system.deleteOne({ _id: SYSTEM_LAST_ERROR_ID });
+    log('Hoàn tất reconcile.');
+    return EXIT_CODE.OK;
   }
 
   /** `unlock`: gỡ khóa còn sót (chỉ chạy sau khi đã kiểm tra không có runner nào đang chạy). */
@@ -199,7 +546,7 @@ export class MigrationRunner {
     commit: string | undefined,
   ): Promise<ExitCode> {
     const { out, err } = this.options;
-    if (!version || !VERSION_PATTERN.test(version)) {
+    if (!version || !isValidVersion(version)) {
       err('Thiếu/sai --version (dạng x.y.z, ví dụ 1.0.2).');
       return EXIT_CODE.USAGE;
     }
@@ -287,12 +634,21 @@ export class MigrationRunner {
     }
   }
 
-  private async recordApplied(id: string, by: MigrationActor): Promise<void> {
+  /**
+   * Ghi sổ "đã áp dụng". `evidence` (chỉ số đếm của probe baseline, không PII) chỉ có ở bản ghi `by=baseline` do
+   * `reconcile` tạo. Sổ chỉ thêm, không sửa: id đã có thì bỏ qua.
+   */
+  private async recordApplied(
+    id: string,
+    by: MigrationActor,
+    evidence?: Record<string, number>,
+  ): Promise<void> {
     try {
       await this.system.insertOne({
         _id: `${MIGRATION_DOC_PREFIX}${id}`,
         at: new Date(),
         by,
+        ...(evidence ? { evidence } : {}),
       });
     } catch (error) {
       // Đã có trong sổ (sổ chỉ thêm, không sửa): coi như xong.
@@ -382,7 +738,7 @@ export class MigrationRunner {
     }
     if (state.baselineRequired) {
       out(
-        'CẦN BASELINE: `users` đã có dữ liệu nhưng `system` chưa có version; `up --apply` sẽ bị từ chối.',
+        'CẦN BASELINE: `users` đã có dữ liệu, `system` chưa có version và sổ thiếu 002..006; `up --apply` sẽ bị từ chối. Dùng `reconcile --apply` (tự probe rồi baseline).',
       );
     }
   }

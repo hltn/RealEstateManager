@@ -2,6 +2,7 @@ import type { Db } from 'mongodb';
 import { validateMigrationRegistry } from './migration.registry';
 import type { Migration, MigrationActor } from './migration.types';
 import {
+  BASELINE_MIGRATION_IDS,
   MIGRATION_DOC_PREFIX,
   SYSTEM_COLLECTION,
   SYSTEM_LAST_ERROR_ID,
@@ -39,8 +40,14 @@ export interface MigrationState {
   applied: AppliedMigrationDoc[];
   lock: MigrationLockDoc | null;
   lastError: MigrationLastErrorDoc | null;
-  /** `system` chưa có `version` mà `users` đã có dữ liệu => production cũ, cần `baseline` trước. */
+  /**
+   * `system` chưa có `version`, `users` đã có dữ liệu VÀ sổ còn thiếu ít nhất một id 002..006 => production cũ chưa
+   * được xác nhận, cần `reconcile` (tự probe rồi baseline) hoặc `baseline` tay trước. Sổ đã đủ 002..006 (baseline
+   * dở dang: đã ghi sổ, chưa ghi version) KHÔNG còn bị chặn: chỉ cần chạy tiếp để ghi version.
+   */
   baselineRequired: boolean;
+  /** `users` có ít nhất một document. `version` null + `hasUsers` false = DB mới tinh (xem `planReconcile`). */
+  hasUsers: boolean;
 }
 
 type SystemRow = Record<string, unknown> & { _id: string };
@@ -89,9 +96,17 @@ export const readMigrationState = async (db: Db): Promise<MigrationState> => {
   }
   applied.sort((a, b) => a.id.localeCompare(b.id));
 
-  const baselineRequired = version === null && (await hasUserData(db));
-  return { version, applied, lock, lastError, baselineRequired };
+  const hasUsers = await hasUserData(db);
+  const baselineRequired =
+    version === null && !hasAllBaselineIds(applied) && hasUsers;
+  return { version, applied, lock, lastError, baselineRequired, hasUsers };
 };
+
+/** Sổ đã có đủ mọi id 002..006 (baseline đã ghi xong). */
+export const hasAllBaselineIds = (
+  applied: readonly AppliedMigrationDoc[],
+): boolean =>
+  BASELINE_MIGRATION_IDS.every((id) => applied.some((doc) => doc.id === id));
 
 /** `users` có ít nhất 1 document (dấu hiệu production đã vận hành trước khi có sổ `system`). */
 export const hasUserData = async (db: Db): Promise<boolean> =>

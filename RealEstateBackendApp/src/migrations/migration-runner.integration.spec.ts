@@ -474,6 +474,7 @@ describe('MigrationRunner (CLI) trên replica set', () => {
             lock: null,
             lastError: null,
             baselineRequired: false,
+            hasUsers: false,
           }),
         )
         .mockImplementation(realRead);
@@ -509,6 +510,7 @@ describe('MigrationRunner (CLI) trên replica set', () => {
             lock: null,
             lastError: null,
             baselineRequired: true,
+            hasUsers: true,
           }),
         )
         .mockImplementation(realRead);

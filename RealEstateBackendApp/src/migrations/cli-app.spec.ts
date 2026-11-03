@@ -48,4 +48,30 @@ describe('runCli (cú pháp, không cần kết nối Mongo)', () => {
     expect(code).toBe(EXIT_CODE.FAILURE);
     expect(err.join('')).toContain('MONGODB_URI');
   });
+
+  it('reconcile nhận đủ cờ (--apply --by --skip-version --json): qua phân tích cú pháp, dừng ở thiếu MONGODB_URI (mã 1)', async () => {
+    const { code, err } = await run([
+      'reconcile',
+      '--apply',
+      '--by',
+      'deploy',
+      '--skip-version',
+      '--json',
+    ]);
+    expect(code).toBe(EXIT_CODE.FAILURE);
+    expect(err.join('')).toContain('MONGODB_URI');
+  });
+
+  it('reconcile với tùy chọn lạ hoặc --by sai => mã 2', async () => {
+    expect((await run(['reconcile', '--force'])).code).toBe(EXIT_CODE.USAGE);
+    expect((await run(['reconcile', '--by', 'someone'])).code).toBe(
+      EXIT_CODE.USAGE,
+    );
+  });
+
+  it('mã thoát DOWNGRADE là 5 và cách dùng nêu reconcile + mã 5', () => {
+    expect(EXIT_CODE.DOWNGRADE).toBe(5);
+    expect(CLI_USAGE).toContain('reconcile');
+    expect(CLI_USAGE).toContain('5 downgrade');
+  });
 });

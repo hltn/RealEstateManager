@@ -1,5 +1,5 @@
 /**
- * CLI migration: `node dist/migrations/cli.js <status|up|unlock|baseline>`.
+ * CLI migration: `node dist/migrations/cli.js <status|up|unlock|baseline|reconcile>`.
  * KHÔNG khởi động NestJS; chỉ dùng MongoClient + MONGODB_URI (đã có sẵn trong env của container backend).
  * Mọi logic nằm ở `cli-app.ts`; file này chỉ nối vào process (env, stdout/stderr, mã thoát).
  */

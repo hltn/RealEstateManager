@@ -11,9 +11,13 @@ export const CLI_USAGE = `Cách dùng: node dist/migrations/cli.js <lệnh> [tù
   unlock                               Gỡ khóa còn sót (chỉ khi chắc chắn không có runner nào đang chạy).
   baseline [--apply] --version x.y.z [--commit sha]
                                        Chạy MỘT lần: ghi sổ 002..006 đã áp dụng + version. Mặc định dry-run.
+  reconcile [--apply] [--by deploy|cli] [--skip-version] [--json]
+                                       Tự đối chiếu DB với phiên bản app: probe chỉ-đọc 002..006 rồi baseline (nếu cần),
+                                       chạy migration chờ, ghi version. Mặc định dry-run; --skip-version không ghi version;
+                                       --json in đúng MỘT dòng JSON ra stdout (log khác ra stderr).
 
 Biến môi trường: MONGODB_URI (bắt buộc).
-Mã thoát: 0 ok | 1 lỗi/từ chối | 2 sai cú pháp | 3 đang có khóa | 4 cần baseline.`;
+Mã thoát: 0 ok | 1 lỗi/từ chối | 2 sai cú pháp | 3 đang có khóa | 4 cần baseline/probe không đạt | 5 downgrade (app cũ hơn DB).`;
 
 export interface CliDeps {
   /** Chuỗi kết nối Mongo (đã có database trong đường dẫn, như `MONGODB_URI` của backend). */
@@ -28,13 +32,19 @@ interface ParsedArgs {
   command: string | undefined;
   apply: boolean;
   json: boolean;
+  skipVersion: boolean;
   by: MigrationActor;
   version: string | undefined;
   commit: string | undefined;
 }
 
 const VALUE_FLAGS = ['--by', '--version', '--commit'] as const;
-const BOOLEAN_FLAGS = ['--apply', '--json', '--help'] as const;
+const BOOLEAN_FLAGS = [
+  '--apply',
+  '--json',
+  '--skip-version',
+  '--help',
+] as const;
 
 /** Phân tích argv; trả `string` (thông báo lỗi cú pháp) nếu không hợp lệ. */
 const parseArgs = (argv: readonly string[]): ParsedArgs | string => {
@@ -42,6 +52,7 @@ const parseArgs = (argv: readonly string[]): ParsedArgs | string => {
     command: undefined,
     apply: false,
     json: false,
+    skipVersion: false,
     by: 'cli',
     version: undefined,
     commit: undefined,
@@ -54,6 +65,7 @@ const parseArgs = (argv: readonly string[]): ParsedArgs | string => {
     } else if ((BOOLEAN_FLAGS as readonly string[]).includes(token)) {
       if (token === '--apply') parsed.apply = true;
       if (token === '--json') parsed.json = true;
+      if (token === '--skip-version') parsed.skipVersion = true;
       if (token === '--help') parsed.command = 'help';
     } else if ((VALUE_FLAGS as readonly string[]).includes(token)) {
       const value = argv[index + 1];
@@ -89,7 +101,7 @@ export const runCli = async (
     deps.err(`${parsed}\n${CLI_USAGE}`);
     return EXIT_CODE.USAGE;
   }
-  const commands = ['status', 'up', 'unlock', 'baseline'];
+  const commands = ['status', 'up', 'unlock', 'baseline', 'reconcile'];
   if (parsed.command === 'help') {
     deps.out(CLI_USAGE);
     return EXIT_CODE.OK;
@@ -122,6 +134,13 @@ export const runCli = async (
         return await runner.up(parsed.apply, parsed.by);
       case 'unlock':
         return await runner.unlock();
+      case 'reconcile':
+        return await runner.reconcile({
+          apply: parsed.apply,
+          by: parsed.by,
+          skipVersion: parsed.skipVersion,
+          json: parsed.json,
+        });
       default:
         return await runner.baseline(
           parsed.apply,
