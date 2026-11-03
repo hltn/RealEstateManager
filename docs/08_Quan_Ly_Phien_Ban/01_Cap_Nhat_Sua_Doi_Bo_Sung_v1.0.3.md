@@ -72,7 +72,7 @@ Khi thêm lỗi mới, chép khối này và điền đủ các dòng:
 
 ## 4. Bảng tổng hợp
 
-Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**. Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
+Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028` và `PT-029` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (trạng thái `Mới`, chỉ ghi nhận, chưa sửa). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
 
 | Mã | Tiêu đề | Mức độ | Nhóm | Trạng thái |
 |---|---|---|---|---|
@@ -103,10 +103,12 @@ Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013
 | [PT-025](#pt-025--sidebar-mobile-không-tự-đóng-sau-khi-chọn-mục-chuyển-nút-x-sang-phải) | Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải | Major | FE | Xong một phần |
 | [PT-026](#pt-026--form-tạo-lịch-hẹn-mobile-icon-đè-lên-chữ-ở-ô-giờ-và-dự-án) | Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án | Major | FE | Xong một phần |
 | [PT-027](#pt-027--lưu-phiên-bản-hệ-thống-trong-db-và-cơ-chế-tự-chạy-migration-khi-nâng-cấp) | Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp | Major (đề xuất; cải tiến nền tảng) | BE / DevOps / Dữ liệu | Xong một phần |
+| [PT-028](#pt-028--chuyển-nút-ghi-chú-ở-tab-nhật-ký-xuống-thanh-đáy-mobile-và-chỉnh-lại-nút-trên-desktop) | Chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile; chỉnh lại nút trên desktop | Cải tiến | FE | Mới |
+| [PT-029](#pt-029--màn-hình-mobile-bỏ-nút-chỉnh-sửa-ở-hàng-tiêu-đề) | Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề | Minor | FE | Mới |
 
 ## 5. Chi tiết các mục
 
-Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đến `PT-012`) **[Do QA đề xuất khi rà tài liệu]** (`PT-013` đến `PT-016`) hoặc **[Oniichan test production 2026-11-02]** (`PT-017` đến `PT-026`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-02]** (`PT-027`). "Người phụ trách" là **đề xuất**, Oniichan chốt.
+Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đến `PT-012`) **[Do QA đề xuất khi rà tài liệu]** (`PT-013` đến `PT-016`) hoặc **[Oniichan test production 2026-11-02]** (`PT-017` đến `PT-026`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-02]** (`PT-027`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-03]** (`PT-028`, `PT-029`). "Người phụ trách" là **đề xuất**, Oniichan chốt.
 
 #### PT-001 — Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu
 
@@ -703,9 +705,46 @@ Chỉ là gợi ý, **chưa giao việc**. Mọi nhóm FE đều phải thử tr
 | (b) Tiến độ tự chuyển trạng thái | PT-023 | Tính năng mới: `architect-agent` thiết kế, rồi `coder-backend-agent` và `coder-frontend-agent`; chờ Oniichan trả lời mục 7 |
 | (c) Sidebar mobile | PT-024, PT-025 | `coder-frontend-agent` |
 | (d) Form lịch hẹn mobile | PT-026 | `coder-frontend-agent`; rà luôn các form mobile khác cùng kiểu |
+| (f) Nút Ghi chú và nút Chỉnh sửa ở màn chi tiết khách | PT-028, PT-029 | `coder-frontend-agent`; cùng màn với nhóm (a), nên làm sau khi nhóm (a) đã chốt để khỏi sửa chồng lên nhau. Chờ Oniichan trả lời 2 câu hỏi trong chính mục PT-028 |
 | (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được). Dockerfile đưa số phiên bản vào image nằm trong phạm vi PT-027 (PT-014 đã `Bỏ`). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
 
 Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý, vì mọi thay đổi schema/dữ liệu về sau sẽ dựa vào nó (hiện chưa mục PT nào bắt buộc migration, nhưng PT-023 có thể phát sinh); **điều kiện để deploy được là xử lý PT-006 (đĩa) trước**. Nhóm (a), (c), (d) thuần giao diện không phụ thuộc vào nhóm (e).
+
+#### PT-028 — Chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile và chỉnh lại nút trên desktop
+
+**[Oniichan yêu cầu bổ sung 2026-11-03]**
+
+| Trường | Nội dung |
+|---|---|
+| Mô tả | Màn chi tiết khách, tab **Nhật ký**. **Mobile:** bỏ nút "Ghi chú" nằm ngay dưới thanh tab (nút khoanh đỏ trong ảnh Oniichan gửi), chuyển xuống **thanh cố định ở đáy màn**, đứng cạnh hai nút "Gọi điện" và "Nhắn Zalo". **Desktop:** nút "Ghi chú" ở cùng chỗ đang "đứng lửng lơ" (một nút nhỏ đứng riêng, không gắn với khối nào), cần chỉnh lại cho đẹp và gọn |
+| Nhóm | FE |
+| Màn hình / API | Chi tiết khách, tab Nhật ký. File liên quan (đã đọc, 2026-11-03): `RealEstateAdminApp/src/modules/crm/screens/CustomerDetail/components/CareLogComposer.tsx` (nút khoanh đỏ: `w-full` ở mobile, `md:w-auto` ở desktop, nút `openCreate`); `.../components/MobileContactFooter.tsx` (thanh đáy cố định, hiện có 2 nút `flex-1`, `h-12`); `.../CustomerDetail.mobile.tsx`, `CustomerDetail.desktop.tsx` (nối `onAddNote`); `.../useNoteComposer.ts` (`openCreate`). Không có API mới |
+| Bước tái hiện | 1. Mở chi tiết một khách ở mobile (hoặc giả lập 375x667). 2. Chọn tab "Nhật ký". 3. Nhìn nút "Ghi chú" dưới thanh tab. 4. Lặp lại ở desktop và nhìn vị trí nút. (Môi trường: Oniichan test trên điện thoại (iPhone, Safari) và giả lập iPhone SE 375x667 trên desktop. Khi sửa phải thử lại đúng hai môi trường này, kèm desktop) |
+| Kết quả thực tế | Mobile: nút "Ghi chú" nằm giữa màn hình, trên khối "Nhật ký chăm sóc", phải cuộn lên mới thấy khi danh sách nhật ký dài, còn các nút hành động chính (Gọi điện, Nhắn Zalo) lại nằm ở đáy. Desktop: nút đứng riêng một mình, không thẳng hàng với khối nào, nhìn lửng lơ |
+| Kết quả mong đợi | Mobile: không còn nút "Ghi chú" ở giữa màn; thanh đáy có 3 nút (Ghi chú, Gọi điện, Nhắn Zalo), vẫn bấm được bằng một tay, không đè nội dung và không bị bàn phím che khi mở form. Desktop: nút "Ghi chú" được đặt vào chỗ có chủ đích (ví dụ cùng hàng với tiêu đề thẻ "Nhật ký chăm sóc", căn phải) hoặc nằm trong thẻ, cân với bố cục xung quanh |
+| Mức độ | Cải tiến |
+| Ảnh hưởng | Thao tác ghi chú, việc làm nhiều nhất của sale sau cuộc gọi, hiện nằm xa tầm ngón cái ở mobile; desktop thì thiếu chỉn chu |
+| Đề xuất | (1) Mobile: thêm nút "Ghi chú" vào `MobileContactFooter` (thanh đáy), tiếp tục dùng `openCreate` của `useNoteComposer` để mở form; chỉ hiện nút ở tab Nhật ký hay ở mọi tab là điểm cần Oniichan chốt (câu hỏi 1). Ẩn nút khoanh đỏ ở mobile (`variant === 'mobile'`) trong `CareLogComposer`, giữ nguyên ở desktop. (2) Desktop: đưa nút lên đầu thẻ "Nhật ký chăm sóc" (cùng hàng với tiêu đề), thay vì đứng riêng trên thẻ. (3) Cập nhật test vitest (`CustomerDetail.mobile.test.tsx` đang kiểm thanh đáy chỉ có Gọi điện và Nhắn Zalo, dòng 107 đến 115). (4) Kiểm tra khi form ghi chú đang mở thì thanh đáy không che ô nhập (form cuộn vào vùng nhìn thấy, xem `CareLogForm.tsx:89`) |
+| Người phụ trách | `coder-frontend-agent`; `qa-agent` review code và test |
+| Trạng thái | **Mới** (2026-11-03). Oniichan dặn **chỉ ghi vào danh sách PT, chưa sửa**. Chưa có code. **Câu hỏi cần Oniichan chốt trước khi sửa:** (1) Trên mobile, thanh đáy có 3 nút thì nút "Ghi chú" hiện ở **mọi tab** hay **chỉ tab Nhật ký**? (2) Ở mobile còn nút "Ghi chú" trong thẻ đầu hồ sơ (cạnh "Hẹn nhắc", `CustomerHeader.tsx:56`): **giữ** hay **bỏ** để khỏi trùng với nút ở thanh đáy? |
+
+#### PT-029 — Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề
+
+**[Oniichan yêu cầu bổ sung 2026-11-03]**
+
+| Trường | Nội dung |
+|---|---|
+| Mô tả | Màn chi tiết khách ở mobile: bỏ nút "Chỉnh sửa" (biểu tượng bút, chữ xanh) nằm góc phải hàng tiêu đề "← Quản lý khách hàng". Oniichan nhận xét nút này "lửng lơ" (đứng một mình trên nền trang, không thuộc thẻ nào) |
+| Nhóm | FE |
+| Màn hình / API | Chi tiết khách, mobile (mọi tab). File: `RealEstateAdminApp/src/modules/crm/screens/CustomerDetail/components/MobileDetailHeader.tsx:27-30` (nút gọi `navigate('edit_persona')`); test `MobileDetailHeader.test.tsx:21-25` đang kiểm nút này **phải có** nên cần đổi. Không có API mới |
+| Bước tái hiện | 1. Mở chi tiết một khách ở mobile (iPhone Safari hoặc giả lập 375x667). 2. Nhìn góc phải hàng tiêu đề. (Môi trường: như PT-017 đến PT-026) |
+| Kết quả thực tế | Có nút "Chỉnh sửa" đứng riêng ở góc phải hàng tiêu đề |
+| Kết quả mong đợi | Không còn nút này ở mobile; hàng tiêu đề chỉ còn nút Quay lại và nhãn "Quản lý khách hàng" |
+| Mức độ | Minor |
+| Ảnh hưởng | Giao diện thiếu gọn. **Không mất chức năng (Neptune đã đọc code, 2026-11-03):** cùng đích `edit_persona` (`/customers/:id/persona`) vẫn vào được bằng nút "Sửa" ở thẻ "Thông tin" (`CustomerInfoCard.tsx:24`) và thẻ "Chân dung khách hàng" (`PersonaCards.tsx:52`), cả hai đều nằm ở tab Thông tin |
+| Đề xuất | Xóa nút và import `Pencil`, `BUTTON_LINK_CLASS`, `useCrmActions().navigate` khỏi `MobileDetailHeader.tsx` (giữ `goBack`); sửa test thành "KHÔNG có nút Chỉnh sửa". Chỉ áp dụng cho mobile: `MobileDetailHeader` chỉ được dùng ở `CustomerDetail.mobile.tsx:43`, nên desktop không bị ảnh hưởng. Làm chung đợt với PT-028 (cùng màn, cùng agent) |
+| Người phụ trách | `coder-frontend-agent`; `qa-agent` review code và test |
+| Trạng thái | **Mới** (2026-11-03). Oniichan dặn chỉ ghi vào danh sách PT, chưa sửa (dặn lúc ghi PT-028, áp dụng cả mục này). Chưa có code. Lưu ý: nếu người dùng đang ở tab Nhật ký hay Tiến độ thì muốn sửa khách phải quay về tab Thông tin (đề xuất chấp nhận; nếu Oniichan muốn giữ một lối tắt khác ở các tab đó thì báo lại) |
 
 ## 6. Kết quả test production do Oniichan ghi nhận
 
