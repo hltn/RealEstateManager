@@ -3,6 +3,7 @@ import { InjectConnection } from '@nestjs/mongoose';
 import { ClientSession, Connection, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
+import { NotificationsService } from '../../notifications/notifications.service';
 import {
   CrmAuditAction,
   CrmAuditChange,
@@ -33,6 +34,7 @@ import {
   CriteriaUpdateResponseDto,
   DataConsentResponseDto,
 } from './dtos/customer-response.dto';
+import { buildAutoStatusNotifications } from './utils/customer-auto-status-notification.util';
 import {
   computeProgress,
   crossesAutoStatusThreshold,
@@ -52,13 +54,15 @@ export class CustomerCriteriaService {
     private readonly refs: CustomerRefsService,
     private readonly audit: CrmAuditLogService,
     private readonly statusChange: CustomerStatusChangeService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
    * Cập nhật 1-4 tiêu chí; `progress` = số tiêu chí hoàn thành x 25 do server tính và ghi CÙNG lệnh update.
    * Gửi giá trị trùng giá trị hiện có là no-op (không tăng version, không audit).
-   * PT-023: khi tiến độ đổi, tự chuyển tình trạng (về đúng 3/4 từ mức khác, kể cả 100 -> 75 -> NET; xuống dưới
-   * 3/4 -> INTERESTED nếu NET do cơ chế tự động đặt) CÙNG transaction; lỗi ở bước đổi tình trạng làm rollback cả tiêu chí.
+   * PT-023: khi tiến độ đổi, tự chuyển tình trạng (về đúng 3/4 từ mức khác, kể cả 100 -> 75 -> NET, đè mọi tình
+   * trạng trừ DROPPED; xuống dưới 3/4 -> INTERESTED nếu đang NET, kể cả NET do người dùng chọn tay) CÙNG transaction;
+   * lỗi ở bước đổi tình trạng làm rollback cả tiêu chí.
    */
   async updateCriteria(
     jwt: JwtPayload,
@@ -79,7 +83,8 @@ export class CustomerCriteriaService {
           lastUpdatedAt: 1,
           __v: 1,
           statusId: 1,
-          statusAutoSource: 1,
+          fullName: 1,
+          careTeam: 1,
         },
       });
       if (!before) throw customerNotFound();
@@ -203,6 +208,7 @@ export class CustomerCriteriaService {
   /**
    * PT-023: quyết định + áp dụng tự chuyển tình trạng sau khi tiêu chí đã ghi (cùng `session`).
    * `criteriaVersion` là `__v` vừa `$inc` ở bước ghi tiêu chí nên khóa lạc quan vẫn chặt.
+   * Khi đổi thật: gửi thông báo `CUSTOMER_STATUS_AUTO_CHANGED` cho người cùng chăm sóc (trừ người tick), cùng transaction.
    * Trả `null` khi không cần đổi, hoặc tình trạng đích (NET/INTERESTED) thiếu/ngừng hoạt động
    * (lúc đó chỉ log cảnh báo, KHÔNG làm hỏng lệnh sửa tiêu chí).
    */
@@ -212,7 +218,8 @@ export class CustomerCriteriaService {
     before: {
       progress?: number;
       statusId: Types.ObjectId;
-      statusAutoSource?: string | null;
+      fullName: string;
+      careTeam?: Array<{ userId: Types.ObjectId }>;
     },
     nextProgress: number,
     criteriaVersion: number,
@@ -236,8 +243,6 @@ export class CustomerCriteriaService {
       prevProgress: before.progress ?? 0,
       nextProgress,
       currentGroup: current.listGroup,
-      currentCode: current.code,
-      isAutoSet: !!before.statusAutoSource,
     });
     if (!target) return null;
 
@@ -255,9 +260,24 @@ export class CustomerCriteriaService {
       targetId,
       {
         version: criteriaVersion,
-        autoSource: target === 'NET' ? AUTO_STATUS_SOURCE : undefined,
+        autoSource: AUTO_STATUS_SOURCE,
       },
       auditSource,
+      session,
+    );
+    // Thông báo người cùng chăm sóc (trừ người tick) CÙNG transaction, chỉ khi tình trạng đã đổi thật (tới đây là chắc chắn).
+    await this.notifications.createMany(
+      buildAutoStatusNotifications({
+        customerId: new Types.ObjectId(id),
+        customerName: before.fullName,
+        careTeam: before.careTeam ?? [],
+        actorId: ctx.actor.userId,
+        actorName: ctx.actor.displayName,
+        fromLabel: current.label,
+        toLabel: result.status.label,
+        target,
+        version: result.version,
+      }),
       session,
     );
     return {

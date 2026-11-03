@@ -82,9 +82,6 @@ export interface AutoStatusInput {
   prevProgress: number;
   nextProgress: number;
   currentGroup: ListGroup;
-  currentCode: string;
-  /** Tình trạng NET hiện tại do cơ chế tự động đặt (`statusAutoSource` có giá trị). */
-  isAutoSet: boolean;
 }
 
 /**
@@ -102,33 +99,29 @@ export const crossesAutoStatusThreshold = (
     prevProgress >= AUTO_STATUS_PROGRESS_THRESHOLD);
 
 /**
- * PT-023: quyết định tự chuyển tình trạng khi tiến độ đổi. Hàm thuần, không đụng DB.
- * - Tiến độ MỚI bằng đúng 75 và tiến độ cũ khác 75 (từ dưới 75 lên, hoặc 100 -> 75) và khách đang ở nhóm
- *   Chưa tiếp cận/Có quan tâm -> `NET`. 4/4 (next = 100) không kích hoạt.
- * - Xuống dưới 75 (từ >= 75) và khách đang NET do cơ chế tự động đặt -> `INTERESTED`.
- * - Còn lại (DROPPED, nhóm cao hơn, NET đổi tay/có sẵn không marker, tiến độ không đổi...) -> `null` (không đổi).
+ * PT-023 (đã chốt 2026-11-03): quyết định tự chuyển tình trạng khi tiến độ đổi. Hàm thuần, không đụng DB.
+ * Quyết định chỉ dựa vào NHÓM tình trạng hiện tại, KHÔNG phân biệt tình trạng do tự động hay do người dùng đặt:
+ * - Tiến độ MỚI bằng đúng 75 và tiến độ cũ khác 75 (từ dưới 75 lên, hoặc 100 -> 75): `NET` cho mọi nhóm trừ
+ *   `DROPPED` (miễn) và `NET` (đã ở NET thì không đổi). Tình trạng tùy biến ở nhóm Chưa tiếp cận/Có quan tâm bị đè.
+ *   4/4 (next = 100) không kích hoạt.
+ * - Xuống dưới 75 (từ >= 75): khách đang ở nhóm `NET` (kể cả NET do người dùng chọn tay) -> `INTERESTED`.
+ *   Nhóm khác (Chưa tiếp cận, Có quan tâm, DROPPED) không đổi: "về Có quan tâm" chỉ áp dụng cho khách đang ở NET.
+ * - Còn lại (tiến độ không đổi, không qua mốc...) -> `null`.
  */
 export const decideAutoStatus = ({
   prevProgress,
   nextProgress,
   currentGroup,
-  currentCode,
-  isAutoSet,
 }: AutoStatusInput): AutoStatusTarget | null => {
   const threshold = AUTO_STATUS_PROGRESS_THRESHOLD;
-  if (
-    nextProgress === threshold &&
-    prevProgress !== threshold &&
-    (currentGroup === ListGroup.NOT_CONTACTED ||
-      currentGroup === ListGroup.INTERESTED)
-  ) {
-    return 'NET';
+  if (currentGroup === ListGroup.DROPPED) return null;
+  if (nextProgress === threshold && prevProgress !== threshold) {
+    return currentGroup === ListGroup.NET ? null : 'NET';
   }
   if (
     nextProgress < threshold &&
     prevProgress >= threshold &&
-    currentCode === 'NET' &&
-    isAutoSet
+    currentGroup === ListGroup.NET
   ) {
     return 'INTERESTED';
   }

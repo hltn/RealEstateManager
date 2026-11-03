@@ -47,7 +47,7 @@ export const CRITERIA_KEYS = [
 ] as const;
 export type CriteriaKey = (typeof CRITERIA_KEYS)[number];
 
-/** PT-023: nguồn đặt tình trạng tự động (dấu `statusAutoSource`); hiện chỉ có tiến độ tiêu chí. */
+/** PT-023: nguồn đổi tình trạng tự động, chỉ ghi vào audit (`changes[].field = 'statusAutoSource'`); hiện chỉ có tiến độ tiêu chí. */
 export const AUTO_STATUS_SOURCE = 'CRITERIA_PROGRESS' as const;
 export type AutoStatusSource = typeof AUTO_STATUS_SOURCE;
 /** PT-023: mốc tiến độ (3/4 tiêu chí) kích hoạt tự chuyển sang NET. */

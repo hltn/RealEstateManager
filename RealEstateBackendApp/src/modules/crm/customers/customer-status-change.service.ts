@@ -64,8 +64,8 @@ export class CustomerStatusChangeService {
   /**
    * Đổi tình trạng trong một transaction có sẵn (dùng chung cho API đơn lẻ và thao tác hàng loạt).
    * `version` vắng mặt (hàng loạt) thì không kiểm khóa lạc quan.
-   * `autoSource` (PT-023): có -> đặt dấu `statusAutoSource` (tình trạng do cơ chế tự động đặt) và ghi vào audit;
-   * vắng (PATCH /status, hàng loạt, hoàn tác, lùi tự động về INTERESTED) -> xóa dấu.
+   * `autoSource` (PT-023): có -> đổi này do cơ chế tự động (cả chiều lên NET lẫn về INTERESTED), ghi thêm phần tử
+   * `statusAutoSource` vào audit để lịch sử phân biệt với đổi tay; KHÔNG lưu vào khách (không còn dấu trên khách).
    */
   async applyChange(
     ctx: AccessContext,
@@ -112,10 +112,8 @@ export class CustomerStatusChangeService {
           statusChangedAt: now,
           lastUpdatedAt: now,
           lastUpdatedBy: ctx.actor.userId,
-          ...(autoSource ? { statusAutoSource: autoSource } : {}),
         },
         $inc: { __v: 1 },
-        ...(autoSource ? {} : { $unset: { statusAutoSource: '' } }),
       },
       { session },
     );

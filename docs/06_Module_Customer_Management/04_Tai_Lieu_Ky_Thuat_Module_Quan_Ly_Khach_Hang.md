@@ -195,7 +195,6 @@ erDiagram
 | `email` | string \| null (trim, lowercase, ≤ 254, định dạng email) | Không | Email khách (**không unique**, không bắt buộc). Là dữ liệu cá nhân: không ghi vào log ứng dụng, không đưa vào payload push | C1 |
 | `statusId` | ObjectId → `customer_statuses` | Có | Mặc định trạng thái `isDefault` ("Chưa tiếp cận") | C1, C6 |
 | `statusChangedAt` | Date | Có | Lần đổi tình trạng gần nhất | C6 |
-| `statusAutoSource` | enum `['CRITERIA_PROGRESS']` \| null | Không (mặc định `null`; **không index**; **không trả ra API**) | Dấu "tình trạng hiện tại do cơ chế tự đổi theo tiến độ đặt" (v1.0.3, PT-023). Thiếu hoặc `null` = không phải do tự động (tương thích ngược, **không cần migration**). Đặt khi tự lên `NET`; xóa mỗi khi tình trạng đổi bằng đường khác hoặc khi tự hạ về `INTERESTED`. Cơ chế: mục 6.2a | C6, PT-023 |
 | `sourceId` | ObjectId → `catalog_items` (LEAD_SOURCE) \| null | Không | Nguồn khách | C1 |
 | `interestedProjectIds` | ObjectId[] → `projects` | Không | Nhiều dự án | C1 |
 | `areaId` | ObjectId → `areas` \| null | Không | Nơi khách đang ở | C1 |
@@ -359,6 +358,7 @@ Index: `{ key: 1 }` unique; `{ isActive: 1, groupCode: 1, order: 1 }`.
 | `APPOINTMENT_DUE` | Đến mốc nhắc trước lịch hẹn | `assigneeId` + phụ trách chính (`priority=HIGH`) | C3, X5 |
 | `FOLLOW_UP_DUE` | Đến hạn "bước tiếp theo" của nhật ký | Tác giả + phụ trách chính | C3 |
 | `CARE_LOG_ADDED` | Người cùng chăm sóc ghi chú mới (gộp theo khách trong 10 phút) | Thành viên khác trong nhóm | X5 |
+| `CUSTOMER_STATUS_AUTO_CHANGED` (thêm ở v1.0.3, PT-023) | Tình trạng khách bị **tự** đổi theo tiến độ 3/4 tiêu chí (lên `NET` hoặc về `INTERESTED`; chỉ khi có đổi thật). Mức ưu tiên `NORMAL`; chống trùng theo (khách, version sau cùng) | Thành viên `careTeam` của khách, **trừ người tick tiêu chí** | PT-023 |
 | `STALE_CUSTOMER` | Khách có tình trạng thuộc nhóm Chưa tiếp cận hoặc Có quan tâm (cả hai) quá N ngày chưa có nhật ký | Phụ trách chính (`HIGH`); thành viên chỉ nhận nếu tự bật | X5, QT7 |
 | `CUSTOMER_OCCASION` | Sinh nhật / kỷ niệm (hôm nay hoặc trước N ngày) | Cả nhóm chăm sóc, phụ trách chính `HIGH` | C13 |
 | `CARE_TEAM_JOIN_REQUESTED` / `CARE_TEAM_JOIN_RESOLVED` | Có đề nghị tham gia / đề nghị được duyệt hoặc từ chối | Phụ trách chính + Quản lý nhóm / người đề nghị | X2 |
@@ -570,30 +570,31 @@ sequenceDiagram
   Note over FE: React Query invalidate list-counts → khách tự xuất hiện ở tab đúng (không xóa, không chuyển dữ liệu)
 ```
 
-Lưu ý (v1.0.3, PT-023): lệnh `PATCH /status`, đổi hàng loạt và Hoàn tác **xóa** dấu `statusAutoSource` (đổi tay thì không còn là "do tự động đặt"), kể cả khi đổi tay thành `NET`.
+Lưu ý (v1.0.3, PT-023): lệnh `PATCH /status`, đổi hàng loạt và Hoàn tác **không** kích hoạt tự đổi theo tiến độ và không còn dấu riêng trên khách (field `statusAutoSource` đã bỏ 2026-11-03); lần hạ tiêu chí kế tiếp xử lý theo nhóm tình trạng hiện tại (mục 6.2a), kể cả khi `NET` do đổi tay.
 
 ### 6.2a Tự đổi tình trạng theo tiến độ (PT-023, v1.0.3)
 
-**Quy tắc nghiệp vụ** (Oniichan chốt 2026-11-02; 3 điểm (a) không thông báo, (b) chỉ đè khi nhóm `NOT_CONTACTED`/`INTERESTED`, (c) không lùi/đè trạng thái cao hơn là **giả định tạm đã áp dụng**, chờ xác nhận, xem `docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mục 7 câu 9. Câu 19 (4/4 rồi bỏ một tiêu chí xuống 3/4 thì **tự lên "Khách net"**) và câu 20 (tình trạng tùy biến bị đè, hạ thì về `INTERESTED` hệ thống) **Oniichan đã chốt 2026-11-02**):
+**Quy tắc nghiệp vụ** (Oniichan chốt 2026-11-02; 3 điểm (a) thông báo, (b) hạ dưới 3/4 về `INTERESTED` bất kể `NET` do ai đặt, (c) đủ 3/4 đè mọi tình trạng trừ `DROPPED` **đã chốt 2026-11-03**, xem `docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mục 7 câu 9. Câu 19 (4/4 rồi bỏ một tiêu chí xuống 3/4 thì **tự lên "Khách net"**) và câu 20 (tình trạng tùy biến bị đè, hạ thì về `INTERESTED` hệ thống) cũng đã chốt):
 
-- Chỉ xét khi lần cập nhật làm `progress` **thực sự đổi**. Đủ **3/4** tiêu chí bất kỳ (`progress = 75`):
-  - `progress` **mới = 75** và `progress` cũ **khác 75** (từ 0/25/50 lên 75, **hoặc từ 100 xuống 75**, tức 4/4 bỏ một tiêu chí) và tình trạng hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED` ⇒ tự chuyển hẳn sang `NET` ("Khách net") và đặt `statusAutoSource = 'CRITERIA_PROGRESS'`.
-  - `progress` tụt từ 75 trở lên xuống **dưới 75** và tình trạng hiện tại là `NET` **do cơ chế này đặt** (có `statusAutoSource`) ⇒ tự về `INTERESTED` ("Có quan tâm"), xóa dấu. Hạ từ 3/4 hoặc 4/4 xuống 1/4 hay 0/4 cũng là dưới ngưỡng.
-- **Không làm gì** khi: đủ 4/4 (kể cả 0/25/50 lên 100); khách đang `DROPPED` hoặc ở nhóm cao hơn (kể cả khi 100 xuống 75); `NET` do đổi tay hoặc có sẵn (không có dấu) khi hạ tiêu chí; `progress` không đổi (chỉ sửa mô tả).
+- Chỉ xét khi lần cập nhật làm `progress` **thực sự đổi**. Quyết định chỉ dựa vào **nhóm** tình trạng hiện tại, không phân biệt tình trạng do tự động hay do người dùng đặt:
+  - `progress` **mới = 75** và `progress` cũ **khác 75** (từ 0/25/50 lên 75, **hoặc từ 100 xuống 75**, tức 4/4 bỏ một tiêu chí) và tình trạng hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED` (kể cả tình trạng tùy biến, bị đè) ⇒ tự chuyển hẳn sang `NET` ("Khách net").
+  - `progress` tụt từ 75 trở lên xuống **dưới 75** (2/4, 1/4, 0/4) và tình trạng hiện tại thuộc nhóm `NET` (**kể cả NET do người dùng chọn tay**) ⇒ tự về `INTERESTED` ("Có quan tâm").
+- **Không làm gì** (không đổi, không audit `STATUS_CHANGED`, không thông báo) khi: khách đang `DROPPED` (miễn cả hai chiều); khách đã ở nhóm `NET` khi đủ 3/4; khách ở nhóm `NOT_CONTACTED`/`INTERESTED` khi hạ tiêu chí; đủ 4/4 (kể cả 0/25/50 lên 100); `progress` không đổi (chỉ sửa mô tả).
 - **Chỉ** `PATCH /crm/customers/:id/criteria` kích hoạt. Nhập CSV và đổi hàng loạt **không** kích hoạt. **Lưu ý:** backend hiện **chưa có** nhập CSV (M8); khi làm M8 phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
-- Tình trạng cũ dạng tùy biến (Quản trị thêm) thuộc nhóm `INTERESTED`/`NOT_CONTACTED` vẫn bị đè thành `NET`, và khi hạ thì khách về `INTERESTED` của hệ thống chứ không về tình trạng cũ (mục 7 câu 20 của tài liệu phiên bản; Oniichan đã chấp nhận 2026-11-02).
+- Tình trạng cũ dạng tùy biến (Quản trị thêm) bị đè thành `NET`, và khi hạ thì khách về `INTERESTED` của hệ thống chứ không về tình trạng cũ (mục 7 câu 20 của tài liệu phiên bản; Oniichan đã chấp nhận).
+- **Thông báo (câu 9 (a), chốt 2026-11-03, đã triển khai):** mỗi lần tự đổi **thật** (cả lên `NET` lẫn về `INTERESTED`) gửi thông báo trong ứng dụng loại `CUSTOMER_STATUS_AUTO_CHANGED` (mục 3.6.1) cho những người trong `careTeam` của khách, **trừ người thực hiện tick**; không có người nhận (careTeam rỗng hoặc chỉ có người tick) thì không gửi. Ghi bằng `NotificationsService.createMany(items, session)` **cùng transaction** nên lỗi hoặc xung đột version rollback cả thông báo; không đổi tình trạng thì không thông báo. `dedupeKey` = `CUSTOMER_STATUS_AUTO:<customerId>:<version sau cùng>`; deep link `/crm/customers/:id`; nội dung không chứa SĐT/CCCD.
 
 **Cơ chế (backend):**
 
-- Tái dùng `CustomerStatusChangeService.applyChange` (cùng `session`, kiểm khóa lạc quan `version`) trong **cùng transaction** với cập nhật tiêu chí; tiêu chí và tình trạng nguyên tử, lỗi bước đổi tình trạng làm rollback cả hai. Quyết định bằng một hàm thuần (`decideAutoStatus`) nhận tiến độ trước/sau, nhóm và mã tình trạng hiện tại, có dấu `statusAutoSource` hay không.
+- Tái dùng `CustomerStatusChangeService.applyChange` (cùng `session`, kiểm khóa lạc quan `version`) trong **cùng transaction** với cập nhật tiêu chí; tiêu chí và tình trạng nguyên tử, lỗi bước đổi tình trạng làm rollback cả hai. Quyết định bằng một hàm thuần (`decideAutoStatus`) chỉ nhận tiến độ trước/sau và **nhóm** tình trạng hiện tại (không còn tham số mã tình trạng hay dấu "do tự động đặt").
 - Tìm tình trạng đích theo `code` (`NET`, `INTERESTED`) đang hoạt động, chưa xóa. Nếu danh mục thiếu thì **bỏ qua** việc tự đổi (tiêu chí vẫn lưu, trả 200, log cảnh báo).
-- **Field `customers.statusAutoSource`:** optional, enum `['CRITERIA_PROGRESS']`, mặc định `null`, **không index**, **không trả ra API**; **không cần migration** (thiếu = `null`). Mọi đổi tay xóa dấu (xem 6.2); `applyChange` nhận tham số `autoSource` để đặt dấu.
-- **Audit:** 2 bản ghi `CRITERIA_UPDATED` và `STATUS_CHANGED` trong cùng transaction, **cùng actor là người tick tiêu chí**, `reason` null; `STATUS_CHANGED` có thêm phần tử `changes` `{ field: 'statusAutoSource', ... }`. Không đổi schema audit.
+- **Không còn field `customers.statusAutoSource`** (bỏ 2026-11-03 vì mã chết sau khi bỏ điều kiện "do cơ chế tự động đặt"). **Không cần migration:** document cũ còn field thừa vẫn đọc/ghi bình thường, không ảnh hưởng quyết định. `applyChange` vẫn nhận tham số `autoSource` nhưng chỉ để ghi dấu vào audit.
+- **Audit:** 2 bản ghi `CRITERIA_UPDATED` và `STATUS_CHANGED` trong cùng transaction, **cùng actor là người tick tiêu chí**, `reason` null; `STATUS_CHANGED` có thêm phần tử `changes` `{ field: 'statusAutoSource', from: null, to: 'CRITERIA_PROGRESS' }` cho **cả hai chiều** (lên `NET` và về `INTERESTED`); đây là dấu duy nhất cho biết lần đổi do tự động. Không đổi schema audit.
 - **Version:** cập nhật tiêu chí tăng `__v` một lần, đổi tình trạng tăng thêm một lần nên `version` trả về = `version` gửi lên + 2.
 
 **API:** response `PATCH /crm/customers/:id/criteria` thêm `autoStatusChange?: { from: StatusRef|null, to: StatusRef }` (chỉ khi vừa tự đổi); `version`/`lastUpdatedAt` là giá trị sau cùng. Request không đổi; tương thích ngược. Chi tiết ở tài liệu 05.
 
-**Frontend:** khi response có `autoStatusChange`, hiện toast 6 giây nêu tình trạng cũ và mới kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí); **không có Hoàn tác 10 giây** (hoàn tác riêng tình trạng làm lệch quy tắc 3/4 và dấu đã bị xóa; muốn đảo thì bỏ tick tiêu chí hoặc đổi tay). Lịch sử thay đổi hiện chip "Tự động theo tiến độ". Ghi dữ liệu CRM ở FE đã làm mới toàn bộ truy vấn liên quan nên không cần thêm bước làm mới.
+**Frontend:** khi response có `autoStatusChange`, hiện toast 6 giây nêu tình trạng cũ và mới kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí); **không có Hoàn tác 10 giây** (hoàn tác riêng tình trạng làm lệch quy tắc 3/4; muốn đảo thì bỏ tick tiêu chí hoặc đổi tay). Lịch sử thay đổi hiện chip "Tự động theo tiến độ". Ghi dữ liệu CRM ở FE đã làm mới toàn bộ truy vấn liên quan nên không cần thêm bước làm mới.
 
 ### 6.3 Phân khách & gửi push (C8, QT7, QT8, X5)
 

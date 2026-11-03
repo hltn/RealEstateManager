@@ -16,6 +16,11 @@ describe('resolveNotificationPath (deepLink backend -> route Web Admin)', () => 
     expect(resolveNotificationPath({ deepLink: '/crm/audit-logs?actorId=1&actions=PHONE_VIEW_ALERT' })).toBeNull();
   });
 
+  it('thông báo tự đổi trạng thái (deepLink hồ sơ khách, có thể kèm query) -> mở đúng hồ sơ khách', () => {
+    expect(resolveNotificationPath({ deepLink: '/crm/customers/66f1a2b3c4d5e6f708192a3b', customerId: '66f1a2b3c4d5e6f708192a3b' })).toBe('/crm/customers/66f1a2b3c4d5e6f708192a3b');
+    expect(resolveNotificationPath({ deepLink: '/crm/customers/66f1a2b3c4d5e6f708192a3b?tab=history' })).toBe('/crm/customers/66f1a2b3c4d5e6f708192a3b');
+  });
+
   it('không dẫn tới đường dẫn ngoài app (chống link lạ)', () => {
     expect(resolveNotificationPath({ deepLink: 'https://evil.example/crm/customers/abc' })).toBeNull();
     expect(resolveNotificationPath({ deepLink: '//evil.example' })).toBeNull();
@@ -25,6 +30,7 @@ describe('resolveNotificationPath (deepLink backend -> route Web Admin)', () => 
 describe('getNotificationTypeLabel', () => {
   it('dịch loại đã biết, loại lạ -> "Thông báo"', () => {
     expect(getNotificationTypeLabel('APPOINTMENT_DUE')).toBe('Lịch hẹn');
+    expect(getNotificationTypeLabel('CUSTOMER_STATUS_AUTO_CHANGED')).toBe('Tự đổi trạng thái');
     expect(getNotificationTypeLabel('UNKNOWN_FUTURE_TYPE')).toBe('Thông báo');
   });
 });

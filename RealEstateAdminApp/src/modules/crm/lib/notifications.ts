@@ -8,6 +8,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   APPOINTMENT_DUE: 'Lịch hẹn',
   FOLLOW_UP_DUE: 'Việc cần làm',
   CARE_LOG_ADDED: 'Nhật ký mới',
+  CUSTOMER_STATUS_AUTO_CHANGED: 'Tự đổi trạng thái',
   STALE_CUSTOMER: 'Khách lâu chưa chăm sóc',
   CUSTOMER_OCCASION: 'Dịp đặc biệt',
   CARE_TEAM_JOIN_REQUESTED: 'Đề nghị tham gia',

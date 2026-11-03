@@ -30,6 +30,7 @@ import { GlobalExceptionFilter } from '../../common/filters/global-exception.fil
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
+import { NotificationsService } from '../notifications/notifications.service';
 import { TeamsModule } from '../teams/teams.module';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
@@ -2136,7 +2137,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
 
     const statusCollection = () => connection.collection('customer_statuses');
 
-    it('(1) tick tiêu chí thứ 3 -> NET, đặt marker, trả autoStatusChange, version +2, đủ 2 audit đúng actor/source', async () => {
+    it('(1) tick tiêu chí thứ 3 -> NET, trả autoStatusChange, version +2, đủ 2 audit đúng actor/source', async () => {
       const { id, version } = await newCustomer();
       const res = await setDone(id, version, THREE, {
         'x-client-type': 'mobile',
@@ -2151,7 +2152,8 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.NET);
-      expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
+      // Không còn lưu dấu trên khách; dấu tự động chỉ nằm trong audit.
+      expect(raw.statusAutoSource).toBeUndefined();
       expect(raw.__v).toBe(version + 2);
       expect(res.body.data.lastUpdatedAt).toBe(
         (raw.lastUpdatedAt as Date).toISOString(),
@@ -2191,7 +2193,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
     });
 
-    it('(2) bỏ tick xuống 2/4 -> INTERESTED, xóa marker, trả autoStatusChange', async () => {
+    it('(2) bỏ tick xuống 2/4 -> INTERESTED, trả autoStatusChange, audit có dấu tự động', async () => {
       const { id, version } = await newCustomer();
       const up = await setDone(id, version, THREE);
       const down = await setDone(id, up.body.data.version, TWO);
@@ -2205,52 +2207,133 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.INTERESTED);
-      expect(raw.statusAutoSource).toBeUndefined();
       const audits = await auditOf(id, 'STATUS_CHANGED');
       expect(audits).toHaveLength(2);
-      // Lùi tự động không ghi marker vào audit.
-      expect(
-        audits[1].changes.some(
-          (c: { field: string }) => c.field === 'statusAutoSource',
-        ),
-      ).toBe(false);
+      // Cả chiều lên NET lẫn về INTERESTED đều ghi dấu tự động vào audit (FE hiện chip "Tự động theo tiến độ").
+      expect(audits[1].changes).toEqual(
+        expect.arrayContaining([
+          { field: 'statusAutoSource', from: null, to: 'CRITERIA_PROGRESS' },
+        ]),
+      );
+      expect(audits[1].reason).toBeNull();
     });
 
-    it('(3) NET đổi tay qua PATCH /status rồi hạ 2/4 -> giữ NET', async () => {
+    it('(3) NET đổi tay qua PATCH /status: đủ 3/4 không đổi gì; hạ 2/4 -> về INTERESTED (kể cả NET do người dùng chọn)', async () => {
       const { id, version } = await newCustomer();
       const manual = await changeStatus(id, version, status.NET);
       const up = await setDone(id, manual.body.data.version, THREE);
+      // Đã ở NET: không đổi, không audit STATUS_CHANGED mới (chỉ 1 bản ghi của lần đổi tay).
       expect(up.body.data.autoStatusChange).toBeUndefined();
+      expect(up.body.data.version).toBe(manual.body.data.version + 1);
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
+
       const down = await setDone(id, up.body.data.version, TWO);
       expect(down.status).toBe(200);
-      expect(down.body.data.autoStatusChange).toBeUndefined();
-      expect(String((await rawCustomer(id))!.statusId)).toBe(status.NET);
+      expect(down.body.data.autoStatusChange).toMatchObject({
+        from: { code: 'NET' },
+        to: { code: 'INTERESTED' },
+      });
+      expect(down.body.data.version).toBe(up.body.data.version + 2);
+      expect(String((await rawCustomer(id))!.statusId)).toBe(status.INTERESTED);
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(2);
     });
 
-    it('(4) NET tự đặt rồi đổi tay sang trạng thái khác -> xóa marker; đổi tay lại thành NET không dựng lại marker', async () => {
+    it.each([
+      ['2/4', TWO, 50],
+      ['1/4', ['demand'] as CriterionKey[], 25],
+      ['0/4', [] as CriterionKey[], 0],
+    ])(
+      '(4) NET tự đặt rồi đổi tay sang trạng thái khác, đổi tay lại NET, hạ %s -> về INTERESTED',
+      async (_label, remaining, expectedProgress) => {
+        const { id, version } = await newCustomer();
+        const up = await setDone(id, version, THREE);
+        const toInterested = await changeStatus(
+          id,
+          up.body.data.version,
+          status.INTERESTED,
+        );
+        expect(toInterested.status).toBe(200);
+        const toNet = await changeStatus(
+          id,
+          toInterested.body.data.version,
+          status.NET,
+        );
+        const down = await setDone(id, toNet.body.data.version, remaining);
+        expect(down.body.data.progress).toBe(expectedProgress);
+        expect(down.body.data.autoStatusChange).toMatchObject({
+          from: { code: 'NET' },
+          to: { code: 'INTERESTED' },
+        });
+        expect(String((await rawCustomer(id))!.statusId)).toBe(
+          status.INTERESTED,
+        );
+      },
+    );
+
+    it('(4b) tình trạng tùy biến (nhóm INTERESTED) đủ 3/4 -> bị đè thành NET; hạ 2/4 -> INTERESTED hệ thống', async () => {
       const { id, version } = await newCustomer();
-      const up = await setDone(id, version, THREE);
-      expect((await rawCustomer(id))!.statusAutoSource).toBe(
-        'CRITERIA_PROGRESS',
+      const base = (await statusCollection().findOne({ code: 'INTERESTED' }))!;
+      const custom = await statusCollection().insertOne({
+        ...base,
+        _id: new Types.ObjectId(),
+        code: 'CUSTOM_VIP',
+        seedKey: 'STATUS:CUSTOM_VIP',
+        label: 'Quan tâm VIP',
+      });
+      try {
+        const moved = await changeStatus(
+          id,
+          version,
+          String(custom.insertedId),
+        );
+        expect(moved.status).toBe(200);
+        const up = await setDone(id, moved.body.data.version, THREE);
+        expect(up.body.data.autoStatusChange).toMatchObject({
+          from: { code: 'CUSTOM_VIP' },
+          to: { code: 'NET' },
+        });
+        const down = await setDone(id, up.body.data.version, TWO);
+        expect(down.body.data.autoStatusChange).toMatchObject({
+          from: { code: 'NET' },
+          to: { code: 'INTERESTED', id: status.INTERESTED },
+        });
+      } finally {
+        await statusCollection().deleteOne({ _id: custom.insertedId });
+      }
+    });
+
+    it('(4c) DROPPED hạ tiêu chí, và NOT_CONTACTED 4/4 hạ tiêu chí -> không đổi', async () => {
+      const dropped = await newCustomer();
+      const d1 = await changeStatus(
+        dropped.id,
+        dropped.version,
+        status.DROPPED,
+      );
+      const full = await setDone(dropped.id, d1.body.data.version, [
+        ...CRITERIA,
+      ]);
+      const downDropped = await setDone(
+        dropped.id,
+        full.body.data.version,
+        TWO,
+      );
+      expect(downDropped.body.data.autoStatusChange).toBeUndefined();
+      expect(String((await rawCustomer(dropped.id))!.statusId)).toBe(
+        status.DROPPED,
       );
 
-      const toInterested = await changeStatus(
-        id,
-        up.body.data.version,
-        status.INTERESTED,
+      // NOT_CONTACTED 4/4 hạ 2/4: không tự "lên" INTERESTED.
+      const fresh = await newCustomer();
+      const fullFresh = await setDone(fresh.id, fresh.version, [...CRITERIA]);
+      const downFresh = await setDone(
+        fresh.id,
+        fullFresh.body.data.version,
+        TWO,
       );
-      expect(toInterested.status).toBe(200);
-      expect((await rawCustomer(id))!.statusAutoSource).toBeUndefined();
-
-      const toNet = await changeStatus(
-        id,
-        toInterested.body.data.version,
-        status.NET,
+      expect(downFresh.body.data.autoStatusChange).toBeUndefined();
+      expect(String((await rawCustomer(fresh.id))!.statusId)).toBe(
+        status.NOT_CONTACTED,
       );
-      expect((await rawCustomer(id))!.statusAutoSource).toBeUndefined();
-      const down = await setDone(id, toNet.body.data.version, TWO);
-      expect(down.body.data.autoStatusChange).toBeUndefined();
-      expect(String((await rawCustomer(id))!.statusId)).toBe(status.NET);
     });
 
     it('(5) DROPPED tick đủ 3/4 -> không đổi', async () => {
@@ -2283,11 +2366,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.NET);
-      expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
     });
 
-    it('(6b) khách INTERESTED 4/4 (từng đổi tay), bỏ 1 tiêu chí -> NET + marker + 2 audit + version +2', async () => {
+    it('(6b) khách INTERESTED 4/4 (từng đổi tay), bỏ 1 tiêu chí -> NET + 2 audit + version +2', async () => {
       const { id, version } = await newCustomer();
       const manual = await changeStatus(id, version, status.INTERESTED);
       expect(manual.status).toBe(200);
@@ -2309,7 +2391,6 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.NET);
-      expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
       expect(raw.__v).toBe(full.body.data.version + 2);
       expect(await auditOf(id, 'CRITERIA_UPDATED')).toHaveLength(
         criteriaAuditsBefore + 1,
@@ -2319,7 +2400,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       );
     });
 
-    it('(6c) khách NET đổi tay, 4/4 rồi 100 -> 75 -> không đổi, không đặt marker', async () => {
+    it('(6c) khách NET đổi tay, 4/4 rồi 100 -> 75 -> không đổi (đã NET)', async () => {
       const { id, version } = await newCustomer();
       const manual = await changeStatus(id, version, status.NET);
       const full = await setDone(id, manual.body.data.version, [...CRITERIA]);
@@ -2331,7 +2412,6 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(back.body.data.version).toBe(full.body.data.version + 1);
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.NET);
-      expect(raw.statusAutoSource).toBeUndefined();
       // Chỉ có 1 audit STATUS_CHANGED: lần đổi tay.
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
     });
@@ -2345,7 +2425,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       let v: number = up.body.data.version;
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
 
-      // 75 -> 100 -> 75 khi đang NET tự đặt: không đổi, marker còn nguyên, mỗi bước chỉ tăng version 1.
+      // 75 -> 100 -> 75 khi đang NET: không đổi, mỗi bước chỉ tăng version 1.
       for (const done of [[...CRITERIA], THREE] as CriterionKey[][]) {
         const res = await setDone(id, v, done);
         expect(res.status).toBe(200);
@@ -2354,17 +2434,15 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         v = res.body.data.version;
         const raw = (await rawCustomer(id))!;
         expect(String(raw.statusId)).toBe(status.NET);
-        expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
       }
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
 
-      // 75 -> 50: NET tự đặt lùi về INTERESTED, xóa marker.
+      // 75 -> 50: NET lùi về INTERESTED.
       const down = await setDone(id, v, TWO);
       expect(down.body.data.autoStatusChange).toMatchObject({
         from: { code: 'NET' },
         to: { code: 'INTERESTED' },
       });
-      expect((await rawCustomer(id))!.statusAutoSource).toBeUndefined();
 
       // 50 -> 75 lần nữa: lên NET lại, đúng 3 audit STATUS_CHANGED tổng cộng.
       const again = await setDone(id, down.body.data.version, THREE);
@@ -2375,7 +2453,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(3);
     });
 
-    it('(6e) DROPPED 4/4 rồi 100 -> 75 -> không đổi, không đặt marker', async () => {
+    it('(6e) DROPPED 4/4 rồi 100 -> 75 -> không đổi', async () => {
       const { id, version } = await newCustomer();
       const dropped = await changeStatus(id, version, status.DROPPED);
       const full = await setDone(id, dropped.body.data.version, [...CRITERIA]);
@@ -2386,7 +2464,6 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(back.body.data.version).toBe(full.body.data.version + 1);
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.DROPPED);
-      expect(raw.statusAutoSource).toBeUndefined();
     });
 
     it('(6f) 100 -> 75 nhưng version cũ (xung đột) -> 409, không đổi tình trạng, không audit mới', async () => {
@@ -2403,9 +2480,9 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       );
     });
 
-    it('(7) khách NET sẵn có (không marker, dữ liệu cũ) hạ 2/4 -> giữ NET', async () => {
+    it('(7) khách NET sẵn có (dữ liệu cũ, còn field statusAutoSource thừa) hạ 2/4 -> về INTERESTED', async () => {
       const { id, version } = await newCustomer();
-      // Mô phỏng dữ liệu trước PT-023: NET + 4/4 nhưng KHÔNG có field statusAutoSource.
+      // Mô phỏng dữ liệu cũ: NET + 4/4, còn field `statusAutoSource` thừa (đã bỏ khỏi schema, không được ảnh hưởng).
       await customers().updateOne(
         { _id: new Types.ObjectId(id) },
         {
@@ -2416,15 +2493,18 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
             'criteria.motivation.isDone': true,
             'criteria.finance.isDone': true,
             'criteria.timing.isDone': true,
+            statusAutoSource: 'CRITERIA_PROGRESS',
           },
-          $unset: { statusAutoSource: '' },
         },
       );
       const res = await setDone(id, version, TWO);
       expect(res.status).toBe(200);
       expect(res.body.data.progress).toBe(50);
-      expect(res.body.data.autoStatusChange).toBeUndefined();
-      expect(String((await rawCustomer(id))!.statusId)).toBe(status.NET);
+      expect(res.body.data.autoStatusChange).toMatchObject({
+        from: { code: 'NET' },
+        to: { code: 'INTERESTED' },
+      });
+      expect(String((await rawCustomer(id))!.statusId)).toBe(status.INTERESTED);
     });
 
     it.each([
@@ -2445,7 +2525,6 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
           const raw = (await rawCustomer(id))!;
           expect(raw.progress).toBe(75);
           expect(String(raw.statusId)).toBe(status.NOT_CONTACTED);
-          expect(raw.statusAutoSource ?? null).toBeNull();
         } finally {
           await statusCollection().updateOne(
             { code: 'NET' },
@@ -2460,7 +2539,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       },
     );
 
-    it('(8b) INTERESTED bị ngừng hoạt động: NET tự đặt hạ 2/4 vẫn lưu tiêu chí, giữ NET', async () => {
+    it('(8b) INTERESTED bị ngừng hoạt động: NET hạ 2/4 vẫn lưu tiêu chí, giữ NET', async () => {
       const { id, version } = await newCustomer();
       const up = await setDone(id, version, THREE);
       await statusCollection().updateOne(
@@ -2514,13 +2593,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(0);
     });
 
-    it('(11) hàng loạt CHANGE_STATUS không kích hoạt tự chuyển và xóa marker', async () => {
+    it('(11) hàng loạt CHANGE_STATUS không kích hoạt tự chuyển', async () => {
       const { id, version } = await newCustomer();
       const up = await setDone(id, version, THREE);
       expect(up.body.data.autoStatusChange).toBeDefined();
-      expect((await rawCustomer(id))!.statusAutoSource).toBe(
-        'CRITERIA_PROGRESS',
-      );
 
       // Rate limit hàng loạt dùng Redis; stub để case này chỉ kiểm hành vi tình trạng/marker.
       const rateLimit = jest
@@ -2541,11 +2617,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(bulk.body.data.succeeded).toEqual([id]);
       const raw = (await rawCustomer(id))!;
       expect(String(raw.statusId)).toBe(status.INTERESTED);
-      expect(raw.statusAutoSource).toBeUndefined();
       // 1 lần tự đổi (NET) + 1 lần hàng loạt; hàng loạt không sinh thêm tự chuyển nào.
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(2);
 
-      // Marker đã xóa: hạ tiêu chí không đổi tình trạng.
+      // Đã ở INTERESTED: hạ tiêu chí không đổi tình trạng.
       const down = await setDone(id, raw.__v, ['demand']);
       expect(down.body.data.autoStatusChange).toBeUndefined();
     });
@@ -2576,7 +2651,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(1);
     });
 
-    it('(13) response không có autoStatusChange khi không đổi tình trạng (client cũ vẫn hợp lệ); marker không lộ ra API', async () => {
+    it('(13) response không có autoStatusChange khi không đổi tình trạng (client cũ vẫn hợp lệ); không có field tự động nào lộ ra API', async () => {
       const { id, version } = await newCustomer();
       const res = await setDone(id, version, ['demand']);
       expect(res.status).toBe(200);
@@ -2673,7 +2748,224 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       ]);
     });
 
-    it('(17) PATCH criteria đồng thời với PATCH /status cùng version: đúng 1 thắng; marker khớp bên thắng', async () => {
+    const notificationsOf = (customerId: string, as: string) =>
+      connection
+        .collection('notifications')
+        .find({
+          'data.customerId': new Types.ObjectId(customerId),
+          userId: new Types.ObjectId(ids[as]),
+          type: 'CUSTOMER_STATUS_AUTO_CHANGED',
+        })
+        .toArray();
+
+    it('(18) thông báo: nhiều người chăm sóc, người tick KHÔNG nhận; cả chiều lên NET lẫn về INTERESTED', async () => {
+      const created = await createCustomer('manager1', {
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const id = created.id;
+      const up = await setDone(
+        id,
+        created.res.body.data.version,
+        THREE,
+        {},
+        'staffB',
+      );
+      expect(up.body.data.autoStatusChange.to.code).toBe('NET');
+
+      expect(await notificationsOf(id, 'staffB')).toHaveLength(0);
+      const toA = await notificationsOf(id, 'staffA');
+      expect(toA).toHaveLength(1);
+      expect(toA[0]).toMatchObject({
+        title: 'Tình trạng khách tự đổi',
+        priority: 'NORMAL',
+        readAt: null,
+        data: { deepLink: `/crm/customers/${id}` },
+        dedupeKey: `CUSTOMER_STATUS_AUTO:${id}:${up.body.data.version}`,
+      });
+      expect(toA[0].body).toContain('đạt 3/4');
+      // Quản lý tạo khách nhưng không nằm trong careTeam -> không nhận.
+      expect(await notificationsOf(id, 'manager1')).toHaveLength(0);
+
+      // Chiều về INTERESTED: A hạ tiêu chí -> B nhận, A (người tick) không nhận thêm.
+      const down = await setDone(id, up.body.data.version, TWO, {}, 'staffA');
+      expect(down.body.data.autoStatusChange.to.code).toBe('INTERESTED');
+      const toB = await notificationsOf(id, 'staffB');
+      expect(toB).toHaveLength(1);
+      expect(toB[0].body).toContain('xuống dưới 3/4');
+      expect(await notificationsOf(id, 'staffA')).toHaveLength(1);
+    });
+
+    it('(18b) người tick là người chăm sóc duy nhất -> không có thông báo nào', async () => {
+      const { id, version } = await newCustomer();
+      const up = await setDone(id, version, THREE);
+      expect(up.body.data.autoStatusChange.to.code).toBe('NET');
+      expect(
+        await connection
+          .collection('notifications')
+          .countDocuments({ 'data.customerId': new Types.ObjectId(id) }),
+      ).toBe(0);
+    });
+
+    it('(18c) không đổi tình trạng (đã NET, DROPPED, lên 4/4) -> không thông báo', async () => {
+      const created = await createCustomer('manager1', {
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const id = created.id;
+      const net = await call(
+        'PATCH',
+        `/crm/customers/${id}/status`,
+        'manager1',
+        { statusId: status.NET, version: created.res.body.data.version },
+      );
+      const up = await setDone(id, net.body.data.version, THREE, {}, 'staffB');
+      expect(up.body.data.autoStatusChange).toBeUndefined();
+      const full = await setDone(
+        id,
+        up.body.data.version,
+        [...CRITERIA],
+        {},
+        'staffB',
+      );
+      expect(full.body.data.autoStatusChange).toBeUndefined();
+
+      const dropped = await createCustomer('manager1', {
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const d1 = await call(
+        'PATCH',
+        `/crm/customers/${dropped.id}/status`,
+        'manager1',
+        {
+          statusId: status.DROPPED,
+          version: dropped.res.body.data.version,
+        },
+      );
+      await setDone(dropped.id, d1.body.data.version, THREE, {}, 'staffB');
+
+      expect(
+        await connection
+          .collection('notifications')
+          .countDocuments({
+            type: 'CUSTOMER_STATUS_AUTO_CHANGED',
+            'data.customerId': {
+              $in: [new Types.ObjectId(id), new Types.ObjectId(dropped.id)],
+            },
+          }),
+      ).toBe(0);
+    });
+
+    it('(18d) người nhận đã tắt inApp cho loại này -> không ghi; lỗi version -> rollback không để lại thông báo', async () => {
+      const created = await createCustomer('manager1', {
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const id = created.id;
+      const conflict = await setDone(
+        id,
+        created.res.body.data.version + 5,
+        THREE,
+        {},
+        'staffB',
+      );
+      expect(conflict.status).toBe(409);
+      expect(await notificationsOf(id, 'staffA')).toHaveLength(0);
+
+      await connection.collection('notification_preferences').updateOne(
+        { userId: new Types.ObjectId(ids.staffA) },
+        {
+          $set: {
+            types: {
+              CUSTOMER_STATUS_AUTO_CHANGED: { inApp: false, push: true },
+            },
+          },
+        },
+        { upsert: true },
+      );
+      try {
+        const up = await setDone(
+          id,
+          created.res.body.data.version,
+          THREE,
+          {},
+          'staffB',
+        );
+        expect(up.body.data.autoStatusChange.to.code).toBe('NET');
+        expect(await notificationsOf(id, 'staffA')).toHaveLength(0);
+      } finally {
+        await connection
+          .collection('notification_preferences')
+          .deleteOne({ userId: new Types.ObjectId(ids.staffA) });
+      }
+    });
+
+    it('(18e) lỗi SAU khi ghi thông báo -> rollback cả thông báo (chứng minh createMany chạy cùng transaction)', async () => {
+      const created = await createCustomer('manager1', {
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const id = created.id;
+      const version: number = created.res.body.data.version;
+      const notifications = app.get(NotificationsService);
+      const original = notifications.createMany.bind(notifications);
+      let written = -1;
+      const spy = jest
+        .spyOn(notifications, 'createMany')
+        .mockImplementationOnce(async (items, session) => {
+          written = await original(items, session);
+          throw new Error('sau-khi-ghi-thong-bao');
+        });
+      try {
+        const res = await setDone(id, version, THREE, {}, 'staffB');
+        expect(res.status).toBe(500);
+      } finally {
+        spy.mockRestore();
+      }
+      // Thông báo đã được ghi (trong transaction) rồi bị hủy cùng với tiêu chí/tình trạng/audit.
+      expect(written).toBe(1);
+      expect(await notificationsOf(id, 'staffA')).toHaveLength(0);
+      const raw = (await rawCustomer(id))!;
+      expect(raw.progress).toBe(0);
+      expect(raw.__v).toBe(version);
+      expect(String(raw.statusId)).toBe(status.NOT_CONTACTED);
+      expect(await auditOf(id, 'STATUS_CHANGED')).toHaveLength(0);
+    });
+
+    it('(18f) nội dung thông báo không chứa SĐT; 2 PATCH đồng thời chỉ sinh đúng 1 thông báo cho mỗi người nhận', async () => {
+      const phone = nextPhone();
+      const created = await createCustomer('manager1', {
+        fullName: 'Trần Thị Bích',
+        phone,
+        careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
+      });
+      const id = created.id;
+      const base = await setDone(
+        id,
+        created.res.body.data.version,
+        TWO,
+        {},
+        'staffB',
+      );
+      const current: number = base.body.data.version;
+      const results = await Promise.all([
+        setDone(id, current, THREE, {}, 'staffB'),
+        setDone(id, current, [...TWO, 'timing'], {}, 'staffB'),
+      ]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      const toA = await notificationsOf(id, 'staffA');
+      expect(toA).toHaveLength(1);
+      const text = JSON.stringify(toA[0]);
+      expect(text).toContain('Trần Thị Bích');
+      expect(text).not.toContain(phone);
+      expect(text).not.toContain(phone.slice(1));
+      expect(
+        await connection
+          .collection('notifications')
+          .countDocuments({
+            'data.customerId': new Types.ObjectId(id),
+            type: 'CUSTOMER_STATUS_AUTO_CHANGED',
+          }),
+      ).toBe(1);
+    });
+
+    it('(17) PATCH criteria đồng thời với PATCH /status cùng version: đúng 1 thắng; tình trạng khớp bên thắng', async () => {
       const { id, version } = await newCustomer();
       const base = await setDone(id, version, TWO);
       const current: number = base.body.data.version;
@@ -2685,11 +2977,9 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       const raw = (await rawCustomer(id))!;
       if (criteria.status === 200) {
         expect(String(raw.statusId)).toBe(status.NET);
-        expect(raw.statusAutoSource).toBe('CRITERIA_PROGRESS');
         expect(raw.__v).toBe(current + 2);
       } else {
         expect(String(raw.statusId)).toBe(status.INTERESTED);
-        expect(raw.statusAutoSource).toBeUndefined();
         expect(raw.progress).toBe(50);
         expect(raw.__v).toBe(current + 1);
       }
