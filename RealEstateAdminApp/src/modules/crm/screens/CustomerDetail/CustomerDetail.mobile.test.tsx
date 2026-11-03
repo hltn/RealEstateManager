@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CareLogView, CustomerDetail } from '@crm/api';
 import { CrmProvider } from '@crm/store/CrmProvider';
 import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
@@ -91,6 +91,11 @@ const renderScreen = () => {
 };
 
 const openLogsTab = () => fireEvent.click(screen.getByRole('tab', { name: 'Nhật ký' }));
+const getFooter = () => screen.getByRole('contentinfo', { name: 'Thao tác nhanh với khách' });
+/** Nút "Ghi chú" ở thẻ tóm tắt đầu hồ sơ. */
+const getHeaderNoteButton = () => within(screen.getByRole('region', { name: 'Tóm tắt hồ sơ' })).getByRole('button', { name: 'Ghi chú' });
+/** Nút "Ghi chú" ở thanh cố định đáy màn (PT-028). */
+const getFooterNoteButton = () => within(getFooter()).getByRole('button', { name: 'Ghi chú' });
 
 beforeEach(() => useCustomerHistories.mockClear());
 
@@ -104,57 +109,188 @@ describe('Chi tiết khách (mobile) — PT-017: đầu màn không hiện tên 
 });
 
 describe('Chi tiết khách (mobile) — PT-018: SĐT bỏ khỏi tab Thông tin nhưng vẫn còn đường xem/gọi', () => {
-  it('section "Thông tin" không có SĐT; thẻ tóm tắt còn SĐT che + "Hiện số"; thanh cố định còn Gọi điện/Nhắn Zalo', () => {
+  it('section "Thông tin" không có SĐT; thẻ tóm tắt còn SĐT che + "Hiện số"; thanh cố định còn Ghi chú/Gọi điện/Nhắn Zalo', () => {
     renderScreen();
     const info = screen.getByRole('region', { name: 'Thông tin khách hàng' });
     expect(within(info).queryByText(/0912/)).toBeNull();
     const summary = screen.getByRole('region', { name: 'Tóm tắt hồ sơ' });
     expect(within(summary).getByText(/0912 ••• 678/)).toBeInTheDocument();
     expect(within(summary).getByRole('button', { name: /Hiện số/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Gọi điện' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Nhắn Zalo' })).toBeInTheDocument();
+    expect(within(getFooter()).getByRole('button', { name: 'Gọi điện' })).toBeInTheDocument();
+    expect(within(getFooter()).getByRole('button', { name: 'Nhắn Zalo' })).toBeInTheDocument();
+  });
+});
+
+describe('Chi tiết khách (mobile) — PT-028: nút "Ghi chú" nằm ở thanh đáy, hiện ở mọi tab', () => {
+  it('thanh đáy có đúng 3 nút theo thứ tự Ghi chú, Gọi điện, Nhắn Zalo', () => {
+    renderScreen();
+    const labels = within(getFooter()).getAllByRole('button').map((button) => button.textContent?.trim());
+    expect(labels).toEqual(['Ghi chú', 'Gọi điện', 'Nhắn Zalo']);
+  });
+
+  it.each(['Thông tin', 'Nhật ký', 'Tiến độ'])('tab %s: thanh đáy vẫn có nút "Ghi chú"', (tabName) => {
+    renderScreen();
+    fireEvent.click(screen.getByRole('tab', { name: tabName }));
+    expect(getFooterNoteButton()).toBeInTheDocument();
+  });
+
+  it.each(['Thông tin', 'Tiến độ'])('đang ở tab %s: bấm "Ghi chú" ở thanh đáy -> sang tab Nhật ký và mở form đầy đủ (như nút ở thẻ đầu hồ sơ)', (tabName) => {
+    renderScreen();
+    fireEvent.click(screen.getByRole('tab', { name: tabName }));
+    fireEvent.click(getFooterNoteButton());
+    expect(screen.getByRole('tab', { name: 'Nhật ký' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('tab Nhật ký không còn nút "Ghi chú" riêng dưới thanh tab: chỉ còn 2 nút (thẻ đầu hồ sơ + thanh đáy), form chưa mở', () => {
+    renderScreen();
+    openLogsTab();
+    expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(2);
+    expect(screen.queryByRole('form')).toBeNull();
+  });
+
+  it('form đang mở: thanh đáy vẫn còn đủ 3 nút; nội dung chừa đáy 6rem + safe-area (home indicator) để cuộn tới cuối form không bị che', () => {
+    renderScreen();
+    fireEvent.click(getFooterNoteButton());
+    expect(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toBeInTheDocument();
+    expect(within(getFooter()).getAllByRole('button')).toHaveLength(3);
+    expect(screen.getByTestId('customer-detail-mobile')).toHaveClass('pb-[calc(6rem+env(safe-area-inset-bottom))]');
+  });
+
+  describe('bấm "Ghi chú" khi form thêm mới ĐÃ mở sẵn: cuộn + focus lại form, không mất nháp', () => {
+    const scrollIntoView = vi.fn();
+    const typeDraft = (text: string) => fireEvent.change(screen.getByRole('textbox', { name: /Nội dung trao đổi/ }), { target: { value: text } });
+
+    beforeEach(() => {
+      scrollIntoView.mockClear();
+      // jsdom không có scrollIntoView: gắn hàm giả để đếm số lần form được đưa vào vùng nhìn thấy.
+      Element.prototype.scrollIntoView = scrollIntoView;
+    });
+    afterEach(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    });
+
+    it('mở lần đầu: form cuộn + focus đúng 1 lần (không bị gọi đôi)', () => {
+      renderScreen();
+      fireEvent.click(getFooterNoteButton());
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' }));
+      expect(screen.getByRole('textbox', { name: /Nội dung trao đổi/ })).toHaveFocus();
+    });
+
+    it('nháp đang ẩn ở tab Thông tin: bấm Ghi chú ở thanh đáy -> sang tab Nhật ký, form cuộn + focus lại, nháp còn nguyên', () => {
+      renderScreen();
+      fireEvent.click(getFooterNoteButton());
+      typeDraft('Khách hẹn xem nhà thứ bảy');
+      fireEvent.click(screen.getByRole('tab', { name: 'Thông tin' }));
+      expect(screen.queryByRole('form')).toBeNull();
+      scrollIntoView.mockClear();
+
+      fireEvent.click(getFooterNoteButton());
+
+      expect(screen.getByRole('tab', { name: 'Nhật ký' })).toHaveAttribute('aria-selected', 'true');
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' }));
+      const textbox = screen.getByRole('textbox', { name: /Nội dung trao đổi/ });
+      expect(textbox).toHaveFocus();
+      expect(textbox).toHaveValue('Khách hẹn xem nhà thứ bảy');
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('đang ở tab Nhật ký, form mở và focus đã rời ô nhập: bấm Ghi chú ở thanh đáy đưa focus về ô nội dung, nháp còn nguyên', () => {
+      renderScreen();
+      openLogsTab();
+      fireEvent.click(getFooterNoteButton());
+      typeDraft('Nháp đang gõ');
+      getFooterNoteButton().focus();
+      scrollIntoView.mockClear();
+
+      fireEvent.click(getFooterNoteButton());
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('textbox', { name: /Nội dung trao đổi/ })).toHaveFocus();
+      expect(screen.getByRole('textbox', { name: /Nội dung trao đổi/ })).toHaveValue('Nháp đang gõ');
+    });
+
+    it('đang SỬA nhật ký có thay đổi: bấm Ghi chú ở thanh đáy chỉ hỏi lại (không cuộn/focus phía sau hộp xác nhận)', () => {
+      renderScreen();
+      openLogsTab();
+      fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
+      typeDraft('Đã sửa nội dung nhật ký');
+      scrollIntoView.mockClear();
+
+      fireEvent.click(getFooterNoteButton());
+
+      expect(screen.getByRole('dialog')).toHaveTextContent('Bỏ thay đổi chưa lưu?');
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+
+  it('đang soạn có nội dung rồi bấm "Ghi chú" ở thanh đáy lần nữa: giữ nguyên bản nháp (không reset form)', () => {
+    renderScreen();
+    fireEvent.click(getFooterNoteButton());
+    fireEvent.change(screen.getByRole('textbox', { name: /Nội dung trao đổi/ }), { target: { value: 'Bản nháp đang gõ' } });
+    fireEvent.click(getFooterNoteButton());
+    expect(screen.getByRole('textbox', { name: /Nội dung trao đổi/ })).toHaveValue('Bản nháp đang gõ');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('Chi tiết khách (mobile) — PT-028: bấm "Ghi chú" ở thanh đáy khi bản nháp đã có ở tab khác', () => {
+  it('soạn dở, sang tab Thông tin rồi bấm "Ghi chú" ở thanh đáy: về tab Nhật ký, bản nháp còn nguyên, không hỏi lại', () => {
+    renderScreen();
+    fireEvent.click(getFooterNoteButton());
+    fireEvent.change(screen.getByRole('textbox', { name: /Nội dung trao đổi/ }), { target: { value: 'Nháp giữ qua tab' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Thông tin' }));
+    expect(screen.queryByRole('form')).toBeNull();
+    fireEvent.click(getFooterNoteButton());
+    expect(screen.getByRole('tab', { name: 'Nhật ký' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('textbox', { name: /Nội dung trao đổi/ })).toHaveValue('Nháp giữ qua tab');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
 
 describe('Chi tiết khách (mobile) — PT-020: form ghi chú chỉ hiện khi bấm "Ghi chú"', () => {
-  it('vào tab Nhật ký: chưa có form, chỉ có nút "Ghi chú" (trong vùng Nhật ký) và danh sách nhật ký', () => {
+  it('vào tab Nhật ký: chưa có form và danh sách nhật ký hiện ra; nút "Ghi chú" chỉ ở thẻ tóm tắt + thanh đáy (PT-028)', () => {
     renderScreen();
     openLogsTab();
     expect(screen.queryByRole('form')).toBeNull();
     expect(screen.getByText('Đã gọi tư vấn')).toBeInTheDocument();
-    // Có 2 nút "Ghi chú": ở thẻ tóm tắt và ở đầu tab Nhật ký.
-    expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(2);
+    expect(getHeaderNoteButton()).toBeInTheDocument();
+    expect(getFooterNoteButton()).toBeInTheDocument();
   });
 
-  it('bấm "Ghi chú" trong tab Nhật ký: hiện form ĐẦY ĐỦ (nội dung, kênh, kết quả, nhắc việc, ảnh) và nút Ghi chú trong tab biến mất', () => {
+  it('bấm "Ghi chú" ở thanh đáy khi đang ở tab Nhật ký: hiện form ĐẦY ĐỦ (nội dung, kênh, kết quả, nhắc việc, ảnh)', () => {
     renderScreen();
     openLogsTab();
-    const logsTabButton = screen.getAllByRole('button', { name: 'Ghi chú' })[1];
-    fireEvent.click(logsTabButton);
+    fireEvent.click(getFooterNoteButton());
     const form = screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' });
     expect(within(form).getByRole('textbox', { name: /Nội dung trao đổi/ })).toBeVisible();
     expect(within(form).getByRole('combobox', { name: 'Kênh liên hệ' })).toBeVisible();
     expect(within(form).getByRole('combobox', { name: 'Kết quả liên hệ' })).toBeVisible();
     expect(within(form).getByRole('group', { name: 'Nhắc việc tiếp theo' })).toBeVisible();
     expect(within(form).getByText('Thêm ảnh')).toBeVisible();
-    expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(1);
+    // Thẻ tóm tắt + thanh đáy vẫn giữ nút "Ghi chú" (nút riêng trong tab Nhật ký không còn).
+    expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(2);
   });
 
   it('bấm "Ghi chú" ở thẻ tóm tắt khi đang ở tab Thông tin: tự sang tab Nhật ký và mở form đầy đủ (không mở hộp rút gọn)', () => {
     renderScreen();
     expect(screen.getByRole('tab', { name: 'Thông tin' })).toHaveAttribute('aria-selected', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Ghi chú' }));
+    fireEvent.click(getHeaderNoteButton());
     expect(screen.getByRole('tab', { name: 'Nhật ký' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('Hủy: form đóng lại, nút "Ghi chú" quay về', () => {
+  it('Hủy: form đóng lại, không còn form nào và nút "Ghi chú" ở thanh đáy vẫn dùng được để mở lại', () => {
     renderScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Ghi chú' }));
+    fireEvent.click(getHeaderNoteButton());
     fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
     expect(screen.queryByRole('form')).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(2);
+    fireEvent.click(getFooterNoteButton());
+    expect(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toBeInTheDocument();
   });
 });
 
@@ -197,7 +333,7 @@ describe('Chi tiết khách (mobile) — PT-020/PT-022: không mất bản nháp
 
   it('đang soạn rồi đổi sang tab Thông tin/Tiến độ và quay lại: form + nội dung đã gõ vẫn còn', () => {
     renderScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Ghi chú' }));
+    fireEvent.click(getHeaderNoteButton());
     typeDraft('Khách hẹn xem nhà thứ bảy');
     fireEvent.click(screen.getByRole('tab', { name: 'Thông tin' }));
     expect(screen.queryByRole('form')).toBeNull(); // ẩn khỏi tab khác (không chiếm chỗ, không có trong cây truy cập)
@@ -209,7 +345,7 @@ describe('Chi tiết khách (mobile) — PT-020/PT-022: không mất bản nháp
   it('đang soạn (có nội dung) mà bấm "Sửa" nhật ký: hỏi lại, KHÔNG đổi form; "Tiếp tục nhập" giữ nguyên bản nháp', () => {
     renderScreen();
     openLogsTab();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi chú' })[1]);
+    fireEvent.click(getFooterNoteButton());
     typeDraft('Bản nháp quan trọng');
     fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Bỏ thay đổi chưa lưu?');
@@ -222,7 +358,7 @@ describe('Chi tiết khách (mobile) — PT-020/PT-022: không mất bản nháp
   it('đang soạn rồi xác nhận "Bỏ thay đổi": sang form sửa nhật ký với dữ liệu cũ', () => {
     renderScreen();
     openLogsTab();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi chú' })[1]);
+    fireEvent.click(getFooterNoteButton());
     typeDraft('Bản nháp sẽ bị bỏ');
     fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Bỏ thay đổi' }));
@@ -233,7 +369,7 @@ describe('Chi tiết khách (mobile) — PT-020/PT-022: không mất bản nháp
   it('form mới mở, chưa gõ gì: bấm "Sửa" chuyển thẳng, không hỏi', () => {
     renderScreen();
     openLogsTab();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi chú' })[1]);
+    fireEvent.click(getFooterNoteButton());
     fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByRole('form', { name: 'Sửa nhật ký chăm sóc' })).toBeInTheDocument();
@@ -241,7 +377,7 @@ describe('Chi tiết khách (mobile) — PT-020/PT-022: không mất bản nháp
 
   it('có bản nháp mà bấm Hủy: hỏi lại; xác nhận thì đóng form, từ chối thì giữ nội dung', () => {
     renderScreen();
-    fireEvent.click(screen.getByRole('button', { name: 'Ghi chú' }));
+    fireEvent.click(getHeaderNoteButton());
     typeDraft('Chưa lưu');
     fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -257,7 +393,7 @@ describe('Chi tiết khách (mobile) — PT-020/PT-022: không mất bản nháp
     openLogsTab();
     fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
     typeDraft('Đã sửa nội dung nhật ký');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ghi chú' })[0]);
+    fireEvent.click(getHeaderNoteButton());
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('form', { name: 'Sửa nhật ký chăm sóc' })).toBeInTheDocument();
   });

@@ -1,5 +1,6 @@
-// Chi tiết khách trên điện thoại (02 §7): chia tab Thông tin / Nhật ký / Tiến độ; nút Gọi và Zalo cố định đáy.
-// Màn chi tiết là sub view -> CrmLayout KHÔNG hiện `CrmBottomNav`; chừa `pb-24` cho thanh CTA đáy.
+// Chi tiết khách trên điện thoại (02 §7): chia tab Thông tin / Nhật ký / Tiến độ; nút Ghi chú, Gọi và Zalo cố định đáy (PT-028).
+// Màn chi tiết là sub view -> CrmLayout KHÔNG hiện `CrmBottomNav`; chừa đáy `6rem + safe-area` (cao hơn thanh đáy ~73px + vùng home indicator iPhone)
+// cho thanh CTA đáy để phần cuối form ghi chú / danh sách vẫn cuộn lên khỏi thanh đáy.
 import { useState } from 'react';
 import { useCareLogs, useCustomerDetail } from '@crm/api';
 import { CustomerLoadState } from '@crm/components/CustomerLoadState';
@@ -35,20 +36,27 @@ export const CustomerDetailMobile = () => {
   const careLogs = careLogsState.data;
   const [activeTab, setActiveTab] = useState<MobileTab>('info');
   const noteComposer = useNoteComposer(selectedCustomerId ?? '');
+  // Tăng mỗi lần bấm "Ghi chú" khi form thêm mới ĐÃ mở sẵn (không dựng lại) để form cuộn vào vùng nhìn thấy + focus lại.
+  const [noteFocusSignal, setNoteFocusSignal] = useState(0);
 
   if (!customer) return <CustomerLoadState variant="mobile" title="Chi tiết khách hàng" isLoading={isLoading} isNotFound={isNotFound} error={error} onRetry={refetch} />;
 
+  // "Ghi chú" ở thẻ đầu hồ sơ và ở thanh đáy (mọi tab): sang tab Nhật ký và mở form đầy đủ (PT-020, PT-028).
+  // Form thêm mới đã mở sẵn (có thể đang có nháp, đang ẩn ở tab khác): `openCreate` giữ nguyên nháp và không dựng lại form nên phải báo form cuộn + focus lại.
+  // Các trường hợp còn lại tự xử lý: đóng -> form mới mount (cuộn + focus); đang sửa nhật ký -> dựng form mới hoặc hỏi lại (hộp xác nhận lo tiêu điểm).
+  const handleAddNote = () => {
+    setActiveTab('logs');
+    if (noteComposer.state.kind === 'create') setNoteFocusSignal((signal) => signal + 1);
+    noteComposer.openCreate();
+  };
+
   return (
-    <div className="flex w-full min-w-0 flex-col gap-4 pb-24" data-testid="customer-detail-mobile">
+    <div className="flex w-full min-w-0 flex-col gap-4 pb-[calc(6rem+env(safe-area-inset-bottom))]" data-testid="customer-detail-mobile">
       <MobileDetailHeader />
       <CustomerHeader
         customer={customer}
         variant="mobile"
-        onAddNote={() => {
-          // Nút "Ghi chú" ở đầu hồ sơ: sang tab Nhật ký và mở form đầy đủ (PT-020).
-          setActiveTab('logs');
-          noteComposer.openCreate();
-        }}
+        onAddNote={handleAddNote}
       />
 
       <div role="tablist" aria-label="Thông tin khách hàng" className="flex border-b border-gray-200 dark:border-white/[0.05]">
@@ -79,8 +87,9 @@ export const CustomerDetailMobile = () => {
       )}
 
       {/* Form ghi chú LUÔN được dựng (chỉ ẩn khi không ở tab Nhật ký): đổi tab giữa chừng không làm mất bản nháp/ảnh đã tải lên. */}
-      <div hidden={activeTab !== 'logs'}>
-        <CareLogComposer key={customer.id} customer={customer} variant="mobile" composer={noteComposer} />
+      {/* `empty:hidden`: form đóng thì vùng này rỗng, không để lại khoảng cách thừa (gap) giữa các khối. */}
+      <div hidden={activeTab !== 'logs'} className="empty:hidden">
+        <CareLogComposer key={customer.id} customer={customer} variant="mobile" composer={noteComposer} focusSignal={noteFocusSignal} />
       </div>
 
       {activeTab === 'logs' && (
@@ -98,7 +107,7 @@ export const CustomerDetailMobile = () => {
         </>
       )}
 
-      <MobileContactFooter customerId={customer.id} />
+      <MobileContactFooter customerId={customer.id} onAddNote={handleAddNote} />
     </div>
   );
 };

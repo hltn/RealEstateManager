@@ -17,13 +17,18 @@ const renderHeader = () => {
   );
 };
 
-describe('MobileDetailHeader (PT-017): đầu màn chi tiết khách trên điện thoại', () => {
-  it('chỉ còn nhãn "Quản lý khách hàng" + Quay lại + Chỉnh sửa, KHÔNG có tên khách (tên đã nằm ở thẻ tóm tắt hồ sơ)', () => {
+describe('MobileDetailHeader (PT-017, PT-029): đầu màn chi tiết khách trên điện thoại', () => {
+  it('chỉ còn nhãn "Quản lý khách hàng" + Quay lại, KHÔNG có tên khách (tên đã nằm ở thẻ tóm tắt hồ sơ)', () => {
     renderHeader();
     expect(screen.getByText('Quản lý khách hàng')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Quay lại' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Chỉnh sửa/ })).toBeInTheDocument();
     expect(screen.queryByRole('heading')).toBeNull();
+  });
+
+  it('PT-029: KHÔNG còn nút "Chỉnh sửa" ở hàng tiêu đề; nút duy nhất là Quay lại', () => {
+    renderHeader();
+    expect(screen.queryByRole('button', { name: /Chỉnh sửa/ })).toBeNull();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 
   it('bấm Quay lại không lỗi (gọi goBack của store)', () => {

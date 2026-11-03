@@ -61,8 +61,10 @@ export const BUTTON_PRIMARY_BASE_CLASS =
 export const BUTTON_PRIMARY_CLASS = `${BUTTON_PRIMARY_BASE_CLASS} ${BUTTON_SIZE_MD}`;
 export const BUTTON_PRIMARY_LG_CLASS = `${BUTTON_PRIMARY_BASE_CLASS} ${BUTTON_SIZE_LG}`;
 
-/** Nút xanh lá (Zalo) — token success thay `emerald` của Stitch. */
-export const BUTTON_SUCCESS_LG_CLASS = `inline-flex items-center justify-center gap-2 rounded-lg bg-success-500 font-medium text-white transition-colors hover:bg-success-600 active:scale-[0.98] ${BUTTON_SIZE_LG}`;
+/** Nút xanh lá (Zalo), chưa có padding/cỡ chữ — token success thay `emerald` của Stitch. */
+export const BUTTON_SUCCESS_BASE_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-success-500 font-medium text-white transition-colors hover:bg-success-600 active:scale-[0.98]';
+export const BUTTON_SUCCESS_LG_CLASS = `${BUTTON_SUCCESS_BASE_CLASS} ${BUTTON_SIZE_LG}`;
 
 /** Nút viền, chưa có padding/cỡ chữ — `UserManagementScreen.tsx:207`. */
 export const BUTTON_OUTLINE_BASE_CLASS =

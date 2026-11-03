@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CareLogView, CustomerDetail } from '@crm/api';
@@ -19,6 +19,7 @@ vi.mock('./components/CriteriaBoard', () => ({ CriteriaBoard: () => null }));
 vi.mock('./components/CareTeamCard', () => ({ CareTeamCard: () => null }));
 
 const useCustomerHistories = vi.fn();
+const createCareLog = vi.fn();
 const customer = {
   id: 'c1',
   fullName: 'Nguyễn Văn A Rất Dài Tên Khách Hàng',
@@ -70,7 +71,7 @@ vi.mock('@crm/api', async () => {
       useCustomerHistories(...args);
       return { data: [], isLoading: false, isError: false, error: null, isFetching: false, refetch: vi.fn() };
     },
-    useCrmApi: () => ({ createPhoneView: vi.fn(), createCareLog: vi.fn(), updateCareLog: vi.fn(), deleteCareLogAttachment: vi.fn(), removeSavedCareLogAttachment: vi.fn() }),
+    useCrmApi: () => ({ createPhoneView: vi.fn(), createCareLog, updateCareLog: vi.fn(), deleteCareLogAttachment: vi.fn(), removeSavedCareLogAttachment: vi.fn() }),
     useCrmActor: () => ({ userId: 'u1', role: 'STAFF', teamId: null, managedTeamIds: [] }),
     useCatalogs: () => ({ catalogs: { statuses: [], contactResults: [{ id: 'r1', label: 'Quan tâm', isActive: true, order: 1, suggestionText: '', suggestedFollowUpDays: null }] }, users: [] }),
     useNationalIdViews: () => ({ data: [] }),
@@ -90,16 +91,79 @@ const renderScreen = () => {
   );
 };
 
-beforeEach(() => useCustomerHistories.mockClear());
+beforeEach(() => {
+  useCustomerHistories.mockClear();
+  createCareLog.mockReset();
+});
 
 const selectTab = (name: string) => fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}`) }));
 
 describe('Chi tiết khách (desktop) — PT-020/PT-022: form ghi chú chỉ hiện khi bấm nút, không mất bản nháp', () => {
-  it('mặc định chưa có form: chỉ có nút "Ghi chú" (đầu hồ sơ + đầu tab Nhật ký) và danh sách nhật ký', () => {
+  it('mặc định chưa có form: chỉ có nút "Ghi chú" (đầu hồ sơ + đầu thẻ Nhật ký chăm sóc) và danh sách nhật ký', () => {
     renderScreen();
     expect(screen.queryByRole('form')).toBeNull();
     expect(screen.getByText('Đã gọi tư vấn')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(2);
+  });
+
+  it('PT-028: nút "Ghi chú" nằm trong đầu thẻ "Nhật ký chăm sóc" (cùng hàng tiêu đề), không còn khối riêng dưới thanh tab', () => {
+    renderScreen();
+    const card = screen.getByRole('region', { name: 'Nhật ký chăm sóc' });
+    expect(within(card).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument();
+    // Cả cột giữa (thanh tab + form + thẻ) chỉ có đúng 1 nút "Ghi chú", và nó nằm trong thẻ.
+    const centerColumn = screen.getByRole('tablist', { name: 'Nhật ký và lịch sử' }).parentElement as HTMLElement;
+    const buttons = within(centerColumn).getAllByRole('button', { name: 'Ghi chú' });
+    expect(buttons).toHaveLength(1);
+    expect(card).toContainElement(buttons[0]);
+  });
+
+  it('PT-028: bấm "Ghi chú" ở đầu thẻ mở form đầy đủ và nút ở đầu thẻ ẩn đi (như trước khi form thay nút); Hủy thì nút quay lại', () => {
+    renderScreen();
+    const card = screen.getByRole('region', { name: 'Nhật ký chăm sóc' });
+    fireEvent.click(within(card).getByRole('button', { name: 'Ghi chú' }));
+    expect(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+    expect(screen.queryByRole('form')).toBeNull();
+    expect(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument();
+  });
+
+  it('PT-028: bấm "Sửa" một nhật ký (form sửa mở) thì nút "Ghi chú" ở đầu thẻ cũng ẩn; Hủy (chưa gõ gì) thì nút quay lại', () => {
+    renderScreen();
+    fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
+    expect(screen.getByRole('form', { name: 'Sửa nhật ký chăm sóc' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+    expect(screen.queryByRole('form')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument();
+  });
+
+  it('PT-028: lưu thành công -> form đóng và nút "Ghi chú" ở đầu thẻ quay lại; lưu thất bại -> form + nháp còn, nút chưa quay lại', async () => {
+    createCareLog.mockResolvedValueOnce({ ok: false, error: { code: 'INTERNAL', message: 'Lỗi' } });
+    renderScreen();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).getByRole('button', { name: 'Ghi chú' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Nội dung trao đổi/ }), { target: { value: 'Khách quan tâm căn góc' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu nhật ký' }));
+    await waitFor(() => expect(createCareLog).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu nhật ký' })).toBeEnabled());
+    expect(screen.getByRole('textbox', { name: /Nội dung trao đổi/ })).toHaveValue('Khách quan tâm căn góc');
+    expect(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+
+    createCareLog.mockResolvedValueOnce({ ok: true, data: {} });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu nhật ký' }));
+    await waitFor(() => expect(screen.queryByRole('form')).toBeNull());
+    expect(createCareLog).toHaveBeenCalledTimes(2);
+    expect(createCareLog).toHaveBeenLastCalledWith('c1', expect.objectContaining({ content: 'Khách quan tâm căn góc' }), 'u1');
+    expect(within(screen.getByRole('region', { name: 'Nhật ký chăm sóc' })).getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument();
+  });
+
+  it('PT-028: sang tab "Lịch sử thay đổi" thì thẻ Nhật ký (và nút "Ghi chú" của nó) không hiện; chỉ còn nút ở đầu hồ sơ', () => {
+    renderScreen();
+    selectTab('Lịch sử thay đổi');
+    expect(screen.queryByRole('region', { name: 'Nhật ký chăm sóc' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Ghi chú' })).toHaveLength(1);
   });
 
   it('đang soạn rồi sang tab "Lịch sử thay đổi" và quay lại: form + nội dung đã gõ vẫn còn', () => {

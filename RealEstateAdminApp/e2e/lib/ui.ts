@@ -16,9 +16,11 @@ export async function openCustomerDetail(page: Page, customerId: string, fullNam
 }
 
 /**
- * Mở form ghi chú chăm sóc ĐẦY ĐỦ ở chi tiết khách (PT-020): form KHÔNG hiện sẵn, chỉ hiện sau khi bấm nút "Ghi chú"
- * (desktop có 2 nút cùng tên: biểu tượng ở đầu hồ sơ và nút ở đầu tab Nhật ký, bấm nút nào cũng mở cùng form; mobile phải đang ở tab "Nhật ký"
- * hoặc bấm nút ở thẻ tóm tắt, nút đó tự chuyển sang tab Nhật ký).
+ * Mở form ghi chú chăm sóc ĐẦY ĐỦ ở chi tiết khách (PT-020, PT-028): form KHÔNG hiện sẵn, chỉ hiện sau khi bấm nút "Ghi chú".
+ * Có nhiều nút cùng tên, bấm nút nào cũng mở cùng form và `.first()` (thứ tự DOM) trúng:
+ * - desktop: nút biểu tượng ở đầu hồ sơ (thẻ "Nhật ký chăm sóc" cũng có nút "Ghi chú" ở đầu thẻ, cùng hàng tiêu đề);
+ * - mobile: nút ở thẻ "Tóm tắt hồ sơ" (thanh đáy cố định cũng có nút "Ghi chú", hiện ở mọi tab); cả hai tự chuyển sang tab "Nhật ký".
+ * Tab Nhật ký mobile KHÔNG còn nút "Ghi chú" riêng dưới thanh tab.
  */
 export async function openCareLogComposer(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: 'Ghi chú', exact: true }).first().click();

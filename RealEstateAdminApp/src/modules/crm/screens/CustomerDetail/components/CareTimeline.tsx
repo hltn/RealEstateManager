@@ -1,7 +1,8 @@
 // Dòng thời gian nhật ký chăm sóc (C2, 02 §5 "Mục dòng thời gian"): ngày giờ đầy đủ (giờ VN), người viết,
 // dấu "Chính" chỉ khi tác giả là phụ trách chính của khách, kênh + kết quả liên hệ, bước tiếp theo, ảnh đính kèm.
 // PT-022: nút "Sửa" hiện theo `log.canEdit` do BE tính (tác giả / Quản trị / Quản lý trong phạm vi) — FE KHÔNG tự kiểm giờ hay vai trò.
-import { Activity, CalendarClock, Images, Pencil, X } from 'lucide-react';
+// PT-028: truyền `onAddNote` thì đầu thẻ (cùng hàng tiêu đề, căn phải) có nút "Ghi chú" cỡ nhỏ kiểu nút phụ (desktop); không truyền = không có nút (mobile dùng thanh đáy).
+import { Activity, CalendarClock, Images, NotebookPen, Pencil, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { CareLogView } from '@crm/api';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
@@ -124,9 +125,11 @@ interface CareTimelineProps {
   customerId: string;
   /** Bấm "Sửa" trên một nhật ký (PT-022): mở lại form với dữ liệu cũ. Không truyền = ẩn nút Sửa. */
   onEdit?: (log: CareLogView) => void;
+  /** Bấm "Ghi chú" ở đầu thẻ (PT-028). Không truyền = ẩn nút; chỉ áp dụng khi thẻ có khung (`isFramed`). */
+  onAddNote?: () => void;
 }
 
-export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, hasMore = false, isLoadingMore = false, onLoadMore, onImageError, customerId, onEdit }: CareTimelineProps) => {
+export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, hasMore = false, isLoadingMore = false, onLoadMore, onImageError, customerId, onEdit, onAddNote }: CareTimelineProps) => {
   const { removePhoto, isRemoving } = useRemoveCareLogPhoto(customerId);
   const lastImageRetry = useRef(0);
   /** Tối đa 1 lần làm mới / 30 giây để URL hỏng thật không gây vòng lặp tải. */
@@ -218,7 +221,22 @@ export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, has
   if (!isFramed) return content;
   return (
     <section aria-label="Nhật ký chăm sóc" className={`${CARD_CLASS} space-y-4 p-5`}>
-      <CardHeading icon={Activity} title="Nhật ký chăm sóc" as="h3" trailing={<span className={MUTED_TEXT_CLASS}>{careLogs.length}{hasMore ? '+' : ''} mục</span>} />
+      <CardHeading
+        icon={Activity}
+        title="Nhật ký chăm sóc"
+        as="h3"
+        trailing={
+          <div className="flex shrink-0 items-center gap-3">
+            <span className={`whitespace-nowrap ${MUTED_TEXT_CLASS}`}>{careLogs.length}{hasMore ? '+' : ''} mục</span>
+            {onAddNote && (
+              <button type="button" onClick={onAddNote} className={BUTTON_SOFT_SM_CLASS}>
+                <NotebookPen size={14} aria-hidden="true" />
+                Ghi chú
+              </button>
+            )}
+          </div>
+        }
+      />
       {content}
     </section>
   );

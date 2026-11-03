@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CareLogView } from '@crm/api';
@@ -41,16 +42,42 @@ const makeLog = (canEdit: boolean): CareLogView => ({
   canEdit,
 });
 
-const renderTimeline = (careLog: CareLogView) => {
+const renderTimeline = (careLog: CareLogView, props: Partial<ComponentProps<typeof CareTimeline>> = {}) => {
   const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
   return render(
     <MemoryRouter>
       <CrmProvider store={store}>
-        <CareTimeline careLogs={[careLog]} customerId="c1" />
+        <CareTimeline careLogs={[careLog]} customerId="c1" {...props} />
       </CrmProvider>
     </MemoryRouter>,
   );
 };
+
+describe('CareTimeline (PT-028): nút "Ghi chú" ở đầu thẻ, cùng hàng tiêu đề', () => {
+  it('có onAddNote: nút "Ghi chú" nằm TRONG hàng tiêu đề "Nhật ký chăm sóc" (cùng khối với số mục), bấm gọi onAddNote', () => {
+    const onAddNote = vi.fn();
+    renderTimeline(makeLog(false), { onAddNote });
+    const card = screen.getByRole('region', { name: 'Nhật ký chăm sóc' });
+    const heading = within(card).getByRole('heading', { level: 3, name: 'Nhật ký chăm sóc' });
+    // Hàng tiêu đề = khối cha chung của tiêu đề và nút (không phải khối riêng phía trên thẻ).
+    const headerRow = heading.closest('div.flex.justify-between') as HTMLElement;
+    const button = within(headerRow).getByRole('button', { name: 'Ghi chú' });
+    expect(within(headerRow).getByText('1 mục')).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onAddNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('không có onAddNote (mobile dùng thanh đáy): không có nút "Ghi chú" trong thẻ', () => {
+    renderTimeline(makeLog(false));
+    expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+    expect(screen.getByText('1 mục')).toBeInTheDocument();
+  });
+
+  it('danh sách trần (isFramed = false) không có đầu thẻ nên không có nút "Ghi chú" dù truyền onAddNote', () => {
+    renderTimeline(makeLog(false), { isFramed: false, onAddNote: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+  });
+});
 
 describe('CareTimeline: gỡ ảnh khỏi nhật ký đã lưu', () => {
   beforeEach(() => removeSavedCareLogAttachment.mockReset());

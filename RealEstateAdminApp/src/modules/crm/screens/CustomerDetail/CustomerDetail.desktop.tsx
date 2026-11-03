@@ -1,5 +1,5 @@
 // Chi tiết khách — bố cục 3 vùng theo tài liệu 02 §4.3 (máy tính); máy tính bảng 2 vùng (02 §7):
-// THÔNG TIN + CHÂN DUNG | NHẬT KÝ CHĂM SÓC (ô ghi chú nhanh ở đầu) / LỊCH SỬ THAY ĐỔI | TIẾN ĐỘ + NHÓM CHĂM SÓC + GỢI Ý.
+// THÔNG TIN + CHÂN DUNG | NHẬT KÝ CHĂM SÓC (nút "Ghi chú" ở đầu thẻ, cùng hàng tiêu đề, PT-028) / LỊCH SỬ THAY ĐỔI | TIẾN ĐỘ + NHÓM CHĂM SÓC + GỢI Ý.
 // Dữ liệu qua lớp `@crm/api` (khách ngoài phạm vi quyền = không tìm thấy).
 import { useState } from 'react';
 import { useCareLogs, useCustomerDetail } from '@crm/api';
@@ -75,11 +75,12 @@ export const CustomerDetailDesktop = () => {
             })}
           </div>
           {/* Form ghi chú LUÔN được dựng (chỉ ẩn khi sang tab Lịch sử): đổi tab giữa chừng không làm mất bản nháp/ảnh đã tải lên. */}
-          <div hidden={centerTab !== 'logs'}>
+          {/* `empty:hidden`: form đóng thì vùng này rỗng, không để lại khoảng cách thừa (gap) giữa tab và thẻ Nhật ký. */}
+          <div hidden={centerTab !== 'logs'} className="empty:hidden">
             <CareLogComposer key={customer.id} customer={customer} variant="desktop" composer={noteComposer} />
           </div>
           {centerTab === 'logs' ? (
-            <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} onEdit={noteComposer.openEdit} />
+            <CareTimeline careLogs={careLogs} isLoading={careLogsState.isLoading} hasMore={careLogsState.hasMore} isLoadingMore={careLogsState.isFetchingMore} onLoadMore={careLogsState.loadMore} onImageError={careLogsState.refetch} customerId={customer.id} onEdit={noteComposer.openEdit} onAddNote={noteComposer.state.kind === 'closed' ? noteComposer.openCreate : undefined} />
           ) : (
             <HistoryList customerId={customer.id} />
           )}

@@ -44,11 +44,16 @@ interface CareLogFormProps {
    * nút Hủy/Lưu dính đáy vùng cuộn để luôn thấy khi form dài hoặc bàn phím ảo hiện.
    */
   layout?: 'card' | 'dialog';
+  /**
+   * Đổi giá trị = yêu cầu đưa form vào vùng nhìn thấy + focus ô nội dung LẠI (PT-028: bấm "Ghi chú" ở thanh đáy khi form đã mở sẵn nên không được dựng lại).
+   * Không đụng tới dữ liệu đang nhập.
+   */
+  focusSignal?: number;
 }
 
 const MAX_CONTENT_LENGTH = 5000;
 
-export const CareLogForm = ({ customer, variant, editingLog, onClose, onCancel = onClose, onGuardChange, layout = 'card' }: CareLogFormProps) => {
+export const CareLogForm = ({ customer, variant, editingLog, onClose, onCancel = onClose, onGuardChange, layout = 'card', focusSignal }: CareLogFormProps) => {
   const { catalogs } = useCatalogs();
   const { showToast } = useCrmActions();
   const { saveCareLog, updateCareLog } = useCustomerDetailActions(customer);
@@ -88,11 +93,12 @@ export const CareLogForm = ({ customer, variant, editingLog, onClose, onCancel =
 
   // Mở form (bấm "Ghi chú"/"Sửa"): đưa form vào vùng nhìn thấy (mobile: form nằm dưới thẻ tóm tắt) rồi đặt con trỏ vào ô nội dung.
   // Trong hộp thoại thì `useFocusTrap` của vỏ lo việc này (nó phải thấy tiêu điểm của nút đã mở để trả về khi đóng).
+  // Chạy lại mỗi khi `focusSignal` đổi (form đã mở sẵn mà bấm "Ghi chú" lần nữa): cuộn + focus lại, KHÔNG reset bản nháp.
   useEffect(() => {
     if (isDialog) return;
     formRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
     contentRef.current?.focus({ preventScroll: true });
-  }, [isDialog]);
+  }, [isDialog, focusSignal]);
 
   const handleResultChange = (resultId: string) => {
     setContactResultId(resultId);

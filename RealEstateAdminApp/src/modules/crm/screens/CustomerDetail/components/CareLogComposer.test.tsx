@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CareLogView, CustomerDetail } from '@crm/api';
 import { CrmProvider } from '@crm/store/CrmProvider';
 import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
@@ -16,7 +16,7 @@ vi.mock('@crm/api', async () => {
 const customer = { id: 'c1', version: 1, status: { id: 's', label: 'Mới' }, criteria: {}, careTeam: [] } as unknown as CustomerDetail;
 const log = { id: 'l1', customerId: 'c1', content: 'Nội dung cũ', contactChannel: 'CALL', contactResult: null, images: [], attachmentIds: [] } as unknown as CareLogView;
 
-const renderComposer = (state: NoteComposerState, pending: NoteComposerState | null = null) => {
+const renderComposer = (state: NoteComposerState, pending: NoteComposerState | null = null, variant: 'desktop' | 'mobile' = 'mobile', layout?: 'card' | 'dialog') => {
   const composer: NoteComposer = {
     state,
     pending,
@@ -29,26 +29,28 @@ const renderComposer = (state: NoteComposerState, pending: NoteComposerState | n
     reportGuard: vi.fn(),
   };
   const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
-  render(
+  const ui = (focusSignal?: number) => (
     <MemoryRouter>
       <CrmProvider store={store}>
-        <CareLogComposer customer={customer} variant="mobile" composer={composer} />
+        <CareLogComposer customer={customer} variant={variant} layout={layout} composer={composer} focusSignal={focusSignal} />
       </CrmProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
-  return composer;
+  const view = render(ui());
+  return Object.assign(composer, { container: view.container, setFocusSignal: (signal: number) => view.rerender(ui(signal)) });
 };
 
-describe('CareLogComposer (PT-020): form chỉ hiện khi bấm nút "Ghi chú"', () => {
-  it('đóng: chỉ có nút "Ghi chú", KHÔNG có ô nhập/biểu mẫu nào; bấm nút gọi openCreate', () => {
-    const composer = renderComposer({ kind: 'closed' });
+describe('CareLogComposer (PT-020, PT-028): form chỉ hiện khi đã mở, trạng thái đóng không có nút riêng', () => {
+  it.each(['mobile', 'desktop'] as const)('đóng (%s): không dựng gì (không nút "Ghi chú", không form, không ô nhập); nút mở form nằm ở thanh đáy / đầu thẻ Nhật ký', (variant) => {
+    const composer = renderComposer({ kind: 'closed' }, null, variant);
+    expect(composer.container).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByRole('form')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Ghi chú' }));
-    expect(composer.openCreate).toHaveBeenCalledTimes(1);
+    expect(composer.openCreate).not.toHaveBeenCalled();
   });
 
-  it('mở thêm mới: hiện form đầy đủ "Thêm nhật ký chăm sóc" và ẩn nút "Ghi chú"', () => {
+  it('mở thêm mới: hiện form đầy đủ "Thêm nhật ký chăm sóc", không có nút "Ghi chú"', () => {
     renderComposer({ kind: 'create' });
     expect(screen.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull();
@@ -71,6 +73,40 @@ describe('CareLogComposer (PT-020): form chỉ hiện khi bấm nút "Ghi chú"'
     expect(composer.reportGuard).toHaveBeenLastCalledWith({ isDirty: false, isSaving: false });
     fireEvent.change(screen.getByRole('textbox', { name: /Nội dung trao đổi/ }), { target: { value: 'Nháp' } });
     expect(composer.reportGuard).toHaveBeenLastCalledWith({ isDirty: true, isSaving: false });
+  });
+});
+
+describe('CareLogComposer (PT-028): focusSignal đưa form đang mở vào vùng nhìn thấy + focus lại, không reset nháp', () => {
+  const scrollIntoView = vi.fn();
+  beforeEach(() => {
+    scrollIntoView.mockClear();
+    Element.prototype.scrollIntoView = scrollIntoView;
+  });
+  afterEach(() => {
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  it('mở form: cuộn + focus 1 lần; đổi focusSignal: cuộn + focus lại, nội dung đã gõ còn nguyên; render lại cùng giá trị thì KHÔNG cuộn thêm', () => {
+    const composer = renderComposer({ kind: 'create' });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    const textbox = screen.getByRole('textbox', { name: /Nội dung trao đổi/ });
+    fireEvent.change(textbox, { target: { value: 'Nháp' } });
+    (document.activeElement as HTMLElement).blur();
+    expect(textbox).not.toHaveFocus();
+
+    composer.setFocusSignal(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    expect(textbox).toHaveFocus();
+    expect(textbox).toHaveValue('Nháp');
+
+    composer.setFocusSignal(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it('trong hộp thoại (layout "dialog") focusSignal không cuộn/focus: vỏ hộp thoại tự lo tiêu điểm', () => {
+    const composer = renderComposer({ kind: 'create' }, null, 'mobile', 'dialog');
+    composer.setFocusSignal(1);
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
 
