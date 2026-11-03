@@ -6,6 +6,11 @@ import { createHash } from 'crypto';
 import { MongoClient, ObjectId } from 'mongodb';
 import type { Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { normalizeVietnamese } from '../../modules/crm/common/utils/vietnamese-text.util';
+import {
+  provinceSeedKey,
+  SEED_PROVINCES,
+} from '../../modules/crm/seed/crm-seed.data';
 import {
   BREAKERS,
   seedProductionLikeDb,
@@ -64,6 +69,7 @@ describe('baseline probes (002..006)', () => {
       expect(results[4].counts).toMatchObject({
         provincesKept: 34,
         provincesInserted: 0,
+        areasEmpty: 0,
       });
       expect(await snapshotDb(db)).toEqual(before);
     });
@@ -321,10 +327,172 @@ describe('baseline probes (002..006)', () => {
   });
 
   describe('probe 006 (34 tỉnh)', () => {
-    it('DB chưa có khu vực nào: còn việc (cần chèn 34 tỉnh) => fail', async () => {
-      const result = await probe006Areas.run(newDb());
+    const provinceDoc = (name: string, order: number) => ({
+      name,
+      nameNormalized: normalizeVietnamese(name),
+      type: 'PROVINCE',
+      parentId: null,
+      ancestorIds: [],
+      adminCode: null,
+      isLegacy: false,
+      order,
+      isActive: true,
+      seedKey: provinceSeedKey(name),
+      deletedAt: null,
+    });
+
+    it('areas rỗng hoàn toàn (cài mới, CRM chưa seed): ĐẠT dù thiếu 34 tỉnh; counts vẫn báo provincesInserted=34; KHÔNG ghi/tạo gì', async () => {
+      const db = newDb();
+      // DB cài mới: đã có admin nhưng chưa có collection areas.
+      await db.collection('users').insertOne({
+        email: 'admin@example.test',
+        role: 'ADMIN',
+        roles: ['ADMIN'],
+        teamId: null,
+        teamIds: [],
+      });
+      const before = await snapshotDb(db);
+
+      const result = await probe006Areas.run(db);
+
+      expect(result.passed).toBe(true);
+      expect(result.counts).toMatchObject({
+        provincesKept: 0,
+        provincesInserted: 34,
+        areasDeleted: 0,
+        provincesNormalized: 0,
+        customersCleared: 0,
+        projectsCleared: 0,
+        areasEmpty: 1,
+      });
+      expect(await snapshotDb(db)).toEqual(before);
+    });
+
+    it('collection areas tồn tại nhưng rỗng: vẫn ĐẠT', async () => {
+      const db = newDb();
+      await db.createCollection('areas');
+      expect((await probe006Areas.run(db)).passed).toBe(true);
+    });
+
+    it('areas rỗng nhưng khách/dự án còn trỏ areaId mồ côi => FAIL (migration vẫn phải đặt areaId=null)', async () => {
+      const db = newDb();
+      await db.collection('customers').insertOne({ areaId: new ObjectId() });
+      const customerCase = await probe006Areas.run(db);
+      expect(customerCase.passed).toBe(false);
+      expect(customerCase.counts.customersCleared).toBe(1);
+
+      const db2 = newDb();
+      await db2.collection('projects').insertOne({ areaId: new ObjectId() });
+      const projectCase = await probe006Areas.run(db2);
+      expect(projectCase.passed).toBe(false);
+      expect(projectCase.counts.projectsCleared).toBe(1);
+    });
+
+    it('areas có MỘT PHẦN tỉnh (thiếu tỉnh khác) => FAIL, provincesInserted là phần còn thiếu', async () => {
+      const db = newDb();
+      await db
+        .collection('areas')
+        .insertMany(
+          SEED_PROVINCES.slice(0, 10).map((name, index) =>
+            provinceDoc(name, index + 1),
+          ),
+        );
+      const result = await probe006Areas.run(db);
       expect(result.passed).toBe(false);
-      expect(result.counts.provincesInserted).toBe(34);
+      expect(result.counts).toMatchObject({
+        provincesKept: 10,
+        provincesInserted: 24,
+        areasDeleted: 0,
+        areasEmpty: 0,
+      });
+    });
+
+    it('chỉ còn khu vực cũ (không có tỉnh chuẩn nào) => FAIL do areasDeleted>0', async () => {
+      const db = newDb();
+      await db.collection('areas').insertOne({
+        name: 'Quận 7',
+        nameNormalized: 'quan 7',
+        type: 'DISTRICT',
+        parentId: new ObjectId(),
+        ancestorIds: [],
+        order: 999,
+        seedKey: 'AREA:old/quan 7',
+        isLegacy: false,
+        deletedAt: null,
+      });
+      const result = await probe006Areas.run(db);
+      expect(result.passed).toBe(false);
+      expect(result.counts).toMatchObject({
+        provincesKept: 0,
+        areasDeleted: 1,
+        provincesInserted: 34,
+        areasEmpty: 0,
+      });
+    });
+
+    it('areas chỉ có MỘT tỉnh chuẩn ĐÃ XÓA MỀM => FAIL (bản xóa mềm phải bị xóa cứng: areasDeleted=1, không coi là rỗng)', async () => {
+      const db = newDb();
+      await db.collection('areas').insertOne({
+        ...provinceDoc(SEED_PROVINCES[0], 1),
+        deletedAt: new Date(),
+      });
+      const result = await probe006Areas.run(db);
+      expect(result.passed).toBe(false);
+      expect(result.counts).toMatchObject({
+        provincesKept: 0,
+        areasDeleted: 1,
+        provincesInserted: 34,
+        areasEmpty: 0,
+      });
+    });
+
+    it('đủ 34 tỉnh chuẩn nhưng MỘT tỉnh đã xóa mềm => FAIL (kept=33, areasDeleted=1, provincesInserted=1)', async () => {
+      const db = newDb();
+      await db.collection('areas').insertMany(
+        SEED_PROVINCES.map((name, index) => ({
+          ...provinceDoc(name, index + 1),
+          deletedAt: index === 5 ? new Date() : null,
+        })),
+      );
+      const result = await probe006Areas.run(db);
+      expect(result.passed).toBe(false);
+      expect(result.counts).toMatchObject({
+        provincesKept: 33,
+        areasDeleted: 1,
+        provincesInserted: 1,
+        areasEmpty: 0,
+      });
+    });
+
+    it('đủ 34 tỉnh chuẩn => ĐẠT (provincesKept=34, provincesInserted=0)', async () => {
+      const db = newDb();
+      await db
+        .collection('areas')
+        .insertMany(
+          SEED_PROVINCES.map((name, index) => provinceDoc(name, index + 1)),
+        );
+      const result = await probe006Areas.run(db);
+      expect(result.passed).toBe(true);
+      expect(result.counts).toMatchObject({
+        provincesKept: 34,
+        provincesInserted: 0,
+        provincesNormalized: 0,
+        areasEmpty: 0,
+      });
+    });
+
+    it('đủ 34 tỉnh nhưng một tỉnh lệch chuẩn (sai order) => FAIL (provincesNormalized=1)', async () => {
+      const db = newDb();
+      await db
+        .collection('areas')
+        .insertMany(
+          SEED_PROVINCES.map((name, index) =>
+            provinceDoc(name, index === 0 ? 999 : index + 1),
+          ),
+        );
+      const result = await probe006Areas.run(db);
+      expect(result.passed).toBe(false);
+      expect(result.counts.provincesNormalized).toBe(1);
     });
 
     it('khách trỏ khu vực không tồn tại => fail (customersCleared=1)', async () => {

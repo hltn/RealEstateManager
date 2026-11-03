@@ -194,7 +194,7 @@ describe('MigrationRunner.reconcile (CLI) trên replica set', () => {
       expect(
         await systemDoc(db, 'migration:006_areas_34_provinces'),
       ).toMatchObject({
-        evidence: { provincesKept: 34, provincesInserted: 0 },
+        evidence: { provincesKept: 34, provincesInserted: 0, areasEmpty: 0 },
       });
       expect(await systemDoc(db, 'version')).toMatchObject({
         value: '1.0.3',
@@ -203,6 +203,51 @@ describe('MigrationRunner.reconcile (CLI) trên replica set', () => {
       expect(await systemDoc(db, 'migration-lock')).toBeNull();
       expect(await businessSnapshot(db)).toEqual(businessBefore);
       expect(result.report).toMatchObject({ applied: true, result: 'ok' });
+    });
+
+    it('cài mới đã có admin nhưng areas rỗng (CRM tắt, chưa seed 34 tỉnh): probe 006 đạt, baseline + version OK, lần deploy thứ 2 không bị chặn (mã 0)', async () => {
+      const { db, uri } = newDb();
+      await seedProductionLikeDb(db);
+      await db.collection('areas').deleteMany({});
+      await db.collection('customers').deleteMany({});
+
+      const first = await run(uri, [], [...APPLY, '--json']);
+      expect(first.code).toBe(EXIT_CODE.OK);
+      expect(first.report?.probes.every((p) => p.passed)).toBe(true);
+      expect(
+        await systemDoc(db, 'migration:006_areas_34_provinces'),
+      ).toMatchObject({
+        by: 'baseline',
+        evidence: { provincesKept: 0, provincesInserted: 34, areasEmpty: 1 },
+      });
+      expect(await systemDoc(db, 'version')).toMatchObject({ value: '1.0.3' });
+      // Baseline không tự seed tỉnh: việc đó thuộc CrmSeedService khi bật CRM.
+      expect(await db.collection('areas').countDocuments()).toBe(0);
+
+      const second = await run(uri, [], [...APPLY, '--json']);
+      expect(second.code).toBe(EXIT_CODE.OK);
+    });
+
+    it('areas rỗng nhưng khách còn areaId mồ côi: probe 006 không đạt => mã 4, không ghi sổ/version, không đổi dữ liệu', async () => {
+      const { db, uri } = newDb();
+      await seedProductionLikeDb(db);
+      await db.collection('areas').deleteMany({});
+      // seedProductionLikeDb để lại khách trỏ vào tỉnh vừa xóa => mồ côi.
+      const before = await snapshotDb(db);
+
+      for (const argv of [[...APPLY, '--json'], ['--json']]) {
+        const result = await run(uri, [], argv);
+        expect(result.code).toBe(EXIT_CODE.BASELINE_REQUIRED);
+        expect(result.report?.result).toBe('probe_failed');
+        expect(result.report?.applied).toBe(false);
+        expect(
+          result.report?.probes.filter((p) => !p.passed).map((p) => p.id),
+        ).toEqual(['006_areas_34_provinces']);
+      }
+      expect(await snapshotDb(db)).toEqual(before);
+      expect(await db.listCollections({ name: 'system' }).toArray()).toEqual(
+        [],
+      );
     });
 
     it('--skip-version: baseline được ghi nhưng version KHÔNG; sau đó `up` không còn bị chặn mã 4 (baselineRequired đã sửa)', async () => {

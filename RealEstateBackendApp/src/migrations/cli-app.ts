@@ -26,6 +26,8 @@ export interface CliDeps {
   app: { version: string; commit: string | null };
   out: (line: string) => void;
   err: (line: string) => void;
+  /** Hạn chọn máy chủ Mongo (ms); mặc định 10 giây. Chỉ test cần rút ngắn. */
+  serverSelectionTimeoutMs?: number;
 }
 
 interface ParsedArgs {
@@ -88,6 +90,27 @@ const parseArgs = (argv: readonly string[]): ParsedArgs | string => {
   return parsed;
 };
 
+/** Gợi ý ngắn khi lỗi kết nối Mongo (KHÔNG chứa URI/mật khẩu). */
+export const CONNECTION_HINT =
+  'Gợi ý: kiểm tra (1) MongoDB đã chạy chưa; (2) MongoDB có chạy dạng replica set khớp tham số `replicaSet` ' +
+  'trong MONGODB_URI không (Mongo đơn lẻ mà URI có `replicaSet=...` sẽ báo hết hạn chọn máy chủ); ' +
+  '(3) thông tin xác thực trong MONGODB_URI có đúng không.';
+
+/** Lỗi chọn máy chủ/mạng/xác thực của driver (code 18 = AuthenticationFailed). */
+export const isConnectionError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  if (
+    [
+      'MongoServerSelectionError',
+      'MongoNetworkError',
+      'MongoNetworkTimeoutError',
+    ].includes(error.name)
+  ) {
+    return true;
+  }
+  return (error as { code?: unknown }).code === 18;
+};
+
 /**
  * Điểm vào logic CLI (tách khỏi `cli.ts` để test tích hợp gọi được mà không spawn tiến trình). Trả về mã thoát;
  * KHÔNG gọi `process.exit`. Lỗi bất ngờ (kết nối...) được lọc chuỗi kết nối trước khi in.
@@ -116,10 +139,12 @@ export const runCli = async (
   }
 
   const client = new MongoClient(deps.mongoUri, {
-    serverSelectionTimeoutMS: 10_000,
+    serverSelectionTimeoutMS: deps.serverSelectionTimeoutMs ?? 10_000,
   });
+  let connected = false;
   try {
     await client.connect();
+    connected = true;
     const runner = new MigrationRunner({
       client,
       migrations: deps.migrations,
@@ -150,6 +175,7 @@ export const runCli = async (
     }
   } catch (error) {
     deps.err(`LỖI: ${sanitizeErrorMessage(error)}`);
+    if (!connected || isConnectionError(error)) deps.err(CONNECTION_HINT);
     return EXIT_CODE.FAILURE;
   } finally {
     await client.close().catch(() => undefined);

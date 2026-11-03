@@ -1,4 +1,9 @@
-import { CLI_USAGE, runCli } from './cli-app';
+import {
+  CLI_USAGE,
+  CONNECTION_HINT,
+  isConnectionError,
+  runCli,
+} from './cli-app';
 import { EXIT_CODE } from './migration-runner';
 
 const run = async (argv: string[]) => {
@@ -73,5 +78,66 @@ describe('runCli (cú pháp, không cần kết nối Mongo)', () => {
     expect(EXIT_CODE.DOWNGRADE).toBe(5);
     expect(CLI_USAGE).toContain('reconcile');
     expect(CLI_USAGE).toContain('5 downgrade');
+  });
+});
+
+describe('runCli (lỗi kết nối Mongo)', () => {
+  it('Mongo không tới được (như standalone sai replicaSet): in LỖI + gợi ý replicaSet/xác thực, mã 1, KHÔNG lộ URI hay mật khẩu', async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runCli(['status'], {
+      // Cổng 1 không có dịch vụ nào lắng nghe => lỗi chọn máy chủ sau hạn rút ngắn.
+      mongoUri:
+        'mongodb://admin:S3cretPass@127.0.0.1:1/realestate?replicaSet=rs0',
+      migrations: [],
+      app: { version: '1.0.3', commit: null },
+      out: (line) => out.push(line),
+      err: (line) => err.push(line),
+      serverSelectionTimeoutMs: 300,
+    });
+
+    const stderr = err.join('\n');
+    expect(code).toBe(EXIT_CODE.FAILURE);
+    expect(stderr).toContain('LỖI:');
+    expect(stderr).toContain(CONNECTION_HINT);
+    expect(stderr).not.toContain('S3cretPass');
+    expect(stderr).not.toContain('mongodb://');
+    expect(out).toEqual([]);
+  });
+
+  it('thiếu MONGODB_URI KHÔNG kèm gợi ý kết nối', async () => {
+    const err: string[] = [];
+    await runCli(['status'], {
+      mongoUri: undefined,
+      migrations: [],
+      app: { version: '1.0.3', commit: null },
+      out: () => undefined,
+      err: (line) => err.push(line),
+    });
+    expect(err.join('')).not.toContain(CONNECTION_HINT);
+  });
+});
+
+describe('isConnectionError', () => {
+  const named = (name: string): Error =>
+    Object.assign(new Error('x'), { name });
+  const coded = (code: unknown): Error =>
+    Object.assign(new Error('x'), { code });
+
+  it.each([
+    ['MongoServerSelectionError', named('MongoServerSelectionError'), true],
+    ['MongoNetworkError', named('MongoNetworkError'), true],
+    ['MongoNetworkTimeoutError', named('MongoNetworkTimeoutError'), true],
+    ['Error có code 18 (AuthenticationFailed)', coded(18), true],
+    ['Error có code khác (11000)', coded(11000), false],
+    ['Error thường', new Error('boom'), false],
+    ['TypeError', new TypeError('boom'), false],
+    ['MongoServerError không phải xác thực', named('MongoServerError'), false],
+    ['string', 'MongoServerSelectionError', false],
+    ['undefined', undefined, false],
+    ['null', null, false],
+    ['object thường có code 18 (không phải Error)', { code: 18 }, false],
+  ])('%s', (_label, error, expected) => {
+    expect(isConnectionError(error)).toBe(expected);
   });
 });

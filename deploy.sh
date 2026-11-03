@@ -12,7 +12,7 @@
 # lần đó làm theo mục 5 của tài liệu, từng bước bằng tay. Script này từ chối chạy nếu thấy Mongo cũ.
 #
 # Các bước: tiền điều kiện (+ dung lượng đĩa) -> git pull (ff-only) -> `compose config -q` -> kiểm tra migration 005
-# -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung) -> gắn thẻ image backend hiện tại làm bản dự phòng
+# -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung; bỏ qua nếu DB chưa có dữ liệu: không `users`, không document nào) -> gắn thẻ image backend hiện tại làm bản dự phòng
 # -> build backend (kèm GIT_COMMIT) -> runner migration `reconcile` (PT-027, bước 6b): dry-run xem kế hoạch, rồi
 # `reconcile --apply --skip-version` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
 # rồi chạy migration 007+ còn chờ) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply`
@@ -45,6 +45,8 @@
 #   DEPLOY_AUTO_MIGRATE   1 (mặc định) = tự baseline + migrate sau backup; 0 = như --no-migrate (cờ dòng lệnh thắng biến)
 #   DEPLOY_ALLOW_DOWNGRADE  1 = cho phép CỐ Ý deploy code có version thấp hơn DB (bỏ qua migrate, không hạ version); mặc định 0
 #   MONGO_CONTAINER, BACKEND_CONTAINER  tên container (mặc định realestate_mongo, realestate_backend; chỉ đổi khi thử nghiệm)
+#   DEPLOY_ENV_FILE, DEPLOY_RUNTIME_ENV_FILE, DEPLOY_LOGS_DIR, DEPLOY_BACKUP_DIR, NINE_ROUTER_CONTAINER  CHỈ cho staging local
+#                       (scripts/staging.sh đặt; mục 11.3 tài liệu). Production KHÔNG đặt: mặc định .env.docker, .env, logs, backups, realestate_9router
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -57,11 +59,47 @@ ROOT_DIR="$(cd "$(dirname "$_self")" && pwd)"
 source "$ROOT_DIR/scripts/lib/ops-common.sh"
 
 readonly PROD_BRANCH="production"
-readonly ENV_FILE=".env.docker"
+# Các biến DEPLOY_* / NINE_ROUTER_CONTAINER dưới đây CHỈ để chạy staging local (scripts/staging.sh đặt chúng); production không đặt
+# gì nên giữ đúng mặc định cũ (.env.docker, ./.env, ./logs, ./backups, realestate_9router).
+readonly ENV_FILE="${DEPLOY_ENV_FILE:-.env.docker}"
+readonly RUNTIME_ENV_FILE="${DEPLOY_RUNTIME_ENV_FILE:-.env}"   # file backend bind-mount làm /app/.env
+readonly LOGS_DIR="${DEPLOY_LOGS_DIR:-logs}"
+readonly BACKUP_DIR="${DEPLOY_BACKUP_DIR:-backups}"
+readonly NINE_ROUTER_CONTAINER="${NINE_ROUTER_CONTAINER-realestate_9router}"   # đặt RỖNG để bỏ qua cảnh báo 9Router (staging)
 readonly MONGO_CONTAINER="${MONGO_CONTAINER:-realestate_mongo}"
 readonly BACKEND_CONTAINER="${BACKEND_CONTAINER:-realestate_backend}"
 readonly DEFAULT_PROJECT="realestatemanager"   # tên project compose = tên thư mục repo (không đổi, xem docker-compose.yml)
 readonly DOC="docs/01_Infrastructure/06_Production_Deploy.md"
+
+# Kiểm các biến chỉ dành cho staging NGAY khi nạp script (trước mọi lệnh): đường dẫn phải là đường dẫn TƯƠNG ĐỐI trong repo (một dòng
+# DEPLOY_LOGS_DIR=/ sẽ thành `chown -R 1000:1000 /`); và bất kỳ biến nào khác mặc định chỉ hợp lệ khi chạy qua scripts/staging.sh
+# (project compose = realestate-staging VÀ COMPOSE_FILE có docker-compose.staging.yml), chiều ngược lại cũng chặn. Không đặt biến nào
+# (production) thì mọi giá trị là mặc định cũ và hàm này không làm gì.
+valid_rel_path() {
+  [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || return 1
+  [[ "/$1/" != *"/./"* && "/$1/" != *"/../"* ]]
+}
+check_staging_vars() {
+  local pair name val staged=""
+  for pair in "DEPLOY_ENV_FILE=$ENV_FILE" "DEPLOY_RUNTIME_ENV_FILE=$RUNTIME_ENV_FILE" "DEPLOY_LOGS_DIR=$LOGS_DIR" "DEPLOY_BACKUP_DIR=$BACKUP_DIR"; do
+    name="${pair%%=*}"; val="${pair#*=}"
+    valid_rel_path "$val" || die "$name='$val' không hợp lệ: phải là đường dẫn TƯƠNG ĐỐI trong repo (chỉ A-Z a-z 0-9 . _ - và dấu /, không bắt đầu bằng /, không chứa '..' hoặc '.', không rỗng)."
+  done
+  [[ "$ENV_FILE" == ".env.docker" ]] || staged+=" DEPLOY_ENV_FILE"
+  [[ "$RUNTIME_ENV_FILE" == ".env" ]] || staged+=" DEPLOY_RUNTIME_ENV_FILE"
+  [[ "$LOGS_DIR" == "logs" ]] || staged+=" DEPLOY_LOGS_DIR"
+  [[ "$BACKUP_DIR" == "backups" ]] || staged+=" DEPLOY_BACKUP_DIR"
+  [[ "$NINE_ROUTER_CONTAINER" == "realestate_9router" ]] || staged+=" NINE_ROUTER_CONTAINER"
+  local has_stg_file=0
+  [[ "${COMPOSE_FILE:-}" != *docker-compose.staging.yml* ]] || has_stg_file=1
+  if [[ -n "$staged" ]] && { [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]] || (( has_stg_file == 0 )); }; then
+    die "Biến staging đặt ngoài wrapper:${staged}. Chúng chỉ hợp lệ khi chạy qua scripts/staging.sh (COMPOSE_PROJECT_NAME=realestate-staging và COMPOSE_FILE có docker-compose.staging.yml). Bỏ các biến này để deploy production."
+  fi
+  if (( has_stg_file == 1 )) && [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]]; then
+    die "COMPOSE_FILE có docker-compose.staging.yml nhưng COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-}' khác realestate-staging: dễ chạm nhầm stack khác. Chạy qua scripts/staging.sh hoặc bỏ COMPOSE_FILE."
+  fi
+}
+check_staging_vars
 
 MONGO_TIMEOUT="${MONGO_TIMEOUT:-120}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
@@ -82,6 +120,7 @@ ALLOW_DOWNGRADE="${DEPLOY_ALLOW_DOWNGRADE:-0}"  # 1 = chấp nhận CỐ Ý vers
 PLAN_ONLY=0       # =1 khi có --plan-only: chạy đến hết `reconcile` dry-run rồi thoát (không backup, không up)
 DOWNGRADE_ACTIVE=0     # =1 khi runner báo downgrade và DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua migrate và việc ghi version
 MIGRATION_GATE_RAN=0   # =1 khi đã đọc được trạng thái migration (Mongo healthy): chỉ khi đó mới ghi phiên bản sau deploy
+DB_EMPTY_NO_BACKUP=0   # =1 khi Mongo đã chạy nhưng DB `realestate` CHƯA có dữ liệu (không có `users`, không collection nào có document): bỏ qua backup
 
 usage() {
   cat <<'EOF'
@@ -114,7 +153,7 @@ hết giá trị mẫu <...>; đủ dung lượng đĩa (DEPLOY_MIN_FREE_GB, m�
 đang ở nhánh production; chạy trong tmux/nohup.
 
 Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không còn user chưa migrate 005
--> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users) -> gắn thẻ image backend hiện tại thành
+-> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) -> gắn thẻ image backend hiện tại thành
 <project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `reconcile` (bước 6b, xem trên;
 với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần baseline) -> up -d --build -> chờ mongo healthy và
 backend liveness -> ghi phiên bản vào collection `system` (bước 8b).
@@ -187,10 +226,10 @@ check_prereqs() {
   require_no_placeholders "$ENV_FILE"
 
   # backend bind-mount ./.env; thiếu thì Docker tự tạo THƯ MỤC .env làm backend lỗi.
-  if [[ -d .env ]]; then
-    die "./.env là THƯ MỤC (Docker tự tạo khi file thiếu). Xóa nó (rmdir .env), rồi 'touch .env'."
+  if [[ -d "$RUNTIME_ENV_FILE" ]]; then
+    die "./$RUNTIME_ENV_FILE là THƯ MỤC (Docker tự tạo khi file thiếu). Xóa nó (rmdir $RUNTIME_ENV_FILE), rồi 'touch $RUNTIME_ENV_FILE'."
   fi
-  [[ -e .env ]] || { touch .env; log "Đã tạo ./.env rỗng (backend bind-mount file này)."; }
+  [[ -e "$RUNTIME_ENV_FILE" ]] || { touch "$RUNTIME_ENV_FILE"; log "Đã tạo ./$RUNTIME_ENV_FILE rỗng (backend bind-mount file này)."; }
 }
 
 # Khóa chống hai lần deploy chạy chồng nhau. Đặt trong .git (không hiện ở git status, không phải file repo).
@@ -253,7 +292,7 @@ check_credential_pair() {
 # Đếm CHỈ ĐỌC bằng cùng bộ lọc với UserRolesMigrationGuard. Không đếm được thì cảnh báo, không chặn.
 check_users_migrated() {
   local health out pending js
-  health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)"
+  health="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
   if [[ "$health" != "healthy" ]]; then
     warn "Mongo không ở trạng thái healthy ($health): bỏ qua kiểm tra migration 005."
     return 0
@@ -283,26 +322,47 @@ EOF
 # ── 4) logs/: backend chạy USER node (uid 1000) cần quyền ghi ────────────────
 # docker-compose.yml chỉ bind-mount ./logs (không mount ./tmp; tmp nằm trong image), nên chỉ chuẩn bị logs/.
 ensure_runtime_dirs() {
-  mkdir -p logs
+  mkdir -p "$LOGS_DIR"
   local need=0 stray
-  [[ "$(stat -c '%u' logs)" == "1000" ]] || need=1
-  stray="$(find logs ! -uid 1000 -print -quit)"
+  [[ "$(stat -c '%u' "$LOGS_DIR")" == "1000" ]] || need=1
+  stray="$(find "$LOGS_DIR" ! -uid 1000 -print -quit)"
   [[ -z "$stray" ]] || need=1
   (( need == 1 )) || return 0
 
   log "logs/ chưa thuộc uid 1000 (backend cần ghi); đang chown..."
   if [[ "$(id -u)" == "0" ]]; then
-    chown -R 1000:1000 logs
-  elif chown -R 1000:1000 logs 2>/dev/null; then
+    chown -R 1000:1000 "$LOGS_DIR"
+  elif chown -R 1000:1000 "$LOGS_DIR" 2>/dev/null; then
     :   # user hiện tại chính là uid 1000 (vd user đầu tiên trên Ubuntu): chown về chính mình thành công
   elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    sudo -n chown -R 1000:1000 logs
+    sudo -n chown -R 1000:1000 "$LOGS_DIR"
   else
-    die "Không chown được logs/ (không có sudo không mật khẩu). Chạy rồi chạy lại script:  sudo chown -R 1000:1000 \"$PWD/logs\""
+    die "Không chown được logs/ (không có sudo không mật khẩu). Chạy rồi chạy lại script:  sudo chown -R 1000:1000 \"$PWD/$LOGS_DIR\""
   fi
 }
 
 # ── 5) Backup Mongo (bắt buộc trước khi up) ──────────────────────────────────
+# Phân loại DB `realestate` (CHỈ ĐỌC) để quyết định có cần backup không. In đúng một trong:
+#   HAS_USERS            có collection `users` (kể cả rỗng): backup bắt buộc, mongodump luôn sinh prelude realestate.users
+#   EMPTY                không có `users` VÀ không collection nào có document: không có gì để sao lưu
+#   EMPTY_SYSTEM_ONLY    không có `users`; collection duy nhất có document là `system` (sổ phiên bản/migration do runner ghi ở 6b của một
+#                        lần deploy đầu bị dở dang trước `up`): không có dữ liệu nghiệp vụ, sổ tái tạo được bằng reconcile. Một DB
+#                        production cũ đã baseline cũng có `system`, nhưng khi đó `users`/collection nghiệp vụ có dữ liệu nên ra
+#                        HAS_USERS/AMBIGUOUS, không rơi vào nhánh này
+#   AMBIGUOUS:<tên...>   không có `users` nhưng collection khác (ngoài `system`) có dữ liệu: mơ hồ, caller phải dừng
+# Trả 1 (không in gì) nếu không hỏi được Mongo: caller phải dừng (fail-closed).
+classify_db() {
+  local present busy
+  present="$(existing_collections "$MONGO_CONTAINER" users)" || return 1
+  if [[ -n "$present" ]]; then echo HAS_USERS; return 0; fi
+  busy="$(nonempty_collections "$MONGO_CONTAINER")" || return 1
+  case "$busy" in
+    "") echo EMPTY ;;
+    system) echo EMPTY_SYSTEM_ONLY ;;
+    *) echo "AMBIGUOUS:${busy}" ;;
+  esac
+}
+
 backup_mongo() {
   local state
   state="$(docker inspect -f '{{.State.Status}}' "$MONGO_CONTAINER" 2>/dev/null || true)"
@@ -316,8 +376,30 @@ backup_mongo() {
   docker exec "$MONGO_CONTAINER" sh -c 'test -n "$MONGO_INITDB_ROOT_USERNAME" && test -n "$MONGO_INITDB_ROOT_PASSWORD"' \
     || die "Mongo đang chạy cấu hình cũ (không có user root/xác thực). deploy.sh KHÔNG dùng để nâng cấp standalone: làm theo $DOC mục 5."
 
-  install -d -m 700 backups
-  local out="backups/deploy-pre-${TS}.archive.gz"
+  # DB `realestate` chưa có collection `users` (Mongo vừa dựng, backend chưa boot lần nào): mongodump vẫn mã 0 nhưng archive
+  # KHÔNG có prelude `realestate.users` nên verify_backup_archive sẽ từ chối. Chỉ khi DB thật sự không có dữ liệu nghiệp vụ nào mới
+  # bỏ qua backup; có `users` (kể cả rỗng) thì backup vẫn BẮT BUỘC như thường; mơ hồ thì dừng, không đoán.
+  local db_class
+  db_class="$(classify_db)" || die "Không hỏi được Mongo xem DB realestate có collection users/dữ liệu hay chưa (mongosh lỗi hoặc quá ${OPS_EXEC_TIMEOUT}s). Không deploy khi không biết có cần backup hay không: kiểm container $MONGO_CONTAINER rồi chạy lại."
+  case "$db_class" in
+    HAS_USERS) ;;
+    EMPTY)
+      warn "DB realestate trong $MONGO_CONTAINER chưa có dữ liệu (chưa có collection users, không collection nào có document): bỏ qua mongodump vì không có gì để sao lưu (backend chưa boot lần nào?)."
+      DB_EMPTY_NO_BACKUP=1
+      return 0
+      ;;
+    EMPTY_SYSTEM_ONLY)
+      warn "DB realestate trong $MONGO_CONTAINER chưa có collection users; collection duy nhất có dữ liệu là \`system\` (sổ phiên bản/migration, thường do một lần deploy đầu bị dở dang). Không có dữ liệu nghiệp vụ cần sao lưu, sổ tái tạo được bằng reconcile: bỏ qua mongodump. (DB production cũ đã baseline sẽ có users/collection nghiệp vụ nên không rơi vào trường hợp này.)"
+      DB_EMPTY_NO_BACKUP=1
+      return 0
+      ;;
+    *)
+      die "DB realestate chưa có collection users nhưng có collection có dữ liệu (${db_class#AMBIGUOUS:}). Không rõ đây là DB gì nên deploy.sh KHÔNG bỏ qua backup và cũng không tạo được backup hợp lệ (backup phải chứa realestate.users). Kiểm bằng mongosh ('show collections' trong DB realestate) và xử lý theo $DOC mục 6 trước; không deploy khi chưa hiểu tình trạng dữ liệu."
+      ;;
+  esac
+
+  install -d -m 700 "$BACKUP_DIR"
+  local out="${BACKUP_DIR}/deploy-pre-${TS}.archive.gz"
   local part="${out}.partial"
   log "mongodump DB realestate -> $out ..."
   # Mật khẩu: đọc từ biến môi trường BÊN TRONG container, đưa cho mongodump qua pipe `--config <(...)` (không có trên dòng
@@ -371,7 +453,7 @@ run_migration_cli() { compose run --rm --no-deps -T backend node dist/migrations
 runner_cmd_hint() { printf 'docker compose --env-file %s run --rm --no-deps backend node dist/migrations/cli.js' "$ENV_FILE"; }
 
 mongo_is_healthy() {
-  [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)" == "healthy" ]]
+  [[ "$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')" == "healthy" ]]
 }
 
 # Build image backend MỚI (gắn GIT_COMMIT). Chưa đụng stack đang chạy: container cũ giữ image cũ theo ID; thẻ :latest
@@ -415,7 +497,7 @@ reconcile_stop() {
       die "Downgrade chưa được cho phép. Stack chưa bị đổi."
       ;;
     *)
-      die "Runner migration lỗi hoặc từ chối (mã $rc; xem output ở trên: kết nối Mongo, sổ không liền mạch, version sai định dạng, image thiếu dist/migrations/cli.js, Mongo không phải replica set khi --apply...). Stack chưa bị đổi (dry-run chỉ đọc)."
+      die "Runner migration lỗi hoặc từ chối (mã $rc; xem output ở trên: kết nối Mongo, sổ không liền mạch, version sai định dạng, image thiếu dist/migrations/cli.js, Mongo không phải replica set: runner từ chối ngay cả ở dry-run...). Stack chưa bị đổi (dry-run chỉ đọc)."
       ;;
   esac
 }
@@ -443,7 +525,7 @@ reconcile_dry_run() {
 # Chế độ mặc định (tự migrate): dry-run xem kế hoạch, rồi `reconcile --apply --skip-version` NGAY SAU backup (bước 5), TRƯỚC `up`.
 # Version thường chưa ghi ở đây (code mới chưa chạy): bước 8b làm việc đó. Ngoại lệ DB mới tinh (version null, users rỗng): runner
 # GHI version ngay ở bước này (kể cả --skip-version), nên 8b trên DB mới là no-op mã 0. STACK_TOUCHED=1 đặt ngay trước --apply; BACKUP_FILE rỗng
-# thì không chạy --apply. Mã 3/4/5 từ --apply: runner không ghi gì nên trả STACK_TOUCHED=0 trước khi dừng. Mã 1 từ --apply:
+# thì không chạy --apply, trừ DB chưa có dữ liệu (bước 5 bỏ qua backup, kiểm lại ngay trước --apply). Mã 3/4/5 từ --apply: runner không ghi gì nên trả STACK_TOUCHED=0 trước khi dừng. Mã 1 từ --apply:
 # có thể một migration đã chạy dở (dữ liệu đổi một phần) nên GIỮ STACK_TOUCHED=1 (in hướng dẫn "không quay code cũ").
 auto_reconcile() {
   local cli rc=0
@@ -455,10 +537,23 @@ auto_reconcile() {
     return 0
   fi
 
-  [[ -n "$BACKUP_FILE" ]] || die "Tự migrate cần backup Mongo vừa tạo ở bước 5 (BACKUP_FILE rỗng). Dừng, chưa ghi gì. Stack chưa bị đổi."
+  if [[ -z "$BACKUP_FILE" ]]; then
+    # Chỉ DB không có dữ liệu nghiệp vụ (bước 5 đã xác nhận: không users, không document nào ngoài `system`) được ghi mà không có
+    # backup. Hỏi lại NGAY trước khi ghi (build mất vài phút: dữ liệu có thể đã xuất hiện); bất kỳ trạng thái nào khác là dừng,
+    # giữ nguyên quy tắc "luôn backup trước khi ghi".
+    local db_class="" recheck_rc=0
+    (( DB_EMPTY_NO_BACKUP == 1 )) || die "Tự migrate cần backup Mongo vừa tạo ở bước 5 (BACKUP_FILE rỗng), mà bước 5 không xác nhận DB trống. Dừng, chưa ghi gì. Stack chưa bị đổi."
+    db_class="$(classify_db)" || recheck_rc=$?
+    (( recheck_rc == 0 )) || die "Không hỏi lại được Mongo ngay trước khi ghi (mongosh lỗi hoặc quá hạn): không ghi khi không có backup và không xác nhận được DB còn trống. Chạy lại: bash deploy.sh --no-pull. Dừng, chưa ghi gì. Stack chưa bị đổi."
+    case "$db_class" in
+      EMPTY|EMPTY_SYSTEM_ONLY) ;;
+      *) die "DB realestate KHÔNG còn trống kể từ bước 5 (nay: $db_class), nhưng deploy này không có backup. Không ghi. Chạy lại để có backup mới: bash deploy.sh --no-pull. Dừng, chưa ghi gì. Stack chưa bị đổi." ;;
+    esac
+    log "DB realestate chưa có dữ liệu nghiệp vụ ($db_class; đã kiểm lại ngay trước khi ghi): ghi baseline/version không cần backup."
+  fi
   # Từ đây dữ liệu/sổ có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
   STACK_TOUCHED=1
-  log "reconcile --apply --skip-version (baseline nếu cần + migration chờ; backup: $BACKUP_FILE) ..."
+  log "reconcile --apply --skip-version (baseline nếu cần + migration chờ; backup: ${BACKUP_FILE:-không có, DB trống}) ..."
   run_migration_cli reconcile --apply --by deploy --skip-version || rc=$?
   case "$rc" in
     0) ;;
@@ -589,7 +684,7 @@ wait_mongo_healthy() {
   local status
   SECONDS=0
   while (( SECONDS < MONGO_TIMEOUT )); do
-    status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)"
+    status="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
     if [[ "$status" == "healthy" ]]; then log "Mongo healthy."; return 0; fi
     sleep 3
   done
@@ -605,7 +700,7 @@ wait_backend_liveness() {
       log "Backend liveness OK sau ~${SECONDS}s."
       return 0
     fi
-    state="$(docker inspect -f '{{.State.Status}}' "$BACKEND_CONTAINER" 2>/dev/null || echo missing)"
+    state="$(inspect_field "$BACKEND_CONTAINER" '{{.State.Status}}')"
     if [[ "$state" == "exited" || "$state" == "dead" || "$state" == "missing" ]]; then
       die "Container backend ở trạng thái '$state' (không chạy)."
     fi
@@ -683,8 +778,8 @@ main() {
 
   echo
   compose ps
-  if [[ "$(docker inspect -f '{{.State.Status}}' realestate_9router 2>/dev/null || echo missing)" != "running" ]]; then
-    warn "Container realestate_9router không chạy (AI qua 9Router sẽ lỗi). Xem: docker compose --env-file $ENV_FILE logs nine-router"
+  if [[ -n "$NINE_ROUTER_CONTAINER" && "$(inspect_field "$NINE_ROUTER_CONTAINER" '{{.State.Status}}')" != "running" ]]; then
+    warn "Container $NINE_ROUTER_CONTAINER không chạy (AI qua 9Router sẽ lỗi). Xem: docker compose --env-file $ENV_FILE logs nine-router"
   fi
   log "Deploy xong (commit ${NEW_COMMIT:-?}). Image dự phòng: ${PREV_IMAGE_TAG:-không có}. Backup: ${BACKUP_FILE:-không có}."
 }

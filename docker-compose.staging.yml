@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.staging.yml — OVERRIDE CHỈ CHO "STAGING LOCAL" (máy dev), phủ lên docker-compose.yml của production.
+# KHÔNG bao giờ dùng trên VPS và KHÔNG tự được nạp: compose chỉ đọc file này khi COMPOSE_FILE (hoặc -f) nêu tên nó, việc mà
+# chỉ `scripts/staging.sh` làm. Chạy `docker compose` mặc định / `bash deploy.sh` mặc định vẫn chỉ dùng docker-compose.yml.
+# Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md mục 11.3 ("Staging local").
+#
+# Khác production (liệt kê đầy đủ ở mục 11.3):
+#   - project `realestate-staging`, container `rhstg_*` => volume/mạng cũng mang tiền tố project (không đụng realestate_* / realestate-dev_*)
+#   - backend publish 127.0.0.1:${STAGING_BACKEND_PORT:-13100} (prod: không publish); mongo/redis/minio vẫn không publish
+#   - backend đọc env từ .staging/env (KHÔNG đọc .env.docker thật) và bind-mount .staging/backend.env, .staging/logs (KHÔNG đụng ./.env, ./logs)
+#   - nine-router, cloudflared: tắt (profile không bao giờ bật); frontend: tắt mặc định (profile `frontend`, bật bằng STAGING_FRONTEND=1)
+# Mọi thứ còn lại (image, healthcheck, replica set + auth + keyFile, NODE_ENV=production, subnet mạng...) giữ nguyên như prod.
+# ─────────────────────────────────────────────────────────────────────────────
+name: realestate-staging
+
+services:
+  mongo:
+    container_name: rhstg_mongo
+  redis:
+    container_name: rhstg_redis
+  minio:
+    container_name: rhstg_minio
+  minio-init:
+    container_name: rhstg_minio_init
+
+  backend:
+    container_name: rhstg_backend
+    # `!override`: thay HẲN danh sách của file gốc (nếu chỉ nối thêm thì .env.docker thật vẫn bị nạp, ./.env và ./logs vẫn bị mount).
+    env_file: !override
+      - .staging/env
+    ports: !override
+      - "127.0.0.1:${STAGING_BACKEND_PORT:-13100}:3000"
+    volumes: !override
+      - ./.staging/backend.env:/app/.env
+      - ./.staging/logs:/app/logs
+
+  frontend:
+    container_name: rhstg_frontend
+    profiles: ["frontend"]
+    ports: !override
+      - "127.0.0.1:${STAGING_FRONTEND_PORT:-18080}:80"
+
+  # Không bao giờ chạy ở staging (không có token Cloudflare / cổng AI thật). Profile không tồn tại trong COMPOSE_PROFILES.
+  nine-router:
+    container_name: rhstg_9router
+    profiles: ["never-in-staging"]
+  cloudflared:
+    container_name: rhstg_cloudflared
+    profiles: ["never-in-staging"]

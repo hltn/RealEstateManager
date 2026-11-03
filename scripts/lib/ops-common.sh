@@ -13,6 +13,19 @@ log()  { printf '[%s] %s\n' "$LOG_PREFIX" "$*"; }
 warn() { printf '[%s] CẢNH BÁO: %s\n' "$LOG_PREFIX" "$*" >&2; }
 die()  { printf '[%s] LỖI: %s\n' "$LOG_PREFIX" "$*" >&2; exit 1; }
 
+# In MỘT trường của `docker inspect -f <template> <container>`; container không tồn tại (hoặc không đọc được) thì in $3
+# (mặc định "missing"). Không dùng `$(docker inspect ... || echo missing)`: khi lỗi, docker vẫn có thể in một dòng TRỐNG ra stdout,
+# ghép với "missing" thành "\nmissing" (cảnh báo bị xuống dòng giữa chừng). Docker thoát mã khác 0 thì KHÔNG tin stdout, dùng giá trị
+# mặc định; thành công thì chỉ lấy dòng đầu, rỗng cũng rơi về mặc định. `--` đặt trước tên container để tên bắt đầu bằng `-` không
+# bị hiểu là cờ.
+inspect_field() {
+  local v rc=0
+  v="$(docker inspect -f "$2" -- "$1" 2>/dev/null)" || rc=$?
+  if (( rc != 0 )); then printf '%s' "${3:-missing}"; return 0; fi
+  v="${v%%$'\n'*}"
+  printf '%s' "${v:-${3:-missing}}"
+}
+
 # Quyền (dạng bát phân, vd 600) của một file; hỗ trợ GNU stat (Ubuntu) và BSD stat.
 file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
@@ -152,4 +165,25 @@ print('COLL_EXISTS:${coll}=' + (names.includes('${coll}') ? 1 : 0));"
     fi
   done
   printf '%s' "$found"
+}
+
+# In (cách nhau bằng khoảng trắng) tên các collection CÓ DỮ LIỆU (>= 1 document) trong DB `realestate` thật (CHỈ ĐỌC), bỏ qua view và
+# collection hệ thống của Mongo (tên bắt đầu bằng `system.`, gồm system.buckets.* của time-series; bản thân collection time-series
+# vẫn được xét; collection `system` của ứng dụng KHÔNG bị bỏ qua). "Có dữ liệu" kiểm bằng findOne({}, {_id: 1}) chứ KHÔNG dùng
+# estimatedDocumentCount(): số đếm trong metadata có thể sai (về 0) sau khi mongod bị kill -9, và kết quả sai theo hướng "trống" sẽ
+# làm bỏ qua backup oan. Kết quả rỗng (nhưng trả 0) nghĩa là không có document nào ở collection nào. Mật khẩu root xác thực TRONG
+# script mongosh, không lên dòng lệnh. Trả 1 (không in gì) nếu không hỏi được hoặc output không có dòng kết quả: caller PHẢI dừng.
+nonempty_collections() {
+  local mongo="$1" out js line
+  read -r -d '' js <<'JSEOF' || true
+db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB('realestate');
+const busy = d.getCollectionInfos({ type: { $ne: 'view' } }).map(c => c.name)
+  .filter(n => !n.startsWith('system.')).filter(n => d.getCollection(n).findOne({}, { _id: 1 }) !== null);
+print('NONEMPTY_COLLS=' + busy.join(' '));
+JSEOF
+  out="$(timeout "$OPS_EXEC_TIMEOUT" docker exec -i "$mongo" mongosh --quiet --norc --file /dev/stdin <<<"$js" 2>&1)" || return 1
+  line="$(grep -E '^NONEMPTY_COLLS=' <<<"$out" | tail -n 1)" || return 1
+  [[ -n "$line" ]] || return 1
+  printf '%s' "${line#NONEMPTY_COLLS=}"
 }

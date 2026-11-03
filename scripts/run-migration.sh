@@ -143,7 +143,7 @@ MONGO_PWD="$(read_env MONGO_ROOT_PASSWORD)"
 [[ "$MONGO_USER" =~ ^[A-Za-z0-9._~-]+$ && "$MONGO_PWD" =~ ^[A-Za-z0-9._~-]+$ ]] \
   || die "MONGO_ROOT_USERNAME/MONGO_ROOT_PASSWORD có ký tự không an toàn cho URI (chỉ A-Z a-z 0-9 . _ ~ -). Dùng hex theo tài liệu mục 2."
 
-mongo_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)"
+mongo_health="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
 [[ "$mongo_health" == "healthy" ]] \
   || die "$MONGO_CONTAINER chưa healthy (trạng thái: $mongo_health). Khởi động: docker compose --env-file $ENV_FILE up -d mongo, đợi healthy rồi chạy lại."
 
