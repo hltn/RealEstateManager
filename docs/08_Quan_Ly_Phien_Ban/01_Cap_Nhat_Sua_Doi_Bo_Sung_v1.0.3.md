@@ -72,7 +72,7 @@ Khi thêm lỗi mới, chép khối này và điền đủ các dòng:
 
 ## 4. Bảng tổng hợp
 
-Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028` và `PT-029` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (trạng thái `Xong một phần`: code và test xong, chưa commit, chưa deploy; còn việc thử trên mobile thật). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
+Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028`, `PT-029` và `PT-030` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (trạng thái `Xong một phần`: code và test xong, chưa commit, chưa deploy; còn việc thử trên mobile thật; PT-030 là PWA cài được trên iPhone và Android, còn thử máy thật và Lighthouse). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27 tại thời điểm đó; từ 2026-11-03 thêm PT-028, PT-029 và PT-030, đều `Xong một phần`, nên bảng dưới có **30 mục**). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
 
 | Mã | Tiêu đề | Mức độ | Nhóm | Trạng thái |
 |---|---|---|---|---|
@@ -105,10 +105,11 @@ Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013
 | [PT-027](#pt-027--lưu-phiên-bản-hệ-thống-trong-db-và-cơ-chế-tự-chạy-migration-khi-nâng-cấp) | Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp | Major (đề xuất; cải tiến nền tảng) | BE / DevOps / Dữ liệu | Xong một phần |
 | [PT-028](#pt-028--chuyển-nút-ghi-chú-ở-tab-nhật-ký-xuống-thanh-đáy-mobile-và-chỉnh-lại-nút-trên-desktop) | Chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile; chỉnh lại nút trên desktop | Cải tiến | FE | Xong một phần |
 | [PT-029](#pt-029--màn-hình-mobile-bỏ-nút-chỉnh-sửa-ở-hàng-tiêu-đề) | Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề | Minor | FE | Xong một phần |
+| [PT-030](#pt-030--biến-web-admin-thành-pwa-cài-được-trên-iphone-và-android) | Biến web admin thành PWA cài được trên iPhone và Android (không offline dữ liệu) | Cải tiến | FE | Xong một phần |
 
 ## 5. Chi tiết các mục
 
-Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đến `PT-012`) **[Do QA đề xuất khi rà tài liệu]** (`PT-013` đến `PT-016`) hoặc **[Oniichan test production 2026-11-02]** (`PT-017` đến `PT-026`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-02]** (`PT-027`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-03]** (`PT-028`, `PT-029`). "Người phụ trách" là **đề xuất**, Oniichan chốt.
+Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đến `PT-012`) **[Do QA đề xuất khi rà tài liệu]** (`PT-013` đến `PT-016`) hoặc **[Oniichan test production 2026-11-02]** (`PT-017` đến `PT-026`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-02]** (`PT-027`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-03]** (`PT-028`, `PT-029`, `PT-030`). "Người phụ trách" là **đề xuất**, Oniichan chốt.
 
 #### PT-001 — Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu
 
@@ -706,6 +707,7 @@ Chỉ là gợi ý, **chưa giao việc**. Mọi nhóm FE đều phải thử tr
 | (c) Sidebar mobile | PT-024, PT-025 | `coder-frontend-agent` |
 | (d) Form lịch hẹn mobile | PT-026 | `coder-frontend-agent`; rà luôn các form mobile khác cùng kiểu |
 | (f) Nút Ghi chú và nút Chỉnh sửa ở màn chi tiết khách | PT-028, PT-029 | `coder-frontend-agent`; cùng màn với nhóm (a), nên làm sau khi nhóm (a) đã chốt để khỏi sửa chồng lên nhau. Chờ Oniichan trả lời 2 câu hỏi trong chính mục PT-028 |
+| (g) PWA (cài lên màn hình chính) | PT-030 | `coder-frontend-agent` (code, icon, test) + `devops-agent` (nginx, header cache; tài liệu hạ tầng); `qa-agent` review. Không phụ thuộc nhóm khác, nhưng `viewport-fit=cover` đổi cách tính vùng an toàn nên nên thử cùng đợt với nhóm (c), (d), (f) trên iPhone thật |
 | (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được). Dockerfile đưa số phiên bản vào image nằm trong phạm vi PT-027 (PT-014 đã `Bỏ`). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
 
 Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý, vì mọi thay đổi schema/dữ liệu về sau sẽ dựa vào nó (hiện chưa mục PT nào bắt buộc migration, nhưng PT-023 có thể phát sinh); **điều kiện để deploy được là xử lý PT-006 (đĩa) trước**. Nhóm (a), (c), (d) thuần giao diện không phụ thuộc vào nhóm (e).
@@ -745,6 +747,76 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 | Đề xuất | Xóa nút và import `Pencil`, `BUTTON_LINK_CLASS`, `useCrmActions().navigate` khỏi `MobileDetailHeader.tsx` (giữ `goBack`); sửa test thành "KHÔNG có nút Chỉnh sửa". Chỉ áp dụng cho mobile: `MobileDetailHeader` chỉ được dùng ở `CustomerDetail.mobile.tsx:43`, nên desktop không bị ảnh hưởng. Làm chung đợt với PT-028 (cùng màn, cùng agent) |
 | Người phụ trách | `coder-frontend-agent`; `qa-agent` review code và test |
 | Trạng thái | Xong một phần (2026-11-03). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); `qa-agent` đã review (không Major). Nút "Chỉnh sửa" ở tiêu đề mobile đã xóa, test đổi thành kiểm không còn nút. **Còn lại:** Oniichan xem trên mobile thật. Lưu ý: nếu người dùng đang ở tab Nhật ký hay Tiến độ thì muốn sửa khách phải quay về tab Thông tin (đề xuất chấp nhận; nếu Oniichan muốn giữ một lối tắt khác ở các tab đó thì báo lại) |
+
+#### PT-030 — Biến web admin thành PWA cài được trên iPhone và Android
+
+**[Oniichan yêu cầu bổ sung 2026-11-03]**
+
+| Trường | Nội dung |
+|---|---|
+| Mô tả | Làm cho web admin **cài được lên Màn hình chính** như một ứng dụng (iPhone Safari và Android Chrome): có manifest, service worker, icon, tên ứng dụng, mở ra không thanh địa chỉ. Hiện trạng trước đó: chưa có manifest, service worker, icon; `public/` chỉ có logo Vite; `index.html` còn `<title>client</title>`, `lang="en"`, chưa có `theme-color` |
+| Nhóm | FE (phần cache header nginx và tài liệu hạ tầng do `devops-agent` làm, xem `docs/01_Infrastructure`) |
+| Màn hình / API | Toàn bộ web admin. Không có API mới. File chính: `RealEstateAdminApp/vite.config.ts` (plugin `vite-plugin-pwa` 2.0.0, tương thích Vite 8), `index.html`, `src/pwa/*` (`sw.ts`, `serviceWorkerConfig.ts`, `registerServiceWorker.ts`, `PwaUpdatePrompt.tsx`, `IosInstallHint.tsx`, `iosInstallHintLogic.ts` và test), `public/offline.html`, `public/pwa-*.png`, `public/apple-touch-icon.png`, `public/favicon-*.png`, `scripts/generate-pwa-icons.mjs`, `tsconfig.sw.json` |
+| Bước tái hiện | 1. Mở web admin trên iPhone Safari, bấm Chia sẻ. 2. Nhìn menu: trước đây không có icon/tên riêng, mở ra vẫn là trang web trong Safari |
+| Kết quả thực tế | Không cài được như ứng dụng; tab trình duyệt hiện tiêu đề `client` và logo Vite |
+| Kết quả mong đợi | Cài lên Màn hình chính với tên "STND", icon logo STND, mở ra toàn màn hình; có hướng dẫn cài trên iPhone; có thông báo khi có phiên bản mới; mất mạng thì hiện trang "Không có kết nối" |
+| Mức độ | Cải tiến |
+| Ảnh hưởng | Nhân viên mở ứng dụng nhanh hơn từ Màn hình chính; không ảnh hưởng dữ liệu. Rủi ro đã chặn: service worker **không bao giờ** cache dữ liệu (CCCD, hồ sơ khách, ảnh signed URL) |
+| Đề xuất | Xem "Quyết định đã chốt" và "Đã làm" ngay dưới |
+| Người phụ trách | `coder-frontend-agent` (code, icon, test, tài liệu mục này); `devops-agent` (nginx và tài liệu hạ tầng); `qa-agent` review |
+| Trạng thái | Xong một phần (2026-11-03). Code, test (vitest) và build xong trong repo (chưa commit, chưa deploy). **Chưa** thử trên iPhone và Android thật, **chưa** chạy Lighthouse, **chưa** kiểm Cloudflare. Việc còn lại: mục "Việc Oniichan tự làm" bên dưới |
+
+##### Quyết định đã chốt (Oniichan duyệt 2026-11-03)
+
+1. **Mức PWA: cài được, KHÔNG offline dữ liệu.** Service worker chỉ precache vỏ ứng dụng (JS, CSS, icon, `offline.html`). **Không cache `/api/`**, ảnh, hay origin khác; không có `runtimeCaching`. Mất mạng khi mở một trang thì hiện trang tĩnh "Không có kết nối" kèm nút Thử lại, **không** hiện dữ liệu cũ.
+2. **Cập nhật sau deploy: không tự tải lại.** Nhân viên có thể đang gõ dở ghi chú. Khi có phiên bản mới hiện thông báo "Có phiên bản mới" với nút **Cập nhật** (mới tải lại) và nút **Để sau**. Ứng dụng tự kiểm bản mới khi mở lại/quay lại ứng dụng (sự kiện `visibilitychange`) và mỗi 1 giờ, vì PWA đã cài trên iOS gần như không tự tải lại trang.
+3. **Icon tạm** dựng từ `src/images/logo/logo.png` (chỉ **60x78 px**, nền trong suốt, không vuông): đặt giữa nền navy `#101828` (màu nền tối của app). Vì file nguồn rất nhỏ, icon 192/512 px là ảnh **phóng to nên hơi mềm/mờ**; chấp nhận cho tới khi có logo độ phân giải cao.
+4. **`viewport-fit=cover`: ĐÃ LÀM** (xem mục 23 ở mục 7, đã sửa lại cho khớp). Đã rà các phần tử cố định/sát mép, danh sách ở "Vùng an toàn".
+5. **Tên:** `name` "STND – Quản lý Bất động sản", `short_name` "STND" (dưới icon), `lang: vi`, `display: standalone`, `start_url`/`scope`/`id` đều `/`, không khóa hướng màn hình (desktop cũng dùng).
+
+##### Đã làm
+
+- **Plugin, không viết tay toàn bộ:** `vite-plugin-pwa` 2.0.0 (peer `vite ^8` hợp lệ), chiến lược `injectManifest` với service worker tự viết `src/pwa/sw.ts` (Workbox `workbox-precaching`, `workbox-routing`, `workbox-core`), chế độ `registerType: 'prompt'`, `devOptions.enabled: false`. Build ra `dist/sw.js` (gộp sẵn Workbox, không có `workbox-*.js` riêng), `dist/manifest.webmanifest`, icon, `dist/offline.html`.
+- **Vì sao `injectManifest` thay vì `generateSW`/`navigateFallback`:** `navigateFallback` của Workbox trả trang được chỉ định cho **mọi** lần điều hướng (kể cả khi có mạng), nên không thể dùng để chỉ hiện `offline.html` khi mất mạng. Với `injectManifest`: điều hướng luôn đi mạng; **chỉ khi `fetch` lỗi** mới trả `offline.html`. `index.html` cố ý **không** nằm trong precache (vì Workbox sẽ trả bản cũ cho `/` kể cả khi online); `navigateFallbackDenylist` tương ứng là `NavigationRoute({ denylist: [/^\/api\//] })`. `manifest.webmanifest` cũng bị lọc khỏi precache để luôn lấy bản mới.
+- **Hệ quả cần biết:** mất mạng khi mở ứng dụng thì thấy "Không có kết nối" chứ **không** vào được vỏ SPA rồi lỗi API. Đang dùng ứng dụng (trang đã tải) mà mất mạng thì hành vi như web thường (lỗi từng request). Lần cài đầu tải khoảng 1,8 MB JS/CSS để precache.
+- **`index.html`:** `lang="vi"`, `<title>STND – Quản lý Bất động sản</title>` (không có chỗ nào đang đặt title động: `PageMeta`/`react-helmet-async` chưa được màn hình nào dùng, nên không xung đột), `theme-color`, `apple-touch-icon` (180x180, nền đặc vì iOS không hỗ trợ nền trong suốt), `apple-mobile-web-app-capable`, `mobile-web-app-capable`, `apple-mobile-web-app-title`, `apple-mobile-web-app-status-bar-style=default`, `viewport-fit=cover`; script áp lớp `dark` giữ nguyên; favicon Vite (`favicon.svg`) đã **xóa** và thay bằng `favicon-32x32.png`, `favicon-48x48.png` từ logo STND.
+- **Hướng dẫn cài iPhone:** banner mỏng ở đầu trang, **chỉ** hiện khi iOS Safari, chưa cài (không standalone), đã đăng nhập và chưa bấm "Đã hiểu" (cờ localStorage `pwa.iosInstallHintDismissed`). Nội dung: bấm Chia sẻ rồi chọn "Thêm vào MH chính". Không hiện trên Chrome/Firefox iOS và trong trình duyệt nhúng của app (Zalo, Facebook...) vì hướng dẫn Safari không đúng ở đó.
+- **Android: KHÔNG làm nút "Cài ứng dụng" riêng** (`beforeinstallprompt` phải bắt từ sớm trước khi React mount và giữ trạng thái toàn cục; không đáng độ phức tạp). Chrome Android vẫn tự có menu "Cài đặt ứng dụng" và thanh gợi ý khi đủ điều kiện.
+- **Script sinh icon:** `RealEstateAdminApp/scripts/generate-pwa-icons.mjs` (dùng `sharp`, devDependency). **Thay logo:** thay file nguồn `src/images/logo/logo.png` (hoặc truyền `--source=...`) rồi chạy `node scripts/generate-pwa-icons.mjs` (tùy chọn `--bg=#rrggbb`, `--kernel=lanczos3|nearest`), commit các PNG trong `public/`. Build **không** phụ thuộc script này (PNG đã nằm sẵn trong `public/`). Đã thử cả hai kernel: `lanczos3` (mặc định) mượt hơn; `nearest` ra răng cưa vì logo không phải pixel-art thật.
+- **Giới hạn đã biết:** `theme-color` và `background_color` là **tĩnh `#ffffff`** (giao diện sáng mặc định); người dùng chọn chế độ tối trong app thì thanh trạng thái vẫn trắng. Thanh trạng thái iOS dùng `default` (nền trắng, chữ đen, nội dung nằm dưới thanh) để không phải che tai thỏ ở mép trên.
+
+##### Vùng an toàn (`viewport-fit=cover`)
+
+Khi có `viewport-fit=cover`, các `env(safe-area-inset-*)` mới có giá trị thật (trước đây luôn bằng 0 nên các chỗ đã có `env()` chưa từng hoạt động). Đã rà và sửa:
+
+| Chỗ | Sửa |
+|---|---|
+| `CrmBottomNav` (thanh đáy CRM) | **Sửa lỗi sẽ lộ ra:** chiều cao `h-16` + `pb-[env(bottom)]` làm phần icon bị co trên iPhone có home indicator. Đổi chiều cao thành `calc(4rem + env(bottom))`; thêm lề trái/phải theo `env(left/right)` |
+| `CrmLayout` | Padding đáy chừa thanh đáy: `pb-[calc(5rem+env(bottom))]` (trước `pb-20`), khớp chiều cao mới |
+| `AppHeader` (header dính trên cùng) | Thêm `pt-[env(top)]` |
+| `AppSidebar` (sidebar mobile) | Đã có `env(top/bottom)`; thêm lề trái `max(1.25rem, env(left))` |
+| `MobileContactFooter` (Ghi chú/Gọi/Zalo) | Đã có `env(bottom)`; thêm lề trái/phải |
+| `BottomSheet` | Chân sheet đã có `env(bottom)`; thêm `env(bottom)` cho vùng nội dung khi sheet **không có** chân |
+| `LightboxModal` (xem ảnh toàn màn hình) | Header chừa `env(top/left/right)` |
+| Toàn trang (`body`) | `padding-left/right: env(left/right)` để xoay ngang không bị tai thỏ che |
+| Toast (`Toaster`) | `containerStyle` chừa `env(top/right)` |
+| Đã có sẵn, giữ nguyên | `FormActionBar`, `CareLogForm` (thanh dính đáy), `MobileDetailHeader` (nằm trong nội dung, không dính), `CustomerDetail.mobile` (`pb` đã gồm `env(bottom)`) |
+
+**Chưa chắc, cần Oniichan thử trên iPhone thật:** (1) với `status-bar-style=default`, `env(safe-area-inset-top)` trong chế độ đã cài thường bằng 0 (nội dung bắt đầu dưới thanh trạng thái); các chỗ đã thêm `env(top)` chỉ phòng trường hợp khác; (2) khi **bàn phím ảo mở**, `env(safe-area-inset-bottom)` có thể vẫn còn giá trị làm thừa khoảng trống ở chân `BottomSheet`/thanh dính; (3) xoay ngang trên iPhone có tai thỏ (thanh đáy CRM, sidebar, lightbox); (4) các hộp thoại giữa màn (`components/ui/modal`) và toast cũ ở các màn tin tức (`fixed top-4 right-4`) **chưa** chỉnh vùng an toàn vì nằm giữa màn hoặc chỉ dùng trên desktop; (5) banner hướng dẫn cài nằm trong luồng bình thường phía trên header, có thể đẩy bố cục các màn mobile toàn màn hình xuống một chút cho tới khi bấm "Đã hiểu".
+
+##### Đã kiểm trong repo (2026-11-03)
+
+- `npx tsc -b` thoát 0; `npx vitest run` toàn bộ 119 file, 1032 test xanh (có 42 test mới trong `src/pwa`: các nhánh hiện gợi ý iOS, đường dẫn `/api` bị chặn, toast cập nhật chỉ gọi cập nhật khi bấm Cập nhật, kiểm bản mới khi tab visible/theo chu kỳ/mất mạng); `npm run lint` không có cảnh báo mới ở file đã đụng; `npm run build` ra đủ `dist/sw.js`, `dist/manifest.webmanifest`, icon, `dist/offline.html`.
+- `dist/sw.js`: danh sách precache **không** có `/api`, không có `index.html`, không có `runtimeCaching`; chỉ có một chỗ nhắc `/api`: `denylist:[/^\/api\//]` của `NavigationRoute`.
+- Trình duyệt headless (Playwright, Chromium) chạy trên `vite preview`: service worker đăng ký ở scope `/`, manifest không lỗi, **không có lỗi installability**, cache chỉ có 124 mục vỏ ứng dụng (không `/api`, không `index.html`, không manifest), mất mạng thì điều hướng ra "Không có kết nối" và nút Thử lại tải lại được ứng dụng; luồng cập nhật (build lại, quay lại tab) hiện "Có phiên bản mới", **không** tự tải lại, và chỉ tải lại sau khi bấm "Cập nhật".
+
+##### Việc Oniichan tự làm
+
+1. Cài thử trên **iPhone Safari** (Chia sẻ, Thêm vào MH chính) và **Android Chrome** (menu Cài đặt ứng dụng): đúng tên, icon, mở toàn màn hình; làm theo mục mới trong [`02_Checklist_Kiem_iPhone_v1.0.3.md`](02_Checklist_Kiem_iPhone_v1.0.3.md).
+2. Chạy **Lighthouse** (mục PWA/Best practices) trên môi trường staging.
+3. **Kiểm Cloudflare không cache `sw.js`** (và `index.html`, `manifest.webmanifest`, `offline.html`): nginx đã đặt `Cache-Control: no-cache` cho các file này, nhưng cần xem Cloudflare có đè bằng rule cache riêng không (tab Caching/Rules). Nếu `sw.js` bị cache ở edge, người dùng sẽ kẹt bản cũ.
+4. Đưa kết quả vào checklist iPhone và đổi PT-030 sang `Xong` khi đạt.
+5. Có logo độ phân giải cao thì thay file nguồn và chạy lại script icon.
 
 ## 6. Kết quả test production do Oniichan ghi nhận
 
@@ -812,7 +884,7 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 20. **PT-023, trạng thái tùy biến bị đè:** khách đang ở một trạng thái tùy biến (do Quản trị thêm) thuộc nhóm `INTERESTED` hoặc `NOT_CONTACTED` sẽ bị đè thành `NET` khi đạt 3/4; và khi tiến độ tụt dưới 3/4, hệ thống đưa khách về `INTERESTED` chứ **không** về trạng thái tùy biến cũ. **Đã chốt: Oniichan CHẤP NHẬN (2026-11-02).**
 21. **Đã chốt (Oniichan, 2026-11-02): `QuickNoteModal` bản rút gọn.** Câu hỏi: sau PT-020, nút "Ghi chú" ở chi tiết khách mở form đầy đủ ở tab Nhật ký, nhưng `QuickNoteModal` bản rút gọn vẫn còn ở màn Việc hôm nay, danh sách khách và lịch hẹn. **Oniichan quyết: NÂNG LÊN FORM ĐẦY ĐỦ. Đã làm:** `QuickNoteModal` bị xóa, thay bằng `CareLogDialog` (tái dùng `CareLogComposer`; modal trên web, BottomSheet trên app; hỏi xác nhận khi bỏ bản nháp); nhãn menu "Ghi chú nhanh" giữ nguyên. `BottomSheet` dùng `useKeyboardInset` để nâng lên trên bàn phím iOS (các sheet khác cũng hưởng). **Còn lại:** Oniichan thử trên iPhone Safari thật (bàn phím, tải ảnh).
 22. **Đã chốt (Oniichan, 2026-11-02): ô "Dự án" ở form tạo lịch hẹn.** Câu hỏi: ô này là `<select>` thường (PT-019 chỉ đổi ô "Dự án quan tâm" của khách). **Oniichan quyết: ĐỔI sang ô chọn có tìm kiếm. Đã làm** bằng `SearchableSelect` (một lựa chọn, tìm không dấu, có "Không chọn"). Mất nhãn nhóm "Khách quan tâm" / "Dự án khác" nhưng dự án khách quan tâm xếp đầu khi chưa gõ; chưa có trạng thái loading/lỗi riêng (như ô cũ).
-23. **`viewport-fit=cover` (chờ Oniichan quyết):** `index.html` của web admin thiếu `viewport-fit=cover`. Oniichan đã hỏi và Neptune đã giải thích (2026-11-02): chỉ có tác dụng khi dùng như PWA hoặc xoay ngang (vùng an toàn của iPhone); thêm vào thì phải kiểm lại từng màn, nhất là thanh Gọi/Zalo cố định ở đáy mobile. **Đề xuất: CHƯA thêm.** Trạng thái: chờ Oniichan quyết sau khi nghe giải thích; mặc định không làm.
+23. **Đã chốt và đã làm (2026-11-03, theo PT-030): `viewport-fit=cover`.** Trước đó (2026-11-02) `index.html` của web admin thiếu `viewport-fit=cover`; Neptune đã giải thích: chỉ có tác dụng khi dùng như PWA hoặc xoay ngang (vùng an toàn của iPhone), thêm vào thì phải kiểm lại từng màn, nhất là thanh Gọi/Zalo cố định ở đáy mobile, và đề xuất tạm "chưa thêm". Khi Oniichan duyệt làm PWA (PT-030), `viewport-fit=cover` **đã được thêm** vào `index.html` và đã rà, sửa các phần tử cố định/sát mép (danh sách ở mục "Vùng an toàn" của PT-030). Còn lại: Oniichan thử trên iPhone thật (các điểm "chưa chắc" ở PT-030). Lưu ý: các `env(safe-area-inset-*)` có sẵn trước đây chỉ bắt đầu có giá trị thật từ khi có `viewport-fit=cover`.
 24. **Sidebar mobile (a11y, có từ trước), chưa có quyết định, giữ mở:** khi đóng, sidebar mobile vẫn nằm trong thứ tự phím Tab. Có muốn xử lý không?
 
 ## 8. Definition of Done của v1.0.3

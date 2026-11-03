@@ -12,8 +12,11 @@ import { useModuleTabItems } from '@crm/navigation';
 import { buildCrmPath } from '@crm/routes';
 import { useCurrentView } from '@crm/store';
 
-/** Chiều cao thanh (h-16 = 64px) — CrmLayout chừa padding đáy tương ứng để nội dung không bị che. */
-export const CRM_BOTTOM_NAV_HEIGHT_CLASS = 'h-16';
+/**
+ * Chiều cao thanh = 64px phần icon + vùng home indicator iPhone (`viewport-fit=cover` làm `env()` có giá trị).
+ * Phải cộng inset vào chiều cao (box-border), nếu để `h-16` thì `pb-[env()]` ăn mất phần icon. CrmLayout chừa padding đáy tương ứng.
+ */
+export const CRM_BOTTOM_NAV_HEIGHT_CLASS = 'h-[calc(4rem+env(safe-area-inset-bottom))]';
 
 export const CrmBottomNav = () => {
   const currentView = useCurrentView();
@@ -24,7 +27,7 @@ export const CrmBottomNav = () => {
   return (
     <nav
       aria-label="Điều hướng module khách hàng"
-      className={`fixed inset-x-0 bottom-0 z-40 flex ${CRM_BOTTOM_NAV_HEIGHT_CLASS} items-center justify-around border-t border-gray-200 bg-white px-1 pb-[env(safe-area-inset-bottom)] shadow-theme-lg md:hidden dark:border-gray-800 dark:bg-gray-900`}
+      className={`fixed inset-x-0 bottom-0 z-40 flex ${CRM_BOTTOM_NAV_HEIGHT_CLASS} items-center justify-around border-t border-gray-200 bg-white pl-[max(0.25rem,env(safe-area-inset-left))] pr-[max(0.25rem,env(safe-area-inset-right))] pb-[env(safe-area-inset-bottom)] shadow-theme-lg md:hidden dark:border-gray-800 dark:bg-gray-900`}
     >
       {tabItems.map(({ view, label, icon: Icon }) => {
         const isActive = currentView === view;

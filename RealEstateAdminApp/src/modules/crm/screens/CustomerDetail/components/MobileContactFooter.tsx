@@ -23,7 +23,7 @@ export const MobileContactFooter = ({ customerId, onAddNote }: MobileContactFoot
   const { callCustomer, messageZalo } = useContactActions();
 
   return (
-    <footer aria-label="Thao tác nhanh với khách" className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-2 border-t border-gray-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-theme-lg dark:border-gray-800 dark:bg-gray-900">
+    <footer aria-label="Thao tác nhanh với khách" className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-2 border-t border-gray-200 bg-white p-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-theme-lg dark:border-gray-800 dark:bg-gray-900">
       <button type="button" onClick={onAddNote} className={`${BUTTON_OUTLINE_BASE_CLASS} ${FOOTER_BUTTON_CLASS} shrink-0`}>
         <NotebookPen size={18} aria-hidden="true" />
         Ghi chú

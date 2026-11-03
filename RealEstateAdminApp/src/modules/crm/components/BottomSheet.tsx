@@ -71,7 +71,7 @@ export const BottomSheet = ({ title, subtitle, headerAction, footer, onClose, ti
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">{children}</div>
+        <div className={`flex-1 overflow-y-auto overscroll-contain px-4 pt-4 ${footer ? 'pb-4' : 'pb-[calc(1rem+env(safe-area-inset-bottom))]'}`}>{children}</div>
 
         {footer && (
           <footer className="shrink-0 border-t border-gray-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] dark:border-gray-800">

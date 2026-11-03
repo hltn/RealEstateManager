@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <!-- Favicon PNG từ logo STND (sinh bằng scripts/generate-pwa-icons.mjs) -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <!-- viewport-fit=cover: nội dung tràn hết màn hình (tai thỏ/home indicator); phần tử sát mép phải chừa env(safe-area-inset-*) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>STND – Quản lý Bất động sản</title>
+    <!-- PWA. thẻ link manifest do vite-plugin-pwa chèn khi build; apple-touch-icon nền đặc vì iOS không hỗ trợ nền trong suốt. -->
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="STND" />
+    <!-- default: thanh trạng thái iOS nền trắng chữ đen, nội dung nằm dưới thanh (không bị tai thỏ che) -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <script>
       // Áp lớp `dark` trước khi vẽ để người đã chọn tối không bị nháy sáng→tối. Mặc định (chưa chọn) là sáng.
       try {

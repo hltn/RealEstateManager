@@ -349,7 +349,7 @@ const AppSidebar: React.FC = () => {
     // THẤY ĐƯỢC của màn hình, co giãn theo thanh địa chỉ Safari (dvh); trước đây `mt-16` chừa 64px cho header
     // nên hở khoảng trống phía trên. Chừa `env(safe-area-inset-*)` cho tai thỏ / thanh home iOS (desktop lg: bỏ).
     <aside
-      className={`fixed inset-y-0 left-0 h-dvh flex flex-col px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:pt-0 lg:pb-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`fixed inset-y-0 left-0 h-dvh flex flex-col px-5 pl-[max(1.25rem,env(safe-area-inset-left))] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:pt-0 lg:pb-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"

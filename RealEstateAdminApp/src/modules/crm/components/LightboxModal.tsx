@@ -100,7 +100,7 @@ export const LightboxModal = ({ images, startIndex = 0, title = DEFAULT_LIGHTBOX
     return (
       <Modal isOpen onClose={onClose} isFullscreen showCloseButton={false} className="bg-gray-950">
         <div role="dialog" aria-modal="true" aria-labelledby={TITLE_ID} className="flex h-dvh flex-col bg-gray-950 text-white">
-          <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+          <header className="flex shrink-0 items-center justify-between border-b border-white/10 pb-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[calc(0.75rem+env(safe-area-inset-top))]">
             <div className="flex items-center gap-2">
               <Images size={20} className="text-brand-400" aria-hidden="true" />
               <span id={TITLE_ID} className="text-sm font-semibold">

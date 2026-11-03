@@ -6,7 +6,8 @@ Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài li
 
 > Trạng thái kiểm chứng:
 > - **Đã chạy thật** (máy dev, project tạm, mật khẩu giả): Mongo/Redis/MinIO/minio-init; nâng cấp tại chỗ từ standalone; mongodump/mongorestore; `mc mirror`; ký URL bằng host công khai. QA đã dựng và chạy **backend thật** trên stack này: readiness 200 (database/redis/storage up), đăng nhập, tạo khách hàng có transaction, idempotency, upload ảnh + presigned URL (Host khớp trả 200, Host sai trả 403), dữ liệu còn sau restart và `down`/`up`. Với `NODE_ENV=production` đã chạy thật lại: backend khởi động, readiness 200, đăng nhập admin OK, `Set-Cookie` refresh có `Secure`, thiếu `ADMIN_*` trên DB trống thì backend thoát với lỗi rõ ràng.
-> - **Chưa kiểm chứng**: frontend nginx; cloudflared và Tunnel thật; đường lui 5.8 và khôi phục từ tar volume; hành vi trên server Linux thật (đặc biệt quyền ghi `./logs`, xem mục 4); đăng nhập qua HTTPS thật phía sau nginx + Cloudflare.
+> - **Đã thử thật (PT-030, nginx cô lập, `dist` giả)**: header cache/MIME/404 của PWA trong `RealEstateAdminApp/nginx.conf` và `nginx -t` (mục 14.2). Chưa thử với bản build frontend thật hay Cloudflare thật (mục 14.4).
+> - **Chưa kiểm chứng**: frontend nginx (trong stack compose đầy đủ, ngoài phép thử cô lập ở trên); cloudflared và Tunnel thật; đường lui 5.8 và khôi phục từ tar volume; hành vi trên server Linux thật (đặc biệt quyền ghi `./logs`, xem mục 4); đăng nhập qua HTTPS thật phía sau nginx + Cloudflare.
 > - **Mới thêm, chưa chạy trên server thật**: service `nine-router` (9Router) trong compose, `scripts/run-migration.sh`, `scripts/check-disk.sh`, `deploy.sh` (mục 11) và thư viện `scripts/lib/ops-common.sh`. **Đã thử thật ở máy dev** (qa-agent và devops-agent): `docker compose config` (kể cả thiếu từng biến bắt buộc); `docker build --target builder` rồi `bash scripts/run-migration.sh` 005 (3 user) và 006 (xóa 3 area, tạo 34 tỉnh) trên Mongo replica set có xác thực tạm; mô phỏng nâng cấp 5.1-5.5 trên volume mẫu; `git_update` của `deploy.sh` trong repo tạm; `deploy.sh` trong container Linux cô lập (Mongo thật, `docker` giả: mongodump, `mongorestore --dryRun`, đếm user chưa migrate 005, cổng dung lượng đĩa, chặn backup rác/rỗng/DB khác); logic chặn của khối 5.8.3. **Vẫn chưa thử**: `compose up` toàn stack, build frontend, stage `production` của backend, `deploy.sh` nguyên vẹn với Docker thật, rollback 5.8 bằng `up` thật, 5.0a trên container thật của VPS, `sudo -n chown`, và môi trường bash 5.2/Docker 29 của VPS.
 
 ## 1. Kiến trúc stack
@@ -1128,5 +1129,80 @@ Thử trên web: tải một ảnh đính kèm vào nhật ký, mở lại ảnh
 | (c) cổng 27017/firewall | Chạy 13.2 (ba khối: VPS, VirtualBox/router, từ máy ngoài); báo kết quả | Chưa kiểm |
 | (a) `FRONTEND_URL` | Chạy 13.1; sửa nếu sai | Chưa kiểm |
 | (b) user quyền tối thiểu | Quyết có làm không; nếu làm: 13.3 (Mongo) và 13.4 (MinIO), sau backup, từng cái một | Chưa làm (compose đã sẵn sàng) |
+
+## 14. PWA phía hạ tầng (PT-030): header cache của nginx và Cloudflare
+
+Web admin là PWA (service worker `sw.js` ở gốc `/`, scope `/`; chỉ precache vỏ app, **không** cache `/api/`). Phía hạ tầng chỉ có hai việc: (1) nginx gắn đúng `Cache-Control` cho từng nhóm file trong `RealEstateAdminApp/nginx.conf`; (2) bảo đảm Cloudflare không giữ bản cũ của các file không băm tên. PWA chỉ cài/chạy được trên **HTTPS** (hoặc `localhost`): đã có qua Cloudflare Tunnel.
+
+### 14.1. Bảng header theo đường dẫn
+
+| Đường dẫn | Cache-Control | Vì sao |
+|---|---|---|
+| `/index.html`, `/`, mọi route SPA (`/customers/123`...) | `no-cache` | File không băm tên và trỏ tới các `/assets/<tên-băm>` của bản build hiện tại. Nếu trình duyệt giữ bản cũ thì sau deploy nó tải JS/CSS cũ (đã bị xóa khỏi image mới) và vỡ trang |
+| `/sw.js`, `/workbox-*.js`, `/registerSW.js` (nếu có) | `no-cache` | Service worker không băm tên: trình duyệt phải kiểm được bản mới thì app mới cập nhật. Dùng `no-cache` thay vì `no-store`: vẫn lưu và hỏi lại bằng ETag (trả 304, nhẹ), `no-store` không thêm lợi ích |
+| `/manifest.webmanifest`, `/offline.html` | `no-cache` | Không băm tên, nhỏ. `offline.html` còn nằm trong precache của service worker nên phải cập nhật cùng bản build |
+| `/assets/*` (JS/CSS băm tên) | `public, max-age=31536000, immutable` | Đổi nội dung thì đổi tên file nên cache vĩnh viễn an toàn |
+| `/pwa-*.png`, `/apple-touch-icon*.png`, `/maskable-icon*.png`, `/favicon.*` | `public, max-age=86400` | Không băm tên nhưng ít đổi; cache 1 ngày. Regex neo ở gốc và chỉ khớp các tên này (không đụng `/api/...`) |
+| `/api/` | không đổi (proxy như cũ) | Không cache ở nginx |
+
+Quy tắc bổ sung trong cấu hình:
+
+- **File thiếu trả 404 thật** cho `/assets/*`, `sw.js`, `workbox-*`, `registerSW.js`, manifest, `offline.html` và icon (`try_files $uri =404`), **không** rơi về `index.html` với mã 200. Nếu không, sau deploy một `/assets/app-cu.js` đã bị xóa sẽ nhận về HTML (lỗi MIME khó hiểu, hoặc trình duyệt cache HTML thành JS), và trình duyệt đăng ký service worker từ một trang HTML sẽ báo lỗi không rõ nguyên nhân.
+- **`.webmanifest` phải là `application/manifest+json`.** `mime.types` của `nginx:1.27-alpine` **không có** `webmanifest` (lúc thử trả `application/octet-stream`), nên `types { } default_type application/manifest+json;` được đặt ngay trong `location = /manifest.webmanifest`. KHÔNG đặt khối `types { ... }` ở cấp `server`: nó thay toàn bộ bảng MIME (mất `text/css`, `image/png`...).
+- `gzip_types` đã thêm `application/manifest+json` và `image/svg+xml`.
+- **`add_header` không kế thừa:** `add_header` trong một `location` thay thế add_header cấp server. Hiện cấp server không có `add_header` nào. Nếu sau này thêm (header bảo mật...), phải lặp lại chúng trong từng location ở trên.
+- Fallback SPA (`try_files ... /index.html`) là redirect nội bộ nên rơi vào `location = /index.html` và nhận `no-cache`; đã thử trên nginx thật (bảng 14.2).
+- Khối `set_real_ip_from`/`CF-Connecting-IP`, proxy `/api/` (kể cả `client_max_body_size 6m`) và gzip cũ **không đổi**.
+
+### 14.2. Đã kiểm chứng bằng nginx thật (máy dev)
+
+`nginx:1.27-alpine` chạy cô lập (cổng `127.0.0.1:18999`, không đụng stack nào), mount **đúng** `RealEstateAdminApp/nginx.conf` làm `default.conf` (`--add-host backend:127.0.0.1` để upstream resolve được) và một thư mục `dist` GIẢ (file mẫu, không phải build thật). `nginx -t` báo `syntax is ok` / `test is successful`. Kết quả `curl -I`:
+
+| URL | Status | Content-Type | Cache-Control |
+|---|---|---|---|
+| `/` | 200 | text/html | no-cache |
+| `/customers/123` (route SPA) | 200 | text/html | no-cache |
+| `/index.html` | 200 | text/html | no-cache |
+| `/sw.js` | 200 | application/javascript | no-cache |
+| `/sw.js.map` (không có file) | 404 | text/html | (không có) |
+| `/manifest.webmanifest` | 200 | application/manifest+json | no-cache |
+| `/offline.html` | 200 | text/html | no-cache |
+| `/assets/app-abc123.js` | 200 | application/javascript | public, max-age=31536000, immutable |
+| `/assets/app-abc123.css` | 200 | text/css | public, max-age=31536000, immutable |
+| `/assets/khong-co.js` | **404** | text/html | (không có) |
+| `/workbox-xyz.js` | 200 | application/javascript | no-cache |
+| `/workbox-khong-co.js`, `/registerSW.js` (không có file) | **404** | text/html | (không có) |
+| `/pwa-192x192.png`, `/apple-touch-icon.png` | 200 | image/png | public, max-age=86400 |
+| `/favicon.svg` | 200 | image/svg+xml | public, max-age=86400 |
+| `/favicon.ico`, `/pwa-512x512.png` (không có file) | **404** | text/html | (không có) |
+| `/api/`, `/api/v1/x.png` (backend không chạy) | 502 | text/html | (không có), như trước |
+
+Thêm: `If-None-Match` với ETag của `/sw.js` và `/customers/123` trả **304**; `manifest.webmanifest`, `favicon.svg`, JS lớn hơn ngưỡng được gzip; POST 7 MB vào `/api/` trả 413, 1 KB trả 502 (giới hạn 6 MB còn nguyên).
+
+### 14.3. Kiểm sau mỗi lần deploy (Oniichan chạy, chỉ đọc)
+
+```bash
+D=https://<domain-admin>
+for p in / /index.html /sw.js /manifest.webmanifest /offline.html; do
+  echo "== $p"; curl -sI "$D$p" | grep -iE '^(HTTP|content-type|cache-control|cf-cache-status|etag)'
+done
+# Một file băm tên bất kỳ của bản build hiện tại (lấy tên từ index.html):
+A=$(curl -s "$D/" | grep -oE '/assets/[^"]+\.js' | head -n 1); curl -sI "$D$A" | grep -iE '^(HTTP|content-type|cache-control|cf-cache-status)'
+# File không có phải 404, không phải HTML 200:
+curl -s -o /dev/null -w '%{http_code}\n' "$D/assets/khong-co.js"        # 404
+```
+
+Kỳ vọng: `/`, `/index.html`, `/sw.js`, `/manifest.webmanifest`, `/offline.html` đều `cache-control: no-cache` và `cf-cache-status` thuộc `DYNAMIC`/`BYPASS`/`EXPIRED`/`REVALIDATED` (**không** `HIT`); `/manifest.webmanifest` có `content-type: application/manifest+json`; `/assets/...` có `immutable`.
+
+### 14.4. Cloudflare: không để edge giữ bản `sw.js`/`index.html` cũ
+
+Cloudflare mặc định cache theo **phần mở rộng** (`.js`, `.css`, ảnh...), nên `sw.js` có thể bị giữ ở edge. Với origin gửi `Cache-Control: no-cache` thì thường Cloudflare không giữ, nhưng cần kiểm chứng thay vì đoán, vì thiết lập tài khoản (Cache Rules, Browser Cache TTL, Edge Cache TTL...) có thể ghi đè header của origin:
+
+1. Chạy lệnh ở 14.3, **gọi hai lần liên tiếp** cho `/sw.js` và `/index.html`, đọc `cf-cache-status`. Mong đợi `DYNAMIC`/`BYPASS`/`EXPIRED`/`REVALIDATED`, không phải `HIT`. Đồng thời xem `cache-control` mà trình duyệt nhận có đúng `no-cache` (không bị Cloudflare đổi thành `max-age=...`).
+2. Nếu `HIT` hoặc header bị đổi: Cloudflare > Caching > Cache Rules > tạo rule **Bypass cache** cho đường dẫn `/sw.js`, `/index.html`, `/manifest.webmanifest`, `/offline.html` (và `/workbox-*`, `/registerSW.js` nếu có; cũng nên thêm đường dẫn `/` chính xác). Sau khi tạo: Purge các URL này một lần (Caching > Configuration > Purge Cache > Custom Purge) rồi chạy lại bước 1.
+3. Kiểm thủ công sau deploy đầu tiên có PWA: mở web, DevTools > Application > Service Workers, bấm Update, xác nhận nhận được bản `sw.js` mới sau khi deploy bản kế tiếp (không cần xóa cache trình duyệt).
+4. Nên để tắt các tính năng sửa JS/HTML ở edge cho hostname admin (Rocket Loader, và Auto Minify nếu tài khoản còn tùy chọn này): chúng đổi nội dung file mà precache của service worker đã ghi nhận theo bản build.
+
+> Trạng thái: **chưa kiểm chứng trên Cloudflare thật** (không có quyền/không thể thử từ repo): hành vi `cf-cache-status` của `sw.js`/`index.html`, Cache Rule bypass và Purge là việc của Oniichan. Cũng **chưa kiểm** với bản build frontend thật có `sw.js`/`workbox-*.js` thật (bảng 14.2 dùng `dist` giả); tên file thật do `vite-plugin-pwa` sinh ra cần đối chiếu với các location ở 14.1 khi có bản build đầu tiên (nếu có file mới không băm tên như `registerSW.js` thì đã có sẵn, tên khác thì phải thêm location). Luồng cập nhật/offline của service worker trên trình duyệt thật cũng thuộc phần frontend, chưa phải phạm vi tài liệu này.
 
 [← Về chỉ mục Hạ tầng](README.md)

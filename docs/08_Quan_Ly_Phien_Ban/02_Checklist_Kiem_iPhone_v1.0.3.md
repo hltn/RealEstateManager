@@ -1,6 +1,6 @@
 # Checklist kiểm trên iPhone Safari thật — v1.0.3
 
-Phạm vi: các mục FE mobile ở trạng thái `Xong một phần` (PT-017 đến PT-026). Code và test đã xong; file này chỉ phục vụ bước **thử trên máy thật**.
+Phạm vi: các mục FE mobile ở trạng thái `Xong một phần` (PT-017 đến PT-026; mục 28 đến 38 là PT-030, cài PWA và vùng an toàn). Code và test đã xong; file này chỉ phục vụ bước **thử trên máy thật**.
 
 **Chuẩn bị:** iPhone + Safari, đăng nhập tài khoản có quyền thấy khách; mở 1 khách có tên dài, có vài tiêu chí đã tick, có vài nhật ký chăm sóc (do chính tài khoản đang đăng nhập viết). Thử cả chế độ dọc.
 
@@ -38,6 +38,17 @@ Ghi kết quả vào cột cuối: `Đạt` / `Lỗi` (kèm ảnh chụp màn h�
 | 25 | PT-023 | Khách có 2 người cùng chăm sóc A và B; A tick đủ 3/4 làm tự lên "Khách net"; mở chuông thông báo bằng tài khoản B | B nhận 1 thông báo nêu khách và việc tự đổi; **A không** nhận thông báo cho chính mình | |
 | 26 | PT-023 | (Như mục 25) Khách chỉ có A chăm sóc, A tự tick làm đổi trạng thái | Không có thông báo nào (người tick là người nhận duy nhất) | |
 | 27 | PT-023 | (Như mục 25) B hạ tiêu chí làm "Khách net" tự về "Có quan tâm" | A nhận thông báo; B không | |
+| 28 | PT-030 | Safari (chưa cài): đăng nhập, nhìn đầu trang | Có banner "Cài STND lên Màn hình chính..."; trang đăng nhập **không** có banner. Bấm "Đã hiểu" thì banner mất và không hiện lại sau khi tải lại | |
+| 29 | PT-030 | Bấm Chia sẻ, chọn "Thêm vào MH chính" | Tên gợi ý "STND"; icon là logo STND nền navy, **không** viền đen (hơi mềm là bình thường, logo nguồn chỉ 60x78) | |
+| 30 | PT-030 | Mở app từ icon Màn hình chính | Toàn màn hình, không thanh địa chỉ Safari; banner hướng dẫn cài **không** hiện nữa | |
+| 31 | PT-030 | Thanh trạng thái (giờ, pin) khi mở từ icon | Nền trắng chữ đen, header app nằm **dưới** thanh trạng thái, không bị che (chế độ tối của app vẫn có thanh trạng thái trắng: giới hạn đã biết) | |
+| 32 | PT-030 | Vùng an toàn dưới: mở màn CRM có thanh đáy (Hôm nay, Khách hàng) và chi tiết khách (thanh Ghi chú/Gọi/Zalo) | Thanh đáy **không** bị home indicator đè; icon và chữ của thanh tab CRM không bị co; nội dung cuộn tới cuối vẫn thấy được, không bị thanh che | |
+| 33 | PT-030 | Mở bottom sheet (Ghi chú nhanh, bộ lọc) và xem ảnh toàn màn hình | Nút ở chân sheet không sát home indicator; header xem ảnh không sát tai thỏ | |
+| 34 | PT-030 | Xoay ngang (iPhone có tai thỏ): sidebar, thanh đáy CRM, nội dung | Không bị tai thỏ che ở hai bên | |
+| 35 | PT-030 | Mở form có bàn phím ảo (ghi chú trong bottom sheet) | Chân sheet không thừa khoảng trống lớn phía trên bàn phím (điểm chưa chắc về `env(safe-area-inset-bottom)`) | |
+| 36 | PT-030 | Sau khi có bản deploy mới: mở lại app từ icon hoặc chuyển từ app khác về | Hiện thông báo "Có phiên bản mới" (có thể mất vài giây); **không tự tải lại**. Gõ dở một ghi chú, bấm "Để sau" thì không mất chữ; bấm "Cập nhật" thì tải lại bản mới | |
+| 37 | PT-030 | Bật chế độ máy bay rồi mở app từ icon | Trang "Không có kết nối" kèm nút Thử lại, **không** hiện dữ liệu cũ; tắt chế độ máy bay, bấm Thử lại thì vào được app | |
+| 38 | PT-030 | Android Chrome: menu "Cài đặt ứng dụng" (hoặc "Thêm vào màn hình chính") | Cài được; icon tròn/vuông bo theo máy đều hiển thị đủ logo, không bị cắt chữ "STND" (bản maskable) | |
 
 ## Lỗi hay gặp trên Safari iOS (để soi kỹ)
 
