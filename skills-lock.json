@@ -133,6 +133,12 @@
       "skillPath": "plugin/skills/handoff/SKILL.md",
       "computedHash": "beeb4303d875158ad765cdd7b678cd4fd43378c3c0b727df32a46db8aac141aa"
     },
+    "hindsight-docs": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "skills/hindsight-docs/SKILL.md",
+      "computedHash": "8877e7cd0e83cb80ebb73b0ac18784e142b78a43265660eb62b12752ff9bd3a2"
+    },
     "idea-refine": {
       "source": "addyosmani/agent-skills",
       "sourceType": "github",
