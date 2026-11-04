@@ -1,6 +1,6 @@
 # Tài liệu dự án Real Estate Manager
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.3
 
 Đây là chỉ mục tổng của toàn bộ tài liệu dự án. Tài liệu được tổ chức theo **Tổng thể → Hạ tầng → Từng module → Frontend**, mỗi thư mục và mỗi file đều đánh số để đọc theo thứ tự.
 
@@ -44,12 +44,16 @@
 Plan (PM) → Research → Architecture / Design / Data Model → QA Report
 ```
 
+Sơ đồ trên là thứ tự đọc tài liệu của module. Vòng đời `Plan → Architecture → Tasks` (mục Quy ước) dành cho tính năng mới làm theo `/spec-*`.
+
 ## Quy ước
 
+- **Vòng đời tài liệu một tính năng:** `Plan → Architecture → Tasks` (file `NN_<Ten>_Plan.md`, `NN_<Ten>_Architecture.md`, `NN_<Ten>_Tasks.md` trong thư mục module; `NN` = số lớn nhất đang có trong thư mục cộng 1, không lấp chỗ trống, giữ thứ tự Plan < Architecture < Tasks). Mỗi bước chỉ bắt đầu khi file bước trước có `Trạng thái: Approved`. Yêu cầu có mã `FR-xx` (Plan), task có mã `T-xx` và trỏ về `FR-xx` (Tasks); mẫu ở `_templates/`.
+- **Bộ lệnh `/spec-*`** (là skill cục bộ của Neptune ở `.claude/skills/spec-*/`, thiết kế ở `.claude/spec-workflow-design.md`; các thư mục này không nằm trong repo, đã bị git ignore): `/spec-specify` (lập Plan), `/spec-clarify` (hỏi-đáp làm rõ Plan), `/spec-plan` (thiết kế Architecture), `/spec-tasks` (phân rã Tasks), `/spec-analyze` (qa-agent rà nhất quán, chỉ đọc), `/spec-implement` (coder làm theo Tasks, qa-agent review).
 - **Tên thư mục:** `NN_Ten_Nhom/` — `NN` là số thứ tự 2 chữ số. Module nghiệp vụ bắt đầu bằng `Module_`.
 - **Tên file:** `NN_Ten_Tai_Lieu.md` — số thứ tự theo vòng đời (Plan trước, Design sau, QA cuối).
 - **Thêm module mới:** tạo `09_Module_Ten/` (số 08 đã dành cho `08_Quan_Ly_Phien_Ban/`), kèm `README.md`, dùng mẫu trong `_templates/`.
-- **Phiên bản tài liệu:** mọi tài liệu có dòng `> **Phiên bản tài liệu:** vX.Y.Z` ngay dưới tiêu đề. Đổi nội dung tài liệu thì cập nhật dòng này **và** bảng phiên bản tài liệu ở [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
+- **Phiên bản tài liệu:** mọi tài liệu có dòng `> **Phiên bản tài liệu:** vX.Y.Z` ngay dưới tiêu đề. Đổi nội dung tài liệu thì cập nhật dòng này **và** bảng phiên bản tài liệu ở [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md). Ngoại lệ: tick `[x]` và điền "Test tham chiếu" của ma trận phủ FR trong file Tasks (`/spec-implement`) không đổi phiên bản và không cập nhật bảng phiên bản.
 - **Tham chiếu chéo:** ghi đường dẫn tính từ `docs/` (ví dụ `03_Module_News/02_News_Module_Data_Model.md`); với link markdown thì dùng đường dẫn tương đối.
 - **Tài liệu hết hiệu lực:** chuyển vào `archive/`, không xóa.
 - **Quy tắc đồng bộ dữ liệu:** khi sửa trường dữ liệu ở một trong các file Project Plan, Database Plan, Database Mongo Plan, UI Design Plan thì cập nhật các file còn lại (xem đầu mỗi file).

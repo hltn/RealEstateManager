@@ -1,6 +1,6 @@
 # 08 — Quản lý phiên bản
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.3
 
 Mục lục phiên bản của toàn bộ hệ thống Real Estate Manager: quy ước đánh số, bảng phiên bản hệ thống, phiên bản từng thành phần ứng dụng, phiên bản từng tài liệu, và quy trình phát hành một phiên bản mới.
 
@@ -26,6 +26,7 @@ Quy tắc kèm theo:
 - Mỗi tài liệu mang số phiên bản của **lần phát hành gần nhất làm đổi nội dung tài liệu đó** (mục 4), không phải số của lần phát hành hiện tại.
 - **Ngoại lệ về header tài liệu:** tài liệu kế hoạch của một phiên bản chưa phát hành mang số phiên bản kế tiếp (ví dụ `01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mang `v1.0.3` dù hệ thống đang ở v1.0.2).
 - Sửa đổi tính năng CRM được ghi chi tiết theo phiên bản ở [`../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md).
+- **Ngoại lệ về đổi tài liệu:** tick `[x]` và điền "Test tham chiếu" của ma trận phủ FR trong file Tasks (`/spec-implement`) không đổi phiên bản tài liệu và không cập nhật bảng mục 4.
 - Trạng thái dùng 3 giá trị: **Kế hoạch** · **Đang làm** · **Xong**.
 
 ## 2. Bảng phiên bản hệ thống
@@ -102,10 +103,10 @@ Cột "Phiên bản tài liệu" khớp với dòng `> **Phiên bản tài liệ
 | [`07_Frontend_Mobile/02_UI_Design_Plan.md`](../07_Frontend_Mobile/02_UI_Design_Plan.md) | v1.0.1 |  |
 | [`07_Frontend_Mobile/README.md`](../07_Frontend_Mobile/README.md) | v1.0.1 |  |
 | [`08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md) | v1.0.3 | Bản nháp kế hoạch v1.0.3, chưa phát hành |
-| [`08_Quan_Ly_Phien_Ban/README.md`](README.md) | v1.0.2 | File này |
-| [`README.md`](../README.md) | v1.0.2 | Thêm thư mục 08, phiên bản hiện tại, quy ước phiên bản tài liệu |
+| [`08_Quan_Ly_Phien_Ban/README.md`](README.md) | v1.0.3 | File này; v1.0.3: cập nhật hàng `docs/README.md`, ngoại lệ tick `[x]` không đổi phiên bản |
+| [`README.md`](../README.md) | v1.0.3 | Thêm thư mục 08, phiên bản hiện tại, quy ước phiên bản tài liệu; v1.0.3: vòng đời Plan → Architecture → Tasks (tên file `NN_<Ten>_…`, `NN` = max + 1), bộ lệnh `/spec-*`, ngoại lệ tick `[x]` |
 
-Cách xếp: file nào đổi nội dung trong đợt v1.0.2 (theo lịch sử git từ 2026-10-29 và nội dung) mang `v1.0.2`; các file còn lại là `v1.0.1`. File `01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` là bản nháp kế hoạch của v1.0.3, chưa phát hành.
+Cách xếp: file nào đổi nội dung trong đợt v1.0.2 (theo lịch sử git từ 2026-10-29 và nội dung) mang `v1.0.2`; các file còn lại là `v1.0.1`. File `01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` là bản nháp kế hoạch của v1.0.3, chưa phát hành. v1.0.3 là phiên bản đang phát triển, chưa phát hành; tài liệu mới tạo hoặc sửa bằng bộ `/spec-*` mang số này.
 
 ## 5. Quy trình phát hành một phiên bản mới
 
