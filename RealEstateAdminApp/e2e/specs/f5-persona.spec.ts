@@ -119,7 +119,7 @@ test.describe('f5-persona', () => {
 
     // Gắn thẻ mới (tạo nhanh) rồi lưu.
     await openCustomerDetail(page, tagged.id, tagged.fullName);
-    await expect(infoCard(page)).toContainText('Chưa gắn thẻ');
+    await expect(infoCard(page), 'PT-018: chưa có thẻ thì ẩn cả dòng thẻ (không còn chữ "Chưa gắn thẻ")').not.toContainText('Thẻ sở thích');
     await page.getByRole('button', { name: 'Sửa chân dung khách hàng' }).click();
     await page.getByLabel('Thêm thẻ sở thích mới').fill(tag);
     await page.getByLabel('Thêm thẻ sở thích mới').press('Enter');
@@ -152,7 +152,7 @@ test.describe('f5-persona', () => {
     await page.getByRole('checkbox', { name: tag }).uncheck({ force: true });
     await page.getByRole('button', { name: 'Lưu chân dung' }).click();
     await expect(toast(page, 'Đã cập nhật chân dung khách hàng')).toBeVisible();
-    await expect(infoCard(page)).toContainText('Chưa gắn thẻ');
+    await expect(infoCard(page), 'PT-018: chưa có thẻ thì ẩn cả dòng thẻ (không còn chữ "Chưa gắn thẻ")').not.toContainText('Thẻ sở thích');
     await expect(infoCard(page)).not.toContainText(`#${tag}`);
     note(testInfo, 'TT', 'Lọc theo thẻ chỉ có trong "Bộ lọc nâng cao" (2 click + chọn thẻ + Áp dụng), không có ở thanh lọc nhanh.');
   });

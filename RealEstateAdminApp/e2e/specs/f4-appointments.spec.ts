@@ -13,7 +13,7 @@
  */
 import { test, expect } from '../fixtures';
 import { tomorrowSlot, vnToday } from '../lib/api';
-import { MOBILE_VIEWPORT, note, openCustomerDetail, setSchedule, todaySlot, toast } from '../lib/ui';
+import { MOBILE_VIEWPORT, note, openCustomerDetail, selectAppointmentProject, setSchedule, todaySlot, toast } from '../lib/ui';
 import type { Locator, Page } from '@playwright/test';
 
 const SUBMIT = 'Xác nhận tạo lịch hẹn';
@@ -71,16 +71,16 @@ test.describe('f4-appointments', () => {
     await expect(customerCard(page)).toHaveCount(0); // không khóa
     await expect(page.getByText(c1.fullName).first()).toBeVisible();
     // Khách quan tâm đúng 1 dự án -> gợi ý dự án đó.
-    await expect(projectSelect(page)).toHaveValue(p1.id);
+    await expect(projectSelect(page)).toHaveValue(p1.name);
 
     // Chọn tay dự án Ba rồi đổi khách: lựa chọn tay không bị ghi đè bởi gợi ý của khách mới.
-    await projectSelect(page).selectOption(p3.id);
+    await selectAppointmentProject(page, p3.name);
     await pickCustomer(page, c2.fullName);
     await expect(page.getByText(c2.fullName).first()).toBeVisible();
-    await expect(projectSelect(page)).toHaveValue(p3.id);
+    await expect(projectSelect(page)).toHaveValue(p3.name);
     // Đổi lại về khách 1 để lưu lịch của khách 1 với dự án chọn tay.
     await pickCustomer(page, c1.fullName);
-    await expect(projectSelect(page)).toHaveValue(p3.id);
+    await expect(projectSelect(page)).toHaveValue(p3.name);
 
     await timeInput(page).fill(slot.time); // ngày mặc định của form là hôm nay
     await locationInput(page).fill('Văn phòng bán hàng');
@@ -195,6 +195,55 @@ test.describe('f4-appointments', () => {
     await cardFor(page, c.fullName).getByRole('button', { name: 'Thao tác khác' }).click();
     await page.getByRole('list', { name: 'Thao tác lịch hẹn' }).getByText('Xem hồ sơ khách', { exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/crm/customers/${c.id}$`));
+  });
+
+  test('F4-08c "Ghi chú nhanh" ở menu thẻ lịch hẹn mở FORM ĐẦY ĐỦ ngay tại màn Lịch hẹn (không chuyển trang); bỏ nháp có hỏi lại; lưu xong tạo đúng nhật ký', async ({ loginAs, api, backstage }, testInfo) => {
+    const c = await api.createCustomer({ label: 'Khách-GhiChúTạiChỗ' });
+    await api.createAppointment({ customerId: c.id, slot: await todaySlot(testInfo) });
+    const page = await loginAs('staff1');
+    await page.goto('/crm/appointments');
+    const openNote = async () => {
+      await cardFor(page, c.fullName).getByRole('button', { name: 'Thao tác khác' }).click();
+      await page.getByRole('list', { name: 'Thao tác lịch hẹn' }).getByText('Ghi chú nhanh', { exact: true }).click();
+      const form = page.getByRole('dialog').getByRole('form', { name: 'Thêm nhật ký chăm sóc' });
+      await expect(form).toBeVisible();
+      return form;
+    };
+
+    // Form đầy đủ như tab Nhật ký: nội dung, kênh liên hệ, kết quả, nhắc việc tiếp theo (+ ảnh khi cờ ảnh bật); ở lại màn Lịch hẹn.
+    const form = await openNote();
+    await expect(form.getByRole('textbox', { name: /^Nội dung trao đổi/ })).toBeVisible();
+    await expect(form.getByLabel('Kênh liên hệ')).toBeVisible();
+    await expect(form.getByLabel('Kết quả liên hệ')).toBeVisible();
+    await expect(form.getByLabel('Việc cần làm tiếp theo')).toBeVisible();
+    await expect(form.getByLabel('Thời điểm nhắc')).toBeVisible();
+    await expect(page).toHaveURL(/\/crm\/appointments/);
+
+    // Có bản nháp mà đóng thì được hỏi lại; "Tiếp tục nhập" giữ nguyên nháp; "Bỏ thay đổi" đóng và không tạo nhật ký.
+    await form.getByRole('textbox', { name: /^Nội dung trao đổi/ }).fill('Nháp sẽ bỏ');
+    await form.getByRole('button', { name: 'Hủy' }).click();
+    await expect(page.getByRole('dialog').filter({ hasText: 'Bỏ thay đổi chưa lưu?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Tiếp tục nhập' }).click();
+    await expect(form.getByRole('textbox', { name: /^Nội dung trao đổi/ })).toHaveValue('Nháp sẽ bỏ');
+    await form.getByRole('button', { name: 'Hủy' }).click();
+    await page.getByRole('button', { name: 'Bỏ thay đổi' }).click();
+    await expect(page.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toHaveCount(0);
+    expect((await backstage.find('care_logs')).filter((l) => String(l.customerId) === c.id)).toHaveLength(0);
+
+    // Mở lại là form trống; lưu với kênh Zalo -> toast, hộp đóng, ở lại màn Lịch hẹn, có đúng 1 nhật ký.
+    const again = await openNote();
+    await expect(again.getByRole('textbox', { name: /^Nội dung trao đổi/ })).toHaveValue('');
+    const content = `Ghi chú tại màn Lịch hẹn cho ${c.fullName}`;
+    await again.getByRole('textbox', { name: /^Nội dung trao đổi/ }).fill(content);
+    await again.getByLabel('Kênh liên hệ').selectOption({ label: 'Zalo' });
+    await again.getByRole('button', { name: 'Lưu nhật ký' }).click();
+    await expect(toast(page, 'Đã lưu nhật ký chăm sóc')).toBeVisible();
+    await expect(page.getByRole('form', { name: 'Thêm nhật ký chăm sóc' })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/crm\/appointments/);
+    const logs = (await backstage.find('care_logs')).filter((l) => String(l.customerId) === c.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0].content).toBe(content);
+    expect(logs[0].contactChannel).toBe('ZALO');
   });
 
   test('F4-08 việc lịch hẹn ở "Việc hôm nay": nút "Hoàn thành" đóng việc và cập nhật lịch hẹn; thẻ "Ký cọc" và "Nhắc gọi lại" có nút xác nhận riêng', async ({ loginAs, api, backstage }, testInfo) => {

@@ -1,5 +1,7 @@
 # EXPORT GOOGLE DRIVE — Kiến trúc Chi tiết
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Tài liệu này được viết dựa trên `05_Module_Market_Analysis/02_Export_GDrive_Research.md`, `docs/archive/intent/export-market-analysis-google-drive.md`, audit codebase thực tế, và skill `nodejs-react-mongo-coding-guidelines`.
 >
 > Đây là **input bắt buộc** cho `coder-backend-agent` và `coder-frontend-agent`.

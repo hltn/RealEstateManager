@@ -64,6 +64,8 @@ export const crmKeys = {
 
 const CATALOG_STALE_MS = 5 * 60 * 1000;
 const DATA_STALE_MS = 15 * 1000;
+/** Lịch sử thay đổi ít đổi và MỌI thao tác ghi đều làm mất hiệu lực (`invalidate`) nên giữ "tươi" lâu hơn: đóng/mở lại phần thu gọn không tải lại (PT-021). */
+const HISTORY_STALE_MS = 5 * 60 * 1000;
 const NOTIFICATION_POLL_MS = 60 * 1000;
 
 /** Không thử lại 4xx (kết quả cuối), chỉ thử lại lỗi mạng/5xx tối đa 2 lần. */
@@ -318,13 +320,17 @@ export const useCareLogs = (customerId: string | null | undefined, primaryUserId
   };
 };
 
-/** `GET /crm/customers/:id/histories` (50 mục mới nhất). */
-export const useCustomerHistories = (customerId: string | null | undefined): QueryState<HistoryEntry[]> => {
+/**
+ * `GET /crm/customers/:id/histories` (50 mục mới nhất).
+ * `isEnabled = false` (mặc định true): KHÔNG gọi API (lazy load, PT-021) — phần "Lịch sử thay đổi" thu gọn chỉ bật khi người dùng mở.
+ * Dữ liệu đã tải vẫn nằm trong cache sau khi tắt lại, nên đóng rồi mở lại không phải tải lại (trừ khi đã quá hạn `HISTORY_STALE_MS` hoặc có thao tác ghi làm mất hiệu lực).
+ */
+export const useCustomerHistories = (customerId: string | null | undefined, isEnabled = true): QueryState<HistoryEntry[]> => {
   const result = useQuery({
     queryKey: [...crmKeys.data, 'histories', customerId],
     queryFn: async ({ signal }) => (await customerApi.fetchHistories(customerId as string, { limit: 50 }, signal)).data,
-    enabled: Boolean(customerId),
-    staleTime: DATA_STALE_MS,
+    enabled: Boolean(customerId) && isEnabled,
+    staleTime: HISTORY_STALE_MS,
     retry: retryTransient,
   });
   return stateOf(result, []);

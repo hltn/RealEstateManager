@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CareLogView } from '@crm/api';
@@ -41,16 +42,42 @@ const makeLog = (canEdit: boolean): CareLogView => ({
   canEdit,
 });
 
-const renderTimeline = (careLog: CareLogView) => {
+const renderTimeline = (careLog: CareLogView, props: Partial<ComponentProps<typeof CareTimeline>> = {}) => {
   const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
   return render(
     <MemoryRouter>
       <CrmProvider store={store}>
-        <CareTimeline careLogs={[careLog]} customerId="c1" />
+        <CareTimeline careLogs={[careLog]} customerId="c1" {...props} />
       </CrmProvider>
     </MemoryRouter>,
   );
 };
+
+describe('CareTimeline (PT-028): nút "Ghi chú" ở đầu thẻ, cùng hàng tiêu đề', () => {
+  it('có onAddNote: nút "Ghi chú" nằm TRONG hàng tiêu đề "Nhật ký chăm sóc" (cùng khối với số mục), bấm gọi onAddNote', () => {
+    const onAddNote = vi.fn();
+    renderTimeline(makeLog(false), { onAddNote });
+    const card = screen.getByRole('region', { name: 'Nhật ký chăm sóc' });
+    const heading = within(card).getByRole('heading', { level: 3, name: 'Nhật ký chăm sóc' });
+    // Hàng tiêu đề = khối cha chung của tiêu đề và nút (không phải khối riêng phía trên thẻ).
+    const headerRow = heading.closest('div.flex.justify-between') as HTMLElement;
+    const button = within(headerRow).getByRole('button', { name: 'Ghi chú' });
+    expect(within(headerRow).getByText('1 mục')).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onAddNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('không có onAddNote (mobile dùng thanh đáy): không có nút "Ghi chú" trong thẻ', () => {
+    renderTimeline(makeLog(false));
+    expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+    expect(screen.getByText('1 mục')).toBeInTheDocument();
+  });
+
+  it('danh sách trần (isFramed = false) không có đầu thẻ nên không có nút "Ghi chú" dù truyền onAddNote', () => {
+    renderTimeline(makeLog(false), { isFramed: false, onAddNote: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull();
+  });
+});
 
 describe('CareTimeline: gỡ ảnh khỏi nhật ký đã lưu', () => {
   beforeEach(() => removeSavedCareLogAttachment.mockReset());
@@ -101,5 +128,45 @@ describe('CareTimeline: gỡ ảnh khỏi nhật ký đã lưu', () => {
     expect(screen.queryByRole('button', { name: /Hiện thêm/ })).not.toBeInTheDocument();
     expect(screen.getAllByTestId('care-log-photo')).toHaveLength(3);
     expect(screen.queryAllByTestId('care-log-photo-remove')).toHaveLength(0);
+  });
+});
+
+describe('CareTimeline: nút Sửa nhật ký (PT-022) theo canEdit do BE trả, không kiểm 24 giờ ở FE', () => {
+  const renderWithEdit = (careLog: CareLogView, onEdit?: (log: CareLogView) => void) => {
+    const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
+    return render(
+      <MemoryRouter>
+        <CrmProvider store={store}>
+          <CareTimeline careLogs={[careLog]} customerId="c1" onEdit={onEdit} />
+        </CrmProvider>
+      </MemoryRouter>,
+    );
+  };
+
+  it('canEdit = true: hiện nút Sửa, bấm gọi onEdit với đúng nhật ký (kể cả nhật ký rất cũ, FE không có giới hạn giờ)', () => {
+    const onEdit = vi.fn();
+    const oldLog: CareLogView = { ...makeLog(true), occurredAt: '2025-01-01T02:00:00.000Z' };
+    renderWithEdit(oldLog, onEdit);
+    fireEvent.click(screen.getByRole('button', { name: /^Sửa nhật ký/ }));
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith(oldLog);
+  });
+
+  it('canEdit = false: KHÔNG có nút Sửa (dù nhật ký vừa tạo)', () => {
+    renderWithEdit({ ...makeLog(false), occurredAt: new Date().toISOString() }, vi.fn());
+    expect(screen.queryByRole('button', { name: /^Sửa nhật ký/ })).toBeNull();
+  });
+
+  it('không truyền onEdit (nơi chỉ xem): ẩn nút Sửa dù canEdit = true', () => {
+    renderWithEdit(makeLog(true));
+    expect(screen.queryByRole('button', { name: /^Sửa nhật ký/ })).toBeNull();
+  });
+
+  it('nhật ký đã sửa có chữ "(đã sửa)"; chưa sửa thì không', () => {
+    const { unmount } = renderWithEdit({ ...makeLog(true), editedAt: '2026-10-27T02:00:00.000Z' });
+    expect(screen.getByText('(đã sửa)')).toBeInTheDocument();
+    unmount();
+    renderWithEdit(makeLog(true));
+    expect(screen.queryByText('(đã sửa)')).toBeNull();
   });
 });

@@ -13,12 +13,12 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
 import { buildHelmetOptions } from './common/security/helmet.config';
 import { resolveTrustProxy } from './common/security/trust-proxy.config';
+import { setupSwagger, SWAGGER_PATH } from './common/swagger/swagger.config';
 import { FeatureFlagService } from './shared/feature-flags/feature-flag.service';
 
 async function bootstrap() {
@@ -74,15 +74,8 @@ async function bootstrap() {
   // Setup Global Exception Filter
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  // Swagger Documentation Setup
-  const config = new DocumentBuilder()
-    .setTitle('Real Estate API')
-    .setDescription('The Real Estate API description')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/v1/docs', app, document);
+  // Swagger chỉ bật khi NODE_ENV thuộc danh sách phi-production (fail-safe, PT-008).
+  const isSwaggerOn = setupSwagger(app);
 
   // Graceful Shutdown Hooks
   app.enableShutdownHooks();
@@ -94,6 +87,10 @@ async function bootstrap() {
   const port = configService.get<number>('PORT') || 3000;
   await app.listen(port, '0.0.0.0'); // Listen on all interfaces
   logger.log(`Application is running on: http://localhost:${port}`);
-  logger.log(`Swagger docs available at: http://localhost:${port}/api/v1/docs`);
+  logger.log(
+    isSwaggerOn
+      ? `Swagger docs available at: http://localhost:${port}/${SWAGGER_PATH}`
+      : `Swagger docs đã tắt (NODE_ENV=${process.env.NODE_ENV ?? '(chưa đặt)'})`,
+  );
 }
 bootstrap();

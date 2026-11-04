@@ -1,5 +1,7 @@
 # Project Plan: Module quản lý & chăm sóc khách hàng (Web + Ứng dụng di động)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Bản này chỉ mô tả mục đích, tính năng và yêu cầu. Các mục đánh dấu **[Giả định]** đã được xác nhận ngày 22/10/2026 (xem **Nhật ký quyết định** ở [tài liệu 04, mục 11](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md#11-nhật-ký-quyết-định-2026-10-22)); riêng việc nhập dữ liệu từ 3 sheet cũ được **hoãn sang giai đoạn sau**.
 
 ## 1. Mục đích
@@ -67,7 +69,7 @@ Nhóm "Nhu cầu BĐS" nên lưu dạng trường có cấu trúc (danh sách ch
 | X4 | Nhật ký thay đổi (ai, lúc nào, đổi gì), gồm mọi lần đổi tình trạng và đổi người chăm sóc | Phải có |
 | X5 | **Đẩy thông báo trên điện thoại:** được phân khách mới, lịch hẹn đến hạn, có ghi chú mới từ người cùng chăm sóc, khách lâu chưa được chăm sóc — áp dụng cho cả hai tình trạng Chưa tiếp cận và Có quan tâm (người phụ trách chính nhận thông báo ưu tiên) | Phải có |
 | X6 | Dashboard thống kê: khách theo tình trạng, nguồn khách, dự án, khu vực; tiến độ trung bình; khách theo người chăm sóc | Nên có |
-| X7 | Quản lý danh mục: tình trạng, nguồn khách, khu vực, người dùng và **danh sách dự án** (để chọn khi nhập hồ sơ khách). **Quản trị tự thêm, sửa, xóa dự án**; dự án đang có khách quan tâm thì không xóa mà chuyển "ngừng hoạt động" (khách cũ vẫn giữ liên kết); dự án đã xóa mềm khôi phục được. Mã dự án bắt buộc (chữ, số, `-`, `_`, tối đa 20 ký tự); trạng thái dự án: sắp mở bán / đang bán / hết hàng; có khoảng giá | Phải có |
+| X7 | Quản lý danh mục: tình trạng, nguồn khách, khu vực, người dùng và **danh sách dự án** (để chọn khi nhập hồ sơ khách). **Quản trị tự thêm, sửa, xóa dự án**; dự án đang có khách quan tâm thì không xóa mà chuyển "ngừng hoạt động" (khách cũ vẫn giữ liên kết); dự án đã xóa mềm khôi phục được. Mã dự án bắt buộc (chỉ chữ A-Z không dấu và số 0-9, viết liền, tối đa 30 ký tự; đổi 2026-11-04, PT-031; mã cũ có `-`/`_` giữ nguyên); trạng thái dự án: sắp mở bán / đang bán / hết hàng; có khoảng giá | Phải có |
 | X8 | Xuất Excel/CSV chứa **SĐT đầy đủ** (không chứa CCCD đầy đủ); chỉ Quản trị/Quản lý (trong phạm vi) xuất, mỗi lần xuất ghi nhật ký. Nhập/xuất Excel/CSV **chung** (người dùng tự ghép cột; chạy thử trước khi nhập thật). **Nhập dữ liệu cũ từ DSKH, DSKH_DROP, DSKH_NET: hoãn sang giai đoạn sau** (mục 3.5) | Phải có (phần chung) |
 | X9 | **Ứng dụng di động cho cả iPhone và Android** (có đẩy thông báo) và bản web cho máy tính | Phải có |
 | X10 | Quản trị **tự thêm, sửa, bớt trường chân dung** (kiểu chữ, danh sách chọn, ngày, chọn nhiều) mà không cần lập trình | Nên có |

@@ -1,5 +1,7 @@
 # Thiết kế giao diện: Module Quản lý khách hàng (tích hợp vào app STND hiện có)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Tài liệu mô tả cách thiết kế giao diện để module **hòa vào app hiện có**, dựa trên ảnh chụp trang "Quản lý Đăng tin WordPress". Toàn bộ phần quản lý khách hàng nằm trong **một tab ở menu bên trái**. Các mục đánh dấu **[Đề xuất]** cần bạn chốt.
 
 ## 1. Nguyên tắc
@@ -112,18 +114,19 @@ Mở thành trang riêng, có đường dẫn "Quản lý khách hàng › Nguy�
 └────────────────┴─────────────────────────────┴───────────────────────┘
 ```
 
-- **Ô ghi chú nhanh luôn ở đầu nhật ký**; chọn "kết quả liên hệ" thì hệ thống gợi ý mốc hẹn nhắc. Có nút **đính kèm ảnh** (tối đa 5 ảnh/ghi chú, jpeg/png/webp, ≤ 5 MB); ảnh hiện dạng hình thu nhỏ trong dòng thời gian, bấm để xem lớn.
+- **Form ghi chú (v1.0.3, PT-020, mục 7 câu 21):** hình khung ở trên là bố cục ban đầu; từ v1.0.3 form **không hiện sẵn** mà chỉ mở khi bấm nút "Ghi chú" (tab Nhật ký, có hỏi xác nhận khi bỏ bản nháp). Ở Việc hôm nay, danh sách khách và lịch hẹn, mục menu "Ghi chú nhanh" (nhãn giữ nguyên) mở hộp thoại `CareLogDialog` (modal trên web, BottomSheet trên app) dùng **cùng form đầy đủ** với tab Nhật ký (không còn `QuickNoteModal` rút gọn); BottomSheet nâng lên trên bàn phím iOS. Chọn "kết quả liên hệ" thì hệ thống gợi ý mốc hẹn nhắc. Có nút **đính kèm ảnh** (tối đa 5 ảnh/ghi chú, jpeg/png/webp, ≤ 5 MB); ảnh hiện dạng hình thu nhỏ trong dòng thời gian, bấm để xem lớn.
 - Khối **Thông tin** có thêm **Email** (không bắt buộc). Hồ sơ không có mã khách hàng.
 - Lịch hẹn có loại **Ký cọc / HĐMB** bên cạnh xem nhà, gặp mặt, gọi lại, khác.
 - Mục **Lịch sử thay đổi** hiện SĐT cũ → mới đầy đủ cho người xem được khách.
 - **CCCD** chỉ hiện 4 số cuối; nút "Hiện" chỉ có với người được cấp quyền và ghi lại mỗi lần xem.
 - Tiến độ là **4 chấm**, thay cho thanh ký tự █░ của Sheets.
+- **Tự đổi tình trạng theo tiến độ (v1.0.3, PT-023):** khi tick tiêu chí làm tiến độ đạt 3/4 (kể cả khi từ 4/4 bỏ một tiêu chí xuống 3/4, và đè cả tình trạng do người dùng đặt tay trừ "Bỏ"; hoặc tụt xuống dưới 3/4 khi đang "Khách net", kể cả do đặt tay) và hệ thống tự đổi tình trạng, hiện toast **6 giây** "Đã tự chuyển tình trạng: "cũ" -> "mới"" kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí). **Không có nút Hoàn tác** (khác với đổi tình trạng bằng tay); muốn đảo thì bỏ tick hoặc đổi tình trạng bằng tay. Mục Lịch sử thay đổi hiện chip "Tự động theo tiến độ" ở các lần đổi này. Quy tắc: tài liệu 04 mục 6.2a.
 
 ### 4.4 Lịch hẹn, Báo cáo, Cài đặt
 - **Lịch hẹn:** lịch tuần/tháng; bấm vào cuộc hẹn mở nhanh hồ sơ khách.
 - **Báo cáo:** thẻ số liệu và biểu đồ theo tình trạng, nguồn khách, dự án, khu vực, người phụ trách; bộ lọc theo thời gian.
 - **Cài đặt:** danh mục (tình trạng, nguồn, khu vực), **danh sách dự án**, **trường chân dung** (thêm/sửa/bớt).
-- **Màn Dự án (Quản trị, CRUD đầy đủ):** bảng dự án (mã, tên, chủ đầu tư, vị trí, khoảng giá, trạng thái, số khách quan tâm). Nút **Thêm dự án**, **Sửa**, **Ngừng hoạt động / Kích hoạt lại**, **Xóa** (xóa mềm). Mã dự án bắt buộc (chữ, số, `-`, `_`, tối đa 20 ký tự). Trạng thái chọn từ danh sách: Sắp mở bán / Đang bán / Hết hàng. Dự án đang có khách quan tâm: nút Xóa bị thay bằng gợi ý "Ngừng hoạt động"; dự án ngừng hiện nhãn "đã ngừng" ở khách cũ và ẩn khỏi ô chọn mới. Có bộ lọc xem dự án đã xóa và nút **Khôi phục**.
+- **Màn Dự án (Quản trị, CRUD đầy đủ):** bảng dự án (mã, tên, chủ đầu tư, vị trí, khoảng giá, trạng thái, số khách quan tâm). Nút **Thêm dự án**, **Sửa**, **Ngừng hoạt động / Kích hoạt lại**, **Xóa** (xóa mềm). Mã dự án bắt buộc (chỉ chữ A-Z không dấu và số 0-9, viết liền, tối đa 30 ký tự; hiển thị chữ hoa; đổi 2026-11-04, PT-031). Form **Thêm** tự điền ô Mã từ Tên dự án (bỏ dấu, chỉ A-Z và 0-9, viết hoa, cắt 30 ký tự, trùng thì thêm hậu tố số), ngừng tự điền khi người dùng sửa tay ô Mã; form **Sửa** không tự đổi mã. Trạng thái chọn từ danh sách: Sắp mở bán / Đang bán / Hết hàng. Dự án đang có khách quan tâm: nút Xóa bị thay bằng gợi ý "Ngừng hoạt động"; dự án ngừng hiện nhãn "đã ngừng" ở khách cũ và ẩn khỏi ô chọn mới. Có bộ lọc xem dự án đã xóa và nút **Khôi phục**.
 - **Xuất file (Quản trị, Quản lý):** file Excel/CSV chứa SĐT đầy đủ, không chứa CCCD đầy đủ; mỗi lần xuất được ghi nhật ký.
 
 ### 4.5 Giai đoạn sau: ghi âm và văn bản cuộc gọi

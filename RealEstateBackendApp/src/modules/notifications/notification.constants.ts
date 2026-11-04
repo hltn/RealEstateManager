@@ -15,6 +15,8 @@ export enum NotificationType {
   EXPORT_READY = 'EXPORT_READY',
   /** Thêm ở M5: cảnh báo truy cập bất thường (dò SĐT, xem số/CCCD dồn dập) gửi cho Quản trị. */
   SECURITY_ALERT = 'SECURITY_ALERT',
+  /** Thêm ở PT-023 (v1.0.3): tình trạng khách bị TỰ đổi theo tiến độ 3/4 tiêu chí; gửi người cùng chăm sóc (trừ người tick). */
+  CUSTOMER_STATUS_AUTO_CHANGED = 'CUSTOMER_STATUS_AUTO_CHANGED',
 }
 
 export enum NotificationPriority {

@@ -1,5 +1,5 @@
 /**
- * F8 - Một tài khoản có NHIỀU vai trò và NHIỀU nhóm (v1.0.3 mục A/C): Admin gán 2 vai trò + 2 nhóm ở Cài đặt CRM > Người dùng.
+ * F8 - Một tài khoản có NHIỀU vai trò và NHIỀU nhóm (v1.0.2 mục A/C): Admin gán 2 vai trò + 2 nhóm ở Cài đặt CRM > Người dùng.
  * Dùng tài khoản RIÊNG tạo bằng API (không đụng tài khoản seed dùng chung giữa các spec).
  * Kiểm cả 3 điểm UX: (1) thấy đủ vai trò/nhóm ngay trên dòng người dùng, (2) lưu xong quay về đúng danh sách (không mất ngữ cảnh),
  * (3) backend ghi đúng (roles, teamIds, trường suy ra role/teamId).

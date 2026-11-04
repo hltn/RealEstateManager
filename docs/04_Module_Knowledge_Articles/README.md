@@ -1,5 +1,7 @@
 # 04 — Module Bài viết chuyên gia (Knowledge Articles)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Tự động viết bài kiến thức và đăng lên WordPress.
 
 | # | Tài liệu | Loại | Nội dung |

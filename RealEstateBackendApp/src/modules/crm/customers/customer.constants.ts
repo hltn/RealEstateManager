@@ -47,6 +47,12 @@ export const CRITERIA_KEYS = [
 ] as const;
 export type CriteriaKey = (typeof CRITERIA_KEYS)[number];
 
+/** PT-023: nguồn đổi tình trạng tự động, chỉ ghi vào audit (`changes[].field = 'statusAutoSource'`); hiện chỉ có tiến độ tiêu chí. */
+export const AUTO_STATUS_SOURCE = 'CRITERIA_PROGRESS' as const;
+export type AutoStatusSource = typeof AUTO_STATUS_SOURCE;
+/** PT-023: mốc tiến độ (3/4 tiêu chí) kích hoạt tự chuyển sang NET. */
+export const AUTO_STATUS_PROGRESS_THRESHOLD = 75;
+
 export const CRITERION_DESCRIPTION_MAX_LENGTH = 1000;
 export const CUSTOMER_NAME_MAX_LENGTH = 150;
 export const CUSTOMER_EMAIL_MAX_LENGTH = 254;

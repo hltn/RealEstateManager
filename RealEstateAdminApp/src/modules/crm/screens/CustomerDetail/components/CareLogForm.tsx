@@ -1,53 +1,109 @@
-// Ô ghi chú nhanh ở đầu nhật ký (02 §4.3, C2, C3): nội dung + kênh + kết quả liên hệ + nhắc việc tiếp theo (+ tạo lịch hẹn).
+// Form ghi chú / chăm sóc của tab Nhật ký (02 §4.3, C2, C3): nội dung + kênh + kết quả liên hệ + nhắc việc tiếp theo (+ tạo lịch hẹn) + ảnh.
 // Chọn "kết quả liên hệ" -> gợi ý sẵn nội dung + mốc hẹn nhắc theo danh mục (người dùng sửa được trước khi lưu).
-import { useState, type FormEvent } from 'react';
-import { CalendarClock, CircleCheck, MessageSquareText, Save } from 'lucide-react';
-import { useCatalogs, type CustomerDetail } from '@crm/api';
+// PT-020: KHÔNG hiện sẵn — chỉ được dựng khi người dùng bấm "Ghi chú" (xem `CareLogComposer`); luôn là bộ trường ĐẦY ĐỦ. Các màn khác (Việc hôm nay, Danh sách khách, Lịch hẹn) cũng dùng đúng form này trong hộp thoại (`layout="dialog"`, xem `CareLogDialog`).
+// PT-022: có `editingLog` = SỬA nhật ký đã lưu (`PATCH care-logs/:logId`): điền sẵn dữ liệu cũ + ảnh đã đính kèm; không sửa "nhắc việc tiếp theo" (PATCH không nhận).
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { CalendarClock, CircleCheck, MessageSquareText, Save, X } from 'lucide-react';
+import { useCatalogs, type CareLogView, type CustomerDetail } from '@crm/api';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CONTACT_CHANNEL_LABELS, CONTACT_CHANNEL_ORDER } from '@crm/lib/customerAdapters';
 import {
   BUTTON_DASHED_CLASS,
+  BUTTON_OUTLINE_LG_CLASS,
   BUTTON_PRIMARY_LG_CLASS,
   CARD_CLASS,
   CHECKBOX_CLASS,
   DIVIDER_CLASS,
   FORM_HINT_CLASS,
   FORM_LABEL_CLASS,
+  ICON_BUTTON_CLASS,
   SOLID_INPUT_CLASS,
 } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import type { ContactChannel } from '@crm/types/crm';
-import { fromDateTimeLocalValue, getSuggestedFollowUpIso, toDateTimeLocalValue } from '../customerDetailUtils';
-import { MAX_ATTACHED_PHOTOS, MAX_PHOTO_BYTES, useAttachedPhotos } from '../useAttachedPhotos';
+import { fromDateTimeLocalValue, getSuggestedFollowUpIso, isCareLogDraftDirty, toDateTimeLocalValue } from '../customerDetailUtils';
+import { MAX_ATTACHED_PHOTOS, MAX_PHOTO_BYTES, toExistingPhotos, useAttachedPhotos } from '../useAttachedPhotos';
 import { useCustomerDetailActions } from '../useCustomerDetailActions';
+import type { NoteComposerGuard } from '../useNoteComposer';
 import { AttachedPhotoTray, CardHeading, PhotoPickerButton } from './DetailParts';
 
 interface CareLogFormProps {
   customer: CustomerDetail;
   variant: 'desktop' | 'mobile';
+  /** Có = đang SỬA nhật ký này (điền sẵn dữ liệu cũ); không có = thêm mới. */
+  editingLog?: CareLogView;
+  /** Đóng form NGAY sau khi lưu xong (và là mặc định của `onCancel`). */
+  onClose: () => void;
+  /** Người dùng bấm Hủy/X (không có = như `onClose`). Cho phép chỗ đặt form hỏi lại khi còn thay đổi chưa lưu. */
+  onCancel?: () => void;
+  /** Báo mỗi khi "còn thay đổi chưa lưu"/"đang lưu" đổi (xem `useNoteComposer`). */
+  onGuardChange?: (guard: NoteComposerGuard) => void;
+  /**
+   * 'card' (mặc định) = thẻ có tiêu đề + nút X, nằm trong tab Nhật ký.
+   * 'dialog' = đặt trong hộp thoại/bottom sheet ở màn khác (Việc hôm nay, Danh sách khách, Lịch hẹn): KHÔNG có khung thẻ/tiêu đề/nút X (vỏ hộp thoại lo),
+   * nút Hủy/Lưu dính đáy vùng cuộn để luôn thấy khi form dài hoặc bàn phím ảo hiện.
+   */
+  layout?: 'card' | 'dialog';
+  /**
+   * Đổi giá trị = yêu cầu đưa form vào vùng nhìn thấy + focus ô nội dung LẠI (PT-028: bấm "Ghi chú" ở thanh đáy khi form đã mở sẵn nên không được dựng lại).
+   * Không đụng tới dữ liệu đang nhập.
+   */
+  focusSignal?: number;
 }
 
 const MAX_CONTENT_LENGTH = 5000;
 
-export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
+export const CareLogForm = ({ customer, variant, editingLog, onClose, onCancel = onClose, onGuardChange, layout = 'card', focusSignal }: CareLogFormProps) => {
   const { catalogs } = useCatalogs();
   const { showToast } = useCrmActions();
-  const { saveCareLog } = useCustomerDetailActions(customer);
-  const { photos, attachmentIds, isUploading, addFiles, removePhoto, clearPhotos } = useAttachedPhotos(customer.id);
+  const { saveCareLog, updateCareLog } = useCustomerDetailActions(customer);
+  const { photos, attachmentIds, isUploading, addFiles, removePhoto, clearPhotos } = useAttachedPhotos(customer.id, editingLog ? toExistingPhotos(editingLog) : []);
+  const isEditing = Boolean(editingLog);
+  const isDialog = layout === 'dialog';
+  const formRef = useRef<HTMLFormElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [content, setContent] = useState('');
-  const [contactChannel, setContactChannel] = useState<ContactChannel>('CALL');
-  const [contactResultId, setContactResultId] = useState('');
+  const [content, setContent] = useState(editingLog?.content ?? '');
+  const [contactChannel, setContactChannel] = useState<ContactChannel>(editingLog?.contactChannel ?? 'CALL');
+  const [contactResultId, setContactResultId] = useState(editingLog?.contactResult?.id ?? '');
   const [nextSuggestion, setNextSuggestion] = useState('');
   const [nextDueLocal, setNextDueLocal] = useState('');
   const [shouldCreateAppointment, setShouldCreateAppointment] = useState(false);
-  const idPrefix = `care-log-${variant}`;
-  const contactResults = catalogs.contactResults.filter((item) => item.isActive).sort((a, b) => a.order - b.order);
+  // Hộp thoại có thể mở khi form ở tab Nhật ký cũng đang mở -> id riêng để không trùng.
+  const idPrefix = isDialog ? `care-log-dialog-${variant}` : `care-log-${variant}`;
+  const activeResults = catalogs.contactResults.filter((item) => item.isActive).sort((a, b) => a.order - b.order);
+  // Khi sửa: kết quả liên hệ hiện tại của nhật ký vẫn chọn được dù danh mục đã ẩn nó (không làm mất dữ liệu cũ).
+  const currentResult = editingLog?.contactResult;
+  const contactResults =
+    currentResult && !activeResults.some((item) => item.id === currentResult.id)
+      ? [...activeResults, { id: currentResult.id, label: currentResult.label, suggestionText: '', suggestedFollowUpDays: null, order: Number.MAX_SAFE_INTEGER, isActive: false }]
+      : activeResults;
   const isContentEmpty = content.trim().length === 0;
   const hasAttachments = CRM_FEATURE_FLAGS.isAttachmentsEnabled;
+  const hasPhotoChanges = photos.some((photo) => !photo.isExisting) || (editingLog ? photos.filter((photo) => photo.isExisting).length < editingLog.attachmentIds.length : false);
+  const isDirty = isCareLogDraftDirty(
+    { content, contactChannel, contactResultId, nextSuggestion, nextDueLocal, hasPhotoChanges },
+    editingLog && { content: editingLog.content, contactChannel: editingLog.contactChannel, contactResultId: editingLog.contactResult?.id ?? '' },
+  );
+
+  // Báo chỗ đặt form để hỏi lại trước khi bỏ bản nháp (đổi sang form khác, Hủy/X).
+  useEffect(() => {
+    onGuardChange?.({ isDirty, isSaving });
+  }, [isDirty, isSaving, onGuardChange]);
+
+  // Mở form (bấm "Ghi chú"/"Sửa"): đưa form vào vùng nhìn thấy (mobile: form nằm dưới thẻ tóm tắt) rồi đặt con trỏ vào ô nội dung.
+  // Trong hộp thoại thì `useFocusTrap` của vỏ lo việc này (nó phải thấy tiêu điểm của nút đã mở để trả về khi đóng).
+  // Chạy lại mỗi khi `focusSignal` đổi (form đã mở sẵn mà bấm "Ghi chú" lần nữa): cuộn + focus lại, KHÔNG reset bản nháp.
+  useEffect(() => {
+    if (isDialog) return;
+    formRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    contentRef.current?.focus({ preventScroll: true });
+  }, [isDialog, focusSignal]);
 
   const handleResultChange = (resultId: string) => {
     setContactResultId(resultId);
+    // Gợi ý việc tiếp theo chỉ áp dụng khi thêm mới (sửa nhật ký không đổi "nhắc việc tiếp theo").
+    if (isEditing) return;
     const result = contactResults.find((item) => item.id === resultId);
     if (!result) return;
     // Gợi ý mốc hẹn + việc tiếp theo theo kết quả liên hệ; chỉ điền khi người dùng chưa tự nhập.
@@ -64,9 +120,28 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
     clearPhotos();
   };
 
+  // Ảnh mới đã tải lên mà chưa lưu được xóa khi form được gỡ (`useAttachedPhotos`), nên Hủy không tự xóa: nếu hộp "bỏ thay đổi?" bị từ chối thì ảnh còn nguyên.
+  const handleCancel = () => onCancel();
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving || isUploading) return;
+    if (editingLog) {
+      setIsSaving(true);
+      const isUpdated = await updateCareLog(editingLog.id, {
+        content,
+        contactChannel,
+        contactResultId: contactResultId || null,
+        // Cờ ảnh tắt: không gửi `attachmentIds` để KHÔNG vô tình gỡ ảnh đã có của nhật ký.
+        ...(hasAttachments ? { attachmentIds } : {}),
+      });
+      setIsSaving(false);
+      if (isUpdated) {
+        clearPhotos(); // ảnh mới đã gắn vào nhật ký: dọn khay để bước dọn khi gỡ form không xóa nhầm
+        onClose();
+      }
+      return;
+    }
     const dueAt = fromDateTimeLocalValue(nextDueLocal) || null;
     const hasNextAction = Boolean(nextSuggestion.trim() || dueAt);
     setIsSaving(true);
@@ -80,19 +155,81 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
       attachmentIds,
     });
     setIsSaving(false);
-    if (isSaved) reset();
+    if (isSaved) {
+      reset();
+      onClose();
+    }
   };
 
+  // "Nhắc việc tiếp theo": chỉ khi THÊM MỚI (PATCH nhật ký không nhận nextAction nên khi sửa chỉ báo giữ nguyên).
+  const nextActionSection = isEditing ? (
+    <p className={`border-t pt-4 ${DIVIDER_CLASS} ${FORM_HINT_CLASS}`}>Việc tiếp theo và lịch hẹn đã tạo cùng nhật ký này được giữ nguyên.</p>
+  ) : (
+    <fieldset className={`space-y-3 border-t pt-4 ${DIVIDER_CLASS}`}>
+      <legend className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+        <CalendarClock size={16} aria-hidden="true" className="text-brand-500" />
+        Nhắc việc tiếp theo
+      </legend>
+      <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+        <input
+          type="text"
+          value={nextSuggestion}
+          onChange={(event) => setNextSuggestion(event.target.value)}
+          aria-label="Việc cần làm tiếp theo"
+          placeholder="VD: Gọi lại báo giá căn tầng cao"
+          className={SOLID_INPUT_CLASS}
+        />
+        <input
+          type="datetime-local"
+          value={nextDueLocal}
+          onChange={(event) => setNextDueLocal(event.target.value)}
+          aria-label="Thời điểm nhắc"
+          className={`${SOLID_INPUT_CLASS} dark:[color-scheme:dark]`}
+        />
+      </div>
+      <label className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
+        <input
+          type="checkbox"
+          checked={shouldCreateAppointment}
+          disabled={!nextDueLocal}
+          onChange={(event) => setShouldCreateAppointment(event.target.checked)}
+          className={CHECKBOX_CLASS}
+        />
+        Tạo lịch hẹn "Nhắc gọi lại" vào thời điểm này
+      </label>
+      <p className={FORM_HINT_CLASS}>Có thời điểm nhắc thì việc sẽ hiện ở "Việc hôm nay" đúng ngày (giờ Việt Nam).</p>
+    </fieldset>
+  );
+
   return (
-    <form onSubmit={handleSubmit} aria-label="Thêm nhật ký chăm sóc" className={`${CARD_CLASS} @container space-y-4 p-5`}>
-      <CardHeading icon={MessageSquareText} title="Ghi chú chăm sóc" as="h3" />
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit}
+      aria-label={isEditing ? 'Sửa nhật ký chăm sóc' : 'Thêm nhật ký chăm sóc'}
+      className={isDialog ? '@container space-y-4' : `${CARD_CLASS} @container scroll-mt-20 space-y-4 p-5`}
+    >
+      {!isDialog && (
+        <CardHeading
+          icon={MessageSquareText}
+          title={isEditing ? 'Sửa nhật ký chăm sóc' : 'Ghi chú chăm sóc'}
+          as="h3"
+          trailing={
+            <button type="button" onClick={handleCancel} disabled={isSaving} aria-label="Đóng form ghi chú" title="Đóng" className={ICON_BUTTON_CLASS}>
+              <X size={18} aria-hidden="true" />
+            </button>
+          }
+        />
+      )}
 
       <div>
         <label htmlFor={`${idPrefix}-content`} className={FORM_LABEL_CLASS}>
           Nội dung trao đổi <span className="text-error-500">*</span>
         </label>
         <textarea
+          ref={contentRef}
           id={`${idPrefix}-content`}
+          // Trong hộp thoại: cho `useFocusTrap` biết ô nhận tiêu điểm đầu tiên (không thì nó chọn nút đóng).
+          data-autofocus={isDialog ? '' : undefined}
           rows={variant === 'mobile' ? 3 : 4}
           maxLength={MAX_CONTENT_LENGTH}
           value={content}
@@ -130,40 +267,7 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
         </div>
       </div>
 
-      <fieldset className={`space-y-3 border-t pt-4 ${DIVIDER_CLASS}`}>
-        <legend className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
-          <CalendarClock size={16} aria-hidden="true" className="text-brand-500" />
-          Nhắc việc tiếp theo
-        </legend>
-        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
-          <input
-            type="text"
-            value={nextSuggestion}
-            onChange={(event) => setNextSuggestion(event.target.value)}
-            aria-label="Việc cần làm tiếp theo"
-            placeholder="VD: Gọi lại báo giá căn tầng cao"
-            className={SOLID_INPUT_CLASS}
-          />
-          <input
-            type="datetime-local"
-            value={nextDueLocal}
-            onChange={(event) => setNextDueLocal(event.target.value)}
-            aria-label="Thời điểm nhắc"
-            className={`${SOLID_INPUT_CLASS} dark:[color-scheme:dark]`}
-          />
-        </div>
-        <label className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-          <input
-            type="checkbox"
-            checked={shouldCreateAppointment}
-            disabled={!nextDueLocal}
-            onChange={(event) => setShouldCreateAppointment(event.target.checked)}
-            className={CHECKBOX_CLASS}
-          />
-          Tạo lịch hẹn "Nhắc gọi lại" vào thời điểm này
-        </label>
-        <p className={FORM_HINT_CLASS}>Có thời điểm nhắc thì việc sẽ hiện ở "Việc hôm nay" đúng ngày (giờ Việt Nam).</p>
-      </fieldset>
+      {nextActionSection}
 
       {hasAttachments && (
         <div className={`space-y-2 border-t pt-4 ${DIVIDER_CLASS}`}>
@@ -192,10 +296,25 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
         </div>
       )}
 
-      <button type="submit" disabled={isContentEmpty || isSaving || isUploading} className={`${BUTTON_PRIMARY_LG_CLASS} w-full`}>
-        <Save size={18} aria-hidden="true" />
-        {isSaving ? 'Đang lưu…' : isUploading ? 'Đang tải ảnh…' : 'Lưu nhật ký'}
-      </button>
+      <div
+        className={
+          isDialog
+            ? `sticky z-10 flex items-center gap-3 border-t border-gray-100 bg-white pt-3 dark:border-white/[0.05] dark:bg-gray-900 ${
+                // Phủ kín bề ngang + sát đáy vùng cuộn: bù đúng lề của vỏ. Bottom sheet cuộn BÊN TRONG vùng có `p-4` và sticky tính theo mép TRONG
+                // của vùng đệm nên cần `-bottom-4` (không thì chữ cuộn lọt qua khe 16px dưới thanh nút); hộp thoại web cuộn ở khung ngoài không đệm (`p-6` chỉ ở thẻ).
+                variant === 'mobile' ? '-bottom-4 -mx-4 -mb-4 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]' : 'bottom-0 -mx-6 -mb-6 rounded-b-3xl px-6 pb-5'
+              }`
+            : 'flex items-center gap-3'
+        }
+      >
+        <button type="button" onClick={handleCancel} disabled={isSaving} className={`${BUTTON_OUTLINE_LG_CLASS} shrink-0`}>
+          Hủy
+        </button>
+        <button type="submit" disabled={isContentEmpty || isSaving || isUploading} className={`${BUTTON_PRIMARY_LG_CLASS} min-w-0 flex-1`}>
+          <Save size={18} aria-hidden="true" />
+          {isSaving ? 'Đang lưu…' : isUploading ? 'Đang tải ảnh…' : isEditing ? 'Lưu thay đổi' : 'Lưu nhật ký'}
+        </button>
+      </div>
     </form>
   );
 };

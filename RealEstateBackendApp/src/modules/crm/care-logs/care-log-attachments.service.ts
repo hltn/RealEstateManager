@@ -215,7 +215,7 @@ export class CareLogAttachmentsService {
 
   /**
    * Gỡ một ảnh (04 mục 4.2): chưa gắn => người tải lên hoặc Quản trị/Quản lý (trong phạm vi); đã gắn => tác giả
-   * nhật ký trong 24 giờ hoặc Quản trị/Quản lý. Ảnh đã gắn cũng bị rút khỏi nhật ký.
+   * nhật ký hoặc Quản trị/Quản lý (không giới hạn thời gian). Ảnh đã gắn cũng bị rút khỏi nhật ký.
    */
   async remove(
     jwt: JwtPayload,
@@ -256,7 +256,7 @@ export class CareLogAttachmentsService {
           .lean()
           .exec();
         if (!log) throw resourceNotFound();
-        assertCanModifyCareLog(ctx.actor, log, now);
+        assertCanModifyCareLog(ctx.actor, log);
         await this.careLogModel
           .updateOne(
             { _id: log._id },

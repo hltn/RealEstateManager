@@ -549,7 +549,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
   describe('Dự án', () => {
     const base = {
       name: 'Dự án Thử',
-      code: 'Thu-01',
+      code: 'Thu01',
       developer: 'Chủ đầu tư X',
     };
 
@@ -563,7 +563,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(res.status).toBe(201);
       expect(res.body.data).toMatchObject({
         name: 'Dự án Thử',
-        code: 'Thu-01',
+        code: 'Thu01',
         status: 'UPCOMING',
         isActive: true,
         customerCount: 0,
@@ -588,11 +588,11 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
         .countDocuments({});
       const res = await call('POST', '/crm/projects', 'admin', {
         name: 'Trùng',
-        code: 'THU-01',
+        code: 'THU01',
       });
       expect(res.status).toBe(409);
       expect(res.body.errorCode).toBe('PROJECT_CODE_DUPLICATED');
-      expect(res.body.details).toEqual({ code: 'THU-01' });
+      expect(res.body.details).toEqual({ code: 'THU01' });
       expect(
         await connection.collection('crm_audit_logs').countDocuments({}),
       ).toBe(before);
@@ -601,7 +601,10 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
     it('validate: mã sai định dạng, giá đảo ngược, khu vực không tồn tại, status lạ, field thừa', async () => {
       const cases: Array<[Record<string, unknown>, number, string]> = [
         [{ name: 'A', code: 'co dau cach' }, 400, 'VALIDATION_FAILED'],
-        [{ name: 'A', code: 'x'.repeat(21) }, 400, 'VALIDATION_FAILED'],
+        [{ name: 'A', code: 'x'.repeat(31) }, 400, 'VALIDATION_FAILED'],
+        [{ name: 'A', code: 'AB_CD' }, 400, 'VALIDATION_FAILED'],
+        [{ name: 'A', code: 'AB-CD' }, 400, 'VALIDATION_FAILED'],
+        [{ name: 'A', code: 'Đạt' }, 400, 'VALIDATION_FAILED'],
         [{ name: 'A' }, 400, 'VALIDATION_FAILED'],
         [
           { name: 'A', code: 'OK1', priceFrom: 10, priceTo: 5 },
@@ -636,7 +639,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(ok.body.data).toMatchObject({
         status: 'SELLING',
         description: 'Mô tả',
-        code: 'Thu-01',
+        code: 'Thu01',
       });
 
       // priceTo mới thấp hơn priceFrom đang lưu (1 tỷ)
@@ -682,20 +685,179 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
         'PATCH',
         `/crm/projects/${ids.project}`,
         'admin',
-        { code: 'THU-01' },
+        { code: 'THU01' },
       );
       expect(sameCode.status).toBe(200);
-      expect(sameCode.body.data.code).toBe('THU-01');
+      expect(sameCode.body.data.code).toBe('THU01');
+    });
+
+    it('mã cũ chứa "_"/"-" (không migrate): PATCH gửi lại đúng mã cũ => 200, đổi sang mã mới còn "_" => 400, đổi sang mã sạch => 200 (PT-031)', async () => {
+      const legacyId = new Types.ObjectId();
+      await connection.collection('projects').insertOne({
+        _id: legacyId,
+        name: 'Dự án mã cũ',
+        code: 'OLD_code-1',
+        codeNormalized: 'OLD_CODE-1',
+        propertyTypes: [],
+        status: 'UPCOMING',
+        isActive: true,
+        deletedAt: null,
+      });
+      const url = `/crm/projects/${legacyId.toHexString()}`;
+
+      const same = await call('PATCH', url, 'admin', {
+        code: 'old_CODE-1',
+        name: 'Dự án mã cũ (sửa tên)',
+      });
+      expect(same.status).toBe(200);
+      expect(same.body.data.code).toBe('old_CODE-1');
+
+      const bad = await call('PATCH', url, 'admin', { code: 'NEW_CODE' });
+      expect([bad.status, bad.body.errorCode]).toEqual([
+        400,
+        'VALIDATION_FAILED',
+      ]);
+
+      const clean = await call('PATCH', url, 'admin', { code: 'OLDCODE1' });
+      expect(clean.status).toBe(200);
+      expect(clean.body.data.code).toBe('OLDCODE1');
+    });
+
+    /** Chèn thẳng dự án mã cũ (bỏ qua DTO) để mô phỏng dữ liệu production chưa migrate. */
+    const insertedProjectIds: Types.ObjectId[] = [];
+    const insertLegacyProject = async (
+      code: string,
+      deletedAt: Date | null = null,
+    ): Promise<string> => {
+      const legacyId = new Types.ObjectId();
+      await connection.collection('projects').insertOne({
+        _id: legacyId,
+        name: `Mã cũ ${code}`,
+        code,
+        codeNormalized: code.toUpperCase(),
+        propertyTypes: [],
+        status: 'UPCOMING',
+        isActive: deletedAt === null,
+        deletedAt,
+      });
+      insertedProjectIds.push(legacyId);
+      return legacyId.toHexString();
+    };
+    // Dọn dự án do các ca PT-031 tự chèn để không làm lệch các ca danh sách/xóa mềm chạy sau.
+    afterEach(async () => {
+      if (insertedProjectIds.length === 0) return;
+      await connection
+        .collection('projects')
+        .deleteMany({ _id: { $in: insertedProjectIds.splice(0) } });
+    });
+
+    it('PATCH mã cũ: đúng 20 ký tự có "_"/"-" và có khoảng trắng đầu/cuối vẫn được giữ nguyên (200); audit chỉ ghi khi mã đổi cách viết', async () => {
+      const code = 'LEG_ACY-CODE_20-CHAR'; // đúng 20 ký tự, mã cũ tối đa cũ
+      expect(code).toHaveLength(20);
+      const id = await insertLegacyProject(code);
+      const url = `/crm/projects/${id}`;
+
+      const padded = await call('PATCH', url, 'admin', {
+        code: `  ${code.toLowerCase()}  `,
+      });
+      expect(padded.status).toBe(200);
+      expect(padded.body.data.code).toBe(code.toLowerCase());
+      const stored = await connection
+        .collection('projects')
+        .findOne({ _id: new Types.ObjectId(id) });
+      expect(stored?.codeNormalized).toBe(code.toUpperCase());
+
+      const exact = await call('PATCH', url, 'admin', { code: code });
+      expect(exact.status).toBe(200);
+      expect(exact.body.data.code).toBe(code);
+      expect(await auditActions(id)).toEqual([
+        'PROJECT_UPDATED',
+        'PROJECT_UPDATED',
+      ]);
+    });
+
+    it('PATCH mã: đổi sang mã sai quy tắc mới => 400 VALIDATION_FAILED, details.fields=["code"], mã gốc và codeNormalized không đổi, không ghi audit', async () => {
+      const id = await insertLegacyProject('KEEP_old-1');
+      const url = `/crm/projects/${id}`;
+
+      const bad = await call('PATCH', url, 'admin', { code: 'NEW-CODE' });
+      expect(bad.status).toBe(400);
+      expect(bad.body.errorCode).toBe('VALIDATION_FAILED');
+      expect(bad.body.details).toEqual({ fields: ['code'] });
+
+      // Sai ngay ở DTO (nới): 31 ký tự, khoảng trắng giữa, dấu tiếng Việt, rỗng, null.
+      for (const code of ['A'.repeat(31), 'AB CD', 'Đạt', '', '   ', null]) {
+        const res = await call('PATCH', url, 'admin', { code });
+        expect([code, res.status, res.body.errorCode]).toEqual([
+          code,
+          400,
+          'VALIDATION_FAILED',
+        ]);
+      }
+
+      const stored = await connection
+        .collection('projects')
+        .findOne({ _id: new Types.ObjectId(id) });
+      expect(stored).toMatchObject({
+        code: 'KEEP_old-1',
+        codeNormalized: 'KEEP_OLD-1',
+      });
+      expect(await auditActions(id)).toEqual([]);
+    });
+
+    it('PATCH mã cũ sang mã trùng không phân biệt hoa thường với dự án đã xóa mềm => 409 PROJECT_CODE_DUPLICATED', async () => {
+      await insertLegacyProject('TAKEN1', new Date());
+      const id = await insertLegacyProject('FREE_old-2');
+      const res = await call('PATCH', `/crm/projects/${id}`, 'admin', {
+        code: 'taken1',
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.errorCode).toBe('PROJECT_CODE_DUPLICATED');
+    });
+
+    it('tạo mã: đúng 30 ký tự chữ thường + khoảng trắng đầu/cuối => 201, lưu đã cắt, giữ nguyên chữ thường', async () => {
+      const code = 'a1'.repeat(15);
+      const res = await call('POST', '/crm/projects', 'admin', {
+        name: 'Mã 30 ký tự',
+        code: ` ${code} `,
+      });
+      expect(res.status).toBe(201);
+      expect(res.body.data.code).toBe(code);
+      const stored = await connection
+        .collection('projects')
+        .findOne({ codeNormalized: code.toUpperCase() });
+      expect(stored?.code).toBe(code);
+    });
+
+    it('race: PATCH đổi mã cũ sang mã sạch song song với PATCH "gửi lại mã cũ" => không bao giờ ghi lại mã cũ sau khi đã đổi (transaction + snapshot)', async () => {
+      for (let round = 0; round < 5; round += 1) {
+        const id = await insertLegacyProject(`RACE_old-${round}`);
+        const url = `/crm/projects/${id}`;
+        const [change, resend] = await Promise.all([
+          call('PATCH', url, 'admin', { code: `RACECLEAN${round}` }),
+          call('PATCH', url, 'admin', { code: `race_OLD-${round}` }),
+        ]);
+        expect(change.status).toBe(200);
+        // Gửi lại mã cũ: 200 nếu chạy trước, 400 nếu chạy sau khi mã đã đổi (đọc lại sau retry).
+        expect([200, 400]).toContain(resend.status);
+        const stored = await connection
+          .collection('projects')
+          .findOne({ _id: new Types.ObjectId(id) });
+        // Cả hai thắng => thứ tự tuần tự hợp lệ duy nhất là resend rồi change; resend 400 => change chạy trước.
+        // Cả hai trường hợp mã cuối cùng đều là mã sạch (không bị mã cũ đè lại do đọc cũ).
+        expect(stored?.code).toBe(`RACECLEAN${round}`);
+        expect(stored?.codeNormalized).toBe(String(stored?.code).toUpperCase());
+      }
     });
 
     it('danh sách: lọc/sort/phân trang { data, meta }, sort ngoài whitelist 400, isDeleted chỉ Quản trị', async () => {
       const list = await call(
         'GET',
-        '/crm/projects?q=thu-01&status=SELLING',
+        '/crm/projects?q=thu01&status=SELLING',
         'staffA',
       );
       expect(list.status).toBe(200);
-      expect(list.body.data.map((p: any) => p.code)).toEqual(['THU-01']);
+      expect(list.body.data.map((p: any) => p.code)).toEqual(['THU01']);
       expect(list.body.meta).toEqual({
         total: 1,
         page: 1,
@@ -772,7 +934,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
         },
       ]);
 
-      const list = await call('GET', '/crm/projects?q=thu-01', 'admin');
+      const list = await call('GET', '/crm/projects?q=thu01', 'admin');
       expect(list.body.data[0].customerCount).toBe(2);
 
       const del = await call('DELETE', `/crm/projects/${ids.project}`, 'admin');
@@ -797,7 +959,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       });
       const onlyActive = await call(
         'GET',
-        '/crm/projects?q=thu-01&isActive=true',
+        '/crm/projects?q=thu01&isActive=true',
         'staffA',
       );
       expect(onlyActive.body.data).toEqual([]);
@@ -894,7 +1056,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
     it('race: hai request tạo cùng mã (khác hoa thường) cùng lúc => đúng một 201, một 409 (unique index), chỉ một audit', async () => {
       const results = await Promise.all(
-        ['Race-1', 'RACE-1', 'race-1', 'rAcE-1'].map((code) =>
+        ['Race1', 'RACE1', 'race1', 'rAcE1'].map((code) =>
           call('POST', '/crm/projects', 'admin', {
             name: `Race ${code}`,
             code,
@@ -907,7 +1069,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(
         await connection
           .collection('projects')
-          .countDocuments({ codeNormalized: 'RACE-1' }),
+          .countDocuments({ codeNormalized: 'RACE1' }),
       ).toBe(1);
       const winner = results.find((r) => r.status === 201)!;
       expect(await auditActions(winner.body.data.id)).toEqual([
@@ -1643,7 +1805,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       // `admin` (token cũ còn ghi ADMIN) đã bị hạ trong DB => 403 ngay, không đợi token hết hạn.
       const stale = await call('POST', '/crm/projects', 'admin', {
         name: 'Không được',
-        code: 'STALE-ADMIN',
+        code: 'STALEADMIN',
       });
       expect(stale.status).toBe(403);
 

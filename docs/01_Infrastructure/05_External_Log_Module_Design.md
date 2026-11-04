@@ -1,5 +1,7 @@
 # ExternalLogModule — Design Spec (Phase 1: Architecture & Data Schema)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > Tài liệu thiết kế cho tính năng **ghi log tập trung mọi Outgoing Request**:
 > (1) **Crawl Request** — HTTP request cào dữ liệu tin tức từ các trang báo (VnExpress, Vietnamnet, Cafeland, Batdongsan…);
 > (2) **AI Request** — HTTP request gọi AI Provider (OpenRouter, Must1c…) để lọc bài, trích xuất, tóm tắt.

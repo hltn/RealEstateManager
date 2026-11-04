@@ -1196,7 +1196,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       ).toBe(403);
     });
 
-    it('sửa/xóa: tác giả trong 24 giờ, người khác 403, quá 24 giờ 403 CARE_LOG_EDIT_WINDOW_EXPIRED, Quản trị/Quản lý (trong phạm vi) mọi lúc', async () => {
+    it('sửa/xóa: tác giả mọi lúc (kể cả nhật ký rất cũ), người khác 403, Quản trị/Quản lý (trong phạm vi) mọi lúc', async () => {
       const edited = await call(
         'PATCH',
         `/crm/customers/${cl}/care-logs/${logA}`,
@@ -1230,26 +1230,38 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         ).status,
       ).toBe(403);
 
+      // PT-022: nhật ký tạo từ 400 ngày trước vẫn được tác giả sửa (canEdit = true); người khác vẫn 403.
       await careLogs().updateOne(
         { _id: new Types.ObjectId(logA) },
-        { $set: { createdAt: new Date(Date.now() - 25 * HOUR) } },
+        { $set: { createdAt: new Date(Date.now() - 400 * 24 * HOUR) } },
       );
-      for (const [method, body] of [
-        ['PATCH', { content: 'Quá hạn' }],
-        ['DELETE', undefined],
-      ] as const) {
-        const res = await call(
-          method,
-          `/crm/customers/${cl}/care-logs/${logA}`,
-          'staffA',
-          body,
-        );
-        expect([method, res.status, res.body.errorCode]).toEqual([
-          method,
-          403,
-          'CARE_LOG_EDIT_WINDOW_EXPIRED',
-        ]);
-      }
+      const veryOldByAuthor = await call(
+        'PATCH',
+        `/crm/customers/${cl}/care-logs/${logA}`,
+        'staffA',
+        { content: 'Tác giả sửa nhật ký rất cũ' },
+      );
+      expect(veryOldByAuthor.status).toBe(200);
+      expect(veryOldByAuthor.body.data.content).toBe(
+        'Tác giả sửa nhật ký rất cũ',
+      );
+      expect(veryOldByAuthor.body.data.canEdit).toBe(true);
+      const veryOldByStranger = await call(
+        'PATCH',
+        `/crm/customers/${cl}/care-logs/${logA}`,
+        'staffB',
+        { content: 'Sửa trộm nhật ký cũ' },
+      );
+      expect(veryOldByStranger.status).toBe(403);
+      expect(
+        (
+          await call(
+            'DELETE',
+            `/crm/customers/${cl}/care-logs/${logA}`,
+            'staffB',
+          )
+        ).status,
+      ).toBe(403);
       const asAdmin = await call(
         'PATCH',
         `/crm/customers/${cl}/care-logs/${logA}`,
@@ -1313,6 +1325,121 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
           )
         ).status,
       ).toBe(404);
+    });
+
+    it('nhật ký rất cũ (PT-022): canEdit theo từng vai trò; Quản lý/Nhân viên NGOÀI phạm vi 404 (không sửa/xóa được); Quản lý trong phạm vi sửa/xóa được', async () => {
+      const { id: cq } = await createCustomer('staffA');
+      await call('POST', `/crm/customers/${cq}/care-team/members`, 'staffA', {
+        userIds: [ids.staffB],
+      });
+      const created = await call(
+        'POST',
+        `/crm/customers/${cq}/care-logs`,
+        'staffA',
+        { content: 'Nhật ký cũ, nhiều vai trò', contactChannel: 'CALL' },
+      );
+      expect(created.status).toBe(201);
+      const oldId = created.body.data.id as string;
+      await careLogs().updateOne(
+        { _id: new Types.ObjectId(oldId) },
+        { $set: { createdAt: new Date(Date.now() - 400 * 24 * HOUR) } },
+      );
+      const url = `/crm/customers/${cq}/care-logs/${oldId}`;
+
+      // canEdit trong danh sách: tác giả, Quản lý trong phạm vi, Quản trị => true; thành viên nhóm không phải tác giả => false.
+      for (const [who, canEdit] of [
+        ['staffA', true],
+        ['staffB', false],
+        ['manager1', true],
+        ['admin', true],
+      ] as const) {
+        const list = await call('GET', `/crm/customers/${cq}/care-logs`, who);
+        expect([who, list.status]).toEqual([who, 200]);
+        expect([who, list.body.data[0].canEdit]).toEqual([who, canEdit]);
+      }
+
+      // Ngoài phạm vi (Quản lý nhóm khác, Nhân viên nhóm khác): 404 ở cả sửa lẫn xóa, nhật ký không đổi.
+      for (const who of ['manager2', 'staffC']) {
+        expect([
+          who,
+          (await call('PATCH', url, who, { content: 'Sửa ngoài phạm vi' }))
+            .status,
+        ]).toEqual([who, 404]);
+        expect([who, (await call('DELETE', url, who)).status]).toEqual([
+          who,
+          404,
+        ]);
+      }
+      const untouched = await careLogs().findOne({
+        _id: new Types.ObjectId(oldId),
+      });
+      expect(untouched).toMatchObject({
+        content: 'Nhật ký cũ, nhiều vai trò',
+        deletedAt: null,
+      });
+
+      // Quản lý trong phạm vi sửa/xóa được nhật ký cũ; sau khi xóa mềm, tác giả xóa/sửa lại đều 404.
+      const byManager = await call('PATCH', url, 'manager1', {
+        content: 'Quản lý chỉnh',
+      });
+      expect(byManager.status).toBe(200);
+      expect(byManager.body.data.canEdit).toBe(true);
+      expect((await call('DELETE', url, 'manager1')).status).toBe(204);
+      expect((await call('DELETE', url, 'staffA')).status).toBe(404);
+      expect(
+        (await call('PATCH', url, 'staffA', { content: 'Sửa sau khi xóa' }))
+          .status,
+      ).toBe(404);
+    });
+
+    it('xóa nhật ký: tác giả xóa được nhật ký rất cũ (PT-022), người khác 403 và nhật ký còn nguyên', async () => {
+      const { id: cd } = await createCustomer('staffA');
+      await call('POST', `/crm/customers/${cd}/care-team/members`, 'staffA', {
+        userIds: [ids.staffB],
+      });
+      const created = await call(
+        'POST',
+        `/crm/customers/${cd}/care-logs`,
+        'staffA',
+        { content: 'Nhật ký sẽ rất cũ', contactChannel: 'CALL' },
+      );
+      expect(created.status).toBe(201);
+      const oldLogId = created.body.data.id as string;
+      await careLogs().updateOne(
+        { _id: new Types.ObjectId(oldLogId) },
+        { $set: { createdAt: new Date(Date.now() - 400 * 24 * HOUR) } },
+      );
+
+      expect(
+        (
+          await call(
+            'DELETE',
+            `/crm/customers/${cd}/care-logs/${oldLogId}`,
+            'staffB',
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        await careLogs().countDocuments({
+          _id: new Types.ObjectId(oldLogId),
+          deletedAt: null,
+        }),
+      ).toBe(1);
+      expect(
+        (
+          await call(
+            'DELETE',
+            `/crm/customers/${cd}/care-logs/${oldLogId}`,
+            'staffA',
+          )
+        ).status,
+      ).toBe(204);
+      expect(
+        await careLogs().countDocuments({
+          _id: new Types.ObjectId(oldLogId),
+          deletedAt: null,
+        }),
+      ).toBe(0);
     });
   });
 
@@ -1618,7 +1745,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       for (const key of keys) expect(storage.objects.has(key)).toBe(false);
     });
 
-    it('gỡ ảnh: chưa gắn => người tải lên (người khác 404); đã gắn => tác giả trong 24 giờ (người khác 403), nhật ký không còn ảnh', async () => {
+    it('gỡ ảnh: chưa gắn => người tải lên (người khác 404); đã gắn => tác giả mọi lúc, kể cả nhật ký rất cũ (người khác 403), nhật ký không còn ảnh', async () => {
       const loose = (await upload(cp, 'staffA')).body.data.id;
       const looseKey = (await attachmentsCol().findOne({
         _id: new Types.ObjectId(loose),
@@ -1663,6 +1790,11 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
           attachmentIds: [attachedId],
         },
       );
+      // PT-022: nhật ký rất cũ (400 ngày) vẫn cho tác giả gỡ ảnh; người khác vẫn 403.
+      await careLogs().updateOne(
+        { _id: new Types.ObjectId(log.body.data.id) },
+        { $set: { createdAt: new Date(Date.now() - 400 * 24 * HOUR) } },
+      );
       expect(
         (
           await call(
@@ -1686,6 +1818,53 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       });
       expect(reread!.attachments).toEqual([]);
       expect(await auditOf(cp, 'ATTACHMENT_REMOVED')).toHaveLength(2);
+    });
+
+    it('gỡ ảnh đã gắn vào nhật ký rất cũ (PT-022): Quản lý/Nhân viên ngoài phạm vi 404 và ảnh còn nguyên; Quản lý trong phạm vi gỡ được', async () => {
+      const attachedId = (await upload(cp, 'staffA')).body.data.id as string;
+      const log = await call(
+        'POST',
+        `/crm/customers/${cp}/care-logs`,
+        'staffA',
+        {
+          content: 'Ảnh của nhật ký cũ',
+          contactChannel: 'CALL',
+          attachmentIds: [attachedId],
+        },
+      );
+      expect(log.status).toBe(201);
+      const logId = new Types.ObjectId(log.body.data.id as string);
+      await careLogs().updateOne(
+        { _id: logId },
+        { $set: { createdAt: new Date(Date.now() - 400 * 24 * HOUR) } },
+      );
+      const url = `/crm/customers/${cp}/care-log-attachments/${attachedId}`;
+
+      for (const who of ['manager2', 'staffC']) {
+        expect([who, (await call('DELETE', url, who)).status]).toEqual([
+          who,
+          404,
+        ]);
+      }
+      expect(
+        await attachmentsCol().countDocuments({
+          _id: new Types.ObjectId(attachedId),
+          status: 'ATTACHED',
+        }),
+      ).toBe(1);
+      expect(
+        (await careLogs().findOne({ _id: logId }))!.attachments,
+      ).toHaveLength(1);
+
+      expect((await call('DELETE', url, 'manager1')).status).toBe(204);
+      expect((await careLogs().findOne({ _id: logId }))!.attachments).toEqual(
+        [],
+      );
+      expect(
+        (await attachmentsCol().findOne({
+          _id: new Types.ObjectId(attachedId),
+        }))!.status,
+      ).toBe('REMOVED');
     });
 
     it('dọn nền: ảnh chưa gắn quá 24 giờ bị xóa khỏi kho; ảnh còn mới và ảnh đã gắn được giữ nguyên', async () => {

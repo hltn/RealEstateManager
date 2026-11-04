@@ -1,5 +1,7 @@
 # Kế hoạch Triển khai Frontend (React Native) - Real Estate Manager
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Tài liệu này mô tả chi tiết kiến trúc, công nghệ, cấu trúc thư mục và lộ trình các bước để xây dựng ứng dụng di động cho dự án quản lý bất động sản.
 
 ---

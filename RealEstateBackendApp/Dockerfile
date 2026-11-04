@@ -13,6 +13,11 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
+# Đưa số phiên bản vào image (PT-027): dist/version.json = { version (từ package.json), commit (build arg) }.
+# Stage production KHÔNG có package.json nên runner migration (dist/migrations/cli.js) đọc file này (rồi mới fallback package.json).
+# Đặt SAU `npm run build` để đổi GIT_COMMIT chỉ làm lại lớp nhỏ này, không làm mất cache bước build.
+ARG GIT_COMMIT=unknown
+RUN node -e "const c = process.env.GIT_COMMIT; require('fs').writeFileSync('dist/version.json', JSON.stringify({ version: require('./package.json').version, commit: c && c !== 'unknown' ? c : null }) + '\n')"
 
 # ── Stage 3: Production runtime ───────────────────────────────────────────────
 FROM node:24.18.1-slim AS production

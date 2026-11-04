@@ -1,0 +1,2 @@
+*.sh text eol=lf
+scripts/staging/shims/* text eol=lf

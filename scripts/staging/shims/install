@@ -1,0 +1,4 @@
+#!/bin/bash
+# Shim CHỈ cho staging local trên Windows/Git Bash: `install -d -m 700 <dir>` lỗi trên NTFS (không chmod được); chỉ mkdir -p.
+if [[ "${1:-}" == "-d" ]]; then shift; [[ "${1:-}" == "-m" ]] && shift 2; mkdir -p "$@"; exit $?; fi
+exec /usr/bin/install "$@"

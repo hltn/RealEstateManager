@@ -1,5 +1,7 @@
 # Tài liệu kỹ thuật: Module Quản lý & chăm sóc khách hàng (CRM)
 
+> **Phiên bản tài liệu:** v1.0.2
+
 > **Phạm vi:** giai đoạn 1 của [`01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md`](01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md) (C1–C14, X1–X11, quy tắc mục 4, yêu cầu chung mục 5). **Nhập dữ liệu 3 sheet cũ (DSKH, DSKH_DROP, DSKH_NET) hoãn sang giai đoạn sau** (D7). Zalo (3.3) và ghi âm (3.4) chỉ phác thảo ở [mục 8](#8-giai-đoạn-sau-zalo-ghi-âm--phác-thảo).
 > **Danh sách API đầy đủ:** [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md).
 > **Chuẩn áp dụng:** skill `nodejs-react-mongo-coding-guidelines` (naming, `/api/v1`, Swagger, phân trang `{ data, meta }`, lỗi `{ statusCode, message, timestamp, path }`, soft delete, transaction, audit trail, queue, Correlation ID).
@@ -16,7 +18,7 @@
 | Thay 3 sheet DSKH / DSKH_DROP / DSKH_NET | Một collection `customers` + **tình trạng** (`statusId`) thuộc một nhóm danh sách (`NOT_CONTACTED` / `INTERESTED` / `NET` / `DROPPED`; thêm tab ảo `ALL`). Đổi tình trạng là đổi danh sách hiển thị (C6, quy tắc 2) |
 | Nhiều người cùng chăm sóc, đúng 1 phụ trách chính | `careTeam[]` nhúng trong khách + bất biến "đúng 1 PRIMARY" kiểm ở service (C8, quy tắc 7) |
 | Phân quyền theo khách được phân | Bộ lọc phạm vi (row-level scope) bắt buộc ở tầng repository, không chỉ guard (X1, quy tắc 6) |
-| Tự động hóa việc làm tay | Tiến độ (C5), `lastUpdatedAt` (C7), chống trùng SĐT (X2), nhắc lịch (C3, C13, X5) đều do server tính |
+| Tự động hóa việc làm tay | Tiến độ (C5), `lastUpdatedAt` (C7), chống trùng SĐT (X2), nhắc lịch (C3, C13, X5) đều do server tính; từ v1.0.3 tiến độ đạt 3/4 tiêu chí còn tự đổi tình trạng khách (mục 6.2a) |
 | Chân dung động | `persona_fields` do Quản trị cấu hình (X10) + giá trị lưu kiểu attribute pattern có metadata người/ngày/nguồn (quy tắc 9) |
 | Di động có đẩy thông báo | App Expo (iOS/Android) + FCM HTTP v1 (APNs qua Firebase) + hộp thông báo trong app (X5, X9). **Giai đoạn 1 chỉ có hộp thông báo trong app (Web Admin chạy API thật); FCM, `device_tokens` và app di động làm ở giai đoạn 2** (thiết kế giữ nguyên, chỉ để cấu hình/placeholder) |
 
@@ -201,7 +203,7 @@ erDiagram
 | `nationalIdLast4` | string \| null | Không | 4 số cuối để hiển thị `••••1234` | C9 |
 | `hasNationalId` | boolean | Có | Cho UI biết có CCCD | C9 |
 | `criteria` | `{ demand, motivation, finance, timing }` mỗi cái `{ isDone: boolean, description: string ≤1000, updatedBy, updatedAt }` | Có (mặc định `isDone=false`) | 4 tiêu chí Nhu cầu / Động cơ / Tài chính / Thời gian | C4 |
-| `progress` | number ∈ {0,25,50,75,100} | Có | **Server tính** = số `isDone` × 25, ghi cùng lệnh update tiêu chí; không nhận từ client | C5, QT1 |
+| `progress` | number ∈ {0,25,50,75,100} | Có | **Server tính** = số `isDone` × 25, ghi cùng lệnh update tiêu chí; không nhận từ client. **Từ v1.0.3** khi `progress` đổi, server có thể tự đổi tình trạng khách theo tiến độ (mục 6.2a) | C5, QT1, PT-023 |
 | `careTeam` | `[{ userId, role: 'PRIMARY'\|'MEMBER', addedBy, addedAt }]` | Không | Nhóm chăm sóc. **Bất biến:** nếu không rỗng thì đúng 1 `PRIMARY`, `userId` không trùng | C8, QT7 |
 | `primaryAssigneeId` | ObjectId \| null | Không | Phi chuẩn hóa từ `careTeam` để lọc/sort/thống kê nhanh | C8, X3, X6 |
 | `teamIds` | ObjectId[] | Không | Hợp các `teamId` của thành viên `careTeam`; nếu `careTeam` rỗng thì = nhóm của người tạo. Dùng cho phạm vi Quản lý | QT6 |
@@ -218,7 +220,7 @@ erDiagram
 | `createdVia` | `'WEB'\|'MOBILE'\|'IMPORT'` | Có | Kênh tạo (`IMPORT` = nhập file chung) | X8 |
 | `legacy` | `{ sheet, rowNumber, importJobId }` | Không | **Hoãn giai đoạn sau (D7)** — chưa tạo ở giai đoạn 1; thêm sau là tương thích ngược (field mới, tùy chọn). Truy vết dữ liệu cũ từ 3 sheet | X8 |
 | `deletedAt`, `deletedBy`, `anonymizedAt` | Date/ObjectId | Không | Soft delete; ẩn danh hóa khi khách yêu cầu xóa dữ liệu | §5 |
-| `purgingAt` | Date | Không (không index; bản ghi cũ không có thì coi như null) | v1.0.3 mục D: khách đang **xóa vĩnh viễn** (đặt nguyên tử trước khi xóa file; khôi phục/ẩn danh hóa bị chặn 409 `CUSTOMER_PURGE_IN_PROGRESS`; không hết hạn, chỉ mất khi bản ghi bị xóa) | tài liệu 09 §7 |
+| `purgingAt` | Date | Không (không index; bản ghi cũ không có thì coi như null) | v1.0.2 mục D: khách đang **xóa vĩnh viễn** (đặt nguyên tử trước khi xóa file; khôi phục/ẩn danh hóa bị chặn 409 `CUSTOMER_PURGE_IN_PROGRESS`; không hết hạn, chỉ mất khi bản ghi bị xóa) | tài liệu 09 §7 |
 | `__v` | number | — | Bật `optimisticConcurrency` — client gửi `version` khi PATCH, lệch thì 409 `VERSION_CONFLICT` (nhiều người cùng sửa) | QT7 |
 
 > **Không có mã khách hàng** (quyết định #2): không field `customerCode`, không unique/index, không cột trong import/export, không filter. Khách nhận diện bằng `_id` (nội bộ), họ tên và SĐT (duy nhất).
@@ -292,7 +294,7 @@ Khi lưu chân dung, service tính lại trong cùng một lệnh `updateOne`: `
 | `customer_statuses` | `code` (bất biến), `label`, `listGroup: 'NOT_CONTACTED'\|'INTERESTED'\|'NET'\|'DROPPED'`, `color`, `order`, `isDefault`, `isSystem`, `isActive`, `deletedAt` | `{ code: 1 }` unique; `{ listGroup: 1, order: 1 }` | Seed 4 trạng thái hệ thống, mỗi trạng thái một nhóm danh sách riêng (không còn nhóm gộp "Đang chăm sóc"): `NOT_CONTACTED` "Chưa tiếp cận" (listGroup `NOT_CONTACTED`, default), `INTERESTED` "Có quan tâm" (listGroup `INTERESTED`), `NET` "Khách net" (listGroup `NET`), `DROPPED` "Bỏ" (listGroup `DROPPED`). Tab "Tất cả" (`ALL`) là tab ảo, không phải `listGroup` lưu trong DB. Trạng thái `isDefault` phải thuộc nhóm `NOT_CONTACTED`. Quản trị thêm trạng thái mới phải chọn `listGroup` → khách tự vào đúng danh sách (C6, QT2). Không xóa được trạng thái `isSystem` hoặc đang có khách |
 | `catalog_items` | `type: 'LEAD_SOURCE'\|'CONTACT_RESULT'\|'PERSONA_GROUP'`, `code`, `label`, `order`, `isActive`, `isSystem`, `meta` (ví dụ CONTACT_RESULT: `{ suggestedFollowUpDays, suggestionText }`), `deletedAt` | `{ type: 1, code: 1 }` unique; `{ type: 1, order: 1 }` | Một collection cho danh mục phẳng (DRY). `CONTACT_RESULT` cho ô "Kết quả liên hệ" và gợi ý mốc hẹn (C3) |
 | `areas` | `name`, `nameNormalized`, `type: 'COUNTRY'\|'PROVINCE'\|'DISTRICT'\|'WARD'\|'OTHER'`, `parentId`, `ancestorIds[]`, `adminCode?`, `isLegacy`, `order`, `isActive`, `deletedAt` | `{ parentId: 1, order: 1 }`; `{ ancestorIds: 1 }`; `{ nameNormalized: 1 }` | Cây khu vực linh hoạt. Lọc theo tỉnh tự bao gồm khu vực con (`ancestorIds`). `isLegacy` cho quận/huyện cũ (sau sắp xếp hành chính 2025) **[Giả định]** |
-| `projects` | `name`, `code` (**bắt buộc**, unique, regex `^[A-Za-z0-9_-]{1,20}$`: chữ, số, `-`, `_`, tối đa 20 ký tự), `developer?`, `location?`, `areaId?`, `propertyTypes[]`, `priceFrom?`, `priceTo?` (VNĐ ≥ 0, `priceFrom ≤ priceTo`), `status` (enum `'UPCOMING'\|'SELLING'\|'SOLD_OUT'`, mặc định `UPCOMING`), `description?`, `isActive`, `deletedAt` | `{ code: 1 }` unique (kể cả dự án đã xóa mềm); `{ isActive: 1, name: 1 }` (collation vi); `{ deletedAt: 1 }` | Do **Quản trị** thêm/sửa/xóa. Field tối thiểu, thêm field sau là tương thích ngược. **Xóa:** nếu còn khách tham chiếu (`customers.interestedProjectIds`, chưa xóa mềm) ⇒ 409 `PROJECT_IN_USE` kèm `customerCount`, Quản trị chuyển `isActive=false` (ngừng hoạt động: ẩn khỏi ô chọn mới, khách cũ giữ liên kết, hiển thị "đã ngừng"); không còn tham chiếu ⇒ xóa mềm (`deletedAt`). Khôi phục qua `POST /crm/project-restorations` |
+| `projects` | `name`, `code` (**bắt buộc**, unique, regex `^[A-Za-z0-9]{1,30}$`: chỉ chữ A-Z không dấu và số 0-9, viết liền, không `-`, không `_`, tối đa 30 ký tự; quy tắc đổi ngày 2026-11-04, xem quyết định #31 và mục 3.3), `developer?`, `location?`, `areaId?`, `propertyTypes[]`, `priceFrom?`, `priceTo?` (VNĐ ≥ 0, `priceFrom ≤ priceTo`), `status` (enum `'UPCOMING'\|'SELLING'\|'SOLD_OUT'`, mặc định `UPCOMING`), `description?`, `isActive`, `deletedAt` | `{ code: 1 }` unique (kể cả dự án đã xóa mềm); `{ isActive: 1, name: 1 }` (collation vi); `{ deletedAt: 1 }` | Do **Quản trị** thêm/sửa/xóa. Field tối thiểu, thêm field sau là tương thích ngược. **Xóa:** nếu còn khách tham chiếu (`customers.interestedProjectIds`, chưa xóa mềm) ⇒ 409 `PROJECT_IN_USE` kèm `customerCount`, Quản trị chuyển `isActive=false` (ngừng hoạt động: ẩn khỏi ô chọn mới, khách cũ giữ liên kết, hiển thị "đã ngừng"); không còn tham chiếu ⇒ xóa mềm (`deletedAt`). Khôi phục qua `POST /crm/project-restorations` |
 | `tags` | `name`, `nameNormalized`, `category: 'INTEREST'\|'OCCUPATION'\|'OTHER'`, `color?`, `usageCount`, `createdBy`, `deletedAt` | `{ category: 1, nameNormalized: 1 }` unique partial `deletedAt: null` | Nhân viên tạo thẻ mới khi gắn; Quản trị sửa/xóa/gộp (C11) |
 | `teams` | `name`, `code` (unique), `managerIds: ObjectId[]`, `isActive`, `deletedAt` | `{ code: 1 }` unique; `{ managerIds: 1 }` | Nhóm làm việc cho phạm vi Quản lý |
 
@@ -302,7 +304,7 @@ Khi lưu chân dung, service tính lại trong cùng một lệnh `updateOne`: `
 
 | Hạng mục | Quy ước |
 |---|---|
-| Mã dự án | Bắt buộc, regex `^[A-Za-z0-9_-]{1,20}$`. **Unique không phân biệt hoa thường**, kể cả dự án đã xóa mềm: lưu thêm `codeNormalized` (chữ hoa) với index unique `{ codeNormalized: 1 }` thay cho unique trên `code`; `code` giữ nguyên chữ người nhập để hiển thị. Dữ liệu cũ không hợp lệ/trùng khi chuyển: sinh mã tạm theo quy tắc, báo cáo cho Quản trị sửa |
+| Mã dự án | Bắt buộc, chỉ chữ A-Z không dấu và số 0-9, **viết liền** (không khoảng trắng, không `-`, không `_`), 1 đến 30 ký tự: regex `^[A-Za-z0-9]{1,30}$` (đổi ngày 2026-11-04, PT-031; trước đó cho `-`/`_` và tối đa 20 ký tự). Web hiển thị và gửi mã bằng chữ HOA; BE vẫn giữ `code` đúng như người gửi. **Mã cũ chứa `-`/`_` giữ nguyên, không migrate:** quy tắc mới chỉ áp cho mã tạo mới và mã được đổi; `PATCH` gửi lại đúng mã đang có (so không phân biệt hoa thường) vẫn được chấp nhận dù là mã cũ, còn đổi sang mã khác phải theo quy tắc mới (sai ⇒ 400 `VALIDATION_FAILED`). DTO `PATCH` chỉ kiểm nới (độ dài ≤ 30, ký tự chữ/số/`-`/`_`), service kiểm chặt khi mã thật sự đổi. **Lưu ý:** FE luôn gửi `code` (HOA, đã trim) khi PATCH, nên sửa dự án có mã cũ như `old_code-1` sẽ lưu thành `OLD_CODE-1` (đổi hoa/thường, giữ nguyên `_`/`-`, có audit). Lỗi 400 do DTO có `message` dạng mảng và không có `details.fields`; lỗi 400 do service có `details.fields=['code']`; FE chỉ dựa vào `errorCode`/`message`. **Unique không phân biệt hoa thường**, kể cả dự án đã xóa mềm: lưu thêm `codeNormalized` (chữ hoa) với index unique `{ codeNormalized: 1 }` thay cho unique trên `code`; `code` giữ nguyên chữ người nhập để hiển thị. Dữ liệu cũ không hợp lệ/trùng khi chuyển: sinh mã tạm theo quy tắc, báo cáo cho Quản trị sửa |
 | Trạng thái dự án cũ → enum | Giá trị tự do cũ quy về 3 giá trị `UPCOMING`/`SELLING`/`SOLD_OUT`: "Sắp mở bán"/"Sắp ra mắt" → `UPCOMING`; "Đang mở bán"/"Đang bán" → `SELLING`; "Hết hàng"/"Đã bán hết" → `SOLD_OUT`; **"Sắp bàn giao", "Đang vận hành" → `SOLD_OUT`** (nghĩa là "không còn bán mới"); giá trị không nhận ra → `UPCOMING` kèm báo cáo. Chỉ **thêm** field/enum, không xóa giá trị cũ ngay: lưu giá trị gốc ở `legacyStatusText` (tùy chọn) để đối chiếu |
 | `propertyTypes` | Luôn là **mảng** chuỗi; dữ liệu cũ dạng chuỗi đơn → bọc thành mảng 1 phần tử khi chuyển |
 | Xóa dự án còn khách | Giữ nguyên: 409 `PROJECT_IN_USE { customerCount }`; ngừng hoạt động qua `PATCH /crm/projects/:id` với `isActive=false` |
@@ -356,6 +358,7 @@ Index: `{ key: 1 }` unique; `{ isActive: 1, groupCode: 1, order: 1 }`.
 | `APPOINTMENT_DUE` | Đến mốc nhắc trước lịch hẹn | `assigneeId` + phụ trách chính (`priority=HIGH`) | C3, X5 |
 | `FOLLOW_UP_DUE` | Đến hạn "bước tiếp theo" của nhật ký | Tác giả + phụ trách chính | C3 |
 | `CARE_LOG_ADDED` | Người cùng chăm sóc ghi chú mới (gộp theo khách trong 10 phút) | Thành viên khác trong nhóm | X5 |
+| `CUSTOMER_STATUS_AUTO_CHANGED` (thêm ở v1.0.3, PT-023) | Tình trạng khách bị **tự** đổi theo tiến độ 3/4 tiêu chí (lên `NET` hoặc về `INTERESTED`; chỉ khi có đổi thật). Mức ưu tiên `NORMAL`; chống trùng theo (khách, version sau cùng) | Thành viên `careTeam` của khách, **trừ người tick tiêu chí** | PT-023 |
 | `STALE_CUSTOMER` | Khách có tình trạng thuộc nhóm Chưa tiếp cận hoặc Có quan tâm (cả hai) quá N ngày chưa có nhật ký | Phụ trách chính (`HIGH`); thành viên chỉ nhận nếu tự bật | X5, QT7 |
 | `CUSTOMER_OCCASION` | Sinh nhật / kỷ niệm (hôm nay hoặc trước N ngày) | Cả nhóm chăm sóc, phụ trách chính `HIGH` | C13 |
 | `CARE_TEAM_JOIN_REQUESTED` / `CARE_TEAM_JOIN_RESOLVED` | Có đề nghị tham gia / đề nghị được duyệt hoặc từ chối | Phụ trách chính + Quản lý nhóm / người đề nghị | X2 |
@@ -368,7 +371,7 @@ Mặc định bật tất cả, trừ `STALE_CUSTOMER` cho thành viên không p
 
 | Collection | Field chính | Index |
 |---|---|---|
-| `crm_audit_logs` (bất biến, không có API sửa/xóa; **ngoại lệ nội bộ**: ẩn danh hóa khách ghi đè PII trong audit của khách đó, xóa vĩnh viễn khách (v1.0.3 mục D) xóa mọi audit của khách đó và để lại đúng một dòng `CUSTOMER_PURGED` không PII) | `entityType: 'CUSTOMER'\|'CARE_LOG'\|'ATTACHMENT'\|'APPOINTMENT'\|'CATALOG'\|'PROJECT'\|'PERSONA_FIELD'\|'TAG'\|'TEAM'\|'USER'\|'IMPORT'\|'EXPORT'\|'SETTINGS'`, `entitySubtype?` (vd `CUSTOMER_STATUS`/`LEAD_SOURCE`/`CONTACT_RESULT`/`AREA` khi `entityType = CATALOG`), `entityId`, `customerId?`, `action` (3.7.1), `actorId`, `actorName`, `actorRole`, `changes: [{ field, from, to }]` (**lưu giá trị trường**, kể cả SĐT cũ → mới đầy đủ, xem 7.3; CCCD luôn che), `reason?`, `source: 'WEB'\|'MOBILE'\|'IMPORT'\|'SYSTEM'`, `requestId`, `ip?`, `userAgent?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ actorId: 1, createdAt: -1 }`; `{ action: 1, createdAt: -1 }`; `{ entityType: 1, entityId: 1, createdAt: -1 }` |
+| `crm_audit_logs` (bất biến, không có API sửa/xóa; **ngoại lệ nội bộ**: ẩn danh hóa khách ghi đè PII trong audit của khách đó, xóa vĩnh viễn khách (v1.0.2 mục D) xóa mọi audit của khách đó và để lại đúng một dòng `CUSTOMER_PURGED` không PII) | `entityType: 'CUSTOMER'\|'CARE_LOG'\|'ATTACHMENT'\|'APPOINTMENT'\|'CATALOG'\|'PROJECT'\|'PERSONA_FIELD'\|'TAG'\|'TEAM'\|'USER'\|'IMPORT'\|'EXPORT'\|'SETTINGS'`, `entitySubtype?` (vd `CUSTOMER_STATUS`/`LEAD_SOURCE`/`CONTACT_RESULT`/`AREA` khi `entityType = CATALOG`), `entityId`, `customerId?`, `action` (3.7.1), `actorId`, `actorName`, `actorRole`, `changes: [{ field, from, to }]` (**lưu giá trị trường**, kể cả SĐT cũ → mới đầy đủ, xem 7.3; CCCD luôn che), `reason?`, `source: 'WEB'\|'MOBILE'\|'IMPORT'\|'SYSTEM'`, `requestId`, `ip?`, `userAgent?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ actorId: 1, createdAt: -1 }`; `{ action: 1, createdAt: -1 }`; `{ entityType: 1, entityId: 1, createdAt: -1 }` |
 | `import_mapping_templates` | `code` (người dùng tự đặt; **mẫu hệ thống `DSKH`/`DSKH_DROP`/`DSKH_NET` hoãn giai đoạn sau, D7**), `name`, `defaultStatusCode`, `columns: [{ header, aliases[], target, transform? }]`, `isSystem` | `{ code: 1 }` unique |
 | `import_jobs` | `fileKey`, `originalFileName`, `mimeType`, `size`, `sheetName?`, `mappingTemplateId`, `mappingSnapshot`, `options: { duplicatePolicy: 'SKIP'\|'FILL_EMPTY'\|'OVERWRITE', assigneeMapping[], defaultPrimaryUserId?, defaultTeamId? }`, `isDryRun`, `status: 'UPLOADED'\|'VALIDATING'\|'VALIDATED'\|'IMPORTING'\|'COMPLETED'\|'FAILED'\|'CANCELED'`, `progress: { total, processed }`, `summary: { valid, created, updated, skipped, duplicateInFile, duplicateInDb, errors }`, `errorFileKey?`, `createdBy`, `startedAt?`, `finishedAt?` | `{ createdBy: 1, createdAt: -1 }`; `{ status: 1 }` |
 | `import_job_rows` (tạm) | `jobId`, `rowNumber`, `sheet`, `data` (đã map, **CCCD đã mã hóa/che**), `status: 'VALID'\|'ERROR'\|'DUPLICATE_IN_FILE'\|'DUPLICATE_IN_DB'\|'CREATED'\|'UPDATED'\|'SKIPPED'`, `messages[]`, `customerId?` | `{ jobId: 1, rowNumber: 1 }`; `{ jobId: 1, status: 1 }`; TTL 30 ngày |
@@ -390,7 +393,7 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 | `users` | Thêm enum `MANAGER`, `STAFF` vào `role`; thêm `teamId: ObjectId \| null` (default `null`), index `{ teamId: 1, status: 1 }` | Không — user cũ giữ `ADMIN`/`EDITOR`, `teamId=null`. M1 chỉ gán/gỡ nhóm + audit; **đồng bộ `customers.teamIds` khi đổi nhóm thuộc M2** |
 | — | Không đổi kiểu, không xóa field nào | — |
 
-> Cập nhật: `users` có thêm `roles[]`, `teamIds[]` (`role`/`teamId` thành trường suy ra) và khu vực đổi sang 34 tỉnh thành; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật: `users` có thêm `roles[]`, `teamIds[]` (`role`/`teamId` thành trường suy ra) và khu vực đổi sang 34 tỉnh thành; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 ---
 
@@ -405,7 +408,7 @@ Mọi thay đổi trên `customers` ghi audit **trong cùng transaction** với 
 | Nhân viên chăm sóc | `STAFF` | Chỉ khách có mình trong `careTeam` (PRIMARY hoặc MEMBER) |
 | (Biên tập tin tức) | `EDITOR` | **Không có quyền CRM** — `@Roles(ADMIN, MANAGER, STAFF)` trên mọi controller CRM |
 
-> Cập nhật: một tài khoản có thể có nhiều role (quyền theo role CRM cao nhất) và STAFF có thêm quyền xóa khách "Bỏ" mình phụ trách chính; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật: một tài khoản có thể có nhiều role (quyền theo role CRM cao nhất) và STAFF có thêm quyền xóa khách "Bỏ" mình phụ trách chính; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 ### 4.2 Ma trận vai trò × hành động
 
@@ -417,8 +420,8 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Kiểm tra trùng SĐT (chỉ biết "do [tên] chăm sóc") | ✓ | ✓ | ✓ | ✓ | X2 |
 | Tạo khách (NV tạo ⇒ tự là phụ trách chính) | ✓ | ✓ | ✓ | ✓ | C1, QT7 |
 | Sửa hồ sơ, tiêu chí, chân dung, thẻ; ghi nhật ký; đổi tình trạng | ✓ | P | ✓ | ✓ | QT7 |
-| Sửa / xóa nhật ký | ✓ | P | TG (trong 24 giờ) | TG (trong 24 giờ) | C2 |
-| Đính kèm ảnh vào nhật ký (tối đa 5/ghi chú); gỡ ảnh | ✓ | P | ✓; gỡ: TG (24 giờ) | ✓; gỡ: TG (24 giờ) | C2 |
+| Sửa / xóa nhật ký | ✓ | P | TG | TG | C2 |
+| Đính kèm ảnh vào nhật ký (tối đa 5/ghi chú); gỡ ảnh | ✓ | P | ✓; gỡ: TG | ✓; gỡ: TG | C2 |
 | Thêm thành viên chăm sóc | ✓ | P | ✓ **[Giả định]** | — | C8 |
 | Gỡ thành viên (không phải phụ trách chính) | ✓ | P | ✓ **[Giả định]** | — | C8 |
 | Đổi phụ trách chính; gỡ phụ trách chính (bắt buộc chọn người thay) | ✓ | P | — | — | QT7 |
@@ -463,7 +466,7 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Dữ liệu trả về | `.select()` tường minh (`nationalId` `select:false`; `searchText` không bao giờ trả); DTO response map tay (không ném nguyên document). SĐT trong list/detail luôn là `phoneMasked`; số đầy đủ chỉ qua `phone-views` (đã kiểm scope + ghi `PHONE_VIEWED`) |
 | Kiểm thử | E2E bảng ma trận 4.2 × 4 vai trò; test riêng "NV bị gỡ khỏi nhóm ⇒ 404 ở mọi endpoint con" |
 
-> Cập nhật: `CrmActor`/`buildScope` theo role CRM cao nhất khi có nhiều role, `customers.teamIds` = hợp `teamIds[]` của thành viên `careTeam`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.3.
+> Cập nhật: `CrmActor`/`buildScope` theo role CRM cao nhất khi có nhiều role, `customers.teamIds` = hợp `teamIds[]` của thành viên `careTeam`; xem [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) v1.0.2.
 
 ---
 
@@ -566,6 +569,32 @@ sequenceDiagram
   end
   Note over FE: React Query invalidate list-counts → khách tự xuất hiện ở tab đúng (không xóa, không chuyển dữ liệu)
 ```
+
+Lưu ý (v1.0.3, PT-023): lệnh `PATCH /status`, đổi hàng loạt và Hoàn tác **không** kích hoạt tự đổi theo tiến độ và không còn dấu riêng trên khách (field `statusAutoSource` đã bỏ 2026-11-03); lần hạ tiêu chí kế tiếp xử lý theo nhóm tình trạng hiện tại (mục 6.2a), kể cả khi `NET` do đổi tay.
+
+### 6.2a Tự đổi tình trạng theo tiến độ (PT-023, v1.0.3)
+
+**Quy tắc nghiệp vụ** (Oniichan chốt 2026-11-02; 3 điểm (a) thông báo, (b) hạ dưới 3/4 về `INTERESTED` bất kể `NET` do ai đặt, (c) đủ 3/4 đè mọi tình trạng trừ `DROPPED` **đã chốt 2026-11-03**, xem `docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` mục 7 câu 9. Câu 19 (4/4 rồi bỏ một tiêu chí xuống 3/4 thì **tự lên "Khách net"**) và câu 20 (tình trạng tùy biến bị đè, hạ thì về `INTERESTED` hệ thống) cũng đã chốt):
+
+- Chỉ xét khi lần cập nhật làm `progress` **thực sự đổi**. Quyết định chỉ dựa vào **nhóm** tình trạng hiện tại, không phân biệt tình trạng do tự động hay do người dùng đặt:
+  - `progress` **mới = 75** và `progress` cũ **khác 75** (từ 0/25/50 lên 75, **hoặc từ 100 xuống 75**, tức 4/4 bỏ một tiêu chí) và tình trạng hiện tại thuộc nhóm `NOT_CONTACTED` hoặc `INTERESTED` (kể cả tình trạng tùy biến, bị đè) ⇒ tự chuyển hẳn sang `NET` ("Khách net").
+  - `progress` tụt từ 75 trở lên xuống **dưới 75** (2/4, 1/4, 0/4) và tình trạng hiện tại thuộc nhóm `NET` (**kể cả NET do người dùng chọn tay**) ⇒ tự về `INTERESTED` ("Có quan tâm").
+- **Không làm gì** (không đổi, không audit `STATUS_CHANGED`, không thông báo) khi: khách đang `DROPPED` (miễn cả hai chiều); khách đã ở nhóm `NET` khi đủ 3/4; khách ở nhóm `NOT_CONTACTED`/`INTERESTED` khi hạ tiêu chí; đủ 4/4 (kể cả 0/25/50 lên 100); `progress` không đổi (chỉ sửa mô tả).
+- **Chỉ** `PATCH /crm/customers/:id/criteria` kích hoạt. Nhập CSV và đổi hàng loạt **không** kích hoạt. **Lưu ý:** backend hiện **chưa có** nhập CSV (M8); khi làm M8 phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
+- Tình trạng cũ dạng tùy biến (Quản trị thêm) bị đè thành `NET`, và khi hạ thì khách về `INTERESTED` của hệ thống chứ không về tình trạng cũ (mục 7 câu 20 của tài liệu phiên bản; Oniichan đã chấp nhận).
+- **Thông báo (câu 9 (a), chốt 2026-11-03, đã triển khai):** mỗi lần tự đổi **thật** (cả lên `NET` lẫn về `INTERESTED`) gửi thông báo trong ứng dụng loại `CUSTOMER_STATUS_AUTO_CHANGED` (mục 3.6.1) cho những người trong `careTeam` của khách, **trừ người thực hiện tick**; không có người nhận (careTeam rỗng hoặc chỉ có người tick) thì không gửi. Ghi bằng `NotificationsService.createMany(items, session)` **cùng transaction** nên lỗi hoặc xung đột version rollback cả thông báo; không đổi tình trạng thì không thông báo. `dedupeKey` = `CUSTOMER_STATUS_AUTO:<customerId>:<version sau cùng>`; deep link `/crm/customers/:id`; nội dung không chứa SĐT/CCCD.
+
+**Cơ chế (backend):**
+
+- Tái dùng `CustomerStatusChangeService.applyChange` (cùng `session`, kiểm khóa lạc quan `version`) trong **cùng transaction** với cập nhật tiêu chí; tiêu chí và tình trạng nguyên tử, lỗi bước đổi tình trạng làm rollback cả hai. Quyết định bằng một hàm thuần (`decideAutoStatus`) chỉ nhận tiến độ trước/sau và **nhóm** tình trạng hiện tại (không còn tham số mã tình trạng hay dấu "do tự động đặt").
+- Tìm tình trạng đích theo `code` (`NET`, `INTERESTED`) đang hoạt động, chưa xóa. Nếu danh mục thiếu thì **bỏ qua** việc tự đổi (tiêu chí vẫn lưu, trả 200, log cảnh báo).
+- **Không còn field `customers.statusAutoSource`** (bỏ 2026-11-03 vì mã chết sau khi bỏ điều kiện "do cơ chế tự động đặt"). **Không cần migration:** document cũ còn field thừa vẫn đọc/ghi bình thường, không ảnh hưởng quyết định. `applyChange` vẫn nhận tham số `autoSource` nhưng chỉ để ghi dấu vào audit.
+- **Audit:** 2 bản ghi `CRITERIA_UPDATED` và `STATUS_CHANGED` trong cùng transaction, **cùng actor là người tick tiêu chí**, `reason` null; `STATUS_CHANGED` có thêm phần tử `changes` `{ field: 'statusAutoSource', from: null, to: 'CRITERIA_PROGRESS' }` cho **cả hai chiều** (lên `NET` và về `INTERESTED`); đây là dấu duy nhất cho biết lần đổi do tự động. Không đổi schema audit.
+- **Version:** cập nhật tiêu chí tăng `__v` một lần, đổi tình trạng tăng thêm một lần nên `version` trả về = `version` gửi lên + 2.
+
+**API:** response `PATCH /crm/customers/:id/criteria` thêm `autoStatusChange?: { from: StatusRef|null, to: StatusRef }` (chỉ khi vừa tự đổi); `version`/`lastUpdatedAt` là giá trị sau cùng. Request không đổi; tương thích ngược. Chi tiết ở tài liệu 05.
+
+**Frontend:** khi response có `autoStatusChange`, hiện toast 6 giây nêu tình trạng cũ và mới kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí); **không có Hoàn tác 10 giây** (hoàn tác riêng tình trạng làm lệch quy tắc 3/4; muốn đảo thì bỏ tick tiêu chí hoặc đổi tay). Lịch sử thay đổi hiện chip "Tự động theo tiến độ". Ghi dữ liệu CRM ở FE đã làm mới toàn bộ truy vấn liên quan nên không cần thêm bước làm mới.
 
 ### 6.3 Phân khách & gửi push (C8, QT7, QT8, X5)
 
@@ -938,7 +967,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 - [ ] Gọi FCM/S3 có timeout 5 s, retry exponential backoff + jitter.
 - [ ] Không `console.log`; log có `requestId`.
 - [ ] Tìm kiếm theo SĐT: từ khóa số tối thiểu 6 chữ số (hoặc chỉ khớp đuôi số), rate-limit riêng, có cảnh báo dò số; test chứng minh tìm 3 chữ số không trả kết quả.
-- [ ] Mã dự án unique không phân biệt hoa thường (kể cả đã xóa mềm); trạng thái dự án luôn thuộc enum; `propertyTypes` luôn là mảng; dữ liệu cũ đã được chuyển theo quy ước 3.3.
+- [ ] Mã dự án chỉ A-Z, 0-9 viết liền, 1-30 ký tự (mã cũ có `-`/`_` giữ nguyên, chỉ áp quy tắc mới khi tạo/đổi mã); unique không phân biệt hoa thường (kể cả đã xóa mềm); trạng thái dự án luôn thuộc enum; `propertyTypes` luôn là mảng; dữ liệu cũ đã được chuyển theo quy ước 3.3.
 
 ---
 
@@ -978,7 +1007,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | 28 | C | **D12 ĐÃ XÁC NHẬN** — format lỗi 4 trường + `errorCode`/`details` tùy chọn | Giữ nguyên thiết kế |
 | 29 | Chiều 22/10 | **Tab mặc định của danh sách khách là "Tất cả"** | `listGroup` mặc định `ALL` (API và FE); tab Tất cả đứng đầu, thứ tự tab: Tất cả, Chưa tiếp cận, Có quan tâm, Khách net, Bỏ |
 | 30 | Chiều 22/10 | **Xóa dự án = xóa mềm (`deletedAt`) + khôi phục; dự án đang có khách tham chiếu thì chỉ ngừng hoạt động** | Khẳng định #8: DELETE chỉ khi `customerCount = 0`, ngược lại 409 `PROJECT_IN_USE` và dùng PATCH `isActive=false`; khôi phục qua `POST /crm/project-restorations`. Không đổi số endpoint |
-| 31 | Chiều 22/10 | **Mã dự án bắt buộc**, gồm chữ, số, `-`, `_`, tối đa 20 ký tự | Regex `^[A-Za-z0-9_-]{1,20}$`; unique kể cả dự án đã xóa mềm; sai định dạng ⇒ 400 `VALIDATION_FAILED`, trùng ⇒ 409 `PROJECT_CODE_DUPLICATED`; DTO tạo dự án `code*` |
+| 31 | Chiều 22/10; **đổi 04/11/2026 (PT-031)** | **Mã dự án bắt buộc**, chỉ chữ A-Z không dấu và số 0-9, **viết liền** (không khoảng trắng, không `-`, không `_`), 1 đến 30 ký tự; hiển thị/gửi bằng chữ HOA ở web. *Lịch sử:* chốt ngày 22/10 là chữ, số, `-`, `_`, tối đa 20 ký tự; Oniichan đổi ngày 04/11/2026 (ban đầu yêu cầu bỏ `-`/`_` và giữ 20 ký tự, sau đó nâng lên 30 ký tự) | Regex `^[A-Za-z0-9]{1,30}$`; unique không phân biệt hoa thường kể cả dự án đã xóa mềm (`codeNormalized`, không đổi); sai định dạng ⇒ 400 `VALIDATION_FAILED`, trùng ⇒ 409 `PROJECT_CODE_DUPLICATED`; DTO tạo dự án `code*` kiểm chặt. **Mã cũ có `-`/`_` giữ nguyên, không migrate:** `PATCH` gửi lại đúng mã hiện có vẫn qua, đổi sang mã khác phải theo quy tắc mới (kiểm ở service, so với mã hiện tại). Web: form Thêm tự điền mã từ tên (xem PT-031) |
 | 32 | Chiều 22/10 | **Trạng thái dự án là enum** `UPCOMING`/`SELLING`/`SOLD_OUT`; có khoảng giá `priceFrom`/`priceTo` | Enum cố định trong schema (như 3.3); `priceFrom ≤ priceTo`, VNĐ ≥ 0, cả hai tùy chọn; không bảng danh mục riêng |
 | 33 | Chiều 22/10 | **SĐT trong CSV/XLSX xuất ra là ĐẦY ĐỦ** (cập nhật D10): không chứa CCCD đầy đủ, chứa SĐT đầy đủ; kiểm quyền và ghi audit mỗi lần export | Chỉ A và M-P tạo export; audit `CUSTOMER_EXPORTED` ghi bộ lọc, cột, số dòng, người làm (không lưu danh sách số); throttle 5/giờ; chặn CSV formula injection; cập nhật 7.3 và 05 nhóm 2.12 |
 | 34 | Chiều 22/10 | **Lịch sử thay đổi (`histories.changes`) hiển thị SĐT cũ → mới đầy đủ** cho người xem được khách (Oniichan chấp nhận) | `changes` lưu giá trị trường (SĐT, email, họ tên...); riêng `PHONE_VIEWED` không lưu số; CCCD vẫn che; ai xem được và ảnh hưởng quyền riêng tư nêu ở 7.3 (giữ ≥ 2 năm, ẩn danh hóa phải ghi đè `changes`) |

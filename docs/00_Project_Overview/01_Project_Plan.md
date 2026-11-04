@@ -1,5 +1,7 @@
 Kế Hoạch Chi Tiết: Module NewsFireCrawlManager (Business Plan)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 1. Phân Tích Nghiệp Vụ (Business Analysis)
 
 Module này có nhiệm vụ tự động hóa việc thu thập tin tức bất động sản, lọc nội dung bằng AI và đăng tự động lên hệ thống WordPress.

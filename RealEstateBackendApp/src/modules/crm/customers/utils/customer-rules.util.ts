@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
+import { ListGroup } from '../../catalogs/catalog.enums';
 import {
+  AUTO_STATUS_PROGRESS_THRESHOLD,
   CRITERIA_KEYS,
   CriteriaKey,
   NATIONAL_ID_MASK_PREFIX,
@@ -71,4 +73,57 @@ export const mergeCriteria = (
     }
   }
   return { next, changedKeys };
+};
+
+/** Mã tình trạng hệ thống mà cơ chế tự chuyển (PT-023) có thể đặt. */
+export type AutoStatusTarget = 'NET' | 'INTERESTED';
+
+export interface AutoStatusInput {
+  prevProgress: number;
+  nextProgress: number;
+  currentGroup: ListGroup;
+}
+
+/**
+ * PT-023: tiến độ có đi qua mốc 3/4 (75) không (về đúng 75 từ giá trị khác 75, kể cả 100 -> 75; hoặc từ >= 75 xuống
+ * dưới 75). Dùng để bỏ qua sớm, không tốn truy vấn tra tình trạng khi chắc chắn không có gì để tự chuyển
+ * (vd 0 -> 25, 75 -> 100, 75 -> 75).
+ */
+export const crossesAutoStatusThreshold = (
+  prevProgress: number,
+  nextProgress: number,
+): boolean =>
+  (nextProgress === AUTO_STATUS_PROGRESS_THRESHOLD &&
+    prevProgress !== AUTO_STATUS_PROGRESS_THRESHOLD) ||
+  (nextProgress < AUTO_STATUS_PROGRESS_THRESHOLD &&
+    prevProgress >= AUTO_STATUS_PROGRESS_THRESHOLD);
+
+/**
+ * PT-023 (đã chốt 2026-11-03): quyết định tự chuyển tình trạng khi tiến độ đổi. Hàm thuần, không đụng DB.
+ * Quyết định chỉ dựa vào NHÓM tình trạng hiện tại, KHÔNG phân biệt tình trạng do tự động hay do người dùng đặt:
+ * - Tiến độ MỚI bằng đúng 75 và tiến độ cũ khác 75 (từ dưới 75 lên, hoặc 100 -> 75): `NET` cho mọi nhóm trừ
+ *   `DROPPED` (miễn) và `NET` (đã ở NET thì không đổi). Tình trạng tùy biến ở nhóm Chưa tiếp cận/Có quan tâm bị đè.
+ *   4/4 (next = 100) không kích hoạt.
+ * - Xuống dưới 75 (từ >= 75): khách đang ở nhóm `NET` (kể cả NET do người dùng chọn tay) -> `INTERESTED`.
+ *   Nhóm khác (Chưa tiếp cận, Có quan tâm, DROPPED) không đổi: "về Có quan tâm" chỉ áp dụng cho khách đang ở NET.
+ * - Còn lại (tiến độ không đổi, không qua mốc...) -> `null`.
+ */
+export const decideAutoStatus = ({
+  prevProgress,
+  nextProgress,
+  currentGroup,
+}: AutoStatusInput): AutoStatusTarget | null => {
+  const threshold = AUTO_STATUS_PROGRESS_THRESHOLD;
+  if (currentGroup === ListGroup.DROPPED) return null;
+  if (nextProgress === threshold && prevProgress !== threshold) {
+    return currentGroup === ListGroup.NET ? null : 'NET';
+  }
+  if (
+    nextProgress < threshold &&
+    prevProgress >= threshold &&
+    currentGroup === ListGroup.NET
+  ) {
+    return 'INTERESTED';
+  }
+  return null;
 };

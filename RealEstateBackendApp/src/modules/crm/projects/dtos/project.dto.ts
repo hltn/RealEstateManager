@@ -18,6 +18,9 @@ import { Trim } from '../../../../common/decorators/trim.decorator';
 import { RefDto } from '../../../../common/dto/ref.dto';
 import { CatalogPaginationQueryDto } from '../../catalogs/dtos/catalog-common.dto';
 import {
+  PROJECT_CODE_LEGACY_PATTERN,
+  PROJECT_CODE_MAX_LENGTH,
+  PROJECT_CODE_MESSAGE,
   PROJECT_CODE_PATTERN,
   PROJECT_DESCRIPTION_MAX_LENGTH,
   PROJECT_NAME_MAX_LENGTH,
@@ -27,8 +30,7 @@ import {
 } from '../project.rules';
 
 const PRICE_OPTIONS = { allowNaN: false, allowInfinity: false } as const;
-const CODE_MESSAGE =
-  'Mã dự án chỉ gồm chữ không dấu, số, "-" hoặc "_", tối đa 20 ký tự';
+const LEGACY_CODE_MESSAGE = `Mã dự án chỉ gồm chữ A-Z không dấu và số 0-9 viết liền, tối đa ${PROJECT_CODE_MAX_LENGTH} ký tự (mã cũ chỉ được gửi lại nguyên văn)`;
 
 /**
  * Thêm dự án (Quản trị). `code` bắt buộc, duy nhất không phân biệt hoa thường kể cả dự án đã xóa mềm.
@@ -45,11 +47,12 @@ export class CreateProjectDto {
   @ApiProperty({
     example: 'QTERRA',
     pattern: PROJECT_CODE_PATTERN.source,
+    maxLength: PROJECT_CODE_MAX_LENGTH,
     description:
-      'Chữ, số, "-", "_", tối đa 20 ký tự; duy nhất không phân biệt hoa thường',
+      'Chỉ chữ A-Z không dấu và số 0-9, viết liền (không khoảng trắng, "-", "_"), 1-30 ký tự; duy nhất không phân biệt hoa thường',
   })
   @Trim()
-  @Matches(PROJECT_CODE_PATTERN, { message: CODE_MESSAGE })
+  @Matches(PROJECT_CODE_PATTERN, { message: PROJECT_CODE_MESSAGE })
   code: string;
 
   @ApiPropertyOptional({
@@ -136,10 +139,16 @@ export class UpdateProjectDto {
   @MaxLength(PROJECT_NAME_MAX_LENGTH)
   name?: string;
 
-  @ApiPropertyOptional({ pattern: PROJECT_CODE_PATTERN.source })
+  @ApiPropertyOptional({
+    example: 'QTERRA',
+    pattern: PROJECT_CODE_LEGACY_PATTERN.source,
+    maxLength: PROJECT_CODE_MAX_LENGTH,
+    description:
+      'Mã đổi sang giá trị khác phải chỉ gồm A-Z, 0-9 viết liền (service kiểm chặt, sai => 400); gửi lại đúng mã hiện có (kể cả mã cũ chứa "-"/"_") vẫn được chấp nhận',
+  })
   @IsOptional()
   @Trim()
-  @Matches(PROJECT_CODE_PATTERN, { message: CODE_MESSAGE })
+  @Matches(PROJECT_CODE_LEGACY_PATTERN, { message: LEGACY_CODE_MESSAGE })
   code?: string;
 
   @ApiPropertyOptional({

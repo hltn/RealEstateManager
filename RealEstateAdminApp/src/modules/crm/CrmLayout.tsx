@@ -36,8 +36,8 @@ const CrmLayoutContent = () => {
 
   return (
     <>
-      {/* pb-20 = 64px thanh đáy + 16px khoảng thở; từ md trở lên không có thanh đáy */}
-      <div className={shouldShowBottomNav ? 'pb-20 md:pb-0' : undefined}>
+      {/* 5rem = 64px thanh đáy + 16px khoảng thở, cộng vùng home indicator (khớp CRM_BOTTOM_NAV_HEIGHT_CLASS); từ md trở lên không có thanh đáy */}
+      <div className={shouldShowBottomNav ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : undefined}>
         <Outlet />
       </div>
       {shouldShowBottomNav && <CrmBottomNav />}

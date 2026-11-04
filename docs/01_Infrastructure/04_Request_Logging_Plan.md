@@ -1,5 +1,7 @@
 # Kế hoạch Triển khai: Request & Response Logging Module (MongoDB)
 
+> **Phiên bản tài liệu:** v1.0.1
+
 ## 📌 Tóm tắt dự án
 Xây dựng hệ thống ghi log tập trung cho các Outgoing Request ra bên ngoài:
 1. **Crawl Requests**: Ghi lại mọi HTTP request cào dữ liệu tin tức (vào VnExpress, Vietnamnet, Cafeland, Batdongsan...) từ Crawler Service / Axios / Firecrawl.

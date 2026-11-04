@@ -1,0 +1,3 @@
+#!/bin/bash
+# Shim CHỈ cho staging local trên Windows/Git Bash: NTFS không có uid; Docker Desktop bind-mount cho container ghi được nên bỏ qua chown.
+exit 0

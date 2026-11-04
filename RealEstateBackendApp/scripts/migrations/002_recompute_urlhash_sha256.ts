@@ -454,7 +454,7 @@ async function runMigration(dryRun: boolean): Promise<MigrationReport> {
     }
 
     if (dryRun) {
-      log('\n-> Dry-run: KHÔ ghi dữ liệu. Chạy với --apply để thực thi thật.');
+      log('\n-> Dry-run: KHÔNG ghi dữ liệu. Chạy với --apply để thực thi thật.');
       return report;
     }
 

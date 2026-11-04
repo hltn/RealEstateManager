@@ -15,7 +15,15 @@ import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { useIsMobile } from '@crm/hooks/useIsMobile';
 import { createId } from '@crm/lib/id';
 import { toProjectBody } from '@crm/api/http/projectBody';
-import { createEmptyProject, getFirstProjectError, getProjectErrors, normalizeProject, PROJECT_NAME_MAX_LENGTH, type ProjectErrors } from '@crm/lib/projectRules';
+import {
+  createEmptyProject,
+  getFirstProjectError,
+  getProjectErrors,
+  normalizeProject,
+  PROJECT_NAME_MAX_LENGTH,
+  suggestProjectCode,
+  type ProjectErrors,
+} from '@crm/lib/projectRules';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import type { Project } from '@crm/types/crm';
@@ -38,22 +46,49 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
   const isNew = editingProject === null;
   const [draft, setDraft] = useState<Project>(() => editingProject ?? createEmptyProject(createId('proj')));
   const [errors, setErrors] = useState<ProjectErrors>({});
+  /** Khi Thêm: người dùng đã tự sửa tay ô Mã thì ngừng tự điền theo tên (xoá trống = bật lại). */
+  const [isCodeTouched, setIsCodeTouched] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
+
+  /** Gõ tên dự án: khi Thêm và chưa chạm tay vào ô Mã thì mã tự cập nhật theo tên (tên trống -> mã trống). Form Sửa không đổi mã. */
+  const handleNameChange = (name: string) => {
+    const shouldAutofillCode = isNew && !isCodeTouched;
+    const code = shouldAutofillCode ? (name.trim() ? suggestProjectCode(name, catalogs.projects.map((item) => item.code)) : '') : draft.code;
+    setDraft({ ...draft, name, code });
+  };
+
+  /** Đổi các trường khác (gồm ô Mã): nếu ô Mã vừa bị người dùng sửa thì đánh dấu đã chạm tay (xoá trống = chưa chạm). */
+  const handleFieldsChange = (next: Project) => {
+    if (isNew && next.code !== draft.code) setIsCodeTouched(next.code.trim() !== '');
+    setDraft(next);
+  };
+
+  /** Thêm = POST (không nhận `isActive`: dự án mới luôn hoạt động, tắt hoạt động khi tạo = tạo xong rồi PATCH); Sửa = PATCH. */
+  const saveProject = async (normalized: Project) => {
+    if (!isNew) return api.updateProject(normalized.id, toProjectBody(normalized));
+    const result = await api.createProject(toProjectBody(normalized, { isCreate: true }));
+    if (result.ok && !normalized.isActive) await api.updateProject(result.data.id, { isActive: false });
+    return result;
+  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (isSaving) return;
     const normalized = normalizeProject(draft);
-    const nextErrors = getProjectErrors(catalogs.projects, normalized);
+    const nextErrors = getProjectErrors(catalogs.projects, normalized, { originalCode: editingProject?.code });
     setErrors(nextErrors);
     if (getFirstProjectError(nextErrors)) return;
     setIsSaving(true);
-    // POST không nhận `isActive` (dự án mới luôn hoạt động): tắt hoạt động khi tạo = tạo xong rồi PATCH.
-    const result = isNew ? await api.createProject(toProjectBody(normalized, { isCreate: true })) : await api.updateProject(normalized.id, toProjectBody(normalized));
-    if (result.ok && isNew && !normalized.isActive) await api.updateProject(result.data.id, { isActive: false });
+    const result = await saveProject(normalized);
     setIsSaving(false);
     if (!result.ok) {
+      if (result.error.errorCode === 'PROJECT_CODE_DUPLICATED') {
+        // Mã trùng dự án đã xoá mềm mà danh sách không có: báo ngay tại ô Mã, giữ nguyên form để người dùng tự đổi mã rồi lưu lại.
+        // Đánh dấu đã chạm tay để gõ tiếp tên không tự gợi ý lại đúng mã vừa bị trùng.
+        setErrors({ code: `Mã dự án "${normalized.code}" đã tồn tại.` });
+        setIsCodeTouched(true);
+      }
       showToast({ type: 'error', title: result.error.message });
       return;
     }
@@ -71,11 +106,11 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
             maxLength={PROJECT_NAME_MAX_LENGTH}
             autoFocus
             hasError={Boolean(errors.name)}
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            onChange={(event) => handleNameChange(event.target.value)}
             {...getFieldA11yProps(getErrorId(`${ID_PREFIX}-name`), errors.name)}
           />
         </FormField>
-        <ProjectFormFields project={draft} areas={catalogs.areas} errors={errors} idPrefix={ID_PREFIX} onChange={setDraft} />
+        <ProjectFormFields project={draft} areas={catalogs.areas} errors={errors} idPrefix={ID_PREFIX} onChange={handleFieldsChange} />
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-white/[0.05]">
         <div className="min-w-0">

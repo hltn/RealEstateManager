@@ -4,9 +4,11 @@
  * - lớp phủ + hành vi giống `components/ui/modal`: `z-99999`, Esc để đóng, khoá cuộn body, bấm nền để đóng;
  * - nền như hộp thoại Admin `bg-white dark:bg-gray-900`, viền `gray-200 / gray-800`, bo `rounded-t-2xl`.
  * Chân sheet chừa `env(safe-area-inset-bottom)` cho iPhone; sheet phủ lên CrmBottomNav (z-40).
+ * Bàn phím ảo (iOS không co layout viewport): sheet được nâng lên trên bàn phím và hạ chiều cao theo `visualViewport` để nút ở chân/dính đáy không bị che.
  */
 import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useKeyboardInset } from '@crm/hooks/useKeyboardInset';
 import { ICON_BUTTON_CLASS } from '@crm/lib/uiClasses';
 
 interface BottomSheetProps {
@@ -38,13 +40,16 @@ export const BottomSheet = ({ title, subtitle, headerAction, footer, onClose, ti
     };
   }, [onClose]);
 
+  const keyboard = useKeyboardInset();
+
   return (
-    <div className="fixed inset-0 z-99999 flex items-end justify-center">
+    <div className="fixed inset-0 z-99999 flex items-end justify-center" style={keyboard ? { paddingBottom: keyboard.bottomPx } : undefined}>
       <div aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-gray-900/60 backdrop-blur-[2px]" />
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        style={keyboard ? { maxHeight: keyboard.visibleHeightPx } : undefined}
         className="relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-2xl border-t border-gray-200 bg-white shadow-theme-xl dark:border-gray-800 dark:bg-gray-900"
       >
         {/* Đầu sheet: thanh kéo + tiêu đề + nút đóng */}
@@ -66,7 +71,7 @@ export const BottomSheet = ({ title, subtitle, headerAction, footer, onClose, ti
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">{children}</div>
+        <div className={`flex-1 overflow-y-auto overscroll-contain px-4 pt-4 ${footer ? 'pb-4' : 'pb-[calc(1rem+env(safe-area-inset-bottom))]'}`}>{children}</div>
 
         {footer && (
           <footer className="shrink-0 border-t border-gray-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] dark:border-gray-800">

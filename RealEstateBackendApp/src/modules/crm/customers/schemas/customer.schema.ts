@@ -284,7 +284,7 @@ export class Customer {
   anonymizedAt: Date | null;
 
   /**
-   * v1.0.3 mục D: khách đang trong quá trình XÓA VĨNH VIỄN (khác null). Đặt nguyên tử bởi `CustomerPurgeService`
+   * v1.0.2 mục D: khách đang trong quá trình XÓA VĨNH VIỄN (khác null). Đặt nguyên tử bởi `CustomerPurgeService`
    * TRƯỚC khi xóa file MinIO; khôi phục/ẩn danh hóa bị chặn khi có giá trị này. Chỉ thoát bằng xóa vĩnh viễn xong (bản
    * ghi bị xóa). Giá trị là mốc "khóa chống xóa vĩnh viễn song song" (xem `PURGE_CLAIM_GUARD_MS`), không phải lease hết
    * hạn: có giá trị thì vẫn là "đang xóa dở". Field tùy chọn, bản ghi cũ không có thì coi như null (không cần migration);

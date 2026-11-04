@@ -1,5 +1,7 @@
 # 01 — Hạ tầng dùng chung
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Kiến trúc backend, cơ sở dữ liệu và hệ thống ghi log, dùng chung cho mọi module.
 
 | # | Tài liệu | Loại | Nội dung |

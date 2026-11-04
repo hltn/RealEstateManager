@@ -1,5 +1,7 @@
 # Export Market Analysis to Google Drive — Feasibility Research
 
+> **Phiên bản tài liệu:** v1.0.1
+
 **Date:** 2026-08-15
 **Author:** Architect Agent
 **Status:** Research Complete

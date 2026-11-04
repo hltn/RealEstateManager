@@ -26,7 +26,7 @@ export const LocationInput = ({ id, value, officeLocation, error, onChange }: Lo
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Nhập địa chỉ hoặc dùng văn phòng dự án"
+        placeholder="Nhập địa chỉ gặp khách"
         className={getInputClass({ hasError: Boolean(error), hasLeftIcon: true, hasRightAddon: true })}
         {...getFieldA11yProps(getErrorId(id), error)}
       />

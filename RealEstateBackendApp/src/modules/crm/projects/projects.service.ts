@@ -38,6 +38,7 @@ import {
 } from './dtos/project.dto';
 import {
   assertPriceRange,
+  assertProjectCodeChange,
   normalizeProjectCode,
   normalizePropertyTypes,
   ProjectStatus,
@@ -221,6 +222,11 @@ export class ProjectsService {
             .lean()
             .exec();
           if (!before) throw this.notFound();
+
+          // PT-031: mã đổi sang giá trị khác phải theo quy tắc mới; gửi lại đúng mã cũ (có `-`/`_`) vẫn qua.
+          if (dto.code !== undefined) {
+            assertProjectCodeChange(dto.code, before.code);
+          }
 
           const nextPriceFrom =
             dto.priceFrom === undefined ? before.priceFrom : dto.priceFrom;

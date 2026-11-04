@@ -1,5 +1,7 @@
 # Technical Design Document: NewsFireCrawlManager (Enterprise Standard)
 
+> **Phiên bản tài liệu:** v1.0.1
+
   
 
 Tài liệu này được viết lại bởi Architect Agent sau khi **audit trực tiếp code thật** (verify 2026-07-27), thay cho bản thiết kế cũ mang tính aspirational (mô tả "nên có" thay vì "đang có"). Mục đích: phân biệt rõ ràng **cái gì đã hoàn thiện** và **cái gì còn là GAP** (thiếu/vi phạm quy chuẩn `nodejs-react-mongo-coding-guidelines`), để `coder-agent` có checklist thực thi chính xác, tránh hiểu nhầm module đã an toàn 100%.

@@ -153,11 +153,28 @@ export class ChangeStatusResponseDto {
   @ApiProperty() lastUpdatedAt: string;
 }
 
+/** PT-023: tình trạng khách vừa được tự chuyển do tiến độ tiêu chí đạt/xuống dưới 3/4. */
+export class AutoStatusChangeDto {
+  @ApiProperty({ type: StatusRefDto, nullable: true })
+  from: StatusRefDto | null;
+  @ApiProperty({ type: StatusRefDto }) to: StatusRefDto;
+}
+
 export class CriteriaUpdateResponseDto {
   @ApiProperty({ type: CriteriaResponseDto }) criteria: CriteriaResponseDto;
   @ApiProperty() progress: number;
-  @ApiProperty() version: number;
+  @ApiProperty({
+    description:
+      'Version SAU CÙNG (đã tính cả lần tự đổi tình trạng nếu có); gửi lại ở lần PATCH kế tiếp',
+  })
+  version: number;
   @ApiProperty() lastUpdatedAt: string;
+  @ApiPropertyOptional({
+    type: AutoStatusChangeDto,
+    description:
+      'Chỉ có khi tình trạng khách vừa được tự chuyển (đạt 3/4 tiêu chí -> Khách net; xuống dưới 3/4 -> Có quan tâm)',
+  })
+  autoStatusChange?: AutoStatusChangeDto;
 }
 
 export class PhoneLookupResponseDto {

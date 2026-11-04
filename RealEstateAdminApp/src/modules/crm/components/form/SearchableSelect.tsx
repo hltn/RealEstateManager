@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { InputHTMLAttributes, KeyboardEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { twMerge } from 'tailwind-merge';
+import { useVisibleListMaxHeight } from '@crm/hooks/useVisibleListMaxHeight';
 import { INPUT_ICON_CLASS, getInputClass } from '@crm/lib/uiClasses';
-import { normalizeVietnamese } from '@crm/lib/text';
+import { filterOptionsByKeyword } from './searchMatch';
 import type { SelectOption } from './SelectInput';
 
 interface SearchableSelectProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'role' | 'children'> {
@@ -21,29 +23,25 @@ interface SearchableSelectProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   listLabel?: string;
   /** Chuỗi dùng để tìm cho 1 nhãn (đã/chưa bỏ dấu đều được); mặc định chỉ tìm theo nhãn. Dùng để thêm bí danh ("hcm" -> TP. Hồ Chí Minh). */
   getSearchTerms?: (label: string) => readonly string[];
+  /**
+   * Chế độ thân thiện điện thoại (iOS Safari), mặc định tắt: ô nhập chữ 16px (Safari không tự phóng to khi focus), chiều cao danh sách tính theo
+   * vùng nhìn thấy (không bị bàn phím ảo che; xem `useVisibleListMaxHeight`), dòng cao tối thiểu 44px.
+   */
+  isViewportAware?: boolean;
 }
 
 const defaultSearchTerms = (label: string): readonly string[] => [label];
 
-/** Độ khớp của 1 nhãn với từ khoá (đã bỏ dấu): 0 = bắt đầu bằng từ khoá, 1 = đầu một từ, 2 = chỉ chứa; null = không khớp. */
-const getMatchRank = (terms: readonly string[], keyword: string): number | null => {
-  let best: number | null = null;
-  for (const term of terms) {
-    const text = normalizeVietnamese(term);
-    const index = text.indexOf(keyword);
-    if (index < 0) continue;
-    const rank = index === 0 ? 0 : text[index - 1] === ' ' ? 1 : 2;
-    if (best === null || rank < best) best = rank;
-  }
-  return best;
-};
-
 /** Danh sách chọn có ô tìm kiếm (combobox theo WAI-ARIA): gõ để lọc, bỏ dấu tiếng Việt ("ha noi" khớp "Hà Nội"). */
-export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, hasError = false, emptyLabel, listLabel = 'Danh sách lựa chọn', getSearchTerms = defaultSearchTerms, placeholder, className, disabled, ...inputProps }: SearchableSelectProps) => {
+export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, hasError = false, emptyLabel, listLabel = 'Danh sách lựa chọn', getSearchTerms = defaultSearchTerms, isViewportAware = false, placeholder, className, disabled, ...inputProps }: SearchableSelectProps) => {
   const [isOpen, setIsOpen] = useState(false);
   /** Từ khoá đang gõ; chưa gõ thì ô hiển thị nhãn của lựa chọn hiện tại. */
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Chỉ bật theo dõi visualViewport khi `isViewportAware`; tắt thì luôn `undefined` (dùng max-h-60 mặc định).
+  const visibleMaxHeight = useVisibleListMaxHeight(isViewportAware && isOpen, inputRef, rootRef);
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? '';
   const listboxId = `${id}-listbox`;
@@ -51,13 +49,8 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
 
   // Dòng "bỏ chọn" chỉ hiện khi chưa gõ từ khoá. Có từ khoá: lọc không dấu, mục bắt đầu bằng từ khoá lên trước, rồi mục có từ bắt đầu bằng từ khoá (sắp ổn định, giữ thứ tự gốc trong cùng nhóm).
   const items = useMemo<SelectOption[]>(() => {
-    const keyword = normalizeVietnamese(query);
-    if (!keyword) return emptyLabel !== undefined ? [{ value: '', label: emptyLabel }, ...options] : [...options];
-    return options
-      .map((option) => ({ option, rank: getMatchRank(getSearchTerms(option.label), keyword) }))
-      .filter((entry): entry is { option: SelectOption; rank: number } => entry.rank !== null)
-      .sort((first, second) => first.rank - second.rank)
-      .map((entry) => entry.option);
+    if (!query.trim()) return emptyLabel !== undefined ? [{ value: '', label: emptyLabel }, ...options] : [...options];
+    return filterOptionsByKeyword(options, query, getSearchTerms);
   }, [options, query, emptyLabel, getSearchTerms]);
 
   const open = () => {
@@ -115,7 +108,8 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
 
   return (
     <div
-      className="relative"
+      ref={rootRef}
+      className={isViewportAware ? 'relative scroll-mt-24' : 'relative'}
       onBlur={(event) => {
         // Chuyển focus sang phần tử khác ngoài ô này thì đóng danh sách.
         if (!event.currentTarget.contains(event.relatedTarget)) close();
@@ -124,6 +118,7 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
       {Icon && <Icon size={18} aria-hidden="true" className={INPUT_ICON_CLASS} />}
       <input
         {...inputProps}
+        ref={inputRef}
         id={id}
         type="text"
         role="combobox"
@@ -144,7 +139,7 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
         onFocus={open}
         onClick={open}
         onKeyDown={handleKeyDown}
-        className={`${getInputClass({ hasError, hasLeftIcon: Boolean(Icon), hasRightAddon: true })} ${className ?? ''}`}
+        className={twMerge(getInputClass({ hasError, hasLeftIcon: Boolean(Icon), hasRightAddon: true }), isViewportAware && 'text-base md:text-sm', className)}
       />
       <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
       {isOpen && (
@@ -155,7 +150,8 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
           // Không nhận focus bàn phím (Tab đi tiếp ra khỏi ô) và bấm thanh cuộn/đệm không làm ô nhập mất focus (đóng danh sách).
           tabIndex={-1}
           onMouseDown={(event) => event.preventDefault()}
-          className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
+          style={visibleMaxHeight === undefined ? undefined : { maxHeight: visibleMaxHeight }}
+          className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto overscroll-contain rounded-lg border border-gray-200 bg-white p-1 shadow-theme-lg dark:border-gray-700 dark:bg-gray-900"
         >
           {items.length === 0 && <li className="px-3 py-2 text-theme-xs text-gray-500 dark:text-gray-400">Không tìm thấy kết quả phù hợp.</li>}
           {items.map((item, index) => (
@@ -170,7 +166,7 @@ export const SearchableSelect = ({ id, options, value, onChange, icon: Icon, has
                 select(item);
               }}
               onMouseEnter={() => setActiveIndex(index)}
-              className={`cursor-pointer rounded-md px-3 py-2 text-sm text-gray-800 dark:text-white/90 ${
+              className={`cursor-pointer rounded-md px-3 py-2 text-sm ${isViewportAware ? 'flex min-h-11 items-center' : ''} text-gray-800 dark:text-white/90 ${
                 index === activeIndex ? 'bg-brand-50 dark:bg-brand-500/15' : ''
               } ${item.value === value ? 'font-semibold' : ''}`}
             >

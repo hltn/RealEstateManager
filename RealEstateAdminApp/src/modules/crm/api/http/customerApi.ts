@@ -20,6 +20,7 @@ import type {
   PersonaValueInput,
   PhoneLookupResult,
   PurgeResult,
+  UpdateCriteriaResult,
   UpdateCustomerInput,
   UpdateStatusResult,
 } from '../types';
@@ -125,8 +126,20 @@ export const patchStatus = async (customerId: string, body: { statusId: string; 
   return { status: toStatusRef(result.status), previousStatusId: result.previousStatusId ?? '', version: result.version, lastUpdatedAt: result.lastUpdatedAt };
 };
 
-export const patchCriteria = (customerId: string, version: number, criteria: CriteriaPatch): Promise<{ progress: number; version: number; lastUpdatedAt: string }> =>
-  crmHttp.patch(`${BASE}/${encodeURIComponent(customerId)}/criteria`, { version, ...criteria });
+interface CriteriaResultDto {
+  progress: number;
+  version: number;
+  lastUpdatedAt: string;
+  autoStatusChange?: { from: Parameters<typeof toStatusRef>[0] | null; to: Parameters<typeof toStatusRef>[0] };
+}
+
+/** Sửa tiêu chí; PT-023: nếu server tự đổi tình trạng theo tiến độ thì kèm `autoStatusChange` (map như `patchStatus`). */
+export const patchCriteria = async (customerId: string, version: number, criteria: CriteriaPatch): Promise<UpdateCriteriaResult> => {
+  const result = await crmHttp.patch<CriteriaResultDto>(`${BASE}/${encodeURIComponent(customerId)}/criteria`, { version, ...criteria });
+  const { autoStatusChange, ...rest } = result;
+  if (!autoStatusChange) return rest;
+  return { ...rest, autoStatusChange: { from: autoStatusChange.from ? toStatusRef(autoStatusChange.from) : null, to: toStatusRef(autoStatusChange.to) } };
+};
 
 /** `DELETE /crm/customers/:id?reason=` -> 204: xóa mềm (lý do bắt buộc). */
 export const deleteCustomerById = (customerId: string, reason: string): Promise<void> => crmHttp.del(`${BASE}/${encodeURIComponent(customerId)}`, { params: { reason } });

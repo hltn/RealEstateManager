@@ -1,5 +1,7 @@
 # Knowledge Articles — Architecture Design Spec
 
+> **Phiên bản tài liệu:** v1.0.1
+
 **Date:** 2026-08-16
 **Author:** Architect Agent
 **Status:** Draft

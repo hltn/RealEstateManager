@@ -16,6 +16,7 @@ import {
   DocsIcon,
   FileIcon,
   GroupIcon,
+  CloseIcon,
 } from "../icons";
 // [Prototype] Submenu module Quản lý khách hàng (CRM)
 import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
@@ -24,6 +25,7 @@ import { CRM_BASE_PATH } from "@crm/routes";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
 const HorizontaLDotsAny = HorizontaLDots as any;
+const CloseIconAny = CloseIcon as any;
 
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
@@ -111,7 +113,7 @@ const adminItems: NavItem[] = [
 ];
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleMobileSidebar } = useSidebar();
   const location = useLocation();
   const { user } = useAuth();
   const isAdmin = hasAnyRole(user, ["ADMIN"]);
@@ -152,6 +154,21 @@ const AppSidebar: React.FC = () => {
     },
     [location.pathname]
   );
+
+  // PT-025: sidebar mobile tự đóng khi ĐỔI route (kể cả chọn mục con hay điều hướng bằng code).
+  // Chỉ phản ứng khi pathname thật sự đổi (ref lưu pathname trước) để việc mở menu không tự đóng ngay;
+  // `toggleMobileSidebar` là toggle nên chỉ gọi khi đang mở, tránh bật mở lại sidebar đã đóng.
+  const previousPathnameRef = useRef(location.pathname);
+  useEffect(() => {
+    if (previousPathnameRef.current === location.pathname) return;
+    previousPathnameRef.current = location.pathname;
+    if (isMobileOpen) toggleMobileSidebar();
+  }, [location.pathname, isMobileOpen, toggleMobileSidebar]);
+
+  // Chạm lại mục của CHÍNH route đang đứng thì route không đổi (effect trên không chạy) -> đóng tại chỗ.
+  const handleNavigate = (path: string) => {
+    if (isMobileOpen && path === location.pathname) toggleMobileSidebar();
+  };
 
   useEffect(() => {
     let submenuMatched = false;
@@ -246,6 +263,7 @@ const AppSidebar: React.FC = () => {
             nav.path && (
               <Link
                 to={nav.path}
+                onClick={() => handleNavigate(nav.path as string)}
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}
@@ -283,6 +301,7 @@ const AppSidebar: React.FC = () => {
                   <li key={subItem.name}>
                     <Link
                       to={subItem.path}
+                      onClick={() => handleNavigate(subItem.path)}
                       className={`menu-dropdown-item ${
                         isActive(subItem.path)
                           ? "menu-dropdown-item-active"
@@ -326,8 +345,11 @@ const AppSidebar: React.FC = () => {
   );
 
   return (
+    // PT-024: neo top-0 + bottom-0 (inset-y-0) và h-dvh để panel phủ kín từ mép trên tới mép dưới
+    // THẤY ĐƯỢC của màn hình, co giãn theo thanh địa chỉ Safari (dvh); trước đây `mt-16` chừa 64px cho header
+    // nên hở khoảng trống phía trên. Chừa `env(safe-area-inset-*)` cho tai thỏ / thanh home iOS (desktop lg: bỏ).
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`fixed inset-y-0 left-0 h-dvh flex flex-col px-5 pl-[max(1.25rem,env(safe-area-inset-left))] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:pt-0 lg:pb-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -340,8 +362,17 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* PT-025: nút X nằm TRONG vùng nền trắng của panel, góc phải (không còn ở vùng nền tối bên trái); chỉ mobile. */}
+      <button
+        type="button"
+        onClick={toggleMobileSidebar}
+        aria-label="Đóng menu"
+        className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top))] z-10 flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
+      >
+        <CloseIconAny className="size-6" />
+      </button>
       <div className="py-8 flex justify-center">
-        <Link to="/">
+        <Link to="/" onClick={() => handleNavigate("/")}>
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <img
@@ -366,7 +397,7 @@ const AppSidebar: React.FC = () => {
           )}
         </Link>
       </div>
-      <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain duration-300 ease-linear no-scrollbar">
         <nav className="mb-6">
           <div className="flex flex-col gap-4">
             <div>

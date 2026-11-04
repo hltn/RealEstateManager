@@ -15,6 +15,20 @@ export async function openCustomerDetail(page: Page, customerId: string, fullNam
   await expect(page.getByRole('heading', { name: fullName }).first()).toBeVisible();
 }
 
+/**
+ * Mở form ghi chú chăm sóc ĐẦY ĐỦ ở chi tiết khách (PT-020, PT-028): form KHÔNG hiện sẵn, chỉ hiện sau khi bấm nút "Ghi chú".
+ * Có nhiều nút cùng tên, bấm nút nào cũng mở cùng form và `.first()` (thứ tự DOM) trúng:
+ * - desktop: nút biểu tượng ở đầu hồ sơ (thẻ "Nhật ký chăm sóc" cũng có nút "Ghi chú" ở đầu thẻ, cùng hàng tiêu đề);
+ * - mobile: nút ở thẻ "Tóm tắt hồ sơ" (thanh đáy cố định cũng có nút "Ghi chú", hiện ở mọi tab); cả hai tự chuyển sang tab "Nhật ký".
+ * Tab Nhật ký mobile KHÔNG còn nút "Ghi chú" riêng dưới thanh tab.
+ */
+export async function openCareLogComposer(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: 'Ghi chú', exact: true }).first().click();
+  const form = page.getByRole('form', { name: 'Thêm nhật ký chăm sóc' });
+  await expect(form).toBeVisible();
+  return form;
+}
+
 /** Ghi số liệu/quan sát UX vào báo cáo Playwright (annotation) để đối chiếu khi viết báo cáo phát hiện. */
 export function note(info: TestInfo, type: string, description: string): void {
   info.annotations.push({ type, description });
@@ -28,6 +42,24 @@ export function queryParam(url: string, name: string): string | null {
 
 /** Ô "Khách hàng" của form tạo lịch hẹn khi bị khóa (thẻ chỉ-đọc, role=group). */
 export const lockedCustomerCard = (page: Page): Locator => page.getByRole('group', { name: 'Khách hàng' });
+
+/**
+ * Ô "Dự án" của form tạo lịch hẹn là combobox có tìm kiếm (không còn là <select>): ô hiện TÊN dự án (không phải id), chọn bằng cách mở danh sách
+ * rồi bấm dòng theo tên ("Không chọn" = bỏ dự án).
+ */
+export async function selectAppointmentProject(page: Page, projectName: string): Promise<void> {
+  await page.getByLabel('Dự án', { exact: true }).click();
+  await page.getByRole('listbox', { name: 'Danh sách dự án' }).getByRole('option', { name: projectName, exact: true }).click();
+}
+
+/** Tên các dòng trong danh sách dự án của form tạo lịch hẹn theo thứ tự hiển thị (mở danh sách rồi đóng lại bằng Esc). */
+export async function listAppointmentProjectOptions(page: Page): Promise<string[]> {
+  const input = page.getByLabel('Dự án', { exact: true });
+  await input.click();
+  const names = await page.getByRole('listbox', { name: 'Danh sách dự án' }).getByRole('option').allTextContents();
+  await input.press('Escape');
+  return names;
+}
 
 /** JPEG hợp lệ do chính trình duyệt vẽ (canvas) để không phải đưa file nhị phân vào repo; luôn < 1 MB. */
 export async function makeJpeg(page: Page, seed = 0): Promise<Buffer> {

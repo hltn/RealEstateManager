@@ -1,5 +1,7 @@
 # [ PROJECT_PLAN ] | [ DATABASE_PLAN ] | [ DATABASE_MONGO_PLAN ] | [ UI_DESIGN_PLAN ]
 
+> **Phiên bản tài liệu:** v1.0.1
+
 > [!IMPORTANT]
 > **QUY TẮC ĐỒNG BỘ DỮ LIỆU:**
 > Khi 1 trong 4 file kế hoạch (Project, Database, Database Mongo, UI Design) thay đổi hoặc update tính năng, **bắt buộc** phải cập nhật cấu trúc dữ liệu (các trường dữ liệu) vào các file còn lại để đảm bảo tính nhất quán.

@@ -107,7 +107,7 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     /** Tải ảnh lên trước khi lưu ghi chú. Không làm mới danh sách (ảnh chưa gắn). */
     uploadCareLogAttachment: (customerId: string, file: File, signal?: AbortSignal) => toResult(() => care.uploadCareLogAttachment(customerId, file, signal)),
     deleteCareLogAttachment: (customerId: string, attachmentId: string) => toResult(() => care.deleteCareLogAttachment(customerId, attachmentId)),
-    /** Gỡ ảnh khỏi nhật ký ĐÃ LƯU (backend kiểm quyền sửa nhật ký: tác giả trong 24 giờ/Quản trị/Quản lý) và làm mới nhật ký + lịch sử. */
+    /** Gỡ ảnh khỏi nhật ký ĐÃ LƯU (backend kiểm quyền sửa nhật ký: tác giả/Quản trị/Quản lý trong phạm vi) và làm mới nhật ký + lịch sử. */
     removeSavedCareLogAttachment: (customerId: string, attachmentId: string) => write(() => care.deleteCareLogAttachment(customerId, attachmentId)),
 
     // --- Lịch hẹn ----------------------------------------------------------------------------------------------------

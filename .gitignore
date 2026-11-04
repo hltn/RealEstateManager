@@ -6,6 +6,7 @@ build/
 .env.*
 !.env.example
 !.env.docker.example
+!.env.staging.example
 !**/.env.example
 .DS_Store
 *.log
@@ -48,3 +49,6 @@ RealEstateBackendApp/.e2e-dist/
 /backups/
 /logs/
 /tmp/
+
+# Staging local (scripts/staging.sh): env giả sinh ngẫu nhiên, log, backup, dữ liệu tạm. Không bao giờ commit.
+/.staging/

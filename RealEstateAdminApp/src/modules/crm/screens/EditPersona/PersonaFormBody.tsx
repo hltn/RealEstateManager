@@ -14,6 +14,7 @@ import { FormField, getErrorId } from '@crm/components/form/FormField';
 import { MaskedIdInput } from '@crm/components/form/MaskedIdInput';
 import { SectionCard } from '@crm/components/form/SectionCard';
 import { getAreaSearchTerms } from '@crm/lib/areaMatch';
+import { SearchableMultiSelect } from '@crm/components/form/SearchableMultiSelect';
 import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
@@ -144,9 +145,12 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
           <SelectInput id={fieldId('source')} icon={Megaphone} emptyLabel="Chưa rõ" options={catalogs.leadSources.filter((source) => source.isActive || source.id === basic.sourceId).map((source) => ({ value: source.id, label: source.label }))} value={basic.sourceId} onChange={(event) => form.setBasicField('sourceId', event.target.value)} />
         </FormField>
       </div>
-      <ChipMultiSelect
+      <SearchableMultiSelect
+        id={fieldId('projects')}
         legend="Dự án quan tâm (chọn được nhiều)"
         icon={Building2}
+        listLabel="Danh sách dự án"
+        placeholder="Gõ để tìm dự án…"
         options={catalogs.projects.filter((project) => project.isActive || basic.interestedProjectIds.includes(project.id)).map((project) => ({ value: project.id, label: project.name }))}
         selected={basic.interestedProjectIds}
         onToggle={form.toggleProject}

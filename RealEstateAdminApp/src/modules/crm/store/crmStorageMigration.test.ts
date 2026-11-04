@@ -154,7 +154,7 @@ describe('migration -> v5 (dự án, audit)', () => {
     expect(new Set(projects.map((project) => project.code.toUpperCase())).size).toBe(projects.length);
     expect(projects[0].code).not.toBe('');
     expect(projects[2].code).toBe(original[2].code);
-    expect(projects[0].code).toMatch(/^[A-Z0-9_-]+$/);
+    expect(projects[0].code).toMatch(/^[A-Z0-9]+$/);
   });
 
   it('thêm auditLogs rỗng; dữ liệu v4 (đã có dự án kiểu cũ) cũng được chuyển lên v5', () => {
@@ -258,14 +258,27 @@ describe('migration v4 -> v5 vá dữ liệu cũ để sửa dự án không b�
     ]));
     const projects = loadCrmData()?.catalogs.projects ?? [];
     expect(projects.map((project) => project.code)[0]).toBe('DUP');
+    // Mã cũ có `_`/`-` KHÔNG bị cấp lại (mã cũ không migrate), chỉ chuẩn hoá HOA.
     expect(projects[3].code).toBe('CHU_THUONG-1');
     expect(new Set(projects.map((project) => project.code)).size).toBe(4);
     projects.forEach((project) => {
-      expect(isValidProjectCode(project.code)).toBe(true);
+      expect(project.code).toMatch(/^[A-Z0-9_-]{1,30}$/);
       expect(project.code).toBe(project.code.toUpperCase());
       // Không bị khoá: sửa/ngừng dự án cũ luôn qua được kiểm hợp lệ.
       expect(getProjectErrors(projects, project)).toEqual({});
     });
+  });
+
+  it('mã cũ có -/_ giữ nguyên (HOA); mã sai mẫu cũ (khoảng trắng, dấu, > 30 ký tự) hoặc rỗng vẫn được cấp lại theo quy tắc mới', () => {
+    store(v4With([
+      { ...base, id: 'p1', code: 'a_b-c', name: 'Dự án A', priceText: '', statusLabel: '' },
+      { ...base, id: 'p2', code: 'A B', name: 'Sky Park', priceText: '', statusLabel: '' },
+      { ...base, id: 'p3', code: 'MÃ', name: 'Đảo Kim Cương', priceText: '', statusLabel: '' },
+      { ...base, id: 'p4', code: 'X'.repeat(31), name: 'Dự án D', priceText: '', statusLabel: '' },
+      { ...base, id: 'p5', code: '', name: 'Dự án E', priceText: '', statusLabel: '' },
+    ]));
+    const codes = (loadCrmData()?.catalogs.projects ?? []).map((project) => project.code);
+    expect(codes).toEqual(['A_B-C', 'SKYPARK', 'DAOKIMCUONG', 'DUAND', 'DUANE']);
   });
 
   it('tên rỗng, quá dài, trùng (không dấu) được vá theo thứ tự', () => {

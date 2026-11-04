@@ -1,5 +1,7 @@
 # Kế hoạch Triển khai Backend (NestJS & MongoDB) - Real Estate Manager
 
+> **Phiên bản tài liệu:** v1.0.1
+
 Tài liệu này mô tả chi tiết kiến trúc, công nghệ, cấu trúc thư mục và lộ trình các bước để xây dựng hệ thống API Backend (máy chủ) phục vụ cho ứng dụng quản lý bất động sản. Hệ thống được thiết kế dựa trên cấu trúc dữ liệu NoSQL được định nghĩa tại `01_Infrastructure/03_Database_Mongo_Plan.md`.
 
 ---

@@ -301,7 +301,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
             op.includes('/users/{id}/team')) &&
           !isM2Route(op),
       );
-      // teams 4 + members 3 (v1.0.3 mục C) + users/:id/team 1 + users/:id/teams 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 34
+      // teams 4 + members 3 (v1.0.2 mục C) + users/:id/team 1 + users/:id/teams 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 34
       expect(crmOps).toHaveLength(34);
       for (const op of [
         'POST /api/v1/crm/project-restorations',

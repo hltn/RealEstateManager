@@ -57,7 +57,7 @@ export enum CrmAuditAction {
   CUSTOMER_DELETED = 'CUSTOMER_DELETED',
   CUSTOMER_RESTORED = 'CUSTOMER_RESTORED',
   CUSTOMER_ANONYMIZED = 'CUSTOMER_ANONYMIZED',
-  /** v1.0.3 mục D: xóa vĩnh viễn khách đã xóa mềm; dòng DUY NHẤT còn lại của khách, KHÔNG chứa PII (chỉ số lượng bản ghi đã xóa). */
+  /** v1.0.2 mục D: xóa vĩnh viễn khách đã xóa mềm; dòng DUY NHẤT còn lại của khách, KHÔNG chứa PII (chỉ số lượng bản ghi đã xóa). */
   CUSTOMER_PURGED = 'CUSTOMER_PURGED',
   /** Chỉ ghi khi tra SĐT ra khách NGOÀI phạm vi (phát hiện dò số). */
   PHONE_LOOKUP = 'PHONE_LOOKUP',

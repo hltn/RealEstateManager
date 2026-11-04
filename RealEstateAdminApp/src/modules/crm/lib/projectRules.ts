@@ -4,18 +4,25 @@
  * màn Dự án, tab Dự án của Cài đặt, bộ lọc, migration localStorage và lớp dữ liệu (mock API) — không phụ thuộc React/store.
  */
 import { formatBudgetRange } from '@crm/lib/customerRules';
-import { normalizeVietnamese, toSlug } from '@crm/lib/text';
+import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmCatalogs, FieldChange, Project, ProjectPriceUnit, ProjectStatus } from '@crm/types/crm';
 
 export const PROJECT_NAME_MAX_LENGTH = 80;
-export const PROJECT_CODE_MAX_LENGTH = 20;
+export const PROJECT_CODE_MAX_LENGTH = 30;
 export const PROJECT_FIELD_MAX_LENGTH = 200;
 export const PROJECT_TYPES_MAX_COUNT = 10;
 /** Nhãn khi dự án không còn trong danh mục (đã xoá cứng/không tìm thấy). */
 export const UNKNOWN_PROJECT_LABEL = 'Dự án đã ngừng';
 
-/** Mã dự án theo doc 04/05: `^[A-Za-z0-9_-]{1,20}$` (lưu viết hoa; so trùng không phân biệt hoa thường). */
-const PROJECT_CODE_PATTERN = /^[A-Za-z0-9_-]{1,20}$/;
+/**
+ * Mã dự án (quy tắc mới): chỉ chữ A-Z (không dấu) và số 0-9, viết liền (không khoảng trắng, không `-`, không `_`), 1-30 ký tự.
+ * Lưu viết hoa; so trùng không phân biệt hoa thường. Mã cũ trên production có thể còn `-`/`_` (không migrate): xem `getProjectErrors`.
+ */
+const PROJECT_CODE_PATTERN = new RegExp(`^[A-Z0-9]{1,${PROJECT_CODE_MAX_LENGTH}}$`, 'i');
+
+const PROJECT_CODE_PATTERN_MESSAGE = 'Mã chỉ gồm chữ không dấu và số, viết liền, không có gạch ngang hoặc gạch dưới.';
+/** Mã dự phòng khi tên rỗng hoặc toàn ký tự lạ. */
+const FALLBACK_PROJECT_CODE = 'DUAN';
 
 export const isValidProjectCode = (code: string): boolean => PROJECT_CODE_PATTERN.test(code.trim());
 
@@ -108,18 +115,23 @@ export const isProjectCodeTaken = (existing: readonly Project[], project: Pick<P
  * Lỗi theo trường (rỗng = hợp lệ). Bắt buộc: tên + mã. Tên/mã không trùng dự án khác (tên so không dấu, không phân biệt hoa thường;
  * mã so không phân biệt hoa thường) — tính cả dự án đã ngừng hoạt động hoặc đã xoá mềm vì mã là duy nhất kể cả dự án đã xoá.
  * Giá: không âm; khi có cả hai thì "từ" <= "đến".
+ * Mã cũ (có `-`/`_`, không migrate): nếu mã không đổi so với mã gốc (không phân biệt hoa thường) thì KHÔNG báo lỗi mẫu — quy tắc mới
+ * chỉ áp khi Thêm mới hoặc khi đổi sang mã khác. Mã gốc lấy từ `options.originalCode` (nơi gọi truyền mã của dự án đang sửa); không
+ * truyền thì dự phòng tìm dự án cùng id trong `existing`.
  */
-export const getProjectErrors = (existing: readonly Project[], project: Project): ProjectErrors => {
+export const getProjectErrors = (existing: readonly Project[], project: Project, options: { originalCode?: string } = {}): ProjectErrors => {
   const errors: ProjectErrors = {};
   const name = project.name.trim();
   const code = project.code.trim().toUpperCase();
   const others = existing.filter((item) => item.id !== project.id);
+  const originalCode = (options.originalCode ?? existing.find((item) => item.id === project.id)?.code)?.trim().toUpperCase();
+  const isCodeUnchanged = originalCode !== undefined && originalCode === code;
   if (!name) errors.name = 'Vui lòng nhập tên dự án.';
   else if (name.length > PROJECT_NAME_MAX_LENGTH) errors.name = `Tên tối đa ${PROJECT_NAME_MAX_LENGTH} ký tự.`;
   else if (others.some((item) => normalizeVietnamese(item.name) === normalizeVietnamese(name))) errors.name = `Đã có dự án tên "${name}".`;
   if (!code) errors.code = 'Vui lòng nhập mã dự án.';
   else if (code.length > PROJECT_CODE_MAX_LENGTH) errors.code = `Mã tối đa ${PROJECT_CODE_MAX_LENGTH} ký tự.`;
-  else if (!PROJECT_CODE_PATTERN.test(code)) errors.code = 'Mã chỉ gồm chữ không dấu, số, gạch ngang hoặc gạch dưới.';
+  else if (!isCodeUnchanged && !PROJECT_CODE_PATTERN.test(code)) errors.code = PROJECT_CODE_PATTERN_MESSAGE;
   else if (isProjectCodeTaken(existing, project)) errors.code = `Mã dự án "${code}" đã tồn tại.`;
   (['developer', 'location'] as const).forEach((field) => {
     if (project[field].trim().length > PROJECT_FIELD_MAX_LENGTH) errors[field] = `Tối đa ${PROJECT_FIELD_MAX_LENGTH} ký tự.`;
@@ -137,13 +149,17 @@ export const getProjectErrors = (existing: readonly Project[], project: Project)
 export const getFirstProjectError = (errors: ProjectErrors): string | null =>
   PROJECT_FIELD_ORDER.map((field) => errors[field]).find((message): message is string => Boolean(message)) ?? null;
 
-/** Mã gợi ý từ tên ("Sky Park" -> "SKY_PARK"), không trùng `takenCodes` (so không phân biệt hoa thường), luôn hợp lệ theo mẫu. */
+/**
+ * Mã gợi ý từ tên theo quy tắc mới: bỏ dấu tiếng Việt (đ -> d), bỏ mọi ký tự ngoài A-Z0-9 (kể cả khoảng trắng), viết hoa, cắt 30 ký tự
+ * ("Sky Park" -> "SKYPARK"); tên rỗng/toàn ký tự lạ -> "DUAN". Trùng `takenCodes` (không phân biệt hoa thường) thì thêm hậu tố số
+ * tăng dần ("SKYPARK2", "SKYPARK3") — cắt phần gốc để tổng vẫn <= 30 ký tự. Luôn hợp lệ theo mẫu.
+ */
 export const suggestProjectCode = (name: string, takenCodes: Iterable<string>): string => {
   const taken = new Set([...takenCodes].map((code) => code.trim().toUpperCase()));
-  const base = toSlug(name).toUpperCase().slice(0, PROJECT_CODE_MAX_LENGTH).replace(/^[_-]+|[_-]+$/g, '') || 'DUAN';
+  const base = normalizeVietnamese(name).replace(/[^a-z0-9]/g, '').toUpperCase().slice(0, PROJECT_CODE_MAX_LENGTH) || FALLBACK_PROJECT_CODE;
   let candidate = base;
   for (let suffix = 2; taken.has(candidate); suffix += 1) {
-    const tail = `-${suffix}`;
+    const tail = String(suffix);
     candidate = `${base.slice(0, PROJECT_CODE_MAX_LENGTH - tail.length)}${tail}`;
   }
   return candidate;

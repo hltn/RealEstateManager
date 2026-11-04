@@ -1,5 +1,7 @@
 # 01_Auth_Module_Plan.md
 
+> **Phiên bản tài liệu:** v1.0.1
+
   
 
 ## Trạng thái tài liệu

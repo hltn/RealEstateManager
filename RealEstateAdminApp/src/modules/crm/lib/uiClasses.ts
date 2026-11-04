@@ -61,8 +61,10 @@ export const BUTTON_PRIMARY_BASE_CLASS =
 export const BUTTON_PRIMARY_CLASS = `${BUTTON_PRIMARY_BASE_CLASS} ${BUTTON_SIZE_MD}`;
 export const BUTTON_PRIMARY_LG_CLASS = `${BUTTON_PRIMARY_BASE_CLASS} ${BUTTON_SIZE_LG}`;
 
-/** Nút xanh lá (Zalo) — token success thay `emerald` của Stitch. */
-export const BUTTON_SUCCESS_LG_CLASS = `inline-flex items-center justify-center gap-2 rounded-lg bg-success-500 font-medium text-white transition-colors hover:bg-success-600 active:scale-[0.98] ${BUTTON_SIZE_LG}`;
+/** Nút xanh lá (Zalo), chưa có padding/cỡ chữ — token success thay `emerald` của Stitch. */
+export const BUTTON_SUCCESS_BASE_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-success-500 font-medium text-white transition-colors hover:bg-success-600 active:scale-[0.98]';
+export const BUTTON_SUCCESS_LG_CLASS = `${BUTTON_SUCCESS_BASE_CLASS} ${BUTTON_SIZE_LG}`;
 
 /** Nút viền, chưa có padding/cỡ chữ — `UserManagementScreen.tsx:207`. */
 export const BUTTON_OUTLINE_BASE_CLASS =
@@ -208,6 +210,27 @@ export const CHECKBOX_CLASS = 'h-4 w-4 shrink-0 cursor-pointer rounded border-gr
 /** Icon trái trong ô nhập — mẫu "Ô tìm có icon" `ManageWpScreen.tsx:738-748`. */
 export const INPUT_ICON_CLASS = 'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500';
 
+/**
+ * Padding trái của ô có icon bên trái (icon 18px đặt ở `left-3` => chiếm tới 30px; 44px chừa ~14px đệm).
+ * NGUỒN DUY NHẤT: mọi ô nhập/select có icon (`TextInput`, `SelectInput`, `SearchableSelect`, `LocationInput`,
+ * `ProjectField`) đi qua `getInputClass`/`getSelectClass`, không tự viết `pl-*`.
+ */
+export const INPUT_ICON_PAD_CLASS = 'pl-11';
+
+/**
+ * Reset giao diện gốc để `padding` được tôn trọng: Safari iOS vẽ ô `time`/`date`/`select` bằng widget hệ thống,
+ * bỏ qua `padding-left` và canh giữa giá trị -> chữ "09:30" đè lên icon. `appearance: none` (kèm tiền tố
+ * -webkit-) + căn trái giá trị bên trong ô ngày giờ + chiều cao tối thiểu để ô rỗng không xẹp dòng.
+ */
+export const NATIVE_CONTROL_RESET_CLASS =
+  'appearance-none [-webkit-appearance:none] [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:min-h-[1.5em]';
+
+/**
+ * Bổ sung cho `<select>` CÓ icon trái: đã `appearance-none` nên mất mũi tên gốc -> chừa `pr-10` cho mũi tên tự vẽ
+ * (`SelectChevron`). Select không icon giữ nguyên mũi tên gốc.
+ */
+export const SELECT_WITH_ICON_CLASS = 'appearance-none [-webkit-appearance:none]';
+
 const FIELD_BASE_CLASS =
   'w-full rounded-lg border text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60 dark:text-white/90 dark:placeholder:text-gray-500';
 const FIELD_OK_CLASS = 'border-gray-200 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-700';
@@ -221,15 +244,15 @@ export interface InputClassOptions {
 
 /** Ô nhập form 1 dòng cao 44px (mẫu "form trong modal" `UserManagementScreen.tsx:379`) + viền đỏ khi lỗi. */
 export const getInputClass = ({ hasError = false, hasLeftIcon = false, hasRightAddon = false }: InputClassOptions = {}): string =>
-  `${FIELD_BASE_CLASS} h-11 bg-transparent py-2.5 ${hasError ? FIELD_ERROR_CLASS : FIELD_OK_CLASS} ${hasLeftIcon ? 'pl-10' : 'pl-4'} ${
-    hasRightAddon ? 'pr-10' : 'pr-4'
-  }`;
+  `${FIELD_BASE_CLASS} ${NATIVE_CONTROL_RESET_CLASS} h-11 bg-transparent py-2.5 ${hasError ? FIELD_ERROR_CLASS : FIELD_OK_CLASS} ${
+    hasLeftIcon ? INPUT_ICON_PAD_CLASS : 'pl-4'
+  } ${hasRightAddon ? 'pr-10' : 'pr-4'}`;
 
-/** `<select>` gốc: nền đặc + `color-scheme` tối để danh sách thả xuống đọc được ở chế độ tối (`UserManagementScreen.tsx:420`). */
+/** `<select>` gốc (có icon trái: bỏ giao diện gốc + mũi tên tự vẽ, xem `SELECT_WITH_ICON_CLASS`): nền đặc + `color-scheme` tối để danh sách thả xuống đọc được ở chế độ tối (`UserManagementScreen.tsx:420`). */
 export const getSelectClass = ({ hasError = false, hasLeftIcon = false }: InputClassOptions = {}): string =>
-  `${FIELD_BASE_CLASS} h-11 cursor-pointer bg-white py-2.5 pr-4 dark:bg-gray-900 dark:[color-scheme:dark] ${
+  `${FIELD_BASE_CLASS} h-11 cursor-pointer bg-white py-2.5 dark:bg-gray-900 dark:[color-scheme:dark] ${
     hasError ? FIELD_ERROR_CLASS : FIELD_OK_CLASS
-  } ${hasLeftIcon ? 'pl-10' : 'pl-4'}`;
+  } ${hasLeftIcon ? `${INPUT_ICON_PAD_CLASS} pr-10 ${SELECT_WITH_ICON_CLASS}` : 'pl-4 pr-4'}`;
 
 /** Ô nhập nhiều dòng. */
 export const getTextareaClass = (hasError = false): string =>

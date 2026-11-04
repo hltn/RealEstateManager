@@ -1,5 +1,7 @@
 # Bổ sung & sửa đổi tính năng: Module Quản lý & chăm sóc khách hàng (CRM)
 
+> **Phiên bản tài liệu:** v1.0.2
+
 > **Mục đích file:** gom **mọi bổ sung/sửa đổi tính năng phát sinh sau khi các tài liệu 01–06 đã chốt** vào một chỗ, theo từng phiên bản. Mỗi phiên bản là một mục độc lập: có ngày, danh sách thay đổi, trạng thái từng thay đổi, thiết kế, API, dữ liệu, giao diện, kiểm thử, rủi ro. Các tài liệu cũ **không bị viết lại**; chỉ có một dòng trỏ về file này ở nơi liên quan.
 > **Tài liệu liên quan:** [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) (data model §3.8, phân quyền §4), [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) (API), [`02_Auth_Module_Architecture.md`](../02_Module_Auth/02_Auth_Module_Architecture.md) (Auth).
 > **Chuẩn áp dụng:** skill `nodejs-react-mongo-coding-guidelines` (API `/api/v1`, soft delete, transaction, audit trail, migration idempotent).
@@ -8,21 +10,23 @@
 
 ## Quy ước phiên bản
 
-1. **Số phiên bản dạng ba phần** `vX.Y.Z` (hiện tại `v1.0.3`; sau này `v1.0.4` hoặc cao hơn). Mỗi phiên bản là **một mục độc lập** ở cấp `##`, có ngày, danh sách thay đổi và trạng thái từng thay đổi.
+1. **Số phiên bản dạng ba phần** `vX.Y.Z` (hiện tại `v1.0.2`; phiên bản kế tiếp `v1.0.3` đang ở trạng thái Kế hoạch, xem ghi chú đánh số lại bên dưới; sau này `v1.0.4` hoặc cao hơn). Mỗi phiên bản là **một mục độc lập** ở cấp `##`, có ngày, danh sách thay đổi và trạng thái từng thay đổi.
 2. **Không sửa phiên bản cũ, chỉ thêm mới ở cuối file.** Riêng cột trạng thái trong bảng tổng quan của chính phiên bản đó và mục lục phiên bản được cập nhật khi tiến độ thay đổi (Kế hoạch → Đang làm → Xong).
 3. Nếu một quy tắc bị thay đổi ở phiên bản sau thì ghi rõ **"thay thế quy tắc X của vA.B.C"** ngay đầu thay đổi đó; phiên bản cũ giữ nguyên để còn truy vết.
 4. Mỗi thay đổi đều có các tiểu mục: Bối cảnh/vấn đề, Quyết định nghiệp vụ, Thiết kế/quy tắc, API thay đổi, Dữ liệu & migration, Giao diện, Ảnh hưởng tài liệu khác, Kiểm thử/nghiệm thu, Rủi ro/điều chưa kiểm chứng.
 5. Trạng thái dùng 3 giá trị: **Kế hoạch** · **Đang làm** · **Xong**.
+6. **Đánh số lại ngày 2026-11-02:** đợt A–D là v1.0.2 (đã lên production); các việc sửa sau test production nằm ở [`08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md). Mục lục phiên bản của cả hệ thống (không riêng CRM) ở [`08_Quan_Ly_Phien_Ban/README.md`](../08_Quan_Ly_Phien_Ban/README.md).
 
 ## Mục lục phiên bản
 
 | Phiên bản | Ngày | Nội dung | Trạng thái |
 |---|---|---|---|
-| [v1.0.3](#v103-2026-10-29) | 2026-10-29 | 4 sửa đổi: (A) nhiều role + nhiều nhóm cho một tài khoản; (B) khu vực theo 34 tỉnh thành; (C) thêm/gỡ/xem thành viên nhóm; (D) xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" | Đang làm – Đợt 1 (A, B) đã code + QA lần 2 đạt, chờ duyệt và chạy migration; Đợt 2: C (BE + FE) đã code, BE QA đạt, FE đang QA; D: BE đã code + QA đạt 2026-10-30, FE đang QA |
+| [v1.0.2](#v102-2026-10-29) | 2026-10-29 | 4 sửa đổi: (A) nhiều role + nhiều nhóm cho một tài khoản; (B) khu vực theo 34 tỉnh thành; (C) thêm/gỡ/xem thành viên nhóm; (D) xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" | Đã triển khai production 2026-11-02 (commit `e6099c0`; code A–D, cả BE lẫn FE, đều nằm trong commit này; migration 005/006 đã chạy trên VPS). **Chưa đóng (Cổng 3)**: cần xác nhận kết quả QA cuối của FE C/D (ghi nhận gần nhất 2026-10-30 là "FE đang QA") và nghiệm thu thực tế trên production (chưa có ai test, xem `08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`) |
+| v1.0.3 (Kế hoạch) | chưa có | Các việc cần sửa sau khi chạy test trên production; không ghi trong file này mà ở [`../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md) | Kế hoạch |
 
 ---
 
-## v1.0.3 (2026-10-29)
+## v1.0.2 (2026-10-29)
 
 ### 1. Tổng quan
 
@@ -36,6 +40,8 @@
 **Trạng thái thực tế (cập nhật 2026-10-29):** Đợt 1 (A multi-role/nhóm BE, B 34 tỉnh BE + FE) **đã code và QA lần 2 đạt**; code nằm ở commit nháp `d972538` cùng vài file chưa commit. **Migration 005 và 006 CHƯA chạy trên dev.** Đợt 2: **C** (màn thành viên nhóm + UI nhiều role/nhóm + nguồn riêng cho bộ lọc người phụ trách) **đã code (BE + FE)**; BE QA đạt (116/117, test đếm route Swagger đã sửa 31 → 34), FE đang QA. **D** (xóa/khôi phục/xóa vĩnh viễn) **BE đã code, FE chưa** (hợp đồng API ở mục 7.4); chờ QA BE và coder FE.
 
 **Cổng bắt buộc:** **không chạy migration 005/006 lên DB dev** (và chưa commit chính thức phần còn lại) cho tới khi Oniichan đọc tài liệu này và đồng ý.
+
+**Cập nhật 2026-11-02 (đánh số lại thành v1.0.2):** v1.0.2 có ba mốc ngày: 2026-10-29 soạn mục này, 2026-11-01 ngày commit mà thẻ git cục bộ `v1.0.2` trỏ tới, 2026-11-02 lên production. Toàn bộ đợt A–D nằm trong commit production `e6099c0`; migration 005 (cập nhật 3 tài khoản) và 006 (tạo 34 tỉnh/thành, xóa 0 khu vực cũ) **đã chạy trên VPS production ngày 2026-11-02**. Các đoạn "chưa chạy trên dev" và "Cổng 1/2/3" bên dưới là lịch sử trước khi lên production, giữ nguyên để truy vết. Việc chưa kiểm chứng: kết quả QA cuối của FE C/D và test thao tác thật trên production (cần xác nhận).
 
 ### 2. Quyết định của Oniichan (đã chốt)
 
@@ -368,7 +374,7 @@ Không có migration. Xóa vĩnh viễn là thao tác dữ liệu có transactio
 
 ---
 
-### 8. Kế hoạch triển khai v1.0.3
+### 8. Kế hoạch triển khai v1.0.2
 
 #### 8.1 Thứ tự và phụ thuộc
 

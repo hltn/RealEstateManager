@@ -13,6 +13,19 @@ log()  { printf '[%s] %s\n' "$LOG_PREFIX" "$*"; }
 warn() { printf '[%s] CẢNH BÁO: %s\n' "$LOG_PREFIX" "$*" >&2; }
 die()  { printf '[%s] LỖI: %s\n' "$LOG_PREFIX" "$*" >&2; exit 1; }
 
+# In MỘT trường của `docker inspect -f <template> <container>`; container không tồn tại (hoặc không đọc được) thì in $3
+# (mặc định "missing"). Không dùng `$(docker inspect ... || echo missing)`: khi lỗi, docker vẫn có thể in một dòng TRỐNG ra stdout,
+# ghép với "missing" thành "\nmissing" (cảnh báo bị xuống dòng giữa chừng). Docker thoát mã khác 0 thì KHÔNG tin stdout, dùng giá trị
+# mặc định; thành công thì chỉ lấy dòng đầu, rỗng cũng rơi về mặc định. `--` đặt trước tên container để tên bắt đầu bằng `-` không
+# bị hiểu là cờ.
+inspect_field() {
+  local v rc=0
+  v="$(docker inspect -f "$2" -- "$1" 2>/dev/null)" || rc=$?
+  if (( rc != 0 )); then printf '%s' "${3:-missing}"; return 0; fi
+  v="${v%%$'\n'*}"
+  printf '%s' "${v:-${3:-missing}}"
+}
+
 # Quyền (dạng bát phân, vd 600) của một file; hỗ trợ GNU stat (Ubuntu) và BSD stat.
 file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
@@ -89,10 +102,13 @@ require_free_disk_gb() {
 # Kiểm tra file backup mongodump là bản sao lưu DB `realestate` DÙNG ĐƯỢC, không chỉ đúng định dạng:
 #   1) là file thường, > 0 byte; 2) gzip -t qua; 3) `mongorestore --dryRun -v` (CHỈ ĐỌC, không ghi gì) trong container
 #   mongo đọc được archive và liệt kê namespace `realestate.users`. Bước 3 có thời hạn OPS_EXEC_TIMEOUT giây.
+#   Tham số thứ 3 trở đi (tùy chọn): tên collection BẮT BUỘC có thêm trong archive (vd raw_articles news_articles), dùng khi
+#   migration sẽ ghi/xóa ở các collection đó: backup cắt --nsInclude realestate.users sẽ bị từ chối.
 # Mật khẩu root lấy từ biến môi trường trong container và đưa cho mongorestore qua pipe (process substitution),
 # không nằm trên dòng lệnh. Trả 0 nếu hợp lệ; ngược lại in lý do ra stderr và trả 1 (caller quyết định dừng).
 verify_backup_archive() {
-  local f="$1" mongo="${2:-realestate_mongo}" out rc
+  local f="$1" mongo="${2:-realestate_mongo}" out rc coll
+  local -a extra_colls=("${@:3}")
   if [[ ! -f "$f" || ! -s "$f" ]]; then
     warn "Backup '$f' không tồn tại hoặc rỗng (0 byte)."
     return 1
@@ -117,5 +133,57 @@ verify_backup_archive() {
     warn "Backup '$f' không chứa namespace realestate.users (không phải dump của DB realestate, hoặc DB chưa có user). Nếu chắc chắn backup đúng, nguyên nhân khả dĩ khác là phiên bản mongorestore đổi chữ trong log (script tìm dòng 'archive prelude \`realestate.users\`'): kiểm tra thủ công bằng 'mongorestore --dryRun -v' (tài liệu mục 6) rồi báo để sửa script."
     return 1
   fi
+  for coll in "${extra_colls[@]+"${extra_colls[@]}"}"; do
+    if ! grep -qF 'archive prelude `realestate.'"${coll}"'`' <<<"$out"; then
+      warn "Backup '$f' KHÔNG chứa namespace realestate.${coll} (backup cắt --nsInclude, hoặc dump trước khi collection này có). Migration này ghi/xóa ở collection đó nên cần backup đủ: tạo lại backup toàn DB realestate (mongodump --db realestate, không --nsInclude)."
+      return 1
+    fi
+  done
   return 0
+}
+
+# In ra (cách nhau bằng khoảng trắng) những collection trong số các tên được truyền vào ĐANG TỒN TẠI trong DB `realestate` thật
+# (CHỈ ĐỌC: getCollectionNames). Dùng để chỉ đòi backup chứa collection có thật (collection chưa tồn tại thì mongodump không
+# sinh namespace cho nó, đòi nó sẽ chặn oan). Mật khẩu root xác thực TRONG script mongosh (biến môi trường container), không
+# lên dòng lệnh. Trả 1 (không in gì) nếu không hỏi được: caller PHẢI dừng, không đoán.
+existing_collections() {
+  local mongo="$1" out js coll found=""
+  shift
+  js="db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const names = db.getSiblingDB('realestate').getCollectionNames();"
+  for coll in "$@"; do
+    [[ "$coll" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    js+="
+print('COLL_EXISTS:${coll}=' + (names.includes('${coll}') ? 1 : 0));"
+  done
+  out="$(timeout "$OPS_EXEC_TIMEOUT" docker exec -i "$mongo" mongosh --quiet --norc --file /dev/stdin <<<"$js" 2>&1)" || return 1
+  for coll in "$@"; do
+    if grep -qxF "COLL_EXISTS:${coll}=1" <<<"$out"; then
+      found+="${found:+ }${coll}"
+    elif ! grep -qxF "COLL_EXISTS:${coll}=0" <<<"$out"; then
+      return 1
+    fi
+  done
+  printf '%s' "$found"
+}
+
+# In (cách nhau bằng khoảng trắng) tên các collection CÓ DỮ LIỆU (>= 1 document) trong DB `realestate` thật (CHỈ ĐỌC), bỏ qua view và
+# collection hệ thống của Mongo (tên bắt đầu bằng `system.`, gồm system.buckets.* của time-series; bản thân collection time-series
+# vẫn được xét; collection `system` của ứng dụng KHÔNG bị bỏ qua). "Có dữ liệu" kiểm bằng findOne({}, {_id: 1}) chứ KHÔNG dùng
+# estimatedDocumentCount(): số đếm trong metadata có thể sai (về 0) sau khi mongod bị kill -9, và kết quả sai theo hướng "trống" sẽ
+# làm bỏ qua backup oan. Kết quả rỗng (nhưng trả 0) nghĩa là không có document nào ở collection nào. Mật khẩu root xác thực TRONG
+# script mongosh, không lên dòng lệnh. Trả 1 (không in gì) nếu không hỏi được hoặc output không có dòng kết quả: caller PHẢI dừng.
+nonempty_collections() {
+  local mongo="$1" out js line
+  read -r -d '' js <<'JSEOF' || true
+db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB('realestate');
+const busy = d.getCollectionInfos({ type: { $ne: 'view' } }).map(c => c.name)
+  .filter(n => !n.startsWith('system.')).filter(n => d.getCollection(n).findOne({}, { _id: 1 }) !== null);
+print('NONEMPTY_COLLS=' + busy.join(' '));
+JSEOF
+  out="$(timeout "$OPS_EXEC_TIMEOUT" docker exec -i "$mongo" mongosh --quiet --norc --file /dev/stdin <<<"$js" 2>&1)" || return 1
+  line="$(grep -E '^NONEMPTY_COLLS=' <<<"$out" | tail -n 1)" || return 1
+  [[ -n "$line" ]] || return 1
+  printf '%s' "${line#NONEMPTY_COLLS=}"
 }

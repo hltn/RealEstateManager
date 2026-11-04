@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/run-migration.sh — chạy MỘT migration (005 hoặc 006) trên máy chủ production, trong network của compose.
+# scripts/run-migration.sh — chạy MỘT migration cũ (002 đến 006) trên máy chủ production, trong network của compose.
 #
 #   bash scripts/run-migration.sh 005            # dry-run (mặc định, không ghi gì)
 #   bash scripts/run-migration.sh 005 --apply    # ghi thật (bắt buộc có backup mongodump MỚI, đã kiểm nội dung)
 #   bash scripts/run-migration.sh 006 --apply --cleanup
+#   bash scripts/run-migration.sh 002           # dry-run 002 (urlHash SHA-256): dùng khi probe 002 của deploy.sh báo "không xác minh được"
 # (Dùng `bash ...`, không phụ thuộc bit thực thi: commit từ Windows có thể làm mất bit này. Chạy trong tmux/nohup.)
 #
 # Vì sao cần script này: image backend production (stage `production` của RealEstateBackendApp/Dockerfile) chỉ có
@@ -52,8 +53,13 @@ ENV_TMP=""
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash scripts/run-migration.sh <005|006> [--apply] [--cleanup] [--yes] [--help]
+Cách dùng: bash scripts/run-migration.sh <002|003|004|005|006> [--apply] [--cleanup] [--yes] [--help]
 
+  002         rehash urlHash MD5 -> SHA-256 (raw_articles, news_articles), XÓA VĨNH VIỄN bài trùng url. Snapshot NDJSON của chính
+              script nằm TRONG container (mất khi thoát): --apply chỉ dựa vào backup mongodump (phải chứa cả raw_articles và
+              news_articles nếu chúng tồn tại) và cần xác nhận gõ tay (hoặc --yes), như 006.
+  003         bỏ TTL index expiresAt của googledrivetokens.
+  004         users.teamId = null cho tài khoản thiếu + index {teamId, status}.
   005         users.roles[] + users.teamIds[] (nhiều role/nhóm). PHẢI chạy trước khi backend mới khởi động.
   006         khu vực -> đúng 34 tỉnh/thành. XÓA VĨNH VIỄN các khu vực cũ (không hoàn tác được bằng script).
   --apply     Ghi thật. Mặc định là dry-run (chỉ đếm, không ghi). Với --apply BẮT BUỘC có backup mongodump
@@ -62,7 +68,7 @@ Cách dùng: bash scripts/run-migration.sh <005|006> [--apply] [--cleanup] [--ye
   --cleanup   Xóa image tạm realestate-migrate:<tag> VÀ chạy `docker builder prune -f` sau khi xong (kể cả khi lỗi).
               Lưu ý: image rm chỉ giải phóng image; build cache (~2.2 GB) chỉ mất khi prune. `builder prune -f` xóa TOÀN BỘ
               build cache không dùng (không chỉ của migration): `up --build` sau đó dựng lại từ đầu, chậm hơn và lại tốn đĩa.
-  --yes       Bỏ bước xác nhận gõ tay của 006 --apply (dành cho chạy không có terminal).
+  --yes       Bỏ bước xác nhận gõ tay của 002 --apply và 006 --apply (dành cho chạy không có terminal).
   -h, --help  Hiện trợ giúp này.
 
 Chạy ở thư mục gốc repo trên máy chủ, sau khi mongo đã healthy (docker compose --env-file .env.docker up -d mongo ...).
@@ -94,7 +100,7 @@ trap cleanup EXIT
 # ── Tham số ──────────────────────────────────────────────────────────────────
 for arg in "$@"; do
   case "$arg" in
-    005|006) [[ -z "$MIGRATION" ]] || { trap - EXIT; echo "Chỉ chạy MỘT migration mỗi lần." >&2; exit 2; }; MIGRATION="$arg" ;;
+    002|003|004|005|006) [[ -z "$MIGRATION" ]] || { trap - EXIT; echo "Chỉ chạy MỘT migration mỗi lần." >&2; exit 2; }; MIGRATION="$arg" ;;
     --apply) APPLY=1 ;;
     --cleanup) CLEANUP=1 ;;
     --yes) ASSUME_YES=1 ;;
@@ -106,6 +112,9 @@ if [[ -z "$MIGRATION" ]]; then trap - EXIT; usage >&2; exit 2; fi
 [[ "$BACKUP_MAX_AGE_MINUTES" =~ ^[0-9]+$ ]] || die "BACKUP_MAX_AGE_MINUTES phải là số nguyên (phút)."
 
 case "$MIGRATION" in
+  002) SCRIPT_REL="scripts/migrations/002_recompute_urlhash_sha256.ts" ;;
+  003) SCRIPT_REL="scripts/migrations/003_drop_googledrivetokens_ttl_index.ts" ;;
+  004) SCRIPT_REL="scripts/migrations/004_users_add_team_id.ts" ;;
   005) SCRIPT_REL="scripts/migrations/005_users_roles_teamids.ts" ;;
   006) SCRIPT_REL="scripts/migrations/006_areas_34_provinces.ts" ;;
 esac
@@ -134,7 +143,7 @@ MONGO_PWD="$(read_env MONGO_ROOT_PASSWORD)"
 [[ "$MONGO_USER" =~ ^[A-Za-z0-9._~-]+$ && "$MONGO_PWD" =~ ^[A-Za-z0-9._~-]+$ ]] \
   || die "MONGO_ROOT_USERNAME/MONGO_ROOT_PASSWORD có ký tự không an toàn cho URI (chỉ A-Z a-z 0-9 . _ ~ -). Dùng hex theo tài liệu mục 2."
 
-mongo_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$MONGO_CONTAINER" 2>/dev/null || echo missing)"
+mongo_health="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
 [[ "$mongo_health" == "healthy" ]] \
   || die "$MONGO_CONTAINER chưa healthy (trạng thái: $mongo_health). Khởi động: docker compose --env-file $ENV_FILE up -d mongo, đợi healthy rồi chạy lại."
 
@@ -160,7 +169,17 @@ if (( APPLY == 1 )); then
     die "Không có backup mongodump (*.archive.gz, > 0 byte) nào trong ./backups/ mới hơn ${BACKUP_MAX_AGE_MINUTES} phút. Tạo backup NGAY trước khi apply theo $DOC mục 6 (mongodump) rồi chạy lại. Không --apply khi không có backup."
   fi
   # Kiểm cả nội dung (không chỉ định dạng): gzip hợp lệ + mongorestore --dryRun (chỉ đọc) thấy realestate.users.
-  verify_backup_archive "$newest" "$MONGO_CONTAINER" || die "Backup $newest không đạt kiểm tra nội dung. Tạo lại backup rồi chạy lại."
+  # 002 --apply còn XÓA/GHI ở raw_articles và news_articles: backup phải chứa cả hai (backup cắt --nsInclude realestate.users bị từ chối).
+  # Chỉ đòi collection ĐANG TỒN TẠI trong DB thật (mongodump không sinh namespace cho collection chưa có, đòi nó là chặn oan);
+  # không hỏi được danh sách collection thì DỪNG, không đoán.
+  required_colls=()
+  if [[ "$MIGRATION" == "002" ]]; then
+    existing="$(existing_collections "$MONGO_CONTAINER" raw_articles news_articles)"       || die "Không đọc được danh sách collection của DB realestate (mongosh lỗi/quá hạn) để biết backup phải chứa gì. Dừng, chưa ghi gì."
+    # shellcheck disable=SC2206  # tách theo khoảng trắng có chủ ý: tên collection chỉ gồm [A-Za-z0-9_]
+    required_colls=($existing)
+    log "002 --apply: backup phải chứa realestate.users và các collection đang có: ${existing:-(không có collection bài viết nào)}."
+  fi
+  verify_backup_archive "$newest" "$MONGO_CONTAINER" "${required_colls[@]+"${required_colls[@]}"}" || die "Backup $newest không đạt kiểm tra nội dung. Tạo lại backup rồi chạy lại."
   log "Backup dùng làm điều kiện: $newest ($(wc -c < "$newest") byte, đã kiểm nội dung). Nhớ đã chép nó ra NGOÀI máy chủ."
 fi
 
@@ -175,6 +194,21 @@ if [[ "$MIGRATION" == "006" ]]; then
     [[ -t 0 ]] || die "006 --apply cần xác nhận: chạy trong terminal, hoặc thêm --yes khi đã chắc chắn."
     read -r -p "Gõ XOA-KHU-VUC-CU để tiếp tục: " confirm
     [[ "$confirm" == "XOA-KHU-VUC-CU" ]] || die "Không xác nhận, dừng (chưa ghi gì)."
+  fi
+fi
+
+# ── Cảnh báo 002 (--apply) ───────────────────────────────────────────────────
+if [[ "$MIGRATION" == "002" ]] && (( APPLY == 1 )); then
+  {
+    echo "!!! CẢNH BÁO 002 --apply: XÓA VĨNH VIỄN các bản trùng url ở raw_articles và news_articles (giữ bài cũ nhất), rồi"
+    echo "!!! đổi urlHash MD5 -> SHA-256. Snapshot NDJSON mà script in ra nằm TRONG container và MẤT khi thoát, nên ĐƯỜNG LUI"
+    echo "!!! DUY NHẤT là backup mongodump vừa kiểm ở trên (mongorestore --nsInclude 'realestate.*', xem $DOC mục 6)."
+    echo "!!! Đã chạy dry-run 002 và đọc số bài trùng sẽ bị xóa chưa?"
+  } >&2
+  if (( ASSUME_YES == 0 )); then
+    [[ -t 0 ]] || die "002 --apply cần xác nhận: chạy trong terminal, hoặc thêm --yes khi đã chắc chắn."
+    read -r -p "Gõ XOA-BAN-TRUNG-URL để tiếp tục: " confirm
+    [[ "$confirm" == "XOA-BAN-TRUNG-URL" ]] || die "Không xác nhận, dừng (chưa ghi gì)."
   fi
 fi
 

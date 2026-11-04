@@ -32,8 +32,6 @@ export const CARE_LOG_CONTENT_MAX_LENGTH = 5000;
 export const CARE_LOG_SUGGESTION_MAX_LENGTH = 500;
 /** Tối đa 5 ảnh cho mỗi ghi chú (quyết định #5). */
 export const MAX_ATTACHMENTS_PER_CARE_LOG = 5;
-/** Tác giả chỉ sửa/xóa nhật ký (hoặc gỡ ảnh đã gắn) trong 24 giờ kể từ khi tạo (ma trận 04 mục 4.2). */
-export const CARE_LOG_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Ảnh đã tải lên nhưng chưa gắn quá ngần này thì bị dọn. */
 export const ORPHAN_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 /** Số ảnh chưa gắn tối đa mỗi người trên mỗi khách (chống dồn rác vào kho lưu trữ). */

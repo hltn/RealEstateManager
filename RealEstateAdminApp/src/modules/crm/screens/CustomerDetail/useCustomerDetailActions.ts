@@ -5,9 +5,12 @@
  * (kể cả lỗi) nên `version` mới có sẵn cho lần thao tác kế tiếp.
  */
 import { useMemo } from 'react';
-import { describeWriteError, useCrmApi, type ApiResult, type CreateCareLogInput, type CustomerDetail } from '@crm/api';
+import { describeWriteError, useCrmApi, type ApiResult, type CreateCareLogInput, type CrmApi, type CustomerDetail } from '@crm/api';
 import { useCrmActions } from '@crm/store';
 import type { CriterionKey } from '@crm/types/crm';
+
+/** Body `PATCH care-logs/:logId` (hợp đồng không đổi): `attachmentIds` là tập ảnh MONG MUỐN sau khi sửa (thay thế toàn bộ). Không có `nextAction`. */
+export type UpdateCareLogInput = Parameters<CrmApi['updateCareLog']>[2];
 
 export interface CustomerDetailActions {
   /** Đổi tình trạng (gửi `version`); `shouldOfferUndo` = hiện nút "Hoàn tác" trong toast (02 §5). */
@@ -18,11 +21,15 @@ export interface CustomerDetailActions {
   saveCriterionDescription: (key: CriterionKey, description: string) => Promise<boolean>;
   /** Lưu nhật ký; trả `true` nếu đã lưu. */
   saveCareLog: (input: CreateCareLogInput) => Promise<boolean>;
+  /** Sửa nhật ký đã lưu (PT-022; quyền do BE quyết định, FE chỉ hiện nút theo `canEdit`); trả `true` nếu đã lưu. */
+  updateCareLog: (logId: string, input: UpdateCareLogInput) => Promise<boolean>;
   /** Xem CCCD đầy đủ (server kiểm quyền + ghi log); null nếu không được phép/không có. */
   revealNationalId: () => Promise<string | null>;
 }
 
 const UNDO_DURATION_MS = 10_000;
+/** PT-023: toast tự chuyển tình trạng hiện lâu hơn toast thường để kịp đọc (không có nút Hoàn tác). */
+const AUTO_STATUS_TOAST_DURATION_MS = 6_000;
 
 export const useCustomerDetailActions = (customer: Pick<CustomerDetail, 'id' | 'version' | 'status' | 'criteria' | 'careTeam'>): CustomerDetailActions => {
   const api = useCrmApi();
@@ -63,11 +70,21 @@ export const useCustomerDetailActions = (customer: Pick<CustomerDetail, 'id' | '
         });
       },
       toggleCriterion: async (key) => {
-        handle(await api.updateCustomerCriteria(customerId, { version, criteria: { [key]: { isDone: !criteria[key].isDone } } }));
+        const result = await api.updateCustomerCriteria(customerId, { version, criteria: { [key]: { isDone: !criteria[key].isDone } } });
+        if (!handle(result)) return;
+        // PT-023: server vừa tự đổi tình trạng theo tiến độ 3/4 -> báo kèm lý do; `version` mới có sẵn qua lần làm mới dữ liệu của lớp ghi.
+        const autoChange = result.data.autoStatusChange;
+        if (!autoChange) return;
+        showToast({
+          title: `Đã tự chuyển tình trạng: "${autoChange.from?.label ?? 'Chưa rõ'}" → "${autoChange.to.label}"`,
+          message: autoChange.to.code === 'NET' ? 'Do tiến độ đạt 3/4 tiêu chí.' : 'Do tiến độ xuống dưới 3/4 tiêu chí.',
+          durationMs: AUTO_STATUS_TOAST_DURATION_MS,
+        });
       },
       saveCriterionDescription: async (key, description) =>
         handle(await api.updateCustomerCriteria(customerId, { version, criteria: { [key]: { description } } }), 'Đã lưu mô tả tiêu chí'),
       saveCareLog: async (input) => handle(await api.createCareLog(customerId, input, primaryUserId), 'Đã lưu nhật ký chăm sóc'),
+      updateCareLog: async (logId, input) => handle(await api.updateCareLog(customerId, logId, input, primaryUserId), 'Đã cập nhật nhật ký chăm sóc'),
       revealNationalId: async () => {
         const result = await api.createNationalIdView(customerId);
         return handle(result) ? result.data.nationalId : null;
