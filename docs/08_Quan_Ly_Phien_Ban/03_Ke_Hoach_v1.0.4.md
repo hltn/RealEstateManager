@@ -4,7 +4,7 @@
 
 > Ngày tạo: 2026-11-04
 > Module: Quản lý phiên bản / CRM (giai đoạn 2, milestone M7) / Hạ tầng
-> Trạng thái: Draft
+> Trạng thái: Approved
 > Author: pm-agent
 
 > **Bảo mật:** tài liệu này chỉ ghi **tên biến**, không ghi giá trị bí mật (khóa riêng VAPID, token, mật khẩu).
