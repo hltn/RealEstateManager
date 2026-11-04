@@ -10,8 +10,18 @@ export enum ProjectStatus {
   SOLD_OUT = 'SOLD_OUT',
 }
 
-/** Mã dự án (quyết định #31): chữ, số, `-`, `_`, tối đa 20 ký tự. */
-export const PROJECT_CODE_PATTERN = /^[A-Za-z0-9_-]{1,20}$/;
+export const PROJECT_CODE_MAX_LENGTH = 30;
+/**
+ * Mã dự án (quyết định #31, đổi 2026-11-04 — PT-031): chỉ chữ A-Z không dấu và số 0-9, viết liền
+ * (không khoảng trắng, không `-`, không `_`), 1 đến 30 ký tự. Áp cho mã tạo mới và mã được ĐỔI.
+ */
+export const PROJECT_CODE_PATTERN = /^[A-Za-z0-9]{1,30}$/;
+/**
+ * Quy tắc cũ (chữ, số, `-`, `_`, tối đa 30 ký tự): chỉ dùng để chấp nhận PATCH gửi lại đúng mã cũ đang có
+ * (không migrate dữ liệu). DTO PATCH chỉ kiểm nới theo mẫu này; service kiểm chặt khi mã thật sự đổi.
+ */
+export const PROJECT_CODE_LEGACY_PATTERN = /^[A-Za-z0-9_-]{1,30}$/;
+export const PROJECT_CODE_MESSAGE = `Mã dự án chỉ gồm chữ không dấu A-Z và số 0-9, viết liền (không khoảng trắng, "-", "_"), tối đa ${PROJECT_CODE_MAX_LENGTH} ký tự`;
 export const PROJECT_NAME_MAX_LENGTH = 120;
 export const PROJECT_TEXT_MAX_LENGTH = 200;
 export const PROJECT_TYPES_MAX_COUNT = 10;
@@ -23,6 +33,28 @@ export const PROJECT_DESCRIPTION_MAX_LENGTH = 2000;
  */
 export const normalizeProjectCode = (code: string): string =>
   code.trim().toUpperCase();
+
+/**
+ * Kiểm mã khi PATCH (PT-031): mã mới trùng mã hiện có (không phân biệt hoa thường) => cho qua dù là mã cũ
+ * có `-`/`_`; mã khác mã hiện có thì phải theo quy tắc mới (chỉ A-Z, 0-9). Vi phạm => 400 VALIDATION_FAILED.
+ */
+export const assertProjectCodeChange = (
+  nextCode: string,
+  currentCode: string | null | undefined,
+): void => {
+  // `currentCode` thô (có thể thiếu ở dữ liệu rất cũ): thiếu/rỗng thì mã gửi lên rơi vào kiểm chặt.
+  if (
+    normalizeProjectCode(nextCode) === normalizeProjectCode(currentCode ?? '')
+  )
+    return;
+  if (PROJECT_CODE_PATTERN.test(nextCode)) return;
+  throw new BusinessException(
+    ErrorCode.VALIDATION_FAILED,
+    PROJECT_CODE_MESSAGE,
+    HttpStatus.BAD_REQUEST,
+    { fields: ['code'] },
+  );
+};
 
 /**
  * Chuẩn hóa `propertyTypes`: luôn là MẢNG chuỗi; cắt khoảng trắng, bỏ rỗng, bỏ trùng không phân biệt

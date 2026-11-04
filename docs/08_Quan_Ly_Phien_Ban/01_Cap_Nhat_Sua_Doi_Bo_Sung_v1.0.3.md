@@ -72,7 +72,7 @@ Khi thêm lỗi mới, chép khối này và điền đủ các dòng:
 
 ## 4. Bảng tổng hợp
 
-Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028`, `PT-029` và `PT-030` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (trạng thái `Xong một phần`: code và test xong, chưa commit, chưa deploy; còn việc thử trên mobile thật; PT-030 là PWA cài được trên iPhone và Android, còn thử máy thật và Lighthouse). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27 tại thời điểm đó; từ 2026-11-03 thêm PT-028, PT-029 và PT-030, đều `Xong một phần`, nên bảng dưới có **30 mục**). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
+Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028`, `PT-029` và `PT-030` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (trạng thái `Xong một phần`: code và test xong, chưa commit, chưa deploy; còn việc thử trên mobile thật; PT-030 là PWA cài được trên iPhone và Android, còn thử máy thật và Lighthouse); `PT-031` do **Oniichan yêu cầu bổ sung ngày 2026-11-04** (đổi quy tắc mã dự án thành chữ và số viết liền, tối đa 30 ký tự, kèm FE tự điền mã từ tên; `Xong một phần`: code và test xong, chưa commit, chưa deploy). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27 tại thời điểm đó; từ 2026-11-03 thêm PT-028, PT-029 và PT-030, đều `Xong một phần`, nên bảng dưới có 30 mục; từ 2026-11-04 thêm PT-031 (`Xong một phần`), nên bảng dưới có **31 mục**). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
 
 | Mã | Tiêu đề | Mức độ | Nhóm | Trạng thái |
 |---|---|---|---|---|
@@ -106,10 +106,11 @@ Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013
 | [PT-028](#pt-028--chuyển-nút-ghi-chú-ở-tab-nhật-ký-xuống-thanh-đáy-mobile-và-chỉnh-lại-nút-trên-desktop) | Chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile; chỉnh lại nút trên desktop | Cải tiến | FE | Xong một phần |
 | [PT-029](#pt-029--màn-hình-mobile-bỏ-nút-chỉnh-sửa-ở-hàng-tiêu-đề) | Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề | Minor | FE | Xong một phần |
 | [PT-030](#pt-030--biến-web-admin-thành-pwa-cài-được-trên-iphone-và-android) | Biến web admin thành PWA cài được trên iPhone và Android (không offline dữ liệu) | Cải tiến | FE | Xong một phần |
+| [PT-031](#pt-031--đổi-quy-tắc-mã-dự-án-thành-chữ-và-số-viết-liền-fe-tự-điền-mã-từ-tên) | Đổi quy tắc mã dự án thành chữ và số viết liền (tối đa 30 ký tự), FE tự điền mã từ tên | Cải tiến | BE / FE / Tài liệu | Xong một phần |
 
 ## 5. Chi tiết các mục
 
-Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đến `PT-012`) **[Do QA đề xuất khi rà tài liệu]** (`PT-013` đến `PT-016`) hoặc **[Oniichan test production 2026-11-02]** (`PT-017` đến `PT-026`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-02]** (`PT-027`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-03]** (`PT-028`, `PT-029`, `PT-030`). "Người phụ trách" là **đề xuất**, Oniichan chốt.
+Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đến `PT-012`) **[Do QA đề xuất khi rà tài liệu]** (`PT-013` đến `PT-016`) hoặc **[Oniichan test production 2026-11-02]** (`PT-017` đến `PT-026`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-02]** (`PT-027`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-03]** (`PT-028`, `PT-029`, `PT-030`) hoặc **[Oniichan yêu cầu bổ sung 2026-11-04]** (`PT-031`). "Người phụ trách" là **đề xuất**, Oniichan chốt.
 
 #### PT-001 — Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu
 
@@ -708,6 +709,7 @@ Chỉ là gợi ý, **chưa giao việc**. Mọi nhóm FE đều phải thử tr
 | (d) Form lịch hẹn mobile | PT-026 | `coder-frontend-agent`; rà luôn các form mobile khác cùng kiểu |
 | (f) Nút Ghi chú và nút Chỉnh sửa ở màn chi tiết khách | PT-028, PT-029 | `coder-frontend-agent`; cùng màn với nhóm (a), nên làm sau khi nhóm (a) đã chốt để khỏi sửa chồng lên nhau. Chờ Oniichan trả lời 2 câu hỏi trong chính mục PT-028 |
 | (g) PWA (cài lên màn hình chính) | PT-030 | `coder-frontend-agent` (code, icon, test) + `devops-agent` (nginx, header cache; tài liệu hạ tầng); `qa-agent` review. Không phụ thuộc nhóm khác, nhưng `viewport-fit=cover` đổi cách tính vùng an toàn nên nên thử cùng đợt với nhóm (c), (d), (f) trên iPhone thật |
+| (h) Quy tắc mã dự án | PT-031 | `coder-backend-agent` (pattern, DTO, service, test, tài liệu) + `coder-frontend-agent` (tự điền mã, ô Mã viết hoa; làm song song, không đụng file của nhau); `qa-agent` review code và test. Không phụ thuộc nhóm khác; không cần migration (mã cũ giữ nguyên) |
 | (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được). Dockerfile đưa số phiên bản vào image nằm trong phạm vi PT-027 (PT-014 đã `Bỏ`). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
 
 Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý, vì mọi thay đổi schema/dữ liệu về sau sẽ dựa vào nó (hiện chưa mục PT nào bắt buộc migration, nhưng PT-023 có thể phát sinh); **điều kiện để deploy được là xử lý PT-006 (đĩa) trước**. Nhóm (a), (c), (d) thuần giao diện không phụ thuộc vào nhóm (e).
@@ -817,6 +819,45 @@ Khi có `viewport-fit=cover`, các `env(safe-area-inset-*)` mới có giá trị
 3. **Kiểm Cloudflare không cache `sw.js`** (và `index.html`, `manifest.webmanifest`, `offline.html`): nginx đã đặt `Cache-Control: no-cache` cho các file này, nhưng cần xem Cloudflare có đè bằng rule cache riêng không (tab Caching/Rules). Nếu `sw.js` bị cache ở edge, người dùng sẽ kẹt bản cũ.
 4. Đưa kết quả vào checklist iPhone và đổi PT-030 sang `Xong` khi đạt.
 5. Có logo độ phân giải cao thì thay file nguồn và chạy lại script icon.
+
+#### PT-031 — Đổi quy tắc mã dự án thành chữ và số viết liền, FE tự điền mã từ tên
+
+**[Oniichan yêu cầu bổ sung 2026-11-04]**
+
+| Trường | Nội dung |
+|---|---|
+| Mô tả | Đổi quy tắc **mã dự án** (module CRM Dự án): chỉ gồm chữ A-Z không dấu và số 0-9, **viết liền** (không khoảng trắng, **không `-`, không `_`**), 1 đến **30** ký tự; hiển thị và lưu theo chữ HOA ở FE. Kèm tiện ích: form **Thêm dự án** tự điền ô Mã từ Tên dự án. **Lịch sử đổi yêu cầu (2026-11-04):** ban đầu Oniichan chốt tối đa 20 ký tự, sau đó đổi thành 30 ký tự trong cùng ngày; số cuối cùng là 30 |
+| Nhóm | BE / FE / Tài liệu |
+| Màn hình / API | Màn Dự án (form Thêm và Sửa); `POST /crm/projects`, `PATCH /crm/projects/:id`. Quy tắc cũ là quyết định #31 (2026-10-22): chữ, số, `-`, `_`, tối đa 20 ký tự |
+| Bước tái hiện | 1. Mở màn Dự án bằng tài khoản Quản trị, bấm Thêm dự án. 2. Nhập mã có `-` hoặc `_` (ví dụ `SKY-PARK`): trước đây được chấp nhận |
+| Kết quả thực tế | Mã cho phép `-`, `_`, tối đa 20 ký tự; người dùng phải tự gõ mã |
+| Kết quả mong đợi | Mã chỉ A-Z, 0-9 viết liền, 1-30 ký tự (sai ⇒ 400 `VALIDATION_FAILED`); form Thêm tự điền mã từ tên |
+| Mức độ | Cải tiến |
+| Ảnh hưởng | Mã dự án dùng để tìm và hiển thị; đổi quy tắc **không** đổi dữ liệu cũ. Không đổi cơ chế so trùng: `code` giữ như người gửi, unique không phân biệt hoa thường qua `codeNormalized` (kể cả dự án đã xóa mềm), trùng ⇒ 409 `PROJECT_CODE_DUPLICATED` |
+| Đề xuất | Xem "Quyết định đã chốt" và "Đã làm" ngay dưới |
+| Người phụ trách | `coder-backend-agent` (BE, unit test, tài liệu mục này); `coder-frontend-agent` (FE, trong `RealEstateAdminApp/`); `qa-agent` review code và test |
+| Trạng thái | Xong một phần (2026-11-04). Code BE và test xong trong repo (chưa commit, chưa deploy); phần FE do `coder-frontend-agent` làm song song. **Còn lại:** deploy, Oniichan thử thêm/sửa dự án trên web (đặc biệt sửa dự án có mã cũ chứa `-`/`_`) |
+
+##### Quyết định đã chốt (Oniichan, 2026-11-04)
+
+1. **Quy tắc mới:** `^[A-Za-z0-9]{1,30}$`. Hiển thị chữ HOA ở FE; BE vẫn giữ `code` như người gửi, so trùng không phân biệt hoa thường qua `codeNormalized` (không đổi).
+2. **Mã cũ: giữ nguyên, không migrate.** Production có thể đã có mã chứa `-`/`_`; không tự đổi dữ liệu cũ. Quy tắc mới chỉ áp cho mã **tạo mới** và mã **được đổi sang giá trị khác**. `PATCH` gửi lại đúng mã đang có (so không phân biệt hoa thường) vẫn được chấp nhận dù là mã cũ (để sửa tên, giá, trạng thái... mà không bị chặn vì mã).
+3. **FE tự điền mã khi Thêm:** lấy từ Tên dự án bằng slug bỏ dấu tiếng Việt, chỉ giữ A-Z và 0-9, viết hoa, cắt 30 ký tự; nếu trùng với mã đã có thì thêm hậu tố số (ví dụ `SKYPARK` ⇒ `SKYPARK2`); **ngừng tự điền** khi người dùng sửa tay ô Mã; form **Sửa** không tự đổi mã; ô Mã tự viết hoa khi gõ.
+
+##### Đã làm (BE)
+
+- `RealEstateBackendApp/src/modules/crm/projects/project.rules.ts`: `PROJECT_CODE_PATTERN` đổi thành `^[A-Za-z0-9]{1,30}$`; thêm `PROJECT_CODE_MAX_LENGTH` (30), `PROJECT_CODE_LEGACY_PATTERN` (`^[A-Za-z0-9_-]{1,30}$`, chỉ để kiểm nới ở PATCH), `PROJECT_CODE_MESSAGE` và hàm `assertProjectCodeChange` (mã gửi lên trùng mã hiện có không phân biệt hoa thường thì qua; khác thì phải khớp quy tắc mới, sai ⇒ 400 `VALIDATION_FAILED` với `details.fields = ['code']`).
+- `dtos/project.dto.ts`: `CreateProjectDto.code` kiểm chặt (thông báo và Swagger `pattern`, `maxLength`, `description` đã cập nhật); `UpdateProjectDto.code` chỉ kiểm nới (`PROJECT_CODE_LEGACY_PATTERN`, vì DTO không biết mã hiện có).
+- `projects.service.ts` (`update`): trong transaction, sau khi đọc dự án hiện có, gọi `assertProjectCodeChange(dto.code, normalizeProjectCode(before.code))` khi PATCH có `code`.
+- `schemas/project.schema.ts`: `maxlength` của `code` nâng từ 20 lên 30 (tương thích ngược: mã cũ tối đa 20 vẫn hợp lệ). `codeNormalized` và index unique `{ codeNormalized: 1 }` **không có giới hạn độ dài** nên không đổi; không cần migration.
+- Test: `project.rules.spec.ts` (ca biên 1 và 30 ký tự, 31 ký tự bị từ chối, có `_`, có `-`, có khoảng trắng, có dấu tiếng Việt, chữ thường hợp lệ, DTO PATCH nới, `assertProjectCodeChange`); `projects.service.spec.ts` mới (PATCH giữ nguyên mã cũ có `_` thì qua, đổi sang mã mới có `_`/`-` thì 400 và không ghi DB, đổi sang mã hợp lệ thì `codeNormalized` viết hoa, trùng mã ⇒ 409 ở cả tạo và sửa); `crm-m1.integration.spec.ts` (mã dữ liệu thử đổi sang A-Z0-9, thêm ca validate `_`, `-`, dấu, 31 ký tự và ca mã cũ trong DB: PATCH giữ nguyên 200, đổi sang mã còn `_` 400, đổi sang mã sạch 200).
+- Tài liệu: 04 (mục 3.3, bảng `projects`, checklist, quyết định #31), 05 (POST/PATCH `/crm/projects`), 01 (X7) và 02 (màn Dự án).
+- Sau review QA (2026-11-04): thông báo lỗi của DTO PATCH đổi thành "Mã dự án chỉ gồm chữ A-Z không dấu và số 0-9 viết liền, tối đa 30 ký tự (mã cũ chỉ được gửi lại nguyên văn)" (trước đó nghe như `-`/`_` vẫn được phép); `assertProjectCodeChange` nhận **mã hiện có dạng thô** và tự chuẩn hóa bên trong; dữ liệu rất cũ thiếu `code` (null) không còn gây lỗi 500 mà mã gửi lên rơi vào kiểm chặt (có test).
+
+##### Lưu ý khi dùng (từ review QA)
+
+1. **PATCH từ FE luôn gửi `code`** (chữ HOA, đã trim). Vì vậy khi Quản trị sửa bất kỳ trường nào của một dự án có mã cũ như `old_code-1`, mã lưu sẽ đổi sang chữ HOA `OLD_CODE-1` (ghi vào audit `PROJECT_UPDATED` như một thay đổi `code`); các ký tự `_` và `-` vẫn giữ nguyên, chỉ đổi hoa/thường. Đây là hành vi chấp nhận được, không phải lỗi.
+2. **Hai dạng lỗi 400 cho mã sai:** lỗi do **DTO** (khoảng trắng, dấu, quá 30 ký tự, hoặc POST sai quy tắc) trả `message` là **mảng** chuỗi và **không** có `details.fields`; lỗi do **service** (PATCH đổi sang mã khác còn `-`/`_`) trả `message` là chuỗi và `details.fields = ['code']`, `errorCode = VALIDATION_FAILED`. FE chỉ nên dựa vào `errorCode` và `message`, không dựa vào `details.fields`.
 
 ## 6. Kết quả test production do Oniichan ghi nhận
 

@@ -11,7 +11,7 @@
  */
 import { buildSearchText } from '@crm/lib/customerRules';
 import { pruneNationalIds } from '@crm/lib/nationalIdVault';
-import { isValidProjectCode, normalizePropertyTypes, parseLegacyPriceText, parseLegacyProjectStatus, PROJECT_NAME_MAX_LENGTH, suggestProjectCode } from '@crm/lib/projectRules';
+import { normalizePropertyTypes, parseLegacyPriceText, parseLegacyProjectStatus, PROJECT_CODE_MAX_LENGTH, PROJECT_NAME_MAX_LENGTH, suggestProjectCode } from '@crm/lib/projectRules';
 import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmDataState, CrmSession } from './crmReducer';
 
@@ -257,8 +257,14 @@ const migrateProjectToV5 = (project: Record<string, unknown>): Record<string, un
 };
 
 /**
+ * Mẫu mã dự án CŨ cho migration (cho phép `-`/`_`): mã cũ không bị cấp lại chỉ vì chứa gạch (không migrate mã). Quy tắc mới chỉ áp
+ * khi Thêm mới/đổi mã (xem `getProjectErrors`); mã rỗng, quá dài hoặc trùng vẫn được cấp lại như trước.
+ */
+const LEGACY_PROJECT_CODE_PATTERN = new RegExp(`^[A-Z0-9_-]{1,${PROJECT_CODE_MAX_LENGTH}}$`);
+
+/**
  * Migration v4 -> v5: dự án (xem `migrateProjectToV5`) + VÁ dữ liệu cũ để `updateProject` không bị khoá: tên rỗng/quá 80 ký tự được vá,
- * tên trùng (không dấu) thêm hậu tố " (2)"…, mã chuẩn hoá CHỮ HOA, mã rỗng/sai mẫu/trùng -> mã gợi ý sinh từ tên (theo thứ tự: dự án
+ * tên trùng (không dấu) thêm hậu tố " (2)"…, mã chuẩn hoá CHỮ HOA, mã rỗng/sai mẫu cũ/trùng -> mã gợi ý (theo quy tắc mới) sinh từ tên (theo thứ tự: dự án
  * đứng trước giữ mã, dự án sau bị đổi). Thêm `auditLogs` rỗng.
  */
 const migrateV4ToV5 = (data: unknown): unknown => {
@@ -281,7 +287,7 @@ const migrateV4ToV5 = (data: unknown): unknown => {
     }
     takenNames.add(normalizeVietnamese(uniqueName));
     let code = legacyCode.toUpperCase();
-    if (!isValidProjectCode(code) || takenCodes.has(code)) code = suggestProjectCode(uniqueName, takenCodes);
+    if (!LEGACY_PROJECT_CODE_PATTERN.test(code) || takenCodes.has(code)) code = suggestProjectCode(uniqueName, takenCodes);
     takenCodes.add(code);
     return { ...project, name: uniqueName, code };
   });

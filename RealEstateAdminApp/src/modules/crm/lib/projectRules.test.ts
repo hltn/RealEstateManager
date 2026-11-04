@@ -22,8 +22,8 @@ const valid = { ...createEmptyProject('p-new'), name: 'Sky Park', code: 'SKYPARK
 
 describe('normalizeProject', () => {
   it('cắt khoảng trắng, mã viết hoa, tên đầy đủ mặc định = tên ngắn', () => {
-    const saved = normalizeProject({ ...valid, name: ' Sky Park ', code: ' skp-1 ', developer: '  ABC  ', fullName: ' ' });
-    expect(saved).toMatchObject({ name: 'Sky Park', code: 'SKP-1', fullName: 'Sky Park', developer: 'ABC' });
+    const saved = normalizeProject({ ...valid, name: ' Sky Park ', code: ' skp1 ', developer: '  ABC  ', fullName: ' ' });
+    expect(saved).toMatchObject({ name: 'Sky Park', code: 'SKP1', fullName: 'Sky Park', developer: 'ABC' });
   });
 
   it('giá không phải số hữu hạn -> null', () => {
@@ -61,7 +61,8 @@ describe('getProjectErrors', () => {
 
   it('mã sai ký tự hoặc quá dài, trường dài quá bị báo', () => {
     expect(getProjectErrors(projects, { ...valid, code: 'SKY PARK' }).code).toBeDefined();
-    expect(getProjectErrors(projects, { ...valid, code: 'X'.repeat(21) }).code).toBeDefined();
+    expect(getProjectErrors(projects, { ...valid, code: 'X'.repeat(31) }).code).toBeDefined();
+    expect(getProjectErrors(projects, { ...valid, code: 'X'.repeat(30) })).toEqual({});
     expect(getProjectErrors(projects, { ...valid, developer: 'x'.repeat(201) }).developer).toBeDefined();
   });
 
@@ -74,30 +75,98 @@ describe('getProjectErrors', () => {
   });
 });
 
+describe('mã dự án: quy tắc mới (chữ + số viết liền) và mã cũ khi Sửa', () => {
+  const legacy = { ...createEmptyProject('p-legacy'), name: 'Dự án cũ', code: 'OLD_CODE-1' };
+  const withLegacy = [...projects, legacy];
+
+  it.each(['SKY-PARK', 'SKY_PARK', 'SKY PARK', 'SKYPÁRK', 'SKY.PARK'])('Thêm mới: mã "%s" bị báo lỗi mẫu', (code) => {
+    expect(getProjectErrors(projects, { ...valid, code }).code).toBe('Mã chỉ gồm chữ không dấu và số, viết liền, không có gạch ngang hoặc gạch dưới.');
+  });
+
+  it('Thêm mới: chữ thường được chấp nhận (chuẩn hoá HOA lúc lưu)', () => {
+    expect(getProjectErrors(projects, { ...valid, code: 'skypark9' })).toEqual({});
+  });
+
+  it('Sửa dự án mã cũ có _ / -: không đổi mã (kể cả khác hoa/thường) thì không báo lỗi mẫu', () => {
+    expect(getProjectErrors(withLegacy, legacy)).toEqual({});
+    expect(getProjectErrors(withLegacy, { ...legacy, code: 'old_code-1' })).toEqual({});
+    expect(getProjectErrors(withLegacy, { ...legacy, name: 'Tên mới' })).toEqual({});
+  });
+
+  it('Sửa dự án mã cũ: đổi sang mã cũ khác thì báo lỗi; đổi sang mã mới hợp lệ thì qua', () => {
+    expect(getProjectErrors(withLegacy, { ...legacy, code: 'OTHER_OLD' }).code).toContain('chỉ gồm chữ không dấu và số');
+    expect(getProjectErrors(withLegacy, { ...legacy, code: 'OLDCODE1' })).toEqual({});
+  });
+
+  it('originalCode tường minh: dự án đang sửa KHÔNG có trong `existing` vẫn được miễn lỗi mẫu khi mã không đổi', () => {
+    expect(getProjectErrors(projects, legacy, { originalCode: 'OLD_CODE-1' })).toEqual({});
+    expect(getProjectErrors(projects, legacy, { originalCode: 'old_code-1' })).toEqual({});
+    // Không truyền originalCode và không có trong `existing` -> coi như mã mới, áp quy tắc mới.
+    expect(getProjectErrors(projects, legacy).code).toContain('chỉ gồm chữ không dấu và số');
+  });
+
+  it('originalCode tường minh khác mã hiện tại -> áp quy tắc mới; ưu tiên hơn mã tìm theo id', () => {
+    expect(getProjectErrors(projects, legacy, { originalCode: 'KHAC' }).code).toContain('chỉ gồm chữ không dấu và số');
+    expect(getProjectErrors(withLegacy, legacy, { originalCode: 'KHAC' }).code).toContain('chỉ gồm chữ không dấu và số');
+  });
+
+  it('mã cũ của dự án KHÁC không được miễn: dự án mới dùng lại mã đó vẫn bị báo lỗi mẫu', () => {
+    expect(getProjectErrors(withLegacy, { ...valid, code: 'OLD_CODE-1' }).code).toContain('chỉ gồm chữ không dấu và số');
+  });
+
+  it('mã cũ không đổi vẫn phải qua kiểm độ dài/trùng của dự án khác', () => {
+    const clash = { ...legacy, code: projects[0].code };
+    expect(getProjectErrors([...projects, { ...legacy, code: projects[0].code }], clash).code).toContain('đã tồn tại');
+  });
+});
+
 describe('suggestProjectCode / isValidProjectCode', () => {
-  it('sinh mã hợp lệ từ tên có dấu', () => {
-    expect(suggestProjectCode('Căn hộ Sky Park', [])).toBe('CAN_HO_SKY_PARK');
-    expect(isValidProjectCode(suggestProjectCode('Đảo Kim Cương', []))).toBe(true);
+  it('bỏ dấu, bỏ khoảng trắng, viết hoa', () => {
+    expect(suggestProjectCode('Sky Park', [])).toBe('SKYPARK');
+    expect(suggestProjectCode('Căn hộ Đảo Kim Cương', [])).toBe('CANHODAOKIMCUONG');
+    expect(suggestProjectCode('đường Đồng Khởi', [])).toBe('DUONGDONGKHOI');
   });
 
-  it('không trùng mã đã có (kể cả khác hoa/thường), thêm hậu tố và vẫn <= 20 ký tự', () => {
-    expect(suggestProjectCode('Sky Park', ['sky_park'])).toBe('SKY_PARK-2');
-    expect(suggestProjectCode('Sky Park', ['SKY_PARK', 'SKY_PARK-2'])).toBe('SKY_PARK-3');
-    const long = suggestProjectCode('Một dự án có cái tên rất là dài dòng', ['MOT_DU_AN_CO_CAI_TEN']);
-    expect(long.length).toBeLessThanOrEqual(20);
-    expect(isValidProjectCode(long)).toBe(true);
-    expect(long).not.toBe('MOT_DU_AN_CO_CAI_TEN');
+  it('bỏ mọi ký tự ngoài A-Z0-9 (gồm - _ . dấu nháy), giữ chữ số', () => {
+    expect(suggestProjectCode("Q'Terra - Phase_2 (A.1)", [])).toBe('QTERRAPHASE2A1');
   });
 
-  it('tên rỗng/toàn ký tự lạ -> mã dự phòng hợp lệ', () => {
-    expect(isValidProjectCode(suggestProjectCode('', []))).toBe(true);
-    expect(isValidProjectCode(suggestProjectCode('!!!', []))).toBe(true);
+  it('tên rỗng hoặc chỉ ký tự lạ -> DUAN', () => {
+    expect(suggestProjectCode('', [])).toBe('DUAN');
+    expect(suggestProjectCode('  ', [])).toBe('DUAN');
+    expect(suggestProjectCode('!!! --- ___', [])).toBe('DUAN');
   });
 
-  it('nhận ra mã hợp lệ / không hợp lệ', () => {
-    // Mẫu doc: ^[A-Za-z0-9_-]{1,20}$ — cho phép ký tự đầu là _ hoặc -; chữ thường hợp lệ (lưu ép HOA).
-    ['QTERRA', 'vhop', 'A-1', 'A_B', '-A', '_x', 'X'.repeat(20)].forEach((code) => expect(isValidProjectCode(code)).toBe(true));
-    ['', ' ', 'A B', 'Ä', 'A.B', 'X'.repeat(21)].forEach((code) => expect(isValidProjectCode(code)).toBe(false));
+  it('tên dài: cắt đúng 30 ký tự', () => {
+    const code = suggestProjectCode('Một dự án có cái tên rất là dài dòng không tưởng nổi luôn', []);
+    expect(code).toBe('MOTDUANCOCAITENRATLADAIDONGKHO');
+    expect(code).toHaveLength(30);
+  });
+
+  it('trùng mã (không phân biệt hoa thường): thêm hậu tố số tăng dần, không gạch', () => {
+    expect(suggestProjectCode('Sky Park', ['skypark'])).toBe('SKYPARK2');
+    expect(suggestProjectCode('Sky Park', ['SKYPARK', 'skypark2'])).toBe('SKYPARK3');
+    expect(suggestProjectCode('Sky Park', ['OTHER'])).toBe('SKYPARK');
+    expect(suggestProjectCode('', ['DUAN'])).toBe('DUAN2');
+  });
+
+  it('hậu tố cắt phần gốc để tổng vẫn <= 30 ký tự (cả khi hậu tố 2 chữ số)', () => {
+    const base = 'A'.repeat(30);
+    expect(suggestProjectCode(base, [base])).toBe(`${'A'.repeat(29)}2`);
+    const taken = [base, ...Array.from({ length: 8 }, (_, index) => `${'A'.repeat(29)}${index + 2}`)];
+    const next = suggestProjectCode(base, taken);
+    expect(next).toBe(`${'A'.repeat(28)}10`);
+    expect(next).toHaveLength(30);
+    expect(isValidProjectCode(next)).toBe(true);
+  });
+
+  it('mã gợi ý luôn hợp lệ theo mẫu', () => {
+    ['', '!!!', 'Đảo Kim Cương', 'x'.repeat(100)].forEach((name) => expect(isValidProjectCode(suggestProjectCode(name, []))).toBe(true));
+  });
+
+  it('nhận ra mã hợp lệ / không hợp lệ (chữ + số viết liền, 1-30 ký tự)', () => {
+    ['QTERRA', 'vhop', 'A1', '9', 'X'.repeat(30)].forEach((code) => expect(isValidProjectCode(code)).toBe(true));
+    ['', ' ', 'A B', 'Ä', 'A.B', 'A-1', 'A_B', '-A', '_x', 'X'.repeat(31)].forEach((code) => expect(isValidProjectCode(code)).toBe(false));
   });
 });
 

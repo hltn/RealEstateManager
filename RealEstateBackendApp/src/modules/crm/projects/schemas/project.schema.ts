@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { ProjectStatus } from '../project.rules';
+import { PROJECT_CODE_MAX_LENGTH, ProjectStatus } from '../project.rules';
 
 /**
  * Dự án bất động sản (`projects`, tài liệu 04 mục 3.3 + quy ước migration).
@@ -15,7 +15,7 @@ export class Project {
   @Prop({ required: true, trim: true, maxlength: 120 })
   name: string;
 
-  @Prop({ required: true, trim: true, maxlength: 20 })
+  @Prop({ required: true, trim: true, maxlength: PROJECT_CODE_MAX_LENGTH })
   code: string;
 
   @Prop({ required: true })
