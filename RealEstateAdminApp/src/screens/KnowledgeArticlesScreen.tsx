@@ -456,7 +456,7 @@ export default function KnowledgeArticlesScreen() {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
               {isLoading ? (
-                <TableSkeletonRows cols={6} rows={5} />
+                <TableSkeletonRows columnCount={6} rowCount={5} />
               ) : articles.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">

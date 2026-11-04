@@ -188,6 +188,9 @@ layer(base);
   }
   body {
     @apply relative font-normal font-outfit z-1 bg-gray-50 dark:bg-gray-900 dark:text-gray-300 text-gray-800;
+    /* PT-030 (viewport-fit=cover): chừa tai thỏ hai bên khi xoay ngang; =0 trên màn hình không có tai thỏ/desktop. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 }
 

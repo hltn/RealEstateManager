@@ -1,0 +1,158 @@
+/**
+ * Hàm thuần của form "Tạo lịch hẹn mới": giá trị mặc định, danh mục lựa chọn, validate, dựng body `POST /crm/appointments`.
+ * Ngày + giờ nhập theo giờ Việt Nam, lưu `startAt` ISO UTC. Người thực hiện phải thuộc nhóm chăm sóc của khách.
+ */
+import type { CreateAppointmentInput, CustomerDetail } from '@crm/api';
+import { APPOINTMENT_PAST_TOLERANCE_MS } from '@crm/lib/appointmentAdapters';
+import { getVnTodayKey, parseTime24, vnDateTimeToIso } from '@crm/lib/dateTime';
+import type { AppointmentType, Project } from '@crm/types/crm';
+
+export const NOTE_MAX_LENGTH = 500;
+export const DEFAULT_TIME = '09:30';
+export const DEFAULT_REMINDER_MINUTES = 60;
+/** Địa điểm gợi ý cho lịch "Nhắc gọi lại" (không gặp mặt). */
+export const CALL_LOCATION = 'Gọi điện / Zalo';
+
+export interface AppointmentFormValues {
+  customerId: string;
+  type: AppointmentType;
+  title: string;
+  /** Khoá ngày VN "YYYY-MM-DD". */
+  date: string;
+  /** "HH:mm" giờ VN. */
+  time: string;
+  location: string;
+  note: string;
+  /** Dự án của lịch ('' = không chọn). Tuỳ chọn, mọi loại lịch đều gắn được. */
+  projectId: string;
+  assigneeId: string;
+  remindBeforeMinutes: number;
+  smsZnsAuto: boolean;
+  calendarSync: boolean;
+}
+
+export type AppointmentFormField = keyof AppointmentFormValues;
+export type AppointmentFormErrors = Partial<Record<AppointmentFormField, string>>;
+
+/** Thứ tự trường để focus lỗi đầu tiên (khớp thứ tự hiển thị). */
+export const FIELD_ORDER: AppointmentFormField[] = ['customerId', 'type', 'date', 'time', 'projectId', 'location', 'note', 'assigneeId'];
+
+/** id DOM của ô nhập ứng với trường (dùng cho `htmlFor` + focus lỗi). */
+export const getFieldId = (field: AppointmentFormField): string => `appointment-${field}`;
+
+export interface AppointmentTypeOption {
+  type: AppointmentType;
+  title: string;
+  description: string;
+  shortTitle: string;
+  shortDescription: string;
+  isHighPriority?: boolean;
+}
+
+export const APPOINTMENT_TYPE_OPTIONS: AppointmentTypeOption[] = [
+  { type: 'SITE_VISIT', title: 'Xem nhà mẫu / sa bàn', description: 'Dẫn khách xem sa bàn, căn hộ mẫu và tiện ích dự án.', shortTitle: 'Xem nhà mẫu', shortDescription: 'Trải nghiệm dự án' },
+  { type: 'DEPOSIT_CONTRACT', title: 'Ký cọc / HĐMB', description: 'Hẹn ký thỏa thuận đặt cọc hoặc hợp đồng mua bán.', shortTitle: 'Ký cọc / HĐMB', shortDescription: 'Ưu tiên cao', isHighPriority: true },
+  { type: 'MEETING', title: 'Gặp tư vấn', description: 'Trao đổi phương án tài chính, pháp lý, chính sách bán hàng.', shortTitle: 'Gặp tư vấn', shortDescription: 'Trao đổi trực tiếp' },
+  { type: 'CALLBACK', title: 'Nhắc gọi lại', description: 'Nhắc gọi lại cho khách theo hẹn.', shortTitle: 'Nhắc gọi lại', shortDescription: 'Gọi lại theo hẹn' },
+  { type: 'OTHER', title: 'Mục đích khác', description: 'Ghi rõ nội dung ở phần ghi chú bên dưới.', shortTitle: 'Mục đích khác', shortDescription: 'Ghi rõ ở ghi chú' },
+];
+
+/** Người thực hiện mặc định: mình nếu thuộc nhóm chăm sóc, không thì phụ trách chính, cuối cùng là mình. */
+export const getDefaultAssigneeId = (customer: CustomerDetail | null, currentUserId: string): string => {
+  if (!customer || customer.careTeam.length === 0) return currentUserId;
+  if (customer.careTeam.some((member) => member.user.id === currentUserId)) return currentUserId;
+  return customer.primaryAssignee?.id ?? currentUserId;
+};
+
+/**
+ * Giá trị ban đầu của form. `customerId` = khách mang sang từ chi tiết khách ('' = chưa chọn);
+ * `assigneeId` để trống để hook tự suy ra theo nhóm chăm sóc của khách khi dữ liệu khách tải xong.
+ */
+export const createInitialValues = (customerId: string, todayKey: string): AppointmentFormValues => ({
+  customerId,
+  type: 'SITE_VISIT',
+  title: '',
+  date: todayKey,
+  time: DEFAULT_TIME,
+  location: '',
+  note: '',
+  projectId: '',
+  assigneeId: '',
+  remindBeforeMinutes: DEFAULT_REMINDER_MINUTES,
+  smsZnsAuto: false,
+  calendarSync: false,
+});
+
+/**
+ * Form có thay đổi chưa lưu không: so giá trị đang nhập với giá trị ban đầu (khách mang sang tính là ban đầu),
+ * hoặc người dùng đã tự chọn dự án (kể cả "Không chọn"). Dùng để hỏi xác nhận trước khi "Hủy bỏ".
+ */
+export const hasUnsavedChanges = (draft: AppointmentFormValues, initial: AppointmentFormValues, hasManualProject: boolean): boolean =>
+  hasManualProject || (Object.keys(initial) as AppointmentFormField[]).some((field) => draft[field] !== initial[field]);
+
+/** Loại lịch mà dự án là thông tin quan trọng (đi xem nhà mẫu / ký cọc): ô dự án được nhấn mạnh ("Nên chọn"). */
+export const isProjectEmphasizedType = (type: AppointmentType): boolean => type === 'SITE_VISIT' || type === 'DEPOSIT_CONTRACT';
+
+/** Dự án đang hoạt động (chưa ngừng, chưa xóa mềm) - chỉ những dự án này gắn được vào lịch mới. */
+export const listSelectableProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => project.isActive && !project.deletedAt);
+
+/**
+ * Gợi ý dự án theo khách: khách quan tâm ĐÚNG MỘT dự án (đang hoạt động) thì chọn sẵn dự án đó;
+ * không có hoặc nhiều dự án thì không tự chọn ('' ) để người dùng quyết định.
+ */
+export const getSuggestedProjectId = (customer: Pick<CustomerDetail, 'projects'> | null, selectableProjects: readonly Pick<Project, 'id'>[]): string => {
+  if (!customer) return '';
+  const selectableIds = new Set(selectableProjects.map((project) => project.id));
+  const interested = customer.projects.filter((project) => selectableIds.has(project.id));
+  return interested.length === 1 ? interested[0].id : '';
+};
+
+/** Địa chỉ gợi ý: văn phòng của dự án khách quan tâm đầu tiên (nút "Dùng văn phòng dự án"). */
+export const getProjectOfficeLocation = (project: Project | undefined): string =>
+  project ? `Văn phòng bán hàng ${project.fullName}, ${project.location}` : '';
+
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Validate ngày + giờ hẹn (giờ VN, không ở quá khứ); dùng chung cho form tạo lịch và hộp "Đổi giờ". */
+export const validateScheduleDateTime = (date: string, time: string, todayKey: string = getVnTodayKey(), now: Date = new Date()): Pick<AppointmentFormErrors, 'date' | 'time'> => {
+  const errors: Pick<AppointmentFormErrors, 'date' | 'time'> = {};
+  if (!DATE_KEY_PATTERN.test(date)) errors.date = 'Vui lòng chọn ngày diễn ra.';
+  else if (date < todayKey) errors.date = 'Ngày hẹn không được ở quá khứ.';
+  if (!parseTime24(time)) errors.time = 'Vui lòng nhập giờ hợp lệ (HH:mm).';
+  else if (!errors.date && new Date(vnDateTimeToIso(date, time)).getTime() < now.getTime() - APPOINTMENT_PAST_TOLERANCE_MS) errors.time = 'Giờ hẹn không được ở quá khứ.';
+  return errors;
+};
+
+export const validateAppointmentForm = (values: AppointmentFormValues, customer: CustomerDetail | null, todayKey: string = getVnTodayKey(), now: Date = new Date()): AppointmentFormErrors => {
+  const errors: AppointmentFormErrors = { ...validateScheduleDateTime(values.date, values.time, todayKey, now) };
+  if (!values.customerId || !customer) errors.customerId = 'Vui lòng chọn khách hàng.';
+  if (values.type !== 'CALLBACK' && !values.location.trim()) errors.location = 'Vui lòng nhập địa điểm gặp.';
+  if (values.note.length > NOTE_MAX_LENGTH) errors.note = `Ghi chú tối đa ${NOTE_MAX_LENGTH} ký tự.`;
+  else if (values.type === 'OTHER' && !values.note.trim()) errors.note = 'Mục đích khác: vui lòng ghi rõ nội dung buổi hẹn.';
+  if (customer && customer.careTeam.length > 0 && !customer.careTeam.some((member) => member.user.id === values.assigneeId)) {
+    errors.assigneeId = 'Người thực hiện phải thuộc nhóm chăm sóc của khách.';
+  }
+  return errors;
+};
+
+/** Giá trị form hợp lệ -> body `POST /crm/appointments` (giờ VN -> ISO UTC). */
+export const toCreateAppointmentInput = (values: AppointmentFormValues): CreateAppointmentInput => ({
+  customerId: values.customerId,
+  type: values.type,
+  title: values.title.trim(),
+  startAt: vnDateTimeToIso(values.date, values.time),
+  location: values.location.trim(),
+  note: values.note.trim(),
+  assigneeId: values.assigneeId || undefined,
+  remindBeforeMinutes: [values.remindBeforeMinutes],
+  // '' (Không chọn) gửi null tường minh = không gắn dự án.
+  projectId: values.projectId || null,
+});
+
+/** "2026-10-21" -> "Thứ Tư, 21 tháng 10, 2026" (dòng gợi ý dưới ô ngày). */
+export const formatLongDateVi = (dateKey: string): string => {
+  if (!DATE_KEY_PATTERN.test(dateKey)) return '';
+  const date = new Date(`${dateKey}T12:00:00+07:00`);
+  const text = date.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};

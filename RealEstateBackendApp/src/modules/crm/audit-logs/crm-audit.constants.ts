@@ -1,0 +1,103 @@
+/**
+ * Hằng số nhật ký audit CRM (tài liệu 04 mục 3.7 / 3.7.1).
+ * `entityType` là enum đóng ở schema nhưng CHỈ ĐƯỢC THÊM giá trị (zero-downtime);
+ * `action` lưu dạng chuỗi tự do để các milestone sau thêm hành động không cần đổi schema.
+ */
+export enum CrmAuditEntityType {
+  CUSTOMER = 'CUSTOMER',
+  CARE_LOG = 'CARE_LOG',
+  ATTACHMENT = 'ATTACHMENT',
+  APPOINTMENT = 'APPOINTMENT',
+  CATALOG = 'CATALOG',
+  PROJECT = 'PROJECT',
+  PERSONA_FIELD = 'PERSONA_FIELD',
+  TEAM = 'TEAM',
+  IMPORT = 'IMPORT',
+  EXPORT = 'EXPORT',
+  SETTINGS = 'SETTINGS',
+  /** Thêm ở M1: thay đổi nhóm của người dùng (ảnh hưởng phạm vi khách). */
+  USER = 'USER',
+  /** Thêm ở M3: đề nghị tham gia nhóm chăm sóc. */
+  CARE_TEAM_REQUEST = 'CARE_TEAM_REQUEST',
+  /** Thêm ở M4: thẻ sở thích/nghề nghiệp. */
+  TAG = 'TAG',
+}
+
+/** Hành động audit thuộc phạm vi M1 (danh mục, dự án, nhóm, cài đặt). */
+export enum CrmAuditAction {
+  CATALOG_CREATED = 'CATALOG_CREATED',
+  CATALOG_UPDATED = 'CATALOG_UPDATED',
+  CATALOG_DELETED = 'CATALOG_DELETED',
+  PROJECT_CREATED = 'PROJECT_CREATED',
+  PROJECT_UPDATED = 'PROJECT_UPDATED',
+  PROJECT_DEACTIVATED = 'PROJECT_DEACTIVATED',
+  PROJECT_DELETED = 'PROJECT_DELETED',
+  PROJECT_RESTORED = 'PROJECT_RESTORED',
+  TEAM_CREATED = 'TEAM_CREATED',
+  TEAM_UPDATED = 'TEAM_UPDATED',
+  TEAM_DELETED = 'TEAM_DELETED',
+  USER_TEAM_CHANGED = 'USER_TEAM_CHANGED',
+  USER_ROLE_CHANGED = 'USER_ROLE_CHANGED',
+  USER_STATUS_CHANGED = 'USER_STATUS_CHANGED',
+  /** Admin sửa tên hiển thị/email của tài khoản. */
+  USER_UPDATED = 'USER_UPDATED',
+  /** Admin đặt lại mật khẩu; audit KHÔNG chứa mật khẩu/hash (changes rỗng). */
+  USER_PASSWORD_RESET = 'USER_PASSWORD_RESET',
+  SETTINGS_UPDATED = 'SETTINGS_UPDATED',
+  // --- M2: khách hàng lõi (tài liệu 04 mục 3.7.1) ---
+  CUSTOMER_CREATED = 'CUSTOMER_CREATED',
+  CUSTOMER_UPDATED = 'CUSTOMER_UPDATED',
+  STATUS_CHANGED = 'STATUS_CHANGED',
+  CRITERIA_UPDATED = 'CRITERIA_UPDATED',
+  NATIONAL_ID_UPDATED = 'NATIONAL_ID_UPDATED',
+  NATIONAL_ID_REMOVED = 'NATIONAL_ID_REMOVED',
+  NATIONAL_ID_VIEWED = 'NATIONAL_ID_VIEWED',
+  PHONE_VIEWED = 'PHONE_VIEWED',
+  DATA_CONSENT_UPDATED = 'DATA_CONSENT_UPDATED',
+  CUSTOMER_DELETED = 'CUSTOMER_DELETED',
+  CUSTOMER_RESTORED = 'CUSTOMER_RESTORED',
+  CUSTOMER_ANONYMIZED = 'CUSTOMER_ANONYMIZED',
+  /** v1.0.2 mục D: xóa vĩnh viễn khách đã xóa mềm; dòng DUY NHẤT còn lại của khách, KHÔNG chứa PII (chỉ số lượng bản ghi đã xóa). */
+  CUSTOMER_PURGED = 'CUSTOMER_PURGED',
+  /** Chỉ ghi khi tra SĐT ra khách NGOÀI phạm vi (phát hiện dò số). */
+  PHONE_LOOKUP = 'PHONE_LOOKUP',
+  /** Cảnh báo bất thường (tài liệu 04 mục 3.2.3 và 7.3): nhiều truy vấn số khác nhau / xem số-CCCD dồn dập. */
+  PHONE_SEARCH_ANOMALY = 'PHONE_SEARCH_ANOMALY',
+  PHONE_VIEW_ALERT = 'PHONE_VIEW_ALERT',
+  NATIONAL_ID_VIEW_ALERT = 'NATIONAL_ID_VIEW_ALERT',
+  // --- M3: chăm sóc (tài liệu 04 mục 3.7.1) ---
+  CARE_TEAM_MEMBER_ADDED = 'CARE_TEAM_MEMBER_ADDED',
+  CARE_TEAM_MEMBER_REMOVED = 'CARE_TEAM_MEMBER_REMOVED',
+  PRIMARY_CHANGED = 'PRIMARY_CHANGED',
+  JOIN_REQUEST_CREATED = 'JOIN_REQUEST_CREATED',
+  JOIN_REQUEST_RESOLVED = 'JOIN_REQUEST_RESOLVED',
+  CARE_LOG_CREATED = 'CARE_LOG_CREATED',
+  CARE_LOG_UPDATED = 'CARE_LOG_UPDATED',
+  CARE_LOG_DELETED = 'CARE_LOG_DELETED',
+  ATTACHMENT_UPLOADED = 'ATTACHMENT_UPLOADED',
+  ATTACHMENT_REMOVED = 'ATTACHMENT_REMOVED',
+  // --- M4: chân dung và thẻ (tài liệu 04 mục 3.7.1) ---
+  PERSONA_UPDATED = 'PERSONA_UPDATED',
+  TAGS_UPDATED = 'TAGS_UPDATED',
+  PERSONA_FIELD_CREATED = 'PERSONA_FIELD_CREATED',
+  PERSONA_FIELD_UPDATED = 'PERSONA_FIELD_UPDATED',
+  PERSONA_FIELD_DELETED = 'PERSONA_FIELD_DELETED',
+  PERSONA_FIELDS_REORDERED = 'PERSONA_FIELDS_REORDERED',
+  TAG_CREATED = 'TAG_CREATED',
+  TAG_UPDATED = 'TAG_UPDATED',
+  TAG_MERGED = 'TAG_MERGED',
+  TAG_DELETED = 'TAG_DELETED',
+  // --- M5: lịch hẹn (tài liệu 04 mục 3.7.1 `APPOINTMENT_*`) ---
+  APPOINTMENT_CREATED = 'APPOINTMENT_CREATED',
+  APPOINTMENT_UPDATED = 'APPOINTMENT_UPDATED',
+  APPOINTMENT_STATUS_CHANGED = 'APPOINTMENT_STATUS_CHANGED',
+  APPOINTMENT_DELETED = 'APPOINTMENT_DELETED',
+}
+
+export type CrmAuditSource = 'WEB' | 'MOBILE' | 'IMPORT' | 'SYSTEM';
+
+export interface CrmAuditChange {
+  field: string;
+  from: unknown;
+  to: unknown;
+}

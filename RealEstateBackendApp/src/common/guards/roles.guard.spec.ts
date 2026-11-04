@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * TEST-FIRST (TDD) — RolesGuard unit spec.
  *
@@ -6,7 +7,7 @@
  * (đúng kỳ vọng test-first, KHÔNG tạo stub impl).
  *
  * Contract đối chiếu:
- *   - AUTH_MODULE_ARCHITECTURE.md mục 8 (Guards & Decorators — RolesGuard)
+ *   - docs/02_Module_Auth/02_Auth_Module_Architecture.md mục 8 (Guards & Decorators — RolesGuard)
  *   - mục 6.3 (error message exact: "Insufficient role")
  *   - mục 11 (RBAC matrix: EDITOR ❌ / ADMIN ✅ cho user endpoints)
  *   - mục 16.8 (FastifyRequest mock shape)
@@ -20,6 +21,8 @@ import { Reflector } from '@nestjs/core';
 import { ForbiddenException } from '@nestjs/common';
 import { RolesGuard } from './roles.guard';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { ANY_ROLE_KEY } from '../decorators/any-role.decorator';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { UserRole } from '../enums/user-role.enum';
 
 /**
@@ -39,6 +42,20 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
   let reflector: jest.Mocked<Reflector>;
   let guard: RolesGuard;
 
+  /** Reflector giả trả metadata theo KEY (RolesGuard đọc 3 key: public, roles, anyRole). */
+  const mockMetadata = (meta: {
+    roles?: string[];
+    isPublic?: boolean;
+    anyRole?: boolean;
+  }) => {
+    reflector.getAllAndOverride.mockImplementation((key: unknown) => {
+      if (key === ROLES_KEY) return meta.roles;
+      if (key === IS_PUBLIC_KEY) return meta.isPublic;
+      if (key === ANY_ROLE_KEY) return meta.anyRole;
+      return undefined;
+    });
+  };
+
   beforeEach(() => {
     // Reflector.getAllAndOverride(key, [handler, class]) — đọc metadata từ cả
     // handler lẫn class (mục 8: "đọc ROLES_KEY metadata từ handler và class").
@@ -48,9 +65,13 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
     guard = new RolesGuard(reflector);
   });
 
-  it('KHÔNG có @Roles metadata → pass (authenticated là đủ) (mục 8)', () => {
-    reflector.getAllAndOverride.mockReturnValue(undefined);
-    const ctx = createMockContext({ sub: 'u1', email: 'a@b.c', role: UserRole.EDITOR });
+  it('KHÔNG có metadata quyền → default-deny: EDITOR (nhân sự cũ) vẫn pass (mục 8)', () => {
+    mockMetadata({});
+    const ctx = createMockContext({
+      sub: 'u1',
+      email: 'a@b.c',
+      role: UserRole.EDITOR,
+    });
 
     expect(guard.canActivate(ctx)).toBe(true);
     expect(reflector.getAllAndOverride).toHaveBeenCalledWith(ROLES_KEY, [
@@ -60,15 +81,23 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
   });
 
   it('request.user.role thuộc allowedRoles → true (ADMIN gọi endpoint @Roles(ADMIN)) (mục 11)', () => {
-    reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
-    const ctx = createMockContext({ sub: 'u1', email: 'a@b.c', role: UserRole.ADMIN });
+    mockMetadata({ roles: [UserRole.ADMIN] });
+    const ctx = createMockContext({
+      sub: 'u1',
+      email: 'a@b.c',
+      role: UserRole.ADMIN,
+    });
 
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
   it('EDITOR gọi endpoint @Roles(ADMIN) → throw ForbiddenException("Insufficient role") (mục 6.3 + 11)', () => {
-    reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
-    const ctx = createMockContext({ sub: 'u1', email: 'a@b.c', role: UserRole.EDITOR });
+    mockMetadata({ roles: [UserRole.ADMIN] });
+    const ctx = createMockContext({
+      sub: 'u1',
+      email: 'a@b.c',
+      role: UserRole.EDITOR,
+    });
 
     try {
       guard.canActivate(ctx);
@@ -83,7 +112,7 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
   });
 
   it('request.user undefined → throw ForbiddenException (không crash)', () => {
-    reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
+    mockMetadata({ roles: [UserRole.ADMIN] });
     // Giống JwtAuthGuard bypass thất bại — guard phòng thủ: không đọc .role của undefined.
     const ctx = createMockContext(undefined);
 
@@ -91,11 +120,13 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
   });
 
   it('đọc metadata từ cả handler lẫn class (getAllAndOverride merge)', () => {
-    reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
+    mockMetadata({ roles: [UserRole.ADMIN] });
     const handler = function handler() {};
     const klass = class Controller {};
     const ctx = {
-      switchToHttp: () => ({ getRequest: () => ({ user: { role: UserRole.ADMIN } }) }),
+      switchToHttp: () => ({
+        getRequest: () => ({ user: { role: UserRole.ADMIN } }),
+      }),
       getHandler: () => handler,
       getClass: () => klass,
     } as unknown as ExecutionContext;
@@ -103,13 +134,117 @@ describe('RolesGuard (canActivate) — contract mục 8 + 11', () => {
     guard.canActivate(ctx);
 
     // Phải truyền cả [handler, class] để Reflector merge 2 cấp (mục 8).
-    expect(reflector.getAllAndOverride).toHaveBeenCalledWith(ROLES_KEY, [handler, klass]);
+    expect(reflector.getAllAndOverride).toHaveBeenCalledWith(ROLES_KEY, [
+      handler,
+      klass,
+    ]);
   });
 
   it('nhiều role cho phép — role khớp 1 trong danh sách → true', () => {
-    reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN, UserRole.EDITOR]);
+    mockMetadata({ roles: [UserRole.ADMIN, UserRole.EDITOR] });
     const ctx = createMockContext({ role: UserRole.EDITOR });
 
     expect(guard.canActivate(ctx)).toBe(true);
+  });
+  it('KHÔNG có metadata quyền → MANAGER/STAFF (vai trò CRM) bị 403, ADMIN pass', () => {
+    mockMetadata({});
+    for (const role of [UserRole.MANAGER, UserRole.STAFF]) {
+      expect(() => guard.canActivate(createMockContext({ role }))).toThrow(
+        'Insufficient role',
+      );
+    }
+    expect(guard.canActivate(createMockContext({ role: UserRole.ADMIN }))).toBe(
+      true,
+    );
+  });
+
+  describe('tài khoản nhiều role (hợp quyền) và token cũ chỉ có role', () => {
+    const CRM = [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF];
+
+    it('STAFF+EDITOR: vào được cả route CRM lẫn route EDITOR (hai phân vùng ngang quyền, hợp lại)', () => {
+      const ctx = createMockContext({
+        role: UserRole.STAFF,
+        roles: [UserRole.STAFF, UserRole.EDITOR],
+      });
+      mockMetadata({ roles: CRM });
+      expect(guard.canActivate(ctx)).toBe(true);
+      mockMetadata({ roles: [UserRole.EDITOR] });
+      expect(guard.canActivate(ctx)).toBe(true);
+      // Không có role ADMIN/MANAGER thì route chỉ-Quản-trị vẫn chặn.
+      mockMetadata({ roles: [UserRole.ADMIN] });
+      expect(() => guard.canActivate(ctx)).toThrow('Insufficient role');
+    });
+
+    it('khớp bằng role KHÔNG phải cao nhất vẫn pass (MANAGER+STAFF vào route chỉ khai báo STAFF)', () => {
+      mockMetadata({ roles: [UserRole.STAFF] });
+      const ctx = createMockContext({
+        role: UserRole.MANAGER,
+        roles: [UserRole.MANAGER, UserRole.STAFF],
+      });
+      expect(guard.canActivate(ctx)).toBe(true);
+    });
+
+    it('token cũ chỉ có `role` (không có roles) vẫn hoạt động như roles=[role]', () => {
+      mockMetadata({ roles: CRM });
+      expect(
+        guard.canActivate(createMockContext({ role: UserRole.STAFF })),
+      ).toBe(true);
+      expect(() =>
+        guard.canActivate(createMockContext({ role: UserRole.EDITOR })),
+      ).toThrow('Insufficient role');
+    });
+
+    it('khi có roles[], roles quyết định (role đơn trong token không được cộng thêm quyền)', () => {
+      mockMetadata({ roles: [UserRole.ADMIN] });
+      const ctx = createMockContext({
+        role: UserRole.ADMIN,
+        roles: [UserRole.EDITOR],
+      });
+      expect(() => guard.canActivate(ctx)).toThrow('Insufficient role');
+    });
+
+    it('route không khai báo quyền (default-deny): cần ít nhất một role ADMIN/EDITOR', () => {
+      mockMetadata({});
+      expect(
+        guard.canActivate(
+          createMockContext({
+            role: UserRole.STAFF,
+            roles: [UserRole.STAFF, UserRole.EDITOR],
+          }),
+        ),
+      ).toBe(true);
+      expect(() =>
+        guard.canActivate(
+          createMockContext({
+            role: UserRole.MANAGER,
+            roles: [UserRole.MANAGER, UserRole.STAFF],
+          }),
+        ),
+      ).toThrow('Insufficient role');
+    });
+  });
+
+  it('@AnyRole() → mọi vai trò đã đăng nhập pass; @Roles vẫn ưu tiên hơn @AnyRole', () => {
+    mockMetadata({ anyRole: true });
+    expect(guard.canActivate(createMockContext({ role: UserRole.STAFF }))).toBe(
+      true,
+    );
+
+    mockMetadata({ anyRole: true, roles: [UserRole.ADMIN] });
+    expect(() =>
+      guard.canActivate(createMockContext({ role: UserRole.STAFF })),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('@Public() → pass kể cả không có request.user (JwtAuthGuard bỏ qua route này)', () => {
+    mockMetadata({ isPublic: true });
+    expect(guard.canActivate(createMockContext(undefined))).toBe(true);
+  });
+
+  it('default-deny khi không có user (token thiếu role) → 403', () => {
+    mockMetadata({});
+    expect(() => guard.canActivate(createMockContext(undefined))).toThrow(
+      ForbiddenException,
+    );
   });
 });

@@ -10,11 +10,17 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Throttle } from '@nestjs/throttler';
+import { AnyRole } from '../../common/decorators/any-role.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
+import {
+  AUTH_LOGIN_THROTTLE_TTL_MS,
+  reportAuthLoginThrottleStartup,
+  resolveAuthLoginThrottleLimit,
+} from './auth-throttle.config';
 
 /**
  * Cookie path cho refresh token.
@@ -28,12 +34,23 @@ const REFRESH_COOKIE_NAME = 'refreshToken';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {
+    // Fail-fast khi env throttle sai + log warn khi bị nới/bị bỏ qua (ConfigModule đã nạp .env vào process.env).
+    reportAuthLoginThrottleStartup();
+  }
 
   @Public()
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Login, returns access token + sets refresh cookie' })
+  // Mặc định 5/phút; AUTH_LOGIN_THROTTLE_LIMIT chỉ dành cho E2E (đọc lúc request).
+  @Throttle({
+    default: {
+      limit: () => resolveAuthLoginThrottleLimit(),
+      ttl: AUTH_LOGIN_THROTTLE_TTL_MS,
+    },
+  })
+  @ApiOperation({
+    summary: 'Login, returns access token + sets refresh cookie',
+  })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) reply: FastifyReply,
@@ -57,13 +74,13 @@ export class AuthController {
     if (!token) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    const { accessToken, refreshToken } =
-      await this.authService.refresh(token);
+    const { accessToken, refreshToken } = await this.authService.refresh(token);
     this.setRefreshCookie(reply, refreshToken);
     return { accessToken };
   }
 
   @Post('logout')
+  @AnyRole()
   @ApiOperation({ summary: 'Revoke refresh token + clear cookie (idempotent)' })
   async logout(
     @Req() req: FastifyRequest,
@@ -78,6 +95,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @AnyRole()
   @ApiOperation({ summary: 'Get current user profile' })
   async me(@CurrentUser() currentUser: JwtPayload) {
     return this.authService.getMe(String(currentUser?.sub));

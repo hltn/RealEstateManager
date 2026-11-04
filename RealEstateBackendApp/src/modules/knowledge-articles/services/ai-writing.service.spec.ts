@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { AiWritingService } from './ai-writing.service';
 import { KnowledgeConfigService } from './knowledge-config.service';
 import { UnifiedAiService } from '../../../shared/ai-provider/unified-ai.service';
@@ -33,7 +34,9 @@ describe('AiWritingService', () => {
         {
           provide: KnowledgeConfigService,
           useValue: {
-            getAiWritingConfig: jest.fn().mockResolvedValue(mockAiWritingConfig),
+            getAiWritingConfig: jest
+              .fn()
+              .mockResolvedValue(mockAiWritingConfig),
           },
         },
         {
@@ -68,7 +71,8 @@ describe('AiWritingService', () => {
       const aiResponse = {
         title: 'Thị trường BĐS Hà Nội 2026',
         content: '# Thị trường BĐS Hà Nội\n\nNội dung bài viết...',
-        htmlContent: '<h1>Thị trường BĐS Hà Nội</h1><p>Nội dung bài viết...</p>',
+        htmlContent:
+          '<h1>Thị trường BĐS Hà Nội</h1><p>Nội dung bài viết...</p>',
         summary: 'Tổng quan thị trường BĐS Hà Nội năm 2026',
         tags: ['bđs', 'hà nội', 'thị trường'],
       };
@@ -138,8 +142,7 @@ describe('AiWritingService', () => {
     });
 
     it('should throw when AI returns empty response', async () => {
-      const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockResolvedValue({
+      unifiedAiService.callChatCompletion = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           choices: [{ message: { content: '' } }],
@@ -153,19 +156,25 @@ describe('AiWritingService', () => {
           topicDescription: 'Test desc',
         }),
       ).rejects.toThrow('empty response');
-
-      global.fetch = originalFetch;
     });
 
     it('should retry on 500 errors', async () => {
-      let callCount = 0;
-      const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockImplementation(async () => {
-        callCount++;
-        if (callCount <= 2) {
-          return { ok: false, status: 500, text: async () => 'Server Error' } as any;
-        }
-        return {
+      // Bỏ qua thời gian chờ backoff thật (1s + 2s) để test chạy nhanh.
+      jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+
+      const callChatCompletion = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          text: async () => 'Server Error',
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          text: async () => 'Server Error',
+        })
+        .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
             choices: [
@@ -179,8 +188,8 @@ describe('AiWritingService', () => {
               },
             ],
           }),
-        } as any;
-      });
+        });
+      unifiedAiService.callChatCompletion = callChatCompletion;
 
       const result = await service.generateContent({
         topic: 'Test',
@@ -189,18 +198,76 @@ describe('AiWritingService', () => {
       });
 
       expect(result.title).toBe('Retry success');
-      expect(callCount).toBe(3);
-
-      global.fetch = originalFetch;
+      expect(callChatCompletion).toHaveBeenCalledTimes(3);
     });
 
-    it('should not retry on 400 errors', async () => {
-      const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockResolvedValue({
+    it('should not retry on 400 errors and surface the real API error', async () => {
+      const sleepSpy = jest
+        .spyOn(service as any, 'sleep')
+        .mockResolvedValue(undefined);
+      const callChatCompletion = jest.fn().mockResolvedValue({
         ok: false,
         status: 400,
         text: async () => 'Bad Request',
-      } as any);
+      });
+      unifiedAiService.callChatCompletion = callChatCompletion;
+
+      const promise = service.generateContent({
+        topic: 'Test',
+        category: 'test',
+        topicDescription: 'Test desc',
+      });
+
+      await expect(promise).rejects.toThrow(InternalServerErrorException);
+      await expect(promise).rejects.toThrow(
+        /AI API error .*HTTP 400: Bad Request/,
+      );
+      await expect(promise).rejects.not.toThrow(/retries/);
+      expect(callChatCompletion).toHaveBeenCalledTimes(1);
+      expect(sleepSpy).not.toHaveBeenCalled();
+    });
+
+    it('should still retry on 429 rate limit errors', async () => {
+      jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+      const callChatCompletion = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          text: async () => 'Too Many Requests',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ title: 'After 429', content: 'C' }),
+                },
+              },
+            ],
+          }),
+        });
+      unifiedAiService.callChatCompletion = callChatCompletion;
+
+      const result = await service.generateContent({
+        topic: 'Test',
+        category: 'test',
+        topicDescription: 'Test desc',
+      });
+
+      expect(result.title).toBe('After 429');
+      expect(callChatCompletion).toHaveBeenCalledTimes(2);
+    });
+
+    it('should give up after 3 attempts when AI keeps returning 500', async () => {
+      jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+      const callChatCompletion = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'Server Error',
+      });
+      unifiedAiService.callChatCompletion = callChatCompletion;
 
       await expect(
         service.generateContent({
@@ -208,9 +275,8 @@ describe('AiWritingService', () => {
           category: 'test',
           topicDescription: 'Test desc',
         }),
-      ).rejects.toThrow();
-
-      global.fetch = originalFetch;
+      ).rejects.toThrow(/failed after 3 retries/);
+      expect(callChatCompletion).toHaveBeenCalledTimes(3);
     });
   });
 });

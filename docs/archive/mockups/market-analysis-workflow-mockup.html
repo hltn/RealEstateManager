@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phân tích thị trường — Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          primary: '#2563EB',
+          secondary: '#1A237E',
+        },
+        fontFamily: {
+          sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #F8FAFC;
+    color: #0F172A;
+    line-height: 1.5;
+  }
+  ::selection { background: #2563EB20; color: #0F172A; }
+
+  /* --- Workflow connectors --- */
+  .workflow-line {
+    position: relative;
+  }
+  .workflow-line::after {
+    content: '';
+    position: absolute;
+    top: 28px;
+    left: calc(100% + 4px);
+    width: calc(100% - 8px);
+    height: 2px;
+    background: #CBD5E1;
+    transition: background 0.6s ease;
+    z-index: 0;
+  }
+  .workflow-line.done-connector::after {
+    background: #16A34A;
+  }
+  .workflow-line.running-connector::after {
+    background: linear-gradient(90deg, #16A34A 0%, #2563EB 50%, #CBD5E1 100%);
+    background-size: 200% 100%;
+    animation: connectorPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes connectorPulse {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  .workflow-line:last-child::after { display: none; }
+
+  /* --- Pulse ring for running step --- */
+  .pulse-ring {
+    animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes pulseRing {
+    0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
+    70% { box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+  }
+
+  /* --- Spinner --- */
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2.5px solid #DBEAFE;
+    border-top-color: #2563EB;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* --- Slide-down reveal --- */
+  .reveal-enter {
+    animation: revealIn 0.4s ease-out;
+  }
+  @keyframes revealIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* --- Markdown content --- */
+  .markdown-content h2 { font-size: 1.25rem; font-weight: 700; color: #1E293B; margin-top: 1.5em; margin-bottom: 0.5em; }
+  .markdown-content h3 { font-size: 1.1rem; font-weight: 600; color: #334155; margin-top: 1.25em; margin-bottom: 0.4em; }
+  .markdown-content p { margin-bottom: 0.75em; color: #475569; }
+  .markdown-content ul { list-style: disc; padding-left: 1.5em; margin-bottom: 0.75em; color: #475569; }
+  .markdown-content li { margin-bottom: 0.25em; }
+  .markdown-content strong { color: #1E293B; }
+
+  /* --- Tweak panel --- */
+  .tweak-panel { transition: transform 0.3s ease; }
+  .tweak-panel.collapsed { transform: translateX(100%); }
+
+  /* --- Date input styling --- */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  input[type="date"]:hover::-webkit-calendar-picker-indicator { opacity: 1; }
+
+  /* --- Scrollbar --- */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ===== MAIN CONTAINER ===== -->
+<div class="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+
+  <!-- ── HEADER ── -->
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Phân tích thị trường</h1>
+    <p class="mt-1 text-sm text-slate-500">Pipeline tự động 5 bước: thu thập → lọc → chuyển bài → crawl → phân tích AI</p>
+  </div>
+
+  <!-- ── ROW 1: DATE PICKER + BUTTON ── -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-8">
+    <div class="relative flex-1 w-full sm:max-w-[240px]">
+      <label class="block text-xs font-medium text-slate-500 mb-1.5">Ngày phân tích</label>
+      <input
+        type="date"
+        id="datePicker"
+        value="2026-08-06"
+        class="w-full px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-white border border-slate-200 rounded-lg
+               focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary
+               transition-all duration-150 shadow-sm"
+      />
+    </div>
+    <div class="flex items-end gap-2 w-full sm:w-auto">
+      <button
+        id="analyzeBtn"
+        onclick="toggleWorkflow()"
+        class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white
+               bg-primary hover:bg-blue-700 active:bg-blue-800
+               rounded-lg shadow-sm shadow-blue-500/20
+               transition-all duration-150
+               disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none
+               focus:outline-none focus:ring-2 focus:ring-primary/30"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+        </svg>
+        Phân tích
+      </button>
+    </div>
+  </div>
+
+  <!-- ── ROW 2: WORKFLOW VISUALIZATION ── -->
+  <div id="workflowSection" class="mb-8">
+    <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Tiến trình xử lý</h2>
+
+    <!-- Step cards grid: flex row with connectors -->
+    <div class="flex flex-nowrap gap-0 overflow-x-auto pb-2 -mx-1 px-1">
+      <!-- Step 1: Thu thập tin tức — DONE -->
+      <div class="workflow-line done-connector flex-shrink-0 w-[180px] relative z-10">
+        <div class="bg-white rounded-xl border border-green-200 shadow-sm p-4 mx-1 transition-all duration-300">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            </div>
+            <span class="text-xs font-semibold text-green-700">Hoàn tất</span>
+          </div>
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center">1</span>
+            <h3 class="text-sm font-semibold text-slate-900 leading-tight">Thu thập tin tức</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">45 bài viết đã crawl</p>
+        </div>
+      </div>
+
+      <!-- Step 2: Phân tích & lọc — DONE -->
+      <div class="workflow-line done-connector flex-shrink-0 w-[180px] relative z-10">
+        <div class="bg-white rounded-xl border border-green-200 shadow-sm p-4 mx-1">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            </div>
+            <span class="text-xs font-semibold text-green-700">Hoàn tất</span>
+          </div>
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center">2</span>
+            <h3 class="text-sm font-semibold text-slate-900 leading-tight">Phân tích &amp; lọc</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">12 bài được giữ lại</p>
+        </div>
+      </div>
+
+      <!-- Step 3: Chuyển sang bài viết — RUNNING (active demo) -->
+      <div class="workflow-line running-connector flex-shrink-0 w-[180px] relative z-10">
+        <div class="bg-white rounded-xl border-2 border-blue-400 shadow-md shadow-blue-500/10 p-4 mx-1 pulse-ring">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="spinner flex-shrink-0"></div>
+            <span class="text-xs font-semibold text-blue-600 animate-pulse">Đang chạy</span>
+          </div>
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center">3</span>
+            <h3 class="text-sm font-semibold text-slate-900 leading-tight">Chuyển sang bài viết</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">Đang xử lý 12 bài...</p>
+        </div>
+      </div>
+
+      <!-- Step 4: Crawl nội dung chi tiết — PENDING -->
+      <div class="workflow-line flex-shrink-0 w-[180px] relative z-10">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mx-1 opacity-70">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+              <div class="w-2 h-2 rounded-full bg-slate-300"></div>
+            </div>
+            <span class="text-xs font-medium text-slate-400">Chờ</span>
+          </div>
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="w-5 h-5 rounded-full bg-slate-300 text-white text-[10px] font-bold flex items-center justify-center">4</span>
+            <h3 class="text-sm font-medium text-slate-500 leading-tight">Crawl nội dung</h3>
+          </div>
+          <p class="text-[11px] text-slate-300 mt-1">—</p>
+        </div>
+      </div>
+
+      <!-- Step 5: Phân tích thị trường — PENDING -->
+      <div class="workflow-line flex-shrink-0 w-[180px] relative z-10">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mx-1 opacity-70">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+              <div class="w-2 h-2 rounded-full bg-slate-300"></div>
+            </div>
+            <span class="text-xs font-medium text-slate-400">Chờ</span>
+          </div>
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="w-5 h-5 rounded-full bg-slate-300 text-white text-[10px] font-bold flex items-center justify-center">5</span>
+            <h3 class="text-sm font-medium text-slate-500 leading-tight">Phân tích thị trường</h3>
+          </div>
+          <p class="text-[11px] text-slate-300 mt-1">—</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ERROR STATE DEMO: Toggle row -->
+    <div id="errorDemo" class="hidden mt-6 reveal-enter">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-[11px] font-semibold text-red-600 border border-red-200">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          DEMO LỖI
+        </span>
+        <span class="text-xs text-slate-400">— Pipeline dừng ở step 3 do lỗi WordPress API timeout</span>
+      </div>
+      <div class="flex flex-nowrap gap-0 overflow-x-auto pb-2 -mx-1 px-1">
+        <!-- Step 1: done -->
+        <div class="workflow-line done-connector flex-shrink-0 w-[180px] relative z-10">
+          <div class="bg-white rounded-xl border border-green-200 shadow-sm p-4 mx-1">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+              </div>
+              <span class="text-xs font-semibold text-green-700">Hoàn tất</span>
+            </div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center">1</span><h3 class="text-xs font-semibold text-slate-900">Thu thập tin tức</h3></div>
+          </div>
+        </div>
+        <!-- Step 2: done -->
+        <div class="workflow-line done-connector flex-shrink-0 w-[180px] relative z-10">
+          <div class="bg-white rounded-xl border border-green-200 shadow-sm p-4 mx-1">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+              </div>
+              <span class="text-xs font-semibold text-green-700">Hoàn tất</span>
+            </div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center">2</span><h3 class="text-xs font-semibold text-slate-900">Phân tích &amp; lọc</h3></div>
+          </div>
+        </div>
+        <!-- Step 3: ERROR -->
+        <div class="workflow-line flex-shrink-0 w-[180px] relative z-10">
+          <div class="bg-white rounded-xl border-2 border-red-300 shadow-sm shadow-red-500/10 p-4 mx-1">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              </div>
+              <span class="text-xs font-semibold text-red-700">Lỗi</span>
+            </div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">3</span><h3 class="text-xs font-semibold text-slate-900">Chuyển sang bài viết</h3></div>
+            <p class="text-[10px] text-red-500 mt-1 leading-tight">WordPress API timeout after 30s</p>
+          </div>
+        </div>
+        <!-- Step 4: pending (skipped) -->
+        <div class="workflow-line flex-shrink-0 w-[180px] relative z-10">
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mx-1 opacity-50">
+            <div class="flex items-center gap-2 mb-2"><div class="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center"><div class="w-2 h-2 rounded-full bg-slate-300"></div></div><span class="text-xs font-medium text-slate-400">Bỏ qua</span></div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-5 rounded-full bg-slate-300 text-white text-[10px] font-bold flex items-center justify-center">4</span><h3 class="text-xs font-medium text-slate-400">Crawl nội dung</h3></div>
+          </div>
+        </div>
+        <!-- Step 5: pending (skipped) -->
+        <div class="workflow-line flex-shrink-0 w-[180px] relative z-10">
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mx-1 opacity-50">
+            <div class="flex items-center gap-2 mb-2"><div class="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center"><div class="w-2 h-2 rounded-full bg-slate-300"></div></div><span class="text-xs font-medium text-slate-400">Bỏ qua</span></div>
+            <div class="flex items-center gap-1.5"><span class="w-5 h-5 rounded-full bg-slate-300 text-white text-[10px] font-bold flex items-center justify-center">5</span><h3 class="text-xs font-medium text-slate-400">Phân tích thị trường</h3></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- State demo toggle buttons -->
+    <div class="flex flex-wrap gap-2 mt-5">
+      <button onclick="showState('running')" id="btnRunning"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150
+                     bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100">
+        Demo: Đang chạy (step 3)
+      </button>
+      <button onclick="showState('error')" id="btnError"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150
+                     bg-white text-red-600 border-red-200 hover:bg-red-50">
+        Demo: Lỗi (step 3)
+      </button>
+      <button onclick="showState('done')" id="btnDone"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150
+                     bg-white text-green-600 border-green-200 hover:bg-green-50">
+        Demo: Hoàn tất
+      </button>
+      <button onclick="showState('idle')" id="btnIdle"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150
+                     bg-white text-slate-500 border-slate-200 hover:bg-slate-50">
+        Demo: Tất cả pending
+      </button>
+    </div>
+  </div>
+
+  <!-- ── ROW 3: KẾT QUẢ PHÂN TÍCH ── -->
+  <div id="resultArea" class="hidden mb-8 reveal-enter">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">Kết quả phân tích thị trường</h2>
+        <span class="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+          Hoàn tất 06/08/2026
+        </span>
+      </div>
+      <div class="p-5 markdown-content max-h-[500px] overflow-y-auto">
+        <h2>Tổng quan thị trường bất động sản — 06/08/2026</h2>
+        <p><strong>Nguồn dữ liệu:</strong> 12 bài viết từ các trang bất động sản hàng đầu, đã qua lọc AI và phân tích chuyên sâu.</p>
+
+        <h3>1. Xu hướng chung</h3>
+        <ul>
+          <li>Thị trường căn hộ <strong>TP.HCM</strong> tiếp tục xu hướng tăng giá nhẹ (+2.3% so với tháng trước), tập trung ở phân khúc trung cấp (2-4 tỷ).</li>
+          <li>Đất nền ven đô (<strong>Bình Dương, Đồng Nai, Long An</strong>) có dấu hiệu phục hồi với lượng giao dịch tăng ~15% sau khi hạ tầng vành đai 3, 4 được đẩy nhanh tiến độ.</li>
+          <li>Phân khúc <strong>nghỉ dưỡng</strong> (Đà Nẵng, Nha Trang, Phú Quốc) vẫn trầm lắng, thanh khoản thấp, giá giảm nhẹ ở một số dự án thứ cấp.</li>
+        </ul>
+
+        <h3>2. Chính sách &amp; pháp lý</h3>
+        <ul>
+          <li><strong>Luật Đất đai 2024</strong> có hiệu lực từ 01/08/2026 — bảng giá đất mới tại TP.HCM dự kiến tăng 30-50% so với khung cũ, gây lo ngại về chi phí đầu vào cho chủ đầu tư.</li>
+          <li>Ngân hàng Nhà nước tiếp tục giữ lãi suất cho vay ưu đãi ở mức <strong>6-8%/năm</strong> cho gói vay mua nhà ở xã hội.</li>
+        </ul>
+
+        <h3>3. Tâm lý thị trường</h3>
+        <ul>
+          <li>Niềm tin người mua đang <strong>cải thiện</strong> — khảo sát từ batdongsan.com.vn cho thấy 62% người được hỏi có kế hoạch mua nhà trong 12 tháng tới (tăng 8% so với quý trước).</li>
+          <li>Lo ngại về <strong>lạm phát</strong> và giá vàng tăng cao khiến bất động sản được xem là kênh trú ẩn an toàn.</li>
+        </ul>
+
+        <h3>4. Khuyến nghị</h3>
+        <ul>
+          <li><strong>Người mua ở thực:</strong> Cân nhắc các dự án đã có sổ đỏ, hạ tầng hoàn thiện tại khu Đông và Nam TP.HCM. Giá đang ở mức hợp lý, lãi suất vay thấp là thời điểm tốt để xuống tiền.</li>
+          <li><strong>Nhà đầu tư:</strong> Đất nền ven đô (Bình Dương, Long An) có tiềm năng tăng giá tốt trong 2-3 năm tới khi hạ tầng hoàn thiện. Phân khúc nghỉ dưỡng nên tiếp tục theo dõi, chưa nên tham gia.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ROW 4: LỊCH SỬ PHÂN TÍCH ── -->
+  <div id="historyArea" class="mb-8">
+    <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4">Lịch sử phân tích</h2>
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/50">
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Ngày</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Số bài viết</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nội dung phân tích</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-50">
+            <!-- Row 1: active / demo clickable -->
+            <tr class="hover:bg-blue-50/50 transition-colors cursor-pointer" onclick="showResultAndHighlight(this)">
+              <td class="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">06/08/2026</td>
+              <td class="px-4 py-3 text-slate-500 hidden sm:table-cell">12 bài</td>
+              <td class="px-4 py-3 text-slate-600 max-w-[300px] truncate">Tổng quan thị trường bất động sản — căn hộ TP.HCM tăng giá nhẹ, đất nền ven đô phục hồi...</td>
+              <td class="px-4 py-3 hidden md:table-cell">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-xs font-medium text-green-700">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                  Thành công
+                </span>
+              </td>
+            </tr>
+            <!-- Row 2 -->
+            <tr class="hover:bg-slate-50/50 transition-colors cursor-pointer">
+              <td class="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">05/08/2026</td>
+              <td class="px-4 py-3 text-slate-500 hidden sm:table-cell">8 bài</td>
+              <td class="px-4 py-3 text-slate-600 max-w-[300px] truncate">Thị trường ổn định, phân khúc chung cư Hà Nội ghi nhận lượng giao dịch tăng nhẹ ở quận...</td>
+              <td class="px-4 py-3 hidden md:table-cell">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-xs font-medium text-green-700">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                  Thành công
+                </span>
+              </td>
+            </tr>
+            <!-- Row 3: error -->
+            <tr class="hover:bg-red-50/50 transition-colors cursor-pointer">
+              <td class="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">04/08/2026</td>
+              <td class="px-4 py-3 text-slate-500 hidden sm:table-cell">—</td>
+              <td class="px-4 py-3 text-red-500 max-w-[300px] truncate italic">Pipeline dừng ở bước 3 — WordPress API timeout</td>
+              <td class="px-4 py-3 hidden md:table-cell">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-xs font-medium text-red-700">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  Lỗi
+                </span>
+              </td>
+            </tr>
+            <!-- Row 4 -->
+            <tr class="hover:bg-slate-50/50 transition-colors cursor-pointer">
+              <td class="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">01/08/2026</td>
+              <td class="px-4 py-3 text-slate-500 hidden sm:table-cell">15 bài</td>
+              <td class="px-4 py-3 text-slate-600 max-w-[300px] truncate">Luật Đất đai mới có hiệu lực — nhà đầu tư thận trọng, giá đất có biến động tại một số...</td>
+              <td class="px-4 py-3 hidden md:table-cell">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-xs font-medium text-green-700">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                  Thành công
+                </span>
+              </td>
+            </tr>
+            <!-- Row 5 -->
+            <tr class="hover:bg-slate-50/50 transition-colors cursor-pointer">
+              <td class="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">29/07/2026</td>
+              <td class="px-4 py-3 text-slate-500 hidden sm:table-cell">10 bài</td>
+              <td class="px-4 py-3 text-slate-600 max-w-[300px] truncate">Phân khúc bất động sản công nghiệp tiếp tục dẫn dắt thị trường với nhiều dự án KCN mới...</td>
+              <td class="px-4 py-3 hidden md:table-cell">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-xs font-medium text-green-700">
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                  Thành công
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== TOAST ===== -->
+<div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg opacity-0 translate-y-2 pointer-events-none transition-all duration-300 z-50">
+  <span id="toastMsg"></span>
+</div>
+
+<script>
+// ── State demo toggles ──
+function showState(state) {
+  const errorDemo = document.getElementById('errorDemo');
+  const resultArea = document.getElementById('resultArea');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const workflowSection = document.getElementById('workflowSection');
+
+  // Reset all toggle button styles
+  document.querySelectorAll('#workflowSection button[id^="btn"]').forEach(b => {
+    b.className = b.className.replace(/bg-\w+-\d+\s+text-\w+-\d+\s+border-\w+-\d+/, 'bg-white text-slate-500 border-slate-200');
+  });
+
+  if (state === 'error') {
+    errorDemo.classList.remove('hidden');
+    resultArea.classList.add('hidden');
+    analyzeBtn.disabled = false;
+    document.getElementById('btnError').className =
+      'px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150 bg-red-50 text-red-700 border-red-200';
+    toast('Demo: Pipeline lỗi ở step 3');
+  } else if (state === 'done') {
+    errorDemo.classList.add('hidden');
+    resultArea.classList.remove('hidden');
+    analyzeBtn.disabled = false;
+    document.getElementById('btnDone').className =
+      'px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150 bg-green-50 text-green-700 border-green-200';
+    toast('Demo: Pipeline hoàn tất — hiển thị kết quả');
+  } else if (state === 'running') {
+    errorDemo.classList.add('hidden');
+    resultArea.classList.add('hidden');
+    analyzeBtn.disabled = true;
+    document.getElementById('btnRunning').className =
+      'px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150 bg-blue-50 text-blue-700 border-blue-200';
+    toast('Demo: Step 3 đang chạy');
+  } else if (state === 'idle') {
+    errorDemo.classList.add('hidden');
+    resultArea.classList.add('hidden');
+    analyzeBtn.disabled = false;
+    document.getElementById('btnIdle').className =
+      'px-3 py-1.5 text-xs font-semibold rounded-md border transition-all duration-150 bg-slate-100 text-slate-700 border-slate-300';
+    toast('Demo: Tất cả step pending');
+  }
+}
+
+// ── Toast helper ──
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  el.classList.remove('opacity-0', 'translate-y-2');
+  el.classList.add('opacity-100', 'translate-y-0');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.add('opacity-0', 'translate-y-2');
+    el.classList.remove('opacity-100', 'translate-y-0');
+  }, 2200);
+}
+
+// ── Toggle workflow (button click) ──
+function toggleWorkflow() {
+  const btn = document.getElementById('analyzeBtn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  toast('Đã kích hoạt phân tích — theo dõi progress bên dưới');
+  // Keep in running state — user can use demo toggles
+  showState('running');
+}
+
+// ── History row click → show result ──
+function showResultAndHighlight(row) {
+  const resultArea = document.getElementById('resultArea');
+  resultArea.classList.remove('hidden');
+  // Remove highlight from all rows
+  document.querySelectorAll('#historyArea tbody tr').forEach(r => r.classList.remove('bg-blue-50/80'));
+  row.classList.add('bg-blue-50/80');
+  toast('Đã chọn lịch sử ngày 06/08/2026');
+}
+</script>
+</body>
+</html>

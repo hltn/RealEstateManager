@@ -5,7 +5,9 @@ import { Document, HydratedDocument, Types } from 'mongoose';
  * GoogleDriveToken — lưu OAuth2 token của user trên Google Drive.
  *
  * Mỗi user có tối đa 1 document (userId unique).
- * TTL index trên expiresAt tự xoá document khi token hết hạn + revoked.
+ * TTL index đã được BỎ để refresh token không bị xóa.
+ * Token hết hạn sẽ tự động refresh bằng refresh_token.
+ * Nếu refresh_token bị revoke, service sẽ throw và yêu cầu reconnect.
  */
 @Schema({ timestamps: true })
 export class GoogleDriveToken extends Document {
@@ -32,6 +34,3 @@ export type GoogleDriveTokenDocument = HydratedDocument<GoogleDriveToken>;
 
 export const GoogleDriveTokenSchema =
   SchemaFactory.createForClass(GoogleDriveToken);
-
-// TTL index: MongoDB tự xoá document khi expiresAt < now (expireAfterSeconds: 0).
-GoogleDriveTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

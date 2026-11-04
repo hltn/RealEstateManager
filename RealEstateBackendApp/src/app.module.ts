@@ -16,6 +16,14 @@ import { UsersModule } from './modules/users/users.module';
 import { GoogleDriveExportModule } from './modules/google-drive-export/google-drive-export.module';
 import { KnowledgeArticlesModule } from './modules/knowledge-articles/knowledge-articles.module';
 import { SharedModule } from './shared/shared.module';
+import { RedisModule } from './shared/redis/redis.module';
+import { QueueModule } from './shared/queue/queue.module';
+import { StorageModule } from './shared/storage/storage.module';
+import { FeatureFlagModule } from './shared/feature-flags/feature-flag.module';
+import { PiiCryptoModule } from './modules/crm/common/crypto/pii-crypto.module';
+import { CrmModule } from './modules/crm/crm.module';
+import { TeamsModule } from './modules/teams/teams.module';
+import { MigrationsWarningModule } from './migrations/migrations-warning.module';
 
 @Module({
   imports: [
@@ -35,6 +43,14 @@ import { SharedModule } from './shared/shared.module';
       rootPath: join(__dirname, '..', '..', 'RealEstateAdminApp', 'dist'),
       exclude: ['/api/(.*)'],
     }),
+    // Hạ tầng dùng chung (stateless): Redis, BullMQ, S3/MinIO, feature flag, mã hóa PII.
+    RedisModule,
+    QueueModule,
+    StorageModule,
+    FeatureFlagModule,
+    PiiCryptoModule,
+    // Chỉ ghi log cảnh báo nếu còn migration chờ (PT-027); không chạy migration, không chặn khởi động.
+    MigrationsWarningModule,
     ExternalLogModule,
     SharedModule,
     NewsFireCrawlManagerModule,
@@ -43,6 +59,9 @@ import { SharedModule } from './shared/shared.module';
     // Auth + Users: bật global JwtAuthGuard/RolesGuard/ThrottlerGuard.
     AuthModule,
     UsersModule,
+    // CRM: nhóm làm việc + danh mục + dự án (M1). Route CRM nằm sau cờ FEATURE_CRM_ENABLED.
+    TeamsModule,
+    CrmModule,
     // Google Drive Export (OAuth2 flow + Export).
     GoogleDriveExportModule,
     // Knowledge Articles (auto-write, auto-publish pipeline).

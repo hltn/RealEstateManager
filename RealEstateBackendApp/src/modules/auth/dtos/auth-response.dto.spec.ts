@@ -19,18 +19,20 @@ describe('auth-response.dto — load module không throw TDZ', () => {
 });
 
 describe('AuthResponseDto / UserPublicDto shape (mục 6.3)', () => {
-  it('UserPublicDto chứa {_id, email, displayName, role} KHÔNG chứa password/status', () => {
+  it('UserPublicDto chứa {_id, email, displayName, role, roles} KHÔNG chứa password/status', () => {
     const instance: UserPublicDto = {
       _id: 'u1',
       email: 'a@b.com',
       displayName: 'User A',
       role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
     };
     expect(instance).toEqual({
       _id: 'u1',
       email: 'a@b.com',
       displayName: 'User A',
       role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
     });
     // Đảm bảo shape KHÔNG có password/status.
     expect((instance as unknown as Record<string, unknown>).password).toBeUndefined();
@@ -45,6 +47,7 @@ describe('AuthResponseDto / UserPublicDto shape (mục 6.3)', () => {
         email: 'a@b.com',
         displayName: 'User A',
         role: UserRole.ADMIN,
+        roles: [UserRole.ADMIN],
       },
     };
     expect(dto.accessToken).toBe('tok');
@@ -53,6 +56,7 @@ describe('AuthResponseDto / UserPublicDto shape (mục 6.3)', () => {
       email: 'a@b.com',
       displayName: 'User A',
       role: UserRole.ADMIN,
+      roles: [UserRole.ADMIN],
     });
   });
 
@@ -63,6 +67,7 @@ describe('AuthResponseDto / UserPublicDto shape (mục 6.3)', () => {
       email: 'e@f.com',
       displayName: 'Editor',
       role: UserRole.EDITOR,
+      roles: [UserRole.EDITOR],
     };
     expect(dto.role).toBe(UserRole.EDITOR);
   });

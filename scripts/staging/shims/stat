@@ -1,0 +1,6 @@
+#!/bin/bash
+# Shim CHỈ cho staging local trên Windows/Git Bash (scripts/staging.sh đưa thư mục này lên đầu PATH; VPS Ubuntu không dùng).
+# NTFS không có chmod 600 thật nên `stat -c %a` luôn trả 644/666 và require_private_file của deploy.sh sẽ từ chối env: báo 600
+# CHỈ cho đúng file env staging ($STAGING_ENV_FILE). Mọi lệnh stat khác gọi stat thật.
+if [[ "${1:-}" == "-c" && "${2:-}" == "%a" && -n "${STAGING_ENV_FILE:-}" && "${3:-}" == "$STAGING_ENV_FILE" ]]; then echo 600; exit 0; fi
+exec /usr/bin/stat "$@"

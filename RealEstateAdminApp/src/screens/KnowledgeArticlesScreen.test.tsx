@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import KnowledgeArticlesScreen from './KnowledgeArticlesScreen';
-import { getKnowledgeArticles, KnowledgeArticleState, getWpConfig } from '../api/knowledge-articles.api';
+import { getKnowledgeArticles, KnowledgeArticleState } from '../api/knowledge-articles.api';
 
 vi.mock('../api/axios', () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
 vi.mock('../api/knowledge-articles.api', async () => {

@@ -1,36 +1,266 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack PRODUCTION: mongo (replica set rs0 + xác thực) + redis + minio (S3) + nine-router (9Router,
+# cổng AI nội bộ) + backend + frontend (nginx) + cloudflared.
+# Tài liệu đầy đủ: docs/01_Infrastructure/06_Production_Deploy.md
+#
+#   docker compose --env-file .env.docker up -d --build
+#   docker compose --env-file .env.docker ps
+#
+# BIẾN INTERPOLATION (${...} trong file này) được compose đọc từ file --env-file (khuyến nghị
+# chính file .env.docker, nơi đang chứa CLOUDFLARE_TUNNEL_TOKEN) hoặc file .env ở thư mục gốc.
+# Biến bắt buộc mà thiếu sẽ làm `docker compose` báo lỗi ngay (cú pháp ${VAR:?...}).
+# Biến riêng của backend (FEATURE_CRM_ENABLED, CRM_PII_ENCRYPTION_KEY, S3_PUBLIC_ENDPOINT...)
+# nằm trong .env.docker (env_file của backend); xem .env.docker.example.
+#
+# CẢNH BÁO DỮ LIỆU:
+#   - Dữ liệu nằm ở named volume: mongo_data, redis_data, minio_data, nine_router_data.
+#   - `docker compose down` GIỮ dữ liệu; `docker compose down -v` hoặc `docker volume rm`
+#     XÓA VĨNH VIỄN. Named volume KHÔNG phải backup: phải sao lưu ra ngoài máy (xem tài liệu).
+#   - KHÔNG thêm `name:` ở đầu file và KHÔNG đổi tên thư mục dự án: tên volume thật có
+#     tiền tố theo tên project (vd realestatemanager_mongo_data); đổi project là mất dấu dữ liệu cũ.
+#
+# Không service hạ tầng nào publish cổng ra host (mongo, redis, minio chỉ có trong network
+# realestate_net). Cổng ra host: frontend 80 và nine-router 20128 (dashboard + API của 9Router).
+# Cổng 20128 chỉ bind loopback của máy chủ theo mặc định (NINE_ROUTER_BIND_ADDR=127.0.0.1): vào dashboard
+# 9Router từ xa bằng SSH tunnel (ssh -L 20128:localhost:20128 <user>@<host>). Backend gọi 9Router qua
+# http://nine-router:20128/v1 trong network nội bộ nên KHÔNG bị ảnh hưởng. Cần mở ra mọi interface (IP/Tailscale
+# của máy chủ) thì đặt NINE_ROUTER_BIND_ADDR=0.0.0.0 trong .env.docker (cân nhắc kỹ: dashboard lộ ra mạng ngoài).
+# ─────────────────────────────────────────────────────────────────────────────
 services:
 
-  # ── MongoDB ──────────────────────────────────────────────────────────────────
+  # ── MongoDB 7: Replica Set 1 node `rs0` + xác thực + keyFile ─────────────────
+  # Bắt buộc Replica Set vì backend dùng Transaction (withTransaction). Replica set bật xác thực
+  # thì bắt buộc có keyFile (mongod đòi, kể cả 1 node).
+  # - Entrypoint bọc: ghi keyFile từ biến MONGO_KEYFILE vào /etc/mongo-keyfile (container fs, tạo lại
+  #   mỗi lần khởi động), chown mongodb, chmod 400, rồi giao cho docker-entrypoint.sh của image.
+  # - MONGO_INITDB_ROOT_* CHỈ có hiệu lực khi volume mongo_data RỖNG (triển khai mới). Volume cũ đã có dữ
+  #   liệu (standalone, không xác thực) thì phải nâng cấp thủ công: xem tài liệu mục "Nâng cấp từ standalone".
+  # - Healthcheck tự rs.initiate (idempotent) với host `mongo:27017` (tên service trong network nội bộ,
+  #   nên backend nối bằng replicaSet=rs0, không cần directConnection) và chỉ healthy khi là PRIMARY.
+  #   Xác thực NGAY TRONG script mongosh bằng process.env.MONGO_INITDB_ROOT_* (không có -u/-p trên dòng lệnh,
+  #   nên mật khẩu không hiện trong `ps`). rs.initiate chạy sau khi đã xác thực root (user root do initdb tạo
+  #   từ MONGO_INITDB_ROOT_* trước khi mongod thật khởi động), nên nhánh NotYetInitialized vẫn đúng (PT-002).
+  # Image: biến MONGO_IMAGE (mặc định mongo:7 = tag hiện tại). Ghim theo digest: xem PT-009, tài liệu mục 12.
   mongo:
-    image: mongo:7
+    image: ${MONGO_IMAGE:-mongo:7}
     container_name: realestate_mongo
     restart: unless-stopped
-    ports:
-      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Thiếu MONGO_ROOT_USERNAME (xem .env.docker.example)}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Thiếu MONGO_ROOT_PASSWORD (xem .env.docker.example)}
+      MONGO_KEYFILE_CONTENT: ${MONGO_KEYFILE:?Thiếu MONGO_KEYFILE (xem .env.docker.example)}
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        umask 077
+        printf '%s' "$$MONGO_KEYFILE_CONTENT" > /etc/mongo-keyfile
+        chown mongodb:mongodb /etc/mongo-keyfile
+        chmod 400 /etc/mongo-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /etc/mongo-keyfile --bind_ip_all
     volumes:
       - mongo_data:/data/db
     networks:
       - realestate_net
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        - CMD-SHELL
+        - |
+          mongosh --quiet --norc admin --eval "
+          try { db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD); } catch (e) { quit(1); }
+          let s;
+          try { s = rs.status(); } catch (e) {
+            if (e.codeName === 'NotYetInitialized') { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }); }
+            quit(1);
+          }
+          quit(s.ok === 1 && s.myState === 1 ? 0 : 1);
+          "
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # ── Redis (BullMQ nhắc việc, Idempotency) ────────────────────────────────────
+  # BullMQ yêu cầu maxmemory-policy = noeviction (không để Redis tự xóa key job).
+  # AOF (appendonly + everysec): job/idempotency key sống qua restart, mất tối đa ~1 giây khi sập nguồn.
+  # Mật khẩu: chỉ dùng ký tự an toàn cho URL (vd `openssl rand -hex 32`), vì backend ghép vào REDIS_URL.
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: realestate_redis
+    restart: unless-stopped
+    # Mật khẩu đi qua biến môi trường của container (không nằm trong Cmd/argv của `docker inspect`).
+    # Gọi docker-entrypoint.sh của image để vẫn hạ quyền xuống user `redis` như mặc định.
+    command:
+      - sh
+      - -c
+      - exec docker-entrypoint.sh redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Thiếu REDIS_PASSWORD (xem .env.docker.example)}
+      # redis-cli tự đọc biến này làm mật khẩu (healthcheck không phải đưa mật khẩu lên dòng lệnh).
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - realestate_net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 6
+      start_period: 5s
+
+  # ── MinIO (S3-compatible: ảnh đính kèm CRM, file export) ─────────────────────
+  # Image mặc định là Chainguard (build từ upstream MinIO, đã kèm `mc` + sh); minio/minio trên
+  # Docker Hub/quay.io không còn pull được. Chainguard free chỉ có tag `latest` => KHUYẾN NGHỊ production:
+  # pin digest qua MINIO_IMAGE=cgr.dev/chainguard/minio@sha256:<digest> để deploy tái lập được và
+  # không bị đổi phiên bản âm thầm khi `pull`. Digest phải là của bản ĐANG CHẠY: lấy bằng
+  # `bash scripts/print-image-digests.sh` (tài liệu mục 12).
+  # Credential BẮT BUỘC từ env (không có mặc định). Không publish cổng 9000/9001; backend vào qua
+  # http://minio:9000. Trình duyệt tải ảnh/export qua S3_PUBLIC_ENDPOINT (hostname công khai Cloudflare
+  # Tunnel trỏ tới http://minio:9000), xem tài liệu mục "S3_PUBLIC_ENDPOINT".
+  minio:
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    container_name: realestate_minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?Thiếu S3_ACCESS_KEY_ID (xem .env.docker.example)}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?Thiếu S3_SECRET_ACCESS_KEY (xem .env.docker.example)}
+      MC_CONFIG_DIR: /tmp/.mc
+    # Cần xem console quản trị? Mở tạm (chỉ loopback) rồi gỡ ngay sau khi dùng:
+    # ports:
+    #   - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - realestate_net
+    healthcheck:
+      # Image không có curl/wget; dùng `mc ready` (kèm trong image) qua MC_HOST_local.
+      test:
+        - CMD-SHELL
+        - MC_HOST_local="http://$$MINIO_ROOT_USER:$$MINIO_ROOT_PASSWORD@localhost:9000" mc ready local
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # ── Khởi tạo bucket CRM (chạy 1 lần rồi thoát, idempotent) ───────────────────
+  #   crm-attachments : ảnh đính kèm nhật ký chăm sóc (riêng tư, đọc qua signed URL 15 phút)
+  #   crm-exports     : file export, tự xóa sau 7 ngày
+  # Dùng lại image minio (đã có `mc` và sh). Tên bucket khớp S3_BUCKET_ATTACHMENTS / S3_BUCKET_EXPORTS.
+  minio-init:
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    container_name: realestate_minio_init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_USER: ${S3_ACCESS_KEY_ID}
+      MC_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+      MC_CONFIG_DIR: /tmp/.mc
+      BUCKET_ATTACHMENTS: ${S3_BUCKET_ATTACHMENTS:-crm-attachments}
+      BUCKET_EXPORTS: ${S3_BUCKET_EXPORTS:-crm-exports}
+    networks:
+      - realestate_net
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$MC_USER" "$$MC_PASSWORD"
+        mc mb --ignore-existing "local/$$BUCKET_ATTACHMENTS"
+        mc mb --ignore-existing "local/$$BUCKET_EXPORTS"
+        mc anonymous set none "local/$$BUCKET_ATTACHMENTS"
+        mc anonymous set none "local/$$BUCKET_EXPORTS"
+        # Đặt lại rule hạn 7 ngày cho exports (xóa rule cũ trước để chạy lại không nhân đôi rule).
+        mc ilm rule rm --all --force "local/$$BUCKET_EXPORTS" || true
+        mc ilm rule add --expire-days 7 "local/$$BUCKET_EXPORTS"
+        echo "MinIO buckets ready"
+
+  # ── 9Router (cổng định tuyến AI, một phần sản phẩm) ──────────────────────────
+  # Backend gọi qua http://nine-router:20128/v1 (ACTIVE_AI_PLATFORM=9Router, NINEROUTER_BASE_URL trong .env của
+  # backend). Tên service PHẢI giữ là `nine-router` và nằm trong network realestate_net để tên này phân giải được.
+  # - Dữ liệu (tài khoản/provider đã cấu hình) ở volume nine_router_data: GIỮ NGUYÊN tên khóa này, volume thật
+  #   đang có dữ liệu (realestatemanager_nine_router_data). Không đổi project name / không thêm `name:`.
+  # - INITIAL_PASSWORD (mật khẩu dashboard) BẮT BUỘC từ .env.docker, không có mặc định, không ghi vào repo.
+  # - Image 9Router KHÔNG đọc biến NINEROUTER_API_KEY (README của image không có biến này; đó là tên biến phía
+  #   backend), nên đã gỡ khỏi service. API key mà backend dùng gọi 9Router là key tạo trong dashboard 9Router, lưu ở
+  #   cấu hình/.env của backend, không liên quan tới compose. Biến image có đọc (JWT_SECRET, API_KEY_SECRET,
+  #   MACHINE_ID_SALT, REQUIRE_API_KEY, AUTH_COOKIE_SECURE...) hiện KHÔNG đặt: dùng mặc định của image. Nếu bản đang
+  #   chạy có đặt chúng thì PHẢI mang sang đây trước khi tạo lại container (tài liệu mục 5.0a).
+  # - INITIAL_PASSWORD: theo README image chỉ có tác dụng khi CHƯA có mật khẩu đã lưu trong volume.
+  # - Cổng 20128: địa chỉ bind theo NINE_ROUTER_BIND_ADDR, mặc định 127.0.0.1 (chỉ loopback máy chủ; vào dashboard
+  #   từ xa bằng SSH tunnel). Đặt 0.0.0.0 nếu thật sự cần truy cập trực tiếp qua IP/Tailscale của máy chủ.
+  #   Backend gọi qua tên service nine-router:20128 trong network nội bộ, không phụ thuộc cổng publish này.
+  # - Image: biến NINE_ROUTER_IMAGE (mặc định decolua/9router:latest = tag hiện tại, trùng bản đang chạy khi chưa pull lại).
+  #   Muốn tái lập được thì ghim digest của bản ĐANG CHẠY trong .env.docker (PT-009, tài liệu mục 12), không ghim bừa.
+  nine-router:
+    image: ${NINE_ROUTER_IMAGE:-decolua/9router:latest}
+    container_name: realestate_9router
+    restart: unless-stopped
+    ports:
+      - "${NINE_ROUTER_BIND_ADDR:-127.0.0.1}:20128:20128"
+    volumes:
+      - nine_router_data:/app/data
+    environment:
+      INITIAL_PASSWORD: ${NINE_ROUTER_INITIAL_PASSWORD:?Thiếu NINE_ROUTER_INITIAL_PASSWORD (xem .env.docker.example)}
+      DATA_DIR: /app/data
+      NODE_ENV: production
+    networks:
+      - realestate_net
 
   # ── NestJS Backend ────────────────────────────────────────────────────────────
   backend:
     build:
       context: ./RealEstateBackendApp
       dockerfile: Dockerfile
+      args:
+        # Commit ngắn ghi vào dist/version.json của image (PT-027). deploy.sh export GIT_COMMIT trước khi build;
+        # chạy compose tay không đặt thì `commit` trong file là null. Arg chỉ ảnh hưởng một lớp nhỏ cuối stage builder (không mất cache build).
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: realestate_backend
     restart: unless-stopped
     env_file:
       - .env.docker
     environment:
-      - MONGODB_URI=mongodb://mongo:27017/realestate
+      # `environment` ghi đè env_file. Mật khẩu Mongo/Redis và key S3 lấy từ CÙNG biến với service tương ứng
+      # nên không thể lệch nhau. Mật khẩu Mongo/Redis phải an toàn cho URL (hex/base64url), xem tài liệu.
+      # Quyền tối thiểu (PT-016, tùy chọn): đặt MONGO_APP_USERNAME/MONGO_APP_PASSWORD (user readWrite trên DB realestate,
+      # tạo theo tài liệu mục 13) thì backend dùng user đó; KHÔNG đặt thì giữ nguyên hành vi cũ (dùng root). Root vẫn dùng
+      # cho mongo/healthcheck/mongodump/deploy.sh. Tương tự S3_APP_ACCESS_KEY_ID/S3_APP_SECRET_ACCESS_KEY cho MinIO.
+      - MONGODB_URI=mongodb://${MONGO_APP_USERNAME:-${MONGO_ROOT_USERNAME}}:${MONGO_APP_PASSWORD:-${MONGO_ROOT_PASSWORD}}@mongo:27017/realestate?authSource=admin&replicaSet=rs0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - S3_ENDPOINT=http://minio:9000
+      - S3_REGION=us-east-1
+      - S3_FORCE_PATH_STYLE=true
+      - S3_ACCESS_KEY_ID=${S3_APP_ACCESS_KEY_ID:-${S3_ACCESS_KEY_ID}}
+      - S3_SECRET_ACCESS_KEY=${S3_APP_SECRET_ACCESS_KEY:-${S3_SECRET_ACCESS_KEY}}
+      - S3_BUCKET_ATTACHMENTS=${S3_BUCKET_ATTACHMENTS:-crm-attachments}
+      - S3_BUCKET_EXPORTS=${S3_BUCKET_EXPORTS:-crm-exports}
+      # Cờ CRM: CÙNG MỘT biến cho backend và bản build frontend (xem build args của frontend) để hai phía không lệch.
+      # Mặc định TẮT. Đặt CRM_ENABLED / CRM_ATTACHMENTS_ENABLED trong .env.docker; KHÔNG đặt FEATURE_CRM_ENABLED /
+      # FEATURE_CRM_ATTACHMENTS trong .env.docker nữa (bị các dòng dưới ghi đè). Import (M8) và Push giai đoạn sau: giữ tắt.
+      - FEATURE_CRM_ENABLED=${CRM_ENABLED:-false}
+      - FEATURE_CRM_ATTACHMENTS=${CRM_ATTACHMENTS_ENABLED:-false}
+      - FEATURE_CRM_IMPORT=false
+      - FEATURE_CRM_PUSH=false
+      # Các biến sau đặt trong .env.docker (đi qua env_file, không ghi đè ở đây):
+      #   S3_PUBLIC_ENDPOINT (hostname công khai ký signed URL), S3_SIGNED_URL_TTL_SECONDS, REDIS_KEY_PREFIX,
+      #   CRM_PII_ENCRYPTION_KEY (+ CRM_PII_KEY_VERSION). Bật CRM (CRM_ENABLED=true) thì BẮT BUỘC có
+      #   CRM_PII_ENCRYPTION_KEY (thiếu thì backend không khởi động); MẤT khóa = không giải mã lại được CCCD, phải sao lưu.
+      # Production: cookie refresh có cờ Secure (cần HTTPS qua Cloudflare hoặc http://localhost), thiếu ADMIN_EMAIL/
+      # ADMIN_PASSWORD thì backend không khởi động khi DB chưa có user, login throttle cố định 5/phút. Xem tài liệu mục 9.
+      - NODE_ENV=production
+      # Số hop proxy tin cậy để backend lấy IP client (rate limit đăng nhập đếm theo IP thật). Nginx là proxy duy nhất
+      # được tin: nó ghi ĐÈ X-Forwarded-For bằng IP thật (CF-Connecting-IP chỉ được tin khi đến từ cloudflared tĩnh
+      # 10.213.77.250, xem RealEstateAdminApp/nginx.conf). Backend KHÔNG publish cổng nên chỉ nginx gọi vào được.
+      - TRUST_PROXY=1
       - PORT=3000
-      - FRONTEND_URL=http://localhost
+      # URL công khai của web admin (https://<domain-admin>): dùng cho CORS và chuyển hướng sau Google Drive OAuth.
+      # Đọc từ .env.docker; thiếu thì giữ mặc định cũ http://localhost (không phá bản đang chạy, nhưng OAuth sẽ về localhost).
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
       # Cron chạy theo giờ Việt Nam (UTC+7), không dùng UTC mặc định của container.
       - TZ=Asia/Ho_Chi_Minh
       # Daily News Crawler: giữ config trong file bind-mount để backend có thể
@@ -42,6 +272,25 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    # Healthcheck (PT-001): gọi liveness (chỉ cho biết tiến trình còn sống, KHÔNG kiểm dependency nên Mongo/Redis/MinIO
+    # chập chờn không làm backend bị đánh dấu unhealthy). Image node:slim KHÔNG có curl/wget nên dùng `node` + fetch
+    # (Node 24 có sẵn). Cổng đọc từ $PORT (mặc định 3000). start_period 40s cho NestJS khởi động + kết nối DB.
+    # `depends_on` của service khác (frontend, cloudflared) dùng service_started nên KHÔNG bị ảnh hưởng; trạng thái
+    # healthy chỉ hiện ở `docker compose ps`. Readiness (dependency) xem `/api/v1/health/readiness`, tài liệu mục 7.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/v1/health/liveness', { signal: AbortSignal.timeout(4000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
       - ./.env:/app/.env
       # Log file (daily-rotation) persist ra host tại <repo>/logs/
@@ -56,6 +305,12 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: /api/v1
+        # Cờ Vite NHÚNG LÚC BUILD: đổi CRM_ENABLED/CRM_ATTACHMENTS_ENABLED thì phải build lại frontend (--build).
+        # Cùng biến với backend (FEATURE_CRM_*) để hai phía khớp. Mock (dữ liệu mẫu) luôn tắt ở production.
+        VITE_CRM_ENABLED: ${CRM_ENABLED:-false}
+        VITE_FEATURE_CRM_ATTACHMENTS: ${CRM_ATTACHMENTS_ENABLED:-false}
+        VITE_CRM_MOCK_REPORTS: "false"
+        VITE_CRM_MOCK_IMPORT_EXPORT: "false"
     container_name: realestate_frontend
     restart: unless-stopped
     ports:
@@ -66,22 +321,39 @@ services:
       - realestate_net
 
   # ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
+  # Token-based: hostname công khai cấu hình trong dashboard Cloudflare (Zero Trust > Networks > Tunnels).
+  # Cần 2 hostname: <domain-admin> -> http://frontend:80 và <domain-file> -> http://minio:9000
+  # (hostname thứ 2 chính là S3_PUBLIC_ENDPOINT). Xem tài liệu.
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
     container_name: realestate_cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?Thiếu CLOUDFLARE_TUNNEL_TOKEN (xem .env.docker.example)}
     depends_on:
       - frontend
     networks:
-      - realestate_net
+      realestate_net:
+        # IP TĨNH: nginx chỉ tin CF-Connecting-IP từ đúng địa chỉ này (set_real_ip_from trong nginx.conf).
+        ipv4_address: 10.213.77.250
 
 networks:
   realestate_net:
     driver: bridge
+    ipam:
+      config:
+        # Subnet riêng, hiếm gặp, để không đụng dải Docker mặc định (172.16-31.x, 192.168.x) và mạng nội bộ.
+        # Container thường lấy IP động trong ip_range (/25 = .1-.127); cloudflared ở .250 nằm NGOÀI ip_range
+        # nên không bị cấp trùng. Đổi dải thì sửa cả set_real_ip_from trong RealEstateAdminApp/nginx.conf.
+        - subnet: 10.213.77.0/24
+          ip_range: 10.213.77.0/25
 
+# CẢNH BÁO: `docker compose down -v` XÓA CẢ 4 VOLUME (toàn bộ dữ liệu Mongo, Redis, MinIO, 9Router).
 volumes:
   mongo_data:
+    driver: local
+  redis_data:
+  minio_data:
+  nine_router_data:
     driver: local

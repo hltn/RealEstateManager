@@ -1,0 +1,30 @@
+#!/bin/bash
+# Shim CHỈ cho staging local trên Windows/Git Bash. Git Bash (MSYS) tự đổi đối số dạng /đường/dẫn thành đường dẫn Windows khi gọi
+# docker.exe (vd `--file /dev/stdin` thành `C:/.../dev/stdin`, hỏng lệnh). Shim tắt việc đổi đó (MSYS_NO_PATHCONV=1) và CHỈ đổi sang
+# dạng Windows đối số là đường dẫn FILE CỦA HOST đứng ngay sau `--file`/`-f`/`--env-file`/`-v`/`--volume` (hoặc dạng `--cờ=giá-trị`),
+# và chỉ khi file đó tồn tại trên host và không phải /dev/*. Đối số khác (vd `/tmp` hay `/app/.env` dành cho container) giữ nguyên.
+real=""
+IFS=: read -r -a dirs <<<"$PATH"
+for d in "${dirs[@]}"; do
+  [[ "$d" == "${STAGING_SHIM_DIR:-/nonexistent}" ]] && continue
+  for n in docker docker.exe; do [[ -x "$d/$n" && ! -d "$d/$n" ]] && { real="$d/$n"; break 2; }; done
+done
+[[ -n "$real" ]] || { echo "[staging-shim] không tìm thấy docker thật trong PATH" >&2; exit 127; }
+
+is_path_flag() { case "$1" in --file|-f|--env-file|-v|--volume) return 0 ;; *) return 1 ;; esac; }
+to_win() { # <đối số>: in đường dẫn Windows nếu là file host tồn tại (không phải /dev/*), ngược lại in nguyên
+  if [[ "$1" == /* && "$1" != /dev/* && -e "$1" ]]; then cygpath -w "$1"; else printf '%s' "$1"; fi
+}
+
+args=()
+prev=""
+for a in "$@"; do
+  if is_path_flag "$prev"; then
+    a="$(to_win "$a")"
+  elif [[ "$a" == --*=* ]] && is_path_flag "${a%%=*}"; then
+    a="${a%%=*}=$(to_win "${a#*=}")"
+  fi
+  args+=("$a")
+  prev="$a"
+done
+MSYS_NO_PATHCONV=1 exec "$real" "${args[@]}"

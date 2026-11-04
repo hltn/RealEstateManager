@@ -4,6 +4,10 @@ dist/
 build/
 .env
 .env.*
+!.env.example
+!.env.docker.example
+!.env.staging.example
+!**/.env.example
 .DS_Store
 *.log
 npm-debug.log*
@@ -26,7 +30,25 @@ graphify-out/
 CLAUDE.md
 .worktrees/
 
-# Shell scripts
-deploy.sh
+# Shell scripts (deploy.sh nay LÀ file được quản lý trong repo, không còn ignore; get-docker.sh/start.sh vẫn ignore)
 get-docker.sh
 start.sh
+
+.ua/
+
+# E2E Playwright (RealEstateAdminApp/e2e)
+test-results/
+playwright-report/
+RealEstateAdminApp/e2e/.runtime/
+# Build backend RIÊNG của E2E (khác dist dùng chung với backend dev)
+RealEstateBackendApp/.e2e-dist/
+!RealEstateAdminApp/e2e/.env.e2e.example
+
+# Sản phẩm vận hành trên máy chủ production (docker-compose.yml bind-mount ./logs; deploy.sh ghi ./backups).
+# ./backups chứa bản mongodump có dữ liệu cá nhân khách hàng: TUYỆT ĐỐI không commit.
+/backups/
+/logs/
+/tmp/
+
+# Staging local (scripts/staging.sh): env giả sinh ngẫu nhiên, log, backup, dữ liệu tạm. Không bao giờ commit.
+/.staging/

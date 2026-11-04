@@ -4,7 +4,7 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client", "vite-plugin-svgr/client"],
+    "types": ["vite/client", "vite-plugin-svgr/client", "vite-plugin-pwa/client"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
@@ -16,11 +16,18 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* [Prototype] Module CRM alias (TS 6: `paths` tự tính tương đối theo file tsconfig, không cần `baseUrl` đã deprecated) */
+    "paths": {
+      "@crm/*": ["./src/modules/crm/*"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Service worker chạy trong WebWorker (không có DOM) nên kiểm kiểu riêng ở tsconfig.sw.json */
+  "exclude": ["src/pwa/sw.ts"]
 }
