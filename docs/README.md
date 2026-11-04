@@ -1,10 +1,10 @@
 # Tài liệu dự án Real Estate Manager
 
-> **Phiên bản tài liệu:** v1.0.3
+> **Phiên bản tài liệu:** v1.0.4
 
 Đây là chỉ mục tổng của toàn bộ tài liệu dự án. Tài liệu được tổ chức theo **Tổng thể → Hạ tầng → Từng module → Frontend**, mỗi thư mục và mỗi file đều đánh số để đọc theo thứ tự.
 
-**Phiên bản hiện tại: v1.0.2** (đang chạy production từ 2026-11-02). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
+**Phiên bản hiện tại: v1.0.3** (đang chạy production từ 2026-11-04; trước đó v1.0.2 từ 2026-11-02). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
 
 ## Dự án gồm những gì
 

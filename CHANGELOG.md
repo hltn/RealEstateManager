@@ -8,7 +8,7 @@ Nguồn chính và đầy đủ: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08
 
 Sửa và bổ sung sau khi test web trên production (chủ yếu giao diện mobile), thêm PWA, tự chạy migration khi deploy.
 
-**Lưu ý:** v1.0.3 **chưa deploy production**. Còn kiểm trên iPhone/Android thật (kể cả PWA) và Lighthouse; một số mục còn việc kiểm trên VPS.
+v1.0.3 đã deploy lên production ngày 2026-11-04; thẻ git `v1.0.3` đặt trên `d2e5282`.
 
 ### Thêm
 - PT-023: đủ 3/4 tiêu chí thì tự chuyển khách sang "Khách net"; hạ dưới 3/4 về "Có quan tâm" (không đè trạng thái "Bỏ"), thông báo người cùng chăm sóc.
@@ -30,13 +30,14 @@ Sửa và bổ sung sau khi test web trên production (chủ yếu giao diện m
 ### Hạ tầng
 - PT-027: sổ phiên bản trong collection `system`; runner migration; `deploy.sh` tự baseline và tự chạy migration chờ; staging local.
 - PT-001, PT-002: healthcheck cho `backend`; healthcheck `mongo` không còn mật khẩu trên dòng lệnh.
-- PT-009, PT-016: cơ chế ghim digest image (chưa ghim) và runbook user Mongo/MinIO quyền tối thiểu (biến `MONGO_APP_*`, `S3_APP_*`).
+- PT-009, PT-016: cơ chế ghim digest image (biến `*_IMAGE`, script `print-image-digests.sh`) và runbook user Mongo/MinIO quyền tối thiểu (biến `MONGO_APP_*`, `S3_APP_*`).
 - PT-003, PT-004, PT-007, PT-010, PT-011, PT-013: bật ảnh đính kèm CRM, rà biến `S3_BUCKET_EXPORTS`, bổ sung tài liệu triển khai, dọn dẹp sau nâng cấp, rà token tunnel, sao lưu khóa mã hóa PII ra ngoài máy chủ.
+- PT-005: kiểm chứng thao tác AI qua 9Router (Cấu hình AI, tải danh sách model).
+- PT-006: nới đĩa VPS để `deploy.sh` và `run-migration.sh` không bị chặn bởi ngưỡng đĩa trống 5 GB.
 - Số phiên bản ba ứng dụng nâng lên 1.0.3.
 
-### Chưa làm / đã bỏ
-- Chưa làm: PT-005 (kiểm chứng AI qua 9Router), PT-006 (nới đĩa VPS, đang chặn `deploy.sh` kế tiếp).
-- Đã bỏ (Oniichan quyết định 2026-11-02): PT-012, PT-014, PT-015.
+### Đã bỏ
+- Oniichan quyết định bỏ ngày 2026-11-02: PT-012, PT-014, PT-015.
 
 Chi tiết: [`docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md); checklist kiểm máy thật: [`docs/08_Quan_Ly_Phien_Ban/02_Checklist_Kiem_iPhone_v1.0.3.md`](docs/08_Quan_Ly_Phien_Ban/02_Checklist_Kiem_iPhone_v1.0.3.md).
 
