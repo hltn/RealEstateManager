@@ -6,6 +6,8 @@ Mục lục phiên bản của toàn bộ hệ thống Real Estate Manager: quy 
 
 **Phiên bản hiện tại: v1.0.2** (đang chạy production từ 2026-11-02).
 
+Bản tóm tắt thay đổi theo phiên bản (đọc nhanh, kiểu Keep a Changelog) nằm ở [`../../CHANGELOG.md`](../../CHANGELOG.md) ở thư mục gốc repo; file này vẫn là nguồn chính và đầy đủ.
+
 ## 1. Quy ước đánh số
 
 Dùng semver `X.Y.Z`, một số phiên bản **chung cho cả hệ thống** (tài liệu + ứng dụng):
@@ -34,22 +36,26 @@ Quy tắc kèm theo:
 | v1.0.2 | 2026-11-02 (lên production) | Nâng cấp production lên stack mới (Mongo replica set `rs0` có xác thực, Redis, MinIO, 9Router trong compose, `deploy.sh`, migration runner) cùng đợt sửa đổi CRM A–D: nhiều role/nhóm, khu vực 34 tỉnh thành, thành viên nhóm, xóa/khôi phục/xóa vĩnh viễn khách "Bỏ". Production chạy commit `e6099c0`; migration 005 và 006 đã chạy xong trên VPS | Xong về triển khai (đã lên production); chưa đóng chính thức ở mục 09 vì chờ nghiệm thu thực tế | [`../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md), [`../01_Infrastructure/06_Production_Deploy.md`](../01_Infrastructure/06_Production_Deploy.md) |
 | v1.0.3 | chưa có | Kế hoạch: các việc cần sửa/bổ sung sau khi chạy test trên production (hiện gồm 31 mục: 12 phát hiện lúc nâng cấp, 4 do QA đề xuất, 10 do Oniichan test web trên production ngày 2026-11-02 (PT-017 đến PT-026, giao diện mobile và một tính năng mới) và 5 do Oniichan yêu cầu bổ sung (PT-027, lưu phiên bản hệ thống trong collection `system` và cơ chế tự chạy migration; PT-028, PT-029 và PT-030 ngày 2026-11-03, đã code và test, trạng thái Xong một phần: chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile và chỉnh nút trên desktop, bỏ nút Chỉnh sửa ở hàng tiêu đề mobile, biến web admin thành PWA cài được trên iPhone và Android không offline dữ liệu, kèm `viewport-fit=cover` và rà vùng an toàn; còn thử trên iPhone/Android thật và Lighthouse; PT-031 ngày 2026-11-04, đã code và test, trạng thái Xong một phần, chưa deploy: đổi quy tắc mã dự án thành chữ A-Z và số 0-9 viết liền, tối đa 30 ký tự, không `-`/`_`, mã cũ giữ nguyên, kèm FE tự điền mã từ tên dự án); ngày 2026-11-02: 6 mục Xong (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục Xong một phần (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027: đã code và test trong repo, chưa commit, chưa deploy; còn việc kiểm trên VPS hoặc iPhone thật), PT-012 (khu vực bị bỏ trống), PT-014 (hiển thị số phiên bản) và PT-015 (backup định kỳ) Oniichan quyết định Bỏ, 2 mục còn Mới (PT-005, PT-006); PT-022 mở rộng thành bỏ quy tắc tác giả sửa nhật ký trong 24 giờ, cần BE, FE và tài liệu) | Kế hoạch | [`01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md) |
 
-Ba mốc ngày của v1.0.2: **2026-10-29** soạn mục 09 (đợt sửa đổi A–D); **2026-11-01** ngày của commit mà thẻ git cục bộ `v1.0.2` đang trỏ tới (`ad59c4b`); **2026-11-02** lên production (commit `e6099c0`).
+Ba mốc ngày của v1.0.2: **2026-10-29** soạn mục 09 (đợt sửa đổi A–D); **2026-11-02** commit `d0037f2` ("đánh số phiên bản v1.0.2", manifest 1.0.2) là commit mang thẻ git `v1.0.2`, và cùng ngày lên production (production thực chạy commit `e6099c0`, manifest lúc đó còn số cũ). Thẻ cục bộ cũ trỏ `ad59c4b` (2026-11-01) đã bị thay.
 
-Thẻ git (đề xuất, việc push thẻ do Oniichan quyết):
+Thẻ git (**đã quyết**, Oniichan, 2026-11-04):
 
-- `v1.0.1` hiện có trên remote, trỏ commit `932db04` (2026-08-24). Mốc này cũ hơn một phần nội dung được xếp vào v1.0.1 (ví dụ tài liệu CRM soạn tháng 10), nên cần Oniichan quyết có giữ nguyên hay không.
-- `v1.0.2`: lúc viết chỉ thấy thẻ cục bộ trỏ `ad59c4b` (2026-11-01), chưa push, chưa rõ ai tạo. Production đang chạy `e6099c0` (merge PR #17) với **manifest cũ** (backend 0.0.1, admin 0.0.0, mobile 1.0.0); commit nâng số lên 1.0.2 chưa có trong commit này. Hai hướng: **(a)** đặt thẻ `v1.0.2` lên `e6099c0` và ghi rõ manifest lệch số; **(b)** đặt thẻ lên commit nâng 1.0.2 rồi triển khai lại (redeploy).
+- `v1.0.1`: thẻ **giữ nguyên trên remote**, trỏ commit `932db04` (2026-08-24). Mốc này cũ hơn một phần nội dung được xếp vào v1.0.1 (ví dụ tài liệu CRM soạn tháng 10); việc có dời mốc hay không **chưa quyết** (chưa nằm trong quyết định 2026-11-04).
+- `v1.0.2`: **đặt lại lên `d0037f2`** (2026-11-02, "đánh số phiên bản v1.0.2") rồi push, thay cho thẻ cục bộ cũ trỏ `ad59c4b` (2026-11-01, chưa push). Lý do: `d0037f2` có manifest 1.0.2 và nằm trên cả `main` lẫn `production`; còn `e6099c0` (merge PR #17) không nằm trên `main` và manifest còn số cũ (backend 0.0.1, admin 0.0.0, mobile 1.0.0). Lưu ý: production thực chạy `e6099c0` lúc 2026-11-02 (manifest lúc đó còn số cũ), nên thẻ `v1.0.2` đánh dấu bản phát hành chứ không phải commit chính xác đã build trên VPS.
+- `v1.0.3`: **đặt trên `d2e5282`** (nhánh `main`, merge PR #19; đã gồm PT-031).
+- Cả hai thẻ `v1.0.2` và `v1.0.3` **push lên remote `hltn`**.
 - Hệ quả khác: Swagger đang đặt cứng `.setVersion('1.0')` (`main.ts`) và backend chưa có endpoint trả số phiên bản, nên chưa đối chiếu được production với bản phát hành. Đề xuất hiển thị số phiên bản chạy thật ghi ở mục PT-014 của file kế hoạch v1.0.3, mục này đã `Bỏ` (Oniichan quyết định, 2026-11-02) nên không có việc nào xử lý ý này; phần đưa số phiên bản app vào image Docker nằm ở PT-027.
 
 ## 3. Phiên bản thành phần ứng dụng
 
 | Thành phần | Thư mục | Tệp chứa số phiên bản | Phiên bản | Ghi chú |
 |---|---|---|---|---|
-| Backend | `RealEstateBackendApp/` | `package.json` + `package-lock.json` | 1.0.2 | Đi theo bản phát hành |
-| Web admin | `RealEstateAdminApp/` | `package.json` + `package-lock.json` | 1.0.2 | Đi theo bản phát hành |
-| Mobile | `RealEstateApp/` | `package.json` + `package-lock.json` + `app.json` (`expo.version`) | 1.0.2 | Đi theo bản phát hành |
+| Backend | `RealEstateBackendApp/` | `package.json` + `package-lock.json` | 1.0.3 | Đi theo bản phát hành |
+| Web admin | `RealEstateAdminApp/` | `package.json` + `package-lock.json` | 1.0.3 | Đi theo bản phát hành |
+| Mobile | `RealEstateApp/` | `package.json` + `package-lock.json` + `app.json` (`expo.version`) | 1.0.3 | Đi theo bản phát hành |
 | Prototype CRM | `stnd-crm-unified/` | `package.json` | 0.2.0 | **Độc lập, không đi theo bản phát hành**; dùng dữ liệu mock thay API thật, giữ số riêng |
+
+Manifest hiện là **1.0.3** (commit `b40b851`, 2026-11-03). Số **1.0.2** là số tại `d0037f2` (commit mang thẻ `v1.0.2`).
 
 ## 4. Phiên bản từng tài liệu
 
