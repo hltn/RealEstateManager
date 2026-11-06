@@ -59,6 +59,51 @@ export const assertAttachmentCount = (count: number): void => {
   }
 };
 
+/** Ý định của request với kết quả liên hệ: không đụng tới, bỏ chọn, hay gán mới (theo id và/hoặc code). */
+export type ContactResultIntent =
+  | { kind: 'unchanged' }
+  | { kind: 'clear' }
+  | {
+      kind: 'assign';
+      id: string | null;
+      code: string | null;
+      /** Field để báo lỗi: `contactResultCode` khi có gửi mã, ngược lại `contactResultId`. */
+      field: 'contactResultId' | 'contactResultCode';
+    };
+
+const invalidFieldPair = (field: string): BusinessException =>
+  new BusinessException(
+    ErrorCode.VALIDATION_FAILED,
+    'contactResultId và contactResultCode không cùng một bản ghi',
+    HttpStatus.BAD_REQUEST,
+    { field },
+  );
+
+/**
+ * Đọc `contactResultId`/`contactResultCode` của request thành một ý định duy nhất (FR-40).
+ * `undefined` = không gửi, `null` = bỏ chọn. Một bên bỏ chọn mà bên kia chọn giá trị: 400 VALIDATION_FAILED
+ * (hai bên không cùng một bản ghi). Việc id và code có cùng bản ghi hay không do `CustomerRefsService` kiểm.
+ */
+export const readContactResultIntent = (
+  id: string | null | undefined,
+  code: string | null | undefined,
+): ContactResultIntent => {
+  if (id === undefined && code === undefined) return { kind: 'unchanged' };
+  if (id && code === null) {
+    throw invalidFieldPair('contactResultCode');
+  }
+  if (code && id === null) {
+    throw invalidFieldPair('contactResultId');
+  }
+  if (!id && !code) return { kind: 'clear' };
+  return {
+    kind: 'assign',
+    id: id ?? null,
+    code: code ?? null,
+    field: code ? 'contactResultCode' : 'contactResultId',
+  };
+};
+
 /** So tập ảnh hiện có với tập ảnh mong muốn: ảnh cần gắn thêm và ảnh cần gỡ. */
 export const diffAttachmentIds = (
   current: Types.ObjectId[],

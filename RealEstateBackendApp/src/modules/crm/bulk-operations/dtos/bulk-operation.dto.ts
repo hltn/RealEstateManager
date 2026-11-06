@@ -12,6 +12,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { CatalogCode } from '../../../../common/decorators/catalog-code.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { HasVisibleChar } from '../../../../common/decorators/has-visible-char.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
@@ -34,10 +35,21 @@ export enum BulkOperationType {
 }
 
 export class BulkOperationPayloadDto {
-  @ApiPropertyOptional({ description: 'CHANGE_STATUS: tình trạng đích' })
+  @ApiPropertyOptional({
+    description:
+      'CHANGE_STATUS: tình trạng đích. Deprecated: dùng `statusCode`; phải gửi một trong hai',
+  })
   @IsOptional()
   @IsMongoId()
   statusId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'CHANGE_STATUS: mã tình trạng đích (gửi cùng `statusId` mà không cùng bản ghi: 400)',
+  })
+  @OptionalNotNull()
+  @CatalogCode()
+  statusCode?: string;
 
   @ApiPropertyOptional({
     type: [String],

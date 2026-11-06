@@ -20,14 +20,16 @@ import {
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination-query.dto';
-import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
+import { CatalogRefDto, UserRefDto } from '../../../../common/dto/ref.dto';
 import {
   APPOINTMENT_LOCATION_MAX_LENGTH,
   APPOINTMENT_MAX_REMIND_MINUTES,
   APPOINTMENT_MAX_REMINDERS,
   AppointmentType,
 } from '../../appointments/appointment.constants';
+import { CATALOG_CODE_PATTERN } from '../../catalogs/catalog.enums';
 import { CUSTOMER_REASON_MAX_LENGTH } from '../../customers/customer.constants';
+import { PROJECT_CODE_LEGACY_PATTERN } from '../../projects/project.rules';
 import {
   CARE_LOG_CONTENT_MAX_LENGTH,
   CARE_LOG_SUGGESTION_MAX_LENGTH,
@@ -40,6 +42,11 @@ import {
 const MAX_ATTACHMENT_IDS_IN_REQUEST = 20;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_MESSAGE = 'Ngày phải theo định dạng YYYY-MM-DD (giờ Việt Nam)';
+/** Mã dự án nhận cả mã cũ chứa "-"/"_" (khớp DTO lịch hẹn); service chuẩn hóa chữ HOA, mã không tồn tại => 400. */
+const PROJECT_CODE_MESSAGE =
+  'projectCode gồm chữ, số, "-", "_", tối đa 30 ký tự';
+const CODE_MESSAGE =
+  'contactResultCode gồm chữ HOA, số, "_", bắt đầu bằng chữ, tối đa 30 ký tự';
 
 /**
  * Lịch hẹn tạo kèm nhật ký (M5): bắt đầu đúng `nextAction.dueAt` (bắt buộc khi có `appointment`), người thực hiện là
@@ -61,11 +68,23 @@ export class CareLogNextActionAppointmentDto {
     nullable: true,
     type: String,
     description:
-      'Dự án của buổi hẹn (không bắt buộc); phải còn hoạt động, ngược lại 400 VALIDATION_FAILED (field projectId)',
+      'Dự án của buổi hẹn (không bắt buộc), DEPRECATED: dùng `projectCode`; phải còn hoạt động, ngược lại 400 VALIDATION_FAILED (field projectId)',
   })
   @IsOptional()
   @IsMongoId()
   projectId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    example: 'QTERRA',
+    description:
+      'Mã dự án của buổi hẹn (ưu tiên hơn `projectId`, không phân biệt hoa thường). Gửi cả hai thì phải cùng một dự án; một bên null mà bên kia có giá trị thì 400 VALIDATION_FAILED. Dự án phải còn hoạt động (field projectCode)',
+  })
+  @IsOptional()
+  @Trim()
+  @Matches(PROJECT_CODE_LEGACY_PATTERN, { message: PROJECT_CODE_MESSAGE })
+  projectCode?: string | null;
 
   @ApiPropertyOptional({
     type: [Number],
@@ -123,11 +142,21 @@ export class CreateCareLogDto {
   occurredAt?: string;
 
   @ApiPropertyOptional({
-    description: 'Danh mục CONTACT_RESULT đang hoạt động',
+    description:
+      'Danh mục CONTACT_RESULT đang hoạt động (cũ; ưu tiên `contactResultCode`). Gửi cả hai mà không cùng một bản ghi: 400 VALIDATION_FAILED',
   })
   @OptionalNotNull()
   @IsMongoId()
   contactResultId?: string;
+
+  @ApiPropertyOptional({
+    example: 'KHONG_NGHE_MAY',
+    description: 'Mã bất biến của kết quả liên hệ đang hoạt động (FR-40)',
+  })
+  @OptionalNotNull()
+  @Trim()
+  @Matches(CATALOG_CODE_PATTERN, { message: CODE_MESSAGE })
+  contactResultCode?: string;
 
   @ApiPropertyOptional({
     type: [String],
@@ -169,11 +198,23 @@ export class UpdateCareLogDto {
   @ApiPropertyOptional({
     nullable: true,
     type: String,
-    description: '`null` = bỏ kết quả liên hệ',
+    description:
+      '`null` = bỏ kết quả liên hệ (cũ; ưu tiên `contactResultCode`). Gửi cả hai mà không cùng một bản ghi: 400 VALIDATION_FAILED',
   })
   @IsOptional()
   @IsMongoId()
   contactResultId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    example: 'KHONG_NGHE_MAY',
+    description: 'Mã bất biến của kết quả liên hệ; `null` = bỏ kết quả liên hệ',
+  })
+  @IsOptional()
+  @Trim()
+  @Matches(CATALOG_CODE_PATTERN, { message: CODE_MESSAGE })
+  contactResultCode?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -245,7 +286,8 @@ export class CareLogResponseDto {
   @ApiProperty({ type: [CareLogAttachmentResponseDto] })
   attachments: CareLogAttachmentResponseDto[];
   @ApiProperty({ enum: ContactChannel }) contactChannel: ContactChannel;
-  @ApiProperty({ nullable: true, type: RefDto }) contactResult: RefDto | null;
+  @ApiProperty({ nullable: true, type: CatalogRefDto })
+  contactResult: CatalogRefDto | null;
   @ApiProperty({ nullable: true, type: CareLogNextActionResponseDto })
   nextAction: CareLogNextActionResponseDto | null;
   @ApiProperty({ enum: CareLogSource }) source: CareLogSource;

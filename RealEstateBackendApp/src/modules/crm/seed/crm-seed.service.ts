@@ -23,6 +23,7 @@ import {
 import { Project, ProjectDocument } from '../projects/schemas/project.schema';
 import { ensureSeeded } from './ensure-seeded.util';
 import {
+  provinceCode,
   provinceSeedKey,
   SEED_CONTACT_RESULTS,
   SEED_LEAD_SOURCES,
@@ -153,6 +154,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
         { parentId: null, nameNormalized },
         {
           name,
+          code: provinceCode(name),
           type: AreaType.PROVINCE,
           ancestorIds: [],
           adminCode: null,

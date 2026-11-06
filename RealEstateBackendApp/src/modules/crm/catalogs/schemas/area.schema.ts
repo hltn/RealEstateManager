@@ -16,6 +16,13 @@ export class Area {
   @Prop({ required: true })
   nameNormalized: string;
 
+  /**
+   * Mã tham chiếu bất biến (FR-40): sinh phía server khi tạo, không có trong DTO sửa, đổi tên không đổi mã, xóa mềm
+   * không giải phóng mã. Không `required` ở schema vì dữ liệu cũ được migration 007 điền.
+   */
+  @Prop({ type: String, maxlength: 30 })
+  code?: string;
+
   @Prop({ type: String, enum: Object.values(AreaType), required: true })
   type: AreaType;
 
@@ -69,6 +76,11 @@ AreaSchema.index({ nameNormalized: 1 });
 AreaSchema.index(
   { seedKey: 1 },
   { unique: true, partialFilterExpression: { seedKey: { $type: 'string' } } },
+);
+// Mã khu vực duy nhất, tính cả bản xóa mềm (mã không dùng lại); bản chưa có `code` bị bỏ qua đến khi migration 007 điền.
+AreaSchema.index(
+  { code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: 'string' } } },
 );
 // Không có hai khu vực chưa xóa trùng tên (không dấu) dưới cùng một cha; chống race khi tạo/seed đồng thời.
 AreaSchema.index(

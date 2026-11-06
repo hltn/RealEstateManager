@@ -74,6 +74,20 @@ const uniqueIds = (ids: Types.ObjectId[]): Types.ObjectId[] => [
   ...new Map(ids.map((id) => [String(id), id])).values(),
 ];
 
+/** Mã danh mục để ghi kép: dịch từ id; danh mục bị xóa cứng (không dịch được) thì giữ mã đã lưu, không có id thì `null`. */
+const codeFor = (
+  id: Types.ObjectId | null,
+  codes: Map<string, string>,
+  stored: string | null | undefined,
+): string | null => (id ? (codes.get(String(id)) ?? stored ?? null) : null);
+
+/** Mã các dự án quan tâm theo đúng thứ tự id; dự án không dịch được (bị xóa cứng) bị bỏ khỏi mảng mã. */
+const projectCodesOf = (ids: Types.ObjectId[], refMaps: RefMaps): string[] =>
+  ids.flatMap((id) => {
+    const code = refMaps.codes.projects.get(String(id));
+    return code ? [code] : [];
+  });
+
 const profileOf = (doc: CustomerLean): ProfileSnapshot => ({
   fullName: doc.fullName,
   phone: doc.phone,
@@ -181,12 +195,40 @@ export class CustomersService {
     const actorId = ctx.actor.userId;
     const _id = new Types.ObjectId();
 
-    const statusId = dto.statusId
-      ? oid(dto.statusId)
-      : await this.refs.findDefaultStatusId(session);
-    const projectIds = uniqueIds((dto.interestedProjectIds ?? []).map(oid));
-    const sourceId = dto.sourceId ? oid(dto.sourceId) : null;
-    const areaId = dto.areaId ? oid(dto.areaId) : null;
+    // FR-40: nhận `…Code` (ưu tiên) hoặc `…Id` (cũ), dịch MỘT chỗ qua `CustomerRefsService`; lệch id/code thì 400.
+    const [statusInput, sourceInput, areaInput, projectInput] =
+      await Promise.all([
+        this.refs.resolveSingleInput(
+          'status',
+          { id: dto.statusId, code: dto.statusCode },
+          'statusCode',
+          session,
+        ),
+        this.refs.resolveSingleInput(
+          'source',
+          { id: dto.sourceId, code: dto.sourceCode },
+          'sourceCode',
+          session,
+        ),
+        this.refs.resolveSingleInput(
+          'area',
+          { id: dto.areaId, code: dto.areaCode },
+          'areaCode',
+          session,
+        ),
+        this.refs.resolveListInput(
+          'project',
+          { ids: dto.interestedProjectIds, codes: dto.projectCodes },
+          'projectCodes',
+          session,
+        ),
+      ]);
+    const statusRef =
+      statusInput.ref ?? (await this.refs.findDefaultStatusRef(session));
+    const statusId = statusRef.id;
+    const sourceId = sourceInput.ref?.id ?? null;
+    const areaId = areaInput.ref?.id ?? null;
+    const projectIds = projectInput.refs.map((ref) => ref.id);
     await this.refs.lockAndAssert(
       { statusId, sourceId, areaId, projectIds },
       session,
@@ -209,10 +251,14 @@ export class CustomersService {
       phone,
       email,
       statusId,
+      statusCode: statusRef.code,
       statusChangedAt: now,
       sourceId,
+      sourceCode: sourceInput.ref?.code ?? null,
       interestedProjectIds: projectIds,
+      interestedProjectCodes: projectInput.refs.map((ref) => ref.code),
       areaId,
+      areaCode: areaInput.ref?.code ?? null,
       tagIds,
       nationalId: dto.nationalId
         ? this.pii.encrypt(dto.nationalId, nationalIdAad(String(_id)))
@@ -267,6 +313,8 @@ export class CustomersService {
         field: 'status',
         from: null,
         to: refMaps.statuses.get(String(statusId))?.label ?? null,
+        fromCode: null,
+        toCode: statusRef.code,
       },
       {
         field: 'careTeam',
@@ -449,14 +497,43 @@ export class CustomersService {
         phone: 1,
         email: 1,
         sourceId: 1,
+        sourceCode: 1,
         areaId: 1,
+        areaCode: 1,
         interestedProjectIds: 1,
+        interestedProjectCodes: 1,
         tagIds: 1,
         __v: 1,
       },
     });
     if (!before) throw customerNotFound();
     if (before.__v !== dto.version) throw versionConflict(before.__v);
+
+    // FR-40: `…Code` (ưu tiên) hoặc `…Id` (cũ). Không lọc "còn hoạt động" ở đây: khách giữ liên kết với danh mục đã
+    // ngừng; chỉ giá trị MỚI gán mới bị `lockAndAssert` kiểm bên dưới.
+    const [sourceInput, areaInput, projectInput] = await Promise.all([
+      this.refs.resolveSingleInput(
+        'source',
+        { id: dto.sourceId, code: dto.sourceCode },
+        'sourceCode',
+        session,
+        false,
+      ),
+      this.refs.resolveSingleInput(
+        'area',
+        { id: dto.areaId, code: dto.areaCode },
+        'areaCode',
+        session,
+        false,
+      ),
+      this.refs.resolveListInput(
+        'project',
+        { ids: dto.interestedProjectIds, codes: dto.projectCodes },
+        'projectCodes',
+        session,
+        false,
+      ),
+    ]);
 
     const next: ProfileSnapshot = {
       fullName: dto.fullName ?? before.fullName,
@@ -467,22 +544,15 @@ export class CustomersService {
           : dto.email
             ? dto.email.toLowerCase()
             : null,
-      sourceId:
-        dto.sourceId === undefined
-          ? (before.sourceId ?? null)
-          : dto.sourceId
-            ? oid(dto.sourceId)
-            : null,
-      areaId:
-        dto.areaId === undefined
-          ? (before.areaId ?? null)
-          : dto.areaId
-            ? oid(dto.areaId)
-            : null,
-      interestedProjectIds:
-        dto.interestedProjectIds === undefined
-          ? (before.interestedProjectIds ?? [])
-          : uniqueIds(dto.interestedProjectIds.map(oid)),
+      sourceId: sourceInput.provided
+        ? (sourceInput.ref?.id ?? null)
+        : (before.sourceId ?? null),
+      areaId: areaInput.provided
+        ? (areaInput.ref?.id ?? null)
+        : (before.areaId ?? null),
+      interestedProjectIds: projectInput.provided
+        ? projectInput.refs.map((ref) => ref.id)
+        : (before.interestedProjectIds ?? []),
       tagIds:
         dto.tagIds === undefined
           ? (before.tagIds ?? [])
@@ -536,8 +606,20 @@ export class CustomersService {
       phone: next.phone,
       email: next.email,
       sourceId: next.sourceId,
+      // FR-40: ghi kép id + code; mã lấy từ cùng bản ghi danh mục nên đổi nhãn không đổi mã. Khách chưa có mã
+      // (dữ liệu cũ) được điền luôn ở lần ghi này; danh mục bị xóa cứng thì giữ mã đã lưu.
+      sourceCode: codeFor(
+        next.sourceId,
+        refMaps.codes.sources,
+        before.sourceCode,
+      ),
       areaId: next.areaId,
+      areaCode: codeFor(next.areaId, refMaps.codes.areas, before.areaCode),
       interestedProjectIds: next.interestedProjectIds,
+      interestedProjectCodes: projectCodesOf(
+        next.interestedProjectIds,
+        refMaps,
+      ),
       tagIds: next.tagIds,
       lastUpdatedAt: now,
       lastUpdatedBy: ctx.actor.userId,

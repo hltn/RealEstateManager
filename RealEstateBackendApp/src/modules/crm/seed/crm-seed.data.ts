@@ -1,4 +1,5 @@
 import { CatalogItemType, ListGroup } from '../catalogs/catalog.enums';
+import { generateAreaCode } from '../common/utils/area-code.util';
 import { normalizeVietnamese } from '../common/utils/vietnamese-text.util';
 import { ProjectStatus } from '../projects/project.rules';
 
@@ -214,6 +215,12 @@ export const SEED_PROVINCES: readonly string[] = [
 /** Khóa seed bất biến của một tỉnh/thành (`AREA:<tên không dấu>`); seed và migration 006 dùng chung để không tạo trùng. */
 export const provinceSeedKey = (name: string): string =>
   `AREA:${normalizeVietnamese(name)}`;
+
+/**
+ * Mã tham chiếu bất biến (`areas.code`) của một tỉnh/thành seed (FR-40). Xác định từ TÊN, không phụ thuộc thứ tự
+ * chạy hay trạng thái DB; 34 tỉnh đảm bảo không trùng nhau (có test). Seed và migration 007 dùng chung.
+ */
+export const provinceCode = (name: string): string => generateAreaCode(name);
 
 export interface SeedProject {
   code: string;

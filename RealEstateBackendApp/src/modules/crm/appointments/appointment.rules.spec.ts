@@ -2,6 +2,7 @@ import { BusinessException } from '../../../common/exceptions/business.exception
 import { AppointmentStatus } from './appointment.constants';
 import {
   assertEndAfterStart,
+  assertProjectInputConsistent,
   assertRangeValid,
   assertStartNotInPast,
   canTransitionStatus,
@@ -149,4 +150,31 @@ describe('khoảng xem lịch', () => {
       failedField(() => assertRangeValid(from, new Date('khong-hop-le'))),
     ).toBe('from');
   });
+});
+
+describe('assertProjectInputConsistent (FR-40)', () => {
+  it.each([
+    [undefined, undefined],
+    ['66f1a2b3c4d5e6f708192a3b', undefined],
+    [undefined, 'QTERRA'],
+    ['66f1a2b3c4d5e6f708192a3b', 'QTERRA'],
+    [null, null],
+  ])(
+    'FR-40: (%p, %p) hợp lệ (cùng gỡ, cùng có, hoặc chỉ một bên)',
+    (id, code) => {
+      expect(() => assertProjectInputConsistent(id, code)).not.toThrow();
+    },
+  );
+
+  it.each([
+    [null, 'QTERRA'],
+    ['66f1a2b3c4d5e6f708192a3b', null],
+  ])(
+    'FR-40: (%p, %p) một bên null một bên có dữ liệu => 400 VALIDATION_FAILED (field projectCode)',
+    (id, code) => {
+      expect(failedField(() => assertProjectInputConsistent(id, code))).toBe(
+        'projectCode',
+      );
+    },
+  );
 });

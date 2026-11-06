@@ -110,12 +110,17 @@ export class BulkOperationsService {
     const { payload } = dto;
     switch (dto.type) {
       case BulkOperationType.CHANGE_STATUS: {
-        if (!payload.statusId) {
-          throw validationFailed('CHANGE_STATUS cần payload.statusId', {
-            field: 'payload.statusId',
-          });
+        if (!payload.statusId && !payload.statusCode) {
+          throw validationFailed(
+            'CHANGE_STATUS cần payload.statusCode hoặc payload.statusId',
+            { field: 'payload.statusCode' },
+          );
         }
-        const targetId = oid(payload.statusId);
+        // FR-40: nhận `statusCode` (ưu tiên) hoặc `statusId` (cũ); có cả hai mà không cùng bản ghi thì 400 cho cả lô.
+        const targetId = await this.statusChanges.resolveTargetId(
+          payload,
+          'payload.statusCode',
+        );
         return (customerId, session) =>
           this.statusChanges.applyChange(
             ctx,

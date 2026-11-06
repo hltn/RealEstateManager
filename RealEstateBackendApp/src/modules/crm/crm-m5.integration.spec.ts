@@ -2621,6 +2621,13 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
     let projectOff: string; // dự án đã ngừng hoạt động
     const projectOf = (res: Res) => res.body.data.project;
     const labelOf = (code: string) => `Dự án ${code}${RUN_ID}`;
+    // FR-40: response trả CatalogRef {id, code, label}; `code` là mã chuẩn hóa (chữ HOA).
+    const codeOf = (code: string) => `${code}${RUN_ID}`.toUpperCase();
+    const refOf = (id: string, code: string) => ({
+      id,
+      code: codeOf(code),
+      label: labelOf(code),
+    });
 
     const createProject = async (code: string): Promise<string> => {
       const res = await call('POST', '/crm/projects', 'admin', {
@@ -2642,10 +2649,10 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(off.status).toBe(200);
     });
 
-    it('tạo lịch có dự án hợp lệ: lưu projectId, response/chi tiết trả project {id, label}, audit ghi tên dự án; không gửi hoặc null vẫn tạo được', async () => {
+    it('tạo lịch có dự án hợp lệ: lưu projectId, response/chi tiết trả project {id, code, label}, audit ghi tên dự án; không gửi hoặc null vẫn tạo được', async () => {
       const res = await createAppointment('staffA', c, { projectId: projectA });
       expect([res.status, res.body.message]).toEqual([201, undefined]);
-      expect(projectOf(res)).toEqual({ id: projectA, label: labelOf('G7A') });
+      expect(projectOf(res)).toEqual(refOf(projectA, 'G7A'));
       const doc = await col('appointments').findOne({
         _id: oid(res.body.data.id),
       });
@@ -2655,10 +2662,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         `/crm/appointments/${res.body.data.id}`,
         'staffA',
       );
-      expect(projectOf(detail)).toEqual({
-        id: projectA,
-        label: labelOf('G7A'),
-      });
+      expect(projectOf(detail)).toEqual(refOf(projectA, 'G7A'));
       const audit = await col('crm_audit_logs').findOne({
         action: 'APPOINTMENT_CREATED',
         entityId: oid(res.body.data.id),
@@ -2708,7 +2712,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(projectOf(keep)).toMatchObject({ id: projectA });
 
       const swap = await call('PATCH', url, 'staffA', { projectId: projectB });
-      expect(projectOf(swap)).toEqual({ id: projectB, label: labelOf('G7B') });
+      expect(projectOf(swap)).toEqual(refOf(projectB, 'G7B'));
       const audit = await col('crm_audit_logs')
         .find({ action: 'APPOINTMENT_UPDATED', entityId: oid(created.id) })
         .toArray();
@@ -2731,7 +2735,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         isActive: false,
       });
       const read = await call('GET', url, 'staffA');
-      expect(projectOf(read)).toEqual({ id: projectB, label: labelOf('G7B') });
+      expect(projectOf(read)).toEqual(refOf(projectB, 'G7B'));
       const resend = await call('PATCH', url, 'staffA', {
         projectId: projectB,
         note: 'ghi chú',
@@ -2795,16 +2799,13 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
           .map((task: any) => [task.title, task]),
       );
       expect(ofCust['Có dự án'].appointmentId).toBe(withProject);
-      expect(ofCust['Có dự án'].project).toEqual({
-        id: projectB,
-        label: labelOf('G7B'),
-      });
+      expect(ofCust['Có dự án'].project).toEqual(refOf(projectB, 'G7B'));
       expect(ofCust['Có dự án'].customer.projects).toEqual([
-        { id: projectA, label: labelOf('G7A') },
+        refOf(projectA, 'G7A'),
       ]);
       expect(ofCust['Không dự án'].project).toBeNull();
       expect(ofCust['Không dự án'].customer.projects).toEqual([
-        { id: projectA, label: labelOf('G7A') },
+        refOf(projectA, 'G7A'),
       ]);
     });
 

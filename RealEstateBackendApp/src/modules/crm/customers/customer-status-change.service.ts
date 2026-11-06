@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { ClientSession, Connection, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
+import { BusinessException } from '../../../common/exceptions/business.exception';
+import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import {
   CrmAuditAction,
@@ -47,7 +49,7 @@ export class CustomerStatusChangeService {
   ): Promise<ChangeStatusResponseDto> {
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
-    const targetId = new Types.ObjectId(dto.statusId);
+    const targetId = await this.resolveTargetId(dto, 'statusCode');
 
     return withTransaction(this.connection, (session) =>
       this.applyChange(
@@ -59,6 +61,38 @@ export class CustomerStatusChangeService {
         session,
       ),
     );
+  }
+
+  /**
+   * Dịch tình trạng đích từ request về id (FR-40): nhận `statusCode` (ưu tiên) hoặc `statusId` (cũ).
+   * - Chỉ có `statusId`: dùng luôn (việc kiểm "còn hoạt động" do `lockAndAssert` làm trong transaction như trước).
+   * - Có `statusCode`: dịch qua `CustomerRefsService` (không lọc hoạt động, để đặt lại đúng tình trạng hiện tại vẫn là no-op);
+   *   có cả hai mà không cùng bản ghi, hoặc mã không tồn tại: 400.
+   * - Không có gì: 400.
+   */
+  async resolveTargetId(
+    input: { statusId?: string; statusCode?: string },
+    field: string,
+  ): Promise<Types.ObjectId> {
+    if (input.statusId && !input.statusCode) {
+      return new Types.ObjectId(input.statusId);
+    }
+    const { ref } = await this.refs.resolveSingleInput(
+      'status',
+      { id: input.statusId, code: input.statusCode },
+      field,
+      undefined,
+      false,
+    );
+    if (!ref) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        'Cần gửi statusCode hoặc statusId',
+        HttpStatus.BAD_REQUEST,
+        { field },
+      );
+    }
+    return ref.id;
   }
 
   /**
@@ -101,6 +135,12 @@ export class CustomerStatusChangeService {
     }
 
     await this.refs.lockAndAssert({ statusId: targetId }, session);
+    // Nhãn + mã của tình trạng cũ/mới: `statusCode` được ghi kép cùng `statusId`; mã không đổi khi đổi nhãn (FR-40).
+    const maps = await this.refs.resolve({
+      statusIds: [before.statusId, targetId],
+    });
+    const fromStatus = maps.statuses.get(String(before.statusId));
+    const toStatus = maps.statuses.get(String(targetId))!;
     const now = new Date();
     const matched = await this.repo.updateOne(
       ctx.scope,
@@ -109,6 +149,7 @@ export class CustomerStatusChangeService {
       {
         $set: {
           statusId: targetId,
+          statusCode: toStatus.code,
           statusChangedAt: now,
           lastUpdatedAt: now,
           lastUpdatedBy: ctx.actor.userId,
@@ -126,11 +167,6 @@ export class CustomerStatusChangeService {
       throw versionConflict(current.__v);
     }
 
-    const maps = await this.refs.resolve({
-      statusIds: [before.statusId, targetId],
-    });
-    const fromStatus = maps.statuses.get(String(before.statusId));
-    const toStatus = maps.statuses.get(String(targetId))!;
     await this.audit.record(
       {
         entityType: CrmAuditEntityType.CUSTOMER,
@@ -153,6 +189,8 @@ export class CustomerStatusChangeService {
               label: toStatus.label,
               listGroup: toStatus.listGroup,
             },
+            fromCode: fromStatus?.code ?? null,
+            toCode: toStatus.code,
           },
           ...(autoSource
             ? [{ field: 'statusAutoSource', from: null, to: autoSource }]

@@ -2,9 +2,10 @@ import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { CrmActor } from '../common/access/crm-actor';
 import { toPhoneMasked } from '../customers/customer.mapper';
+import { CatalogRefDto } from '../../../common/dto/ref.dto';
 import { StatusRefDto } from '../customers/dtos/customer-response.dto';
-import type { RefMaps } from '../customers/customer-refs.service';
-import { toRef, toUserRef } from '../customers/customer-refs.service';
+import type { CatalogRef, RefMaps } from '../customers/customer-refs.service';
+import { toUserRef } from '../customers/customer-refs.service';
 import { AppointmentResponseDto } from './dtos/appointment.dto';
 import { Appointment } from './schemas/appointment.schema';
 
@@ -37,11 +38,30 @@ export const canDeleteAppointment = (
   actor.role === UserRole.MANAGER ||
   appointment.createdBy.equals(actor.userId);
 
+/**
+ * `{ id, code, label }` của dự án (FR-40). `code` lấy từ mã đã ghi kép trên bản ghi (`storedCode`); bản ghi cũ chưa
+ * có thì dịch từ id qua `projects`. Dự án đã bị xóa cứng (không còn trong `projects`): `label` rỗng, `code` có thể rỗng.
+ */
+export const toProjectRef = (
+  projectId: Types.ObjectId | null | undefined,
+  storedCode: string | null | undefined,
+  projects: ReadonlyMap<string, CatalogRef>,
+): CatalogRefDto | null => {
+  if (!projectId) return null;
+  const ref = projects.get(String(projectId));
+  return {
+    id: String(projectId),
+    code: storedCode || ref?.code || '',
+    label: ref?.label ?? '',
+  };
+};
+
 export const toAppointmentResponse = (
   row: AppointmentLean,
   customer: AppointmentCustomerLean,
   maps: RefMaps,
   actor: CrmActor,
+  projects: ReadonlyMap<string, CatalogRef>,
 ): AppointmentResponseDto => ({
   id: String(row._id),
   customer: {
@@ -59,7 +79,7 @@ export const toAppointmentResponse = (
   location: row.location,
   note: row.note,
   assignee: toUserRef(row.assigneeId, maps.users)!,
-  project: toRef(row.projectId, maps.projects),
+  project: toProjectRef(row.projectId, row.projectCode, projects),
   remindBeforeMinutes: row.remindBeforeMinutes,
   status: row.status,
   completedAt: row.completedAt ? row.completedAt.toISOString() : null,

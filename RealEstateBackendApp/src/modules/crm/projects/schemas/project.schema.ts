@@ -7,7 +7,8 @@ import { PROJECT_CODE_MAX_LENGTH, ProjectStatus } from '../project.rules';
  *
  * - `code` giữ nguyên chữ người nhập; `codeNormalized` (chữ HOA) là khóa duy nhất KỂ CẢ dự án đã xóa mềm.
  * - `status` luôn thuộc enum; `legacyStatusText` lưu chữ gốc của dữ liệu cũ để đối chiếu (không dùng nghiệp vụ).
- * - `propertyTypes` luôn là mảng.
+ * - `propertyTypes` luôn là mảng. `areaCode`/`propertyTypeCodes` ghi kép cùng `areaId`/`propertyTypes` (FR-40, FR-46).
+ * - `codeNormalized` là mã tham chiếu và BẤT BIẾN sau khi tạo (PATCH chỉ đổi được hoa/thường, FR-40 Q1).
  * - `isActive=false` = ngừng hoạt động (ẩn khỏi ô chọn mới, khách cũ giữ liên kết); `deletedAt` = xóa mềm.
  */
 @Schema({ timestamps: true, collection: 'projects' })
@@ -30,8 +31,21 @@ export class Project {
   @Prop({ type: Types.ObjectId, ref: 'Area', default: null })
   areaId: Types.ObjectId | null;
 
+  /** Mã khu vực (`areas.code`), ghi kép cùng `areaId` (FR-40). Thiếu ở dữ liệu cũ đến khi migration 007 điền. */
+  @Prop({ type: String, default: null, maxlength: 30 })
+  areaCode: string | null;
+
+  /** Chữ loại hình cũ (tự do) / nhãn suy ra, giữ nguyên làm dữ liệu cũ (FR-46). */
   @Prop({ type: [String], default: [] })
   propertyTypes: string[];
+
+  /** `value` của lựa chọn trường chân dung `property_type` (FR-46); nguồn thật của loại hình. */
+  @Prop({ type: [String], default: [] })
+  propertyTypeCodes: string[];
+
+  /** Chữ loại hình cũ không khớp lựa chọn nào: giữ nguyên văn để Quản trị chọn lại, không mất dữ liệu (FR-46). */
+  @Prop({ type: [String], default: [] })
+  unmappedPropertyTypes: string[];
 
   @Prop({ type: Number, default: null, min: 0 })
   priceFrom: number | null;
@@ -88,6 +102,8 @@ ProjectSchema.index({ codeNormalized: 1 }, { unique: true });
 ProjectSchema.index({ isActive: 1, name: 1 }, { collation: { locale: 'vi' } });
 ProjectSchema.index({ deletedAt: 1 });
 ProjectSchema.index({ areaId: 1 });
+ProjectSchema.index({ areaCode: 1 });
+ProjectSchema.index({ propertyTypeCodes: 1 });
 // Khóa seed duy nhất (chỉ áp cho bản ghi có seedKey dạng chuỗi).
 ProjectSchema.index(
   { seedKey: 1 },

@@ -17,6 +17,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { CatalogCode } from '../../../../common/decorators/catalog-code.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { HasVisibleChar } from '../../../../common/decorators/has-visible-char.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
@@ -139,28 +140,65 @@ export class CreateCustomerDto {
   email?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Mặc định: tình trạng mặc định (Chưa tiếp cận)',
+    description:
+      'Mặc định: tình trạng mặc định (Chưa tiếp cận). Deprecated: dùng `statusCode`',
   })
   @IsOptional()
   @IsMongoId()
   statusId?: string;
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    description:
+      'Mã tình trạng (ưu tiên hơn `statusId`; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @OptionalNotNull()
+  @CatalogCode()
+  statusCode?: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `sourceCode`',
+  })
   @IsOptional()
   @IsMongoId()
   sourceId?: string | null;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @IsOptional()
+  @CatalogCode()
+  sourceCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `projectCodes`',
+  })
   @OptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
   @IsMongoId({ each: true })
   interestedProjectIds?: string[];
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({ type: [String], description: 'Mã dự án quan tâm' })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
+  @CatalogCode({ each: true })
+  projectCodes?: string[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `areaCode`',
+  })
   @IsOptional()
   @IsMongoId()
   areaId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @IsOptional()
+  @CatalogCode()
+  areaCode?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -237,22 +275,64 @@ export class UpdateCustomerDto {
   @MaxLength(CUSTOMER_EMAIL_MAX_LENGTH)
   email?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `sourceCode`',
+  })
   @IsOptional()
   @IsMongoId()
   sourceId?: string | null;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Mã nguồn (ưu tiên hơn `sourceId`; `null` = xóa; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @IsOptional()
+  @CatalogCode()
+  sourceCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `projectCodes`',
+  })
   @OptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
   @IsMongoId({ each: true })
   interestedProjectIds?: string[];
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Mã dự án quan tâm (thay thế toàn bộ; `[]` = xóa hết); vắng mặt = giữ nguyên',
+  })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
+  @CatalogCode({ each: true })
+  projectCodes?: string[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `areaCode`',
+  })
   @IsOptional()
   @IsMongoId()
   areaId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Mã khu vực (ưu tiên hơn `areaId`; `null` = xóa; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @IsOptional()
+  @CatalogCode()
+  areaCode?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -267,9 +347,21 @@ export class UpdateCustomerDto {
 }
 
 export class ChangeStatusDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Deprecated: dùng `statusCode`. Phải gửi một trong hai (`statusCode` hoặc `statusId`)',
+  })
+  @IsOptional()
   @IsMongoId()
-  statusId: string;
+  statusId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Mã tình trạng đích (ưu tiên hơn `statusId`; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @OptionalNotNull()
+  @CatalogCode()
+  statusCode?: string;
 
   @ApiProperty()
   @Type(() => Number)

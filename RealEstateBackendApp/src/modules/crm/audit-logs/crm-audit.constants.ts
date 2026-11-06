@@ -100,4 +100,10 @@ export interface CrmAuditChange {
   field: string;
   from: unknown;
   to: unknown;
+  /**
+   * Mã bất biến (`code`) tương ứng với `from`/`to` (nhãn) của 5 trường danh mục: tình trạng, nguồn, khu vực,
+   * dự án, kết quả liên hệ (FR-40). Trường nhiều giá trị (dự án) ghi mảng mã. Tùy chọn: bản ghi cũ không có.
+   */
+  fromCode?: string | string[] | null;
+  toCode?: string | string[] | null;
 }

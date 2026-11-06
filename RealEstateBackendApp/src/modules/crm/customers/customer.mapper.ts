@@ -7,7 +7,7 @@ import { isAdminOrManager } from './access/customer-scope';
 import { CareRole, CRITERIA_KEYS } from './customer.constants';
 import type { CustomerLean } from './customers.repository';
 import type { RefIds, RefMaps } from './customer-refs.service';
-import { toRef, toUserRef } from './customer-refs.service';
+import { toCatalogRef, toRef, toUserRef } from './customer-refs.service';
 import {
   CareTeamMemberDto,
   CriteriaDoneDto,
@@ -23,7 +23,7 @@ import { maskNationalId } from './utils/customer-rules.util';
 
 /** Field cần đọc để dựng list item (KHÔNG gồm nationalId, searchText). */
 export const LIST_PROJECTION =
-  'fullName phone statusId sourceId interestedProjectIds areaId tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
+  'fullName phone statusId sourceId sourceCode interestedProjectIds areaId areaCode tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
 
 const iso = (date: Date | null | undefined): string | null =>
   date ? new Date(date).toISOString() : null;
@@ -77,11 +77,17 @@ export const toListItem = (
   fullName: doc.fullName,
   phoneMasked: toPhoneMasked(doc),
   status: refs.statuses.get(String(doc.statusId)) ?? emptyStatus(doc.statusId),
-  source: toRef(doc.sourceId, refs.sources),
-  projects: (doc.interestedProjectIds ?? []).map(
-    (id) => toRef(id, refs.projects)!,
+  // FR-40: `code` dịch từ id (đổi nhãn không đổi mã); danh mục bị xóa cứng thì rơi về mã đã lưu (nguồn, khu vực) hoặc rỗng, không lỗi.
+  source: toCatalogRef(
+    doc.sourceId,
+    refs.sources,
+    refs.codes.sources,
+    doc.sourceCode,
   ),
-  area: toRef(doc.areaId, refs.areas),
+  projects: (doc.interestedProjectIds ?? []).map(
+    (id) => toCatalogRef(id, refs.projects, refs.codes.projects)!,
+  ),
+  area: toCatalogRef(doc.areaId, refs.areas, refs.codes.areas, doc.areaCode),
   tags: (doc.tagIds ?? []).flatMap((id) => {
     const ref = toRef(id, refs.tags);
     // Thẻ đã xóa mềm không có nhãn trong `refs.tags` => không hiện.

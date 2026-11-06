@@ -544,13 +544,11 @@ describe('CRM M1 — QA stress (đồng thời, ADMIN cuối, null, audit, seed 
       seedKey: { $type: 'string' },
       deletedAt: null,
     });
-    expect(
-      (
-        await call('PATCH', `/crm/projects/${String(pj!._id)}`, 'admin', {
-          code: 'RECODED9',
-        })
-      ).status,
-    ).toBe(200);
+    // Mã dự án bất biến qua API từ v1.0.4 (FR-40): mô phỏng bản ghi seed đã bị đổi mã từ trước bằng ghi trực tiếp.
+    await projects.updateOne(
+      { _id: pj!._id },
+      { $set: { code: 'RECODED9', codeNormalized: 'RECODED9' } },
+    );
     await connection
       .collection('customer_statuses')
       .updateOne(

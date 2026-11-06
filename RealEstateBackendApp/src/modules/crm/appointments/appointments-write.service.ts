@@ -20,13 +20,17 @@ import {
   insufficientRole,
   versionConflict,
 } from '../customers/customer.errors';
-import { CustomerRefsService } from '../customers/customer-refs.service';
+import {
+  CatalogRef,
+  CustomerRefsService,
+} from '../customers/customer-refs.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import { RemindersWriterService } from '../reminders/reminders-writer.service';
 import { AppointmentStatus, AppointmentType } from './appointment.constants';
 import { AppointmentCustomerLean, AppointmentLean } from './appointment.mapper';
 import {
   assertEndAfterStart,
+  assertProjectInputConsistent,
   assertStartNotInPast,
   canTransitionStatus,
   normalizeRemindOffsets,
@@ -50,8 +54,10 @@ export interface CreateAppointmentInput {
   note?: string;
   assigneeId?: Types.ObjectId;
   remindBeforeMinutes?: number[];
-  /** Dự án của buổi hẹn (tùy chọn); phải còn hoạt động. */
+  /** Dự án của buổi hẹn (tùy chọn, `id` cũ); phải còn hoạt động. */
   projectId?: Types.ObjectId | null;
+  /** Mã dự án (mới, FR-40, ưu tiên hơn `projectId`); gửi cả hai thì phải cùng một dự án, ngược lại 400. */
+  projectCode?: string | null;
   sourceCareLogId?: Types.ObjectId | null;
 }
 
@@ -135,8 +141,14 @@ export class AppointmentsWriteService {
       input.assigneeId,
       session,
     );
-    // Dự án gắn MỚI phải còn hoạt động: khóa ghi trong transaction để không đua với việc ngừng/xóa dự án.
-    const projectId = input.projectId ?? null;
+    // Dự án gắn MỚI (nhận `projectCode` hoặc `projectId`) phải còn hoạt động: dịch về `{ id, code, label }` rồi khóa
+    // ghi trong transaction để không đua với việc ngừng/xóa dự án. Ghi KÉP `projectId` + `projectCode` (FR-40).
+    const project = await this.resolveProjectForAssign(
+      input.projectId,
+      input.projectCode,
+      session,
+    );
+    const projectId = project?.id ?? null;
     await this.refs.lockAndAssert({ appointmentProjectId: projectId }, session);
     const defaults = (await this.settings.get())
       .defaultAppointmentReminderMinutes;
@@ -156,6 +168,7 @@ export class AppointmentsWriteService {
           remindBeforeMinutes: offsets,
           status: AppointmentStatus.SCHEDULED,
           projectId,
+          projectCode: project?.code ?? null,
           sourceCareLogId: input.sourceCareLogId ?? null,
           createdBy: ctx.actor.userId,
           deletedAt: null,
@@ -168,10 +181,7 @@ export class AppointmentsWriteService {
     await this.refreshCustomer(ctx, input.customerId, now, session);
     await this.reminders.syncAppointment(appointment, now, session);
 
-    const maps = await this.refs.resolve({
-      userIds: [assigneeId],
-      projectIds: [projectId],
-    });
+    const maps = await this.refs.resolve({ userIds: [assigneeId] });
     const changes: CrmAuditChange[] = [
       { field: 'appointment.type', from: null, to: appointment.type },
       {
@@ -185,11 +195,11 @@ export class AppointmentsWriteService {
         to: maps.users.get(String(assigneeId)) ?? String(assigneeId),
       },
     ];
-    if (projectId) {
+    if (project) {
       changes.push({
         field: 'appointment.project',
         from: null,
-        to: maps.projects.get(String(projectId)) ?? String(projectId),
+        to: project.label || String(project.id),
       });
     }
     if (appointment.title) {
@@ -279,35 +289,23 @@ export class AppointmentsWriteService {
         maps.users.get(String(assigneeId)) ?? String(assigneeId),
       );
     }
-    // `projectId`: bỏ trống = giữ nguyên; null = gỡ; đổi sang dự án KHÁC thì dự án mới phải còn hoạt động
-    // (gửi lại đúng dự án cũ đã ngừng hoạt động không bị chặn).
-    if (dto.projectId !== undefined) {
-      const nextProjectId = dto.projectId ? oid(dto.projectId) : null;
-      const currentProjectId = appointment.projectId ?? null;
-      const isSame =
-        nextProjectId === null
-          ? currentProjectId === null
-          : !!currentProjectId && currentProjectId.equals(nextProjectId);
-      if (!isSame) {
-        await this.refs.lockAndAssert(
-          { appointmentProjectId: nextProjectId },
-          session,
-        );
-        const maps = await this.refs.resolve({
-          projectIds: [currentProjectId, nextProjectId],
-        });
-        set.projectId = nextProjectId;
-        track(
-          'project',
-          currentProjectId
-            ? (maps.projects.get(String(currentProjectId)) ?? null)
-            : null,
-          nextProjectId
-            ? (maps.projects.get(String(nextProjectId)) ??
-                String(nextProjectId))
-            : null,
-        );
-      }
+    // Dự án (`projectCode` hoặc `projectId`): bỏ trống = giữ nguyên; null = gỡ; đổi sang dự án KHÁC thì dự án mới
+    // phải còn hoạt động (gửi lại đúng dự án cũ đã ngừng hoạt động không bị chặn). Ghi KÉP id + code (FR-40).
+    const projectChange = await this.resolveProjectChange(
+      appointment,
+      dto,
+      session,
+    );
+    if (projectChange) {
+      set.projectId = projectChange.to?.id ?? null;
+      set.projectCode = projectChange.to?.code ?? null;
+      track(
+        'project',
+        projectChange.from?.label ?? null,
+        projectChange.to
+          ? projectChange.to.label || String(projectChange.to.id)
+          : null,
+      );
     }
     let offsets = appointment.remindBeforeMinutes;
     if (dto.remindBeforeMinutes) {
@@ -519,6 +517,67 @@ export class AppointmentsWriteService {
       .exec();
     if (!active) throw assigneeNotAssignable(assigneeId);
     return assigneeId;
+  }
+
+  /**
+   * Dịch dự án GÁN MỚI từ `projectId` (cũ) và/hoặc `projectCode` (mới) về `{ id, code, label }`. Chỉ nhận dự án còn
+   * hoạt động; không có gì thì `null`; không tồn tại/ngừng hoạt động hoặc id và code khác dự án thì 400
+   * `VALIDATION_FAILED` (`details.field` là `projectCode` nếu client gửi mã, ngược lại `projectId`).
+   */
+  private resolveProjectForAssign(
+    projectId: Types.ObjectId | null | undefined,
+    projectCode: string | null | undefined,
+    session: ClientSession,
+  ): Promise<CatalogRef | null> {
+    return this.refs.resolveOneForAssign(
+      'project',
+      { id: projectId, code: projectCode },
+      projectCode ? 'projectCode' : 'projectId',
+      session,
+    );
+  }
+
+  /**
+   * Xác định việc đổi dự án khi sửa lịch. `null` = không đổi gì (bỏ trống, hoặc gửi lại đúng dự án hiện có: bỏ qua
+   * kiểm tra "còn hoạt động" để dự án đã ngừng sau khi gắn không chặn việc sửa). Ngược lại trả dự án cũ/mới
+   * (`to = null` là gỡ dự án); dự án mới đã được kiểm còn hoạt động và khóa ghi.
+   */
+  private async resolveProjectChange(
+    appointment: AppointmentLean,
+    dto: UpdateAppointmentDto,
+    session: ClientSession,
+  ): Promise<{ from: CatalogRef | null; to: CatalogRef | null } | null> {
+    const { projectId, projectCode } = dto;
+    if (projectId === undefined && projectCode === undefined) return null;
+    assertProjectInputConsistent(projectId, projectCode);
+
+    const currentId = appointment.projectId ?? null;
+    const [from = null] = currentId
+      ? await this.refs.resolveByIds('project', [currentId], { session })
+      : [];
+    if (projectId === null || projectCode === null) {
+      return currentId ? { from, to: null } : null;
+    }
+
+    // Dự án hiện tại có thể không còn trong danh mục (xóa cứng ngoài ứng dụng): lấy mã từ giá trị đã ghi kép trên lịch
+    // để gửi lại đúng giá trị đang lưu vẫn là "không đổi" thay vì 400 "không tồn tại".
+    const currentCode = from?.code ?? appointment.projectCode ?? null;
+    const sameAsCurrent =
+      !!currentId &&
+      (!projectId || currentId.equals(oid(projectId))) &&
+      (!projectCode || currentCode === projectCode.trim().toUpperCase());
+    if (sameAsCurrent) return null;
+
+    const to = await this.resolveProjectForAssign(
+      projectId ? oid(projectId) : null,
+      projectCode,
+      session,
+    );
+    await this.refs.lockAndAssert(
+      { appointmentProjectId: to?.id ?? null },
+      session,
+    );
+    return { from, to };
   }
 
   /** Ghi có khóa lạc quan theo `__v` đã đọc (đua ghi => 409) và tăng `__v`. */

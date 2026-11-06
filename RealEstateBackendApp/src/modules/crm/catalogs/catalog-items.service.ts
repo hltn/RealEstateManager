@@ -252,7 +252,7 @@ export class CatalogItemsService {
           HttpStatus.CONFLICT,
         );
       }
-      const usageCount = await this.countUsage(type, itemId);
+      const usageCount = await this.countUsage(type, itemId, item.code);
       if (usageCount > 0) {
         throw new BusinessException(
           ErrorCode.CATALOG_IN_USE,
@@ -286,10 +286,11 @@ export class CatalogItemsService {
   private countUsage(
     type: CatalogItemType,
     itemId: Types.ObjectId,
+    code: string,
   ): Promise<number> {
     return type === CatalogItemType.LEAD_SOURCE
-      ? this.usage.countCustomersBySource(itemId)
-      : this.usage.countCareLogsByContactResult(itemId);
+      ? this.usage.countCustomersBySource(itemId, code)
+      : this.usage.countCareLogsByContactResult(itemId, code);
   }
 
   /** Đọc giá trị theo đường dẫn "a.b" (chỉ dùng cho `meta.*`). */

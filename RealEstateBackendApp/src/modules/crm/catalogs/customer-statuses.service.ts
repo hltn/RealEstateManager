@@ -243,7 +243,10 @@ export class CustomerStatusesService {
           'Không thể xóa tình trạng mặc định, hãy đặt tình trạng khác làm mặc định trước',
         );
       }
-      const usageCount = await this.usage.countCustomersByStatus(statusId);
+      const usageCount = await this.usage.countCustomersByStatus(
+        statusId,
+        status.code,
+      );
       if (usageCount > 0) {
         throw new BusinessException(
           ErrorCode.CATALOG_IN_USE,

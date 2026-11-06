@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { CrmActor } from '../common/access/crm-actor';
-import { toRef, toUserRef } from '../customers/customer-refs.service';
+import { CatalogRefDto } from '../../../common/dto/ref.dto';
+import { toUserRef } from '../customers/customer-refs.service';
 import type { RefMaps } from '../customers/customer-refs.service';
 import { canModifyCareLog } from './care-log.rules';
 import { CareLogResponseDto } from './dtos/care-log.dto';
@@ -11,10 +12,31 @@ export type CareLogLean = CareLog & { _id: Types.ObjectId };
 /** Chữ ký ảnh theo `attachmentId` (đã ký trước, bất đồng bộ) để mapper giữ thuần đồng bộ. */
 export type AttachmentUrls = Map<string, string>;
 
+/** Mã + nhãn của kết quả liên hệ theo `id` (dịch lô qua `CustomerRefsService.resolveByIds`). */
+export type ContactResultRefs = Map<string, { code: string; label: string }>;
+
+/**
+ * `contactResult` dạng `{ id, code, label }` (FR-40). `code` ưu tiên giá trị đã lưu (ghi kép); bản ghi cũ chưa có
+ * `contactResultCode` thì dịch từ id; không dịch được (danh mục bị xóa cứng) thì `code`/`label` rỗng, không lỗi.
+ */
+const toContactResultRef = (
+  log: CareLogLean,
+  refs: ContactResultRefs,
+): CatalogRefDto | null => {
+  if (!log.contactResultId) return null;
+  const id = String(log.contactResultId);
+  const found = refs.get(id);
+  return {
+    id,
+    code: log.contactResultCode ?? found?.code ?? '',
+    label: found?.label ?? '',
+  };
+};
+
 export const toCareLogResponse = (
   log: CareLogLean,
   actor: CrmActor,
-  maps: Pick<RefMaps, 'users' | 'contactResults'>,
+  maps: Pick<RefMaps, 'users'> & { contactResults: ContactResultRefs },
   urls: AttachmentUrls,
 ): CareLogResponseDto => ({
   id: String(log._id),
@@ -37,7 +59,7 @@ export const toCareLogResponse = (
     };
   }),
   contactChannel: log.contactChannel,
-  contactResult: toRef(log.contactResultId, maps.contactResults),
+  contactResult: toContactResultRef(log, maps.contactResults),
   nextAction: log.nextAction
     ? {
         suggestion: log.nextAction.suggestion ?? null,

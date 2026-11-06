@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
+import {
+  CatalogRefDto,
+  RefDto,
+  UserRefDto,
+} from '../../../../common/dto/ref.dto';
 import { ListGroup } from '../../catalogs/catalog.enums';
 import {
   CareRole,
@@ -61,9 +65,11 @@ export class CustomerListItemDto {
   @ApiProperty() fullName: string;
   @ApiProperty({ example: '0912 ••• 678' }) phoneMasked: string;
   @ApiProperty({ type: StatusRefDto }) status: StatusRefDto;
-  @ApiProperty({ nullable: true, type: RefDto }) source: RefDto | null;
-  @ApiProperty({ type: [RefDto] }) projects: RefDto[];
-  @ApiProperty({ nullable: true, type: RefDto }) area: RefDto | null;
+  @ApiProperty({ nullable: true, type: CatalogRefDto })
+  source: CatalogRefDto | null;
+  @ApiProperty({ type: [CatalogRefDto] }) projects: CatalogRefDto[];
+  @ApiProperty({ nullable: true, type: CatalogRefDto })
+  area: CatalogRefDto | null;
   @ApiProperty({ type: [RefDto], description: 'Thẻ sở thích/nghề nghiệp' })
   tags: RefDto[];
   @ApiProperty({ enum: [0, 25, 50, 75, 100] }) progress: number;
@@ -141,7 +147,7 @@ export class CustomerListCountsDto {
   @ApiProperty() NET: number;
   @ApiProperty() DROPPED: number;
   @ApiProperty({ type: 'array', items: { type: 'object' } })
-  byStatus: Array<{ statusId: string; count: number }>;
+  byStatus: Array<{ statusId: string; statusCode: string; count: number }>;
 }
 
 export class ChangeStatusResponseDto {

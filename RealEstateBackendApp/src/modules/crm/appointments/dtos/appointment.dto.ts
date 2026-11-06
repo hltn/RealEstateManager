@@ -12,6 +12,7 @@ import {
   IsMongoId,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -20,9 +21,10 @@ import { CsvList } from '../../../../common/decorators/csv-list.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination-query.dto';
-import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
+import { CatalogRefDto, UserRefDto } from '../../../../common/dto/ref.dto';
 import { StatusRefDto } from '../../customers/dtos/customer-response.dto';
 import { CareLogResponseDto } from '../../care-logs/dtos/care-log.dto';
+import { PROJECT_CODE_LEGACY_PATTERN } from '../../projects/project.rules';
 import {
   APPOINTMENT_LOCATION_MAX_LENGTH,
   APPOINTMENT_MAX_REMIND_MINUTES,
@@ -35,6 +37,10 @@ import {
 } from '../appointment.constants';
 
 const ISO_EXAMPLE = '2026-10-30T02:00:00.000Z';
+
+/** Mã dự án gửi lên: chấp nhận cả mã cũ chứa "-"/"_" (service chuẩn hóa chữ HOA, mã không tồn tại => 400). */
+const PROJECT_CODE_FORMAT_MESSAGE =
+  'Mã dự án chỉ gồm chữ A-Z không dấu, số 0-9, "-" hoặc "_", tối đa 30 ký tự';
 
 /** Mốc nhắc trước giờ hẹn (phút): tối đa 5 mốc khác nhau, mỗi mốc 0 – 7 ngày. */
 const RemindBeforeMinutes = () =>
@@ -105,11 +111,25 @@ export class CreateAppointmentDto {
     nullable: true,
     type: String,
     description:
-      'Dự án của buổi hẹn (mọi loại lịch, không bắt buộc); phải còn hoạt động, ngược lại 400 VALIDATION_FAILED (field projectId). null/bỏ trống = không gắn',
+      'Dự án của buổi hẹn (mọi loại lịch, không bắt buộc), DEPRECATED: dùng `projectCode`. Phải còn hoạt động, ngược lại 400 VALIDATION_FAILED (field projectId). null/bỏ trống = không gắn',
   })
   @IsOptional()
   @IsMongoId()
   projectId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    example: 'QTERRA',
+    description:
+      'Mã dự án của buổi hẹn (ưu tiên hơn `projectId`, không phân biệt hoa thường). Gửi cả hai thì phải cùng một dự án, nếu không 400 VALIDATION_FAILED. Dự án phải còn hoạt động (field projectCode)',
+  })
+  @IsOptional()
+  @Trim()
+  @Matches(PROJECT_CODE_LEGACY_PATTERN, {
+    message: PROJECT_CODE_FORMAT_MESSAGE,
+  })
+  projectCode?: string | null;
 
   @ApiPropertyOptional({
     type: [Number],
@@ -177,11 +197,25 @@ export class UpdateAppointmentDto {
     nullable: true,
     type: String,
     description:
-      'Đổi dự án (phải còn hoạt động khi gắn MỚI; gửi lại đúng dự án cũ thì bỏ qua kiểm tra). null = gỡ dự án; bỏ trống = giữ nguyên',
+      'Đổi dự án, DEPRECATED: dùng `projectCode` (phải còn hoạt động khi gắn MỚI; gửi lại đúng dự án cũ thì bỏ qua kiểm tra). null = gỡ dự án; bỏ trống = giữ nguyên',
   })
   @IsOptional()
   @IsMongoId()
   projectId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    example: 'QTERRA',
+    description:
+      'Mã dự án (ưu tiên hơn `projectId`); cùng quy tắc: null = gỡ, bỏ trống = giữ nguyên, gửi cả hai thì phải cùng một dự án, nếu không 400 VALIDATION_FAILED',
+  })
+  @IsOptional()
+  @Trim()
+  @Matches(PROJECT_CODE_LEGACY_PATTERN, {
+    message: PROJECT_CODE_FORMAT_MESSAGE,
+  })
+  projectCode?: string | null;
 
   @ApiPropertyOptional({ type: [Number] })
   @OptionalNotNull()
@@ -238,10 +272,24 @@ export class ListAppointmentsQueryDto extends PaginationQueryDto {
   @IsMongoId()
   customerId?: string;
 
-  @ApiPropertyOptional({ description: 'Chỉ lịch hẹn của dự án này' })
+  @ApiPropertyOptional({
+    description: 'Chỉ lịch hẹn của dự án này, DEPRECATED: dùng `projectCode`',
+  })
   @IsOptional()
   @IsMongoId()
   projectId?: string;
+
+  @ApiPropertyOptional({
+    example: 'QTERRA',
+    description:
+      'Chỉ lịch hẹn của dự án có mã này (không phân biệt hoa thường). Gửi cả `projectId` thì phải cùng một dự án, nếu không 400 VALIDATION_FAILED',
+  })
+  @IsOptional()
+  @Trim()
+  @Matches(PROJECT_CODE_LEGACY_PATTERN, {
+    message: PROJECT_CODE_FORMAT_MESSAGE,
+  })
+  projectCode?: string;
 
   @ApiPropertyOptional({
     type: [String],
@@ -301,12 +349,12 @@ export class AppointmentResponseDto {
   @ApiProperty() note: string;
   @ApiProperty({ type: UserRefDto }) assignee: UserRefDto;
   @ApiProperty({
-    type: RefDto,
+    type: CatalogRefDto,
     nullable: true,
     description:
-      'Dự án của buổi hẹn; vẫn trả tên khi dự án đã ngừng hoạt động/ẩn. null = chưa gắn',
+      'Dự án của buổi hẹn `{ id, code, label }`; vẫn trả tên khi dự án đã ngừng hoạt động/ẩn. null = chưa gắn',
   })
-  project: RefDto | null;
+  project: CatalogRefDto | null;
   @ApiProperty({ type: [Number] }) remindBeforeMinutes: number[];
   @ApiProperty({ enum: AppointmentStatus }) status: AppointmentStatus;
   @ApiProperty({ nullable: true, type: String }) completedAt: string | null;

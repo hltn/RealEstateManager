@@ -17,6 +17,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { CatalogCode } from '../../../../common/decorators/catalog-code.decorator';
 import { CsvList } from '../../../../common/decorators/csv-list.decorator';
 import { ToBoolean } from '../../../../common/decorators/to-boolean.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
@@ -52,7 +53,8 @@ export class CustomerFilterQueryDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Id tình trạng, phân tách dấu phẩy',
+    description:
+      'Deprecated: dùng `statusCodes`. Id tình trạng, phân tách dấu phẩy',
   })
   @IsOptional()
   @CsvList()
@@ -61,7 +63,22 @@ export class CustomerFilterQueryDto {
   @IsMongoId({ each: true })
   statusIds?: string[];
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Mã tình trạng, phân tách dấu phẩy (ưu tiên hơn `statusIds`; gửi cả hai mà không cùng tập: 400)',
+  })
+  @IsOptional()
+  @CsvList()
+  @IsArray()
+  @ArrayMaxSize(MAX_FILTER_VALUES)
+  @CatalogCode({ each: true })
+  statusCodes?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `sourceCodes`',
+  })
   @IsOptional()
   @CsvList()
   @IsArray()
@@ -69,7 +86,18 @@ export class CustomerFilterQueryDto {
   @IsMongoId({ each: true })
   sourceIds?: string[];
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ type: [String], description: 'Mã nguồn khách' })
+  @IsOptional()
+  @CsvList()
+  @IsArray()
+  @ArrayMaxSize(MAX_FILTER_VALUES)
+  @CatalogCode({ each: true })
+  sourceCodes?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `projectCodes`',
+  })
   @IsOptional()
   @CsvList()
   @IsArray()
@@ -77,13 +105,35 @@ export class CustomerFilterQueryDto {
   @IsMongoId({ each: true })
   projectIds?: string[];
 
-  @ApiPropertyOptional({ type: [String], description: 'Gồm cả khu vực con' })
+  @ApiPropertyOptional({ type: [String], description: 'Mã dự án quan tâm' })
+  @IsOptional()
+  @CsvList()
+  @IsArray()
+  @ArrayMaxSize(MAX_FILTER_VALUES)
+  @CatalogCode({ each: true })
+  projectCodes?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `areaCodes`. Gồm cả khu vực con',
+  })
   @IsOptional()
   @CsvList()
   @IsArray()
   @ArrayMaxSize(MAX_FILTER_VALUES)
   @IsMongoId({ each: true })
   areaIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Mã khu vực, gồm cả khu vực con',
+  })
+  @IsOptional()
+  @CsvList()
+  @IsArray()
+  @ArrayMaxSize(MAX_FILTER_VALUES)
+  @CatalogCode({ each: true })
+  areaCodes?: string[];
 
   @ApiPropertyOptional({
     type: [String],

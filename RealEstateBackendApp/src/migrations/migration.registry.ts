@@ -1,12 +1,19 @@
 import { FIRST_REGISTRY_MIGRATION_NUMBER } from './system.constants';
 import type { Migration } from './migration.types';
+import { migration007CrmCatalogCodes } from './versions/007_crm_catalog_codes';
+import { migration008CrmProjectPropertyTypeCodes } from './versions/008_crm_project_property_type_codes';
+import { migration009NotificationAttachmentIndexes } from './versions/009_notification_attachment_indexes';
 
 /**
  * Registry migration khai báo TƯỜNG MINH. CHỈ chứa từ 007 trở đi: 002..006 đã chạy tay trên production (có bước xóa),
- * không bọc adapter, không tự chạy lại (xem lệnh `baseline`). Hiện rỗng — thêm migration mới bằng cách import và
- * nối vào mảng này theo thứ tự số.
+ * không bọc adapter, không tự chạy lại (xem lệnh `baseline`). Thêm migration mới bằng cách import và nối vào mảng
+ * này theo thứ tự số.
  */
-export const MIGRATIONS: readonly Migration[] = [];
+export const MIGRATIONS: readonly Migration[] = [
+  migration007CrmCatalogCodes,
+  migration008CrmProjectPropertyTypeCodes,
+  migration009NotificationAttachmentIndexes,
+];
 
 const MIGRATION_ID_PATTERN = /^(\d{3})_[a-z0-9]+(?:_[a-z0-9]+)*$/;
 

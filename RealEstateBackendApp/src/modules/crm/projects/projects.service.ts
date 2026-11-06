@@ -27,6 +27,10 @@ import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { Area, AreaDocument } from '../catalogs/schemas/area.schema';
 import { CrmActorService } from '../common/access/crm-actor.service';
 import { CrmUsageService } from '../common/crm-usage.service';
+import {
+  PersonaField,
+  PersonaFieldDocument,
+} from '../persona/schemas/persona-field.schema';
 import { parseSort } from '../common/utils/sort-parser.util';
 import {
   CreateProjectDto,
@@ -43,6 +47,11 @@ import {
   normalizePropertyTypes,
   ProjectStatus,
 } from './project.rules';
+import {
+  deriveLabels,
+  mapPropertyTypeTexts,
+  type PropertyTypeOption,
+} from './property-type-matcher.util';
 import { Project, ProjectDocument } from './schemas/project.schema';
 
 const AUDIT_FIELDS = [
@@ -51,7 +60,10 @@ const AUDIT_FIELDS = [
   'developer',
   'location',
   'areaId',
+  'areaCode',
   'propertyTypes',
+  'propertyTypeCodes',
+  'unmappedPropertyTypes',
   'priceFrom',
   'priceTo',
   'status',
@@ -68,7 +80,31 @@ const NON_NULLABLE_UPDATE_FIELDS = [
   'isActive',
 ] as const;
 
+/** Khóa trường chân dung chứa danh sách loại hình (FR-46). */
+const PROPERTY_TYPE_FIELD_KEY = 'property_type';
+
 type ProjectLean = Project & { _id: Types.ObjectId };
+
+/** Khu vực đã dịch: id + mã ghi kép (`areaCode` null khi khu vực chưa được migration 007 điền). */
+interface ResolvedArea {
+  areaId: Types.ObjectId | null;
+  areaCode: string | null;
+}
+
+/** Bộ giá trị loại hình đã ánh xạ, ghi kép `propertyTypeCodes` + `propertyTypes` (nhãn) + `unmappedPropertyTypes`. */
+interface ResolvedPropertyTypes {
+  propertyTypeCodes: string[];
+  unmappedPropertyTypes: string[];
+  propertyTypes: string[];
+}
+
+/**
+ * Dự án đã được ánh xạ loại hình (có mã hoặc có chữ chưa khớp) thì response dùng nhãn suy ra; ngược lại
+ * (dự án cũ/seed chỉ có chữ cũ, `propertyTypeCodes` mặc định `[]`) giữ chữ cũ để không mất hiển thị.
+ */
+const hasMappedPropertyTypes = (project: ProjectLean): boolean =>
+  (project.propertyTypeCodes?.length ?? 0) > 0 ||
+  (project.unmappedPropertyTypes?.length ?? 0) > 0;
 
 const emptyToNull = (value: string | null | undefined): string | null => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -91,6 +127,8 @@ export class ProjectsService {
     private readonly usage: CrmUsageService,
     private readonly audit: CrmAuditLogService,
     private readonly actors: CrmActorService,
+    @InjectModel(PersonaField.name)
+    private readonly personaFieldModel: Model<PersonaFieldDocument>,
   ) {}
 
   async list(
@@ -156,7 +194,8 @@ export class ProjectsService {
     dto: CreateProjectDto,
   ): Promise<ProjectDetailResponseDto> {
     assertPriceRange(dto.priceFrom, dto.priceTo);
-    if (dto.areaId) await this.assertAreaExists(dto.areaId);
+    const area = await this.resolveArea(dto.areaId, dto.areaCode);
+    const propertyTypes = await this.resolvePropertyTypes(dto);
     const actorId = new Types.ObjectId(jwt.sub);
 
     try {
@@ -171,8 +210,12 @@ export class ProjectsService {
                 codeNormalized: normalizeProjectCode(dto.code),
                 developer: emptyToNull(dto.developer),
                 location: emptyToNull(dto.location),
-                areaId: dto.areaId ? new Types.ObjectId(dto.areaId) : null,
-                propertyTypes: normalizePropertyTypes(dto.propertyTypes),
+                areaId: area?.areaId ?? null,
+                areaCode: area?.areaCode ?? null,
+                propertyTypes: propertyTypes?.propertyTypes ?? [],
+                propertyTypeCodes: propertyTypes?.propertyTypeCodes ?? [],
+                unmappedPropertyTypes:
+                  propertyTypes?.unmappedPropertyTypes ?? [],
                 priceFrom: dto.priceFrom ?? null,
                 priceTo: dto.priceTo ?? null,
                 status: dto.status ?? ProjectStatus.UPCOMING,
@@ -209,7 +252,6 @@ export class ProjectsService {
     dto: UpdateProjectDto,
   ): Promise<ProjectDetailResponseDto> {
     this.assertNoNullForRequiredFields(dto);
-    if (dto.areaId) await this.assertAreaExists(dto.areaId);
 
     try {
       const updated = await withTransaction(
@@ -223,10 +265,21 @@ export class ProjectsService {
             .exec();
           if (!before) throw this.notFound();
 
-          // PT-031: mã đổi sang giá trị khác phải theo quy tắc mới; gửi lại đúng mã cũ (có `-`/`_`) vẫn qua.
+          // FR-40 (Q1): mã dự án bất biến, so `codeNormalized`; chỉ cho đổi hoa/thường. Dữ liệu rất cũ thiếu
+          // `codeNormalized` thì so với `code` thô.
           if (dto.code !== undefined) {
-            assertProjectCodeChange(dto.code, before.code);
+            assertProjectCodeChange(
+              dto.code,
+              before.codeNormalized || before.code,
+            );
           }
+          // Kiểm dự án tồn tại TRƯỚC khi tra khu vực để dự án không có trả 404 "dự án", không phải 404 "khu vực".
+          const area = await this.resolveArea(dto.areaId, dto.areaCode);
+          // Lựa chọn loại hình đã tắt chỉ giữ được khi dự án đã dùng sẵn; gán mới thì bị từ chối.
+          const propertyTypes = await this.resolvePropertyTypes(
+            dto,
+            before.propertyTypeCodes,
+          );
 
           const nextPriceFrom =
             dto.priceFrom === undefined ? before.priceFrom : dto.priceFrom;
@@ -234,7 +287,7 @@ export class ProjectsService {
             dto.priceTo === undefined ? before.priceTo : dto.priceTo;
           assertPriceRange(nextPriceFrom, nextPriceTo);
 
-          const patch = this.buildPatch(dto, jwt);
+          const patch = this.buildPatch(dto, jwt, area, propertyTypes);
           const after = await this.projectModel
             .findOneAndUpdate(
               { _id: projectId },
@@ -288,6 +341,7 @@ export class ProjectsService {
       const customerCount = await this.usage.countActiveCustomersByProject(
         projectId,
         session,
+        project.codeNormalized,
       );
       if (customerCount > 0) {
         throw new BusinessException(
@@ -370,6 +424,8 @@ export class ProjectsService {
   private buildPatch(
     dto: UpdateProjectDto,
     jwt: JwtPayload,
+    area: ResolvedArea | undefined,
+    propertyTypes: ResolvedPropertyTypes | undefined,
   ): Record<string, unknown> {
     const patch: Record<string, unknown> = {
       updatedBy: new Types.ObjectId(jwt.sub),
@@ -382,12 +438,10 @@ export class ProjectsService {
     if (dto.developer !== undefined)
       patch.developer = emptyToNull(dto.developer);
     if (dto.location !== undefined) patch.location = emptyToNull(dto.location);
-    if (dto.areaId !== undefined) {
-      patch.areaId = dto.areaId ? new Types.ObjectId(dto.areaId) : null;
-    }
-    if (dto.propertyTypes !== undefined) {
-      patch.propertyTypes = normalizePropertyTypes(dto.propertyTypes);
-    }
+    // Ghi kép: `areaId` + `areaCode` cùng một lần $set (FR-40).
+    if (area) Object.assign(patch, area);
+    // Ghi kép: `propertyTypeCodes` + `propertyTypes` (nhãn) + `unmappedPropertyTypes` (FR-46).
+    if (propertyTypes) Object.assign(patch, propertyTypes);
     if (dto.priceFrom !== undefined) patch.priceFrom = dto.priceFrom;
     if (dto.priceTo !== undefined) patch.priceTo = dto.priceTo;
     if (dto.status !== undefined) patch.status = dto.status;
@@ -411,11 +465,123 @@ export class ProjectsService {
     }
   }
 
-  private async assertAreaExists(areaId: string): Promise<void> {
-    const exists = await this.areaModel
-      .exists({ _id: new Types.ObjectId(areaId), deletedAt: null })
+  /**
+   * Dịch khu vực từ request (`areaCode` mới, `areaId` cũ) thành cặp `{ areaId, areaCode }` để ghi kép.
+   * - Cả hai vắng mặt: `undefined` (giữ nguyên). Không bên nào có giá trị (null/rỗng): xóa khu vực.
+   * - Một bên `null` bên kia có giá trị, hoặc hai bên trỏ hai khu vực khác nhau: 400 VALIDATION_FAILED.
+   * - Khu vực không tồn tại hoặc đã xóa mềm: 404 (giữ hành vi cũ). `areaCode` ghi `null` nếu khu vực chưa có `code`.
+   */
+  private async resolveArea(
+    areaId: string | null | undefined,
+    areaCode: string | null | undefined,
+  ): Promise<ResolvedArea | undefined> {
+    if (areaId === undefined && areaCode === undefined) return undefined;
+    if (!areaId && !areaCode) return { areaId: null, areaCode: null };
+    if ((areaId === null && areaCode) || (areaCode === null && areaId)) {
+      throw this.areaMismatch();
+    }
+    const [byId, byCode] = await Promise.all([
+      areaId
+        ? this.areaModel
+            .findOne({ _id: new Types.ObjectId(areaId), deletedAt: null })
+            .select('_id code')
+            .lean()
+            .exec()
+        : Promise.resolve(null),
+      areaCode
+        ? this.areaModel
+            .findOne({ code: areaCode, deletedAt: null })
+            .select('_id code')
+            .lean()
+            .exec()
+        : Promise.resolve(null),
+    ]);
+    if ((areaId && !byId) || (areaCode && !byCode)) {
+      throw new NotFoundException('Không tìm thấy khu vực');
+    }
+    if (byId && byCode && String(byId._id) !== String(byCode._id)) {
+      throw this.areaMismatch();
+    }
+    const found = (byId ?? byCode) as { _id: Types.ObjectId; code?: string };
+    return { areaId: found._id, areaCode: found.code ?? null };
+  }
+
+  private areaMismatch(): BusinessException {
+    return new BusinessException(
+      ErrorCode.VALIDATION_FAILED,
+      '`areaId` và `areaCode` không cùng một khu vực',
+      HttpStatus.BAD_REQUEST,
+      { fields: ['areaId', 'areaCode'] },
+    );
+  }
+
+  /** Lựa chọn của trường chân dung `property_type` (kể cả lựa chọn đã tắt); không có trường thì mảng rỗng. */
+  private async loadPropertyTypeOptions(): Promise<PropertyTypeOption[]> {
+    const field = await this.personaFieldModel
+      .findOne({ key: PROPERTY_TYPE_FIELD_KEY })
+      .select('options')
+      .lean()
       .exec();
-    if (!exists) throw new NotFoundException('Không tìm thấy khu vực');
+    return (field?.options ?? []).map((option) => ({
+      value: option.value,
+      label: option.label,
+      isActive: option.isActive,
+    }));
+  }
+
+  /**
+   * Dựng bộ giá trị loại hình ghi kép từ request (FR-46); `undefined` nếu request không gửi trường nào.
+   * - `propertyTypeCodes`: mỗi mã phải là `value` có trong `property_type`; lựa chọn đã tắt chỉ giữ được khi
+   *   dự án đã dùng (`currentCodes`), gán mới thì 400 VALIDATION_FAILED.
+   * - `propertyTypes` (chữ cũ): ánh xạ qua bộ khớp, mã khớp gộp vào `propertyTypeCodes`, chữ không khớp vào
+   *   `unmappedPropertyTypes`. Chỉ gửi `propertyTypeCodes` thì `unmappedPropertyTypes` được xóa (Quản trị đã chọn lại).
+   * - `propertyTypes` ghi lại = nhãn suy ra + chữ không khớp, để image cũ vẫn đọc được chữ hợp lý.
+   */
+  private async resolvePropertyTypes(
+    dto: Pick<CreateProjectDto, 'propertyTypes' | 'propertyTypeCodes'>,
+    currentCodes: readonly string[] = [],
+  ): Promise<ResolvedPropertyTypes | undefined> {
+    if (dto.propertyTypes === undefined && dto.propertyTypeCodes === undefined)
+      return undefined;
+    const options = await this.loadPropertyTypeOptions();
+
+    const inputCodes = [...new Set(dto.propertyTypeCodes ?? [])];
+    const invalid = inputCodes.filter((code) => {
+      const option = options.find((item) => item.value === code);
+      return (
+        !option || (option.isActive === false && !currentCodes.includes(code))
+      );
+    });
+    if (invalid.length > 0) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        `Loại hình không tồn tại hoặc đã ngừng dùng: ${invalid.join(', ')}`,
+        HttpStatus.BAD_REQUEST,
+        { fields: ['propertyTypeCodes'] },
+      );
+    }
+
+    const mapped =
+      dto.propertyTypes === undefined
+        ? { codes: [] as string[], unmapped: [] as string[] }
+        : mapPropertyTypeTexts(
+            normalizePropertyTypes(dto.propertyTypes),
+            // Chữ cũ không được khớp vào lựa chọn đã tắt (như gán mã mới), trừ khi dự án đã dùng sẵn.
+            options.filter(
+              (option) =>
+                option.isActive !== false ||
+                currentCodes.includes(option.value),
+            ),
+          );
+    const propertyTypeCodes = [...new Set([...inputCodes, ...mapped.codes])];
+    return {
+      propertyTypeCodes,
+      unmappedPropertyTypes: mapped.unmapped,
+      propertyTypes: [
+        ...deriveLabels(propertyTypeCodes, options),
+        ...mapped.unmapped,
+      ],
+    };
   }
 
   private mapDuplicateCode(error: unknown, code?: string): unknown {
@@ -443,18 +609,26 @@ export class ProjectsService {
           ]),
       ).values(),
     ];
-    const [areas, customerCounts] = await Promise.all([
+    // Chỉ nạp lựa chọn loại hình khi có dự án đã có `propertyTypeCodes` (suy nhãn), một truy vấn cho cả lô.
+    const needsPropertyOptions = projects.some(hasMappedPropertyTypes);
+    const [areas, customerCounts, propertyOptions] = await Promise.all([
       areaIds.length
         ? this.areaModel
             .find({ _id: { $in: areaIds } })
-            .select('name')
+            .select('name code')
             .lean()
             .exec()
         : Promise.resolve([]),
-      this.usage.countActiveCustomersByProjects(projects.map((p) => p._id)),
+      this.usage.countActiveCustomersByProjects(projects),
+      needsPropertyOptions
+        ? this.loadPropertyTypeOptions()
+        : Promise.resolve([] as PropertyTypeOption[]),
     ]);
     const areaNameById = new Map(
       areas.map((area) => [String(area._id), area.name]),
+    );
+    const areaCodeById = new Map(
+      areas.map((area) => [String(area._id), area.code ?? null]),
     );
 
     return projects.map((project) => ({
@@ -469,7 +643,22 @@ export class ProjectsService {
             label: areaNameById.get(String(project.areaId)) ?? '',
           }
         : null,
-      propertyTypes: normalizePropertyTypes(project.propertyTypes),
+      // Mã khu vực: ưu tiên field ghi kép, thiếu thì dịch từ id (không lỗi).
+      areaCode:
+        project.areaCode ??
+        (project.areaId ? areaCodeById.get(String(project.areaId)) : null) ??
+        null,
+      // Có `propertyTypeCodes`: nhãn suy ra (+ chữ chưa khớp); dự án chưa migrate: chữ cũ.
+      propertyTypes: hasMappedPropertyTypes(project)
+        ? [
+            ...new Set([
+              ...deriveLabels(project.propertyTypeCodes ?? [], propertyOptions),
+              ...(project.unmappedPropertyTypes ?? []),
+            ]),
+          ]
+        : normalizePropertyTypes(project.propertyTypes),
+      propertyTypeCodes: project.propertyTypeCodes ?? [],
+      unmappedPropertyTypes: project.unmappedPropertyTypes ?? [],
       priceFrom: project.priceFrom ?? null,
       priceTo: project.priceTo ?? null,
       status: project.status,

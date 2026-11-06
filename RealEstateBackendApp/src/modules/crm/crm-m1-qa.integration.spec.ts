@@ -569,7 +569,15 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
           code: 'RECODED1',
         },
       );
-      expect(res.status).toBe(200);
+      expect([res.status, res.body.errorCode]).toEqual([
+        400,
+        'PROJECT_CODE_IMMUTABLE',
+      ]);
+      // Mô phỏng bản seed đã bị đổi mã từ trước v1.0.4 bằng ghi trực tiếp.
+      await projects.updateOne(
+        { _id: first._id },
+        { $set: { code: 'RECODED1', codeNormalized: 'RECODED1' } },
+      );
       const before = await projects.countDocuments({});
       await seed.seedAll();
       expect(await projects.countDocuments({})).toBe(before);
@@ -667,6 +675,185 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
         sawOrphan = !!team?.deletedAt && String(user?.teamId) === t;
       }
       expect(sawOrphan).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  describe('FR-40 (T-08): đếm "đang dùng" theo id HOẶC code trên bản ghi thiếu code (chèn thẳng qua driver)', () => {
+    type Shape = 'chỉ id' | 'chỉ code' | 'cả hai';
+    const shapes: Shape[] = ['chỉ id', 'chỉ code', 'cả hai'];
+    const customers = () => connection.collection('customers');
+
+    /** Khách thô: chỉ có trường id, chỉ có trường code, hoặc cả hai (mô phỏng dữ liệu trước/sau migration). */
+    const rawCustomer = (
+      shape: Shape,
+      idField: string,
+      codeField: string,
+      id: string,
+      code: string,
+      asArray = false,
+    ) => {
+      const idValue = new Types.ObjectId(id);
+      return {
+        fullName: `Khách FR-40 ${shape}`,
+        phone: `+8490${Math.floor(1_000_000 + Math.random() * 8_999_999)}`,
+        deletedAt: null,
+        ...(shape !== 'chỉ code' && {
+          [idField]: asArray ? [idValue] : idValue,
+        }),
+        ...(shape !== 'chỉ id' && { [codeField]: asArray ? [code] : code }),
+      };
+    };
+
+    afterEach(async () => {
+      await customers().deleteMany({ fullName: /^Khách FR-40/ });
+    });
+
+    describe.each(shapes)('khách %s', (shape) => {
+      it('tình trạng: xóa bị chặn CATALOG_IN_USE usageCount 1 (không đếm đôi khi có cả hai)', async () => {
+        const code = `FR40_ST_${shapes.indexOf(shape)}`;
+        const created = await call('POST', '/crm/customer-statuses', 'admin', {
+          code,
+          label: `FR40 ${code}`,
+          listGroup: 'NOT_CONTACTED',
+        });
+        expect(created.status).toBe(201);
+        const id = created.body.data.id as string;
+        await customers().insertOne(
+          rawCustomer(shape, 'statusId', 'statusCode', id, code),
+        );
+        const res = await call(
+          'DELETE',
+          `/crm/customer-statuses/${id}`,
+          'admin',
+        );
+        expect([res.status, res.body.errorCode]).toEqual([
+          409,
+          'CATALOG_IN_USE',
+        ]);
+        expect(res.body.details).toEqual({ usageCount: 1 });
+      });
+
+      it('nguồn khách: xóa bị chặn CATALOG_IN_USE', async () => {
+        const code = `FR40_SRC_${shapes.indexOf(shape)}`;
+        const created = await call('POST', '/crm/lead-sources', 'admin', {
+          code,
+          label: `FR40 ${code}`,
+        });
+        expect(created.status).toBe(201);
+        const id = created.body.data.id as string;
+        await customers().insertOne(
+          rawCustomer(shape, 'sourceId', 'sourceCode', id, code),
+        );
+        const res = await call('DELETE', `/crm/lead-sources/${id}`, 'admin');
+        expect([res.status, res.body.errorCode]).toEqual([
+          409,
+          'CATALOG_IN_USE',
+        ]);
+        expect(res.body.details).toEqual({ usageCount: 1 });
+      });
+
+      it('khu vực: xóa bị chặn CATALOG_IN_USE (khách thiếu areaCode hoặc thiếu areaId)', async () => {
+        const created = await call('POST', '/crm/areas', 'admin', {
+          name: `Tỉnh FR40 ${shape}`,
+          type: 'PROVINCE',
+        });
+        expect(created.status).toBe(201);
+        const id = created.body.data.id as string;
+        const code = created.body.data.code as string;
+        expect(code).toEqual(expect.any(String));
+        await customers().insertOne(
+          rawCustomer(shape, 'areaId', 'areaCode', id, code),
+        );
+        const res = await call('DELETE', `/crm/areas/${id}`, 'admin');
+        expect([res.status, res.body.errorCode]).toEqual([
+          409,
+          'CATALOG_IN_USE',
+        ]);
+        expect(res.body.details.usageCount).toBe(1);
+      });
+
+      it('dự án: xóa bị chặn PROJECT_IN_USE (khách thiếu interestedProjectCodes hoặc thiếu interestedProjectIds)', async () => {
+        const code = `FR40P${shapes.indexOf(shape)}`;
+        const created = await call('POST', '/crm/projects', 'admin', {
+          name: `Dự án FR40 ${shape}`,
+          code,
+        });
+        expect(created.status).toBe(201);
+        const id = created.body.data.id as string;
+        await customers().insertOne(
+          rawCustomer(
+            shape,
+            'interestedProjectIds',
+            'interestedProjectCodes',
+            id,
+            code,
+            true,
+          ),
+        );
+        const res = await call('DELETE', `/crm/projects/${id}`, 'admin');
+        expect([res.status, res.body.errorCode]).toEqual([
+          409,
+          'PROJECT_IN_USE',
+        ]);
+        expect(res.body.details).toEqual({ customerCount: 1 });
+      });
+    });
+
+    it('hết khách thì xóa tình trạng được (không chặn nhầm)', async () => {
+      const created = await call('POST', '/crm/customer-statuses', 'admin', {
+        code: 'FR40_FREE',
+        label: 'FR40 trống',
+        listGroup: 'NOT_CONTACTED',
+      });
+      const res = await call(
+        'DELETE',
+        `/crm/customer-statuses/${created.body.data.id}`,
+        'admin',
+      );
+      expect(res.status).toBe(204);
+    });
+
+    it('FR-40 (T-10): customerCount của dự án đếm khách có CẢ id lẫn code của cùng dự án đúng 1 lần (hợp tập, không nối mảng)', async () => {
+      const make = async (code: string) => {
+        const created = await call('POST', '/crm/projects', 'admin', {
+          name: `Dự án FR40 đếm ${code}`,
+          code,
+        });
+        expect(created.status).toBe(201);
+        return created.body.data.id as string;
+      };
+      const countOf = async (id: string) => {
+        const list = await call('GET', '/crm/projects?limit=100', 'admin');
+        return list.body.data.find((row: any) => row.id === id).customerCount;
+      };
+      const only = await make('FR40CNTBOTH');
+      await customers().insertOne(
+        rawCustomer(
+          'cả hai',
+          'interestedProjectIds',
+          'interestedProjectCodes',
+          only,
+          'FR40CNTBOTH',
+          true,
+        ),
+      );
+      expect(await countOf(only)).toBe(1);
+
+      const mixed = await make('FR40CNTMIX');
+      for (const shape of shapes) {
+        await customers().insertOne(
+          rawCustomer(
+            shape,
+            'interestedProjectIds',
+            'interestedProjectCodes',
+            mixed,
+            'FR40CNTMIX',
+            true,
+          ),
+        );
+      }
+      expect(await countOf(mixed)).toBe(3);
     });
   });
 });

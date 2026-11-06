@@ -18,6 +18,12 @@ const refs: RefMaps = {
   contactResults: new Map(),
   tags: new Map(),
   users: new Map(),
+  codes: {
+    sources: new Map(),
+    areas: new Map(),
+    projects: new Map(),
+    contactResults: new Map(),
+  },
 };
 const me = new Types.ObjectId();
 const doc = {
@@ -150,6 +156,114 @@ describe('audit changes của hồ sơ', () => {
     expect(changes).toEqual([
       { field: 'phone', from: '+84912345678', to: '+84988888888' },
     ]);
+  });
+});
+
+describe('FR-40: CatalogRefDto và audit fromCode/toCode', () => {
+  const sourceId = new Types.ObjectId();
+  const areaId = new Types.ObjectId();
+  const projectId = new Types.ObjectId();
+  const orphanProjectId = new Types.ObjectId();
+  const refsWithCodes: RefMaps = {
+    ...refs,
+    sources: new Map([[String(sourceId), 'Facebook Ads']]),
+    areas: new Map([[String(areaId), 'Hà Nội']]),
+    projects: new Map([[String(projectId), 'Vinhomes Ocean Park']]),
+    codes: {
+      sources: new Map([[String(sourceId), 'FACEBOOK_ADS']]),
+      areas: new Map([[String(areaId), 'HA_NOI']]),
+      projects: new Map([[String(projectId), 'VINOP']]),
+      contactResults: new Map(),
+    },
+  };
+  const withRefs = {
+    ...doc,
+    sourceId,
+    areaId,
+    interestedProjectIds: [projectId],
+  } as unknown as CustomerLean;
+
+  it('FR-40: source/area/projects trả { id, code, label } với code dịch từ id', () => {
+    const item = toListItem(withRefs, refsWithCodes);
+    expect(item.source).toEqual({
+      id: String(sourceId),
+      code: 'FACEBOOK_ADS',
+      label: 'Facebook Ads',
+    });
+    expect(item.area).toEqual({
+      id: String(areaId),
+      code: 'HA_NOI',
+      label: 'Hà Nội',
+    });
+    expect(item.projects).toEqual([
+      { id: String(projectId), code: 'VINOP', label: 'Vinhomes Ocean Park' },
+    ]);
+  });
+
+  it('FR-40: đổi nhãn danh mục không đổi code trong response', () => {
+    const renamed: RefMaps = {
+      ...refsWithCodes,
+      sources: new Map([[String(sourceId), 'Facebook (đã đổi tên)']]),
+    };
+    const source = toListItem(withRefs, renamed).source;
+    expect(source?.label).toBe('Facebook (đã đổi tên)');
+    expect(source?.code).toBe('FACEBOOK_ADS');
+  });
+
+  it('FR-40: bản ghi chưa lưu code vẫn dựng được bằng cách dịch từ id; danh mục bị xóa cứng thì code rơi về mã đã lưu hoặc rỗng, không lỗi', () => {
+    const orphan = {
+      ...withRefs,
+      sourceId: new Types.ObjectId(),
+      sourceCode: 'DA_LUU',
+      areaId: new Types.ObjectId(),
+      interestedProjectIds: [projectId, orphanProjectId],
+    } as unknown as CustomerLean;
+    const item = toListItem(orphan, refsWithCodes);
+    expect(item.source).toMatchObject({ code: 'DA_LUU', label: '' });
+    expect(item.area).toMatchObject({ code: '', label: '' });
+    expect(item.projects.map((project) => project.code)).toEqual(['VINOP', '']);
+  });
+
+  it('FR-40: audit đổi nguồn/khu vực/dự án có fromCode/toCode cạnh nhãn', () => {
+    const before = {
+      ...EMPTY_PROFILE,
+      sourceId,
+      areaId,
+      interestedProjectIds: [projectId],
+    };
+    const changes = buildProfileChanges(before, EMPTY_PROFILE, refsWithCodes);
+    expect(changes).toEqual([
+      {
+        field: 'source',
+        from: 'Facebook Ads',
+        to: null,
+        fromCode: 'FACEBOOK_ADS',
+        toCode: null,
+      },
+      {
+        field: 'area',
+        from: 'Hà Nội',
+        to: null,
+        fromCode: 'HA_NOI',
+        toCode: null,
+      },
+      {
+        field: 'projects',
+        from: ['Vinhomes Ocean Park'],
+        to: [],
+        fromCode: ['VINOP'],
+        toCode: [],
+      },
+    ]);
+  });
+
+  it('FR-40: audit đổi nhãn không đổi code: cùng id thì không phát sinh thay đổi', () => {
+    const same = { ...EMPTY_PROFILE, sourceId };
+    const renamed: RefMaps = {
+      ...refsWithCodes,
+      sources: new Map([[String(sourceId), 'Tên mới']]),
+    };
+    expect(buildProfileChanges(same, same, renamed)).toEqual([]);
   });
 });
 

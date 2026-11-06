@@ -188,6 +188,23 @@ export class Customer {
   @Prop({ type: Types.ObjectId, default: null })
   areaId: Types.ObjectId | null;
 
+  /**
+   * FR-40 (ghi kép): mã bất biến của danh mục, ghi CÙNG LÚC với id tương ứng ở mọi đường ghi. Tùy chọn ở schema vì
+   * bản ghi cũ (và bản ghi do image v1.0.3 ghi) chưa có: migration `007` và lệnh bù điền, mapper dịch từ id khi thiếu.
+   * Đổi nhãn danh mục không đổi `code`. Dự án dùng `codeNormalized` (chữ HOA).
+   */
+  @Prop({ type: String, required: false })
+  statusCode?: string;
+
+  @Prop({ type: String, default: null })
+  sourceCode: string | null;
+
+  @Prop({ type: String, default: null })
+  areaCode: string | null;
+
+  @Prop({ type: [String], default: [] })
+  interestedProjectCodes: string[];
+
   /** M4 (thẻ). */
   @Prop({ type: [Types.ObjectId], default: [] })
   tagIds: Types.ObjectId[];
@@ -319,6 +336,13 @@ CustomerSchema.index({ primaryAssigneeId: 1, statusId: 1 });
 CustomerSchema.index({ sourceId: 1 });
 CustomerSchema.index({ interestedProjectIds: 1 });
 CustomerSchema.index({ areaId: 1 });
+// FR-40: chỉ mục theo `code` (giữ nguyên chỉ mục theo id đến bản thu hẹp). Migration `007` (T-13) tạo cùng định nghĩa.
+CustomerSchema.index({ statusCode: 1 });
+CustomerSchema.index({ deletedAt: 1, statusCode: 1, lastUpdatedAt: -1 });
+CustomerSchema.index({ primaryAssigneeId: 1, statusCode: 1 });
+CustomerSchema.index({ sourceCode: 1 });
+CustomerSchema.index({ areaCode: 1 });
+CustomerSchema.index({ interestedProjectCodes: 1 });
 // Lọc theo thẻ / chân dung (M4).
 CustomerSchema.index({ tagIds: 1 });
 CustomerSchema.index({ personaFilterKeys: 1 });

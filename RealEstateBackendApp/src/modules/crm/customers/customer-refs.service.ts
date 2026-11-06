@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
-import { RefDto, UserRefDto } from '../../../common/dto/ref.dto';
+import { CatalogRefDto, RefDto, UserRefDto } from '../../../common/dto/ref.dto';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { User, UserDocument } from '../../users/schemas/user.schema';
@@ -43,16 +43,84 @@ export interface RefIds {
   userIds?: Array<Types.ObjectId | null | undefined>;
 }
 
+/** Mã bất biến (`code`) theo id danh mục, để mapper/audit dựng `CatalogRefDto` khi bản ghi chưa lưu `…Code` (FR-40). */
+export interface RefCodeMaps {
+  sources: Map<string, string>;
+  areas: Map<string, string>;
+  /** `codeNormalized` (chữ HOA) của dự án. */
+  projects: Map<string, string>;
+  contactResults: Map<string, string>;
+}
+
 export interface RefMaps {
   statuses: Map<string, StatusRefDto>;
   sources: Map<string, string>;
   areas: Map<string, string>;
   projects: Map<string, string>;
   contactResults: Map<string, string>;
+  /** Mã theo id (cùng tập id với các Map nhãn ở trên); thiếu mã (danh mục bị xóa cứng) thì không có khóa. */
+  codes: RefCodeMaps;
   /** Chỉ chứa thẻ CHƯA xóa mềm. */
   tags: Map<string, string>;
   users: Map<string, string>;
 }
+
+/** Loại danh mục có mã tham chiếu `code` (FR-40). */
+export type CatalogRefKind =
+  | 'status'
+  | 'source'
+  | 'area'
+  | 'project'
+  | 'contactResult';
+
+/** Một bản ghi danh mục đã dịch: id, mã bất biến, nhãn (FR-40). */
+export interface CatalogRef {
+  id: Types.ObjectId;
+  code: string;
+  label: string;
+}
+
+/** Tùy chọn dịch: `activeOnly` chỉ lấy bản đang hoạt động, chưa xóa mềm (dùng khi GÁN MỚI). */
+export interface ResolveOptions {
+  activeOnly?: boolean;
+  session?: ClientSession;
+}
+
+/** Đầu vào gán danh mục: `…Id` (cũ) và/hoặc `…Code` (mới); dạng danh sách cho trường nhiều giá trị. */
+export interface RefAssignInput {
+  ids?: Array<Types.ObjectId | null | undefined> | null;
+  codes?: Array<string | null | undefined> | null;
+}
+
+/** Đầu vào một trường danh mục đơn trị: `undefined` = không gửi, `null` = xóa (FR-40). */
+export interface SingleRefInput {
+  id?: string | null;
+  code?: string | null;
+}
+
+/** Đầu vào một trường danh mục nhiều giá trị: `undefined` = không gửi, `[]` = xóa hết (FR-40). */
+export interface ListRefInput {
+  ids?: string[];
+  codes?: string[];
+}
+
+/** Bộ lọc "còn dùng được để gán mới"; trùng điều kiện của `lock`. */
+const ACTIVE_FILTER = { isActive: true, deletedAt: null };
+
+const uniqueCodes = (codes: Array<string | null | undefined> = []) => [
+  ...new Set(codes.filter((code): code is string => !!code)),
+];
+
+/** Chuẩn hóa mã theo loại (mã dự án chữ HOA) RỒI mới khử trùng lặp, để `vin` và `VIN` chỉ tính một. */
+export const normalizeCodes = (
+  kind: CatalogRefKind,
+  codes: Array<string | null | undefined>,
+): string[] =>
+  uniqueCodes(
+    uniqueCodes(codes).map((code) =>
+      kind === 'project' ? code.trim().toUpperCase() : code,
+    ),
+  );
 
 const unique = (ids: Array<Types.ObjectId | null | undefined> = []) => [
   ...new Map(
@@ -198,6 +266,222 @@ export class CustomerRefsService {
     }
   }
 
+  /**
+   * Dịch `code` sang `{ id, code, label }` theo lô: đúng MỘT `$in` cho mỗi lần gọi (không N+1).
+   * Mã dự án so theo `codeNormalized` (chữ HOA). Mã không có trong kết quả tức là không tồn tại
+   * (hoặc không hoạt động nếu `activeOnly`).
+   */
+  resolveByCodes(
+    kind: CatalogRefKind,
+    codes: Array<string | null | undefined>,
+    options: ResolveOptions = {},
+  ): Promise<CatalogRef[]> {
+    return this.fetchRefs(
+      kind,
+      normalizeCodes(kind, codes),
+      CODE_FIELD[kind],
+      options,
+    );
+  }
+
+  /** Dịch id sang `{ id, code, label }` theo lô (một `$in`); bản ghi xóa mềm vẫn trả về trừ khi `activeOnly`. */
+  resolveByIds(
+    kind: CatalogRefKind,
+    ids: Array<Types.ObjectId | null | undefined>,
+    options: ResolveOptions = {},
+  ): Promise<CatalogRef[]> {
+    return this.fetchRefs(kind, unique(ids), '_id', options);
+  }
+
+  /**
+   * Chuẩn hóa đầu vào GÁN MỚI về danh sách id đã dịch (để đưa vào `lockAndAssert`).
+   * - Chỉ nhận bản đang hoạt động, chưa xóa mềm; thiếu/ngừng/đã xóa: 400 "không tồn tại hoặc đã ngừng hoạt động".
+   * - Có cả `…Id` lẫn `…Code` mà không cùng tập bản ghi: 400 VALIDATION_FAILED.
+   * Không có cả hai: trả mảng rỗng.
+   */
+  async resolveForAssign(
+    kind: CatalogRefKind,
+    input: RefAssignInput,
+    field: string,
+    session?: ClientSession,
+    activeOnly = true,
+  ): Promise<CatalogRef[]> {
+    const ids = unique(input.ids ?? []);
+    const codes = normalizeCodes(kind, input.codes ?? []);
+    const options = { activeOnly, session };
+    const none: CatalogRef[] = [];
+    const [byId, byCode] = await Promise.all([
+      ids.length ? this.resolveByIds(kind, ids, options) : none,
+      codes.length ? this.resolveByCodes(kind, codes, options) : none,
+    ]);
+    if (byId.length !== ids.length || byCode.length !== codes.length) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        `${KIND_LABEL[kind]} không tồn tại hoặc đã ngừng hoạt động`,
+        HttpStatus.BAD_REQUEST,
+        { field },
+      );
+    }
+    if (ids.length && codes.length) {
+      const idSet = new Set(byId.map((ref) => String(ref.id)));
+      const sameSet =
+        idSet.size === byCode.length &&
+        byCode.every((ref) => idSet.has(String(ref.id)));
+      if (!sameSet) throw mismatchError(kind, field);
+    }
+    return ids.length ? byId : byCode;
+  }
+
+  /**
+   * Đầu vào request cho MỘT trường danh mục đơn trị (nguồn, khu vực, tình trạng...): `…Id` (cũ) và/hoặc `…Code` (mới).
+   * - Không gửi cả hai (`undefined`): `provided = false`, caller giữ nguyên giá trị hiện có.
+   * - `null` (xóa) hoặc không có giá trị: `provided = true`, `ref = null`.
+   * - Một bên `null` một bên có giá trị, hoặc id và code không cùng bản ghi: 400 VALIDATION_FAILED.
+   * `activeOnly = false` dùng cho SỬA: khách giữ liên kết với danh mục đã ngừng hoạt động, việc kiểm "còn hoạt động"
+   * do `lockAndAssert` làm riêng cho giá trị mới gán.
+   */
+  async resolveSingleInput(
+    kind: CatalogRefKind,
+    input: SingleRefInput,
+    field: string,
+    session?: ClientSession,
+    activeOnly = true,
+  ): Promise<{ provided: boolean; ref: CatalogRef | null }> {
+    const hasId = input.id !== undefined;
+    const hasCode = input.code !== undefined;
+    if (!hasId && !hasCode) return { provided: false, ref: null };
+    if (hasId && hasCode && (input.id === null) !== (input.code === null)) {
+      throw mismatchError(kind, field);
+    }
+    if (!input.id && !input.code) return { provided: true, ref: null };
+    const [ref] = await this.resolveForAssign(
+      kind,
+      {
+        ids: [input.id ? new Types.ObjectId(input.id) : null],
+        codes: [input.code],
+      },
+      field,
+      session,
+      activeOnly,
+    );
+    return { provided: true, ref: ref ?? null };
+  }
+
+  /**
+   * Như `resolveSingleInput` cho trường nhiều giá trị (dự án quan tâm). Kết quả theo ĐÚNG thứ tự đầu vào (id nếu có,
+   * không thì code đã chuẩn hóa), đã khử trùng lặp. Một bên là mảng rỗng, bên kia có phần tử: 400.
+   */
+  async resolveListInput(
+    kind: CatalogRefKind,
+    input: ListRefInput,
+    field: string,
+    session?: ClientSession,
+    activeOnly = true,
+  ): Promise<{ provided: boolean; refs: CatalogRef[] }> {
+    const hasIds = input.ids !== undefined;
+    const hasCodes = input.codes !== undefined;
+    if (!hasIds && !hasCodes) return { provided: false, refs: [] };
+    const ids = unique((input.ids ?? []).map((id) => new Types.ObjectId(id)));
+    const codes = normalizeCodes(kind, input.codes ?? []);
+    if (hasIds && hasCodes && (ids.length === 0) !== (codes.length === 0)) {
+      throw mismatchError(kind, field);
+    }
+    if (ids.length === 0 && codes.length === 0) {
+      return { provided: true, refs: [] };
+    }
+    const resolved = await this.resolveForAssign(
+      kind,
+      { ids, codes },
+      field,
+      session,
+      activeOnly,
+    );
+    const order = ids.length ? ids.map(String) : codes;
+    const keyOf = (ref: CatalogRef) => (ids.length ? String(ref.id) : ref.code);
+    const byKey = new Map(resolved.map((ref) => [keyOf(ref), ref]));
+    return {
+      provided: true,
+      refs: order.flatMap((key) => {
+        const ref = byKey.get(key);
+        return ref ? [ref] : [];
+      }),
+    };
+  }
+
+  /** Tình trạng mặc định (isDefault, đang hoạt động) dạng `{ id, code, label }`: ghi kép khi tạo khách không chọn tình trạng. */
+  async findDefaultStatusRef(session: ClientSession): Promise<CatalogRef> {
+    const status = await this.statusModel
+      .findOne({ isDefault: true, isActive: true, deletedAt: null })
+      .select('code label')
+      .session(session)
+      .lean()
+      .exec();
+    if (!status) {
+      throw new BusinessException(
+        ErrorCode.VALIDATION_FAILED,
+        'Chưa cấu hình tình trạng mặc định cho khách hàng',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return { id: status._id, code: status.code, label: status.label };
+  }
+
+  /** Như `resolveForAssign` cho trường một giá trị; không gửi gì thì trả `null`. */
+  async resolveOneForAssign(
+    kind: CatalogRefKind,
+    input: { id?: Types.ObjectId | null; code?: string | null },
+    field: string,
+    session?: ClientSession,
+  ): Promise<CatalogRef | null> {
+    const [ref] = await this.resolveForAssign(
+      kind,
+      { ids: [input.id], codes: [input.code] },
+      field,
+      session,
+    );
+    return ref ?? null;
+  }
+
+  private async fetchRefs(
+    kind: CatalogRefKind,
+    values: Array<string | Types.ObjectId>,
+    matchField: string,
+    options: ResolveOptions,
+  ): Promise<CatalogRef[]> {
+    if (values.length === 0) return [];
+    const filter = {
+      [matchField]: { $in: values },
+      ...(options.activeOnly ? ACTIVE_FILTER : {}),
+      ...EXTRA_FILTER[kind],
+    };
+    const query = this.modelOf(kind)
+      .find(filter)
+      .select(`${CODE_FIELD[kind]} ${LABEL_FIELD[kind]}`)
+      .lean();
+    if (options.session) query.session(options.session);
+    const rows = (await query.exec()) as Array<
+      Record<string, string | Types.ObjectId | undefined>
+    >;
+    return rows.map((row) => ({
+      id: row._id as Types.ObjectId,
+      code: String(row[CODE_FIELD[kind]] ?? ''),
+      label: String(row[LABEL_FIELD[kind]] ?? ''),
+    }));
+  }
+
+  private modelOf(kind: CatalogRefKind): Model<any> {
+    switch (kind) {
+      case 'status':
+        return this.statusModel;
+      case 'area':
+        return this.areaModel;
+      case 'project':
+        return this.projectModel;
+      default:
+        return this.catalogModel;
+    }
+  }
+
   /** Dịch id sang nhãn theo lô; bản ghi đã xóa mềm vẫn có nhãn (khách cũ giữ liên kết). */
   async resolve(ids: RefIds): Promise<RefMaps> {
     const statusIds = unique(ids.statusIds);
@@ -220,28 +504,28 @@ export class CustomerRefsService {
         sourceIds.length
           ? this.catalogModel
               .find({ _id: { $in: sourceIds } })
-              .select('label')
+              .select('label code')
               .lean()
               .exec()
           : [],
         areaIds.length
           ? this.areaModel
               .find({ _id: { $in: areaIds } })
-              .select('name')
+              .select('name code')
               .lean()
               .exec()
           : [],
         projectIds.length
           ? this.projectModel
               .find({ _id: { $in: projectIds } })
-              .select('name')
+              .select('name codeNormalized')
               .lean()
               .exec()
           : [],
         contactResultIds.length
           ? this.catalogModel
               .find({ _id: { $in: contactResultIds } })
-              .select('label')
+              .select('label code')
               .lean()
               .exec()
           : [],
@@ -303,14 +587,78 @@ export class CustomerRefsService {
           (item) => [item._id, item.displayName] as [Types.ObjectId, string],
         ),
       ),
+      codes: {
+        sources: toCodeMap(sources),
+        areas: toCodeMap(areas),
+        projects: toCodeMap(projects, 'codeNormalized'),
+        contactResults: toCodeMap(contactResults),
+      },
     };
   }
 }
+
+const CODE_FIELD: Record<CatalogRefKind, string> = {
+  status: 'code',
+  source: 'code',
+  area: 'code',
+  project: 'codeNormalized',
+  contactResult: 'code',
+};
+
+const LABEL_FIELD: Record<CatalogRefKind, string> = {
+  status: 'label',
+  source: 'label',
+  area: 'name',
+  project: 'name',
+  contactResult: 'label',
+};
+
+const EXTRA_FILTER: Record<CatalogRefKind, Record<string, unknown>> = {
+  status: {},
+  source: { type: CatalogItemType.LEAD_SOURCE },
+  area: {},
+  project: {},
+  contactResult: { type: CatalogItemType.CONTACT_RESULT },
+};
+
+const KIND_LABEL: Record<CatalogRefKind, string> = {
+  status: 'Tình trạng',
+  source: 'Nguồn khách',
+  area: 'Khu vực',
+  project: 'Dự án',
+  contactResult: 'Kết quả liên hệ',
+};
+
+/** 400: request gửi cả `…Id` lẫn `…Code` nhưng không cùng một bản ghi (hoặc một bên rỗng một bên có giá trị). */
+const mismatchError = (
+  kind: CatalogRefKind,
+  field: string,
+): BusinessException =>
+  new BusinessException(
+    ErrorCode.VALIDATION_FAILED,
+    `${KIND_LABEL[kind]}: id và code không cùng một bản ghi`,
+    HttpStatus.BAD_REQUEST,
+    { field },
+  );
 
 const toLabelMap = (
   rows: Array<[Types.ObjectId, string]>,
 ): Map<string, string> =>
   new Map(rows.map(([id, label]) => [String(id), label] as [string, string]));
+
+/** Map id -> mã; bản ghi thiếu mã (dữ liệu cũ chưa điền) không có khóa để caller rơi về mã đã lưu. */
+const toCodeMap = (
+  rows: Array<{ _id: Types.ObjectId }>,
+  field = 'code',
+): Map<string, string> =>
+  new Map(
+    rows.flatMap((row) => {
+      const code = (row as unknown as Record<string, unknown>)[field];
+      return typeof code === 'string' && code
+        ? [[String(row._id), code] as [string, string]]
+        : [];
+    }),
+  );
 
 /** Ref `{ id, label }` từ Map nhãn; thiếu nhãn (bản ghi đã bị xóa cứng) thì label rỗng. */
 export const toRef = (
@@ -318,6 +666,24 @@ export const toRef = (
   labels: Map<string, string>,
 ): RefDto | null =>
   id ? { id: String(id), label: labels.get(String(id)) ?? '' } : null;
+
+/**
+ * `{ id, code, label }` (FR-40). `code` dịch từ id (nguồn sự thật: id vẫn do mọi phiên bản ghi); không dịch được
+ * (danh mục bị xóa cứng) thì rơi về mã đã lưu trên bản ghi, cuối cùng là chuỗi rỗng, không lỗi.
+ */
+export const toCatalogRef = (
+  id: Types.ObjectId | null | undefined,
+  labels: Map<string, string>,
+  codes: Map<string, string>,
+  storedCode?: string | null,
+): CatalogRefDto | null =>
+  id
+    ? {
+        id: String(id),
+        code: codes.get(String(id)) ?? storedCode ?? '',
+        label: labels.get(String(id)) ?? '',
+      }
+    : null;
 
 export const toUserRef = (
   id: Types.ObjectId | null | undefined,

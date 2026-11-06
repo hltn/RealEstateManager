@@ -17,6 +17,8 @@ export interface Migration {
   id: string;
   description: string;
   up: (context: MigrationContext) => Promise<void>;
+  /** Đường lùi (tùy chọn, chỉ cho migration thuần thêm index). Runner hiện CHƯA gọi; chạy tay khi cần lùi. */
+  down?: (context: MigrationContext) => Promise<void>;
 }
 
 /** Ai kích hoạt: `deploy` (deploy.sh), `cli` (gõ tay), `baseline` (lệnh baseline). Không ghi tên người. */
