@@ -16,7 +16,10 @@
 # -> build backend (kèm GIT_COMMIT) -> runner migration `reconcile` (PT-027, bước 6b): dry-run xem kế hoạch, rồi
 # `reconcile --apply --skip-version` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
 # rồi chạy migration 007+ còn chờ) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply`
-# (bước 8b, chỉ còn ghi `version`).
+# (bước 8b, chỉ còn ghi `version`) -> bước bù mã danh mục (8c, v1.0.4): `node dist/migrations/crm-catalog-codes.cli.js --apply`
+# chạy MỌI lần deploy, ngay sau khi backend sống (idempotent, vài giây). Lệnh bù thoát mã khác 0 thì in cảnh báo ĐỎ, ghi log
+# $LOGS_DIR/deploy-catalog-codes-<thời-gian>.log và deploy THẤT BẠI (exit khác 0), KHÔNG im lặng. Lý do: khoảng trống giữa 6b
+# (migration 007/008 chạy khi image cũ còn phục vụ) và `up` có thể để lại vài bản ghi chỉ có id, chưa có `code`.
 #
 # Tự migrate MẶC ĐỊNH BẬT (DEPLOY_AUTO_MIGRATE=1). Tắt bằng --no-migrate (giữ hành vi cũ: có việc chờ hoặc cần baseline
 # thì DỪNG trước `up`; cờ này chỉ chặn migrate TRƯỚC `up` ở 6b, còn 8b vẫn chạy `reconcile --apply` để ghi phiên bản khi DB sạch,
@@ -29,6 +32,10 @@
 # KHÔNG rollback bằng `git checkout`: khi dữ liệu Mongo đã được nâng cấp (replica set/auth, migration),
 # compose và code cũ không đọc được volume mới, nên quay code về commit cũ có thể làm hỏng thêm.
 # Khi lỗi, script chỉ IN hướng dẫn (log, image dự phòng, mục 5.8 khi dữ liệu đã đổi) rồi thoát mã khác 0.
+# NGOẠI LỆ v1.0.4: migration 007 (mã danh mục) và 008 (loại hình) CHỈ THÊM trường mới, vẫn ghi id cũ, nên SAU hai migration này
+# vẫn được lùi IMAGE về bản `pre-<thời-gian>` (L1, an toàn). Khi tiến lại thì bước bù 8c chạy lại và sửa bản ghi image cũ vừa ghi
+# thiếu `code`. Chỉ khi cần dọn trường mới mới `$unset` (L2, SAU khi đã lùi image); mongorestore từ deploy-pre-* là L3, cuối cùng.
+# Migration khác (005/006, nâng cấp Mongo...) vẫn KHÔNG lùi image. Chi tiết: tài liệu mục 11.
 #
 # Bí mật: script KHÔNG chứa bí mật. Mọi lệnh compose kèm `--env-file .env.docker`. Mật khẩu root Mongo chỉ được đọc
 # từ biến môi trường BÊN TRONG container và đưa cho mongodump/mongorestore qua pipe (không nằm trên dòng lệnh, không
@@ -145,6 +152,8 @@ Tự migrate (mặc định): SAU backup, TRƯỚC `up`, runner `reconcile` (1) 
     002..006), không đạt thì DỪNG (mã 4), không ghi gì;
   - chạy migration 007 trở đi còn chờ (đúng thứ tự, dừng ở lỗi).
 Sau khi backend sống, bước 8b `reconcile --apply` chỉ còn ghi `version` (lỗi chỉ cảnh báo).
+Rồi bước 8c (MỌI lần deploy): `node dist/migrations/crm-catalog-codes.cli.js --apply` bù mã danh mục cho bản ghi image cũ ghi
+trong khoảng giữa 6b và `up`. Lệnh bù thoát mã khác 0 thì in cảnh báo đỏ, ghi log và deploy báo LỖI (exit khác 0), khác với 8b.
 Dừng TRƯỚC `up` (stack chưa đổi) khi runner trả: 3 có khóa | 4 probe không đạt | 5 downgrade | 1 lỗi hoặc từ chối.
 Downgrade CỐ Ý (khôi phục image cũ): DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh ... : bỏ qua migrate, KHÔNG ghi/hạ `version`.
 
@@ -156,7 +165,9 @@ Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không
 -> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) -> gắn thẻ image backend hiện tại thành
 <project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `reconcile` (bước 6b, xem trên;
 với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần baseline) -> up -d --build -> chờ mongo healthy và
-backend liveness -> ghi phiên bản vào collection `system` (bước 8b).
+backend liveness -> ghi phiên bản vào collection `system` (bước 8b) -> bù mã danh mục (bước 8c, lỗi = deploy báo lỗi).
+
+Lùi image sau migration 007/008 (v1.0.4): ĐƯỢC, vì hai migration chỉ thêm trường (L1). Lần tiến lại, bước 8c tự sửa bản ghi thiếu mã.
 
 KHÔNG dùng cho lần nâng cấp standalone đầu tiên (xem mục 5 tài liệu). KHÔNG rollback bằng git checkout.
 Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT,
@@ -188,6 +199,11 @@ print_recovery() {
     else
       echo "2) Không có image backend dự phòng (lần deploy đầu, chưa có container backend)."
     fi
+    echo
+    echo "2b) NGOẠI LỆ migration 007/008 (v1.0.4, chỉ THÊM trường, vẫn ghi id cũ): vẫn lùi được IMAGE về bản pre-<thời-gian> (L1)"
+    echo "   dù migration đã --apply. Khi tiến lại, bước 8c (crm-catalog-codes.cli.js --apply) tự sửa bản ghi image cũ ghi thiếu mã."
+    echo "   Chỉ khi cần dọn trường mới: \$unset các trường mã SAU KHI đã lùi image (L2). mongorestore từ deploy-pre-* là L3, cuối cùng"
+    echo "   (mất dữ liệu phát sinh sau backup). Không áp dụng ngoại lệ này cho migration khác."
     echo
     echo "3) Nếu dữ liệu ĐÃ đổi (migration 005/006, nâng cấp Mongo...): KHÔNG quay về code/image cũ, bản cũ có thể"
     echo "   không đọc được dữ liệu mới. Với deploy thường lệ (lâu sau lần nâng cấp standalone) CHỈ dùng mongorestore"
@@ -678,6 +694,34 @@ sync_system_version() {
   fi
 }
 
+# Bước 8c (v1.0.4, FR-40/FR-46): bù mã danh mục SAU `up`, khi backend đã sống, MỌI lần deploy. Runner 007/008 chạy ở 6b khi image cũ
+# còn phục vụ nên có thể còn vài bản ghi chỉ có id, chưa có `code`; lệnh bù cùng hàm với migration (idempotent, vài giây).
+# Khác 8b: lệnh bù thoát mã khác 0 (1 lỗi/mồ côi/thiếu mã, 2 sai tham số, hay docker lỗi) => cảnh báo ĐỎ (stderr), ghi log
+# $LOGS_DIR/deploy-catalog-codes-<TS>.log (chỉ đầu ra của lệnh bù, không bí mật), rồi `die` (exit 1; on_exit in hướng dẫn lùi).
+# Downgrade có chủ ý: bỏ qua (image cũ không có CLI này).
+run_catalog_codes_cli() { compose run --rm --no-deps -T backend node dist/migrations/crm-catalog-codes.cli.js "$@"; }
+
+apply_catalog_codes() {
+  if (( DOWNGRADE_ACTIVE == 1 )); then
+    warn "Downgrade có chủ ý: bỏ qua bước bù mã danh mục (8c)."
+    return 0
+  fi
+  local rc=0 logfile="$LOGS_DIR/deploy-catalog-codes-${TS}.log"
+  log "Bước 8c: bù mã danh mục (crm-catalog-codes.cli.js --apply) ..."
+  mkdir -p "$LOGS_DIR" 2>/dev/null || true
+  # Ghi đầu ra ra file rồi in lại (không dùng `| tee`: mã thoát của lệnh bù phải lấy trực tiếp, không qua pipe). `|| rc=$?` để set -e
+  # không dừng ngay; cảnh báo đỏ và die nằm bên dưới.
+  run_catalog_codes_cli --apply >"$logfile" 2>&1 || rc=$?
+  cat "$logfile" 2>/dev/null || true
+  if (( rc != 0 )); then
+    printf '\033[1;31m[%s] CẢNH BÁO: bước bù mã danh mục (8c) THẤT BẠI (mã %s). Một số bản ghi có thể còn thiếu `code`.\033[0m\n' "$LOG_PREFIX" "$rc" >&2
+    printf '\033[1;31m[%s] Xem log: %s. Chạy lại sau khi sửa: %s\033[0m\n' "$LOG_PREFIX" "$logfile" \
+      "docker compose --env-file $ENV_FILE run --rm --no-deps backend node dist/migrations/crm-catalog-codes.cli.js --apply" >&2
+    die "Bước bù mã danh mục (8c) lỗi (mã $rc): deploy báo LỖI dù backend đã sống. Backend vẫn chạy; xem $DOC mục 11."
+  fi
+  log "Bù mã danh mục xong (log: $logfile)."
+}
+
 # ── 7) Chờ healthy ───────────────────────────────────────────────────────────
 wait_mongo_healthy() {
   log "Chờ $MONGO_CONTAINER healthy (tối đa ${MONGO_TIMEOUT}s)..."
@@ -775,6 +819,7 @@ main() {
   wait_mongo_healthy
   wait_backend_liveness
   sync_system_version
+  apply_catalog_codes
 
   echo
   compose ps
