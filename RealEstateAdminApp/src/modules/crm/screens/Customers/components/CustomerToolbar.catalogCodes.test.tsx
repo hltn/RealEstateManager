@@ -2,9 +2,10 @@
  * FR-40 (tiêu chí T-15): danh mục do MAPPER trả về (response backend có cả `id` ObjectId lẫn `code`) đổ vào ô lọc
  * thì `<option value>` phải là `code`. Nếu mapper quay về dùng id ObjectId thì các test này đỏ.
  */
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { toAreaList, toProject } from '../../../api/http/catalogMappers';
+import { buildCustomerListParams } from '../../../api/http/customerQuery';
 import type { AreaDto, ProjectDto } from '../../../api/http/dto';
 import { listProjectFilterOptions } from '@crm/lib/projectRules';
 import { DEFAULT_FILTERS } from '@crm/store';
@@ -65,5 +66,18 @@ describe('bộ lọc khách dùng danh mục từ mapper (FR-40)', () => {
     const select = screen.getByLabelText('Khu vực') as HTMLSelectElement;
     expect(select.value).toBe('HA_NOI');
     expect(select.selectedOptions[0].textContent).toBe('Hà Nội');
+  });
+
+  it('FR-40 (T-16): chọn Dự án/Khu vực ghi code vào bộ lọc, và query gửi lên là projectCodes/areaCodes (không có …Ids)', () => {
+    const updateFilters = vi.fn();
+    render(<CustomerToolbar screen={{ ...screenOf(), updateFilters } as unknown as ToolbarScreen} />);
+    fireEvent.change(screen.getByLabelText('Dự án'), { target: { value: 'QTERRA' } });
+    fireEvent.change(screen.getByLabelText('Khu vực'), { target: { value: 'HA_NOI' } });
+    expect(updateFilters).toHaveBeenNthCalledWith(1, { projectIds: ['QTERRA'] });
+    expect(updateFilters).toHaveBeenNthCalledWith(2, { areaIds: ['HA_NOI'] });
+
+    const params = buildCustomerListParams({ ...DEFAULT_FILTERS, projectIds: ['QTERRA'], areaIds: ['HA_NOI'], statusIds: ['NET'], sourceIds: ['WEBSITE'] });
+    expect(params).toMatchObject({ projectCodes: ['QTERRA'], areaCodes: ['HA_NOI'], statusCodes: ['NET'], sourceCodes: ['WEBSITE'] });
+    ['projectIds', 'areaIds', 'statusIds', 'sourceIds'].forEach((key) => expect(params).not.toHaveProperty(key));
   });
 });

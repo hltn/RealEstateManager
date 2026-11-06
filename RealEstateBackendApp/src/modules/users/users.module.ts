@@ -9,6 +9,7 @@ import {
 import { CrmAuditLogModule } from '../crm/audit-logs/crm-audit-log.module';
 import { CrmCommonModule } from '../crm/common/crm-common.module';
 import { CustomerTeamSyncModule } from '../crm/customers/customer-team-sync.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { TeamsModule } from '../teams/teams.module';
 import { UserRolesMigrationGuard } from './migrations/user-roles-migration.guard';
 import { UsersService } from './users.service';
@@ -28,6 +29,8 @@ import { UsersController } from './users.controller';
     CrmCommonModule,
     CrmAuditLogModule,
     CustomerTeamSyncModule,
+    // Khóa tài khoản thu hồi thiết bị push (T-29).
+    NotificationsModule,
   ],
   controllers: [UsersController],
   // UserRolesMigrationGuard: khởi động thấy tài khoản chưa migrate 005 thì cảnh báo, production thì từ chối khởi động.

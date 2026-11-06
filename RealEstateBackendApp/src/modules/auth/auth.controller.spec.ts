@@ -20,6 +20,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { PushSubscriptionManagementService } from '../notifications/push/push-subscription-management.service';
+
+const USER_ID = '65e1f0a1b2c3d4e5f6a7b8c9';
+const ME = { sub: USER_ID, email: 'a@b.c', role: UserRole.ADMIN };
 
 function mockReply(): FastifyReply {
   return {
@@ -35,6 +39,7 @@ function mockRequest(cookies: Record<string, string> = {}): FastifyRequest {
 describe('AuthController — contract mục 6.1/6.3', () => {
   let controller: AuthController;
   let authService: jest.Mocked<AuthService>;
+  let pushSubscriptions: { revokeForLogout: jest.Mock };
 
   beforeEach(async () => {
     authService = {
@@ -44,9 +49,17 @@ describe('AuthController — contract mục 6.1/6.3', () => {
       getMe: jest.fn(),
     } as unknown as jest.Mocked<AuthService>;
 
+    pushSubscriptions = { revokeForLogout: jest.fn().mockResolvedValue(false) };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: authService }],
+      providers: [
+        { provide: AuthService, useValue: authService },
+        {
+          provide: PushSubscriptionManagementService,
+          useValue: pushSubscriptions,
+        },
+      ],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
@@ -136,7 +149,7 @@ describe('AuthController — contract mục 6.1/6.3', () => {
       const reply = mockReply();
       authService.logout.mockResolvedValue();
 
-      const result = await controller.logout(req, reply);
+      const result = await controller.logout(req, reply, ME);
 
       expect(authService.logout).toHaveBeenCalledWith('some-uuid');
       expect(reply.clearCookie).toHaveBeenCalledWith(
@@ -151,11 +164,73 @@ describe('AuthController — contract mục 6.1/6.3', () => {
       const reply = mockReply();
       authService.logout.mockResolvedValue();
 
-      const result = await controller.logout(req, reply);
+      const result = await controller.logout(req, reply, ME);
 
       // authService.logout(undefined) → no-op; controller vẫn clear cookie + message.
       expect(authService.logout).toHaveBeenCalledWith(undefined);
       expect(result).toEqual({ message: 'Logged out successfully' });
+    });
+  });
+
+  describe('POST /auth/logout kèm pushSubscriptionId (T-28)', () => {
+    const SUBSCRIPTION_ID = '665f1c2e8b3a4d0012ab34cd';
+
+    it('id hợp lệ: vẫn revoke refresh token + clear cookie và thu hồi thiết bị của chính người gọi', async () => {
+      const reply = mockReply();
+      authService.logout.mockResolvedValue();
+      pushSubscriptions.revokeForLogout.mockResolvedValue(true);
+
+      const result = await controller.logout(
+        mockRequest({ refreshToken: 'some-uuid' }),
+        reply,
+        ME,
+        { pushSubscriptionId: SUBSCRIPTION_ID },
+      );
+
+      expect(authService.logout).toHaveBeenCalledWith('some-uuid');
+      expect(pushSubscriptions.revokeForLogout).toHaveBeenCalledWith(
+        USER_ID,
+        SUBSCRIPTION_ID,
+      );
+      expect(reply.clearCookie).toHaveBeenCalled();
+      expect(result).toEqual({ message: 'Logged out successfully' });
+    });
+
+    it('id không thu hồi được (của người khác/lạ): phản hồi y hệt, không lộ kết quả', async () => {
+      authService.logout.mockResolvedValue();
+      pushSubscriptions.revokeForLogout.mockResolvedValue(false);
+
+      const result = await controller.logout(mockRequest({}), mockReply(), ME, {
+        pushSubscriptionId: SUBSCRIPTION_ID,
+      });
+
+      expect(result).toEqual({ message: 'Logged out successfully' });
+    });
+
+    it('không có body: tương thích ngược, không lỗi và không thu hồi thiết bị nào', async () => {
+      authService.logout.mockResolvedValue();
+
+      const result = await controller.logout(
+        mockRequest({ refreshToken: 'some-uuid' }),
+        mockReply(),
+        ME,
+        undefined,
+      );
+
+      expect(pushSubscriptions.revokeForLogout).toHaveBeenCalledWith(
+        USER_ID,
+        undefined,
+      );
+      expect(result).toEqual({ message: 'Logged out successfully' });
+    });
+
+    it('body rỗng {}: coi như không có id', async () => {
+      authService.logout.mockResolvedValue();
+      await controller.logout(mockRequest({}), mockReply(), ME, {});
+      expect(pushSubscriptions.revokeForLogout).toHaveBeenCalledWith(
+        USER_ID,
+        undefined,
+      );
     });
   });
 

@@ -11,7 +11,10 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { PushPlatform } from '../push-subscription.constants';
+import {
+  PushPlatform,
+  PushRevokedReason,
+} from '../push-subscription.constants';
 
 /**
  * Chỉ kiểm kiểu và chặn payload quá lớn ở DTO; độ dài/định dạng khóa và allowlist `endpoint` do
@@ -97,4 +100,61 @@ export class PushSubscriptionRegisteredDto {
       'Thiết bị bị gỡ để nhường chỗ khi vượt 3 thiết bị (null nếu không có)',
   })
   displaced: DisplacedPushSubscriptionDto | null;
+}
+
+/** Một thiết bị đang nhận push của người gọi. Cố ý KHÔNG có `endpoint`, `keys`, `endpointHash`. */
+export class ActivePushSubscriptionDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ example: 'iPhone · Safari' })
+  deviceLabel: string;
+
+  @ApiProperty({ enum: PushPlatform })
+  platform: PushPlatform;
+
+  @ApiProperty()
+  lastSeenAt: Date;
+
+  @ApiProperty()
+  createdAt: Date;
+}
+
+/** Thiết bị vừa bị gỡ (trong 7 ngày) để trang cài đặt báo "đã gỡ thiết bị X". Không có `id`: chỉ để hiển thị. */
+export class RevokedPushSubscriptionDto {
+  @ApiProperty({ example: 'iPhone · Safari' })
+  deviceLabel: string;
+
+  @ApiProperty({ enum: PushRevokedReason })
+  reason: PushRevokedReason;
+
+  @ApiProperty()
+  revokedAt: Date;
+}
+
+export class PushSubscriptionListDto {
+  @ApiProperty({ type: [ActivePushSubscriptionDto] })
+  active: ActivePushSubscriptionDto[];
+
+  @ApiProperty({
+    type: [RevokedPushSubscriptionDto],
+    description: 'Đã thu hồi trong 7 ngày gần nhất, mới nhất trước',
+  })
+  recentlyRevoked: RevokedPushSubscriptionDto[];
+}
+
+export class PushConfigDto {
+  @ApiProperty({
+    description:
+      'Cờ `FEATURE_CRM_PUSH` bật VÀ đủ biến `VAPID_*` hợp lệ. FE chỉ hiện nút bật push khi `true`',
+  })
+  enabled: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Khóa công khai VAPID (không bí mật) để `pushManager.subscribe`; `null` khi `enabled = false`',
+  })
+  publicKey: string | null;
 }

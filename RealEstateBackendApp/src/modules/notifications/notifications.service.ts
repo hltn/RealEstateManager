@@ -53,7 +53,7 @@ export interface NewNotification {
 
 type NotificationLean = Notification & { _id: Types.ObjectId };
 
-const clip = (value: string, max: number): string =>
+export const clip = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, max - 1)}…` : value;
 
 const notificationNotFound = (): BusinessException =>

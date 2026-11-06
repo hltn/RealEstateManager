@@ -3,8 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerStorageService } from '@nestjs/throttler';
 import { FeatureFlagService } from '../../shared/feature-flags/feature-flag.service';
+import { QueueRuntimeModule } from '../../shared/queue/queue-runtime.module';
 import { PiiCryptoModule } from '../crm/common/crypto/pii-crypto.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { NotificationDispatcher } from './notification-dispatcher.service';
 import { NotificationPreferencesController } from './notification-preferences.controller';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { NotificationsController } from './notifications.controller';
@@ -16,6 +18,13 @@ import {
   PUSH_THROTTLER_STORAGE,
   PushRegistrationThrottlerGuard,
 } from './push/push-registration-throttler.guard';
+import { PushCleanupService } from './push/push-cleanup.service';
+import { PushQueueWorker } from './push/push-queue-worker.service';
+import {
+  PushDelivery,
+  PushDeliverySchema,
+} from './push/schemas/push-delivery.schema';
+import { PushSubscriptionManagementService } from './push/push-subscription-management.service';
 import { PushSubscriptionsController } from './push/push-subscriptions.controller';
 import { PushSubscriptionsService } from './push/push-subscriptions.service';
 import {
@@ -48,9 +57,12 @@ import {
       },
       { name: User.name, schema: UserSchema },
       { name: PushSubscription.name, schema: PushSubscriptionSchema },
+      { name: PushDelivery.name, schema: PushDeliverySchema },
     ]),
     // Mã hóa `auth` của push_subscriptions (T-26).
     PiiCryptoModule,
+    // Xếp job push.send sau commit (T-23).
+    QueueRuntimeModule,
   ],
   controllers: [
     NotificationsController,
@@ -59,8 +71,12 @@ import {
   ],
   providers: [
     NotificationsService,
+    NotificationDispatcher,
     NotificationPreferencesService,
     PushSubscriptionsService,
+    PushSubscriptionManagementService,
+    PushCleanupService,
+    PushQueueWorker,
     // Throttler đăng ký push tự chứa cấu hình + kho đếm, không phụ thuộc ThrottlerModule toàn cục.
     {
       provide: PUSH_THROTTLER_OPTIONS,
@@ -74,6 +90,11 @@ import {
       inject: [ConfigService, FeatureFlagService],
     },
   ],
-  exports: [NotificationsService, PushSubscriptionsService],
+  exports: [
+    NotificationsService,
+    NotificationDispatcher,
+    PushSubscriptionsService,
+    PushSubscriptionManagementService,
+  ],
 })
 export class NotificationsModule {}

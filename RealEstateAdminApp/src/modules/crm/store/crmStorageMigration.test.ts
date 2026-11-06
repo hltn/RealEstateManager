@@ -1,9 +1,6 @@
-/** Migration schema localStorage v3 -> v4 -> v5 + vá khách hỏng + sao lưu: an toàn với dữ liệu cũ, không rơi về seed vì 1 bản ghi hỏng. */
+/** Schema localStorage v6 (FR-40, T-16): bỏ dữ liệu v3-v5 lưu theo id cũ (không lỗi, giữ backup) + vá khách hỏng + sao lưu. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { matchesCustomerFilters } from '@crm/api/queries';
-import { buildSearchText } from '@crm/lib/customerRules';
 import { resetNationalIdVaultForTest, revealNationalId, seedNationalIds } from '@crm/lib/nationalIdVault';
-import { getProjectErrors, isValidProjectCode, PROJECT_NAME_MAX_LENGTH } from '@crm/lib/projectRules';
 import { CRM_BACKUP_KEY_PREFIX, CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData, saveCrmData } from './crmStorage';
 import { createSeedDataState } from './crmStore';
 
@@ -12,40 +9,14 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-const codeOf = (index: number) => `#${String(index + 1).padStart(2, '0')}`;
 const corruptBackupKeys = () => Object.keys(window.localStorage).filter((key) => key.startsWith(`${CRM_STORAGE_KEY}_corrupt_`));
 
-type Loose = Record<string, unknown>;
-
-/** Dự án đúng như bản v4 từng lưu: `priceText`/`statusLabel` dạng chữ, chưa có `deletedAt`/enum; vài dự án mã rỗng/sai mẫu. */
-const legacyProjects = (projects: Loose[]): Loose[] => {
-  const legacy: { code?: string; priceText: string; statusLabel: string }[] = [
-    { code: '', priceText: '3,5 – 6 tỷ', statusLabel: 'Sắp mở bán' },
-    { code: 'mã sai!', priceText: 'liên hệ', statusLabel: 'Đang vận hành' },
-    { priceText: '95 - 130 triệu/m²', statusLabel: 'Đang mở bán Giai đoạn 2' },
-  ];
-  return projects.map((project, index) => {
-    const { priceFrom: _from, priceTo: _to, priceUnit: _unit, status: _status, deletedAt: _deleted, developer: _developer, propertyTypes: _types, ...rest } = project;
-    const override = legacy[index] ?? { priceText: '', statusLabel: 'Trạng thái lạ' };
-    return { ...rest, ...override, code: override.code ?? rest.code, propertyType: index === 0 ? 'Căn hộ' : '' };
-  });
-};
-
-/** Dựng payload đúng như bản v3 từng lưu: khách có `code`, searchText chứa mã, status nhóm CARING, dự án dạng cũ. */
-/** FR-40: seed mới dùng `code` làm id; bản v3 thật lưu id cũ `st-*` nên dựng lại đúng như vậy cho test migration. */
-const LEGACY_STATUS_IDS: Record<string, string> = { NOT_CONTACTED: 'st-not-contacted', INTERESTED: 'st-interested', NET: 'st-net', DROPPED: 'st-dropped' };
-
-const buildV3Payload = () => {
+/** Payload đúng như bản v3-v5 từng lưu: seed nhưng catalog/khách tham chiếu bằng id cũ (st-*, ...). */
+const buildLegacyPayload = (schemaVersion: 3 | 4 | 5) => {
   const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
-  data.catalogs.statuses = data.catalogs.statuses.map((status) => ({ ...status, id: LEGACY_STATUS_IDS[status.code] ?? status.id }));
-  const customers = data.customers.map((customer, index) => ({ ...customer, code: codeOf(index), searchText: `${customer.searchText} ${codeOf(index)}` }));
-  const statuses = [
-    ...data.catalogs.statuses.map((status) => (status.listGroup === 'NOT_CONTACTED' || status.listGroup === 'INTERESTED' ? { ...status, listGroup: 'CARING' } : status)),
-    { id: 'st-custom', code: 'DA_DAT_COC', label: 'Đã đặt cọc', listGroup: 'CARING', tone: 'brand', order: 9, isDefault: false, isSystem: false, isActive: true },
-  ];
-  const { auditLogs: _auditLogs, ...dataV3 } = data;
-  const projects = legacyProjects(data.catalogs.projects as unknown as Loose[]);
-  return { schemaVersion: 3, data: { ...dataV3, customers, catalogs: { ...data.catalogs, statuses, projects } } };
+  const statuses = data.catalogs.statuses.map((status) => ({ ...status, id: `st-${status.code.toLowerCase()}` }));
+  const customers = data.customers.map((customer) => ({ ...customer, statusId: `st-${customer.statusId.toLowerCase()}` }));
+  return { schemaVersion, data: { ...data, customers, catalogs: { ...data.catalogs, statuses } } };
 };
 
 const store = (payload: unknown) => {
@@ -54,151 +25,73 @@ const store = (payload: unknown) => {
   return raw;
 };
 
-describe('migration v3 -> v4 (khách, tình trạng)', () => {
-  it('phiên bản hiện tại là 5', () => {
-    expect(CRM_SCHEMA_VERSION).toBe(5);
+describe('phiên bản 6: bỏ dữ liệu lưu theo id danh mục cũ (FR-40, T-16)', () => {
+  it('phiên bản hiện tại là 6', () => {
+    expect(CRM_SCHEMA_VERSION).toBe(6);
   });
 
-  it('bỏ field code của mọi khách, giữ nguyên các field còn lại và số lượng', () => {
-    const payload = buildV3Payload();
+  it.each([3, 4, 5] as const)('payload v%i (id cũ st-*): trả null để nạp seed, không ném lỗi, giữ nguyên văn bản dưới khoá backup', (version) => {
+    const raw = store(buildLegacyPayload(version));
+    expect(() => loadCrmData()).not.toThrow();
+    expect(loadCrmData()).toBeNull();
+    expect(window.localStorage.getItem(CRM_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}${version}`)).toBe(raw);
+    expect(corruptBackupKeys()).toHaveLength(0);
+  });
+
+  it('payload v5: khoá CCCD mô phỏng không còn mục của khách cũ sau khi load', () => {
+    const payload = buildLegacyPayload(5);
+    const oldCustomerId = payload.data.customers[0].id;
+    seedNationalIds({ [oldCustomerId]: '079123456789' });
+    expect(revealNationalId(oldCustomerId)).not.toBeNull();
     store(payload);
-    const loaded = loadCrmData();
-    expect(loaded).not.toBeNull();
-    expect(loaded?.customers).toHaveLength(payload.data.customers.length);
-    loaded?.customers.forEach((customer, index) => {
-      expect(customer).not.toHaveProperty('code');
-      expect(customer.id).toBe(payload.data.customers[index].id);
-      expect(customer.fullName).toBe(payload.data.customers[index].fullName);
-    });
+    expect(loadCrmData()).toBeNull();
+    expect(revealNationalId(oldCustomerId)).toBeNull();
+    expect(window.localStorage.getItem('stnd_crm_pii_sim_v1') ?? '{}').not.toContain(oldCustomerId);
   });
 
-  it('dựng lại searchText không còn mã khách (mọi biến thể): bằng đúng buildSearchText; tìm "#01" không ra, tên/SĐT/email vẫn ra', () => {
-    const payload = buildV3Payload();
-    payload.data.customers = payload.data.customers.map((customer, index) => ({ ...customer, searchText: `${customer.searchText} ${codeOf(index)} ${index + 1} #${index + 1} kh-${index + 1}` }));
-    store(payload);
-    const customers = loadCrmData()?.customers ?? [];
-    customers.forEach((customer) => expect(customer.searchText).toBe(buildSearchText(customer)));
-    expect(customers.filter((customer) => matchesCustomerFilters(customer, { q: '#01' }))).toHaveLength(0);
-    const first = customers[0];
-    expect(matchesCustomerFilters(first, { q: first.fullName })).toBe(true);
-    expect(matchesCustomerFilters(first, { q: first.phone })).toBe(true);
-    expect(matchesCustomerFilters(first, { q: first.email })).toBe(true);
+  it('chỉ giữ 1 bản backup theo version: bỏ dữ liệu lần nữa thay bản cũ thay vì thêm bản', () => {
+    window.localStorage.setItem(`${CRM_BACKUP_KEY_PREFIX}4`, 'v4 cũ');
+    store(buildLegacyPayload(5));
+    loadCrmData();
+    const backups = Object.keys(window.localStorage).filter((key) => key.startsWith(CRM_BACKUP_KEY_PREFIX));
+    expect(backups).toEqual([`${CRM_BACKUP_KEY_PREFIX}5`]);
   });
 
-  it('email null / số / thiếu -> chuỗi rỗng, không làm hỏng cả CSDL', () => {
-    const payload = buildV3Payload();
-    const [first, second, third, ...rest] = payload.data.customers;
-    const { email: _removed, ...withoutEmail } = third;
-    payload.data.customers = [{ ...first, email: null }, { ...second, email: 12345 }, withoutEmail, ...rest] as unknown as typeof payload.data.customers;
-    store(payload);
-    const loaded = loadCrmData();
-    expect(loaded?.customers).toHaveLength(payload.data.customers.length);
-    expect(loaded?.customers.slice(0, 3).map((customer) => customer.email)).toEqual(['', '', '']);
+  it('createCrmStore sau khi bỏ dữ liệu v5: nạp seed mới theo code (id tình trạng = code), không còn id cũ', async () => {
+    store(buildLegacyPayload(5));
+    const { createCrmStore } = await import('./crmStore');
+    const { statuses } = createCrmStore().getState().state.catalogs;
+    expect(statuses.map((status) => status.id)).toEqual(statuses.map((status) => status.code));
+    expect(JSON.stringify(createCrmStore().getState().state.customers)).not.toContain('st-');
   });
 
-  it('tách CARING: Chưa tiếp cận (mặc định) -> NOT_CONTACTED, Có quan tâm -> INTERESTED, tình trạng tự thêm -> NOT_CONTACTED', () => {
-    store(buildV3Payload());
-    const statuses = loadCrmData()?.catalogs.statuses ?? [];
-    const groupOf = (id: string) => statuses.find((status) => status.id === id)?.listGroup;
-    expect(groupOf('st-not-contacted')).toBe('NOT_CONTACTED');
-    expect(groupOf('st-interested')).toBe('INTERESTED');
-    expect(groupOf('st-custom')).toBe('NOT_CONTACTED');
-    expect(groupOf('st-net')).toBe('NET');
-    expect(groupOf('st-dropped')).toBe('DROPPED');
-    expect(statuses.some((status) => (status.listGroup as string) === 'CARING')).toBe(false);
+  it('payload v3-v5 hỏng cấu trúc (thiếu catalogs / khách sai kiểu) cũng không crash, trả null', () => {
+    const { data } = buildLegacyPayload(3);
+    store({ schemaVersion: 3, data: { ...data, catalogs: null } });
+    expect(loadCrmData()).toBeNull();
+    store({ schemaVersion: 4, data: { ...data, customers: [null, 5, { id: 'x' }] } });
+    expect(loadCrmData()).toBeNull();
+    expect(window.localStorage.getItem(CRM_STORAGE_KEY)).toBeNull();
   });
 
-  it('tình trạng v3 KHÔNG có field code: không crash; nhận ra bằng id seed, còn lại về NOT_CONTACTED', () => {
-    const payload = buildV3Payload();
-    payload.data.catalogs.statuses = payload.data.catalogs.statuses.map((status) => {
-      const { code: _code, ...withoutCode } = status as unknown as Loose;
-      return withoutCode;
-    }) as unknown as typeof payload.data.catalogs.statuses;
-    store(payload);
-    const statuses = loadCrmData()?.catalogs.statuses ?? [];
-    expect(statuses.find((status) => status.id === 'st-interested')?.listGroup).toBe('INTERESTED');
-    expect(statuses.find((status) => status.id === 'st-not-contacted')?.listGroup).toBe('NOT_CONTACTED');
-    expect(statuses.find((status) => status.id === 'st-custom')?.listGroup).toBe('NOT_CONTACTED');
+  it('schemaVersion lạ (< 3, thiếu, không phải số): coi là hỏng, lưu bản _corrupt_ và trả null', () => {
+    const raw = store({ schemaVersion: 2, data: buildLegacyPayload(5).data });
+    expect(loadCrmData()).toBeNull();
+    expect(corruptBackupKeys().map((key) => window.localStorage.getItem(key))).toContain(raw);
+    store({ data: {} });
+    expect(loadCrmData()).toBeNull();
   });
 
-  it('tình trạng mặc định cũ (dù mã INTERESTED) được đưa về NOT_CONTACTED để thoả quy tắc mặc định', () => {
-    const payload = buildV3Payload();
-    payload.data.catalogs.statuses = payload.data.catalogs.statuses.map((status) => ({ ...status, isDefault: status.id === 'st-interested' }));
-    store(payload);
-    const statuses = loadCrmData()?.catalogs.statuses ?? [];
-    expect(statuses.find((status) => status.isDefault)?.listGroup).toBe('NOT_CONTACTED');
-  });
-});
-
-describe('migration -> v5 (dự án, audit)', () => {
-  it('giá/trạng thái dạng chữ -> số/enum; không parse được thì để trống; thêm deletedAt, developer, propertyTypes (mảng)', () => {
-    store(buildV3Payload());
-    const projects = loadCrmData()?.catalogs.projects ?? [];
-    expect(projects[0]).toMatchObject({ priceFrom: 3_500_000_000, priceTo: 6_000_000_000, priceUnit: 'TOTAL', status: 'UPCOMING' });
-    expect(projects[1]).toMatchObject({ priceFrom: null, priceTo: null, status: 'SOLD_OUT' });
-    expect(projects[2]).toMatchObject({ priceFrom: 95_000_000, priceTo: 130_000_000, priceUnit: 'PER_SQM', status: 'SELLING' });
-    expect(projects[3]).toMatchObject({ priceFrom: null, priceTo: null, status: null });
-    projects.forEach((project) => {
-      expect(project).toMatchObject({ deletedAt: null, developer: '' });
-      expect(project).not.toHaveProperty('propertyType');
-      expect(project).not.toHaveProperty('priceText');
-      expect(project).not.toHaveProperty('statusLabel');
-    });
-    // Loại hình: chuỗi cũ -> mảng 1 phần tử; rỗng -> [].
-    expect(projects[0].propertyTypes).toEqual(['Căn hộ']);
-    expect(projects[1].propertyTypes).toEqual([]);
-  });
-
-  it('mã dự án rỗng/sai mẫu -> mã gợi ý từ tên, hợp lệ và không trùng; mã đang đúng giữ nguyên', () => {
-    const payload = buildV3Payload();
-    store(payload);
-    const projects = loadCrmData()?.catalogs.projects ?? [];
-    const original = payload.data.catalogs.projects as unknown as Loose[];
-    projects.forEach((project) => expect(isValidProjectCode(project.code)).toBe(true));
-    expect(new Set(projects.map((project) => project.code.toUpperCase())).size).toBe(projects.length);
-    expect(projects[0].code).not.toBe('');
-    expect(projects[2].code).toBe(original[2].code);
-    expect(projects[0].code).toMatch(/^[A-Z0-9]+$/);
-  });
-
-  it('thêm auditLogs rỗng; dữ liệu v4 (đã có dự án kiểu cũ) cũng được chuyển lên v5', () => {
-    const { auditLogs: _auditLogs, ...v4Data } = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
-    store({ schemaVersion: 4, data: { ...v4Data, catalogs: { ...v4Data.catalogs, projects: legacyProjects(v4Data.catalogs.projects as unknown as Loose[]) } } });
-    const loaded = loadCrmData();
-    expect(loaded?.auditLogs).toEqual([]);
-    expect(loaded?.catalogs.projects[0]).toMatchObject({ status: 'UPCOMING', priceFrom: 3_500_000_000 });
-  });
-
-  it('dữ liệu v5 hiện tại đọc lại nguyên vẹn (không migrate lại)', () => {
+  it('dữ liệu v6 hiện tại đọc lại nguyên vẹn, không tạo backup', () => {
     const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
     saveCrmData(data);
     expect(loadCrmData()).toEqual(data);
-    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}${CRM_SCHEMA_VERSION}`)).toBeNull();
+    expect(Object.keys(window.localStorage).filter((key) => key.startsWith(CRM_BACKUP_KEY_PREFIX))).toEqual([]);
   });
 });
 
-describe('sao lưu + ghi lại sau migration', () => {
-  it('giữ nguyên văn bản v3 dưới khoá backup trước khi ghi đè; lần đọc sau cho cùng kết quả và payload mới ở v5', () => {
-    const raw = store(buildV3Payload());
-    const first = loadCrmData();
-    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}3`)).toBe(raw);
-    expect(JSON.parse(window.localStorage.getItem(CRM_STORAGE_KEY) ?? '{}').schemaVersion).toBe(CRM_SCHEMA_VERSION);
-    expect(loadCrmData()).toEqual(first);
-  });
-
-  it('payload v3 thiếu catalogs / mọi khách sai kiểu: không crash, trả null, dọn khoá và lưu bản _corrupt_', () => {
-    const payload = buildV3Payload();
-    const raw = store({ schemaVersion: 3, data: { ...payload.data, catalogs: null } });
-    expect(loadCrmData()).toBeNull();
-    expect(window.localStorage.getItem(CRM_STORAGE_KEY)).toBeNull();
-    expect(corruptBackupKeys().map((key) => window.localStorage.getItem(key))).toContain(raw);
-    store({ schemaVersion: 3, data: { ...payload.data, customers: [null, 5, { id: 'x' }] } });
-    expect(loadCrmData()).toBeNull();
-    expect(window.localStorage.getItem(CRM_STORAGE_KEY)).toBeNull();
-  });
-});
-
-describe('1 khách hỏng không làm cả CSDL về seed', () => {
+describe('1 khách hỏng không làm cả CSDL về seed (v6)', () => {
   /** 50 khách (clone seed, id/SĐT khác nhau) + nhật ký/lịch hẹn/lịch sử trỏ tới khách, khách ở vị trí `brokenIndex` bị hỏng criteria. */
   const buildFifty = (brokenIndex: number) => {
     const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
@@ -211,7 +104,7 @@ describe('1 khách hỏng không làm cả CSDL về seed', () => {
     return { ...data, customers: broken, careLogs, changeLogs, appointments: [], nationalIdViews: [], careTeamRequests: [] };
   };
 
-  it('v5: giữ 49 khách lành, loại khách hỏng cùng dữ liệu con, lưu bản _corrupt_ và ghi lại bản đã vá', () => {
+  it('v6: giữ 49 khách lành, loại khách hỏng cùng dữ liệu con, lưu bản _corrupt_ và ghi lại bản đã vá', () => {
     const raw = store({ schemaVersion: CRM_SCHEMA_VERSION, data: buildFifty(7) });
     const loaded = loadCrmData();
     expect(loaded?.customers).toHaveLength(49);
@@ -227,18 +120,6 @@ describe('1 khách hỏng không làm cả CSDL về seed', () => {
     expect(corruptBackupKeys()).toHaveLength(1);
   });
 
-  it('v3: vừa migrate vừa vá — giữ cả bản v3 (backup) lẫn bản gốc (_corrupt_)', () => {
-    const v3 = buildV3Payload();
-    const fifty = buildFifty(0);
-    const raw = store({ schemaVersion: 3, data: { ...v3.data, customers: fifty.customers, careLogs: fifty.careLogs, changeLogs: fifty.changeLogs } });
-    const loaded = loadCrmData();
-    expect(loaded?.customers).toHaveLength(49);
-    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}3`)).toBe(raw);
-    // Bản backup version đã là bản gốc nguyên văn -> KHÔNG ghi thêm bản _corrupt_ trùng nội dung (tối đa 1 bản sao mỗi lần nạp).
-    expect(corruptBackupKeys()).toHaveLength(0);
-    expect(loaded?.catalogs.statuses.some((status) => (status.listGroup as string) === 'CARING')).toBe(false);
-  });
-
   it('hỏng ở phần không phải khách (vd danh sách người dùng) vẫn rơi về seed như cũ', () => {
     store({ schemaVersion: CRM_SCHEMA_VERSION, data: { ...buildFifty(3), users: 'hỏng' } });
     expect(loadCrmData()).toBeNull();
@@ -246,75 +127,8 @@ describe('1 khách hỏng không làm cả CSDL về seed', () => {
   });
 });
 
-describe('migration v4 -> v5 vá dữ liệu cũ để sửa dự án không bị khoá', () => {
-  const v4With = (projects: Loose[]) => {
-    const { auditLogs: _auditLogs, ...v4Data } = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
-    return { schemaVersion: 4, data: { ...v4Data, catalogs: { ...v4Data.catalogs, projects } } };
-  };
-  const base = { fullName: '', developer: '', location: '', areaId: null, segment: '', isActive: true };
-
-  it('mã trùng "dup","dup" (và khác hoa/thường) -> dự án sau được cấp mã mới; mã chữ thường -> chữ HOA; tất cả qua được getProjectErrors', () => {
-    store(v4With([
-      { ...base, id: 'p1', code: 'dup', name: 'Dự án A', priceText: '', statusLabel: '' },
-      { ...base, id: 'p2', code: 'dup', name: 'Dự án B', priceText: '', statusLabel: '' },
-      { ...base, id: 'p3', code: 'DUP', name: 'Dự án C', priceText: '', statusLabel: '' },
-      { ...base, id: 'p4', code: 'chu_thuong-1', name: 'Dự án D', priceText: '', statusLabel: '' },
-    ]));
-    const projects = loadCrmData()?.catalogs.projects ?? [];
-    expect(projects.map((project) => project.code)[0]).toBe('DUP');
-    // Mã cũ có `_`/`-` KHÔNG bị cấp lại (mã cũ không migrate), chỉ chuẩn hoá HOA.
-    expect(projects[3].code).toBe('CHU_THUONG-1');
-    expect(new Set(projects.map((project) => project.code)).size).toBe(4);
-    projects.forEach((project) => {
-      expect(project.code).toMatch(/^[A-Z0-9_-]{1,30}$/);
-      expect(project.code).toBe(project.code.toUpperCase());
-      // Không bị khoá: sửa/ngừng dự án cũ luôn qua được kiểm hợp lệ.
-      expect(getProjectErrors(projects, project)).toEqual({});
-    });
-  });
-
-  it('mã cũ có -/_ giữ nguyên (HOA); mã sai mẫu cũ (khoảng trắng, dấu, > 30 ký tự) hoặc rỗng vẫn được cấp lại theo quy tắc mới', () => {
-    store(v4With([
-      { ...base, id: 'p1', code: 'a_b-c', name: 'Dự án A', priceText: '', statusLabel: '' },
-      { ...base, id: 'p2', code: 'A B', name: 'Sky Park', priceText: '', statusLabel: '' },
-      { ...base, id: 'p3', code: 'MÃ', name: 'Đảo Kim Cương', priceText: '', statusLabel: '' },
-      { ...base, id: 'p4', code: 'X'.repeat(31), name: 'Dự án D', priceText: '', statusLabel: '' },
-      { ...base, id: 'p5', code: '', name: 'Dự án E', priceText: '', statusLabel: '' },
-    ]));
-    const codes = (loadCrmData()?.catalogs.projects ?? []).map((project) => project.code);
-    expect(codes).toEqual(['A_B-C', 'SKYPARK', 'DAOKIMCUONG', 'DUAND', 'DUANE']);
-  });
-
-  it('tên rỗng, quá dài, trùng (không dấu) được vá theo thứ tự', () => {
-    store(v4With([
-      { ...base, id: 'p1', code: 'A1', name: 'Sky Park', priceText: '', statusLabel: '' },
-      { ...base, id: 'p2', code: 'A2', name: 'sky  PARK', priceText: '', statusLabel: '' },
-      { ...base, id: 'p3', code: 'A3', name: '   ', fullName: 'Tên đầy đủ có sẵn', priceText: '', statusLabel: '' },
-      { ...base, id: 'p4', code: 'A4', name: '', priceText: '', statusLabel: '' },
-      { ...base, id: 'p5', code: 'A5', name: 'Rất dài '.repeat(30), priceText: '', statusLabel: '' },
-    ]));
-    const projects = loadCrmData()?.catalogs.projects ?? [];
-    expect(projects[0].name).toBe('Sky Park');
-    expect(projects[1].name).toBe('sky  PARK (2)');
-    expect(projects[2].name).toBe('Tên đầy đủ có sẵn');
-    expect(projects[3].name).toBe('A4');
-    expect(projects[4].name.length).toBeLessThanOrEqual(PROJECT_NAME_MAX_LENGTH);
-    projects.forEach((project) => expect(getProjectErrors(projects, project)).toEqual({}));
-  });
-
-  it('loại hình chuỗi cũ -> mảng 1 phần tử (không tách); chuỗi rỗng -> []; mảng sẵn có được chuẩn hoá', () => {
-    store(v4With([
-      { ...base, id: 'p1', code: 'A1', name: 'A', propertyType: 'Căn hộ / Shophouse', priceText: '', statusLabel: '' },
-      { ...base, id: 'p2', code: 'A2', name: 'B', propertyType: '', priceText: '', statusLabel: '' },
-      { ...base, id: 'p3', code: 'A3', name: 'C', propertyTypes: [' Nhà phố ', 'nhà phố', ''], priceFrom: null, priceTo: null, priceUnit: 'TOTAL', status: null },
-    ]));
-    const projects = loadCrmData()?.catalogs.projects ?? [];
-    expect(projects.map((project) => project.propertyTypes)).toEqual([['Căn hộ / Shophouse'], [], ['Nhà phố']]);
-  });
-});
-
 describe('sao lưu khi hết dung lượng (QUOTA)', () => {
-  const OLD_BACKUP = `${CRM_BACKUP_KEY_PREFIX}2`;
+  const OLD_BACKUP = `${CRM_BACKUP_KEY_PREFIX}4`;
   const OLD_CORRUPT = `${CRM_STORAGE_KEY}_corrupt_1`;
 
   /** Giả lập bộ nhớ đầy: mọi lần ghi khoá backup/_corrupt_/chính đều lỗi QUOTA CHO ĐẾN KHI các bản sao cũ bị xoá. */
@@ -327,34 +141,25 @@ describe('sao lưu khi hết dung lượng (QUOTA)', () => {
     });
   };
 
-  it('migration: ghi backup lỗi quota -> xoá bản sao cũ rồi thử lại; backup mới và dữ liệu v5 đều được ghi', () => {
-    const raw = store(buildV3Payload());
+  it('bỏ dữ liệu cũ: ghi backup lỗi quota -> xoá bản sao cũ rồi thử lại; backup mới được ghi, kết quả null', () => {
+    const raw = store(buildLegacyPayload(5));
     window.localStorage.setItem(OLD_BACKUP, 'bản cũ');
     window.localStorage.setItem(OLD_CORRUPT, 'bản hỏng cũ');
     simulateFullStorage();
-    const loaded = loadCrmData();
-    expect(loaded).not.toBeNull();
-    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}3`)).toBe(raw);
+    expect(loadCrmData()).toBeNull();
+    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}5`)).toBe(raw);
     expect(window.localStorage.getItem(OLD_BACKUP)).toBeNull();
     expect(window.localStorage.getItem(OLD_CORRUPT)).toBeNull();
-    expect(JSON.parse(window.localStorage.getItem(CRM_STORAGE_KEY) ?? '{}').schemaVersion).toBe(CRM_SCHEMA_VERSION);
+    expect(window.localStorage.getItem(CRM_STORAGE_KEY)).toBeNull();
   });
 
-  it('quota kể cả sau khi xoá (đầy thật): vẫn trả dữ liệu đã migrate trong phiên, không ném lỗi', () => {
-    store(buildV3Payload());
+  it('quota kể cả sau khi xoá (đầy thật): không ném lỗi, vẫn trả null để nạp seed', () => {
+    store(buildLegacyPayload(5));
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('full', 'QuotaExceededError');
     });
     expect(() => loadCrmData()).not.toThrow();
-    expect(loadCrmData()?.customers.length).toBeGreaterThan(0);
-  });
-
-  it('chỉ giữ 1 bản backup theo version: migrate lần nữa thay bản cũ thay vì thêm bản', () => {
-    window.localStorage.setItem(OLD_BACKUP, 'v2 cũ');
-    store(buildV3Payload());
-    loadCrmData();
-    const backups = Object.keys(window.localStorage).filter((key) => key.startsWith(CRM_BACKUP_KEY_PREFIX));
-    expect(backups).toEqual([`${CRM_BACKUP_KEY_PREFIX}3`]);
+    expect(loadCrmData()).toBeNull();
   });
 });
 

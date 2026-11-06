@@ -25,6 +25,8 @@ import { BusinessException } from '../../common/exceptions/business.exception';
 import { ErrorCode } from '../../common/exceptions/error-codes';
 import { escapeRegex } from '../../common/utils/regex.util';
 import { isDuplicateKeyError } from '../../common/utils/mongo-error.util';
+import { PushRevokedReason } from '../notifications/push/push-subscription.constants';
+import { PushSubscriptionManagementService } from '../notifications/push/push-subscription-management.service';
 import { withTransaction } from '../../shared/database/with-transaction.util';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { diffFields } from '../crm/audit-logs/audit-diff.util';
@@ -76,6 +78,7 @@ export class UsersService {
     @InjectConnection() private readonly connection: Connection,
     private readonly audit: CrmAuditLogService,
     private readonly teamSync: CustomerTeamSyncService,
+    private readonly pushSubscriptions: PushSubscriptionManagementService,
   ) {}
 
   /**
@@ -428,6 +431,15 @@ export class UsersService {
         .lean()
         .exec();
       if (!after) throw new NotFoundException('User not found');
+
+      // Khóa tài khoản: thu hồi mọi thiết bị push cùng transaction (không gửi thêm push sau khi khóa).
+      if (dto.status !== UserStatus.ACTIVE) {
+        await this.pushSubscriptions.revokeAllForUser(
+          userId,
+          PushRevokedReason.ACCOUNT_DISABLED,
+          session,
+        );
+      }
 
       await this.audit.record(
         {

@@ -1,21 +1,20 @@
 /**
  * Lưu/đọc dữ liệu CRM prototype trong localStorage, CÓ version schema + migration an toàn.
  *
- * - Schema hiện tại: v5.
- *   - v3 -> v4: bỏ `customer.code` (+ dựng lại searchText), tách listGroup CARING -> NOT_CONTACTED | INTERESTED.
- *   - v4 -> v5: dự án có `deletedAt`, `priceFrom/priceTo/priceUnit` (thay `priceText`), `status` enum (thay `statusLabel`), mã hợp lệ
- *     (sinh mã gợi ý cho mã rỗng/sai mẫu); thêm `auditLogs`.
+ * - Schema hiện tại: v6 (FR-40, T-16).
+ *   - v6: "id" của tình trạng/nguồn/khu vực/dự án/kết quả liên hệ = `code` bất biến của backend. Dữ liệu v3-v5 lưu theo id cũ (st-*, src-*,
+ *     area-*, proj-*, ObjectId) không đổi được sang code một cách tin cậy (nguồn/khu vực cũ không có `code`) nên BỊ BỎ, không migrate:
+ *     giữ 1 bản sao nguyên văn dưới khoá backup rồi nạp lại dữ liệu mẫu (bộ lọc/ưu tiên theo id cũ biến mất cùng dữ liệu đó, không lỗi).
  * - Trước khi ghi đè bản cũ luôn giữ 1 bản sao nguyên văn dưới khoá `stnd_crm_data_backup_v<version>`.
  * - Một khách hỏng KHÔNG làm mất cả CSDL: khách hỏng bị loại riêng (kèm dữ liệu con), bản gốc lưu ở `stnd_crm_data_corrupt_<timestamp>`.
  * - v2 và cũ hơn / payload hỏng nặng: không tương thích, xoá và nạp lại seed.
  */
-import { buildSearchText } from '@crm/lib/customerRules';
 import { pruneNationalIds } from '@crm/lib/nationalIdVault';
-import { normalizePropertyTypes, parseLegacyPriceText, parseLegacyProjectStatus, PROJECT_CODE_MAX_LENGTH, PROJECT_NAME_MAX_LENGTH, suggestProjectCode } from '@crm/lib/projectRules';
-import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmDataState, CrmSession } from './crmReducer';
 
-export const CRM_SCHEMA_VERSION = 5;
+export const CRM_SCHEMA_VERSION = 6;
+/** Phiên bản cũ nhất còn nhận ra để sao lưu rồi bỏ (v3-v5, lưu theo id danh mục cũ). Nhỏ hơn: coi là hỏng/không tương thích. */
+const OLDEST_DROPPABLE_SCHEMA_VERSION = 3;
 export const CRM_STORAGE_KEY = 'stnd_crm_data';
 export const CRM_SESSION_STORAGE_KEY = 'stnd_crm_session_v1';
 /** Tiền tố khoá bản sao dữ liệu cũ trước khi migration ghi đè (`<prefix><version>`). */
@@ -206,94 +205,6 @@ const normalizeCrmData = (value: unknown): unknown => {
   };
 };
 
-/**
- * Migration v3 -> v4 (chỉ gọi cho payload v3; không crash với dữ liệu thiếu/sai kiểu — phần còn lại do `isCrmDataState` kiểm):
- * - Bỏ field `code` (mã khách) khỏi từng khách và dựng lại `searchText` (không còn chứa mã, dù mã nằm ở biến thể nào).
- * - Tình trạng thuộc nhóm cũ CARING: mã (hoặc id seed) INTERESTED -> nhóm INTERESTED, còn lại -> NOT_CONTACTED (kể cả tình trạng
- *   không có `code`); tình trạng mặc định luôn thuộc NOT_CONTACTED.
- */
-const migrateV3ToV4 = (data: unknown): unknown => {
-  if (!isRecord(data)) return data;
-  const customers = Array.isArray(data.customers)
-    ? data.customers.map((customer) => {
-        if (!isRecord(customer)) return customer;
-        const { code: _legacyCode, ...rest } = customer;
-        const searchText =
-          isString(rest.fullName) && isString(rest.phone)
-            ? buildSearchText({ fullName: rest.fullName, phone: rest.phone, email: isString(rest.email) ? rest.email : '' })
-            : rest.searchText;
-        return { ...rest, searchText };
-      })
-    : data.customers;
-  const catalogs = data.catalogs;
-  if (!isRecord(catalogs)) return { ...data, customers };
-  const statuses = Array.isArray(catalogs.statuses)
-    ? catalogs.statuses.map((status) => {
-        if (!isRecord(status) || status.listGroup !== 'CARING') return status;
-        const isInterested = (status.code === 'INTERESTED' || status.id === 'st-interested') && status.isDefault !== true;
-        return { ...status, listGroup: isInterested ? 'INTERESTED' : 'NOT_CONTACTED' };
-      })
-    : catalogs.statuses;
-  return { ...data, customers, catalogs: { ...catalogs, statuses } };
-};
-
-/** 1 dự án v4 -> v5: giá/trạng thái dạng chữ -> số/enum (không parse được thì để trống), loại hình chuỗi -> mảng, thêm `deletedAt`. */
-const migrateProjectToV5 = (project: Record<string, unknown>): Record<string, unknown> => {
-  const { priceText, statusLabel, propertyType, ...rest } = project;
-  const isLegacy = 'priceText' in project || 'statusLabel' in project;
-  const price = isLegacy ? parseLegacyPriceText(priceText) : { priceFrom: rest.priceFrom, priceTo: rest.priceTo, priceUnit: rest.priceUnit };
-  const isFiniteNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
-  return {
-    ...rest,
-    developer: withDefault(rest.developer, isString, ''),
-    // Loại hình: mảng có sẵn giữ nguyên (đã chuẩn hoá); chuỗi cũ -> mảng 1 phần tử.
-    propertyTypes: Array.isArray(rest.propertyTypes) ? normalizePropertyTypes(rest.propertyTypes) : normalizePropertyTypes([propertyType]),
-    priceFrom: withDefault(price.priceFrom, isFiniteNumber, null),
-    priceTo: withDefault(price.priceTo, isFiniteNumber, null),
-    priceUnit: price.priceUnit === 'PER_SQM' ? 'PER_SQM' : 'TOTAL',
-    status: isLegacy ? parseLegacyProjectStatus(statusLabel) : withDefault(rest.status, (value) => value === 'UPCOMING' || value === 'SELLING' || value === 'SOLD_OUT', null),
-    deletedAt: withDefault(rest.deletedAt, isString, null),
-  };
-};
-
-/**
- * Mẫu mã dự án CŨ cho migration (cho phép `-`/`_`): mã cũ không bị cấp lại chỉ vì chứa gạch (không migrate mã). Quy tắc mới chỉ áp
- * khi Thêm mới/đổi mã (xem `getProjectErrors`); mã rỗng, quá dài hoặc trùng vẫn được cấp lại như trước.
- */
-const LEGACY_PROJECT_CODE_PATTERN = new RegExp(`^[A-Z0-9_-]{1,${PROJECT_CODE_MAX_LENGTH}}$`);
-
-/**
- * Migration v4 -> v5: dự án (xem `migrateProjectToV5`) + VÁ dữ liệu cũ để `updateProject` không bị khoá: tên rỗng/quá 80 ký tự được vá,
- * tên trùng (không dấu) thêm hậu tố " (2)"…, mã chuẩn hoá CHỮ HOA, mã rỗng/sai mẫu cũ/trùng -> mã gợi ý (theo quy tắc mới) sinh từ tên (theo thứ tự: dự án
- * đứng trước giữ mã, dự án sau bị đổi). Thêm `auditLogs` rỗng.
- */
-const migrateV4ToV5 = (data: unknown): unknown => {
-  if (!isRecord(data)) return data;
-  const catalogs = data.catalogs;
-  const auditLogs = Array.isArray(data.auditLogs) ? data.auditLogs : [];
-  if (!isRecord(catalogs) || !Array.isArray(catalogs.projects)) return { ...data, auditLogs };
-  const takenCodes = new Set<string>();
-  const takenNames = new Set<string>();
-  const projects = catalogs.projects.map((entry) => {
-    if (!isRecord(entry)) return entry;
-    const project = migrateProjectToV5(entry);
-    const fullName = isString(project.fullName) ? project.fullName.trim() : '';
-    const legacyCode = isString(project.code) ? project.code.trim() : '';
-    const name = ((isString(project.name) ? project.name.trim() : '') || fullName || legacyCode || 'Dự án').slice(0, PROJECT_NAME_MAX_LENGTH);
-    let uniqueName = name;
-    for (let suffix = 2; takenNames.has(normalizeVietnamese(uniqueName)); suffix += 1) {
-      const tail = ` (${suffix})`;
-      uniqueName = `${name.slice(0, PROJECT_NAME_MAX_LENGTH - tail.length)}${tail}`;
-    }
-    takenNames.add(normalizeVietnamese(uniqueName));
-    let code = legacyCode.toUpperCase();
-    if (!LEGACY_PROJECT_CODE_PATTERN.test(code) || takenCodes.has(code)) code = suggestProjectCode(uniqueName, takenCodes);
-    takenCodes.add(code);
-    return { ...project, name: uniqueName, code };
-  });
-  return { ...data, auditLogs, catalogs: { ...catalogs, projects } };
-};
-
 // ---------------------------------------------------------------------------
 // Sao lưu dữ liệu hỏng
 // ---------------------------------------------------------------------------
@@ -414,8 +325,8 @@ const salvageCrmData = (data: unknown): { data: CrmDataState; droppedCount: numb
 
 /**
  * Đọc dữ liệu đã lưu. Trả null (để nạp seed) nếu: chưa có, JSON hỏng, version không hỗ trợ, hỏng nặng.
- * Luôn dọn khoá schema cũ. Tự migrate v3 -> v4 -> v5 (giữ 1 bản sao dưới khoá backup) và vá bản ghi hỏng (bản gốc ở khoá _corrupt_ khi
- * KHÔNG migrate — khi migrate thì bản backup đã là bản gốc, không ghi trùng); khách bị loại cũng được dọn khỏi kho CCCD mô phỏng.
+ * Luôn dọn khoá schema cũ. Payload v3-v5 (id danh mục cũ) bị bỏ sau khi giữ 1 bản sao dưới khoá backup; vá bản ghi hỏng của v6 (bản gốc
+ * ở khoá _corrupt_); khách bị loại cũng được dọn khỏi kho CCCD mô phỏng.
  */
 export const loadCrmData = (): CrmDataState | null => {
   const storage = getStorage();
@@ -427,26 +338,23 @@ export const loadCrmData = (): CrmDataState | null => {
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (isRecord(parsed)) {
-      const storedVersion = parsed.schemaVersion;
-      let data: unknown = parsed.data;
-      let version = storedVersion;
-      if (version === 3) {
-        data = migrateV3ToV4(data);
-        version = 4;
+      const version = parsed.schemaVersion;
+      // v3-v5 lưu theo id danh mục cũ: giữ bản sao nguyên văn rồi bỏ (trả null để nạp dữ liệu mẫu theo code), không migrate.
+      if (typeof version === 'number' && version >= OLDEST_DROPPABLE_SCHEMA_VERSION && version < CRM_SCHEMA_VERSION) {
+        backupBeforeOverwrite(storage, raw, version);
+        storage.removeItem(CRM_STORAGE_KEY);
+        // Toàn bộ khách cũ bị bỏ: dọn luôn CCCD mô phỏng của họ (tập khách còn sống = rỗng).
+        pruneNationalIds(new Set());
+        return null;
       }
-      if (version === 4) {
-        data = migrateV4ToV5(data);
-        version = 5;
-      }
-      if (version === CRM_SCHEMA_VERSION) {
-        const result = salvageCrmData(normalizeCrmData(data));
+      if (version ===CRM_SCHEMA_VERSION) {
+        const result = salvageCrmData(normalizeCrmData(parsed.data));
         if (result) {
-          const isMigrated = storedVersion !== CRM_SCHEMA_VERSION;
-          const isPatched = result.droppedCount > 0;
-          if (isMigrated) backupBeforeOverwrite(storage, raw, storedVersion);
-          else if (isPatched) backupCorruptPayload(storage, raw);
-          if (isPatched) pruneNationalIds(new Set(result.data.customers.map((customer) => customer.id)));
-          if (isMigrated || isPatched) setItemWithQuotaRetry(storage, CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: CRM_SCHEMA_VERSION, data: result.data }));
+          if (result.droppedCount > 0) {
+            backupCorruptPayload(storage, raw);
+            pruneNationalIds(new Set(result.data.customers.map((customer) => customer.id)));
+            setItemWithQuotaRetry(storage, CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: CRM_SCHEMA_VERSION, data: result.data }));
+          }
           return result.data;
         }
       }

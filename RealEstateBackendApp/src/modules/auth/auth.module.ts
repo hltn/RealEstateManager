@@ -14,6 +14,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { CustomLogger } from '../../common/logger/custom-logger.service';
 
 @Module({
@@ -36,6 +37,8 @@ import { CustomLogger } from '../../common/logger/custom-logger.service';
         },
       }),
     }),
+    // Thu hồi thiết bị push khi đăng xuất (T-28).
+    NotificationsModule,
     // Throttler mặc định 100 req/phút cho mọi route; login override 5/phút.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],

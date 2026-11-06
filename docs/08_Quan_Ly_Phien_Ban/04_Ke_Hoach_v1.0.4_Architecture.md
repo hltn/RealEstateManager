@@ -21,7 +21,7 @@
 |---|---|---|---|
 | D1 | **A0 (làm trước): đổi tham chiếu danh mục sang `code` theo kiểu mở rộng–chuyển–thu hẹp (expand/migrate/contract), "ghi kép"**: trường `…Code` mới là nguồn đọc chính, trường ObjectId cũ vẫn được ghi song song và KHÔNG xóa ở v1.0.4. Migration `007` điền `code` cho dữ liệu cũ, idempotent, có chế độ dry-run | Skill cấm sửa/xóa field đột ngột (Zero-Downtime Schema); đường lùi = chạy lại image cũ vẫn đọc đúng; `deploy.sh` chạy migration TRƯỚC `up` khi image cũ còn phục vụ nên phải tương thích hai chiều | FR-40, FR-46 |
 | D2 | **Push là kênh bổ sung của hộp thông báo, đi theo mô hình outbox**: `NotificationDispatcher` (điểm vào duy nhất) ghi thông báo với `pushStatus = PENDING` TRONG transaction nghiệp vụ; job BullMQ `push.send` được xếp hàng SAU commit (hook `afterCommit`) và có job quét `push.sweep` làm lưới an toàn nếu Redis lỗi/instance chết giữa chừng | Không gửi push cho transaction rollback, không mất push khi Redis lỗi, nghiệp vụ không bao giờ bị chặn bởi push | FR-03, FR-44 |
-| D3 | **Không gửi trùng** bằng 3 lớp: `jobId = push:{notificationId}`; collection `push_deliveries` unique (notificationId, subscriptionId) quyết định ai đã gửi xong; `Topic` (Web Push) và `tag` (service worker) theo id thông báo để nếu vẫn lặp thì thay thế nhau chứ không hiện hai lần | Retry/restart/hai instance an toàn (at-least-once + dedupe) | FR-03, FR-12 |
+| D3 | **Không gửi trùng** bằng 3 lớp: `jobId = push-{notificationId}` (BullMQ không cho dấu `:`; hàm dùng chung `pushSendJobId`); collection `push_deliveries` unique (notificationId, subscriptionId) quyết định ai đã gửi xong; `Topic` (Web Push) và `tag` (service worker) theo id thông báo để nếu vẫn lặp thì thay thế nhau chứ không hiện hai lần | Retry/restart/hai instance an toàn (at-least-once + dedupe) | FR-03, FR-12 |
 | D4 | **Danh mục push (FR-43) là hằng số cấu hình trong code** (`push-catalog.ts`), đúng 4 loại, có điều kiện gửi cho `CUSTOMER_ASSIGNED`; trang Cài đặt thông báo đọc danh sách loại từ API (không hard-code ở FE) | Thêm loại = thêm một dòng, không sửa bộ gửi | FR-43, FR-10 |
 | D5 | **Web Push chuẩn bằng thư viện `web-push`** (VAPID, mã hóa payload `aes128gcm`, timeout 5 giây); `WebPushProvider` thay `NoopPushProvider` khi `FEATURE_CRM_PUSH` bật VÀ đủ biến VAPID; thiếu biến thì quay về Noop + log lỗi (không sập app, readiness không đổi) | Quay lui nhanh bằng đổi biến môi trường; khớp skill (timeout, retry + jitter) | FR-02, FR-07 |
 | D6 | **SSRF**: endpoint do client gửi lên chỉ nhận `https` và host thuộc danh sách cho phép của dịch vụ push (Google, Mozilla, Apple, Microsoft) | Server sẽ tự `POST` tới URL này; không có allowlist là lỗ hổng SSRF | FR-01, FR-02 |
@@ -40,7 +40,7 @@
                                                                   |    pushStatus = PENDING | SKIPPED            (FR-03)
                                                                   |  - registerAfterCommit(session, enqueue)
                                                                   v
-              transaction COMMIT  --(2) afterCommit-->  Queue `push` : job push.send {notificationId}, jobId = push:{id}
+              transaction COMMIT  --(2) afterCommit-->  Queue `push` : job push.send {notificationId}, jobId = push-{id}
                                                                   |                      ^
                           Redis lỗi / chết giữa chừng             |                      | (4) push.sweep mỗi 60 giây:
                           (job không được xếp hàng)  ------------>+ PENDING quá 30 giây -> xếp hàng lại (cùng jobId)
@@ -177,7 +177,7 @@
 
 | Method | Endpoint | Quyền | Request | Response | FR |
 |---|---|---|---|---|---|
-| GET | `/push-subscriptions/config` | `CRM_ROLES` + `CrmFeatureGuard` | không | `200 { data: { enabled: boolean, publicKey: string \| null } }`. `enabled` = cờ `FEATURE_CRM_PUSH` bật VÀ đủ biến VAPID. `publicKey` = `VAPID_PUBLIC_KEY` (không bí mật; FE lấy lúc chạy, **không** nhúng vào bundle nên đổi khóa không phải build lại FE) | FR-07, FR-09 |
+| GET | `/push-subscriptions/config` | `CRM_ROLES` + `CrmFeatureGuard` | không | `200 { data: { enabled: boolean, publicKey: string \| null } }`. `enabled` = cờ `FEATURE_CRM_PUSH` bật VÀ đủ biến VAPID. `publicKey` = `VAPID_PUBLIC_KEY` **chỉ khi `enabled = true`; `enabled = false` thì `publicKey = null`** (không bí mật; FE lấy lúc chạy, **không** nhúng vào bundle nên đổi khóa không phải build lại FE) | FR-07, FR-09 |
 | POST | `/push-subscriptions` | `CRM_ROLES` (Self) | `{ endpoint: string (https, ≤1024, host allowlist), keys: { p256dh: string (base64url 87), auth: string (base64url 22) }, expirationTime?: number \| null }`. Đã whitelist DTO; giới hạn 10 yêu cầu/phút/người (Throttler) | `201` (mới) hoặc `200` (upsert/làm mới): `{ data: { id, deviceLabel, platform, createdAt, lastSeenAt, displaced: { id, deviceLabel } \| null } }`. Upsert theo `endpoint`: đã có (kể cả của người khác hoặc đã thu hồi) thì **gán lại cho người gọi**, xóa `revokedAt`, cập nhật `lastSeenAt` và khóa. Nếu sau khi lưu người này có hơn 3 subscription hiệu lực thì thu hồi (`LIMIT_EXCEEDED`) các cái `lastSeenAt` cũ nhất và trả `displaced` (thiết bị bị gỡ). Lỗi: `400 PUSH_SUBSCRIPTION_INVALID` (endpoint không https/không thuộc allowlist/khóa sai độ dài), `400 VALIDATION_FAILED` | FR-01, FR-05 |
 | GET | `/push-subscriptions` | `CRM_ROLES` (Self) | không | `200 { data: { active: [{ id, deviceLabel, platform, lastSeenAt, createdAt }], recentlyRevoked: [{ deviceLabel, reason: 'LIMIT_EXCEEDED' \| 'GONE' \| 'USER' \| 'LOGOUT' \| 'ACCOUNT_DISABLED', revokedAt }] } }`. `recentlyRevoked` = đã thu hồi trong 7 ngày (nguồn của thông báo "đã gỡ thiết bị X để nhường chỗ") | FR-01, FR-09 |
 | DELETE | `/push-subscriptions/:id` | `CRM_ROLES` (Self) | `:id` qua `ParseObjectIdPipe` | `204`. Chỉ chủ sở hữu; người khác hoặc không tồn tại: `404 RESOURCE_NOT_FOUND` (không lộ tồn tại). Đặt `revokedAt`, `revokedReason = USER`, `purgeAt`. Idempotent (đã thu hồi cũng 204) | FR-01 |
@@ -410,8 +410,8 @@ Với nguồn bên ngoài sau này: **không** có đường nhập `title/body`
 ### 5.3 `afterCommit` và job quét `push.sweep` (FR-03)
 
 - `shared/database/after-commit.util.ts`: `registerAfterCommit(session, fn)`; `withTransaction` được sửa để (a) xóa danh sách hàm đã đăng ký **ở đầu mỗi lần chạy `work`** (vì `connection.transaction` có thể retry `work`), (b) sau khi transaction **commit thành công** thì chạy lần lượt các hàm, mỗi hàm bọc `try/catch` (ghi log cảnh báo, không bao giờ ném). Nếu `session` không do `withTransaction` tạo (không có trong bảng theo dõi, ví dụ gọi không transaction) thì chạy ngay.
-- Hàm đăng ký làm đúng một việc: `queue.add('push.send', { notificationId }, { jobId: 'push:{notificationId}' })` qua `QueueRuntimeService.add`. Lỗi Redis chỉ ghi log; thông báo vẫn `PENDING`.
-- **`push.sweep` (job lặp mỗi 60 giây, `upsertSchedulers`)**: lấy tối đa 200 thông báo `pushStatus = PENDING`, `createdAt < now - 30 giây`, xếp hàng lại với **cùng `jobId`** (BullMQ bỏ qua nếu đã có). Thông báo `PENDING` quá hạn TTL của loại (`ttlSeconds`) chuyển `SKIPPED` (không gửi nhắc đã cũ). Cờ tắt thì chuyển `SKIPPED` (xem 5.4).
+- Hàm đăng ký làm đúng một việc: `queue.add('push.send', { notificationId }, { jobId: pushSendJobId(notificationId) })` qua `QueueRuntimeService.add`. Lỗi Redis chỉ ghi log; thông báo vẫn `PENDING`.
+- **`push.sweep` (job lặp mỗi 60 giây, `upsertSchedulers`)**: lấy tối đa 200 thông báo `pushStatus = PENDING`, `createdAt < now - 30 giây`, xếp hàng lại với **cùng `jobId`** (`push-{id}`, qua chính hàm `pushSendJobId`) (BullMQ bỏ qua nếu đã có). Thông báo `PENDING` quá hạn TTL của loại (`ttlSeconds`) chuyển `SKIPPED` (không gửi nhắc đã cũ). Cờ tắt thì chuyển `SKIPPED` (xem 5.4).
 - Rủi ro đã kiểm: Redis chết lúc commit, instance chết giữa chừng, retry `work` của transaction: không mất push, không gửi cho transaction bị rollback (vì chưa có hàng đợi và bản ghi `PENDING` rollback cùng transaction).
 
 ### 5.4 FR-02, FR-03, FR-04: `WebPushProvider`, worker `push.send`, retry
@@ -458,6 +458,7 @@ Với nguồn bên ngoài sau này: **không** có đường nhập `title/body`
 | Mục | Thiết kế | FR |
 |---|---|---|
 | Biến mới (backend) | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (bí mật), `VAPID_SUBJECT` (giá trị đã chốt: địa chỉ `mailto:` của STND trong Plan), `PUSH_ENDPOINT_HOST_ALLOWLIST` (tùy chọn). Tên chính xác do `devops-agent` chốt | FR-07 |
+| Cấu hình cho FE | `GET /push-subscriptions/config` trả `publicKey = null` khi `enabled = false`; khóa công khai chỉ được trả khi `enabled = true` | FR-07, FR-09 |
 | Compose | `docker-compose.yml` đổi `FEATURE_CRM_PUSH=false` (dòng 248, đang cứng) thành `FEATURE_CRM_PUSH=${CRM_PUSH_ENABLED:-false}`; chuyển `VAPID_*` từ `.env.docker` vào service `backend` qua `environment` (không vào `build.args`, không vào image) | FR-07 |
 | `.env.docker.example` | Thêm `CRM_PUSH_ENABLED=false`, `VAPID_PUBLIC_KEY=`, `VAPID_PRIVATE_KEY=`, `VAPID_SUBJECT=` (để trống/ví dụ, không giá trị thật), kèm chú thích "tạo khóa một lần" | FR-07, FR-13 |
 | FE | **Không** cần biến build: khóa công khai lấy lúc chạy từ `GET /push-subscriptions/config` | FR-07, FR-09 |
