@@ -26,6 +26,7 @@ import type {
 } from '../types';
 import type { CareLogDto, CustomerDetailDto, CustomerListItemDto, CustomerPersonaDto, DeletedCustomerDto, HistoryEntryDto } from './dto';
 import { crmHttp, type QueryParams } from './crmHttp';
+import { refListParam, refParam, toUiCatalogId } from './catalogIds';
 import { toStatusRef } from './catalogMappers';
 import { buildCustomerFilterParams, buildCustomerListParams } from './customerQuery';
 import { toCareLog, toCustomerDetail, toCustomerListItem, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toNationalIdView, toPersonaValueBody, type DetailMappingContext } from './customerMappers';
@@ -37,8 +38,19 @@ export const fetchCustomerList = async (query: CustomerListQuery, signal?: Abort
   return { data: result.data.map(toCustomerListItem), meta: result.meta };
 };
 
-export const fetchListCounts = (query: CustomerListQuery, signal?: AbortSignal): Promise<ListCounts> =>
-  crmHttp.get<ListCounts>(`${BASE}/list-counts`, { params: buildCustomerFilterParams(query), signal });
+interface ListCountsDto extends Omit<ListCounts, 'byStatus'> {
+  /** `statusCode` có từ khi backend đếm theo `code` (FR-40); thiếu thì suy từ `statusId`. */
+  byStatus: { statusId: string; statusCode?: string; count: number }[];
+}
+
+/** `byStatus[].statusId` của UI = `code` của tình trạng (FR-40). */
+export const toListCounts = (dto: ListCountsDto): ListCounts => ({
+  ...dto,
+  byStatus: dto.byStatus.map((item) => ({ statusId: item.statusCode ?? toUiCatalogId('statuses', item.statusId), count: item.count })),
+});
+
+export const fetchListCounts = async (query: CustomerListQuery, signal?: AbortSignal): Promise<ListCounts> =>
+  toListCounts(await crmHttp.get<ListCountsDto>(`${BASE}/list-counts`, { params: buildCustomerFilterParams(query), signal }));
 
 export const fetchCustomerDetail = async (customerId: string, context: DetailMappingContext, signal?: AbortSignal): Promise<CustomerDetail> =>
   toCustomerDetail(await crmHttp.get<CustomerDetailDto>(`${BASE}/${encodeURIComponent(customerId)}`, { signal }), context);
@@ -87,10 +99,11 @@ export const postCustomer = async (input: CreateCustomerInput, context: DetailMa
     fullName: input.fullName,
     phone: input.phone,
     email: input.email?.trim() ? input.email.trim() : undefined,
-    statusId: input.statusId,
-    sourceId: input.sourceId ?? undefined,
-    interestedProjectIds: input.interestedProjectIds,
-    areaId: input.areaId ?? undefined,
+    // FR-40: gửi `…Code` (id của UI = code); ObjectId cũ gửi trường id tương ứng.
+    ...refParam('statusCode', 'statusId', input.statusId),
+    ...refParam('sourceCode', 'sourceId', input.sourceId ?? undefined),
+    ...refListParam('projectCodes', 'interestedProjectIds', input.interestedProjectIds, 'projects'),
+    ...refParam('areaCode', 'areaId', input.areaId ?? undefined),
     tagIds: input.tagIds,
     nationalId: input.nationalId?.trim() ? input.nationalId.trim() : undefined,
     criteria: input.criteria,
@@ -106,9 +119,9 @@ export const patchCustomer = async (customerId: string, input: UpdateCustomerInp
     phone: input.phone,
     // `email: null` = xóa email (backend nhận null cho field không bắt buộc).
     email: input.email === undefined ? undefined : input.email.trim() === '' ? null : input.email.trim(),
-    sourceId: input.sourceId,
-    interestedProjectIds: input.interestedProjectIds,
-    areaId: input.areaId,
+    ...refParam('sourceCode', 'sourceId', input.sourceId),
+    ...refListParam('projectCodes', 'interestedProjectIds', input.interestedProjectIds, 'projects'),
+    ...refParam('areaCode', 'areaId', input.areaId),
     tagIds: input.tagIds,
   });
   return toCustomerDetail(await crmHttp.patch<CustomerDetailDto>(`${BASE}/${encodeURIComponent(customerId)}`, body), context);
@@ -122,8 +135,9 @@ interface StatusResultDto {
 }
 
 export const patchStatus = async (customerId: string, body: { statusId: string; version: number; reason?: string }): Promise<UpdateStatusResult> => {
-  const result = await crmHttp.patch<StatusResultDto>(`${BASE}/${encodeURIComponent(customerId)}/status`, body);
-  return { status: toStatusRef(result.status), previousStatusId: result.previousStatusId ?? '', version: result.version, lastUpdatedAt: result.lastUpdatedAt };
+  const { statusId, ...rest } = body;
+  const result = await crmHttp.patch<StatusResultDto>(`${BASE}/${encodeURIComponent(customerId)}/status`, { ...refParam('statusCode', 'statusId', statusId), ...rest });
+  return { status: toStatusRef(result.status), previousStatusId: result.previousStatusId ? toUiCatalogId('statuses', result.previousStatusId) : '', version: result.version, lastUpdatedAt: result.lastUpdatedAt };
 };
 
 interface CriteriaResultDto {

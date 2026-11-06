@@ -10,7 +10,7 @@ describe('crmReducer — cập nhật khách (C7, X4)', () => {
   it('tự ghi lastUpdatedAt/By, tăng version và ghi nhật ký thay đổi cũ -> mới', () => {
     const state = createTestState();
     const before = state.customers.find((customer) => customer.id === 'CUST-001');
-    const next = crmReducer(state, { type: 'customers/update', customerId: 'CUST-001', patch: { statusId: 'st-net' }, action: 'STATUS_CHANGED', meta: meta('thao') });
+    const next = crmReducer(state, { type: 'customers/update', customerId: 'CUST-001', patch: { statusId: 'NET' }, action: 'STATUS_CHANGED', meta: meta('thao') });
     const after = next.customers.find((customer) => customer.id === 'CUST-001');
     expect(after?.lastUpdatedAt).toBe(NOW);
     expect(after?.lastUpdatedBy).toBe('thao');
@@ -27,7 +27,7 @@ describe('crmReducer — cập nhật khách (C7, X4)', () => {
 
   it('patch không đổi gì -> giữ nguyên state (không ghi log rỗng, không tăng version)', () => {
     const state = createTestState();
-    const next = crmReducer(state, { type: 'customers/update', customerId: 'CUST-001', patch: { statusId: 'st-interested' }, action: 'STATUS_CHANGED', meta: meta() });
+    const next = crmReducer(state, { type: 'customers/update', customerId: 'CUST-001', patch: { statusId: 'INTERESTED' }, action: 'STATUS_CHANGED', meta: meta() });
     expect(next).toBe(state);
   });
 
@@ -117,7 +117,7 @@ describe('crmReducer — nhật ký, lịch hẹn', () => {
 describe('crmReducer — UI state', () => {
   it('filters/reset giữ tab đang chọn, xoá bộ lọc khác', () => {
     const state = createTestState();
-    const filtered = crmReducer(state, { type: 'filters/set', changes: { listGroup: 'NET', projectIds: ['proj-1'], q: 'an' } });
+    const filtered = crmReducer(state, { type: 'filters/set', changes: { listGroup: 'NET', projectIds: ['QTERRA'], q: 'an' } });
     const reset = crmReducer(filtered, { type: 'filters/reset' });
     expect(reset.filters.listGroup).toBe('NET');
     expect(reset.filters.projectIds).toEqual([]);

@@ -13,7 +13,7 @@ export const createCustomerRecord = (overrides: Partial<Customer> & Pick<Custome
     fullName: '',
     phone: '',
     email: '',
-    statusId: 'st-not-contacted',
+    statusId: 'NOT_CONTACTED',
     statusChangedAt: EPOCH,
     sourceId: null,
     interestedProjectIds: [],

@@ -3,6 +3,7 @@
  */
 import type { AppointmentListQuery, AppointmentView, CareLogView, CreateAppointmentInput, DailyTask, DailyTaskScope, Paginated } from '../types';
 import type { AppointmentDto, DailyTaskDto, NotificationDto } from './dto';
+import { refParam, requireServerCatalogId } from './catalogIds';
 import { crmHttp } from './crmHttp';
 import { toAppointment, toCareLog, toDailyTask } from './customerMappers';
 
@@ -16,7 +17,7 @@ export const fetchAppointments = async (query: AppointmentListQuery, signal?: Ab
   const items: AppointmentView[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const result = await crmHttp.list<AppointmentDto>('/crm/appointments', {
-      params: { from: query.from, to: query.to, customerId: query.customerId, projectId: query.projectId, status: query.status, assigneeIds: query.assigneeIds, types: query.types, page, limit: 100 },
+      params: { from: query.from, to: query.to, customerId: query.customerId, projectId: query.projectId ? requireServerCatalogId('projects', query.projectId) : undefined, status: query.status, assigneeIds: query.assigneeIds, types: query.types, page, limit: 100 },
       signal,
     });
     items.push(...result.data.map(toAppointment));
@@ -37,8 +38,8 @@ export const postAppointment = async (input: CreateAppointmentInput): Promise<Ap
     ...(note?.trim() ? { note: note.trim() } : {}),
     ...(assigneeId ? { assigneeId } : {}),
     ...(remindBeforeMinutes ? { remindBeforeMinutes } : {}),
-    // null = không gắn dự án (gửi tường minh); bỏ trống thì không gửi.
-    ...(projectId !== undefined ? { projectId } : {}),
+    // null = không gắn dự án (gửi tường minh); bỏ trống thì không gửi. FR-40: id của UI = code -> `projectCode`.
+    ...refParam('projectCode', 'projectId', projectId),
   };
   return toAppointment(await crmHttp.post<AppointmentDto>('/crm/appointments', body, { isIdempotent: true }));
 };

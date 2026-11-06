@@ -7,12 +7,23 @@ import type { CrmSettingsDto, ProjectDto, TeamMemberDto, UserDto } from './dto';
 import { crmHttp } from './crmHttp';
 import { toCrmSettings, toProject, toTeamMember, userDtoToUser } from './catalogMappers';
 import { fetchAllPages } from './catalogApi';
+import { requireServerCatalogId, type CatalogKind } from './catalogIds';
 
 export type CatalogEndpoint = 'customer-statuses' | 'lead-sources' | 'contact-results' | 'areas';
 
-export const createCatalogItem = (endpoint: CatalogEndpoint, body: Record<string, unknown>): Promise<unknown> => crmHttp.post(`/crm/${endpoint}`, body);
-export const updateCatalogItem = (endpoint: CatalogEndpoint, id: string, body: Record<string, unknown>): Promise<unknown> => crmHttp.patch(`/crm/${endpoint}/${encodeURIComponent(id)}`, body);
-export const deleteCatalogItem = (endpoint: CatalogEndpoint, id: string): Promise<void> => crmHttp.del(`/crm/${endpoint}/${encodeURIComponent(id)}`);
+const CATALOG_KINDS: Record<CatalogEndpoint, CatalogKind> = { 'customer-statuses': 'statuses', 'lead-sources': 'leadSources', 'contact-results': 'contactResults', areas: 'areas' };
+
+/**
+ * FR-40: id của UI là `code`, nhưng URL quản trị (`/crm/<danh mục>/:id`) và `parentId` của khu vực vẫn cần ObjectId -> đổi qua bảng tra
+ * (bản ghi chưa migrate: id vốn đã là ObjectId nên giữ nguyên).
+ */
+const toCatalogBody = (endpoint: CatalogEndpoint, body: Record<string, unknown>): Record<string, unknown> =>
+  endpoint === 'areas' && typeof body.parentId === 'string' && body.parentId ? { ...body, parentId: requireServerCatalogId('areas', body.parentId) } : body;
+
+export const createCatalogItem = (endpoint: CatalogEndpoint, body: Record<string, unknown>): Promise<unknown> => crmHttp.post(`/crm/${endpoint}`, toCatalogBody(endpoint, body));
+export const updateCatalogItem = (endpoint: CatalogEndpoint, id: string, body: Record<string, unknown>): Promise<unknown> =>
+  crmHttp.patch(`/crm/${endpoint}/${encodeURIComponent(requireServerCatalogId(CATALOG_KINDS[endpoint], id))}`, toCatalogBody(endpoint, body));
+export const deleteCatalogItem = (endpoint: CatalogEndpoint, id: string): Promise<void> => crmHttp.del(`/crm/${endpoint}/${encodeURIComponent(requireServerCatalogId(CATALOG_KINDS[endpoint], id))}`);
 
 export const createTag = (body: { name: string; category: string }): Promise<{ id: string; label: string; category: string }> => crmHttp.post('/crm/tags', body);
 
@@ -23,6 +34,8 @@ export type ProjectBody = Partial<{
   code: string;
   developer: string | null;
   location: string | null;
+  /** Mã khu vực (FR-40, ưu tiên); `areaId` chỉ dùng cho ObjectId cũ. */
+  areaCode: string | null;
   areaId: string | null;
   propertyTypes: string[];
   priceFrom: number | null;
@@ -33,9 +46,11 @@ export type ProjectBody = Partial<{
 }>;
 
 export const postProject = async (body: ProjectBody): Promise<Project> => toProject(await crmHttp.post<ProjectDto>('/crm/projects', body));
-export const patchProject = async (id: string, body: ProjectBody): Promise<Project> => toProject(await crmHttp.patch<ProjectDto>(`/crm/projects/${encodeURIComponent(id)}`, body));
-export const deleteProject = (id: string): Promise<void> => crmHttp.del(`/crm/projects/${encodeURIComponent(id)}`);
-export const postProjectRestoration = async (projectId: string): Promise<Project> => toProject(await crmHttp.post<ProjectDto>('/crm/project-restorations', { projectId }));
+export const patchProject = async (id: string, body: ProjectBody): Promise<Project> =>
+  toProject(await crmHttp.patch<ProjectDto>(`/crm/projects/${encodeURIComponent(requireServerCatalogId('projects', id))}`, body));
+export const deleteProject = (id: string): Promise<void> => crmHttp.del(`/crm/projects/${encodeURIComponent(requireServerCatalogId('projects', id))}`);
+export const postProjectRestoration = async (projectId: string): Promise<Project> =>
+  toProject(await crmHttp.post<ProjectDto>('/crm/project-restorations', { projectId: requireServerCatalogId('projects', projectId) }));
 
 // --- Người dùng, nhóm ---------------------------------------------------------------------------------------------------
 

@@ -9,6 +9,11 @@ export interface RefDto {
   label: string;
 }
 
+/** `Ref` của danh mục có `code` bất biến (FR-40). `code` tùy chọn: bản ghi chưa migrate thì backend chưa trả. */
+export interface CatalogRefDto extends RefDto {
+  code?: string;
+}
+
 export interface UserRefDto {
   id: string;
   displayName: string;
@@ -51,6 +56,8 @@ export interface AreaDto {
   type: string;
   parentId: string | null;
   path: RefDto[];
+  /** Mã bất biến (FR-40); thiếu ở bản ghi chưa migrate. */
+  code?: string;
   adminCode: string | null;
   isLegacy: boolean;
   order: number;
@@ -63,8 +70,14 @@ export interface ProjectDto {
   code: string;
   developer: string | null;
   location: string | null;
-  area: RefDto | null;
+  area: CatalogRefDto | null;
+  /** Mã khu vực (`areas.code`), có cả khi `area.code` thiếu. */
+  areaCode?: string | null;
   propertyTypes: string[];
+  /** `value` lựa chọn `property_type` (FR-46); thiếu ở backend cũ. */
+  propertyTypeCodes?: string[];
+  /** Chữ loại hình cũ chưa ánh xạ được: Quản trị cần chọn lại. */
+  unmappedPropertyTypes?: string[];
   priceFrom: number | null;
   priceTo: number | null;
   status: 'UPCOMING' | 'SELLING' | 'SOLD_OUT';
@@ -176,9 +189,9 @@ export interface CustomerListItemDto {
   fullName: string;
   phoneMasked: string;
   status: StatusRefDto;
-  source: RefDto | null;
-  projects: RefDto[];
-  area: RefDto | null;
+  source: CatalogRefDto | null;
+  projects: CatalogRefDto[];
+  area: CatalogRefDto | null;
   tags: RefDto[];
   progress: number;
   criteriaDone: CriteriaDoneDto;
@@ -277,7 +290,7 @@ export interface CareLogDto {
   content: string;
   attachments: AttachmentDto[];
   contactChannel: ContactChannel;
-  contactResult: RefDto | null;
+  contactResult: CatalogRefDto | null;
   nextAction: { suggestion: string | null; dueAt: string | null; appointmentId: string | null } | null;
   source: 'MANUAL' | 'IMPORT' | 'SYSTEM';
   editedAt: string | null;
@@ -295,7 +308,7 @@ export interface AppointmentDto {
   location: string;
   note: string;
   /** Có ở mọi response lịch hẹn; thiếu (backend cũ) hoặc null = không gắn dự án. */
-  project?: RefDto | null;
+  project?: CatalogRefDto | null;
   assignee: UserRefDto;
   remindBeforeMinutes: number[];
   status: AppointmentStatus;
@@ -312,9 +325,9 @@ export interface DailyTaskDto {
   kind: DailyTaskKind;
   dueAt: string;
   group: DailyTaskGroup;
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRefDto; projects: RefDto[] };
+  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRefDto; projects: CatalogRefDto[] };
   /** Dự án của lịch hẹn (task APPOINTMENT có dự án); thiếu hoặc null = không có. */
-  project?: RefDto | null;
+  project?: CatalogRefDto | null;
   title: string;
   lastCareLog: { occurredAt: string; excerpt: string } | null;
   suggestion: string;

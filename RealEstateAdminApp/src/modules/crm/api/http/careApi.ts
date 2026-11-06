@@ -4,6 +4,7 @@
 import type { BulkOperation, CareLogView, CareTeamRequestView, CreateCareLogInput, Paginated } from '../types';
 import type { CareLogDto, CareTeamDto, CareTeamRequestDto } from './dto';
 import apiAxios from '../../../../api/axios';
+import { refParam, requireServerCatalogId } from './catalogIds';
 import { crmHttp } from './crmHttp';
 import { CrmApiException, normalizeApiError } from './crmErrors';
 import { toCareLog, toCareTeamRequest } from './customerMappers';
@@ -35,6 +36,12 @@ export const patchCareTeamRequest = (requestId: string, body: { status: 'APPROVE
 
 // --- Nhật ký ------------------------------------------------------------------------------------------------------------
 
+/**
+ * Lịch hẹn lồng trong `nextAction`: hợp đồng chưa có `projectCode` ở đây nên đổi `code` của UI về id thật (bảng tra `catalogIds`).
+ */
+const toAppointmentBody = <T extends { projectId?: string | null }>(appointment: T): T =>
+  appointment.projectId ? { ...appointment, projectId: requireServerCatalogId('projects', appointment.projectId) } : appointment;
+
 /** Body `POST care-logs`: bỏ trường rỗng (backend `forbidNonWhitelisted` + `@OptionalNotNull`). */
 export const buildCareLogBody = (input: CreateCareLogInput): Record<string, unknown> => {
   const nextAction = input.nextAction;
@@ -43,14 +50,14 @@ export const buildCareLogBody = (input: CreateCareLogInput): Record<string, unkn
     content: input.content,
     contactChannel: input.contactChannel,
     ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
-    ...(input.contactResultId ? { contactResultId: input.contactResultId } : {}),
+    ...(input.contactResultId ? refParam('contactResultCode', 'contactResultId', input.contactResultId) : {}),
     ...(input.attachmentIds && input.attachmentIds.length > 0 ? { attachmentIds: input.attachmentIds } : {}),
     ...(hasNextAction && nextAction
       ? {
           nextAction: {
             ...(nextAction.suggestion?.trim() ? { suggestion: nextAction.suggestion.trim() } : {}),
             ...(nextAction.dueAt ? { dueAt: nextAction.dueAt } : {}),
-            ...(nextAction.appointment ? { appointment: nextAction.appointment } : {}),
+            ...(nextAction.appointment ? { appointment: toAppointmentBody(nextAction.appointment) } : {}),
           },
         }
       : {}),
@@ -65,7 +72,13 @@ export const patchCareLog = async (
   logId: string,
   body: { content?: string; contactChannel?: string; contactResultId?: string | null; occurredAt?: string; attachmentIds?: string[] },
   primaryUserId: string | null,
-): Promise<CareLogView> => toCareLog(await crmHttp.patch<CareLogDto>(`${customerPath(customerId)}/care-logs/${encodeURIComponent(logId)}`, body), primaryUserId);
+): Promise<CareLogView> => {
+  const { contactResultId, ...rest } = body;
+  return toCareLog(
+    await crmHttp.patch<CareLogDto>(`${customerPath(customerId)}/care-logs/${encodeURIComponent(logId)}`, { ...rest, ...refParam('contactResultCode', 'contactResultId', contactResultId) }),
+    primaryUserId,
+  );
+};
 
 export const deleteCareLog = (customerId: string, logId: string, reason?: string): Promise<void> =>
   crmHttp.del(`${customerPath(customerId)}/care-logs/${encodeURIComponent(logId)}`, { params: { reason } });
@@ -102,7 +115,7 @@ export const postBulkOperation = (operation: BulkOperation): Promise<BulkResult>
   const { type, customerIds } = operation;
   const payload =
     operation.type === 'CHANGE_STATUS'
-      ? { statusId: operation.statusId }
+      ? refParam('statusCode', 'statusId', operation.statusId)
       : operation.type === 'ASSIGN'
         ? { memberIds: operation.memberIds, ...(operation.primaryUserId ? { primaryUserId: operation.primaryUserId } : {}) }
         : operation.type === 'DELETE'

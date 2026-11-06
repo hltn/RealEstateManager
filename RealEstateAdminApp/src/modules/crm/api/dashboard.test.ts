@@ -68,11 +68,11 @@ describe('báo cáo theo tình trạng khi có tình trạng đã ẩn', () => {
     const { state, actor } = setup();
     const hiddenState = {
       ...state,
-      catalogs: { ...state.catalogs, statuses: state.catalogs.statuses.map((status) => (status.id === 'st-interested' ? { ...status, isActive: false } : status)) },
+      catalogs: { ...state.catalogs, statuses: state.catalogs.statuses.map((status) => (status.id === 'INTERESTED' ? { ...status, isActive: false } : status)) },
     };
     const segments = getDashboardBreakdown(hiddenState, actor, 'status');
     expect(segments.reduce((sum, item) => sum + item.count, 0)).toBe(getDashboardSummary(hiddenState, actor).totalCustomers);
     expect(segments.find((item) => item.key.id === 'hidden-statuses')?.count).toBe(6);
-    expect(segments.find((item) => item.key.id === 'st-interested')).toBeUndefined();
+    expect(segments.find((item) => item.key.id === 'INTERESTED')).toBeUndefined();
   });
 });

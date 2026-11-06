@@ -8,7 +8,7 @@ import type { CustomerListItem } from '@crm/api';
 
 const bulkOperation = vi.fn();
 const customers = ['c1', 'c2', 'c3'].map(
-  (id) => ({ id, fullName: `Khách ${id}`, status: { id: 'st-dropped', listGroup: 'DROPPED' }, primaryAssignee: null }) as unknown as CustomerListItem,
+  (id) => ({ id, fullName: `Khách ${id}`, status: { id: 'DROPPED', listGroup: 'DROPPED' }, primaryAssignee: null }) as unknown as CustomerListItem,
 );
 
 vi.mock('@crm/api', async () => {

@@ -12,8 +12,8 @@ const bulkOperation = vi.fn();
 const actorRef = { current: { userId: 'admin', role: 'ADMIN', teamId: null, managedTeamIds: [] as string[] } as { userId: string; role: 'ADMIN' | 'MANAGER' | 'STAFF'; teamId: string | null; managedTeamIds: string[] } };
 const catalogs: CrmCatalogs = {
   statuses: [
-    { id: 'st-interested', code: 'INTERESTED', label: 'Có quan tâm', listGroup: 'INTERESTED', tone: 'success', order: 1, isDefault: false, isSystem: true, isActive: true },
-    { id: 'st-dropped', code: 'DROPPED', label: 'Bỏ', listGroup: 'DROPPED', tone: 'error', order: 2, isDefault: false, isSystem: true, isActive: true },
+    { id: 'INTERESTED', code: 'INTERESTED', label: 'Có quan tâm', listGroup: 'INTERESTED', tone: 'success', order: 1, isDefault: false, isSystem: true, isActive: true },
+    { id: 'DROPPED', code: 'DROPPED', label: 'Bỏ', listGroup: 'DROPPED', tone: 'error', order: 2, isDefault: false, isSystem: true, isActive: true },
   ],
   leadSources: [],
   areas: [],
@@ -37,7 +37,7 @@ vi.mock('@crm/api', async () => {
 const customerOf = (statusId: string, listGroup: 'INTERESTED' | 'DROPPED', primaryUserId: string | null = null): CustomerListItem =>
   ({ id: 'c', fullName: 'Khách', status: { id: statusId, listGroup }, primaryAssignee: primaryUserId ? { id: primaryUserId, displayName: 'P' } : null }) as CustomerListItem;
 
-const setup = (getCustomer: (id: string) => CustomerListItem | undefined = () => customerOf('st-interested', 'INTERESTED'), selectedIds = ['c-1', 'c-2']) => {
+const setup = (getCustomer: (id: string) => CustomerListItem | undefined = () => customerOf('INTERESTED', 'INTERESTED'), selectedIds = ['c-1', 'c-2']) => {
   const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), initialSession: { currentUserId: 'admin' }, shouldPersist: false });
   const onClear = vi.fn();
   const onDeselect = vi.fn();
@@ -68,7 +68,7 @@ describe('BulkActionBar gọi API hàng loạt', () => {
   it('chuyển sang "Bỏ" phải xác nhận: chưa gọi API; Huỷ giữ nguyên; Xác nhận mới gọi đúng payload', async () => {
     bulkOperation.mockResolvedValue({ ok: true, data: { succeeded: ['c-1', 'c-2'], failed: [] } });
     const { onClear } = setup();
-    pick('CHANGE_STATUS', 'st-dropped');
+    pick('CHANGE_STATUS', 'DROPPED');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     expect(bulkOperation).not.toHaveBeenCalled();
 
@@ -79,13 +79,13 @@ describe('BulkActionBar gọi API hàng loạt', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
     fireEvent.click(screen.getByRole('button', { name: 'Chuyển sang Bỏ' }));
     await waitFor(() => expect(onClear).toHaveBeenCalledTimes(1));
-    expect(bulkOperation).toHaveBeenCalledWith({ type: 'CHANGE_STATUS', customerIds: ['c-1', 'c-2'], statusId: 'st-dropped' });
+    expect(bulkOperation).toHaveBeenCalledWith({ type: 'CHANGE_STATUS', customerIds: ['c-1', 'c-2'], statusId: 'DROPPED' });
   });
 
   it('đổi sang tình trạng không phải "Bỏ" thì gọi API ngay, không hỏi', async () => {
     bulkOperation.mockResolvedValue({ ok: true, data: { succeeded: ['c-1', 'c-2'], failed: [] } });
     setup();
-    pick('CHANGE_STATUS', 'st-interested');
+    pick('CHANGE_STATUS', 'INTERESTED');
     expect(screen.queryByRole('alertdialog')).toBeNull();
     await waitFor(() => expect(bulkOperation).toHaveBeenCalledTimes(1));
   });
@@ -111,10 +111,10 @@ describe('BulkActionBar gọi API hàng loạt', () => {
 const optionLabels = () => Array.from(screen.getByLabelText('Hành động hàng loạt').querySelectorAll('option')).map((option) => option.textContent);
 
 describe('BulkActionBar - xóa khách "Bỏ" hàng loạt', () => {
-  const droppedOf = (primaryUserId: string | null = null) => () => customerOf('st-dropped', 'DROPPED', primaryUserId);
+  const droppedOf = (primaryUserId: string | null = null) => () => customerOf('DROPPED', 'DROPPED', primaryUserId);
 
   it('option "Xóa" chỉ hiện khi MỌI khách chọn thuộc "Bỏ"', () => {
-    setup(() => customerOf('st-interested', 'INTERESTED'));
+    setup(() => customerOf('INTERESTED', 'INTERESTED'));
     expect(optionLabels()).not.toContain('Xóa');
   });
 
@@ -141,7 +141,7 @@ describe('BulkActionBar - xóa khách "Bỏ" hàng loạt', () => {
     fireEvent.change(screen.getByLabelText('Hành động hàng loạt'), { target: { value: 'DELETE' } });
     expect(screen.getByRole('button', { name: 'Xóa' })).toBeEnabled();
 
-    rerenderWith(() => customerOf('st-interested', 'INTERESTED'));
+    rerenderWith(() => customerOf('INTERESTED', 'INTERESTED'));
     await waitFor(() => expect(screen.getByLabelText('Hành động hàng loạt')).toHaveValue(''));
     rerenderWith(droppedOf());
     expect(screen.getByLabelText('Hành động hàng loạt')).toHaveValue('');

@@ -5,7 +5,7 @@
 import type { Area, CatalogItem, ContactResult, CrmSettings, CrmUser, CustomerStatusItem, PersonaFieldDefinition, Project, Tag, Team } from '@crm/types/crm';
 import type { AreaDto, AssignableUserDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, TagDto, TeamDto } from './dto';
 import { crmHttp, type QueryParams } from './crmHttp';
-import { assignableToUser, toArea, toCatalogItem, toContactResult, toCrmSettings, toPersonaField, toProject, toStatusItem, toTag, toTeam } from './catalogMappers';
+import { assignableToUser, toAreaList, toCatalogItem, toContactResult, toCrmSettings, toPersonaField, toProject, toStatusItem, toTag, toTeam } from './catalogMappers';
 
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 5;
@@ -24,7 +24,7 @@ export const fetchAllPages = async <T>(url: string, params: QueryParams = {}, si
 export const fetchStatuses = async (signal?: AbortSignal): Promise<CustomerStatusItem[]> => (await fetchAllPages<CustomerStatusDto>('/crm/customer-statuses', {}, signal)).map(toStatusItem);
 export const fetchLeadSources = async (signal?: AbortSignal): Promise<CatalogItem[]> => (await fetchAllPages<LeadSourceDto>('/crm/lead-sources', {}, signal)).map(toCatalogItem);
 export const fetchContactResults = async (signal?: AbortSignal): Promise<ContactResult[]> => (await fetchAllPages<ContactResultDto>('/crm/contact-results', {}, signal)).map(toContactResult);
-export const fetchAreas = async (signal?: AbortSignal): Promise<Area[]> => (await fetchAllPages<AreaDto>('/crm/areas', {}, signal)).map(toArea);
+export const fetchAreas = async (signal?: AbortSignal): Promise<Area[]> => toAreaList(await fetchAllPages<AreaDto>('/crm/areas', {}, signal));
 /** `isDeleted` chỉ Quản trị (xem dự án đã xóa mềm). */
 export const fetchProjects = async (options: { isDeleted?: boolean } = {}, signal?: AbortSignal): Promise<Project[]> =>
   (await fetchAllPages<ProjectDto>('/crm/projects', { isDeleted: options.isDeleted, sort: 'name' }, signal)).map(toProject);

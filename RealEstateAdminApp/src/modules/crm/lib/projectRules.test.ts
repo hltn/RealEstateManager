@@ -247,7 +247,7 @@ describe('formatProjectPrice + diffProject', () => {
 
 describe('toProjectLabel / listProjectFilterOptions', () => {
   it('nhãn = tên ngắn; không có trong danh mục -> "Dự án đã ngừng"', () => {
-    expect(toProjectLabel(projects, 'proj-1')).toBe("Q'Terra");
+    expect(toProjectLabel(projects, 'QTERRA')).toBe("Q'Terra");
     expect(toProjectLabel(projects, 'proj-ghost')).toBe(UNKNOWN_PROJECT_LABEL);
   });
 

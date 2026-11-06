@@ -32,7 +32,7 @@ import type {
   PersonaValueDto,
   UserRefDto,
 } from './dto';
-import { optionLabelToValue, optionValueToLabel, toPersonaGroupCode, toStatusRef } from './catalogMappers';
+import { optionLabelToValue, optionValueToLabel, toCatalogRef, toNullableCatalogRef, toPersonaGroupCode, toStatusRef } from './catalogMappers';
 
 /** Người không xác định (bản ghi hệ thống/đã xóa). */
 export const SYSTEM_USER: UserRef = { id: '', displayName: 'Hệ thống' };
@@ -44,9 +44,9 @@ export const toCustomerListItem = (dto: CustomerListItemDto): CustomerListItem =
   fullName: dto.fullName,
   phoneMasked: dto.phoneMasked,
   status: toStatusRef(dto.status),
-  source: dto.source,
-  projects: dto.projects,
-  area: dto.area,
+  source: toNullableCatalogRef('leadSources', dto.source),
+  projects: dto.projects.map((project) => toCatalogRef('projects', project)),
+  area: toNullableCatalogRef('areas', dto.area),
   tags: dto.tags,
   progress: dto.progress,
   criteriaDone: dto.criteriaDone,
@@ -151,7 +151,7 @@ export const toCareLog = (dto: CareLogDto, primaryUserId: string | null): CareLo
   occurredAt: dto.occurredAt,
   content: dto.content,
   contactChannel: dto.contactChannel,
-  contactResult: dto.contactResult,
+  contactResult: toNullableCatalogRef('contactResults', dto.contactResult),
   nextAction: dto.nextAction
     ? { suggestion: dto.nextAction.suggestion ?? '', dueAt: dto.nextAction.dueAt, appointmentId: dto.nextAction.appointmentId }
     : null,
@@ -171,7 +171,7 @@ export const toAppointment = (dto: AppointmentDto): AppointmentView => ({
   endAt: dto.endAt,
   location: dto.location,
   note: dto.note,
-  project: dto.project ? { id: dto.project.id, label: dto.project.label } : null,
+  project: toNullableCatalogRef('projects', dto.project),
   assignee: toUserRef(dto.assignee),
   remindBeforeMinutes: dto.remindBeforeMinutes,
   status: dto.status,
@@ -187,8 +187,8 @@ export const toDailyTask = (dto: DailyTaskDto): DailyTask => ({
   kind: dto.kind,
   dueAt: dto.dueAt,
   group: dto.group,
-  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked, status: toStatusRef(dto.customer.status), projects: dto.customer.projects },
-  project: dto.project ? { id: dto.project.id, label: dto.project.label } : null,
+  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked, status: toStatusRef(dto.customer.status), projects: dto.customer.projects.map((project) => toCatalogRef('projects', project)) },
+  project: toNullableCatalogRef('projects', dto.project),
   title: dto.title,
   lastCareLog: dto.lastCareLog,
   suggestion: dto.suggestion,

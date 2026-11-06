@@ -45,7 +45,7 @@ describe('importCustomers', () => {
       isPhoneTaken: (phone) => phone === '+84912345678',
       preset: DSKH,
     });
-    expect(results[0]).toMatchObject({ rowNumber: 2, errors: [], data: { phone: '+84900111001', sourceId: 'src-website', interestedProjectIds: ['proj-1', 'proj-2'], areaId: 'area-tp-ho-chi-minh', primaryUserId: 'hanh', statusId: 'st-not-contacted' } });
+    expect(results[0]).toMatchObject({ rowNumber: 2, errors: [], data: { phone: '+84900111001', sourceId: 'WEBSITE', interestedProjectIds: ['QTERRA', 'PRIVIA'], areaId: 'TP_HO_CHI_MINH', primaryUserId: 'hanh', statusId: 'NOT_CONTACTED' } });
     expect(results[1].errors).toContain('Thiếu họ tên');
     expect(results[2].errors[0]).toMatch(/SĐT không hợp lệ/);
     expect(results[3].errors).toContain('SĐT đã có trong hệ thống (trùng)');
@@ -65,20 +65,20 @@ describe('importCustomers', () => {
       ['2', 'Bình', '0900 111 002', '', '', 'Quận 7, TP.HCM', '', ''],
     ];
     const [byProvince, byDistrict] = validateImportRows(rows, mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
-    expect(byProvince.data?.areaId).toBe('area-ha-noi');
+    expect(byProvince.data?.areaId).toBe('HA_NOI');
     expect(byDistrict.errors).toEqual([]);
     expect(byDistrict.data?.areaId).toBeNull();
     expect(byDistrict.warnings).toHaveLength(1);
   });
 
   it.each([
-    ['TP.HCM', 'area-tp-ho-chi-minh'],
-    ['Sài Gòn', 'area-tp-ho-chi-minh'],
-    ['Hồ Chí Minh', 'area-tp-ho-chi-minh'],
-    ['Thành phố Hồ Chí Minh, Việt Nam', 'area-tp-ho-chi-minh'],
-    ['TP Hà Nội', 'area-ha-noi'],
-    ['Tỉnh Nghệ An', 'area-nghe-an'],
-    ['dac lac', 'area-dak-lak'],
+    ['TP.HCM', 'TP_HO_CHI_MINH'],
+    ['Sài Gòn', 'TP_HO_CHI_MINH'],
+    ['Hồ Chí Minh', 'TP_HO_CHI_MINH'],
+    ['Thành phố Hồ Chí Minh, Việt Nam', 'TP_HO_CHI_MINH'],
+    ['TP Hà Nội', 'HA_NOI'],
+    ['Tỉnh Nghệ An', 'NGHE_AN'],
+    ['dac lac', 'DAK_LAK'],
   ])('khu vực "%s" khớp đúng tỉnh trong danh mục', (text, expectedId) => {
     const mapping = autoMapColumns(headers, DSKH);
     const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', text, '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
@@ -97,7 +97,7 @@ describe('importCustomers', () => {
   it('preset DSKH_DROP gán tình trạng mặc định "Bỏ" khi file không có cột tình trạng', () => {
     const mapping = autoMapColumns(['Họ tên', 'SĐT'], DROP);
     const [result] = validateImportRows([['An', '0900111222']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DROP });
-    expect(result.data?.statusId).toBe('st-dropped');
+    expect(result.data?.statusId).toBe('DROPPED');
   });
 });
 
@@ -125,7 +125,7 @@ describe('C4 / N3 import: giới hạn, mục đã ẩn, nhân viên không hợ
       ...SEED_CATALOGS,
       projects: SEED_CATALOGS.projects.map((item) => ({ ...item, isActive: false })),
       areas: SEED_CATALOGS.areas.map((item) => ({ ...item, isActive: false })),
-      statuses: SEED_CATALOGS.statuses.map((item) => (item.id === 'st-net' ? { ...item, isActive: false } : item)),
+      statuses: SEED_CATALOGS.statuses.map((item) => (item.id === 'NET' ? { ...item, isActive: false } : item)),
     };
     const result = run(['An', '0900111001', '', SEED_CATALOGS.projects[0].name, SEED_CATALOGS.areas[0].name, 'Khách net', ''], { catalogs: hidden });
     expect(result.errors.filter((error) => error.includes('đã ngừng dùng'))).toHaveLength(3);

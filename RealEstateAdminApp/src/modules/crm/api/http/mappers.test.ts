@@ -231,7 +231,7 @@ describe('danh mục', () => {
     const create = toProjectBody(project, { isCreate: true });
     expect(create).not.toHaveProperty('isActive');
     expect(create).not.toHaveProperty('fullName');
-    expect(create).toMatchObject({ developer: null, location: null, areaId: null, propertyTypes: ['Căn hộ'] });
+    expect(create).toMatchObject({ developer: null, location: null, areaCode: null, propertyTypes: ['Căn hộ'] });
     expect(toProjectBody(project).isActive).toBe(false);
   });
 });
@@ -283,7 +283,7 @@ describe('tham số danh sách khách (05 §2.3)', () => {
     expect(normalizeSearchTerm(' a ')).toBeUndefined();
     expect(normalizeSearchTerm('  an ')).toBe('an');
     const params = buildCustomerListParams({ q: 'a', listGroup: 'ALL', statusIds: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: '  ' });
-    expect(params).toMatchObject({ q: undefined, listGroup: undefined, statusIds: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: undefined });
+    expect(params).toMatchObject({ q: undefined, listGroup: undefined, statusCodes: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: undefined });
     expect(buildCustomerListParams({ listGroup: 'NET' }).listGroup).toBe('NET');
   });
 
@@ -300,7 +300,7 @@ describe('body nhật ký (05 §2.6)', () => {
     expect(full).toEqual({
       content: 'a',
       contactChannel: 'ZALO',
-      contactResultId: 'r1',
+      contactResultCode: 'r1',
       attachmentIds: ['x'],
       nextAction: { suggestion: 'Gọi lại', dueAt: '2026-10-30T02:00:00.000Z', appointment: { type: 'CALLBACK' } },
     });

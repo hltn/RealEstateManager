@@ -25,10 +25,10 @@ describe('toDashboardQuery', () => {
 
   it('tuỳ chọn: chỉ áp đầu mút đã nhập; lọc dự án + người + trường ngày cập nhật', () => {
     const query = toDashboardQuery(
-      { ...DEFAULT_REPORT_FILTERS, period: 'custom', from: '2026-10-01', to: '', dateField: 'lastUpdatedAt', projectId: 'proj-2', assigneeId: 'hanh' },
+      { ...DEFAULT_REPORT_FILTERS, period: 'custom', from: '2026-10-01', to: '', dateField: 'lastUpdatedAt', projectId: 'PRIVIA', assigneeId: 'hanh' },
       '2026-10-22',
     );
-    expect(query).toEqual({ dateField: 'lastUpdatedAt', from: '2026-10-01', projectIds: ['proj-2'], assigneeIds: ['hanh'] });
+    expect(query).toEqual({ dateField: 'lastUpdatedAt', from: '2026-10-01', projectIds: ['PRIVIA'], assigneeIds: ['hanh'] });
   });
 
   it('bỏ qua from/to khi không phải kỳ tuỳ chọn', () => {
@@ -44,10 +44,10 @@ describe('định dạng số liệu', () => {
 
   it('đoạn tình trạng lấy màu theo tone; thiếu tone -> xám', () => {
     const segments = toStatusSegments([
-      { key: { id: 'st-net', label: 'Khách net' }, count: 3, percent: 30, averageProgress: 80, tone: 'warning' },
+      { key: { id: 'NET', label: 'Khách net' }, count: 3, percent: 30, averageProgress: 80, tone: 'warning' },
       { key: { id: 'x', label: 'Khác' }, count: 1, percent: 10, averageProgress: 0 },
     ]);
-    expect(segments[0]).toMatchObject({ key: 'st-net', fillClass: 'bg-warning-500' });
+    expect(segments[0]).toMatchObject({ key: 'NET', fillClass: 'bg-warning-500' });
     expect(segments[1].fillClass).toContain('bg-gray-400');
   });
 

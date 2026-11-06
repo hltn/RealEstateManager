@@ -99,6 +99,7 @@ export interface CatalogItem {
 
 /** Khu vực (nơi khách đang ở). Prototype: danh sách phẳng, chưa có cây tỉnh/quận. */
 export interface Area {
+  /** `code` bất biến của backend (FR-40); bản ghi chưa migrate: id cũ. */
   id: string;
   name: string;
   /** Tên gốc của khu vực (không kèm tên khu vực cha) — dùng khi sửa. */
@@ -123,6 +124,10 @@ export interface Project {
   areaId: string | null;
   /** Loại hình sản phẩm, vd ["Căn hộ", "Shophouse"] (không bắt buộc; 04 §3.3 `propertyTypes[]`). */
   propertyTypes: string[];
+  /** `value` lựa chọn loại hình (FR-46), chỉ đọc; có khi backend đã trả. */
+  propertyTypeCodes?: string[];
+  /** Chữ loại hình cũ chưa ánh xạ được (FR-46); Quản trị cần chọn lại. */
+  unmappedPropertyTypes?: string[];
   /** Khoảng giá (VNĐ, theo `priceUnit`); null = chưa nhập. Khi có cả hai thì `priceFrom <= priceTo`. */
   priceFrom: number | null;
   priceTo: number | null;

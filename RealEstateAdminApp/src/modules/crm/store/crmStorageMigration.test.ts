@@ -32,8 +32,12 @@ const legacyProjects = (projects: Loose[]): Loose[] => {
 };
 
 /** Dựng payload đúng như bản v3 từng lưu: khách có `code`, searchText chứa mã, status nhóm CARING, dự án dạng cũ. */
+/** FR-40: seed mới dùng `code` làm id; bản v3 thật lưu id cũ `st-*` nên dựng lại đúng như vậy cho test migration. */
+const LEGACY_STATUS_IDS: Record<string, string> = { NOT_CONTACTED: 'st-not-contacted', INTERESTED: 'st-interested', NET: 'st-net', DROPPED: 'st-dropped' };
+
 const buildV3Payload = () => {
   const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
+  data.catalogs.statuses = data.catalogs.statuses.map((status) => ({ ...status, id: LEGACY_STATUS_IDS[status.code] ?? status.id }));
   const customers = data.customers.map((customer, index) => ({ ...customer, code: codeOf(index), searchText: `${customer.searchText} ${codeOf(index)}` }));
   const statuses = [
     ...data.catalogs.statuses.map((status) => (status.listGroup === 'NOT_CONTACTED' || status.listGroup === 'INTERESTED' ? { ...status, listGroup: 'CARING' } : status)),
