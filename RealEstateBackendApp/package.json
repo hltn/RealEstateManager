@@ -66,8 +66,10 @@
     "remark-gfm": "^1.0.0",
     "rss-parser": "^3.13.0",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.5",
     "turndown": "^7.2.4",
     "unist-util-visit": "^2.0.3",
+    "web-push": "^3.6.7",
     "winston": "^3.19.0"
   },
   "devDependencies": {
@@ -87,6 +89,7 @@
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "@types/turndown": "^5.0.6",
+    "@types/web-push": "^3.6.4",
     "chokidar": "^5.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

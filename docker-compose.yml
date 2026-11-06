@@ -241,11 +241,19 @@ services:
       - S3_BUCKET_EXPORTS=${S3_BUCKET_EXPORTS:-crm-exports}
       # Cờ CRM: CÙNG MỘT biến cho backend và bản build frontend (xem build args của frontend) để hai phía không lệch.
       # Mặc định TẮT. Đặt CRM_ENABLED / CRM_ATTACHMENTS_ENABLED trong .env.docker; KHÔNG đặt FEATURE_CRM_ENABLED /
-      # FEATURE_CRM_ATTACHMENTS trong .env.docker nữa (bị các dòng dưới ghi đè). Import (M8) và Push giai đoạn sau: giữ tắt.
+      # FEATURE_CRM_ATTACHMENTS trong .env.docker nữa (bị các dòng dưới ghi đè). Import (M8): giữ tắt. Push: xem khối Web Push VAPID bên dưới.
       - FEATURE_CRM_ENABLED=${CRM_ENABLED:-false}
       - FEATURE_CRM_ATTACHMENTS=${CRM_ATTACHMENTS_ENABLED:-false}
       - FEATURE_CRM_IMPORT=false
-      - FEATURE_CRM_PUSH=false
+      # Web Push VAPID (v1.0.4, FR-07). Mặc định TẮT. Bật/tắt khẩn cấp: đổi CRM_PUSH_ENABLED trong .env.docker rồi
+      # `docker compose --env-file .env.docker up -d backend` (TẠO LẠI container mới có hiệu lực; `restart` không nạp lại env).
+      # VAPID_* đặt qua environment (không build.args, không vào image). Thiếu VAPID_* thì backend quay về Noop + log lỗi.
+      - FEATURE_CRM_PUSH=${CRM_PUSH_ENABLED:-false}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-}
+      # Host push BỔ SUNG (không thay thế danh sách mặc định FCM/Mozilla/Apple/WNS); để trống nếu không cần.
+      - PUSH_ENDPOINT_HOST_ALLOWLIST=${PUSH_ENDPOINT_HOST_ALLOWLIST:-}
       # Các biến sau đặt trong .env.docker (đi qua env_file, không ghi đè ở đây):
       #   S3_PUBLIC_ENDPOINT (hostname công khai ký signed URL), S3_SIGNED_URL_TTL_SECONDS, REDIS_KEY_PREFIX,
       #   CRM_PII_ENCRYPTION_KEY (+ CRM_PII_KEY_VERSION). Bật CRM (CRM_ENABLED=true) thì BẮT BUỘC có
