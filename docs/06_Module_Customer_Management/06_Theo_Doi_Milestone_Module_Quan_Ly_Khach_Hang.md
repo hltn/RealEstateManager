@@ -86,4 +86,11 @@ Hạ tầng đã chốt (D5): MongoDB Replica Set, **Redis + BullMQ**, MinIO/S3.
 
 - Kanban theo tình trạng ở danh sách khách (kéo thả đổi tình trạng).
 
+### 6.4 Kết quả truy vết FR-14 ở `news-fire-crawl-manager` (T-04, v1.0.4)
+
+- `backfillEmbeddings`: đã đổi body inline thành `BackfillEmbeddingsDto` (`@IsInt @Min(1) @Max(200)`, tùy chọn, mặc định 50).
+- `crawlConfig`: **không vào filter Mongo**. Chỉ có ở `news-source.dto.ts` (`@IsObject`) và `news-source.schema.ts` (`Record<string, any>`); không dịch vụ nào đọc nó để dựng truy vấn. Kết luận: không cần whitelist; giữ nguyên, khóa chứa `.` ở body vẫn qua interceptor (có test).
+- `articles` (`analyze-raw`, `articles/save`): **có vào filter Mongo** qua `urlHash` của từng phần tử (`findOne({ urlHash })` trong `saveArticles`, `deleteMany({ urlHash: { $in, $nin } })` trong `deleteRawArticlesInSetNotIn`). Đã xử lý: DTO thêm `@IsObject({ each: true })`; `urlHash` chỉ nhận chuỗi (object kiểu `{ $ne }` bị bỏ qua/loại) ngay tại hai điểm vào filter. Interceptor toàn cục vẫn là lớp chặn đầu tiên.
+- Test: `news-manager.dto.spec.ts`, `custom-crawler.service.spec.ts`, `news-article.service.spec.ts`, và `modules/crm/crm-fr14-nosql-operator.integration.spec.ts` (đường có interceptor, kèm kiểm `AppModule` đăng ký `APP_INTERCEPTOR`).
+
 [← Về chỉ mục module](README.md)
