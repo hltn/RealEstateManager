@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
 import { useNotificationActions, useNotifications, useUnreadNotificationCount, type NotificationItem } from "@crm/api";
+import { useIsMobile } from "@crm/hooks/useIsMobile";
 import { formatVnRelative } from "@crm/lib/dateTime";
 import { getNotificationTypeLabel, resolveNotificationPath } from "@crm/lib/notifications";
 import { Dropdown } from "../ui/dropdown/Dropdown";
@@ -23,6 +24,8 @@ export default function NotificationDropdown() {
   const { data, isLoading, error } = useNotifications({ limit: PREVIEW_LIMIT }, isEnabled && isOpen);
   const actions = useNotificationActions();
   const navigate = useNavigate();
+  // FR-38: mobile (< md) bấm chuông sang màn `/notifications` (danh sách cuộn vô hạn), không mở popup.
+  const isMobile = useIsMobile();
 
   if (!isEnabled) return null;
 
@@ -42,7 +45,7 @@ export default function NotificationDropdown() {
         data-testid="notification-bell"
         aria-label={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : "Thông báo"}
         className="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full dropdown-toggle hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => (isMobile ? navigate("/notifications") : setIsOpen((current) => !current))}
       >
         {unreadCount > 0 && (
           <span data-testid="notification-bell-count" className="absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[11px] font-semibold leading-none text-white">

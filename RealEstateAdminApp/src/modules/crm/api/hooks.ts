@@ -473,6 +473,65 @@ export const useNotifications = (query: { isRead?: boolean; page?: number; limit
   return stateOf(result, EMPTY_PAGE<scheduling.NotificationItem>());
 };
 
+/** Số thông báo mỗi lần tải của danh sách cuộn vô hạn (FR-38). */
+export const NOTIFICATION_PAGE_SIZE = 20;
+
+const EMPTY_NOTIFICATIONS: scheduling.NotificationItem[] = [];
+
+/**
+ * `GET /notifications` theo trang, cuộn tới cuối thì tải thêm (FR-38): dùng cho màn `/notifications` (mobile) và dropdown desktop.
+ * - 20 mục mỗi trang, mới nhất trước; còn trang kế khi `meta.page < meta.totalPages`.
+ * - `loadMore` KHÔNG gọi trùng: bỏ qua khi đang tải (kể cả khi gọi liên tiếp trong cùng một nhịp trước lúc render lại).
+ * - Gộp các trang và loại trùng theo `id` (thông báo mới đến làm lệch trang có thể lặp mục ở biên).
+ * - Lỗi giữa chừng giữ nguyên các trang đã tải: `isLoadMoreError = true`, gọi lại `loadMore` để thử lại.
+ * Hook `useNotifications` cũ giữ nguyên. Đánh dấu đã đọc (`useNotificationActions`) làm tươi cả danh sách này lẫn `unread-count`
+ * vì cùng nằm dưới khóa `[...crmKeys.data, 'notifications']`.
+ */
+export const useInfiniteNotifications = (query: { isRead?: boolean } = {}, isEnabled = true) => {
+  const isReadFilter = query.isRead;
+  const result = useInfiniteQuery({
+    queryKey: [...crmKeys.data, 'notifications', 'infinite', isReadFilter ?? 'all'],
+    queryFn: ({ pageParam, signal }) => scheduling.fetchNotifications({ isRead: isReadFilter, page: pageParam, limit: NOTIFICATION_PAGE_SIZE }, signal),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined),
+    enabled: isEnabled,
+    staleTime: DATA_STALE_MS,
+    retry: retryTransient,
+  });
+  const { fetchNextPage, hasNextPage, isFetching } = result;
+
+  const items = useMemo<scheduling.NotificationItem[]>(() => {
+    if (!result.data) return EMPTY_NOTIFICATIONS;
+    const seen = new Set<string>();
+    return result.data.pages.flatMap((page) => page.data).filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
+  }, [result.data]);
+
+  // Khóa đồng bộ: IntersectionObserver có thể báo nhiều lần trước khi React kịp cập nhật `isFetchingNextPage`.
+  const isLoadingMoreRef = useRef(false);
+  const loadMore = useCallback(() => {
+    if (!hasNextPage || isFetching || isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    void fetchNextPage().finally(() => {
+      isLoadingMoreRef.current = false;
+    });
+  }, [fetchNextPage, hasNextPage, isFetching]);
+
+  return {
+    data: items,
+    total: result.data?.pages[0]?.meta.total ?? 0,
+    isLoading: result.isLoading,
+    isFetching,
+    isFetchingMore: result.isFetchingNextPage,
+    hasMore: Boolean(hasNextPage),
+    isError: result.isError,
+    /** Lỗi khi tải trang kế (các trang đã tải vẫn còn). */
+    isLoadMoreError: result.isFetchNextPageError,
+    error: result.isError ? toApiError(result.error) : null,
+    refetch: () => void result.refetch(),
+    loadMore,
+  };
+};
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Quản trị
 // ---------------------------------------------------------------------------------------------------------------------

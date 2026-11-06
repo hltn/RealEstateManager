@@ -1,27 +1,26 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
-import { Pagination } from '../../../../components/common/Pagination';
-import { useNotificationActions, useNotifications, type NotificationItem } from '@crm/api';
+import { useInfiniteNotifications, useNotificationActions, type NotificationItem } from '@crm/api';
 import { CrmUnavailable } from '@crm/components/CrmUnavailable';
+import { useLoadMoreOnVisible } from '@crm/hooks/useLoadMoreOnVisible';
 import { formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
 import { getNotificationTypeLabel, resolveNotificationPath } from '@crm/lib/notifications';
 import { BUTTON_OUTLINE_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS, TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
 import { toast } from './toast';
 
-const PAGE_SIZE = 20;
-
 type Filter = 'all' | 'unread';
 
 /**
  * Trang "Thông báo" (`/notifications`): hộp thông báo trong app của CHÍNH người dùng (05 §2.10), mới nhất trước, lọc chưa đọc,
- * đánh dấu đã đọc từng cái/tất cả, bấm để mở màn liên quan. Làm mới định kỳ (chưa có push — M7).
+ * đánh dấu đã đọc từng cái/tất cả, bấm để mở màn liên quan. Hiện 20 mục đầu, cuộn tới cuối tải thêm 20 (FR-38).
  * Nằm ngoài `/crm` (không có CrmProvider) nên dùng toast trực tiếp.
  */
 export const NotificationsScreen = () => {
   const [filter, setFilter] = useState<Filter>('all');
-  const [page, setPage] = useState(1);
-  const { data, isLoading, error, refetch } = useNotifications({ isRead: filter === 'unread' ? false : undefined, page, limit: PAGE_SIZE });
+  const { data: items, isLoading, isFetchingMore, hasMore, error, isLoadMoreError, refetch, loadMore } = useInfiniteNotifications({ isRead: filter === 'unread' ? false : undefined });
+  // Trang kế lỗi thì dừng tự tải (tránh vòng lặp), người dùng bấm "Thử lại".
+  const sentinelRef = useLoadMoreOnVisible(loadMore, hasMore && !isLoadMoreError);
   const actions = useNotificationActions();
   const navigate = useNavigate();
   const [isBusy, setIsBusy] = useState(false);
@@ -44,7 +43,8 @@ export const NotificationsScreen = () => {
     else toast.error(result.error.message);
   };
 
-  if (error && !isLoading) return <CrmUnavailable error={error} onRetry={refetch} />;
+  // Lỗi tải trang đầu (chưa có mục nào): màn lỗi toàn trang. Lỗi trang kế hoặc làm mới nền giữ nguyên danh sách đã tải.
+  if (error && !isLoading && items.length === 0) return <CrmUnavailable error={error} onRetry={refetch} />;
 
   return (
     <div className="flex w-full flex-col gap-6">
@@ -68,10 +68,7 @@ export const NotificationsScreen = () => {
               type="button"
               role="tab"
               aria-selected={isActive}
-              onClick={() => {
-                setFilter(value);
-                setPage(1);
-              }}
+              onClick={() => setFilter(value)}
               className={`${TAB_BASE_CLASS} ${isActive ? TAB_ACTIVE_CLASS : TAB_INACTIVE_CLASS}`}
             >
               {value === 'all' ? 'Tất cả' : 'Chưa đọc'}
@@ -87,7 +84,7 @@ export const NotificationsScreen = () => {
               <div key={index} className="h-20 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />
             ))}
           </div>
-        ) : data.data.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className={`${CARD_CLASS} flex flex-col items-center px-6 py-12 text-center`}>
             <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800">
               <Bell size={28} aria-hidden="true" />
@@ -96,7 +93,7 @@ export const NotificationsScreen = () => {
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {data.data.map((item) => (
+            {items.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"
@@ -119,7 +116,24 @@ export const NotificationsScreen = () => {
             ))}
           </ul>
         )}
-        <Pagination meta={data.meta} onPageChange={setPage} itemLabel="thông báo" />
+        {items.length > 0 && (
+          <div className="py-2 text-center text-theme-sm text-gray-500 dark:text-gray-400" aria-live="polite">
+            {isLoadMoreError ? (
+              <span className="inline-flex items-center gap-3">
+                Không tải thêm được thông báo.
+                <button type="button" onClick={loadMore} className={BUTTON_OUTLINE_CLASS}>
+                  Thử lại
+                </button>
+              </span>
+            ) : isFetchingMore ? (
+              <span aria-busy="true">Đang tải thêm…</span>
+            ) : hasMore ? (
+              <span ref={sentinelRef} data-testid="notifications-sentinel" className="block h-4" aria-hidden="true" />
+            ) : (
+              <span>Đã hết thông báo</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
