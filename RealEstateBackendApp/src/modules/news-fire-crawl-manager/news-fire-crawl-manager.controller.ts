@@ -20,6 +20,7 @@ import {
   BulkIdsDto,
   AnalyzeRawArticlesDto,
   SaveArticlesDto,
+  BackfillEmbeddingsDto,
   TriggerManualCrawlDto,
   AiPromptDto,
   TriggerManualAnalyzeDto,
@@ -1560,9 +1561,9 @@ export class NewsFireCrawlManagerController {
       'rate limit 100ms giua moi request API.',
   })
   @Post('articles/backfill-embeddings')
-  async backfillEmbeddings(@Body() body: { batchSize?: number }) {
+  async backfillEmbeddings(@Body() body: BackfillEmbeddingsDto) {
     const result = await this.newsArticleService.backfillEmbeddings(
-      body.batchSize || 50,
+      body.batchSize ?? 50,
     );
     return {
       message: 'Backfill embeddings completed',

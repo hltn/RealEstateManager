@@ -18,6 +18,7 @@ import {
   BulkIdsDto,
   AnalyzeRawArticlesDto,
   SaveArticlesDto,
+  BackfillEmbeddingsDto,
   TriggerManualAnalyzeDto,
   TriggerManualCrawlDto,
   GetRawArticlesQueryDto,
@@ -230,4 +231,41 @@ describe('AiPromptDto', () => {
     );
     expect(errors.length).toBeGreaterThan(0);
   });
+});
+
+describe('BackfillEmbeddingsDto (FR-14)', () => {
+  const check = (v: unknown) =>
+    validate(plainToInstance(BackfillEmbeddingsDto, v as object));
+
+  it('FR-14: bỏ trống batchSize → pass', async () => {
+    expect(await check({})).toHaveLength(0);
+  });
+
+  it.each([1, 50, 200])('FR-14: batchSize=%s → pass', async (n) => {
+    expect(await check({ batchSize: n })).toHaveLength(0);
+  });
+
+  it.each([
+    ['0', 0],
+    ['201', 201],
+    ['âm', -5],
+    ['số thực', 1.5],
+    ['chuỗi', '50'],
+    ['object $gt', { $gt: 0 }],
+    ['mảng', [50]],
+  ])('FR-14: batchSize %s → fail', async (_n, v) => {
+    expect((await check({ batchSize: v })).length).toBeGreaterThan(0);
+  });
+});
+
+describe('articles phải là mảng object (FR-14)', () => {
+  it.each([AnalyzeRawArticlesDto, SaveArticlesDto])(
+    'FR-14: %p từ chối phần tử không phải object',
+    async (Dto) => {
+      const errors = await validate(
+        plainToInstance(Dto, { articles: ['x', 1, null] }),
+      );
+      expect(errors.length).toBeGreaterThan(0);
+    },
+  );
 });

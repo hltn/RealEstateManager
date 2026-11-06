@@ -24,6 +24,8 @@ import { PiiCryptoModule } from './modules/crm/common/crypto/pii-crypto.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { MigrationsWarningModule } from './migrations/migrations-warning.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { NoSqlOperatorInterceptor } from './common/security/nosql-operator.interceptor';
 
 @Module({
   imports: [
@@ -68,7 +70,11 @@ import { MigrationsWarningModule } from './migrations/migrations-warning.module'
     KnowledgeArticlesModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // FR-14: chặn toán tử `$` ở body/query/params (chạy sau guard, trước ValidationPipe).
+    { provide: APP_INTERCEPTOR, useClass: NoSqlOperatorInterceptor },
+  ],
 })
 export class AppModule implements NestModule {
   /**

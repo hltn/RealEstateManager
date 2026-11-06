@@ -186,22 +186,33 @@ export class UsersService {
       lastLoginAt: null,
     };
 
-    if (teamIds.length === 0) {
-      return toUserPublicProfile(await this.userModel.create(newUser));
-    }
+    // Hai POST đồng thời cùng email cùng qua kiểm trước: chỉ unique index {email, deletedAt} bắt được (E11000 → 409).
+    try {
+      if (teamIds.length === 0) {
+        return toUserPublicProfile(await this.userModel.create(newUser));
+      }
 
-    // Có nhóm: kiểm nhóm + "khóa ghi" nhóm + tạo user trong CÙNG transaction để việc xóa nhóm đồng thời
-    // không để lại tài khoản mới trỏ vào nhóm đã xóa (xem TeamsService.setUserTeams).
-    assertRolesCanJoinTeam(roles);
-    const created = await withTransaction(this.connection, async (session) => {
-      await lockActiveTeams(this.teamModel, teamIds, session);
-      const [doc] = await this.userModel.create(
-        [{ ...newUser, teamId: teamIds[0], teamIds }],
-        { session },
+      // Có nhóm: kiểm nhóm + "khóa ghi" nhóm + tạo user trong CÙNG transaction để việc xóa nhóm đồng thời
+      // không để lại tài khoản mới trỏ vào nhóm đã xóa (xem TeamsService.setUserTeams).
+      assertRolesCanJoinTeam(roles);
+      const created = await withTransaction(
+        this.connection,
+        async (session) => {
+          await lockActiveTeams(this.teamModel, teamIds, session);
+          const [doc] = await this.userModel.create(
+            [{ ...newUser, teamId: teamIds[0], teamIds }],
+            { session },
+          );
+          return doc;
+        },
       );
-      return doc;
-    });
-    return toUserPublicProfile(created);
+      return toUserPublicProfile(created);
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        throw new ConflictException(EMAIL_IN_USE_MESSAGE);
+      }
+      throw error;
+    }
   }
 
   /**

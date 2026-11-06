@@ -1091,4 +1091,47 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       expect(userModel.create).not.toHaveBeenCalled();
     });
   });
+
+  describe('create — E11000 email trùng do race (FR-22)', () => {
+    const baseDto: CreateUserDto = {
+      email: 'race@example.com',
+      password: 'Staff@123456',
+      displayName: 'Race',
+      role: UserRole.STAFF,
+    };
+    const TEAM_ID = '65e1f0a1b2c3d4e5f6a7b8d1';
+    const dupError = Object.assign(new Error('E11000 duplicate key'), {
+      code: 11000,
+    });
+
+    it('FR-22: nhánh không teamIds — create ném E11000 → ConflictException(Email already in use)', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      userModel.create.mockRejectedValue(dupError);
+
+      const promise = service.create(baseDto);
+
+      await expect(promise).rejects.toThrow(ConflictException);
+      await expect(promise).rejects.toThrow('Email already in use');
+    });
+
+    it('FR-22: nhánh có teamIds — create trong transaction ném E11000 → ConflictException(Email already in use)', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      teamModel.countDocuments.mockReturnValue(chainable(1));
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
+      userModel.create.mockRejectedValue(dupError);
+
+      const promise = service.create({ ...baseDto, teamIds: [TEAM_ID] });
+
+      await expect(promise).rejects.toThrow(ConflictException);
+      await expect(promise).rejects.toThrow('Email already in use');
+    });
+
+    it('FR-22: lỗi khác E11000 vẫn ném nguyên (không bị nuốt thành 409)', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      const other = new Error('boom');
+      userModel.create.mockRejectedValue(other);
+
+      await expect(service.create(baseDto)).rejects.toBe(other);
+    });
+  });
 });
