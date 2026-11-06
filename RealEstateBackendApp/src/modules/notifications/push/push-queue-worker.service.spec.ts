@@ -8,8 +8,13 @@ const build = (enabled: boolean) => {
     upsertSchedulers: jest.fn().mockResolvedValue(undefined),
   };
   const cleanup = { run: jest.fn().mockResolvedValue({}) };
-  const worker = new PushQueueWorker(runtime as never, cleanup as never);
-  return { worker, runtime, cleanup };
+  const delivery = { process: jest.fn().mockResolvedValue(undefined) };
+  const worker = new PushQueueWorker(
+    runtime as never,
+    cleanup as never,
+    delivery as never,
+  );
+  return { worker, runtime, cleanup, delivery };
 };
 
 describe('PushQueueWorker (T-29)', () => {
@@ -53,15 +58,32 @@ describe('PushQueueWorker (T-29)', () => {
     expect(error).toHaveBeenCalledWith(expect.stringContaining('redis down'));
   });
 
-  it('job push.cleanup gọi dọn dẹp; job lạ (kể cả push.send chưa hỗ trợ) ném lỗi, không nuốt', async () => {
+  it('job push.cleanup gọi dọn dẹp; job lạ ném lỗi, không nuốt', async () => {
     const { worker, cleanup } = build(true);
 
     await worker.handle({ name: 'push.cleanup' });
     await expect(worker.handle({ name: 'khac' })).rejects.toThrow('khac');
-    await expect(worker.handle({ name: 'push.send' })).rejects.toThrow(
-      'push.send',
-    );
 
     expect(cleanup.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('job push.send giao cho PushDeliveryProcessor kèm attemptsMade/opts, lỗi của nó nổi lên', async () => {
+    const { worker, delivery } = build(true);
+    await worker.handle({
+      name: 'push.send',
+      data: { notificationId: 'n1' },
+      attemptsMade: 2,
+      opts: { attempts: 5 },
+    });
+    expect(delivery.process).toHaveBeenCalledWith({
+      data: { notificationId: 'n1' },
+      attemptsMade: 2,
+      opts: { attempts: 5 },
+    });
+
+    delivery.process.mockRejectedValueOnce(new Error('boom'));
+    await expect(
+      worker.handle({ name: 'push.send', data: {} }),
+    ).rejects.toThrow('boom');
   });
 });

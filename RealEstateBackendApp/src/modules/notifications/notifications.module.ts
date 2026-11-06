@@ -19,6 +19,7 @@ import {
   PushRegistrationThrottlerGuard,
 } from './push/push-registration-throttler.guard';
 import { PushCleanupService } from './push/push-cleanup.service';
+import { PushDeliveryProcessor } from './push/push-delivery.processor';
 import { PushQueueWorker } from './push/push-queue-worker.service';
 import {
   PushDelivery,
@@ -76,6 +77,7 @@ import {
     PushSubscriptionsService,
     PushSubscriptionManagementService,
     PushCleanupService,
+    PushDeliveryProcessor,
     PushQueueWorker,
     // Throttler đăng ký push tự chứa cấu hình + kho đếm, không phụ thuộc ThrottlerModule toàn cục.
     {

@@ -6,6 +6,10 @@ import {
 } from '../../../shared/queue/queue.constants';
 import { QueueRuntimeService } from '../../../shared/queue/queue-runtime.service';
 import { PushCleanupService } from './push-cleanup.service';
+import {
+  PushDeliveryProcessor,
+  PushSendJobLike,
+} from './push-delivery.processor';
 import { PushJobNames } from './push-queue.constants';
 
 /** Nhịp job lặp dọn subscription: 6 giờ (Architecture 5.6). */
@@ -13,8 +17,8 @@ export const PUSH_CLEANUP_EVERY_MS = 6 * 60 * 60 * 1000;
 
 /**
  * MỘT worker duy nhất cho queue `push` (`QueueNames.PUSH`), chọn việc theo tên job. Không đăng ký nhiều worker trên
- * cùng queue vì mỗi worker sẽ nhận cả job không phải của mình. Các job khác (`push.send` T-31, `push.sweep` T-32)
- * thêm nhánh vào `handle`. Đồng thời đăng ký job lặp `push.cleanup` bằng `upsertSchedulers` (id cố định, idempotent
+ * cùng queue vì mỗi worker sẽ nhận cả job không phải của mình. `push.send` giao cho `PushDeliveryProcessor`; các job
+ * khác (`push.sweep` T-32) thêm nhánh vào `handle`. Đồng thời đăng ký job lặp `push.cleanup` bằng `upsertSchedulers` (id cố định, idempotent
  * khi nhiều instance/khởi động lại cùng đăng ký). Chỉ chạy khi `QUEUE_WORKERS_ENABLED`.
  */
 @Injectable()
@@ -24,6 +28,7 @@ export class PushQueueWorker implements OnApplicationBootstrap {
   constructor(
     private readonly runtime: QueueRuntimeService,
     private readonly cleanup: PushCleanupService,
+    private readonly delivery: PushDeliveryProcessor,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -47,8 +52,17 @@ export class PushQueueWorker implements OnApplicationBootstrap {
       );
   }
 
-  async handle(job: Pick<Job, 'name'>): Promise<void> {
+  async handle(
+    job: Pick<Job, 'name'> & Partial<PushSendJobLike>,
+  ): Promise<void> {
     switch (job.name) {
+      case PushJobNames.SEND:
+        await this.delivery.process({
+          data: job.data ?? {},
+          attemptsMade: job.attemptsMade ?? 0,
+          opts: job.opts,
+        });
+        return;
       case PushJobNames.CLEANUP:
         await this.cleanup.run(new Date());
         return;
