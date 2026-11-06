@@ -16,7 +16,7 @@
 # -> build backend (kèm GIT_COMMIT) -> runner migration `reconcile` (PT-027, bước 6b): dry-run xem kế hoạch, rồi
 # `reconcile --apply --skip-version` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
 # rồi chạy migration 007+ còn chờ) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply`
-# (bước 8b, chỉ còn ghi `version`) -> bước bù mã danh mục (8c, v1.0.4): `node dist/migrations/crm-catalog-codes.cli.js --apply`
+# (bước 8b, chỉ còn ghi `version`; CÀI MỚI không có container Mongo: 6b/8b bỏ qua, bước 8a chạy `reconcile --apply` đủ 007/008/009 + version ngay sau liveness) -> bước bù mã danh mục (8c, v1.0.4): `node dist/migrations/crm-catalog-codes.cli.js --apply`
 # chạy MỌI lần deploy, ngay sau khi backend sống (idempotent, vài giây). Lệnh bù thoát mã khác 0 thì in cảnh báo ĐỎ, ghi log
 # $LOGS_DIR/deploy-catalog-codes-<thời-gian>.log và deploy THẤT BẠI (exit khác 0), KHÔNG im lặng. Lý do: khoảng trống giữa 6b
 # (migration 007/008 chạy khi image cũ còn phục vụ) và `up` có thể để lại vài bản ghi chỉ có id, chưa có `code`.
@@ -126,6 +126,7 @@ AUTO_MIGRATE="${DEPLOY_AUTO_MIGRATE:-1}"        # 1 = tự baseline + migrate sa
 ALLOW_DOWNGRADE="${DEPLOY_ALLOW_DOWNGRADE:-0}"  # 1 = chấp nhận CỐ Ý version code < version DB
 PLAN_ONLY=0       # =1 khi có --plan-only: chạy đến hết `reconcile` dry-run rồi thoát (không backup, không up)
 DOWNGRADE_ACTIVE=0     # =1 khi runner báo downgrade và DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua migrate và việc ghi version
+FRESH_INSTALL=0        # =1 khi chưa có container Mongo (triển khai mới, DB trống): 6b/8b không chạy được, bước 8a bù bằng reconcile sau liveness (T-19)
 MIGRATION_GATE_RAN=0   # =1 khi đã đọc được trạng thái migration (Mongo healthy): chỉ khi đó mới ghi phiên bản sau deploy
 DB_EMPTY_NO_BACKUP=0   # =1 khi Mongo đã chạy nhưng DB `realestate` CHƯA có dữ liệu (không có `users`, không collection nào có document): bỏ qua backup
 
@@ -383,7 +384,7 @@ backup_mongo() {
   local state
   state="$(docker inspect -f '{{.State.Status}}' "$MONGO_CONTAINER" 2>/dev/null || true)"
   if [[ -z "$state" ]]; then
-    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua mongodump vì chưa có dữ liệu để sao lưu."
+    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua mongodump vì không có container để dump (nếu volume Mongo cũ còn dữ liệu, migration cũng bị bỏ qua: xem migration_gate)."
     return 0
   fi
   [[ "$state" == "running" ]] || die "Container $MONGO_CONTAINER ở trạng thái '$state'. Khởi động nó trước (docker compose --env-file $ENV_FILE up -d mongo) để sao lưu được; không deploy khi không có backup."
@@ -467,6 +468,15 @@ run_migration_cli() { compose run --rm --no-deps -T backend node dist/migrations
 
 # Lệnh runner viết sẵn để IN cho người dùng chạy tay (không chạy ở đây).
 runner_cmd_hint() { printf 'docker compose --env-file %s run --rm --no-deps backend node dist/migrations/cli.js' "$ENV_FILE"; }
+
+# Có volume dữ liệu Mongo của project compose hiện hành (`<project>_mongo_data`) không. Project: COMPOSE_PROJECT_NAME, rồi nhãn
+# compose của container backend đang có, rồi tên mặc định. Dùng phân biệt "cài mới thật" với "container bị xóa nhưng dữ liệu còn".
+mongo_volume_exists() {
+  local project="${COMPOSE_PROJECT_NAME:-}"
+  [[ -n "$project" ]] || project="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
+  [[ -n "$project" ]] || project="$DEFAULT_PROJECT"
+  [[ -n "$(docker volume ls -q --filter "name=^${project}_mongo_data\$" 2>/dev/null || true)" ]]
+}
 
 mongo_is_healthy() {
   [[ "$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')" == "healthy" ]]
@@ -662,7 +672,14 @@ migration_gate() {
     if docker inspect "$MONGO_CONTAINER" >/dev/null 2>&1; then
       die "Mongo ($MONGO_CONTAINER) đang chạy nhưng chưa healthy: không đọc được trạng thái migration. Chờ nó healthy (docker compose --env-file $ENV_FILE ps) rồi chạy lại. Stack chưa bị đổi."
     fi
-    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua migration. Sau khi stack lên, xem: $cli status"
+    # Container có thể đã bị xóa (compose down/rm) mà volume vẫn giữ DỮ LIỆU THẬT: khi đó KHÔNG coi là DB trống (8a sẽ
+    # chạy reconcile --apply không backup). Chỉ cài mới khi không có container VÀ không có volume Mongo của project.
+    if mongo_volume_exists; then
+      warn "Chưa có container $MONGO_CONTAINER NHƯNG đã có volume Mongo của project (dữ liệu có thể còn): KHÔNG coi là cài mới, bỏ qua migration và bước 8a (không chạy migration khi chưa backup). Khởi động Mongo rồi chạy lại deploy, hoặc xem: $cli status"
+      return 0
+    fi
+    FRESH_INSTALL=1
+    warn "Chưa có container $MONGO_CONTAINER và chưa có volume Mongo (triển khai mới, DB trống): bỏ qua migration trước \`up\`; sau khi stack lên và backend sống, bước 8a sẽ chạy reconcile --apply (007/008/009 + ghi version) trong CÙNG lần deploy này. Xem trạng thái: $cli status"
     return 0
   fi
 
@@ -681,6 +698,7 @@ migration_gate() {
 # Downgrade có chủ ý: bỏ qua hẳn (không ghi, không hạ version). Ở chế độ --no-migrate, nếu DB có version cao hơn thì runner
 # trả mã 5 và cũng không ghi gì: chỉ cảnh báo.
 sync_system_version() {
+  (( FRESH_INSTALL == 1 )) && return 0   # cài mới đã được fresh_install_reconcile (8a) xử lý, gồm cả ghi version
   (( MIGRATION_GATE_RAN == 1 )) || { log "Bỏ qua ghi phiên bản vào \`system\` (chưa đọc được trạng thái migration trước deploy)."; return 0; }
   if (( DOWNGRADE_ACTIVE == 1 )); then
     warn "Downgrade có chủ ý: KHÔNG ghi và KHÔNG hạ \`version\` trong \`system\` (DB giữ version cao hơn)."
@@ -692,6 +710,20 @@ sync_system_version() {
   if (( rc != 0 )); then
     warn "Không ghi được phiên bản vào collection \`system\` (mã $rc; backend vẫn chạy). Ghi lại sau: $(runner_cmd_hint) reconcile --apply --by cli"
   fi
+}
+
+# Bước 8a (T-19): CÀI MỚI (6b bỏ qua vì chưa có container Mongo, nên chưa chạy 007/008/009 và chưa ghi version). Sau `up` + liveness,
+# chạy `reconcile --apply --by deploy` (không --skip-version): trên DB mới tinh runner chạy hết migration chờ và ghi `version`. DB trống
+# nên không cần backup. Khác 8b: lỗi => `die` (deploy báo lỗi, exit khác 0), vì cài mới mà thiếu 009/version là trạng thái dở dang.
+fresh_install_reconcile() {
+  (( FRESH_INSTALL == 1 )) || return 0
+  local rc=0
+  log "Bước 8a (cài mới): reconcile --apply --by deploy (chạy 007/008/009 và ghi phiên bản trong cùng lần deploy) ..."
+  run_migration_cli reconcile --apply --by deploy || rc=$?
+  if (( rc != 0 )); then
+    die "Bước 8a (cài mới) reconcile --apply thất bại (mã $rc): backend vẫn chạy nhưng migration/phiên bản chưa đủ. Xem: $(runner_cmd_hint) status ; sửa nguyên nhân rồi chạy: $(runner_cmd_hint) reconcile --apply --by cli"
+  fi
+  log "Bước 8a xong: migration và phiên bản đã ghi."
 }
 
 # Bước 8c (v1.0.4, FR-40/FR-46): bù mã danh mục SAU `up`, khi backend đã sống, MỌI lần deploy. Runner 007/008 chạy ở 6b khi image cũ
@@ -818,6 +850,7 @@ main() {
 
   wait_mongo_healthy
   wait_backend_liveness
+  fresh_install_reconcile
   sync_system_version
   apply_catalog_codes
 
