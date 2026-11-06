@@ -5,8 +5,10 @@
  * Dùng mongodb-memory-server ở chế độ replica set (lần đầu tự tải binary mongod về cache).
  */
 import mongoose, { Connection, InferSchemaType, Model, Schema } from 'mongoose';
+import { MongoServerError } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { createMemoryReplSet } from './memory-replset.util';
+import { registerAfterCommit } from './after-commit.util';
 import { withTransaction } from './with-transaction.util';
 
 jest.setTimeout(180_000);
@@ -75,6 +77,68 @@ describe('withTransaction (MongoDB Replica Set)', () => {
     });
 
     expect(visibleOutside).toBe(0);
+    expect(await Customer.countDocuments()).toBe(1);
+  });
+
+  it('FR-03 afterCommit: chỉ chạy sau commit và thấy dữ liệu đã commit', async () => {
+    let seen = -1;
+    await withTransaction(connection, async (session) => {
+      await Customer.create([{ name: 'Dũng' }], { session });
+      void registerAfterCommit(session, async () => {
+        seen = await Customer.countDocuments();
+      });
+      expect(seen).toBe(-1);
+    });
+
+    expect(seen).toBe(1);
+  });
+
+  it('FR-03 afterCommit: rollback thì callback không chạy', async () => {
+    const callback = jest.fn();
+    await expect(
+      withTransaction(connection, async (session) => {
+        await Customer.create([{ name: 'Em' }], { session });
+        void registerAfterCommit(session, callback);
+        throw new Error('hủy');
+      }),
+    ).rejects.toThrow('hủy');
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(await Customer.countDocuments()).toBe(0);
+  });
+
+  it('FR-03 afterCommit: retry work (TransientTransactionError) không chạy callback hai lần', async () => {
+    const callback = jest.fn();
+    let attempts = 0;
+    await withTransaction(connection, async (session) => {
+      attempts += 1;
+      await Customer.create([{ name: 'Phúc' }], { session });
+      void registerAfterCommit(session, callback);
+      if (attempts === 1) {
+        const transient = new MongoServerError({
+          message: 'giả lập transient',
+        });
+        transient.addErrorLabel('TransientTransactionError');
+        throw transient;
+      }
+    });
+
+    expect(attempts).toBe(2);
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(await Customer.countDocuments()).toBe(1);
+  });
+
+  it('FR-03 afterCommit: callback ném lỗi không làm hỏng dữ liệu đã commit', async () => {
+    await expect(
+      withTransaction(connection, async (session) => {
+        await Customer.create([{ name: 'Giang' }], { session });
+        void registerAfterCommit(session, () => {
+          throw new Error('enqueue lỗi');
+        });
+        return 'ok';
+      }),
+    ).resolves.toBe('ok');
+
     expect(await Customer.countDocuments()).toBe(1);
   });
 });
