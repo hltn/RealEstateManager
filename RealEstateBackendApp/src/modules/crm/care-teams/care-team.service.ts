@@ -27,7 +27,9 @@ import {
   NotificationPriority,
   NotificationType,
 } from '../../notifications/notification.constants';
-import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../notifications/notification-dispatcher.service';
+import type { PushOrigin } from '../../notifications/push/push-catalog';
+import { requestContextStorage } from '../../../common/services/request-context.service';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
 import {
   careTeamLabels,
@@ -44,6 +46,7 @@ import {
   planChangePrimary,
   planRemoveMember,
   assertCareTeamInvariant,
+  buildBulkPushGroupKey,
 } from './care-team.rules';
 import {
   AddCareTeamMembersDto,
@@ -60,6 +63,8 @@ export interface CareTeamMutation {
   plan: (careTeam: CareTeamEntry[], now: Date) => CareTeamChange;
   restrictToActorScope: boolean;
   source: CrmAuditSource;
+  /** Nguồn của thay đổi: quyết có push `CUSTOMER_ASSIGNED` hay không và khóa gộp đợt hàng loạt (Architecture 5.2). */
+  origin: PushOrigin;
 }
 
 /**
@@ -77,7 +82,7 @@ export class CareTeamService {
     private readonly refs: CustomerRefsService,
     private readonly assignees: CareTeamAssigneesService,
     private readonly audit: CrmAuditLogService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
   ) {}
 
   async get(jwt: JwtPayload, id: string): Promise<CareTeamResponseDto> {
@@ -120,6 +125,7 @@ export class CareTeamService {
         ),
       restrictToActorScope: true,
       source,
+      origin: 'TEAM_ADD',
     }));
   }
 
@@ -156,6 +162,7 @@ export class CareTeamService {
         ),
       restrictToActorScope: true,
       source,
+      origin: 'TEAM_ADD',
     }));
   }
 
@@ -177,6 +184,7 @@ export class CareTeamService {
         planChangePrimary(careTeam, oid(dto.userId), ctx.actor.userId, now),
       restrictToActorScope: true,
       source,
+      origin: 'TEAM_ADD',
     }));
   }
 
@@ -290,39 +298,62 @@ export class CareTeamService {
       customerId,
       before.fullName,
       change,
-      primary?.userId ?? null,
+      before.__v + 1,
+      mutation.origin,
       session,
     );
     return toCareTeamResponse(change.careTeam, maps.users);
   }
 
-  /** Báo người MỚI được thêm vào nhóm (trừ chính người thực hiện), cùng transaction với việc thêm; phụ trách chính `HIGH`. */
+  /**
+   * Báo người MỚI được thêm vào nhóm (trừ chính người thực hiện), cùng transaction với việc thêm; phụ trách chính
+   * `HIGH`. Mỗi người một yêu cầu vì `careRole` (lấy từ `change.careTeam`) quyết có push hay không: chỉ người
+   * cùng phụ trách (`MEMBER`) mới có push. `dedupeKey` gắn `__v` SAU thay đổi nên mỗi lần thêm là một thông báo
+   * mới còn retry thì không trùng. Thêm hàng loạt gộp đợt theo `X-Request-ID` (`groupKey`) để worker giới hạn
+   * 3 push/người/đợt (T-33).
+   */
   private async notifyAssigned(
     ctx: AccessContext,
     customerId: string,
     customerName: string,
     change: CareTeamChange,
-    primaryId: Types.ObjectId | null,
+    versionAfter: number,
+    origin: PushOrigin,
     session: ClientSession,
   ): Promise<void> {
     const recipients = change.addedUserIds.filter(
       (userId) => !userId.equals(ctx.actor.userId),
     );
-    await this.notifications.createMany(
-      recipients.map((userId) => ({
-        userId,
-        type: NotificationType.CUSTOMER_ASSIGNED,
-        title: 'Bạn được phân chăm sóc khách mới',
-        body: `Bạn được phân chăm sóc khách ${customerName}`,
-        priority:
-          primaryId && userId.equals(primaryId)
-            ? NotificationPriority.HIGH
-            : NotificationPriority.NORMAL,
-        data: {
-          customerId: oid(customerId),
-          deepLink: `/crm/customers/${customerId}`,
-        },
-      })),
+    const primaryAfter = findPrimary(change.careTeam);
+    const requestId = requestContextStorage.getStore()?.requestId;
+    const groupKey =
+      origin === 'BULK_ADD' ? buildBulkPushGroupKey(requestId) : undefined;
+    await this.notifications.dispatch(
+      recipients.map((userId) => {
+        const isPrimary = !!primaryAfter && userId.equals(primaryAfter.userId);
+        return {
+          type: NotificationType.CUSTOMER_ASSIGNED,
+          recipientIds: [userId],
+          inApp: {
+            title: 'Bạn được phân chăm sóc khách mới',
+            body: `Bạn được phân chăm sóc khách ${customerName}`,
+            priority: isPrimary
+              ? NotificationPriority.HIGH
+              : NotificationPriority.NORMAL,
+          },
+          vars: { actorName: ctx.actor.displayName, customerName },
+          data: {
+            customerId: oid(customerId),
+            deepLink: `/crm/customers/${customerId}`,
+          },
+          context: {
+            careRole: isPrimary ? ('PRIMARY' as const) : ('MEMBER' as const),
+            origin,
+            ...(groupKey && { groupKey }),
+          },
+          dedupeKey: `ASSIGN:ADD:${customerId}:${versionAfter}`,
+        };
+      }),
       session,
     );
   }

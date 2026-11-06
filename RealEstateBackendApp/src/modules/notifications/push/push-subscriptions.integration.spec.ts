@@ -26,6 +26,8 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
 import { FeatureFlagModule } from '../../../shared/feature-flags/feature-flag.module';
+import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';
+import { createRedisClientStub } from '../../../shared/redis/redis-client.fixture';
 import {
   EncryptedPayload,
   PiiCryptoService,
@@ -135,7 +137,11 @@ describe('T-26 POST /push-subscriptions (FR-01)', () => {
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
-    }).compile();
+    })
+      // Không cần Redis thật: các ca ở đây không dùng bộ đếm đợt push (T-33).
+      .overrideProvider(REDIS_CLIENT)
+      .useValue(createRedisClientStub())
+      .compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),

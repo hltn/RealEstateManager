@@ -1,16 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
-import { formatVnDateTime } from '../../../common/utils/timezone.util';
+import {
+  formatVnDateTime,
+  formatVnShortDateTime,
+} from '../../../common/utils/timezone.util';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import {
   NotificationPriority,
   NotificationType,
 } from '../../notifications/notification.constants';
 import {
-  NewNotification,
-  NotificationsService,
-} from '../../notifications/notifications.service';
+  NotificationDispatcher,
+  NotificationRequest,
+} from '../../notifications/notification-dispatcher.service';
 import {
   APPOINTMENT_TYPE_LABELS,
   AppointmentStatus,
@@ -49,7 +52,7 @@ type ReminderLean = Reminder & { _id: Types.ObjectId };
 
 /** Kết quả đánh giá một nhắc việc trong transaction. */
 type Decision =
-  | { action: 'SEND'; notifications: NewNotification[] }
+  | { action: 'SEND'; notifications: NotificationRequest[] }
   | { action: 'CANCEL' };
 
 /** Nhắc việc không còn thuộc về lần nhận này (đã bị hủy/nhận lại): bỏ qua im lặng, không phải lỗi. */
@@ -92,7 +95,7 @@ export class ReminderDispatchService {
     @InjectModel(PersonaField.name)
     private readonly personaFieldModel: Model<PersonaFieldDocument>,
     private readonly customers: CustomersRepository,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
   ) {}
 
   async dispatchDue(now = new Date()): Promise<DispatchResult> {
@@ -172,7 +175,7 @@ export class ReminderDispatchService {
         if (marked.matchedCount !== 1) throw new ClaimLostError();
 
         if (decision.action === 'CANCEL') return 'canceled' as const;
-        await this.notifications.createMany(decision.notifications, session);
+        await this.notifications.dispatch(decision.notifications, session);
         return 'sent' as const;
       });
     } catch (error) {
@@ -264,6 +267,12 @@ export class ReminderDispatchService {
       title: 'Sắp đến giờ hẹn',
       body: `${APPOINTMENT_TYPE_LABELS[appointment.type]} với khách ${customer.fullName} lúc ${formatVnDateTime(appointment.startAt)}`,
       appointmentId: appointment._id,
+      // Chỉ `APPOINTMENT_DUE` thuộc `PUSH_CATALOG` nên chỉ loại này có push; giờ hẹn dạng `HH:mm dd/MM`.
+      vars: {
+        appointmentTypeLabel: APPOINTMENT_TYPE_LABELS[appointment.type],
+        customerName: customer.fullName,
+        appointmentTimeLabel: formatVnShortDateTime(appointment.startAt),
+      },
     });
   }
 
@@ -353,6 +362,7 @@ export class ReminderDispatchService {
       title: string;
       body: string;
       appointmentId?: Types.ObjectId;
+      vars?: NotificationRequest['vars'];
     },
   ): Decision {
     const team = new Map(
@@ -374,14 +384,17 @@ export class ReminderDispatchService {
     return {
       action: 'SEND',
       notifications: [...wanted.values()].map((userId) => ({
-        userId,
         type: content.type,
-        title: content.title,
-        body: content.body,
-        priority:
-          primaryId && userId.equals(primaryId)
-            ? NotificationPriority.HIGH
-            : NotificationPriority.NORMAL,
+        recipientIds: [userId],
+        inApp: {
+          title: content.title,
+          body: content.body,
+          priority:
+            primaryId && userId.equals(primaryId)
+              ? NotificationPriority.HIGH
+              : NotificationPriority.NORMAL,
+        },
+        ...(content.vars && { vars: content.vars }),
         data: {
           customerId: customer._id,
           ...(content.appointmentId && {

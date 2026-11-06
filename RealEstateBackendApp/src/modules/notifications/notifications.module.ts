@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerStorageService } from '@nestjs/throttler';
 import { FeatureFlagService } from '../../shared/feature-flags/feature-flag.service';
+import { RedisModule } from '../../shared/redis/redis.module';
 import { QueueRuntimeModule } from '../../shared/queue/queue-runtime.module';
 import { PiiCryptoModule } from '../crm/common/crypto/pii-crypto.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
@@ -20,6 +21,8 @@ import {
 } from './push/push-registration-throttler.guard';
 import { PushCleanupService } from './push/push-cleanup.service';
 import { PushDeliveryProcessor } from './push/push-delivery.processor';
+import { PushGroupLimiter } from './push/push-group-limiter.service';
+import { PushSweepService } from './push/push-sweep.service';
 import { PushQueueWorker } from './push/push-queue-worker.service';
 import {
   PushDelivery,
@@ -44,7 +47,7 @@ import {
 
 /**
  * Thông báo dùng chung toàn app (M5, tài liệu 04 mục 2.3 `notifications`): hộp thông báo trong ứng dụng, cài đặt
- * thông báo, điểm ghi thông báo cho module khác (`NotificationsService.createMany`) và cổng push (`WebPushProvider` khi bật cờ + đủ `VAPID_*`, ngược lại Noop).
+ * thông báo, điểm ghi thông báo cho module khác (`NotificationDispatcher`) và cổng push (`WebPushProvider` khi bật cờ + đủ `VAPID_*`, ngược lại Noop).
  * Không phụ thuộc module CRM nào nên module CRM nào cũng import được mà không tạo vòng.
  * `PUSH_PROVIDER` do `createPushProvider` chọn một lần lúc khởi động (Architecture 5.4).
  */
@@ -64,6 +67,8 @@ import {
     PiiCryptoModule,
     // Xếp job push.send sau commit (T-23).
     QueueRuntimeModule,
+    // Bộ đếm giới hạn push theo đợt hàng loạt (T-33).
+    RedisModule,
   ],
   controllers: [
     NotificationsController,
@@ -78,6 +83,8 @@ import {
     PushSubscriptionManagementService,
     PushCleanupService,
     PushDeliveryProcessor,
+    PushGroupLimiter,
+    PushSweepService,
     PushQueueWorker,
     // Throttler đăng ký push tự chứa cấu hình + kho đếm, không phụ thuộc ThrottlerModule toàn cục.
     {

@@ -7,6 +7,20 @@ import { CrmActor } from '../common/access/crm-actor';
 import { CareRole } from '../customers/customer.constants';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
 
+/** Độ dài tối đa của phần `requestId` trong `pushGroupKey` (header `X-Request-ID` do client gửi, không tin độ dài). */
+export const MAX_PUSH_GROUP_REQUEST_ID_LENGTH = 128;
+
+/**
+ * Khóa đợt hàng loạt `BULK:{requestId}` để worker giới hạn 3 push/người/đợt (T-33). `requestId` bị cắt còn
+ * `MAX_PUSH_GROUP_REQUEST_ID_LENGTH` ký tự; thiếu/rỗng (ngoài ngữ cảnh HTTP) thì trả `undefined` (không giới hạn).
+ */
+export const buildBulkPushGroupKey = (
+  requestId: string | undefined,
+): string | undefined =>
+  requestId
+    ? `BULK:${requestId.slice(0, MAX_PUSH_GROUP_REQUEST_ID_LENGTH)}`
+    : undefined;
+
 /** Kết quả một thay đổi nhóm chăm sóc: nhóm mới + người mới vào/ra + phụ trách chính có đổi không. */
 export interface CareTeamChange {
   careTeam: CareTeamEntry[];

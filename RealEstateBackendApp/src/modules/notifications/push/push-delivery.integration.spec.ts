@@ -1,7 +1,8 @@
 /**
  * INTEGRATION — T-31 worker `push.send` (`PushDeliveryProcessor` qua router `PushQueueWorker.handle`) trên MongoDB
  * Replica Set thật (mongodb-memory-server). Nhà cung cấp push là bản giả (không gọi mạng), hàng đợi BullMQ là bản giả
- * (không cần Redis). Retry của BullMQ được mô phỏng bằng cách gọi `handle` lại với `attemptsMade` tăng dần.
+ * (không gọi Redis). T-33 (giới hạn 3 push/người/đợt) dùng Redis THẬT qua biến môi trường `REDIS_URL` (bắt buộc đặt, ví dụ
+ * container tạm `redis://127.0.0.1:16399`), mỗi lần chạy dùng tiền tố khóa riêng. Retry của BullMQ được mô phỏng bằng cách gọi `handle` lại với `attemptsMade` tăng dần.
  *
  * Chạy: npx jest --testRegex ".*\.integration\.spec\.ts$" --testPathIgnorePatterns "/node_modules/" --runInBand push-delivery
  */
@@ -11,12 +12,19 @@ import { getConnectionToken, MongooseModule } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnrecoverableError } from 'bullmq';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type Redis from 'ioredis';
 import { Connection, Types } from 'mongoose';
 import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
 import { FeatureFlagModule } from '../../../shared/feature-flags/feature-flag.module';
 import { QueueRuntimeService } from '../../../shared/queue/queue-runtime.service';
+import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';
 import { PiiCryptoService } from '../../crm/common/crypto/pii-crypto.service';
-import { NotificationPushStatus } from '../notification.constants';
+import {
+  NotificationPriority,
+  NotificationPushStatus,
+  NotificationType,
+} from '../notification.constants';
+import { NotificationDispatcher } from '../notification-dispatcher.service';
 import { NotificationsModule } from '../notifications.module';
 import * as renderer from './push-content.renderer';
 import { buildPushAuthAad } from './push-endpoint.policy';
@@ -46,6 +54,9 @@ describe('T-31 push.send worker (tích hợp)', () => {
   let connection: Connection;
   let worker: PushQueueWorker;
   let crypto: PiiCryptoService;
+  let dispatcher: NotificationDispatcher;
+  let redis: Redis;
+  const queueAdd = jest.fn();
   /** Kết quả giả theo `endpoint`; không khai báo thì `SENT`. */
   const outcomes = new Map<string, PushSendResult>();
   const sent: Array<{ endpoint: string; auth: string; payload: unknown }> = [];
@@ -161,6 +172,8 @@ describe('T-31 push.send worker (tích hợp)', () => {
     process.env.FEATURE_CRM_ENABLED = 'true';
     process.env.FEATURE_CRM_PUSH = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
+    // Khóa Redis riêng cho lần chạy, không đụng khóa của môi trường khác dùng chung Redis.
+    process.env.REDIS_KEY_PREFIX = `it-t33-${Date.now()}:`;
     replSet = await createMemoryReplSet();
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -180,7 +193,7 @@ describe('T-31 push.send worker (tích hợp)', () => {
       .overrideProvider(QueueRuntimeService)
       .useValue({
         isEnabled: () => false,
-        add: jest.fn(),
+        add: queueAdd,
         registerWorker: jest.fn(),
         upsertSchedulers: jest.fn().mockResolvedValue(undefined),
       })
@@ -189,6 +202,8 @@ describe('T-31 push.send worker (tích hợp)', () => {
     connection = moduleRef.get<Connection>(getConnectionToken());
     worker = moduleRef.get(PushQueueWorker);
     crypto = moduleRef.get(PiiCryptoService);
+    dispatcher = moduleRef.get(NotificationDispatcher);
+    redis = moduleRef.get<Redis>(REDIS_CLIENT);
     await Promise.all(
       connection.modelNames().map((name) => connection.model(name).init()),
     );
@@ -196,6 +211,7 @@ describe('T-31 push.send worker (tích hợp)', () => {
 
   afterAll(async () => {
     delete process.env.FEATURE_CRM_PUSH;
+    delete process.env.REDIS_KEY_PREFIX;
     await moduleRef?.close();
     await replSet?.stop();
   });
@@ -203,6 +219,7 @@ describe('T-31 push.send worker (tích hợp)', () => {
   beforeEach(() => {
     process.env.FEATURE_CRM_PUSH = 'true';
     outcomes.clear();
+    queueAdd.mockReset();
     sent.length = 0;
     send.mockClear();
     logSpies = [
@@ -525,5 +542,190 @@ describe('T-31 push.send worker (tích hợp)', () => {
     expect(all).not.toContain('fcm.googleapis.com');
     expect(all).not.toContain('Minh');
     expect(all).not.toContain('auth-a');
+  });
+
+  describe('T-33 giới hạn 3 push/người/đợt hàng loạt (Redis thật)', () => {
+    /** Mô phỏng `ASSIGN` hàng loạt: mỗi khách một yêu cầu `BULK_ADD`, cùng `groupKey` và cùng người nhận. */
+    const bulkAssign = async (
+      recipientId: Types.ObjectId,
+      groupKey: string,
+      customers: number,
+    ): Promise<Types.ObjectId[]> => {
+      queueAdd.mockClear();
+      const tag = new Types.ObjectId().toHexString();
+      for (let index = 0; index < customers; index += 1) {
+        const customerId = new Types.ObjectId();
+        await dispatcher.dispatch([
+          {
+            type: NotificationType.CUSTOMER_ASSIGNED,
+            recipientIds: [recipientId],
+            inApp: {
+              title: 'Bạn được thêm vào nhóm chăm sóc',
+              body: `Khách số ${index + 1}`,
+              priority: NotificationPriority.NORMAL,
+            },
+            vars: { actorName: 'Lan', customerName: `Khách ${index + 1}` },
+            data: {
+              customerId,
+              deepLink: `/crm/customers/${String(customerId)}`,
+            },
+            context: { careRole: 'MEMBER', origin: 'BULK_ADD', groupKey },
+            dedupeKey: `T33:${tag}:${String(customerId)}`,
+          },
+        ]);
+      }
+      return queueAdd.mock.calls.map(
+        (call) =>
+          new Types.ObjectId(
+            (call[2] as { notificationId: string }).notificationId,
+          ),
+      );
+    };
+
+    const statuses = async (ids: Types.ObjectId[]) =>
+      (
+        await col('notifications')
+          .find({ _id: { $in: ids } })
+          .toArray()
+      ).map((doc) => doc.pushStatus as string);
+    const counter = (userId: Types.ObjectId, groupKey: string) =>
+      redis.get(`push:group:${String(userId)}:${groupKey}`);
+
+    it('bulk ASSIGN 6 khách cho cùng một người: đúng 3 push, 3 còn lại SKIPPED, đủ 6 thông báo trong hộp', async () => {
+      const userId = await createUser();
+      await createSubscription(userId, 'a');
+      const ids = await bulkAssign(userId, 'BULK:req-6', 6);
+      expect(ids).toHaveLength(6);
+
+      for (const id of ids) await run(id);
+
+      expect(send).toHaveBeenCalledTimes(3);
+      const result = await statuses(ids);
+      expect(result.filter((x) => x === 'SENT')).toHaveLength(3);
+      expect(result.filter((x) => x === 'SKIPPED')).toHaveLength(3);
+      expect(await col('notifications').countDocuments({ userId })).toBe(6);
+      expect(await counter(userId, 'BULK:req-6')).toBe('6');
+      // Phần bị bỏ qua không claim, không gọi nhà cung cấp.
+      expect(await col('push_deliveries').countDocuments({ userId })).toBe(3);
+    });
+
+    it('chạy lại job đã xong sau khi vượt hạn mức: không gửi thêm, không đếm lại', async () => {
+      const userId = await createUser();
+      await createSubscription(userId, 'a');
+      const ids = await bulkAssign(userId, 'BULK:rerun', 4);
+      for (const id of ids) await run(id);
+      for (const id of ids) await run(id);
+      expect(send).toHaveBeenCalledTimes(3);
+      expect(await counter(userId, 'BULK:rerun')).toBe('4');
+    });
+
+    it('đợt khác dùng bộ đếm khác; người khác trong cùng đợt có bộ đếm riêng', async () => {
+      const userId = await createUser();
+      const otherId = await createUser();
+      await createSubscription(userId, 'a');
+      await createSubscription(otherId, 'b');
+
+      for (const id of await bulkAssign(userId, 'BULK:batch-1', 4)) {
+        await run(id);
+      }
+      expect(send).toHaveBeenCalledTimes(3);
+
+      for (const id of await bulkAssign(userId, 'BULK:batch-2', 4)) {
+        await run(id);
+      }
+      expect(send).toHaveBeenCalledTimes(6);
+
+      for (const id of await bulkAssign(otherId, 'BULK:batch-1', 4)) {
+        await run(id);
+      }
+      expect(send).toHaveBeenCalledTimes(9);
+
+      expect(await counter(userId, 'BULK:batch-1')).toBe('4');
+      expect(await counter(userId, 'BULK:batch-2')).toBe('4');
+      expect(await counter(otherId, 'BULK:batch-1')).toBe('4');
+    });
+
+    it('bộ đếm có hạn 10 phút (EXPIRE)', async () => {
+      const userId = await createUser();
+      await createSubscription(userId, 'a');
+      const [id] = await bulkAssign(userId, 'BULK:ttl', 1);
+      await run(id);
+      const ttl = await redis.ttl(`push:group:${String(userId)}:BULK:ttl`);
+      expect(ttl).toBeGreaterThan(590);
+      expect(ttl).toBeLessThanOrEqual(600);
+    });
+
+    it('retry của cùng một thông báo (TRANSIENT) không tăng bộ đếm lần hai', async () => {
+      const userId = await createUser();
+      const subscription = await createSubscription(userId, 'a');
+      outcomes.set(subscription.endpoint, {
+        outcome: 'TRANSIENT',
+        statusCode: 503,
+      });
+      const [id] = await bulkAssign(userId, 'BULK:retry', 1);
+
+      await expect(run(id, 0)).rejects.toThrow('PUSH_TRANSIENT');
+      await expect(run(id, 1)).rejects.toThrow('PUSH_TRANSIENT');
+      outcomes.delete(subscription.endpoint);
+      await run(id, 2);
+
+      expect(await counter(userId, 'BULK:retry')).toBe('1');
+      expect(await notificationOf(id)).toMatchObject({ pushStatus: 'SENT' });
+    });
+
+    it('retry của thông báo bị vượt hạn mức vẫn bị chặn (quyết định được nhớ theo thông báo)', async () => {
+      const userId = await createUser();
+      await createSubscription(userId, 'a');
+      const ids = await bulkAssign(userId, 'BULK:memo', 4);
+      for (const id of ids) await run(id);
+      const skipped = (await statuses(ids)).indexOf('SKIPPED');
+      expect(skipped).toBe(3);
+      // Ép thông báo thứ 4 về PENDING như thể sweep xếp lại: vẫn SKIPPED, bộ đếm giữ nguyên 4.
+      await col('notifications').updateOne(
+        { _id: ids[3] },
+        { $set: { pushStatus: 'PENDING' } },
+      );
+      await run(ids[3]);
+      expect(await notificationOf(ids[3])).toMatchObject({
+        pushStatus: 'SKIPPED',
+      });
+      expect(send).toHaveBeenCalledTimes(3);
+      expect(await counter(userId, 'BULK:memo')).toBe('4');
+    });
+
+    it('không có thiết bị: SKIPPED trước khi tiêu hạn mức', async () => {
+      const userId = await createUser();
+      const ids = await bulkAssign(userId, 'BULK:no-device', 2);
+      for (const id of ids) await run(id);
+      expect(await statuses(ids)).toEqual(['SKIPPED', 'SKIPPED']);
+      expect(await counter(userId, 'BULK:no-device')).toBeNull();
+    });
+
+    it('thông báo không thuộc đợt (không pushGroupKey): không giới hạn', async () => {
+      const userId = await createUser();
+      await createSubscription(userId, 'a');
+      const ids: Types.ObjectId[] = [];
+      for (let index = 0; index < 5; index += 1) {
+        ids.push(await createNotification(userId));
+      }
+      for (const id of ids) await run(id);
+      expect(send).toHaveBeenCalledTimes(5);
+    });
+
+    it('Redis lỗi: không chặn, vẫn gửi cả 5 thông báo (fail-open), job không ném', async () => {
+      const userId = await createUser();
+      await createSubscription(userId, 'a');
+      const ids = await bulkAssign(userId, 'BULK:redis-down', 5);
+      const spy = jest
+        .spyOn(redis, 'eval')
+        .mockRejectedValue(new Error('Command timed out'));
+
+      for (const id of ids) await expect(run(id)).resolves.toBeUndefined();
+
+      expect(spy).toHaveBeenCalledTimes(5);
+      expect(send).toHaveBeenCalledTimes(5);
+      expect(await statuses(ids)).toEqual(Array(5).fill('SENT'));
+      expect(allLogs()).not.toContain('redis-down');
+    });
   });
 });

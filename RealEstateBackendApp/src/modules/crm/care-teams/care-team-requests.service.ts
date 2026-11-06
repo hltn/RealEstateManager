@@ -42,7 +42,7 @@ import {
   NotificationPriority,
   NotificationType,
 } from '../../notifications/notification.constants';
-import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../notifications/notification-dispatcher.service';
 import { CareTeamService } from './care-team.service';
 import { careTeamActionForbidden, planAddMembers } from './care-team.rules';
 import {
@@ -90,7 +90,7 @@ export class CareTeamRequestsService {
     private readonly careTeam: CareTeamService,
     private readonly rateLimit: CrmRateLimitService,
     private readonly audit: CrmAuditLogService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
     @InjectModel(Team.name) private readonly teamModel: Model<TeamDocument>,
   ) {}
 
@@ -326,19 +326,25 @@ export class CareTeamRequestsService {
       if (!userId.equals(ctx.actor.userId))
         reviewers.set(String(userId), userId);
     }
-    await this.notifications.createMany(
-      [...reviewers.values()].map((userId) => ({
-        userId,
-        type: NotificationType.CARE_TEAM_JOIN_REQUESTED,
-        title: 'Có đề nghị tham gia chăm sóc khách',
-        body: `${ctx.actor.displayName} đề nghị tham gia nhóm chăm sóc một khách bạn quản lý`,
-        priority: NotificationPriority.NORMAL,
-        data: {
-          customerId,
-          requestId,
-          deepLink: '/crm/care-team-requests',
+    // Loại ngoài `PUSH_CATALOG`: chỉ hộp thông báo, không push.
+    await this.notifications.dispatch(
+      [
+        {
+          type: NotificationType.CARE_TEAM_JOIN_REQUESTED,
+          recipientIds: [...reviewers.values()],
+          inApp: {
+            title: 'Có đề nghị tham gia chăm sóc khách',
+            body: `${ctx.actor.displayName} đề nghị tham gia nhóm chăm sóc một khách bạn quản lý`,
+            priority: NotificationPriority.NORMAL,
+          },
+          data: {
+            customerId,
+            requestId,
+            deepLink: '/crm/care-team-requests',
+          },
+          dedupeKey: `JOINREQ:${String(requestId)}`,
         },
-      })),
+      ],
       session,
     );
   }
@@ -350,17 +356,19 @@ export class CareTeamRequestsService {
     session: ClientSession,
   ): Promise<void> {
     const approved = status === CareTeamRequestStatus.APPROVED;
-    await this.notifications.createMany(
+    await this.notifications.dispatch(
       [
         {
-          userId: request.requesterId,
           type: NotificationType.CARE_TEAM_JOIN_RESOLVED,
-          title: approved
-            ? 'Đề nghị tham gia được duyệt'
-            : 'Đề nghị tham gia bị từ chối',
-          body: approved
-            ? 'Bạn đã được thêm vào nhóm chăm sóc khách theo đề nghị của mình'
-            : 'Đề nghị tham gia nhóm chăm sóc của bạn đã bị từ chối',
+          recipientIds: [request.requesterId],
+          inApp: {
+            title: approved
+              ? 'Đề nghị tham gia được duyệt'
+              : 'Đề nghị tham gia bị từ chối',
+            body: approved
+              ? 'Bạn đã được thêm vào nhóm chăm sóc khách theo đề nghị của mình'
+              : 'Đề nghị tham gia nhóm chăm sóc của bạn đã bị từ chối',
+          },
           data: {
             ...(approved && { customerId: request.customerId }),
             requestId: request._id,
@@ -368,6 +376,7 @@ export class CareTeamRequestsService {
               ? `/crm/customers/${String(request.customerId)}`
               : '/crm/care-team-requests',
           },
+          dedupeKey: `JOINRES:${String(request._id)}`,
         },
       ],
       session,
@@ -401,6 +410,7 @@ export class CareTeamRequestsService {
           ),
         restrictToActorScope: false,
         source,
+        origin: 'REQUEST_APPROVED',
       },
       session,
     );

@@ -27,6 +27,8 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
 import { FeatureFlagModule } from '../../../shared/feature-flags/feature-flag.module';
+import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';
+import { createRedisClientStub } from '../../../shared/redis/redis-client.fixture';
 import { NotificationsModule } from '../notifications.module';
 import { PushCleanupService } from './push-cleanup.service';
 import { PushSubscriptionManagementService } from './push-subscription-management.service';
@@ -91,7 +93,11 @@ describe('T-27/T-28/T-29 quản lý thiết bị push', () => {
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
-    }).compile();
+    })
+      // Không cần Redis thật: các ca ở đây không dùng bộ đếm đợt push (T-33).
+      .overrideProvider(REDIS_CLIENT)
+      .useValue(createRedisClientStub())
+      .compile();
     const instance = moduleRef.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );

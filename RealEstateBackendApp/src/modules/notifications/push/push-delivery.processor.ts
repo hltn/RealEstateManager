@@ -26,6 +26,7 @@ import {
 import { getPushCatalogEntry } from './push-catalog';
 import { PushRenderError, renderPushContent } from './push-content.renderer';
 import { buildPushAuthAad, shortEndpointHash } from './push-endpoint.policy';
+import { PushGroupLimiter } from './push-group-limiter.service';
 import {
   PUSH_PROVIDER,
   type PushPayload,
@@ -92,10 +93,11 @@ export class PushDeliveryProcessor {
     @Inject(PUSH_PROVIDER) private readonly provider: PushProvider,
     private readonly featureFlags: FeatureFlagService,
     private readonly crypto: PiiCryptoService,
+    private readonly groupLimiter: PushGroupLimiter,
   ) {}
 
   /**
-   * 9 bước của Architecture 5.4. Ném lỗi thường để BullMQ retry (TRANSIENT); ném `UnrecoverableError` khi không thể
+   * 9 bước của Architecture 5.4 (kèm bước giới hạn đợt hàng loạt của 5.5 giữa bước 6 và 7). Ném lỗi thường để BullMQ retry (TRANSIENT); ném `UnrecoverableError` khi không thể
    * khỏi bằng thử lại (`PushRenderError`). Mọi lần đặt `pushStatus` đều có điều kiện `PENDING` (idempotent, không đè
    * kết quả của instance khác).
    */
@@ -138,7 +140,7 @@ export class PushDeliveryProcessor {
         _id: notificationId,
         pushStatus: NotificationPushStatus.PENDING,
       })
-      .select('userId type data push')
+      .select('userId type data push pushGroupKey')
       .lean()
       .exec();
     if (!notification) return;
@@ -183,6 +185,18 @@ export class PushDeliveryProcessor {
       .lean()
       .exec();
     if (subscriptions.length === 0) {
+      await this.settle(notificationId, NotificationPushStatus.SKIPPED);
+      return;
+    }
+
+    // (6b) Thêm hàng loạt (T-33, Q5): tối đa 3 push cho mỗi (người, đợt). Đặt SAU bước 6 để thông báo không có
+    // thiết bị không tốn hạn mức; bộ đếm idempotent theo `notificationId` nên retry không đếm lại. Redis lỗi: vẫn gửi.
+    const isAllowed = await this.groupLimiter.tryAcquire(
+      String(userId),
+      notification.pushGroupKey,
+      String(notificationId),
+    );
+    if (!isAllowed) {
       await this.settle(notificationId, NotificationPushStatus.SKIPPED);
       return;
     }

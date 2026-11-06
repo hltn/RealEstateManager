@@ -16,6 +16,8 @@ import { Connection } from 'mongoose';
 import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
+import { createRedisClientStub } from '../../shared/redis/redis-client.fixture';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from './users.module';
 
@@ -57,7 +59,11 @@ describe('FR-22: POST /users đồng thời cùng email (AuthModule + UsersModul
         AuthModule,
         UsersModule,
       ],
-    }).compile();
+    })
+      // Không cần Redis thật: NotificationsModule kéo theo RedisModule, tránh tự kết nối Redis của máy.
+      .overrideProvider(REDIS_CLIENT)
+      .useValue(createRedisClientStub())
+      .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );

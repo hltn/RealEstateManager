@@ -5,9 +5,11 @@ import { CareRole } from '../customers/customer.constants';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
 import {
   assertCareTeamInvariant,
+  buildBulkPushGroupKey,
   canChangePrimary,
   canManageMembers,
   findPrimary,
+  MAX_PUSH_GROUP_REQUEST_ID_LENGTH,
   planAddMembers,
   planChangePrimary,
   planRemoveMember,
@@ -205,5 +207,26 @@ describe('care-team.rules', () => {
       expect(canChangePrimary(actorOf(UserRole.MANAGER))).toBe(true);
       expect(canChangePrimary(actorOf(UserRole.STAFF, a))).toBe(false);
     });
+  });
+});
+
+describe('buildBulkPushGroupKey (T-33)', () => {
+  it('ghép BULK:{requestId}', () => {
+    expect(buildBulkPushGroupKey('req-1')).toBe('BULK:req-1');
+  });
+
+  it('thiếu hoặc rỗng (ngoài ngữ cảnh HTTP): undefined', () => {
+    expect(buildBulkPushGroupKey(undefined)).toBeUndefined();
+    expect(buildBulkPushGroupKey('')).toBeUndefined();
+  });
+
+  it('requestId đúng 128 ký tự giữ nguyên, 129 ký tự bị cắt còn 128', () => {
+    expect(MAX_PUSH_GROUP_REQUEST_ID_LENGTH).toBe(128);
+    expect(buildBulkPushGroupKey('a'.repeat(128))).toBe(
+      `BULK:${'a'.repeat(128)}`,
+    );
+    expect(buildBulkPushGroupKey('a'.repeat(129))).toBe(
+      `BULK:${'a'.repeat(128)}`,
+    );
   });
 });

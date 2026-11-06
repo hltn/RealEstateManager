@@ -27,10 +27,11 @@ describe('buildAutoStatusNotifications (PT-023)', () => {
 
   it('nhiều người chăm sóc: báo mọi người TRỪ người tick', () => {
     const items = build();
-    expect(items.map((item) => String(item.userId)).sort()).toEqual(
+    expect(items).toHaveLength(1);
+    expect(items[0].recipientIds.map(String).sort()).toEqual(
       [String(memberB), String(memberC)].sort(),
     );
-    expect(items.every((item) => !item.userId.equals(actor))).toBe(true);
+    expect(items[0].recipientIds.some((id) => id.equals(actor))).toBe(false);
   });
 
   it('người tick là người chăm sóc duy nhất -> không có thông báo nào', () => {
@@ -46,16 +47,17 @@ describe('buildAutoStatusNotifications (PT-023)', () => {
       careTeam: [{ userId: memberB }, { userId: memberB }],
     });
     expect(items).toHaveLength(1);
+    expect(items[0].recipientIds).toHaveLength(1);
   });
 
   it('chiều lên NET: loại, nội dung nêu tình trạng cũ/mới và lý do đạt 3/4', () => {
     const [item] = build();
     expect(item.type).toBe(NotificationType.CUSTOMER_STATUS_AUTO_CHANGED);
-    expect(item.body).toContain('Nguyễn Văn A');
-    expect(item.body).toContain('"Có quan tâm"');
-    expect(item.body).toContain('"Khách net"');
-    expect(item.body).toContain('đạt 3/4');
-    expect(item.body).toContain('Nhân viên A');
+    expect(item.inApp.body).toContain('Nguyễn Văn A');
+    expect(item.inApp.body).toContain('"Có quan tâm"');
+    expect(item.inApp.body).toContain('"Khách net"');
+    expect(item.inApp.body).toContain('đạt 3/4');
+    expect(item.inApp.body).toContain('Nhân viên A');
   });
 
   it('chiều về INTERESTED: lý do xuống dưới 3/4', () => {
@@ -64,21 +66,30 @@ describe('buildAutoStatusNotifications (PT-023)', () => {
       fromLabel: 'Khách net',
       toLabel: 'Có quan tâm',
     });
-    expect(item.body).toContain('xuống dưới 3/4');
-    expect(item.body).toContain('"Khách net"');
-    expect(item.body).toContain('"Có quan tâm"');
+    expect(item.inApp.body).toContain('xuống dưới 3/4');
+    expect(item.inApp.body).toContain('"Khách net"');
+    expect(item.inApp.body).toContain('"Có quan tâm"');
   });
 
   it('tình trạng cũ không rõ (null) -> nhãn dự phòng, không ném lỗi', () => {
     const [item] = build({ fromLabel: null });
-    expect(item.body).toContain('"Chưa rõ"');
+    expect(item.inApp.body).toContain('"Chưa rõ"');
+  });
+
+  it('vars chỉ gồm biến cho phép của mẫu push (customerName, newStatusLabel)', () => {
+    const [item] = build();
+    expect(item.vars).toEqual({
+      customerName: 'Nguyễn Văn A',
+      newStatusLabel: 'Khách net',
+    });
+    expect(item.context).toBeUndefined();
   });
 
   it('deep link và customerId đúng; dedupeKey theo (khách, version sau cùng)', () => {
     const [item] = build();
     expect(item.data.deepLink).toBe(`/crm/customers/${String(customerId)}`);
     expect(item.data.customerId).toEqual(customerId);
-    expect(item.dedupeKey).toBe(`CUSTOMER_STATUS_AUTO:${String(customerId)}:7`);
+    expect(item.dedupeKey).toBe(`AUTOSTATUS:${String(customerId)}:7`);
     expect(build({ version: 9 })[0].dedupeKey).not.toBe(item.dedupeKey);
   });
 });

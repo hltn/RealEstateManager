@@ -46,6 +46,8 @@ interface Setup {
   claim?: (subscriptionId: Types.ObjectId) => unknown;
   sendResults?: Array<{ outcome: string; statusCode?: number }>;
   deliveries?: Array<{ status: string }>;
+  /** Kết quả giả của `PushGroupLimiter.tryAcquire` (mặc định cho phép). */
+  groupAllowed?: boolean;
 }
 
 const defaultNotification = {
@@ -103,6 +105,9 @@ const build = (setup: Setup = {}) => {
   };
   const featureFlags = { isEnabled: jest.fn(() => setup.flag ?? true) };
   const crypto = { decrypt: jest.fn((): string => 'auth-secret') };
+  const groupLimiter = {
+    tryAcquire: jest.fn(() => Promise.resolve(setup.groupAllowed ?? true)),
+  };
   const processor = new PushDeliveryProcessor(
     notificationModel as never,
     preferenceModel as never,
@@ -112,6 +117,7 @@ const build = (setup: Setup = {}) => {
     provider as never,
     featureFlags as never,
     crypto as never,
+    groupLimiter as never,
   );
   return {
     processor,
@@ -120,6 +126,7 @@ const build = (setup: Setup = {}) => {
     deliveryModel,
     provider,
     crypto,
+    groupLimiter,
   };
 };
 
@@ -464,5 +471,63 @@ describe('PushDeliveryProcessor (T-31)', () => {
     expect(all).not.toContain('SECRET-ENDPOINT-TOKEN');
     expect(all).not.toContain('fcm.googleapis.com');
     expect(all).not.toContain('auth-secret');
+  });
+  describe('(6b) giới hạn đợt hàng loạt (T-33)', () => {
+    it('thông báo có pushGroupKey: hỏi bộ giới hạn đúng (userId, groupKey, notificationId) rồi mới gửi', async () => {
+      const m = build({
+        notification: { ...defaultNotification, pushGroupKey: 'BULK:req-1' },
+      });
+      await m.processor.process(job());
+      expect(m.groupLimiter.tryAcquire).toHaveBeenCalledWith(
+        String(USER_ID),
+        'BULK:req-1',
+        String(NOTIFICATION_ID),
+      );
+      expect(m.provider.send).toHaveBeenCalledTimes(1);
+      expect(settledStatus(m)).toEqual(['SENT']);
+    });
+
+    it('vượt hạn mức: SKIPPED, không claim, không gửi', async () => {
+      const m = build({
+        notification: { ...defaultNotification, pushGroupKey: 'BULK:req-1' },
+        groupAllowed: false,
+      });
+      await m.processor.process(job());
+      expect(settledStatus(m)).toEqual(['SKIPPED']);
+      expect(m.deliveryModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(m.provider.send).not.toHaveBeenCalled();
+    });
+
+    it('không có thiết bị: SKIPPED trước khi tiêu hạn mức (bước 6 đứng trước)', async () => {
+      const m = build({
+        notification: { ...defaultNotification, pushGroupKey: 'BULK:req-1' },
+        subscriptions: [],
+      });
+      await m.processor.process(job());
+      expect(settledStatus(m)).toEqual(['SKIPPED']);
+      expect(m.groupLimiter.tryAcquire).not.toHaveBeenCalled();
+    });
+
+    it('bị chặn ở giờ yên lặng/tắt loại: không tiêu hạn mức', async () => {
+      const m = build({
+        notification: { ...defaultNotification, pushGroupKey: 'BULK:req-1' },
+        preference: { types: { CARE_LOG_ADDED: { push: false, inApp: true } } },
+      });
+      await m.processor.process(job());
+      expect(m.groupLimiter.tryAcquire).not.toHaveBeenCalled();
+    });
+
+    it('thông báo không thuộc đợt (pushGroupKey thiếu/null): bộ giới hạn nhận null và vẫn gửi', async () => {
+      const m = build({
+        notification: { ...defaultNotification, pushGroupKey: null },
+      });
+      await m.processor.process(job());
+      expect(m.groupLimiter.tryAcquire).toHaveBeenCalledWith(
+        String(USER_ID),
+        null,
+        String(NOTIFICATION_ID),
+      );
+      expect(m.provider.send).toHaveBeenCalledTimes(1);
+    });
   });
 });

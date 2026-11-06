@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { UserStatus } from '../../common/enums/user-status.enum';
 import { registerAfterCommit } from '../../shared/database/after-commit.util';
 import { QueueNames } from '../../shared/queue/queue.constants';
 import { QueueRuntimeService } from '../../shared/queue/queue-runtime.service';
@@ -20,6 +22,7 @@ import {
 } from './push/push-catalog';
 import { renderPushContent } from './push/push-content.renderer';
 import { PushJobNames, pushSendJobId } from './push/push-queue.constants';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { PUSH_PROVIDER } from './push/push-provider.interface';
 import type { PushProvider } from './push/push-provider.interface';
 import {
@@ -96,6 +99,7 @@ export class NotificationDispatcher {
     private readonly notificationModel: Model<NotificationDocument>,
     @InjectModel(NotificationPreference.name)
     private readonly preferenceModel: Model<NotificationPreferenceDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @Inject(PUSH_PROVIDER) private readonly provider: PushProvider,
     private readonly queue: QueueRuntimeService,
   ) {}
@@ -144,6 +148,38 @@ export class NotificationDispatcher {
       }
     }
     return { created: result.upsertedCount };
+  }
+
+  /**
+   * Gửi cho mọi Quản trị đang hoạt động (cảnh báo bảo mật). Lỗi chỉ ghi log và trả 0: không làm hỏng nghiệp vụ gốc.
+   * Loại ngoài `PUSH_CATALOG` (như `SECURITY_ALERT`) thì không có push.
+   */
+  async notifyAdmins(
+    request: Omit<NotificationRequest, 'recipientIds'>,
+    session?: ClientSession,
+  ): Promise<number> {
+    try {
+      const admins = await this.userModel
+        .find({
+          roles: UserRole.ADMIN,
+          status: UserStatus.ACTIVE,
+          deletedAt: null,
+        })
+        .select('_id')
+        .session(session ?? null)
+        .lean()
+        .exec();
+      const { created } = await this.dispatch(
+        [{ ...request, recipientIds: admins.map((admin) => admin._id) }],
+        session,
+      );
+      return created;
+    } catch (error) {
+      this.logger.warn(
+        `Không gửi được thông báo cho Quản trị (${request.type}): ${(error as Error).message}`,
+      );
+      return 0;
+    }
   }
 
   /**

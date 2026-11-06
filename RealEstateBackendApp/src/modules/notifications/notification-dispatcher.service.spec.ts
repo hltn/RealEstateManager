@@ -39,6 +39,8 @@ const build = (
     preferences?: Array<{ userId: Types.ObjectId; types: any }>;
     upsertedIndexes?: number[] | 'all';
     queueAdd?: jest.Mock;
+    admins?: Array<{ _id: Types.ObjectId }>;
+    adminLookupError?: Error;
   } = {},
 ) => {
   const preferenceQuery = {
@@ -61,6 +63,15 @@ const build = (
       });
     }),
   };
+  const userQuery = {
+    select: jest.fn().mockReturnThis(),
+    session: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockReturnThis(),
+    exec: options.adminLookupError
+      ? jest.fn().mockRejectedValue(options.adminLookupError)
+      : jest.fn().mockResolvedValue(options.admins ?? []),
+  };
+  const userModel = { find: jest.fn().mockReturnValue(userQuery) };
   const provider = {
     initialStatus: jest
       .fn()
@@ -76,10 +87,18 @@ const build = (
   const dispatcher = new NotificationDispatcher(
     notificationModel as never,
     preferenceModel as never,
+    userModel as never,
     provider as never,
     queue as never,
   );
-  return { dispatcher, notificationModel, preferenceModel, provider, queue };
+  return {
+    dispatcher,
+    notificationModel,
+    preferenceModel,
+    userModel,
+    provider,
+    queue,
+  };
 };
 
 const request = (
@@ -468,5 +487,64 @@ describe('NotificationDispatcher.dispatch', () => {
     const query = preferenceModel.find.mock.results[0].value;
     expect(query.session).toHaveBeenCalledWith(session);
     expect(notificationModel.bulkWrite.mock.calls[0][1].session).toBe(session);
+  });
+});
+
+describe('NotificationDispatcher.notifyAdmins (T-35: cảnh báo bảo mật không push)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const alert = {
+    type: NotificationType.SECURITY_ALERT,
+    inApp: {
+      title: 'Cảnh báo truy cập bất thường',
+      body: 'Lan: vượt ngưỡng',
+      priority: NotificationPriority.HIGH,
+    },
+    data: { deepLink: '/crm/audit-logs?actorId=u1&actions=X' },
+    dedupeKey: 'ALERT:X:u1:1',
+  };
+
+  it('chỉ tìm Quản trị đang hoạt động, chưa xóa, rồi ghi hộp thông báo cho từng người, không có push', async () => {
+    const adminA = oid();
+    const adminB = oid();
+    const { dispatcher, notificationModel, userModel, queue } = build({
+      admins: [{ _id: adminA }, { _id: adminB }],
+    });
+    const session = { id: 's' } as never;
+    await expect(dispatcher.notifyAdmins(alert, session)).resolves.toBe(2);
+    expect(userModel.find).toHaveBeenCalledWith({
+      roles: 'ADMIN',
+      status: 'ACTIVE',
+      deletedAt: null,
+    });
+    const operations = notificationModel.bulkWrite.mock
+      .calls[0][0] as Operation[];
+    expect(operations.map((op) => String(op.updateOne.filter.userId))).toEqual([
+      String(adminA),
+      String(adminB),
+    ]);
+    const doc = writtenDoc(notificationModel);
+    expect(doc).toMatchObject({
+      type: NotificationType.SECURITY_ALERT,
+      priority: NotificationPriority.HIGH,
+      pushStatus: NotificationPushStatus.SKIPPED,
+      push: null,
+      dedupeKey: 'ALERT:X:u1:1',
+    });
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('không có Quản trị nào thì không ghi gì và trả 0', async () => {
+    const { dispatcher, notificationModel } = build({ admins: [] });
+    await expect(dispatcher.notifyAdmins(alert)).resolves.toBe(0);
+    expect(notificationModel.bulkWrite).not.toHaveBeenCalled();
+  });
+
+  it('lỗi khi tìm Quản trị chỉ ghi log và trả 0 (không làm hỏng nghiệp vụ gốc)', async () => {
+    const { dispatcher, notificationModel } = build({
+      adminLookupError: new Error('mất kết nối'),
+    });
+    await expect(dispatcher.notifyAdmins(alert)).resolves.toBe(0);
+    expect(notificationModel.bulkWrite).not.toHaveBeenCalled();
   });
 });

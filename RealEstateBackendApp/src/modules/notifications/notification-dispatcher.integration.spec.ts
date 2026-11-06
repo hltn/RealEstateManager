@@ -14,6 +14,8 @@ import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { withTransaction } from '../../shared/database/with-transaction.util';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
 import { QueueRuntimeService } from '../../shared/queue/queue-runtime.service';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
+import { createRedisClientStub } from '../../shared/redis/redis-client.fixture';
 import {
   NotificationPushStatus,
   NotificationType,
@@ -69,6 +71,9 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
         isEnabled: () => true,
         initialStatus: () => NotificationPushStatus.PENDING,
       })
+      // Không cần Redis thật: không dùng bộ đếm đợt push (T-33).
+      .overrideProvider(REDIS_CLIENT)
+      .useValue(createRedisClientStub())
       .overrideProvider(QueueRuntimeService)
       .useValue({
         isEnabled: () => true,

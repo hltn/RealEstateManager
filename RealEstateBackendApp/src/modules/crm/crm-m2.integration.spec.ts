@@ -30,7 +30,7 @@ import { GlobalExceptionFilter } from '../../common/filters/global-exception.fil
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher.service';
 import { TeamsModule } from '../teams/teams.module';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
@@ -2780,7 +2780,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         priority: 'NORMAL',
         readAt: null,
         data: { deepLink: `/crm/customers/${id}` },
-        dedupeKey: `CUSTOMER_STATUS_AUTO:${id}:${up.body.data.version}`,
+        dedupeKey: `AUTOSTATUS:${id}:${up.body.data.version}`,
       });
       expect(toA[0].body).toContain('đạt 3/4');
       // Quản lý tạo khách nhưng không nằm trong careTeam -> không nhận.
@@ -2843,14 +2843,12 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       await setDone(dropped.id, d1.body.data.version, THREE, {}, 'staffB');
 
       expect(
-        await connection
-          .collection('notifications')
-          .countDocuments({
-            type: 'CUSTOMER_STATUS_AUTO_CHANGED',
-            'data.customerId': {
-              $in: [new Types.ObjectId(id), new Types.ObjectId(dropped.id)],
-            },
-          }),
+        await connection.collection('notifications').countDocuments({
+          type: 'CUSTOMER_STATUS_AUTO_CHANGED',
+          'data.customerId': {
+            $in: [new Types.ObjectId(id), new Types.ObjectId(dropped.id)],
+          },
+        }),
       ).toBe(0);
     });
 
@@ -2897,19 +2895,19 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       }
     });
 
-    it('(18e) lỗi SAU khi ghi thông báo -> rollback cả thông báo (chứng minh createMany chạy cùng transaction)', async () => {
+    it('(18e) lỗi SAU khi ghi thông báo -> rollback cả thông báo (chứng minh Dispatcher ghi cùng transaction)', async () => {
       const created = await createCustomer('manager1', {
         careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
       });
       const id = created.id;
       const version: number = created.res.body.data.version;
-      const notifications = app.get(NotificationsService);
-      const original = notifications.createMany.bind(notifications);
+      const notifications = app.get(NotificationDispatcher);
+      const original = notifications.dispatch.bind(notifications);
       let written = -1;
       const spy = jest
-        .spyOn(notifications, 'createMany')
+        .spyOn(notifications, 'dispatch')
         .mockImplementationOnce(async (items, session) => {
-          written = await original(items, session);
+          written = (await original(items, session)).created;
           throw new Error('sau-khi-ghi-thong-bao');
         });
       try {
@@ -2956,12 +2954,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(text).not.toContain(phone);
       expect(text).not.toContain(phone.slice(1));
       expect(
-        await connection
-          .collection('notifications')
-          .countDocuments({
-            'data.customerId': new Types.ObjectId(id),
-            type: 'CUSTOMER_STATUS_AUTO_CHANGED',
-          }),
+        await connection.collection('notifications').countDocuments({
+          'data.customerId': new Types.ObjectId(id),
+          type: 'CUSTOMER_STATUS_AUTO_CHANGED',
+        }),
       ).toBe(1);
     });
 

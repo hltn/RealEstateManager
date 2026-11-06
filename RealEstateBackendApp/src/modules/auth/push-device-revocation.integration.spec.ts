@@ -19,6 +19,8 @@ import { Connection, Types } from 'mongoose';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
+import { createRedisClientStub } from '../../shared/redis/redis-client.fixture';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { UsersModule } from '../users/users.module';
 import { AuthModule } from './auth.module';
@@ -119,7 +121,11 @@ describe('Thu hồi thiết bị push (AuthModule + UsersModule thật)', () => 
         AuthModule,
         UsersModule,
       ],
-    }).compile();
+    })
+      // Không cần Redis thật: NotificationsModule kéo theo RedisModule, tránh tự kết nối Redis của máy.
+      .overrideProvider(REDIS_CLIENT)
+      .useValue(createRedisClientStub())
+      .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );

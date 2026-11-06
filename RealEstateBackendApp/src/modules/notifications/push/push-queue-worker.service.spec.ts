@@ -9,12 +9,14 @@ const build = (enabled: boolean) => {
   };
   const cleanup = { run: jest.fn().mockResolvedValue({}) };
   const delivery = { process: jest.fn().mockResolvedValue(undefined) };
+  const sweep = { run: jest.fn().mockResolvedValue({}) };
   const worker = new PushQueueWorker(
     runtime as never,
     cleanup as never,
     delivery as never,
+    sweep as never,
   );
-  return { worker, runtime, cleanup, delivery };
+  return { worker, runtime, cleanup, delivery, sweep };
 };
 
 describe('PushQueueWorker (T-29)', () => {
@@ -44,6 +46,12 @@ describe('PushQueueWorker (T-29)', () => {
         jobName: 'push.cleanup',
         opts: { attempts: 1 },
       },
+      {
+        id: 'push-sweep',
+        repeat: { every: 60 * 1000 },
+        jobName: 'push.sweep',
+        opts: { attempts: 1 },
+      },
     ]);
   });
 
@@ -65,6 +73,20 @@ describe('PushQueueWorker (T-29)', () => {
     await expect(worker.handle({ name: 'khac' })).rejects.toThrow('khac');
 
     expect(cleanup.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('job push.sweep giao cho PushSweepService, không đụng cleanup/delivery; lỗi của nó nổi lên', async () => {
+    const { worker, sweep, cleanup, delivery } = build(true);
+    await worker.handle({ name: 'push.sweep' });
+    expect(sweep.run).toHaveBeenCalledTimes(1);
+    expect(sweep.run).toHaveBeenCalledWith(expect.any(Date));
+    expect(cleanup.run).not.toHaveBeenCalled();
+    expect(delivery.process).not.toHaveBeenCalled();
+
+    sweep.run.mockRejectedValueOnce(new Error('mongo down'));
+    await expect(worker.handle({ name: 'push.sweep' })).rejects.toThrow(
+      'mongo down',
+    );
   });
 
   it('job push.send giao cho PushDeliveryProcessor kèm attemptsMade/opts, lỗi của nó nổi lên', async () => {

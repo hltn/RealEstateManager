@@ -223,6 +223,7 @@ export class BulkOperationsService {
             ),
           restrictToActorScope: true,
           source,
+          origin: 'BULK_ADD',
         },
         session,
       );

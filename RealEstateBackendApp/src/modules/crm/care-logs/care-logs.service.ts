@@ -32,7 +32,7 @@ import {
 } from '../appointments/appointment.rules';
 import { CrmSettingsService } from '../crm-settings/crm-settings.service';
 import { RemindersWriterService } from '../reminders/reminders-writer.service';
-import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../notifications/notification-dispatcher.service';
 import { NotificationType } from '../../notifications/notification.constants';
 import {
   AccessContext,
@@ -98,7 +98,7 @@ export class CareLogsService {
     private readonly featureFlags: FeatureFlagService,
     private readonly appointmentsWriter: AppointmentsWriteService,
     private readonly reminders: RemindersWriterService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
     private readonly settings: CrmSettingsService,
   ) {}
 
@@ -284,7 +284,7 @@ export class CareLogsService {
       now,
       session,
     );
-    await this.notifyCareTeam(ctx, customer, now, session);
+    await this.notifyCareTeam(ctx, customer, _id, now, session);
 
     const changes: CrmAuditChange[] = [
       { field: 'careLog.content', from: null, to: dto.content },
@@ -332,6 +332,7 @@ export class CareLogsService {
       fullName: string;
       careTeam?: Array<{ userId: Types.ObjectId }>;
     },
+    careLogId: Types.ObjectId,
     now: Date,
     session: ClientSession,
   ): Promise<void> {
@@ -343,20 +344,28 @@ export class CareLogsService {
     const windowMs = careLogNotifyDebounceMinutes * 60 * 1000;
     // 0 phút = không gộp (mỗi ghi chú một thông báo).
     const bucket = windowMs > 0 ? Math.floor(now.getTime() / windowMs) : null;
-    await this.notifications.createMany(
-      recipients.map((member) => ({
-        userId: member.userId,
-        type: NotificationType.CARE_LOG_ADDED,
-        title: 'Ghi chú chăm sóc mới',
-        body: `${ctx.actor.displayName} vừa ghi chú cho khách ${customer.fullName}`,
-        data: {
-          customerId: customer._id,
-          deepLink: `/crm/customers/${String(customer._id)}`,
+    // Gộp = 0 phút thì khóa theo chính ghi chú (`careLogId`) để mỗi ghi chú vẫn một thông báo (và một push).
+    const dedupeKey = `CARE_LOG:${String(customer._id)}:${bucket ?? String(careLogId)}`;
+    await this.notifications.dispatch(
+      [
+        {
+          type: NotificationType.CARE_LOG_ADDED,
+          recipientIds: recipients.map((member) => member.userId),
+          inApp: {
+            title: 'Ghi chú chăm sóc mới',
+            body: `${ctx.actor.displayName} vừa ghi chú cho khách ${customer.fullName}`,
+          },
+          vars: {
+            actorName: ctx.actor.displayName,
+            customerName: customer.fullName,
+          },
+          data: {
+            customerId: customer._id,
+            deepLink: `/crm/customers/${String(customer._id)}`,
+          },
+          dedupeKey,
         },
-        ...(bucket !== null && {
-          dedupeKey: `CARE_LOG:${String(customer._id)}:${bucket}`,
-        }),
-      })),
+      ],
       session,
     );
   }
