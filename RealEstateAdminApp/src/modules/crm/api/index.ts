@@ -18,7 +18,7 @@ export {
 } from './access';
 export type { CrmApi, SaveProfileInput } from './httpCrmApi';
 export type { BulkResult } from './http/careApi';
-export type { ProjectBody, CatalogEndpoint, PersonaFieldPatchBody, PersonaFieldOrderItem } from './http/adminApi';
+export type { ProjectBody, CatalogEndpoint, PersonaFieldPatchBody, PersonaFieldCreateBody, PersonaFieldOrderItem } from './http/adminApi';
 export type { NotificationItem } from './http/schedulingApi';
 export { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_PER_NOTE } from './http/careApi';
 export { APPOINTMENT_VERSION_CONFLICT_GUIDE, describeWriteError, isNotFoundError, isVersionConflict, toApiError } from './http/crmErrors';

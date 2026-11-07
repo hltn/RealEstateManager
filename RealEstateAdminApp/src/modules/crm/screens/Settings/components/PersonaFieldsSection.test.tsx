@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../../../../stores/auth.store';
 
@@ -19,20 +19,25 @@ interface FakeField {
   order: number;
   isSystem: boolean;
   isActive: boolean;
+  weight?: number;
+  isFilterable?: boolean;
+  isSensitive?: boolean;
 }
 let serverFields: FakeField[] = [];
 const patch = vi.fn();
 const put = vi.fn();
 const list = vi.fn();
+const post = vi.fn();
+const del = vi.fn();
 const emptyPage = { data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 1 } };
 
 vi.mock('@crm/api/http/crmHttp', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@crm/api/http/crmHttp')>()),
   crmHttp: {
     raw: vi.fn(),
-    post: vi.fn(),
+    post: (...args: unknown[]) => post(...args),
     get: vi.fn().mockResolvedValue({}),
-    del: vi.fn(),
+    del: (...args: unknown[]) => del(...args),
     list: (...args: unknown[]) => list(...args),
     patch: (...args: unknown[]) => patch(...args),
     put: (...args: unknown[]) => put(...args),
@@ -42,6 +47,7 @@ vi.mock('@crm/api/http/crmHttp', async (importOriginal) => ({
 const showToast = vi.fn();
 vi.mock('@crm/store', () => ({ useCrmActions: () => ({ showToast }) }));
 
+import { usePersonaFieldMap } from '@crm/api';
 import { CrmApiException } from '@crm/api/http/crmErrors';
 import { PersonaFieldsSection } from './PersonaFieldsSection';
 
@@ -125,6 +131,16 @@ beforeEach(() => {
   list.mockReset().mockImplementation(async (url: string) => (url === '/crm/persona-fields' ? { data: serverFields.map(toDto), meta: { total: serverFields.length, page: 1, limit: 100, totalPages: 1 } } : emptyPage));
   patch.mockReset().mockImplementation(async (url: string, body: never) => toDto(applyPatch(url.split('/').pop() as string, body)));
   put.mockReset();
+  post.mockReset().mockImplementation(async (_url: string, body: { options?: FakeOption[] } & Omit<FakeField, 'id' | 'order' | 'isSystem' | 'isActive' | 'options'>) => {
+    // Giống BE: `order` = lớn nhất toàn cục + 1, không phải trường hệ thống, đang bật.
+    const created: FakeField = { ...body, id: `f-new-${serverFields.length}`, options: (body.options ?? []).map((option) => ({ ...option, isActive: true })), order: Math.max(...serverFields.map((field) => field.order)) + 1, isSystem: false, isActive: true };
+    serverFields = [...serverFields, created];
+    return toDto(created);
+  });
+  del.mockReset().mockImplementation(async (url: string) => {
+    const id = decodeURIComponent(url.split('/').pop() as string);
+    serverFields = serverFields.filter((field) => field.id !== id);
+  });
   showToast.mockReset();
   signIn('ADMIN');
 });
@@ -186,6 +202,9 @@ describe('PersonaFieldsSection: danh sách theo 7 nhóm', () => {
   });
 });
 
+// Hợp đồng `mergeOptions` của BE (lựa chọn vắng trong danh sách gửi lên bị TẮT chứ không xóa, đổi nhãn giữ `value`, bật lại giữ mã cũ,
+// tổng ≤100 / mỗi lần gửi ≤50) đã được BE kiểm ở `RealEstateBackendApp/test/crm-fr41-persona-fields-rules.integration.spec.ts`. Máy chủ giả
+// `applyPatch` ở đây chỉ mô phỏng hợp đồng đó để kiểm FE gửi ĐÚNG body và hiển thị đúng sau khi tải lại; KHÔNG thay thế test của BE.
 describe('PersonaFieldsSection: sửa nhãn và lựa chọn (không mất dữ liệu cũ)', () => {
   const openEditor = async (name = 'Loại hình') => {
     fireEvent.click(await screen.findByRole('button', { name: `Sửa trường ${name}` }));
@@ -417,5 +436,232 @@ describe('PersonaFieldsSection: đổi thứ tự trong nhóm', () => {
     renderSection();
     fireEvent.click(await screen.findByRole('button', { name: 'Chuyển xuống: Loại hình' }));
     await waitFor(() => expect(showToast).toHaveBeenCalledWith({ type: 'error', title: 'Bạn không có quyền' }));
+  });
+});
+
+/** Cạnh section dựng thêm một "form chân dung" giả dùng đúng hook danh mục `usePersonaFieldMap` mà form khách dùng. */
+const FormProbe = () => {
+  const map = usePersonaFieldMap();
+  return <p data-testid="form-keys">{[...map.keys()].join(',')}</p>;
+};
+
+describe('PersonaFieldsSection: thêm trường mới (T-64, FR-41)', () => {
+  const renderWithProbe = () => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <PersonaFieldsSection />
+        <FormProbe />
+      </QueryClientProvider>,
+    );
+  };
+
+  const openCreateForm = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Thêm trường' }));
+    return screen.getByRole('form', { name: 'Thêm trường chân dung' });
+  };
+
+  it('mở form: nhập nhãn thì mã tự sinh; chọn kiểu Chọn nhiều hiện phần lựa chọn; gửi POST đủ kiểu/nhóm/trọng số/lọc được và trường mới dùng được NGAY ở form chân dung', async () => {
+    renderWithProbe();
+    const form = await openCreateForm();
+    expect(screen.getByTestId('form-keys')).not.toHaveTextContent('tam_nhin');
+
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Tầm nhìn' } });
+    expect(within(form).getByLabelText(/Mã trường/)).toHaveValue('tam_nhin');
+    fireEvent.change(within(form).getByLabelText(/Nhóm/), { target: { value: 'REAL_ESTATE' } });
+    expect(within(form).queryByLabelText('Thêm lựa chọn mới')).not.toBeInTheDocument();
+    fireEvent.change(within(form).getByLabelText(/Kiểu/), { target: { value: 'MULTI_SELECT' } });
+    fireEvent.change(within(form).getByLabelText('Thêm lựa chọn mới'), { target: { value: 'Hướng biển' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Thêm lựa chọn' }));
+    fireEvent.change(within(form).getByLabelText(/Trọng số/), { target: { value: '5' } });
+    fireEvent.click(within(form).getByRole('switch', { name: 'Lọc được' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Thêm trường' }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/crm/persona-fields', {
+        key: 'tam_nhin',
+        label: 'Tầm nhìn',
+        groupCode: 'REAL_ESTATE',
+        type: 'MULTI_SELECT',
+        options: [{ value: 'HUONG_BIEN', label: 'Hướng biển', isActive: true }],
+        weight: 5,
+        isFilterable: true,
+        isSensitive: false,
+      }),
+    );
+    expect(showToast).toHaveBeenCalledWith({ title: 'Đã thêm trường "Tầm nhìn"' });
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Thêm trường chân dung' })).not.toBeInTheDocument());
+    // Danh sách quản trị có trường mới trong đúng nhóm, cuối nhóm (order do BE gán), có nút Xoá (không phải hệ thống).
+    expect(await screen.findByRole('button', { name: 'Xoá trường Tầm nhìn' })).toBeInTheDocument();
+    expect(labelsIn(groupOf('Nhóm Nhu cầu BĐS'))).toEqual(['Loại hình', 'Mức giá', 'Tầm nhìn']);
+    // Danh mục dùng chung của form chân dung được làm mới -> thấy trường mới mà không tải lại trang.
+    await waitFor(() => expect(screen.getByTestId('form-keys')).toHaveTextContent('tam_nhin'));
+  });
+
+  it('tự sinh mã chỉ tới khi người dùng sửa tay mã; đổi nhãn sau đó không ghi đè mã', async () => {
+    renderSection();
+    const form = await openCreateForm();
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Tầm nhìn' } });
+    fireEvent.change(within(form).getByLabelText(/Mã trường/), { target: { value: 'view_sea' } });
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Tầm nhìn biển' } });
+    expect(within(form).getByLabelText(/Mã trường/)).toHaveValue('view_sea');
+  });
+
+  it('SELECT mà chưa có lựa chọn: báo lỗi tại form, không gọi API', async () => {
+    renderSection();
+    const form = await openCreateForm();
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Hướng' } });
+    fireEvent.change(within(form).getByLabelText(/Kiểu/), { target: { value: 'SELECT' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Thêm trường' }));
+    expect(await within(form).findByText('Cần ít nhất một lựa chọn đang dùng.')).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('nhạy cảm và lọc được loại trừ nhau: bật nhạy cảm tắt "Lọc được" và khóa nó; kiểu không lọc được thì khóa "Lọc được"', async () => {
+    renderSection();
+    const form = await openCreateForm();
+    const filterable = within(form).getByRole('switch', { name: 'Lọc được' });
+    fireEvent.click(filterable);
+    expect(filterable).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(within(form).getByRole('switch', { name: 'Nhạy cảm' }));
+    expect(filterable).toHaveAttribute('aria-checked', 'false');
+    expect(filterable).toBeDisabled();
+    fireEvent.click(within(form).getByRole('switch', { name: 'Nhạy cảm' }));
+    expect(filterable).toBeEnabled();
+
+    fireEvent.click(filterable);
+    fireEvent.change(within(form).getByLabelText(/Kiểu/), { target: { value: 'DATE' } });
+    expect(filterable).toHaveAttribute('aria-checked', 'false');
+    expect(filterable).toBeDisabled();
+  });
+
+  it('gợi ý "Lọc được": kiểu hiện ở bộ lọc nâng cao giữ câu cũ; TEXT chỉ lọc qua API; kiểu không lọc được và nhạy cảm giữ câu riêng', async () => {
+    renderSection();
+    const form = await openCreateForm();
+    const advancedHint = 'Hiện ở bộ lọc nâng cao của danh sách khách.';
+    const apiOnlyHint = 'Cho phép lọc qua API; chưa hiện ở bộ lọc nâng cao.';
+    const typeSelect = within(form).getByLabelText(/Kiểu/);
+
+    // Mặc định TEXT: backend cho lọc nhưng bộ lọc nâng cao chưa hiện.
+    expect(within(form).getByText(apiOnlyHint)).toBeInTheDocument();
+    expect(within(form).queryByText(advancedHint)).not.toBeInTheDocument();
+
+    for (const type of ['SELECT', 'MULTI_SELECT', 'BOOLEAN']) {
+      fireEvent.change(typeSelect, { target: { value: type } });
+      expect(within(form).getByText(advancedHint)).toBeInTheDocument();
+      expect(within(form).queryByText(apiOnlyHint)).not.toBeInTheDocument();
+    }
+
+    fireEvent.change(typeSelect, { target: { value: 'DATE' } });
+    expect(within(form).getByText('Kiểu này không lọc được.')).toBeInTheDocument();
+    expect(within(form).queryByText(apiOnlyHint)).not.toBeInTheDocument();
+
+    fireEvent.change(typeSelect, { target: { value: 'TEXT' } });
+    fireEvent.click(within(form).getByRole('switch', { name: 'Nhạy cảm' }));
+    expect(within(form).getByText('Trường nhạy cảm không dùng để lọc.')).toBeInTheDocument();
+    expect(within(form).queryByText(apiOnlyHint)).not.toBeInTheDocument();
+  });
+
+  it('máy chủ 409 CATALOG_DUPLICATED (key): giữ form mở, nói mã đã tồn tại theo errorCode/details', async () => {
+    post.mockRejectedValue(new CrmApiException({ statusCode: 409, errorCode: 'CATALOG_DUPLICATED', message: 'lời bất kỳ', details: { field: 'key', value: 'tam_nhin' } }));
+    renderSection();
+    const form = await openCreateForm();
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Tầm nhìn' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Thêm trường' }));
+    expect(await within(form).findByText(/Mã trường "tam_nhin" đã tồn tại/)).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Thêm trường chân dung' })).toBeInTheDocument();
+  });
+
+  it('mở form thêm thì đóng form sửa (chỉ một form mở)', async () => {
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa trường Quê quán' }));
+    expect(screen.getByRole('form', { name: 'Sửa trường Quê quán' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm trường' }));
+    expect(screen.queryByRole('form', { name: 'Sửa trường Quê quán' })).not.toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Thêm trường chân dung' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sửa trường Quê quán' }));
+    expect(screen.queryByRole('form', { name: 'Thêm trường chân dung' })).not.toBeInTheDocument();
+  });
+
+  it('gửi form thêm hai lần trong cùng một nhịp: chỉ một POST (chốt useRef)', async () => {
+    renderSection();
+    const form = await openCreateForm();
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Tầm nhìn' } });
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('PersonaFieldsSection: xóa trường', () => {
+  beforeEach(() => {
+    serverFields = [...initialFields(), makeField({ id: 'f-extra', label: 'Tầm nhìn', groupCode: 'REAL_ESTATE', order: 9 })];
+  });
+
+  it('trường hệ thống không có nút Xoá; trường thêm mới có', async () => {
+    renderSection();
+    await screen.findByText('Tầm nhìn');
+    expect(screen.queryByRole('button', { name: 'Xoá trường Quê quán' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Xoá trường Loại hình' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xoá trường Tầm nhìn' })).toBeInTheDocument();
+  });
+
+  it('xác nhận xoá: DELETE đúng id, báo đã xoá, trường biến khỏi danh sách; Huỷ thì không gọi API', async () => {
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Xoá trường Tầm nhìn' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Huỷ' }));
+    expect(del).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xoá trường Tầm nhìn' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Xoá trường' }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/crm/persona-fields/f-extra'));
+    expect(showToast).toHaveBeenCalledWith({ title: 'Đã xoá trường "Tầm nhìn"' });
+    await waitFor(() => expect(screen.queryByText('Tầm nhìn')).not.toBeInTheDocument());
+  });
+
+  it('máy chủ 409 PERSONA_FIELD_SYSTEM {valueCount}: báo không xoá được kèm số khách (theo errorCode), trường vẫn còn', async () => {
+    del.mockRejectedValue(new CrmApiException({ statusCode: 409, errorCode: 'PERSONA_FIELD_SYSTEM', message: 'lời bất kỳ', details: { valueCount: 4 } }));
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Xoá trường Tầm nhìn' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Xoá trường' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith({ type: 'error', title: 'Trường hệ thống không xóa được (4 khách đang có dữ liệu). Hãy tắt trường nếu không dùng.' }));
+    expect(screen.getByText('Tầm nhìn')).toBeInTheDocument();
+  });
+});
+
+describe('PersonaFieldsSection: chống bấm đúp (nợ QA L4)', () => {
+  it('bật/tắt hai lần trong cùng một nhịp (trước khi render lại): chỉ một PATCH', async () => {
+    renderSection();
+    const toggle = await screen.findByRole('switch', { name: 'Bật trường Quê quán' });
+    act(() => {
+      fireEvent.click(toggle);
+      fireEvent.click(toggle);
+    });
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+  });
+
+  it('chuyển vị trí hai lần trong cùng một nhịp: chỉ một PUT', async () => {
+    put.mockResolvedValue([]);
+    renderSection();
+    const down = await screen.findByRole('button', { name: 'Chuyển xuống: Loại hình' });
+    act(() => {
+      fireEvent.click(down);
+      fireEvent.click(down);
+    });
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+  });
+
+  it('lưu form sửa hai lần trong cùng một nhịp: chỉ một PATCH', async () => {
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa trường Quê quán' }));
+    const form = screen.getByRole('form', { name: 'Sửa trường Quê quán' });
+    fireEvent.change(within(form).getByLabelText(/Nhãn trường/), { target: { value: 'Nơi sinh' } });
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
   });
 });

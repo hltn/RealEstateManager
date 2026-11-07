@@ -19,7 +19,7 @@ const catalogs: CrmCatalogs = {
 };
 
 vi.mock('@crm/api', () => ({
-  useCatalogs: () => ({ catalogs, users: [] }),
+  useCatalogs: () => ({ catalogs, users: [], personaFields: [] }),
   useAssigneeFilterOptions: () => [],
   useProjectFilterOptions: () => [],
 }));

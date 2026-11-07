@@ -1,7 +1,7 @@
 /**
  * API quản trị (chỉ Quản trị): người dùng, nhóm, danh mục, dự án, thẻ, cài đặt (05 §2.2, §2.7, §2.8, §2.14).
  */
-import type { AccountRole, AdminPersonaField, AdminTag, AdminUser, CrmSettings, PersonaOptionItem, Project, TagCategory, TeamMember } from '@crm/types/crm';
+import type { AccountRole, AdminPersonaField, AdminTag, AdminUser, CrmSettings, PersonaFieldType, PersonaOptionItem, Project, TagCategory, TeamMember } from '@crm/types/crm';
 import type { Paginated } from '../types';
 import type { CrmSettingsDto, PersonaFieldDto, ProjectDto, TagDto, TeamMemberDto, UserDto } from './dto';
 import { crmHttp } from './crmHttp';
@@ -79,6 +79,27 @@ export interface PersonaFieldPatchBody {
 export const patchPersonaField = async (id: string, body: PersonaFieldPatchBody): Promise<AdminPersonaField> =>
   toAdminPersonaField(await crmHttp.patch<PersonaFieldDto>(`/crm/persona-fields/${encodeURIComponent(id)}`, body));
 
+/**
+ * Thêm trường (`POST /crm/persona-fields`, Quản trị): `key` bất biến sau khi tạo (`^[a-z][a-z0-9_]{0,39}$`, trùng kể cả trường đã xóa
+ * -> 409 `CATALOG_DUPLICATED`); `order` do backend gán (cuối danh sách). SELECT/MULTI_SELECT bắt buộc `options`, kiểu khác không có.
+ * `isFilterable` chỉ với TEXT/SELECT/MULTI_SELECT/BOOLEAN và không đi cùng `isSensitive` (400 `VALIDATION_FAILED`).
+ */
+export interface PersonaFieldCreateBody {
+  key: string;
+  label: string;
+  groupCode: string;
+  type: PersonaFieldType;
+  options?: PersonaOptionItem[];
+  weight?: number;
+  isFilterable?: boolean;
+  isSensitive?: boolean;
+}
+
+export const postPersonaField = async (body: PersonaFieldCreateBody): Promise<AdminPersonaField> => toAdminPersonaField(await crmHttp.post<PersonaFieldDto>('/crm/persona-fields', body));
+
+/** `DELETE /crm/persona-fields/:id` (xóa mềm, 204). Trường hệ thống -> 409 `PERSONA_FIELD_SYSTEM`. */
+export const deletePersonaField = (id: string): Promise<void> => crmHttp.del(`/crm/persona-fields/${encodeURIComponent(id)}`);
+
 export interface PersonaFieldOrderItem {
   id: string;
   order: number;
@@ -100,7 +121,8 @@ export type ProjectBody = Partial<{
   /** Mã khu vực (FR-40, ưu tiên); `areaId` chỉ dùng cho ObjectId cũ. */
   areaCode: string | null;
   areaId: string | null;
-  propertyTypes: string[];
+  /** `value` lựa chọn trường `property_type` (FR-46). */
+  propertyTypeCodes: string[];
   priceFrom: number | null;
   priceTo: number | null;
   status: 'UPCOMING' | 'SELLING' | 'SOLD_OUT';

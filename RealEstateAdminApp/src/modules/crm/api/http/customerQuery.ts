@@ -30,6 +30,8 @@ export const buildCustomerFilterParams = (query: CustomerListQuery): QueryParams
   updatedTo: query.updatedTo,
   occupation: query.occupation?.trim() || undefined,
   tagIds: query.tagIds,
+  // FR-49: `fieldKey:value` đã đúng định dạng backend; mảng rỗng bị `cleanParams` bỏ.
+  personaFilters: query.personaFilters,
 });
 
 /** `GET /crm/customers`: `listGroup` = ALL là mặc định nên không gửi. */

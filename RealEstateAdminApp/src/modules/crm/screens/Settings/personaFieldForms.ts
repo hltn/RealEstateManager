@@ -6,8 +6,9 @@
  * lựa chọn đã dùng không bao giờ biến mất khỏi dữ liệu khách; đổi nhãn giữ nguyên mã `value`.
  */
 import type { ApiError } from '@crm/api';
-import type { PersonaFieldOrderItem, PersonaFieldPatchBody } from '@crm/api/http/adminApi';
+import type { PersonaFieldCreateBody, PersonaFieldOrderItem, PersonaFieldPatchBody } from '@crm/api/http/adminApi';
 import { PERSONA_GROUP_LABELS } from '@crm/data/personaFields';
+import { PERSONA_FILTER_TYPES } from '@crm/lib/customerFilters';
 import { normalizeVietnamese, toSlug } from '@crm/lib/text';
 import type { AdminPersonaField, PersonaFieldType, PersonaGroupCode } from '@crm/types/crm';
 
@@ -70,10 +71,24 @@ export const summarizeOptions = (field: Pick<AdminPersonaField, 'type' | 'option
 
 export type MoveDirection = 'up' | 'down';
 
+const orderTakenByOtherGroups = (fields: readonly AdminPersonaField[], groupCode: string): Set<number> =>
+  new Set(fields.filter((field) => field.groupCode !== groupCode).map((field) => field.order));
+
+/** `count` số tăng dần từ `start`, bỏ qua số đã bị nhóm khác giữ (`order` dùng chung mọi nhóm nên không được trùng chéo nhóm). */
+const renumberAvoiding = (start: number, count: number, taken: ReadonlySet<number>): number[] => {
+  const slots: number[] = [];
+  for (let candidate = start; slots.length < count; candidate += 1) {
+    if (!taken.has(candidate)) slots.push(candidate);
+  }
+  return slots;
+};
+
 /**
  * Body `PUT /crm/persona-fields/order` khi chuyển trường lên/xuống 1 vị trí TRONG NHÓM của nó; `null` nếu đã ở đầu/cuối nhóm.
  * `order` là số dùng chung mọi nhóm nên chỉ hoán đổi các "ô" thứ tự mà nhóm đó đang giữ; ô trùng nhau (dữ liệu cũ) được đánh số lại
- * liên tiếp để việc đổi chỗ có hiệu lực. Chỉ gửi trường thật sự đổi `order`.
+ * liên tiếp (bỏ qua số mà nhóm khác đang giữ, nên không bao giờ sinh order trùng chéo nhóm) để việc đổi chỗ có hiệu lực.
+ * Giới hạn: order trùng GIỮA các nhóm sẵn có trong dữ liệu cũ không bị đụng tới (chỉ nhóm đang đổi chỗ được đánh số lại).
+ * Chỉ gửi trường thật sự đổi `order`.
  */
 export const buildMoveOrderItems = (fields: readonly AdminPersonaField[], fieldId: string, direction: MoveDirection): PersonaFieldOrderItem[] | null => {
   const target = fields.find((field) => field.id === fieldId);
@@ -87,7 +102,7 @@ export const buildMoveOrderItems = (fields: readonly AdminPersonaField[], fieldI
   [sequence[index], sequence[nextIndex]] = [sequence[nextIndex], sequence[index]];
   const sortedSlots = group.map((field) => field.order);
   const hasTie = new Set(sortedSlots).size !== sortedSlots.length;
-  const slots = hasTie ? sortedSlots.map((_, position) => sortedSlots[0] + position) : sortedSlots;
+  const slots = hasTie ? renumberAvoiding(sortedSlots[0], sortedSlots.length, orderTakenByOtherGroups(fields, target.groupCode)) : sortedSlots;
   const items = sequence
     .map((field, position) => ({ field, order: slots[position] }))
     .filter(({ field, order }) => field.order !== order)
@@ -139,12 +154,16 @@ const sameLabel = (left: string, right: string): boolean => normalizeVietnamese(
  * Thêm lựa chọn theo nhãn người dùng gõ. Nhãn trùng một lựa chọn ĐANG DÙNG -> lỗi; trùng lựa chọn ĐÃ TẮT -> bật lại lựa chọn đó
  * (giữ mã cũ nên dữ liệu khách cũ khớp lại, không sinh hai lựa chọn cùng nhãn gây nhầm khi đổi nhãn <-> mã).
  */
-export const addOptionToDraft = (draft: PersonaFieldDraft, rawLabel: string): { draft: PersonaFieldDraft; error: string | null } => {
+export const addOptionToDraft = <T extends { options: OptionDraft[] }>(draft: T, rawLabel: string): { draft: T; error: string | null } => {
   const label = rawLabel.trim();
   if (!label) return { draft, error: 'Nhập tên lựa chọn.' };
   if (label.length > PERSONA_LABEL_MAX_LENGTH) return { draft, error: `Lựa chọn tối đa ${PERSONA_LABEL_MAX_LENGTH} ký tự.` };
-  const existing = draft.options.find((option) => sameLabel(option.label, label));
-  if (existing?.isActive) return { draft, error: `Đã có lựa chọn "${existing.label}".` };
+  // Ưu tiên lựa chọn ĐANG DÙNG cùng nhãn (báo trùng) trước; chỉ khi không có mới bật lại lựa chọn đã tắt (tránh chọn nhầm bản tắt
+  // đứng trước rồi sinh hai lựa chọn đang dùng cùng nhãn).
+  const sameLabelOptions = draft.options.filter((option) => sameLabel(option.label, label));
+  const active = sameLabelOptions.find((option) => option.isActive);
+  if (active) return { draft, error: `Đã có lựa chọn "${active.label}".` };
+  const existing = sameLabelOptions[0];
   if (existing) {
     return { draft: { ...draft, options: draft.options.map((option) => (option === existing ? { ...option, isActive: true } : option)) }, error: null };
   }
@@ -164,11 +183,19 @@ export const validatePersonaFieldDraft = (draft: PersonaFieldDraft, type: Person
   if (active.length === 0) return 'Cần ít nhất một lựa chọn đang dùng.';
   if (active.length > PERSONA_ACTIVE_OPTIONS_MAX) return `Tối đa ${PERSONA_ACTIVE_OPTIONS_MAX} lựa chọn đang dùng.`;
   if (draft.options.length > PERSONA_TOTAL_OPTIONS_MAX) return `Một trường tối đa ${PERSONA_TOTAL_OPTIONS_MAX} lựa chọn (kể cả đã tắt).`;
+  return findOptionError(active, draft.options);
+};
+
+/**
+ * Kiểm nhãn các lựa chọn ĐANG DÙNG (rỗng, quá dài, trùng nhau). Lựa chọn đã tắt không được gửi lên (BE giữ ở trạng thái tắt)
+ * nên trùng nhãn với lựa chọn đang dùng không chặn lưu; chỉ kiểm độ dài cho chắc.
+ */
+const findOptionError = (active: readonly OptionDraft[], all: readonly OptionDraft[]): string | null => {
+  if (all.some((option) => option.label.trim().length > PERSONA_LABEL_MAX_LENGTH)) return `Lựa chọn tối đa ${PERSONA_LABEL_MAX_LENGTH} ký tự.`;
   const seen = new Set<string>();
-  for (const option of draft.options) {
+  for (const option of active) {
     const optionLabel = option.label.trim();
-    if (option.isActive && !optionLabel) return 'Tên lựa chọn không được để trống.';
-    if (optionLabel.length > PERSONA_LABEL_MAX_LENGTH) return `Lựa chọn tối đa ${PERSONA_LABEL_MAX_LENGTH} ký tự.`;
+    if (!optionLabel) return 'Tên lựa chọn không được để trống.';
     const key = normalizeVietnamese(optionLabel);
     if (seen.has(key)) return `Lựa chọn trùng nhau: "${optionLabel}".`;
     seen.add(key);
@@ -194,6 +221,101 @@ export const buildPersonaFieldPatch = (field: AdminPersonaField, draft: PersonaF
   return patch;
 };
 
+// --- Thêm trường mới (đợt 2, T-64) ------------------------------------------------------------------------------------------
+
+/** Giới hạn của backend (`persona.constants.ts`): mã trường `^[a-z][a-z0-9_]{0,39}$`, trọng số nguyên 0..100. */
+export const PERSONA_KEY_MAX_LENGTH = 40;
+export const PERSONA_MAX_WEIGHT = 100;
+const PERSONA_KEY_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
+const FILTERABLE_TYPES: readonly PersonaFieldType[] = ['TEXT', 'SELECT', 'MULTI_SELECT', 'BOOLEAN'];
+
+/** Kiểu cho trường mới (FE chưa hỗ trợ `NUMBER` của BE) theo thứ tự hiển thị. */
+export const PERSONA_CREATABLE_TYPES: readonly PersonaFieldType[] = ['TEXT', 'TEXTAREA', 'SELECT', 'MULTI_SELECT', 'BOOLEAN', 'DATE', 'NUMBER_RANGE'];
+
+/** Kiểu cho phép bật "Lọc được" (khớp `findFieldShapeError` của BE). */
+export const isFilterableType = (type: PersonaFieldType): boolean => FILTERABLE_TYPES.includes(type);
+
+/** Kiểu hiện được ở bộ lọc nâng cao của danh sách khách (dùng chung `PERSONA_FILTER_TYPES` với `buildPersonaFilterFields`). */
+export const isAdvancedFilterType = (type: PersonaFieldType): boolean => PERSONA_FILTER_TYPES.includes(type);
+
+export interface PersonaFieldCreateDraft {
+  label: string;
+  key: string;
+  /** Người dùng đã tự sửa mã -> thôi tự sinh mã theo nhãn. */
+  isKeyEdited: boolean;
+  groupCode: string;
+  type: PersonaFieldType;
+  options: OptionDraft[];
+  /** Chuỗi để ô số nhập tự do; kiểm ở `validateCreateDraft`. */
+  weight: string;
+  isFilterable: boolean;
+  isSensitive: boolean;
+}
+
+export const createEmptyCreateDraft = (groupCode: string): PersonaFieldCreateDraft => ({
+  label: '',
+  key: '',
+  isKeyEdited: false,
+  groupCode,
+  type: 'TEXT',
+  options: [],
+  weight: '1',
+  isFilterable: false,
+  isSensitive: false,
+});
+
+/** Mã gợi ý từ nhãn ("Tầm nhìn đẹp" -> "tam_nhin_dep"): chữ thường, "_" nối, bắt đầu bằng chữ cái (thêm tiền tố "f_"), tối đa 40 ký tự. */
+export const suggestPersonaFieldKey = (label: string): string => {
+  const slug = toSlug(label);
+  if (!slug) return '';
+  const prefixed = /^[a-z]/.test(slug) ? slug : `f_${slug}`;
+  return prefixed.slice(0, PERSONA_KEY_MAX_LENGTH).replace(/_+$/, '');
+};
+
+/** Chỉ kiểu CÓ thể lọc/không nhạy cảm mới giữ cờ; đổi kiểu thì hạ cờ không còn hợp lệ để người dùng không lưu oan. */
+export const changeCreateDraftType = (draft: PersonaFieldCreateDraft, type: PersonaFieldType): PersonaFieldCreateDraft => ({
+  ...draft,
+  type,
+  isFilterable: draft.isFilterable && isFilterableType(type),
+});
+
+/** Lỗi nháp trường mới (hoặc `null`), khớp quy tắc backend: nhãn, mã, trọng số, lựa chọn, lọc được/nhạy cảm. */
+export const validateCreateDraft = (draft: PersonaFieldCreateDraft): string | null => {
+  const label = draft.label.trim();
+  if (!label) return 'Nhãn trường không được để trống.';
+  if (label.length > PERSONA_LABEL_MAX_LENGTH) return `Nhãn trường tối đa ${PERSONA_LABEL_MAX_LENGTH} ký tự.`;
+  if (!PERSONA_KEY_PATTERN.test(draft.key)) return `Mã trường gồm chữ thường, số, "_", bắt đầu bằng chữ cái, tối đa ${PERSONA_KEY_MAX_LENGTH} ký tự.`;
+  if (!/^\d{1,3}$/.test(draft.weight.trim()) || Number(draft.weight) > PERSONA_MAX_WEIGHT) return `Trọng số là số nguyên từ 0 đến ${PERSONA_MAX_WEIGHT}.`;
+  if (draft.isFilterable && draft.isSensitive) return 'Trường nhạy cảm không bật được "Lọc được".';
+  if (draft.isFilterable && !isFilterableType(draft.type)) return `Kiểu "${PERSONA_FIELD_TYPE_LABELS[draft.type]}" không lọc được.`;
+  if (!hasPersonaOptions(draft.type)) return null;
+
+  const active = draft.options.filter((option) => option.isActive);
+  if (active.length === 0) return 'Cần ít nhất một lựa chọn đang dùng.';
+  if (active.length > PERSONA_ACTIVE_OPTIONS_MAX) return `Tối đa ${PERSONA_ACTIVE_OPTIONS_MAX} lựa chọn đang dùng.`;
+  return findOptionError(active, draft.options);
+};
+
+/** Body `POST /crm/persona-fields`: chỉ SELECT/MULTI_SELECT gửi `options` (lựa chọn đang dùng, đã cắt khoảng trắng). `order` do BE gán. */
+export const buildCreatePersonaFieldBody = (draft: PersonaFieldCreateDraft): PersonaFieldCreateBody => {
+  const body: PersonaFieldCreateBody = {
+    key: draft.key,
+    label: draft.label.trim(),
+    groupCode: draft.groupCode,
+    type: draft.type,
+    weight: Number(draft.weight),
+    isFilterable: draft.isFilterable,
+    isSensitive: draft.isSensitive,
+  };
+  if (hasPersonaOptions(draft.type)) {
+    body.options = draft.options.filter((option) => option.isActive).map((option) => ({ value: option.value, label: option.label.trim(), isActive: true }));
+  }
+  return body;
+};
+
+/** Trường hệ thống không xóa được (BE trả 409 `PERSONA_FIELD_SYSTEM`); chỉ trường thêm mới mới có nút xóa. */
+export const canDeletePersonaField = (field: Pick<AdminPersonaField, 'isSystem'>): boolean => !field.isSystem;
+
 // --- Lỗi -----------------------------------------------------------------------------------------------------------------
 
 const valueCountOf = (error: ApiError): number | null => {
@@ -205,6 +327,7 @@ const valueCountOf = (error: ApiError): number | null => {
  * Lời tiếng Việt cho lỗi ghi trường chân dung, dựa vào `errorCode` + `details` (không dựa nội dung `message` của máy chủ):
  * - `PERSONA_FIELD_SYSTEM` `{ field: 'type' }`: đổi kiểu trường hệ thống; `{ valueCount }`: xóa trường hệ thống.
  * - `PERSONA_FIELD_TYPE_LOCKED` `{ valueCount }`: đổi kiểu khi đã có dữ liệu khách.
+ * - `CATALOG_DUPLICATED` `{ field: 'key', value }`: mã trường (key) đã tồn tại, kể cả trường đã xóa mềm.
  * - `VALIDATION_FAILED` (400: tắt hết lựa chọn, trùng mã, quá trần...) và lỗi khác: lời của máy chủ (đã là tiếng Việt).
  */
 export const describePersonaFieldError = (error: ApiError): string => {
@@ -216,6 +339,10 @@ export const describePersonaFieldError = (error: ApiError): string => {
   if (error.errorCode === 'PERSONA_FIELD_TYPE_LOCKED') {
     const count = valueCountOf(error);
     return `Trường đã có dữ liệu${count === null ? '' : ` của ${count} khách`} nên không đổi kiểu được. Hãy tạo trường mới.`;
+  }
+  if (error.errorCode === 'CATALOG_DUPLICATED' && error.details?.field === 'key') {
+    const key = typeof error.details.value === 'string' ? ` "${error.details.value}"` : '';
+    return `Mã trường${key} đã tồn tại (kể cả trường đã xóa). Hãy chọn mã khác.`;
   }
   if (error.statusCode === 404) return 'Trường này không còn tồn tại. Danh sách đã được tải lại.';
   return error.message;

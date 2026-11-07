@@ -5,14 +5,21 @@ import {
   PERSONA_ACTIVE_OPTIONS_MAX,
   PERSONA_TOTAL_OPTIONS_MAX,
   addOptionToDraft,
+  buildCreatePersonaFieldBody,
   buildMoveOrderItems,
   buildPersonaFieldPatch,
+  canDeletePersonaField,
+  changeCreateDraftType,
+  createEmptyCreateDraft,
   describePersonaFieldError,
   groupPersonaFields,
   hasPersonaOptions,
+  isAdvancedFilterType,
   makeOptionValue,
   summarizeOptions,
+  suggestPersonaFieldKey,
   toPersonaFieldDraft,
+  validateCreateDraft,
   validatePersonaFieldDraft,
 } from './personaFieldForms';
 
@@ -128,6 +135,24 @@ describe('buildMoveOrderItems (đổi thứ tự trong nhóm)', () => {
     expect(new Set(applied.map((item) => item.order)).size).toBe(applied.length);
   });
 
+  it('order trùng trong nhóm: số đánh lại KHÔNG trùng order của nhóm khác (nợ QA L4)', () => {
+    // Nhóm PERSONAL trùng order 5; nhóm OCCUPATION giữ đúng các ô 6 và 7 mà phép đánh số liên tiếp 5,6,7 sẽ chạm vào.
+    const mixed = [
+      field({ id: 'a', groupCode: 'PERSONAL', order: 5 }),
+      field({ id: 'b', groupCode: 'PERSONAL', order: 5 }),
+      field({ id: 'c', groupCode: 'PERSONAL', order: 5 }),
+      field({ id: 'o1', groupCode: 'OCCUPATION', order: 6 }),
+      field({ id: 'o2', groupCode: 'OCCUPATION', order: 7 }),
+    ];
+    const items = buildMoveOrderItems(mixed, 'a', 'down') ?? [];
+    const applied = mixed.map((item) => ({ ...item, order: items.find((changed) => changed.id === item.id)?.order ?? item.order }));
+    expect(new Set(applied.map((item) => item.order)).size).toBe(applied.length);
+    const personal = applied.filter((item) => item.groupCode === 'PERSONAL').sort((left, right) => left.order - right.order);
+    expect(personal.map((item) => item.id)).toEqual(['b', 'a', 'c']);
+    // Nhóm khác không bị đổi order.
+    expect(items.every((item) => ['a', 'b', 'c'].includes(item.id))).toBe(true);
+  });
+
   it('chỉ gửi trường thật sự đổi order', () => {
     const items = buildMoveOrderItems(fields, 'p2', 'down') ?? [];
     expect(items.map((item) => item.id).sort()).toEqual(['p2', 'p3']);
@@ -174,6 +199,20 @@ describe('makeOptionValue / addOptionToDraft', () => {
     expect(draft.options[2]).toEqual({ value: 'LAND', label: 'Đất nền', isActive: true, isNew: false });
   });
 
+  it('nhãn vừa trùng lựa chọn đang dùng vừa trùng lựa chọn đã tắt: coi là trùng đang dùng, không bật thêm bản thứ hai (nợ QA L4)', () => {
+    const draft = {
+      fieldId: 'x',
+      label: 'X',
+      options: [
+        { value: 'OLD', label: 'Căn hộ', isActive: false, isNew: false },
+        { value: 'CUR', label: 'Căn hộ', isActive: true, isNew: false },
+      ],
+    };
+    const result = addOptionToDraft(draft, 'căn hộ');
+    expect(result.error).toBe('Đã có lựa chọn "Căn hộ".');
+    expect(result.draft).toBe(draft);
+  });
+
   it('nhãn rỗng/quá dài/đã đủ 100 lựa chọn: báo lỗi', () => {
     const initial = toPersonaFieldDraft(propertyType);
     expect(addOptionToDraft(initial, '   ').error).toBe('Nhập tên lựa chọn.');
@@ -198,14 +237,22 @@ describe('validatePersonaFieldDraft', () => {
     expect(validatePersonaFieldDraft(draft, 'MULTI_SELECT')).toBeNull();
   });
 
-  it('nhãn lựa chọn đang dùng để trống hoặc trùng nhau (kể cả với lựa chọn đã tắt) là lỗi', () => {
+  it('nhãn lựa chọn đang dùng để trống hoặc trùng nhau là lỗi', () => {
     const draft = toPersonaFieldDraft(propertyType);
     const blank = { ...draft, options: draft.options.map((option, index) => (index === 0 ? { ...option, label: ' ' } : option)) };
     expect(validatePersonaFieldDraft(blank, 'MULTI_SELECT')).toBe('Tên lựa chọn không được để trống.');
     const dup = { ...draft, options: draft.options.map((option, index) => (index === 1 ? { ...option, label: 'căn hộ' } : option)) };
     expect(validatePersonaFieldDraft(dup, 'MULTI_SELECT')).toMatch(/trùng nhau/);
-    const dupDisabled = { ...draft, options: draft.options.map((option, index) => (index === 0 ? { ...option, label: 'Đất nền' } : option)) };
-    expect(validatePersonaFieldDraft(dupDisabled, 'MULTI_SELECT')).toMatch(/trùng nhau/);
+  });
+
+  it('lựa chọn ĐÃ TẮT trùng nhãn với lựa chọn đang dùng không chặn lưu (chỉ lựa chọn đang dùng được gửi; nợ QA L4)', () => {
+    const draft = toPersonaFieldDraft(propertyType);
+    // "Căn hộ" (đang dùng) đổi thành "Đất nền" trùng lựa chọn đã tắt LAND: bản tắt không được gửi lên nên không xung đột.
+    const renamed = { ...draft, options: draft.options.map((option, index) => (index === 0 ? { ...option, label: 'Đất nền' } : option)) };
+    expect(validatePersonaFieldDraft(renamed, 'MULTI_SELECT')).toBeNull();
+    // Hai lựa chọn đang dùng trùng nhãn thì vẫn là lỗi.
+    const bothActive = { ...renamed, options: renamed.options.map((option) => (option.value === 'LAND' ? { ...option, isActive: true } : option)) };
+    expect(validatePersonaFieldDraft(bothActive, 'MULTI_SELECT')).toMatch(/trùng nhau/);
   });
 
   it('quá 50 lựa chọn đang dùng hoặc quá 100 tổng: lỗi', () => {
@@ -294,5 +341,90 @@ describe('describePersonaFieldError (theo errorCode, không theo message)', () =
     expect(describePersonaFieldError(error({ statusCode: 404, errorCode: 'RESOURCE_NOT_FOUND' }))).toMatch(/không còn tồn tại/);
     expect(describePersonaFieldError(error({ statusCode: 400, errorCode: 'VALIDATION_FAILED', message: 'Lựa chọn trùng nhau: "A"' }))).toBe('Lựa chọn trùng nhau: "A"');
     expect(describePersonaFieldError(error({ statusCode: 403, errorCode: 'INSUFFICIENT_ROLE', message: 'Bạn không có quyền' }))).toBe('Bạn không có quyền');
+  });
+});
+
+describe('thêm trường mới (FR-41, T-64)', () => {
+  const draftOf = (changes: Partial<ReturnType<typeof createEmptyCreateDraft>> = {}) => ({ ...createEmptyCreateDraft('REAL_ESTATE'), label: 'Tầm nhìn', ...changes });
+  const error = (patch: Partial<ApiError>): ApiError => ({ statusCode: 409, errorCode: 'CONFLICT', message: 'Lời máy chủ', ...patch });
+
+  it('suggestPersonaFieldKey: bỏ dấu, chữ thường, nối "_", bắt đầu bằng chữ cái, tối đa 40 ký tự', () => {
+    expect(suggestPersonaFieldKey('Tầm nhìn đẹp')).toBe('tam_nhin_dep');
+    expect(suggestPersonaFieldKey('123 Tầng')).toBe('f_123_tang');
+    expect(suggestPersonaFieldKey('')).toBe('');
+    expect(suggestPersonaFieldKey('!!!')).toBe('');
+    expect(suggestPersonaFieldKey('a'.repeat(60))).toHaveLength(40);
+  });
+
+  it('draft rỗng: nhóm được chọn, kiểu TEXT, trọng số 1, không lọc/nhạy cảm, chưa tự sửa key', () => {
+    expect(createEmptyCreateDraft('LIFESTYLE')).toMatchObject({ groupCode: 'LIFESTYLE', type: 'TEXT', weight: '1', isFilterable: false, isSensitive: false, options: [], isKeyEdited: false });
+  });
+
+  it('validateCreateDraft: nhãn, key, trọng số', () => {
+    expect(validateCreateDraft(draftOf({ label: ' ', key: 'x' }))).toBe('Nhãn trường không được để trống.');
+    expect(validateCreateDraft(draftOf({ key: '' }))).toMatch(/Mã trường/);
+    expect(validateCreateDraft(draftOf({ key: 'Tam Nhin' }))).toMatch(/Mã trường/);
+    expect(validateCreateDraft(draftOf({ key: '1abc' }))).toMatch(/Mã trường/);
+    expect(validateCreateDraft(draftOf({ key: 'a'.repeat(41) }))).toMatch(/Mã trường/);
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', weight: '101' }))).toMatch(/Trọng số/);
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', weight: '-1' }))).toMatch(/Trọng số/);
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', weight: '1.5' }))).toMatch(/Trọng số/);
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', weight: '' }))).toMatch(/Trọng số/);
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', weight: '100' }))).toBeNull();
+  });
+
+  it('validateCreateDraft: SELECT/MULTI_SELECT cần ít nhất 1 lựa chọn; kiểu khác bỏ qua lựa chọn', () => {
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', type: 'SELECT' }))).toBe('Cần ít nhất một lựa chọn đang dùng.');
+    const option = { value: 'BIEN', label: 'Biển', isActive: true, isNew: true };
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', type: 'MULTI_SELECT', options: [option] }))).toBeNull();
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', type: 'MULTI_SELECT', options: [option, { ...option, value: 'BIEN_2', label: 'biển' }] }))).toMatch(/trùng nhau/);
+    expect(validateCreateDraft(draftOf({ key: 'tam_nhin', type: 'TEXT', options: [option] }))).toBeNull();
+  });
+
+  it('validateCreateDraft: nhạy cảm và lọc được không đi cùng nhau; lọc được chỉ với TEXT/SELECT/MULTI_SELECT/BOOLEAN', () => {
+    expect(validateCreateDraft(draftOf({ key: 'k', isFilterable: true, isSensitive: true }))).toMatch(/nhạy cảm/i);
+    for (const type of ['TEXTAREA', 'NUMBER_RANGE', 'DATE'] as const) {
+      expect(validateCreateDraft(draftOf({ key: 'k', type, isFilterable: true }))).toMatch(/lọc/i);
+    }
+    expect(validateCreateDraft(draftOf({ key: 'k', type: 'BOOLEAN', isFilterable: true }))).toBeNull();
+    expect(validateCreateDraft(draftOf({ key: 'k', type: 'TEXT', isSensitive: true }))).toBeNull();
+  });
+
+  it('buildCreatePersonaFieldBody: gửi key/label/nhóm/kiểu/trọng số/cờ; options chỉ với SELECT/MULTI_SELECT, cắt khoảng trắng', () => {
+    expect(buildCreatePersonaFieldBody(draftOf({ key: 'tam_nhin', label: '  Tầm nhìn ', weight: '7', isFilterable: true }))).toEqual({
+      key: 'tam_nhin',
+      label: 'Tầm nhìn',
+      groupCode: 'REAL_ESTATE',
+      type: 'TEXT',
+      weight: 7,
+      isFilterable: true,
+      isSensitive: false,
+    });
+    const body = buildCreatePersonaFieldBody(
+      draftOf({ key: 'huong', type: 'SELECT', options: [{ value: 'DONG', label: ' Đông ', isActive: true, isNew: true }, { value: 'TAY', label: 'Tây', isActive: false, isNew: true }] }),
+    );
+    expect(body.options).toEqual([{ value: 'DONG', label: 'Đông', isActive: true }]);
+  });
+
+  it('changeCreateDraftType: đổi sang kiểu không lọc được thì tự bỏ "Lọc được", kiểu lọc được thì giữ nguyên', () => {
+    expect(changeCreateDraftType(draftOf({ type: 'TEXT', isFilterable: true }), 'DATE')).toMatchObject({ type: 'DATE', isFilterable: false });
+    expect(changeCreateDraftType(draftOf({ type: 'TEXT', isFilterable: true }), 'SELECT')).toMatchObject({ type: 'SELECT', isFilterable: true });
+    expect(changeCreateDraftType(draftOf({ type: 'TEXT', isFilterable: false }), 'BOOLEAN').isFilterable).toBe(false);
+  });
+
+  it('canDeletePersonaField: chỉ trường không phải hệ thống mới có nút xóa', () => {
+    expect(canDeletePersonaField(field({ id: 'a', isSystem: false }))).toBe(true);
+    expect(canDeletePersonaField(field({ id: 'b', isSystem: true }))).toBe(false);
+  });
+
+  it('describePersonaFieldError: 409 CATALOG_DUPLICATED trên key báo mã trường đã tồn tại', () => {
+    expect(describePersonaFieldError(error({ errorCode: 'CATALOG_DUPLICATED', details: { field: 'key', value: 'tam_nhin' } }))).toMatch(/tam_nhin.*đã/);
+  });
+});
+
+describe('isAdvancedFilterType', () => {
+  it('chỉ SELECT, MULTI_SELECT, BOOLEAN hiện ở bộ lọc nâng cao; TEXT và các kiểu khác thì không', () => {
+    expect(['SELECT', 'MULTI_SELECT', 'BOOLEAN'].map((type) => isAdvancedFilterType(type as never))).toEqual([true, true, true]);
+    expect(['TEXT', 'TEXTAREA', 'DATE', 'NUMBER_RANGE'].map((type) => isAdvancedFilterType(type as never))).toEqual([false, false, false, false]);
   });
 });

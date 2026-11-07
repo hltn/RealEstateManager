@@ -4,6 +4,7 @@ import { buildCareLogBody } from './careApi';
 import { toArea, toPersonaField, toProject, toStatusTone } from './catalogMappers';
 import { toAppointment, toCareLog, toDailyTask, toCustomerDetail, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toPersonaValueBody } from './customerMappers';
 import { buildCustomerListParams, buildCustomerFilterParams, normalizeSearchTerm } from './customerQuery';
+import { cleanParams } from './crmHttp';
 import { toProjectBody } from './projectBody';
 import type { CareLogDto, CustomerDetailDto, PersonaFieldDto } from './dto';
 
@@ -231,8 +232,14 @@ describe('danh mục', () => {
     const create = toProjectBody(project, { isCreate: true });
     expect(create).not.toHaveProperty('isActive');
     expect(create).not.toHaveProperty('fullName');
-    expect(create).toMatchObject({ developer: null, location: null, areaCode: null, propertyTypes: ['Căn hộ'] });
-    expect(toProjectBody(project).isActive).toBe(false);
+    // FR-46: gửi MÃ loại hình (rỗng khi dự án chưa có mã), không còn gửi nhãn.
+    expect(create).toMatchObject({ code: 'A1', developer: null, location: null, areaCode: null, propertyTypeCodes: [] });
+    expect(create).not.toHaveProperty('propertyTypes');
+    const update = toProjectBody(project);
+    expect(update.isActive).toBe(false);
+    // Q1: PATCH không gửi `code` (bất biến) và không gửi loại hình khi người dùng chưa đụng tới.
+    expect(update).not.toHaveProperty('code');
+    expect(update).not.toHaveProperty('propertyTypeCodes');
   });
 });
 
@@ -285,6 +292,14 @@ describe('tham số danh sách khách (05 §2.3)', () => {
     const params = buildCustomerListParams({ q: 'a', listGroup: 'ALL', statusIds: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: '  ' });
     expect(params).toMatchObject({ q: undefined, listGroup: undefined, statusCodes: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: undefined });
     expect(buildCustomerListParams({ listGroup: 'NET' }).listGroup).toBe('NET');
+  });
+
+  it('personaFilters (FR-49) gửi nguyên `fieldKey:value`, cả list lẫn list-counts; rỗng thì không gửi', () => {
+    const personaFilters = ['property_type:APT', 'property_type:VILLA', 'loan_support:true'];
+    expect(buildCustomerListParams({ personaFilters }).personaFilters).toEqual(personaFilters);
+    expect(buildCustomerFilterParams({ personaFilters }).personaFilters).toEqual(personaFilters);
+    expect(cleanParams(buildCustomerFilterParams({ personaFilters }))?.personaFilters).toBe('property_type:APT,property_type:VILLA,loan_support:true');
+    expect(cleanParams(buildCustomerFilterParams({ personaFilters: [] }))).toBeUndefined();
   });
 
   it('list-counts: không có page/limit/sort/listGroup', () => {

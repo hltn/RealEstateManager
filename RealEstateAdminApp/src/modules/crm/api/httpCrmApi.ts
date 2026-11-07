@@ -128,6 +128,8 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     // --- Trường chân dung (Quản trị, FR-41) --------------------------------------------------------------------------
     // Đổi cấu hình trường đổi cả form chân dung/bộ lọc (danh mục `persona-fields`) lẫn độ đầy đủ của khách -> làm mới cả danh mục và dữ liệu.
     updatePersonaField: (id: string, body: admin.PersonaFieldPatchBody) => write(() => admin.patchPersonaField(id, body), { shouldIncludeCatalogs: true }),
+    createPersonaField: (body: admin.PersonaFieldCreateBody) => write(() => admin.postPersonaField(body), { shouldIncludeCatalogs: true }),
+    deletePersonaField: (id: string) => write(() => admin.deletePersonaField(id), { shouldIncludeCatalogs: true }),
     reorderPersonaFields: (items: admin.PersonaFieldOrderItem[]) => write(() => admin.putPersonaFieldOrder(items), { shouldIncludeCatalogs: true }),
 
     // --- Quản trị -----------------------------------------------------------------------------------------------------

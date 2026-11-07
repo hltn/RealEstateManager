@@ -4,13 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const patch = vi.fn();
 const put = vi.fn();
 const list = vi.fn();
+const post = vi.fn();
+const del = vi.fn();
 vi.mock('./http/crmHttp', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./http/crmHttp')>()),
   crmHttp: {
     raw: vi.fn(),
     get: vi.fn(),
-    post: vi.fn(),
-    del: vi.fn(),
+    post: (...args: unknown[]) => post(...args),
+    del: (...args: unknown[]) => del(...args),
     list: (...args: unknown[]) => list(...args),
     patch: (...args: unknown[]) => patch(...args),
     put: (...args: unknown[]) => put(...args),
@@ -67,6 +69,8 @@ beforeEach(() => {
   patch.mockReset().mockResolvedValue(fieldDto);
   put.mockReset().mockResolvedValue([fieldDto]);
   list.mockReset();
+  post.mockReset().mockResolvedValue({ ...fieldDto, id: 'f9', key: 'tam_nhin', isSystem: false });
+  del.mockReset().mockResolvedValue(undefined);
   invalidate.mockReset();
 });
 
@@ -96,6 +100,33 @@ describe('trường chân dung ở màn quản trị (FR-41, T-63)', () => {
     expect(put).toHaveBeenCalledWith('/crm/persona-fields/order', { items });
     expect(result).toMatchObject({ ok: true, data: [mapped] });
     expect(invalidate).toHaveBeenCalledWith({ shouldIncludeCatalogs: true });
+  });
+
+  it('thêm (T-64): POST /crm/persona-fields với body nguyên vẹn, trả trường đã ánh xạ (không phải hệ thống) và làm mới danh mục', async () => {
+    const body = { key: 'tam_nhin', label: 'Tầm nhìn', groupCode: 'REAL_ESTATE', type: 'TEXT' as const, weight: 3, isFilterable: true, isSensitive: false };
+    const result = await setup().createPersonaField(body);
+    expect(post).toHaveBeenCalledWith('/crm/persona-fields', body);
+    expect(result).toMatchObject({ ok: true, data: { id: 'f9', key: 'tam_nhin', isSystem: false } });
+    expect(invalidate).toHaveBeenCalledWith({ shouldIncludeCatalogs: true });
+  });
+
+  it('thêm: 409 CATALOG_DUPLICATED giữ errorCode/details; vẫn làm mới danh mục', async () => {
+    post.mockRejectedValue(new CrmApiException({ statusCode: 409, errorCode: 'CATALOG_DUPLICATED', message: 'x', details: { field: 'key', value: 'tam_nhin' } }));
+    const result = await setup().createPersonaField({ key: 'tam_nhin', label: 'A', groupCode: 'PERSONAL', type: 'TEXT' });
+    expect(result).toMatchObject({ ok: false, error: { statusCode: 409, errorCode: 'CATALOG_DUPLICATED', details: { field: 'key', value: 'tam_nhin' } } });
+  });
+
+  it('xóa (T-64): DELETE /crm/persona-fields/:id (id mã hóa), 204, làm mới danh mục', async () => {
+    const result = await setup().deletePersonaField('a/b');
+    expect(del).toHaveBeenCalledWith('/crm/persona-fields/a%2Fb');
+    expect(result.ok).toBe(true);
+    expect(invalidate).toHaveBeenCalledWith({ shouldIncludeCatalogs: true });
+  });
+
+  it('xóa trường hệ thống: 409 PERSONA_FIELD_SYSTEM với valueCount được giữ nguyên', async () => {
+    del.mockRejectedValue(new CrmApiException({ statusCode: 409, errorCode: 'PERSONA_FIELD_SYSTEM', message: 'x', details: { valueCount: 12 } }));
+    const result = await setup().deletePersonaField('f1');
+    expect(result).toMatchObject({ ok: false, error: { statusCode: 409, errorCode: 'PERSONA_FIELD_SYSTEM', details: { valueCount: 12 } } });
   });
 
   it('lỗi 409 giữ nguyên errorCode/details để màn hình tự chọn lời báo', async () => {

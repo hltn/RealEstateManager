@@ -267,11 +267,16 @@ describe('adapter quản trị dùng id thật cho URL (FR-40)', () => {
     priceFrom: null, priceTo: null, priceUnit: 'TOTAL', status: 'SELLING', segment: '', isActive: true, deletedAt: null,
   };
 
-  it('FR-40: body dự án gửi areaCode và vẫn gửi nhãn propertyTypes (không gửi propertyTypeCodes)', () => {
+  it('FR-40/FR-46: body dự án gửi areaCode và propertyTypeCodes (mã, không gửi nhãn propertyTypes)', () => {
     const body = toProjectBody({ ...baseProject, propertyTypeCodes: ['APARTMENT'] }, { isCreate: true });
-    expect(body).toMatchObject({ areaCode: 'HA_NOI', propertyTypes: ['Căn hộ'] });
+    expect(body).toMatchObject({ code: 'QTERRA', areaCode: 'HA_NOI', propertyTypeCodes: ['APARTMENT'] });
     expect(body).not.toHaveProperty('areaId');
-    expect(body).not.toHaveProperty('propertyTypeCodes');
+    expect(body).not.toHaveProperty('propertyTypes');
+    // Sửa: chỉ gửi mã loại hình khi được yêu cầu (người dùng đã đụng ô Loại hình), và không bao giờ gửi `code` (Q1).
+    const patchUntouched = toProjectBody({ ...baseProject, propertyTypeCodes: ['APARTMENT'] });
+    expect(patchUntouched).not.toHaveProperty('propertyTypeCodes');
+    expect(patchUntouched).not.toHaveProperty('code');
+    expect(toProjectBody({ ...baseProject, propertyTypeCodes: ['APARTMENT'] }, { shouldSendPropertyTypes: true })).toMatchObject({ propertyTypeCodes: ['APARTMENT'] });
     expect(toProjectBody({ ...baseProject, areaId: null }).areaCode).toBeNull();
     expect(toProjectBody({ ...baseProject, areaId: OBJECT_ID })).toMatchObject({ areaId: OBJECT_ID });
   });

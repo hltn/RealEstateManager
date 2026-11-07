@@ -34,7 +34,7 @@ vi.mock('@crm/api', async () => {
   return {
     ...real,
     useCrmApi: () => api,
-    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, users: [] }),
+    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, personaFields: [], users: [] }),
   };
 });
 
@@ -140,7 +140,9 @@ describe('ProjectFormDialog: Sửa', () => {
     setup(project({ code: 'OLD_CODE-1' }));
     typeName('Tên mới');
     fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
-    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith('p1', expect.objectContaining({ code: 'OLD_CODE-1', name: 'Tên mới' })));
+    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith('p1', expect.objectContaining({ name: 'Tên mới' })));
+    // Q1: mã bất biến nên PATCH không gửi `code`.
+    expect(api.updateProject.mock.calls[0][1]).not.toHaveProperty('code');
     expect(screen.queryByText(/chỉ gồm chữ không dấu và số/)).toBeNull();
   });
 

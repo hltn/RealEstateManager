@@ -124,6 +124,11 @@ describe('crmReducer — UI state', () => {
     expect(reset.filters.q).toBe('');
   });
 
+  it('filters/reset xóa cả bộ lọc chân dung (FR-49)', () => {
+    const filtered = crmReducer(createTestState(), { type: 'filters/set', changes: { personaFilters: ['property_type:APT', 'loan_support:true'] } });
+    expect(crmReducer(filtered, { type: 'filters/reset' }).filters.personaFilters).toEqual([]);
+  });
+
   it('filters/dropTags gỡ đúng id thẻ đã gộp/xóa, giữ thẻ khác và bộ lọc khác', () => {
     const state = createTestState();
     const filtered = crmReducer(state, { type: 'filters/set', changes: { tagIds: ['t-golf', 't-bs', 't-gon'], projectIds: ['QTERRA'] } });

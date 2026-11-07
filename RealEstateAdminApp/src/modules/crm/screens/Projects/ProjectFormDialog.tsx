@@ -2,7 +2,7 @@
  * Dialog Thêm / Sửa dự án (chỉ Quản trị — 04 §4.2, X7). Desktop = modal giữa màn, mobile = bottom sheet.
  * Kiểm lỗi theo từng trường ngay ở client (cùng `getProjectErrors` với lớp dữ liệu), rồi gọi `createProject`/`updateProject`.
  */
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Building2, Save } from 'lucide-react';
 import { Modal } from '../../../../components/ui/modal';
 import { useCatalogs, useCrmApi } from '@crm/api';
@@ -19,8 +19,10 @@ import {
   createEmptyProject,
   getFirstProjectError,
   getProjectErrors,
+  listProjectPropertyTypeOptions,
   normalizeProject,
   PROJECT_NAME_MAX_LENGTH,
+  PROPERTY_TYPE_FIELD_KEY,
   suggestProjectCode,
   type ProjectErrors,
 } from '@crm/lib/projectRules';
@@ -40,7 +42,7 @@ interface ProjectFormDialogProps {
 
 export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectFormDialogProps) => {
   const api = useCrmApi();
-  const { catalogs } = useCatalogs();
+  const { catalogs, personaFields } = useCatalogs();
   const { showToast } = useCrmActions();
   const isMobile = useIsMobile();
   const isNew = editingProject === null;
@@ -49,7 +51,16 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
   /** Khi Thêm: người dùng đã tự sửa tay ô Mã thì ngừng tự điền theo tên (xoá trống = bật lại). */
   const [isCodeTouched, setIsCodeTouched] = useState(false);
 
+  /** FR-46: người dùng đã đụng tới ô Loại hình -> khi Sửa mới gửi `propertyTypeCodes` (backend sẽ xóa `unmappedPropertyTypes`). */
+  const [hasPropertyTypesChanged, setHasPropertyTypesChanged] = useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
+
+  // Lựa chọn đã tắt chỉ hiện khi dự án ĐANG LƯU còn dùng nó (không tính nháp), khớp luật của backend.
+  const propertyTypeOptions = useMemo(
+    () => listProjectPropertyTypeOptions(personaFields.find((field) => field.key === PROPERTY_TYPE_FIELD_KEY)?.optionItems, editingProject?.propertyTypeCodes ?? []),
+    [personaFields, editingProject],
+  );
 
   /** Gõ tên dự án: khi Thêm và chưa chạm tay vào ô Mã thì mã tự cập nhật theo tên (tên trống -> mã trống). Form Sửa không đổi mã. */
   const handleNameChange = (name: string) => {
@@ -61,12 +72,13 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
   /** Đổi các trường khác (gồm ô Mã): nếu ô Mã vừa bị người dùng sửa thì đánh dấu đã chạm tay (xoá trống = chưa chạm). */
   const handleFieldsChange = (next: Project) => {
     if (isNew && next.code !== draft.code) setIsCodeTouched(next.code.trim() !== '');
+    if (next.propertyTypeCodes !== draft.propertyTypeCodes) setHasPropertyTypesChanged(true);
     setDraft(next);
   };
 
   /** Thêm = POST (không nhận `isActive`: dự án mới luôn hoạt động, tắt hoạt động khi tạo = tạo xong rồi PATCH); Sửa = PATCH. */
   const saveProject = async (normalized: Project) => {
-    if (!isNew) return api.updateProject(normalized.id, toProjectBody(normalized));
+    if (!isNew) return api.updateProject(normalized.id, toProjectBody(normalized, { shouldSendPropertyTypes: hasPropertyTypesChanged }));
     const result = await api.createProject(toProjectBody(normalized, { isCreate: true }));
     if (result.ok && !normalized.isActive) await api.updateProject(result.data.id, { isActive: false });
     return result;
@@ -110,7 +122,15 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
             {...getFieldA11yProps(getErrorId(`${ID_PREFIX}-name`), errors.name)}
           />
         </FormField>
-        <ProjectFormFields project={draft} areas={catalogs.areas} errors={errors} idPrefix={ID_PREFIX} onChange={handleFieldsChange} />
+        <ProjectFormFields
+          project={draft}
+          areas={catalogs.areas}
+          errors={errors}
+          idPrefix={ID_PREFIX}
+          propertyTypeOptions={propertyTypeOptions}
+          isCodeReadOnly={!isNew}
+          onChange={handleFieldsChange}
+        />
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-white/[0.05]">
         <div className="min-w-0">

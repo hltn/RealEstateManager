@@ -129,6 +129,7 @@ export const DEFAULT_FILTERS: CustomerFilters = {
   updatedTo: '',
   occupation: '',
   tagIds: [],
+  personaFilters: [],
 };
 
 export const createInitialState = (data: CrmDataState, session: CrmSession): CrmState => ({
