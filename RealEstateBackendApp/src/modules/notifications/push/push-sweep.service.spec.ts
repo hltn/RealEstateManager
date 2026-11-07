@@ -20,7 +20,7 @@ const build = (
   };
   const model = {
     find: jest.fn(() => query),
-    updateMany: jest.fn((..._args: unknown[]) => ({
+    updateMany: jest.fn<{ exec: jest.Mock }, unknown[]>(() => ({
       exec: jest.fn().mockResolvedValue({ modifiedCount: 2 }),
     })),
   };
@@ -28,6 +28,8 @@ const build = (
   const provider = { isEnabled: jest.fn(() => isProviderOn) };
   const queue = {
     add: jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue({}),
+    // Mặc định chưa có job cũ trong Redis.
+    getJob: jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(null),
   };
   const service = new PushSweepService(
     model as never,
@@ -37,6 +39,12 @@ const build = (
   );
   return { service, model, query, exec, flags, queue };
 };
+
+/** Job BullMQ giả có trạng thái và `remove`. */
+const fakeJob = (state: string) => ({
+  getState: jest.fn().mockResolvedValue(state),
+  remove: jest.fn().mockResolvedValue(undefined),
+});
 
 const doc = (type: string, ageMs: number) => ({
   _id: new Types.ObjectId(),
@@ -131,6 +139,116 @@ describe('PushSweepService (T-32)', () => {
       skipped: 0,
     });
     expect(queue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('job cũ failed/completed: xóa rồi xếp lại, đúng thứ tự getJob -> remove -> add', async () => {
+    const { service, exec, queue } = build();
+    const failed = doc('APPOINTMENT_DUE', 5 * MIN);
+    const completed = doc('APPOINTMENT_DUE', 6 * MIN);
+    exec.mockResolvedValue([failed, completed]);
+    const failedJob = fakeJob('failed');
+    const completedJob = fakeJob('completed');
+    queue.getJob
+      .mockResolvedValueOnce(failedJob)
+      .mockResolvedValueOnce(completedJob);
+    const order: string[] = [];
+    failedJob.remove.mockImplementation(() => {
+      order.push('remove');
+      return Promise.resolve();
+    });
+    queue.add.mockImplementation(() => {
+      order.push('add');
+      return Promise.resolve({});
+    });
+
+    const result = await service.run(NOW);
+
+    expect(result.enqueued).toBe(2);
+    expect(queue.getJob).toHaveBeenNthCalledWith(
+      1,
+      'push',
+      `push-${String(failed._id)}`,
+    );
+    expect(failedJob.remove).toHaveBeenCalledTimes(1);
+    expect(completedJob.remove).toHaveBeenCalledTimes(1);
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(order.slice(0, 2)).toEqual(['remove', 'add']);
+  });
+
+  it.each(['waiting', 'active', 'delayed'])(
+    'job cũ đang %s: giữ nguyên, không remove, không add, không tính enqueued',
+    async (state) => {
+      const { service, exec, queue } = build();
+      const pending = doc('APPOINTMENT_DUE', 5 * MIN);
+      const other = doc('APPOINTMENT_DUE', 6 * MIN);
+      exec.mockResolvedValue([pending, other]);
+      const busy = fakeJob(state);
+      queue.getJob.mockResolvedValueOnce(busy).mockResolvedValueOnce(null);
+
+      const result = await service.run(NOW);
+
+      expect(busy.remove).not.toHaveBeenCalled();
+      // Chỉ thông báo không có job cũ được xếp; thông báo có job đang chờ/chạy được bỏ qua và lượt vẫn đi tiếp.
+      expect(queue.add).toHaveBeenCalledTimes(1);
+      expect(queue.add.mock.calls[0][2]).toEqual({
+        notificationId: String(other._id),
+      });
+      expect(result.enqueued).toBe(1);
+    },
+  );
+
+  it('getJob lỗi: dừng lượt, không add, không ném', async () => {
+    const { service, exec, queue } = build();
+    exec.mockResolvedValue([
+      doc('APPOINTMENT_DUE', 5 * MIN),
+      doc('APPOINTMENT_DUE', 6 * MIN),
+    ]);
+    queue.getJob.mockRejectedValue(new Error('redis down'));
+    await expect(service.run(NOW)).resolves.toEqual({
+      enqueued: 0,
+      skipped: 0,
+    });
+    expect(queue.getJob).toHaveBeenCalledTimes(1);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('getState lỗi: cảnh báo, dừng lượt, không add, không remove, không ném', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { service, exec, queue } = build();
+    exec.mockResolvedValue([
+      doc('APPOINTMENT_DUE', 5 * MIN),
+      doc('APPOINTMENT_DUE', 6 * MIN),
+    ]);
+    const job = fakeJob('failed');
+    job.getState.mockRejectedValue(new Error('redis down'));
+    queue.getJob.mockResolvedValue(job);
+    await expect(service.run(NOW)).resolves.toEqual({
+      enqueued: 0,
+      skipped: 0,
+    });
+    expect(job.getState).toHaveBeenCalledTimes(1);
+    expect(job.remove).not.toHaveBeenCalled();
+    expect(queue.getJob).toHaveBeenCalledTimes(1);
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('redis down'));
+  });
+
+  it('getState/remove lỗi: dừng lượt, không add, không ném', async () => {
+    const { service, exec, queue } = build();
+    exec.mockResolvedValue([
+      doc('APPOINTMENT_DUE', 5 * MIN),
+      doc('APPOINTMENT_DUE', 6 * MIN),
+    ]);
+    const job = fakeJob('failed');
+    job.remove.mockRejectedValue(new Error('redis down'));
+    queue.getJob.mockResolvedValue(job);
+    await expect(service.run(NOW)).resolves.toEqual({
+      enqueued: 0,
+      skipped: 0,
+    });
+    expect(job.remove).toHaveBeenCalledTimes(1);
+    expect(queue.getJob).toHaveBeenCalledTimes(1);
+    expect(queue.add).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 
 const workerCtor = jest.fn();
 const queueCtor = jest.fn();
+const getJobMock = jest.fn();
 jest.mock('bullmq', () => ({
   Worker: jest.fn().mockImplementation((...args: unknown[]) => {
     workerCtor(...args);
@@ -12,7 +13,12 @@ jest.mock('bullmq', () => ({
   }),
   Queue: jest.fn().mockImplementation((...args: unknown[]) => {
     queueCtor(...args);
-    return { on: jest.fn(), add: jest.fn(), close: jest.fn() };
+    return {
+      on: jest.fn(),
+      add: jest.fn(),
+      getJob: getJobMock,
+      close: jest.fn(),
+    };
   }),
 }));
 
@@ -91,5 +97,21 @@ describe('QueueNames / cấu hình queue push (FR-03)', () => {
     );
     expect(byName.get('push')).toBe(PUSH_JOB_OPTIONS);
     expect(byName.get('crm-scheduler')).toBe(DEFAULT_JOB_OPTIONS);
+  });
+
+  it('getJob: runtime tắt thì trả null và không mở kết nối queue', async () => {
+    const service = makeService();
+    jest.spyOn(service, 'isEnabled').mockReturnValue(false);
+    await expect(service.getJob(QueueNames.PUSH, 'push-1')).resolves.toBeNull();
+    expect(queueCtor).not.toHaveBeenCalled();
+  });
+
+  it('getJob: trả job của queue, hoặc null khi không có', async () => {
+    const service = makeService();
+    const job = { id: 'push-1' };
+    getJobMock.mockResolvedValueOnce(job).mockResolvedValueOnce(undefined);
+    await expect(service.getJob(QueueNames.PUSH, 'push-1')).resolves.toBe(job);
+    expect(getJobMock).toHaveBeenCalledWith('push-1');
+    await expect(service.getJob(QueueNames.PUSH, 'push-2')).resolves.toBeNull();
   });
 });

@@ -88,6 +88,53 @@ describe('redactPii (FR-15)', () => {
     expect(redactPii('1234567890123456')).toBe('1234567890123456');
   });
 
+  it.each([
+    ['1234567890', '[NATIONAL_ID]'],
+    ['12345678901', '[NATIONAL_ID]'],
+    ['02838123456', '[NATIONAL_ID]'],
+    ['1234567890 và 12345678901', '[NATIONAL_ID] và [NATIONAL_ID]'],
+    ['id=1234567890;', 'id=[NATIONAL_ID];'],
+  ])(
+    'FR-15 che mọi dãy 9-12 chữ số liền (Architecture 5.7) %p',
+    (input, expected) => {
+      expect(redactPii(input)).toBe(expected);
+    },
+  );
+
+  it('FR-15 che đủ biên 9..12 chữ số, KHÔNG che 8 hoặc 13 chữ số', () => {
+    for (let n = 9; n <= 12; n++) {
+      expect(redactPii('1'.repeat(n))).toBe('[NATIONAL_ID]');
+    }
+    expect(redactPii('1'.repeat(8))).toBe('1'.repeat(8));
+    expect(redactPii('1'.repeat(13))).toBe('1'.repeat(13));
+  });
+
+  it('FR-15 KHÔNG che số tiền có dấu phân cách, ngày giờ hay số ngắn', () => {
+    expect(redactPii('giá 1.500.000.000 đ')).toBe('giá 1.500.000.000 đ');
+    expect(redactPii('09:30 07/11/2026')).toBe('09:30 07/11/2026');
+    expect(redactPii('2026-11-07T09:30:00.000Z')).toBe(
+      '2026-11-07T09:30:00.000Z',
+    );
+  });
+
+  it('FR-15 chuẩn hóa chữ số fullwidth trước khi quét (không qua mặt)', () => {
+    const fw = (s: string) =>
+      s.replace(/\d/g, (d) => String.fromCharCode(0xff10 + Number(d)));
+    expect(redactPii(fw('0901234567'))).toBe('[PHONE]');
+    expect(redactPii(fw('079123456789'))).toBe('[NATIONAL_ID]');
+    expect(redactPii(fw('1234567890'))).toBe('[NATIONAL_ID]');
+    expect(redactPii(fw('12345678901'))).toBe('[NATIONAL_ID]');
+    expect(redactPii('CMND ' + fw('123456789') + ' ok')).toBe(
+      'CMND [NATIONAL_ID] ok',
+    );
+    // Trộn fullwidth với ASCII trong cùng một dãy.
+    expect(redactPii('０９０1234567')).toBe('[PHONE]');
+  });
+
+  it('FR-15 chữ số fullwidth ngắn (không phải PII) chỉ được chuẩn hóa về ASCII', () => {
+    expect(redactPii('mã １２３')).toBe('mã 123');
+  });
+
   it('FR-15 chuỗi rỗng và chuỗi không có PII giữ nguyên', () => {
     expect(redactPii('')).toBe('');
     expect(redactPii('[news.service.ts:42] khởi động xong')).toBe(

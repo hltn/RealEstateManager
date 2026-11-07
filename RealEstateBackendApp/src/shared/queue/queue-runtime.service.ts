@@ -120,6 +120,12 @@ export class QueueRuntimeService implements OnApplicationShutdown {
     return this.getQueue(queueName).add(jobName, data, options);
   }
 
+  /** Lấy job theo `jobId` (để kiểm tra trạng thái/xóa job cũ trước khi `add` lại). Trả `null` khi runtime tắt hoặc không có job. */
+  async getJob(queueName: string, jobId: string): Promise<Job | null> {
+    if (!this.isEnabled()) return null;
+    return (await this.getQueue(queueName).getJob(jobId)) ?? null;
+  }
+
   async onApplicationShutdown(): Promise<void> {
     this.closing = true;
     // Worker đóng trước (chờ job đang chạy xong) rồi mới đóng kết nối queue.

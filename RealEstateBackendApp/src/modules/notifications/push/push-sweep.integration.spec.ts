@@ -1,7 +1,7 @@
 /**
  * INTEGRATION — T-32 job lặp `push.sweep` (qua router `PushQueueWorker.handle`) trên MongoDB Replica Set thật
- * (mongodb-memory-server). Hàng đợi BullMQ là bản giả có hành vi `jobId` của BullMQ (đã có thì bỏ qua) và công tắc
- * "Redis lỗi"; dịch vụ push là bản giả để chứng minh cờ tắt thì không gọi `send`.
+ * (mongodb-memory-server). Hàng đợi BullMQ là bản giả có hành vi `jobId` của BullMQ (đã có thì bỏ qua), trạng thái job
+ * (`getJob`/`getState`/`remove`) và công tắc "Redis lỗi"; dịch vụ push là bản giả để chứng minh cờ tắt thì không gọi `send`.
  *
  * Chạy: npx jest --testRegex ".*\.integration\.spec\.ts$" --testPathIgnorePatterns "/node_modules/" --runInBand push-sweep --forceExit
  */
@@ -35,8 +35,11 @@ describe('T-32 push.sweep (tích hợp)', () => {
   let connection: Connection;
   let worker: PushQueueWorker;
   let dispatcher: NotificationDispatcher;
-  /** Hàng đợi giả: `jobId` đã có thì bỏ qua như BullMQ. */
-  const jobs = new Map<string, { name: string; data: unknown }>();
+  /** Hàng đợi giả: `jobId` đã có thì bỏ qua như BullMQ; mỗi job có trạng thái để test `getJob`/`remove`. */
+  const jobs = new Map<
+    string,
+    { name: string; data: unknown; state: string }
+  >();
   let isRedisDown = false;
   const queueAdd = jest.fn(
     (
@@ -46,10 +49,26 @@ describe('T-32 push.sweep (tích hợp)', () => {
       options: { jobId: string },
     ) => {
       if (isRedisDown) return Promise.reject(new Error('redis down'));
-      if (!jobs.has(options.jobId)) jobs.set(options.jobId, { name, data });
+      if (!jobs.has(options.jobId)) {
+        jobs.set(options.jobId, { name, data, state: 'waiting' });
+      }
       return Promise.resolve({});
     },
   );
+  const jobRemove = jest.fn();
+  const queueGetJob = jest.fn((_queue: string, jobId: string) => {
+    if (isRedisDown) return Promise.reject(new Error('redis down'));
+    const job = jobs.get(jobId);
+    if (!job) return Promise.resolve(null);
+    return Promise.resolve({
+      getState: () => Promise.resolve(job.state),
+      remove: () => {
+        jobRemove(jobId);
+        jobs.delete(jobId);
+        return Promise.resolve();
+      },
+    });
+  });
   const send = jest.fn();
 
   const col = (name: string) => connection.collection(name);
@@ -108,6 +127,7 @@ describe('T-32 push.sweep (tích hợp)', () => {
       .useValue({
         isEnabled: () => false,
         add: queueAdd,
+        getJob: queueGetJob,
         registerWorker: jest.fn(),
         upsertSchedulers: jest.fn().mockResolvedValue(undefined),
       })
@@ -132,6 +152,8 @@ describe('T-32 push.sweep (tích hợp)', () => {
     isRedisDown = false;
     jobs.clear();
     queueAdd.mockClear();
+    queueGetJob.mockClear();
+    jobRemove.mockClear();
     send.mockClear();
     await col('notifications').deleteMany({});
   });
@@ -173,6 +195,7 @@ describe('T-32 push.sweep (tích hợp)', () => {
     expect(jobs.get(`push-${String(doc!._id)}`)).toEqual({
       name: 'push.send',
       data: { notificationId: String(doc!._id) },
+      state: 'waiting',
     });
     expect(await statusOf(doc!._id)).toBe('PENDING');
   });
@@ -192,7 +215,11 @@ describe('T-32 push.sweep (tích hợp)', () => {
   it('không xếp trùng khi job đã có: quét nhiều lần vẫn đúng một job cho mỗi thông báo', async () => {
     const a = await createNotification();
     const b = await createNotification();
-    jobs.set(`push-${String(a)}`, { name: 'push.send', data: 'đã có' });
+    jobs.set(`push-${String(a)}`, {
+      name: 'push.send',
+      data: 'đã có',
+      state: 'waiting',
+    });
 
     await sweep();
     await sweep();
@@ -200,6 +227,56 @@ describe('T-32 push.sweep (tích hợp)', () => {
     expect(jobs.size).toBe(2);
     expect(jobs.get(`push-${String(a)}`)?.data).toBe('đã có');
     expect(jobs.has(`push-${String(b)}`)).toBe(true);
+  });
+
+  it.each(['failed', 'completed'])(
+    'job cũ %s còn trong Redis: bị xóa rồi xếp lại job mới (thông báo vẫn PENDING)',
+    async (state) => {
+      const id = await createNotification();
+      const jobId = `push-${String(id)}`;
+      jobs.set(jobId, { name: 'push.send', data: 'cũ', state });
+
+      await sweep();
+
+      expect(jobRemove).toHaveBeenCalledWith(jobId);
+      expect(jobs.get(jobId)).toEqual({
+        name: 'push.send',
+        data: { notificationId: String(id) },
+        state: 'waiting',
+      });
+    },
+  );
+
+  it.each(['waiting', 'active', 'delayed'])(
+    'job cũ %s: giữ nguyên, không xóa, không xếp trùng',
+    async (state) => {
+      const id = await createNotification();
+      const jobId = `push-${String(id)}`;
+      jobs.set(jobId, { name: 'push.send', data: 'cũ', state });
+
+      await sweep();
+      await sweep();
+
+      expect(jobRemove).not.toHaveBeenCalled();
+      expect(queueAdd).not.toHaveBeenCalled();
+      expect(jobs.get(jobId)).toEqual({
+        name: 'push.send',
+        data: 'cũ',
+        state,
+      });
+    },
+  );
+
+  it('Redis lỗi ở getJob: không ném, thông báo vẫn PENDING, lượt sau xếp được', async () => {
+    const id = await createNotification();
+    isRedisDown = true;
+    await expect(sweep()).resolves.toBeUndefined();
+    expect(queueGetJob).toHaveBeenCalledTimes(1);
+    expect(queueAdd).not.toHaveBeenCalled();
+    expect(await statusOf(id)).toBe('PENDING');
+    isRedisDown = false;
+    await sweep();
+    expect(jobs.has(`push-${String(id)}`)).toBe(true);
   });
 
   it('chỉ lấy PENDING quá 30 giây: bỏ qua thông báo mới, SENT/FAILED/SKIPPED', async () => {

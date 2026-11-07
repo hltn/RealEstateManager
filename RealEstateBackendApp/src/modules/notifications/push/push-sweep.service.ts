@@ -26,7 +26,7 @@ export const PUSH_SWEEP_EVERY_MS = 60 * 1000;
 const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 
 export interface PushSweepResult {
-  /** Số thông báo được xếp lại job `push.send` (BullMQ tự bỏ qua nếu job cùng `jobId` đã có). */
+  /** Số thông báo được xếp lại job `push.send` (không tính thông báo đã có job đang chờ/chạy). */
   enqueued: number;
   /** Số thông báo chuyển `SKIPPED` (cờ tắt hoặc quá TTL của loại). */
   skipped: number;
@@ -35,7 +35,8 @@ export interface PushSweepResult {
 /**
  * Lưới an toàn của mô hình outbox (job lặp `push.sweep`, FR-03, FR-07; Architecture 5.3): thông báo còn `PENDING` quá
  * 30 giây là do Redis lỗi lúc commit, instance chết giữa chừng hoặc job hết lần retry. IDEMPOTENT: xếp lại bằng cùng
- * `jobId` (`pushSendJobId`, dùng chung với Dispatcher) nên không bao giờ nhân đôi job; chuyển `SKIPPED` luôn kèm điều
+ * `jobId` (`pushSendJobId`, dùng chung với Dispatcher; job cũ đã failed/completed được xóa trước) nên không bao giờ
+ * nhân đôi job; chuyển `SKIPPED` luôn kèm điều
  * kiện `PENDING` nên không đè kết quả worker vừa chốt.
  */
 @Injectable()
@@ -113,19 +114,21 @@ export class PushSweepService {
   }
 
   /**
-   * Xếp lại từng thông báo. Lỗi Redis đầu tiên dừng lượt quét (các thông báo còn lại vẫn PENDING, lượt sau xếp tiếp)
-   * thay vì thử 200 lần cùng một lỗi.
+   * Xếp lại từng thông báo. Lỗi Redis đầu tiên (kể cả ở `getJob`/`remove`) dừng lượt quét (các thông báo còn lại vẫn
+   * PENDING, lượt sau xếp tiếp) thay vì thử 200 lần cùng một lỗi.
    */
   private async enqueueAll(ids: Types.ObjectId[]): Promise<number> {
     let enqueued = 0;
     for (const id of ids) {
       const notificationId = String(id);
+      const jobId = pushSendJobId(notificationId);
       try {
+        if (!(await this.clearFinishedJob(jobId))) continue;
         await this.queue.add(
           QueueNames.PUSH,
           PushJobNames.SEND,
           { notificationId },
-          { jobId: pushSendJobId(notificationId) },
+          { jobId },
         );
         enqueued += 1;
       } catch (error) {
@@ -136,5 +139,20 @@ export class PushSweepService {
       }
     }
     return enqueued;
+  }
+
+  /**
+   * BullMQ bỏ qua `add` khi `jobId` còn trong Redis (failed giữ 7 ngày, completed 1 giờ), nên thông báo vẫn PENDING mà
+   * job cũ đã chốt sẽ không bao giờ được xếp lại. Luồng: không có job thì xếp được; job `failed`/`completed` thì xóa
+   * rồi xếp lại; job đang `waiting`/`active`/`delayed` (hoặc trạng thái khác) thì giữ nguyên, không xếp trùng và không
+   * động vào job đang chạy. Trả `true` khi bên gọi nên `add`.
+   */
+  private async clearFinishedJob(jobId: string): Promise<boolean> {
+    const job = await this.queue.getJob(QueueNames.PUSH, jobId);
+    if (!job) return true;
+    const state = await job.getState();
+    if (state !== 'failed' && state !== 'completed') return false;
+    await job.remove();
+    return true;
   }
 }
