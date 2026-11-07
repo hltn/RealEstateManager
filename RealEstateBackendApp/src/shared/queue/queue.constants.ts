@@ -39,3 +39,8 @@ export const PUSH_WORKER_OPTIONS = {
   concurrency: 5,
   limiter: { max: 50, duration: 1000 },
 } as const;
+
+/** Worker queue `crm-image` (thumbnail ảnh đính kèm, FR-26): 2 job song song để bộ nhớ của `sharp` có trần (Q9, R6). */
+export const CRM_IMAGE_WORKER_OPTIONS = {
+  concurrency: 2,
+} as const;

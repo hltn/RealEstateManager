@@ -2,15 +2,14 @@ import { Controller, Get, Post, Body } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UpdateAiConfigDto } from './dtos/settings.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
+import { AdminOnly } from '../crm/common/access/admin-only.decorator';
 
 @ApiTags('Settings')
 @Controller('settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('ai-config')
   @ApiOperation({
     summary: 'Get current AI configuration',
@@ -20,7 +19,7 @@ export class SettingsController {
     return this.settingsService.getAiConfig();
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('ai-config')
   @ApiOperation({
     summary: 'Update AI configuration',
@@ -30,7 +29,7 @@ export class SettingsController {
     return this.settingsService.updateAiConfig(body);
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('openrouter-models')
   @ApiOperation({
     summary: 'Get list of available OpenRouter models',
@@ -40,7 +39,7 @@ export class SettingsController {
     return this.settingsService.getOpenRouterModels();
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('9router-models')
   @ApiOperation({
     summary: 'Get list of available 9router models',

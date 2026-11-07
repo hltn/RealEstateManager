@@ -1,8 +1,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { UserRole } from '../../../common/enums/user-role.enum';
+import { AdminOnly } from '../../crm/common/access/admin-only.decorator';
 import {
   buildPaginationMeta,
   normalizePagination,
@@ -17,7 +16,7 @@ import { ExternalLogService } from '../services/external-log.service';
  */
 @ApiTags('External Logs')
 @Controller('external-logs')
-@Roles(UserRole.ADMIN)
+@AdminOnly()
 export class ExternalLogController {
   constructor(private readonly externalLogService: ExternalLogService) {}
 

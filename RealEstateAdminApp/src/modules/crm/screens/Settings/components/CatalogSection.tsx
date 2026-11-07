@@ -1,5 +1,5 @@
 /**
- * Quản lý 1 danh mục (tình trạng / nguồn khách / khu vực) qua API `/crm/*` (Quản trị): danh sách + form thêm/sửa.
+ * Quản lý 1 danh mục (tình trạng / nguồn khách / kết quả liên hệ / khu vực) qua API `/crm/*` (Quản trị): danh sách + form thêm/sửa.
  * Không có nút xoá: mục đã dùng chỉ được ẩn (giữ dữ liệu lịch sử — X7); trùng mã/tên do server báo (409 `CATALOG_DUPLICATED`).
  */
 import { useState } from 'react';
@@ -41,6 +41,16 @@ const ItemMeta = ({ item }: { item: AdminCatalogItem }) => {
         <span className={`${CHIP_SMALL_CLASS} ${STATUS_TONE_STYLES[item.tone].chipClass}`}>{LIST_GROUP_LABELS[item.listGroup]}</span>
         {item.isDefault && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Mặc định</span>}
         {item.isSystem && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>Hệ thống</span>}
+      </span>
+    );
+  }
+  if ('suggestedFollowUpDays' in item) {
+    // Kết quả liên hệ (FR-39): tóm tắt gợi ý để Quản trị thấy nhanh form Ghi chú chăm sóc sẽ tự điền gì.
+    const days = item.suggestedFollowUpDays === null ? 'Không gợi ý hẹn lại' : `Hẹn lại sau ${item.suggestedFollowUpDays} ngày`;
+    return (
+      <span className="flex flex-col gap-0.5 text-theme-xs text-gray-500 dark:text-gray-400">
+        <span>{days}</span>
+        {item.suggestionText && <span>Gợi ý: {item.suggestionText}</span>}
       </span>
     );
   }

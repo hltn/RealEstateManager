@@ -1,6 +1,6 @@
 # 06 — Triển khai production (Docker Compose)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.4
 
 Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài liệu này mô tả kiến trúc, biến môi trường, cách triển khai mới, **quy trình nâng cấp từ bản Mongo standalone cũ**, sao lưu và xử lý sự cố. Stack dev (`RealEstateBackendApp/docker-compose.dev.yml`, project `realestate-dev`) là hệ thống riêng, không bị ảnh hưởng.
 
@@ -719,6 +719,7 @@ docker inspect realestate_backend --format '{{.State.Health.Status}}'           
 11. Token Cloudflare: `CLOUDFLARE_TUNNEL_TOKEN` là biến bắt buộc trong `.env.docker` (mục 5.0a (e) hướng dẫn chép từ `deploy.sh` cũ mà không in ra). Chỉ xóa/`shred` `~/deploy.sh.old` sau khi tunnel đã lên và chạy ổn (5.7).
 12. Từ nay cập nhật bằng `deploy.sh` trong repo (mục 11), thay script cũ trên VPS. Người commit `deploy.sh` từ Windows chạy `git add --chmod=+x deploy.sh scripts/run-migration.sh` để giữ bit thực thi (tài liệu vẫn dùng `bash deploy.sh` nên không phụ thuộc bit này).
 13. Dọn định kỳ thẻ image dự phòng `realestatemanager-backend:pre-*` và image `realestate-migrate:*` (mục 5.7/11); script từ chối chạy khi dung lượng đĩa thấp.
+14. Web Push (v1.0.4): sinh khóa VAPID một lần, đặt `VAPID_*` + `CRM_PUSH_ENABLED` rồi bật theo đúng thứ tự: làm theo **mục 15** (kèm cách tắt khẩn cấp, đổi khóa và checklist thử trên điện thoại thật).
 
 ## 10. Bật CRM trên production
 
@@ -728,7 +729,7 @@ Cờ CRM có hai phía và **phải khớp**: backend đọc lúc chạy, fronte
 |---|---|---|---|
 | `CRM_ENABLED` | `FEATURE_CRM_ENABLED` | `VITE_CRM_ENABLED` | công tắc tổng, mặc định `false`; chỉ ghi đúng `true`/`false` chữ thường (backend nhận cả `1`/`yes`/`on` nhưng frontend thì không, sẽ lệch) |
 | `CRM_ATTACHMENTS_ENABLED` | `FEATURE_CRM_ATTACHMENTS` | `VITE_FEATURE_CRM_ATTACHMENTS` | ảnh nhật ký; cần MinIO + `S3_PUBLIC_ENDPOINT` (mục 3) |
-| `CRM_PUSH_ENABLED` | `FEATURE_CRM_PUSH` (mặc định `false`; kèm `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`; chỉ backend, không có phía frontend; đổi thì `docker compose --env-file .env.docker up -d backend` để tạo lại container, không cần build) | (không có) | Web Push v1.0.4; runbook đầy đủ ở T-43 (mục "Web Push VAPID", sẽ viết) |
+| `CRM_PUSH_ENABLED` | `FEATURE_CRM_PUSH` (mặc định `false`; kèm `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`; chỉ backend, không có phía frontend; đổi thì `docker compose --env-file .env.docker up -d backend` để tạo lại container, không cần build) | (không có) | Web Push v1.0.4; runbook đầy đủ ở **mục 15** (Web Push VAPID) |
 | `PUSH_ENDPOINT_HOST_ALLOWLIST` (tùy chọn) | `PUSH_ENDPOINT_HOST_ALLOWLIST` (danh sách host cách nhau dấu phẩy, hỗ trợ `*.host`; **chỉ bổ sung** vào mặc định FCM/Mozilla/Apple/WNS, không thay thế; để trống là bình thường, đổi thì tạo lại container backend) | (không có) | Cho phép thêm host dịch vụ push khi nhà cung cấp đổi tên miền (FR-01, chống SSRF) |
 | (cố định) | `FEATURE_CRM_IMPORT=false` | `VITE_CRM_MOCK_REPORTS=false`, `VITE_CRM_MOCK_IMPORT_EXPORT=false` | M8 chưa làm; không cho dữ liệu mẫu lọt vào production |
 
@@ -1356,5 +1357,241 @@ Cloudflare mặc định cache theo **phần mở rộng** (`.js`, `.css`, ảnh
 4. Nên để tắt các tính năng sửa JS/HTML ở edge cho hostname admin (Rocket Loader, và Auto Minify nếu tài khoản còn tùy chọn này): chúng đổi nội dung file mà precache của service worker đã ghi nhận theo bản build.
 
 > Trạng thái: **chưa kiểm chứng trên Cloudflare thật** (không có quyền/không thể thử từ repo): hành vi `cf-cache-status` của `sw.js`/`index.html`, Cache Rule bypass và Purge là việc của Oniichan. Cũng **chưa kiểm** với bản build frontend thật có `sw.js`/`workbox-*.js` thật (bảng 14.2 dùng `dist` giả); tên file thật do `vite-plugin-pwa` sinh ra cần đối chiếu với các location ở 14.1 khi có bản build đầu tiên (nếu có file mới không băm tên như `registerSW.js` thì đã có sẵn, tên khác thì phải thêm location). Luồng cập nhật/offline của service worker trên trình duyệt thật cũng thuộc phần frontend, chưa phải phạm vi tài liệu này.
+
+## 15. Web Push VAPID (v1.0.4, T-43, FR-08)
+
+Runbook bật/tắt/đổi khóa Web Push trên VPS. Đối chiếu mã nguồn: `push-provider.factory.ts` (chọn nhà cung cấp **một lần lúc khởi động**), `push-subscriptions.controller.ts` (`GET /push-subscriptions/config`), worker `push.send` + `push.sweep`.
+
+**Nguyên tắc chung**
+- Khóa riêng VAPID là bí mật: **không dán vào chat, không commit, không in ra màn hình**. Mọi lệnh dưới đây ghi thẳng vào file quyền 600 hoặc chỉ in độ dài/số đếm.
+- `VAPID_*` và `CRM_PUSH_ENABLED` chỉ nằm ở `environment` của backend (không `build.args`, không vào image, không có phía frontend: frontend lấy khóa công khai lúc chạy qua `/push-subscriptions/config`). Đổi các biến này chỉ cần **tạo lại container**, không build: `docker compose --env-file .env.docker up -d backend` (vài giây).
+- Khi cờ tắt hoặc khóa sai, backend **vẫn khởi động bình thường** với `NoopPushProvider`; hộp thông báo trong app vẫn hoạt động, chỉ không có push ra thiết bị.
+- Mọi lệnh chạy ở thư mục gốc repo trên VPS (nơi có `docker-compose.yml` và `.env.docker`).
+
+### 15.1. Thứ tự bật trên production
+
+Chỉ bật push (bước 5) khi các bước trước đã xong; đảo thứ tự có thể làm người dùng nhận push khi dữ liệu/quyền chưa đúng:
+
+1. Các task bảo mật dữ liệu **T-01..T-04 (FR-14/15/16)** đã làm xong **và đã qua `qa-agent`** (không còn Critical/High). Push gửi nội dung thông báo ra dịch vụ ngoài nên phải đúng quyền/PII trước.
+2. Phần push của backend/frontend đã nằm trong bản deploy (T-16..T-38, T-39..T-42) và `deploy.sh` đã chạy thành công (mục 11).
+3. **A0 xong**: migration 007/008/009 đã `--apply` (mục 11.4) **và** bước bù mã danh mục 8c chạy xong (15.7).
+4. Sinh khóa VAPID một lần (15.2) và đặt vào `.env.docker` (15.3) với **cờ vẫn `false`**; `up -d backend`; kiểm `config` (15.4) phải ra `enabled:false`.
+5. Đặt `CRM_PUSH_ENABLED=true`, `up -d backend`, kiểm `config` ra `enabled:true` (15.4) và log có dòng "Web Push bật" (15.5).
+6. Thử bằng thao tác thật trên điện thoại (15.8, 15.12), theo dõi `pushStatus` (15.9).
+
+Bước 4-6 là việc **sau deploy do Oniichan làm** (T-48), nằm ngoài `/spec-implement`. Cờ tắt lại được bất cứ lúc nào (15.10).
+
+### 15.2. Sinh khóa VAPID (một lần, không hiển thị khóa)
+
+Dùng đúng thư viện `web-push` trong image backend (không cần Node trên máy chủ). `umask 077` để file ra quyền 600; lệnh ghi thẳng vào file, **không in khóa lên màn hình**:
+
+```bash
+umask 077
+docker compose --env-file .env.docker run --rm --no-deps -T backend node -e \
+  "const k=require('web-push').generateVAPIDKeys();process.stdout.write('VAPID_PUBLIC_KEY='+k.publicKey+'\nVAPID_PRIVATE_KEY='+k.privateKey+'\n')" \
+  > ~/vapid.new.env
+ls -l ~/vapid.new.env   # kỳ vọng: -rw------- và > 0 byte
+```
+
+Kiểm độ dài (không in giá trị): khóa công khai **87** ký tự, khóa riêng **43** ký tự (base64url của 65 và 32 byte):
+
+```bash
+awk -F= '/^VAPID_PUBLIC_KEY=/{print "public:", length($2)} /^VAPID_PRIVATE_KEY=/{print "private:", length($2)}' ~/vapid.new.env
+# kỳ vọng: public: 87 / private: 43
+```
+
+**Sao lưu khóa riêng vào trình quản lý mật khẩu ngay lúc này** (mở file bằng trình soạn thảo trên máy chủ và chép tay, hoặc `scp` về máy cá nhân; không qua chat/email). Mất khóa riêng cũng như đổi khóa: mọi thiết bị đã đăng ký thành vô hiệu (15.11).
+
+### 15.3. Đặt `VAPID_*` và `CRM_PUSH_ENABLED` vào `.env.docker`
+
+```bash
+# 1) Xóa dòng cũ (nếu có), bảo đảm file kết thúc bằng xuống dòng, rồi nối khóa mới
+sed -i '/^VAPID_PUBLIC_KEY=/d;/^VAPID_PRIVATE_KEY=/d' .env.docker
+[ -n "$(tail -c1 .env.docker)" ] && echo >> .env.docker
+cat ~/vapid.new.env >> .env.docker
+chmod 600 .env.docker
+
+# 2) Xóa file tạm chứa khóa (khóa riêng đã có trong .env.docker và trình quản lý mật khẩu)
+shred -u ~/vapid.new.env
+
+# 3) Đặt các biến còn lại (mở bằng trình soạn thảo, KHÔNG echo giá trị bí mật):
+#    VAPID_SUBJECT=mailto:<email liên hệ thật>   (bắt buộc là mailto: hoặc https:)
+#    CRM_PUSH_ENABLED=false                      (ở bước 4 của 15.1; bước 5 mới đổi thành true)
+grep -nE '^(CRM_PUSH_ENABLED|VAPID_SUBJECT)=' .env.docker
+
+# 4) Kiểm độ dài khóa trong .env.docker (không in giá trị)
+awk -F= '/^VAPID_PUBLIC_KEY=/{print "public:", length($2)} /^VAPID_PRIVATE_KEY=/{print "private:", length($2)}' .env.docker
+
+# 5) Kiểm compose nhận biến mà KHÔNG lộ khóa riêng: chỉ in cờ/subject, còn khóa chỉ đếm số dòng có giá trị (kỳ vọng 1)
+docker compose --env-file .env.docker config | grep -E 'FEATURE_CRM_PUSH|VAPID_SUBJECT|PUSH_ENDPOINT'
+docker compose --env-file .env.docker config | grep -c '^ *VAPID_PRIVATE_KEY: .\+'
+
+# 6) Áp dụng (tạo lại container backend, không build)
+docker compose --env-file .env.docker up -d backend
+```
+
+`.env.docker` đã nằm ngoài git (mục 2). Đã có bản sao lưu `.env.docker` ngoài máy chủ (mục 9, việc 1): cập nhật bản sao đó sau khi thêm `VAPID_*`.
+
+### 15.4. Kiểm `GET /push-subscriptions/config`
+
+Endpoint cần đăng nhập (mọi vai trò CRM). Mật khẩu nhập tay, không nằm trên dòng lệnh hay lịch sử shell:
+
+```bash
+read -rp 'Email: ' E; read -rsp 'Mật khẩu: ' P; echo
+TOKEN=$(printf '{"email":"%s","password":"%s"}' "$E" "$P" \
+  | curl -s http://localhost/api/v1/auth/login -H 'content-type: application/json' -d @- \
+  | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+unset P
+curl -s http://localhost/api/v1/push-subscriptions/config -H "Authorization: Bearer $TOKEN"; echo
+unset TOKEN
+```
+
+Đăng nhập chịu giới hạn 5 lần/phút/IP ở production: nhập sai nhiều lần sẽ bị chặn tạm.
+
+| Trạng thái | Kết quả `data` |
+|---|---|
+| `CRM_PUSH_ENABLED=true` + `VAPID_*` hợp lệ | `{"enabled":true,"publicKey":"<87 ký tự>"}`; 10 ký tự đầu của `publicKey` phải trùng đầu `VAPID_PUBLIC_KEY` trong `.env.docker` |
+| Cờ `false` | `{"enabled":false,"publicKey":null}` |
+| Cờ `true` nhưng thiếu/sai biến `VAPID_*` | `{"enabled":false,"publicKey":null}` (backend đã quay về Noop, xem log ở 15.5) |
+
+Khóa công khai là thông tin công khai (trình duyệt nào cũng nhận được), in ra được; **khóa riêng thì không bao giờ**.
+
+### 15.5. Log khởi động mong đợi
+
+```bash
+docker compose --env-file .env.docker logs --since 5m backend | grep -E 'Web Push|FEATURE_CRM_PUSH'
+```
+
+- Thành công: `Web Push bật (VAPID hợp lệ), dùng WebPushProvider.`
+- Cờ bật nhưng sai cấu hình (log mức ERROR, chỉ nêu **tên** biến, không kèm giá trị): `FEATURE_CRM_PUSH đang bật nhưng thiếu hoặc sai định dạng: VAPID_PUBLIC_KEY, ...` rồi quay về Noop. Sửa biến theo tên đã nêu rồi `up -d backend` lại.
+- Cờ tắt: không có dòng nào ở trên (Noop im lặng).
+
+### 15.6. Quan hệ giữa các lớp (để hiểu `pushStatus`)
+
+- Khi có sự kiện, Dispatcher ghi thông báo vào hộp thư với `pushStatus=PENDING`; job `push.send` (BullMQ) gửi sau khi transaction commit; `push.sweep` (chu kỳ 60 giây) xếp lại các thông báo `PENDING` quá 30 giây (lưới an toàn khi Redis/worker gián đoạn). Sổ gửi theo thiết bị nằm ở `push_deliveries`.
+- `pushStatus`: `PENDING`, `SENT`, `SKIPPED` (cờ tắt, người nhận không còn `ACTIVE`, loại thông báo bị tắt, giờ yên lặng, không có thiết bị, vượt giới hạn 3 push/đợt), `FAILED`.
+- Dịch vụ push trả 404/410 nghĩa là thiết bị không còn: backend thu hồi thiết bị đó (lý do `GONE`). Tối đa 3 thiết bị/người; đăng ký quá 90 ngày không làm mới thì hết hạn.
+- Có 4 loại thông báo trong danh mục push. `CUSTOMER_ASSIGNED` chỉ push khi người nhận được thêm làm **thành viên (MEMBER)**; đổi người phụ trách chính (PRIMARY) hay tạo khách mới **không** push.
+
+### 15.7. Bù mã danh mục A0 sau `up` (bước 8c)
+
+`deploy.sh` đã chạy bước này **tự động mọi lần deploy** (mục 11, bước 8c) và fail deploy nếu thoát khác 0. Chạy tay khi cần xác nhận, hoặc sau khi `up` thủ công ngoài `deploy.sh`:
+
+```bash
+docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/crm-catalog-codes.cli.js --apply
+echo "exit=$?"   # kỳ vọng exit=0; khác 0 thì DỪNG, không bật push
+```
+
+Lệnh idempotent (chạy lại an toàn). Điều kiện bật push ở 15.1 yêu cầu A0 xong để danh mục dựa trên mã khớp dữ liệu.
+
+### 15.8. Thử push bằng thao tác thật (không có endpoint "Gửi thử")
+
+Hệ thống **không có** endpoint gửi thử; thử bằng đúng luồng nghiệp vụ. Cần một **tài khoản thử** (STAFF hoặc MANAGER, không phải tài khoản quản trị của Oniichan) và một điện thoại thật:
+
+1. Trên điện thoại, mở web admin bằng HTTPS (domain thật). **PWA phải cập nhật bản mới trước**: khi thấy thông báo bản mới, bấm **"Cập nhật"**. Thiết bị chưa cập nhật còn chạy service worker cũ, **không xử lý được push** nên sẽ không hiện thông báo dù backend đã gửi.
+2. iPhone: bắt buộc **"Thêm vào Màn hình chính"** rồi mở từ biểu tượng đó (iOS 16.4 trở lên); mở trong tab Safari thường không nhận push.
+3. Đăng nhập tài khoản thử, vào **Cài đặt thông báo**, bật thông báo và cho phép quyền khi trình duyệt hỏi. Kiểm: thiết bị hiện trong danh sách thiết bị của chính mình (`GET /push-subscriptions`).
+4. Dùng tài khoản khác (admin, hoặc người có quyền quản lý nhóm phụ trách của khách đó theo quy tắc nhóm hiện hành) vào một khách thử, **thêm tài khoản thử làm thành viên cùng phụ trách (MEMBER)**.
+5. Mong đợi trong khoảng 1 phút: điện thoại hiện push tiêu đề **"Bạn được mời cùng phụ trách một khách"**; chạm vào mở `/crm/customers/<id>` của khách đó. Thông báo trong app xuất hiện, `pushStatus` của nó chuyển `SENT` (truy vấn ở 15.9).
+6. Dọn: gỡ tài khoản thử khỏi nhóm phụ trách của khách thử (không để dữ liệu thử lẫn vào dữ liệu thật).
+
+Nếu không hiện push: xem `pushStatus` và `push_deliveries` ở 15.9 (`SKIPPED` cho biết lý do; `FAILED` kèm mã lỗi), rồi lỗi thường gặp ở 15.12.
+
+### 15.9. Truy vấn theo dõi `pushStatus` (chỉ đọc)
+
+Chạy trên VPS. Dòng `auth` đầu lấy tài khoản root từ biến môi trường của container (cùng cách mục 5), không có mật khẩu trên dòng lệnh. Script **chỉ đọc**:
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+const show = (label, cursor, fmt) => { print(label); cursor.forEach(r => print("  " + fmt(r))); };
+show("(1) pushStatus cua thong bao tao trong 24 gio qua:",
+  d.notifications.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: "$pushStatus", n: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+  r => r._id + ": " + r.n);
+print("(2) PENDING qua 2 phut (nghi Redis/worker):");
+print("  " + d.notifications.countDocuments({ pushStatus: "PENDING", createdAt: { $lt: new Date(Date.now() - 2 * 60 * 1000) } }));
+show("(3) Thiet bi bi thu hoi trong 24 gio qua, theo ly do (GONE = dich vu push bao 404/410):",
+  d.push_subscriptions.aggregate([{ $match: { revokedAt: { $gte: since } } }, { $group: { _id: "$revokedReason", n: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+  r => r._id + ": " + r.n);
+show("(4) Ket qua gui theo thiet bi trong 24 gio qua (FAILED 401/403 = nghi sai khoa VAPID):",
+  d.push_deliveries.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { status: "$status", code: "$lastErrorCode" }, n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
+  r => r._id.status + " code=" + r._id.code + ": " + r.n);
+print("(5) Thiet bi dang hieu luc:");
+print("  " + d.push_subscriptions.countDocuments({ revokedAt: null }));
+EOF
+```
+
+Cách đọc kết quả:
+
+| Quan sát | Ý nghĩa/việc cần làm |
+|---|---|
+| (1) có `SENT`, ít `FAILED` | Bình thường. `SKIPPED` nhiều là bình thường nếu cờ tắt, giờ yên lặng hoặc người nhận chưa bật thông báo |
+| (2) > 0 kéo dài | Redis/worker `push.send` có vấn đề (`push.sweep` sẽ xếp lại sau chu kỳ 60 giây; nếu vẫn tồn thì kiểm Redis và log backend) |
+| (3) `GONE` tăng đột biến | Nhiều thiết bị bị dịch vụ push từ chối cùng lúc: nghi vừa đổi khóa VAPID (15.11) |
+| (4) `FAILED` mã 401/403 | Nghi `VAPID_*` sai/lệch cặp hoặc `VAPID_SUBJECT` bị từ chối: kiểm 15.4/15.5 |
+| (5) bằng 0 | Chưa ai bật thông báo (hoặc vừa đổi khóa): người dùng cần bật lại |
+
+### 15.10. Tắt khẩn cấp
+
+```bash
+# Đặt CRM_PUSH_ENABLED=false trong .env.docker (mở bằng trình soạn thảo, hoặc:)
+sed -i 's/^CRM_PUSH_ENABLED=.*/CRM_PUSH_ENABLED=false/' .env.docker
+docker compose --env-file .env.docker up -d backend      # vài giây, không build
+# Kiểm: config phải ra {"enabled":false,"publicKey":null} (15.4)
+```
+
+Hiệu lực: provider chọn lại lúc khởi động thành Noop; worker thấy cờ tắt nên thông báo đang `PENDING` chuyển `SKIPPED` (không gửi). Hộp thông báo trong app **vẫn chạy**. **Reversible**: bật lại bằng `CRM_PUSH_ENABLED=true` + `up -d backend`; thiết bị đã đăng ký vẫn còn, người dùng không phải bật lại. Thông báo đã `SKIPPED` trong lúc tắt không được gửi bù.
+
+### 15.11. Đổi khóa VAPID và hệ quả
+
+Chỉ đổi khi nghi lộ khóa riêng hoặc mất khóa. **Hệ quả: toàn bộ đăng ký hiện có gắn với khóa cũ trở nên vô hiệu** (dịch vụ push từ chối, khoảng 401/403/410, rồi bị thu hồi `GONE`), **mọi người dùng phải vào Cài đặt thông báo và bật lại**. **Không hoàn tác được** (đăng ký cũ không khôi phục được bằng khóa cũ nếu đã bị thu hồi). Báo trước cho người dùng.
+
+1. Sinh cặp mới (15.2), thay vào `.env.docker` (15.3), `up -d backend`.
+2. Kiểm `config` (15.4) ra `publicKey` mới; log có "Web Push bật" (15.5).
+3. **Không cần build lại frontend**: frontend lấy khóa công khai lúc chạy. Người dùng bật lại thông báo sẽ đăng ký bằng khóa mới.
+4. Xóa khóa riêng **cũ** khỏi trình quản lý mật khẩu **chỉ sau khi** xác nhận push chạy với khóa mới (thử 15.8).
+
+### 15.12. Checklist thử thủ công trên điện thoại thật (Oniichan)
+
+Đây là phần **kiểm chứng khác** của FR-08 mà unit test không phủ được (nhận push trên thiết bị thật; tham chiếu từ ghi chú T-41/T-56 sang T-44/T-43). Làm sau bước 5 của 15.1. Đánh dấu từng dòng cho cả iPhone (Safari, PWA đã thêm vào Màn hình chính, iOS 16.4+) và Android (Chrome, PWA):
+
+| # | Bước | iPhone | Android |
+|---|---|---|---|
+| 1 | Mở PWA (iPhone: từ biểu tượng Màn hình chính); bấm **"Cập nhật"** nếu có | [ ] | [ ] |
+| 2 | Cài đặt thông báo: bật, cho phép quyền | [ ] | [ ] |
+| 3 | Thiết bị xuất hiện trong danh sách thiết bị của tôi | [ ] | [ ] |
+| 4 | Được thêm làm MEMBER: nhận push khi **app đang đóng/ở nền** | [ ] | [ ] |
+| 5 | Chạm push mở đúng `/crm/customers/<id>` | [ ] | [ ] |
+| 6 | Bật giờ yên lặng bao trùm giờ hiện tại rồi lặp lại bước 4: **không** có push, `pushStatus=SKIPPED` | [ ] | [ ] |
+| 7 | Tắt loại thông báo `CUSTOMER_ASSIGNED` rồi lặp lại bước 4: **không** có push | [ ] | [ ] |
+| 8 | Gỡ thiết bị trong danh sách thiết bị, lặp lại bước 4: **không** có push | [ ] | [ ] |
+| 9 | Đăng xuất: thiết bị bị thu hồi, không còn nhận push cho tài khoản đó | [ ] | [ ] |
+| 10 | Thiết bị **chưa** bấm "Cập nhật" (còn bản cũ): không hiện push, đây là hành vi dự kiến | [ ] | [ ] |
+
+Lỗi thường gặp: iPhone không mở từ Màn hình chính thì không đăng ký được; chặn thông báo ở cài đặt hệ điều hành; chế độ tiết kiệm pin/Focus chặn hiển thị; domain không phải HTTPS.
+
+### 15.13. Rollback image với migration 007/008 (Q10)
+
+Nếu sau khi bật cần lùi bản: **được lùi image** dù migration 007/008 đã `--apply` (chúng chỉ thêm trường mới, image cũ vẫn đọc id cũ). Quy trình L1 (lùi image), L2 (`$unset` nếu cần), L3 (`mongorestore`) nằm ở **mục 11**, đoạn "Ngoại lệ v1.0.4 cho migration 007 (mã danh mục, FR-40) và 008 (loại hình, FR-46)". Trước khi lùi, **tắt push trước (15.10)**; lùi image không xóa đăng ký thiết bị.
+
+### 15.14. Đã kiểm chứng / chưa kiểm chứng
+
+Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo/Redis tạm (đã xóa), khóa/mật khẩu giả, **không đụng môi trường dev/prod**.
+
+**Đã chạy thật:**
+- Sinh khóa bằng `generateVAPIDKeys()` với lệnh ghi file ở 15.2; độ dài đo được **87/43** (đúng ngưỡng 65/32 byte mà factory kiểm).
+- `docker compose config` với biến giả (cờ `true` rồi `false`): `FEATURE_CRM_PUSH` nhận `"true"`/`"false"`, `VAPID_SUBJECT` và `PUSH_ENDPOINT_HOST_ALLOWLIST` có trong `environment` của backend, `VAPID_PRIVATE_KEY` và `VAPID_PUBLIC_KEY` mỗi biến có đúng 1 dòng có giá trị (đếm bằng `grep -c`, không in).
+- Biên dịch (`tsc`) và chạy backend thật từ nguồn với Mongo + Redis tạm: `GET /push-subscriptions/config` ra đúng 3 trạng thái ở bảng 15.4 (`enabled:true` + khóa; cờ tắt; cờ bật nhưng thiếu VAPID thì `enabled:false`); log đúng hai câu ở 15.5.
+- Nội dung truy vấn theo dõi 15.9 chạy trên dữ liệu mẫu gieo vào Mongo tạm (`PENDING/SENT/SKIPPED`, thiết bị thu hồi `GONE`, `push_deliveries`): ra đủ 5 mục, số đếm khớp dữ liệu gieo.
+- `crm-catalog-codes.cli.js --apply` (15.7) trên Mongo tạm rỗng: thoát `0`.
+- T-20 đã ghi riêng: trong image production, `require('web-push').generateVAPIDKeys` là hàm (mục 11.5).
+
+**Chưa kiểm chứng (việc của Oniichan, sau deploy, T-48/T-44):**
+- Push thật tới thiết bị thật (iPhone/Android) và toàn bộ checklist 15.12, gồm hành vi PWA phải bấm "Cập nhật" trên máy thật.
+- VPS thật và Cloudflare: lệnh `docker compose run ... backend node -e ...` (15.2) trong stack thật, `read -rsp` + `curl` qua nginx (15.4), `shred` trên VPS, dòng `auth` bằng biến root trong container Mongo thật (15.9; trên máy dev đã chạy nội dung truy vấn nhưng với Mongo tạm).
+- Đổi khóa (15.11) và tắt khẩn cấp (15.10): mới thử ở mức đổi biến và khởi động lại tiến trình backend trên máy dev, chưa với stack compose đầy đủ.
+- Quy tắc nhóm phụ trách quyết định ai được thêm MEMBER (15.8 bước 4) lấy theo ứng dụng hiện hành; chưa đối chiếu từng vai trò trên bản chạy thật.
 
 [← Về chỉ mục Hạ tầng](README.md)

@@ -44,6 +44,7 @@ import { AnalyzeJobService } from './services/analyze-job.service';
 import { AuditAction } from './schemas/audit-log.schema';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { CrmActorService } from '../crm/common/access/crm-actor.service';
 
 describe('NewsFireCrawlManagerController', () => {
   let controller: NewsFireCrawlManagerController;
@@ -130,6 +131,8 @@ describe('NewsFireCrawlManagerController', () => {
         { provide: IdempotencyService, useValue: idempotencyService },
         { provide: AuditLogService, useValue: auditLogService },
         { provide: AnalyzeJobService, useValue: analyzeJobService },
+        // @AdminOnly() (FR-21) gắn ActiveAdminGuard: Nest cần CrmActorService để dựng guard (guard không chạy trong unit test).
+        { provide: CrmActorService, useValue: {} },
       ],
     }).compile();
 

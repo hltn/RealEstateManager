@@ -1,5 +1,5 @@
 /**
- * Form sửa/thêm 1 mục danh mục (tình trạng, nguồn khách, khu vực). Trường hiển thị tuỳ loại danh mục.
+ * Form sửa/thêm 1 mục danh mục (tình trạng, nguồn khách, kết quả liên hệ, khu vực). Trường hiển thị tuỳ loại danh mục.
  */
 import type { FormEvent } from 'react';
 import { useCatalogs } from '@crm/api';
@@ -10,7 +10,7 @@ import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CARD_TITLE_CLASS, INSET_CLASS } from '@crm/lib/uiClasses';
 import type { ListGroup, StatusTone } from '@crm/types/crm';
-import { AREA_TYPE_OPTIONS, CATALOG_NAME_MAX_LENGTH, LIST_GROUP_OPTIONS, STATUS_TONE_OPTIONS, type AdminCatalogKind, type AreaType, type CatalogDraft, withAreaParent } from '../settingsForms';
+import { AREA_TYPE_OPTIONS, CATALOG_NAME_MAX_LENGTH, FOLLOW_UP_DAYS_MAX, LIST_GROUP_OPTIONS, STATUS_TONE_OPTIONS, SUGGESTION_TEXT_MAX_LENGTH, type AdminCatalogKind, type AreaType, type CatalogDraft, withAreaParent } from '../settingsForms';
 
 interface CatalogItemEditorProps {
   kind: AdminCatalogKind;
@@ -53,7 +53,7 @@ export const CatalogItemEditor = ({ kind, draft, error, isSaving, onChange, onSa
   const parentOptions = catalogs.areas.filter((area) => area.id !== draft.id).map((area) => ({ value: area.id, label: area.name }));
 
   return (
-    <form onSubmit={handleSubmit} className={`${INSET_CLASS} space-y-4 p-4`} aria-label={isNew ? 'Thêm mục danh mục' : 'Sửa mục danh mục'}>
+    <form noValidate onSubmit={handleSubmit} className={`${INSET_CLASS} space-y-4 p-4`} aria-label={isNew ? 'Thêm mục danh mục' : 'Sửa mục danh mục'}>
       <h3 className={CARD_TITLE_CLASS}>{isNew ? 'Thêm mới' : `Sửa "${draft.name}"`}</h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField inputId={fieldId('name')} label="Tên" isRequired>
@@ -67,6 +67,30 @@ export const CatalogItemEditor = ({ kind, draft, error, isSaving, onChange, onSa
             </FormField>
             <FormField inputId={fieldId('tone')} label="Màu hiển thị">
               <SelectInput id={fieldId('tone')} value={draft.tone} options={STATUS_TONE_OPTIONS} onChange={(event) => onChange({ ...draft, tone: event.target.value as StatusTone })} />
+            </FormField>
+          </>
+        )}
+
+        {kind === 'contactResults' && (
+          <>
+            <FormField inputId={fieldId('follow-up-days')} label="Gợi ý hẹn lại sau (ngày)" hint={`0–${FOLLOW_UP_DAYS_MAX}; để trống = không gợi ý`}>
+              <TextInput
+                id={fieldId('follow-up-days')}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={FOLLOW_UP_DAYS_MAX}
+                value={draft.suggestedFollowUpDays}
+                onChange={(event) => onChange({ ...draft, suggestedFollowUpDays: event.target.value })}
+              />
+            </FormField>
+            <FormField inputId={fieldId('suggestion-text')} label="Gợi ý việc tiếp theo" hint="Tự điền vào ô việc tiếp theo của form Ghi chú chăm sóc">
+              <TextInput
+                id={fieldId('suggestion-text')}
+                value={draft.suggestionText}
+                maxLength={SUGGESTION_TEXT_MAX_LENGTH}
+                onChange={(event) => onChange({ ...draft, suggestionText: event.target.value })}
+              />
             </FormField>
           </>
         )}

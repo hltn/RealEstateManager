@@ -1,50 +1,70 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
-import { useNotificationActions, useNotifications, useUnreadNotificationCount, type NotificationItem } from "@crm/api";
+import { useUnreadNotificationCount } from "@crm/api";
 import { useIsMobile } from "@crm/hooks/useIsMobile";
-import { formatVnRelative } from "@crm/lib/dateTime";
-import { getNotificationTypeLabel, resolveNotificationPath } from "@crm/lib/notifications";
-import { Dropdown } from "../ui/dropdown/Dropdown";
-import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { useAuth } from "../../hooks/useAuth";
 import { hasCrmRole } from "../../utils/userRoles";
-
-const PREVIEW_LIMIT = 8;
+import { computeHorizontalShift, computeMaxHeight } from "./notificationDropdownLayout";
+import { NotificationDropdownPanel } from "./NotificationDropdownPanel";
+import { useDismissibleLayer } from "./useDismissibleLayer";
 
 /**
- * Chuông thông báo trên header: số chưa đọc (làm mới mỗi phút), xem nhanh 8 thông báo mới nhất, đánh dấu đã đọc,
- * mở màn liên quan, "Xem tất cả" -> `/notifications`. Chỉ hiện khi module CRM bật và người dùng có quyền.
+ * Chuông thông báo trên header: số chưa đọc (làm mới mỗi phút). Chỉ hiện khi module CRM bật và người dùng có quyền.
+ * FR-38 (T-57): desktop mở dropdown kiểu Facebook NEO DƯỚI CHUÔNG (căn mép phải theo chuông, không còn `-right-[240px]`,
+ * có kẹp ngang để không tràn viewport); mobile (< md) bấm chuông sang màn `/notifications`. Esc/bấm ra ngoài thì đóng.
  */
 export default function NotificationDropdown() {
   const { user } = useAuth();
   const isEnabled = CRM_FEATURE_FLAGS.isPrototypeEnabled && hasCrmRole(user) /* EDITOR thuần không có quyền CRM: backend trả 403 */;
   const [isOpen, setIsOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount(isEnabled);
-  const { data, isLoading, error } = useNotifications({ limit: PREVIEW_LIMIT }, isEnabled && isOpen);
-  const actions = useNotificationActions();
   const navigate = useNavigate();
   // FR-38: mobile (< md) bấm chuông sang màn `/notifications` (danh sách cuộn vô hạn), không mở popup.
   const isMobile = useIsMobile();
+  const isPanelVisible = isOpen && !isMobile;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Độ dịch ngang (px) để khung nằm trọn trong viewport; 0 khi bố cục đủ chỗ (trường hợp thường gặp).
+  const [shiftX, setShiftX] = useState(0);
+  // Chiều cao tối đa (px) theo chỗ còn lại dưới chuông: dưới lg chuông nằm ở hàng menu thu gọn nên thấp hơn nhiều so với đỉnh trang.
+  const [maxHeightPx, setMaxHeightPx] = useState<number | null>(null);
+
+  const closeDropdown = useCallback(() => setIsOpen(false), []);
+  useDismissibleLayer(isPanelVisible, containerRef, closeDropdown, bellRef);
+
+  // Đo khung sau khi vẽ (trước khi trình duyệt hiển thị) và mỗi lần đổi cỡ cửa sổ: kẹp lại nếu tràn mép viewport.
+  useLayoutEffect(() => {
+    if (!isPanelVisible) return undefined;
+    const clampToViewport = () => {
+      const rect = panelRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setShiftX((current) => computeHorizontalShift({ left: rect.left - current, right: rect.right - current, viewportWidth: document.documentElement.clientWidth }));
+      setMaxHeightPx(computeMaxHeight({ top: rect.top, viewportHeight: window.innerHeight }));
+    };
+    clampToViewport();
+    window.addEventListener("resize", clampToViewport);
+    return () => {
+      window.removeEventListener("resize", clampToViewport);
+      setShiftX(0);
+      setMaxHeightPx(null);
+    };
+  }, [isPanelVisible]);
 
   if (!isEnabled) return null;
 
-  const closeDropdown = () => setIsOpen(false);
-
-  const openItem = async (item: NotificationItem) => {
-    closeDropdown();
-    if (!item.isRead) await actions.markRead(item.id, true);
-    const path = resolveNotificationPath(item);
-    if (path) navigate(path);
-  };
-
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <button
+        ref={bellRef}
         type="button"
         data-testid="notification-bell"
         aria-label={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : "Thông báo"}
-        className="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full dropdown-toggle hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+        aria-haspopup={isMobile ? undefined : "dialog"}
+        aria-expanded={isMobile ? undefined : isPanelVisible}
+        className="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         onClick={() => (isMobile ? navigate("/notifications") : setIsOpen((current) => !current))}
       >
         {unreadCount > 0 && (
@@ -61,54 +81,18 @@ export default function NotificationDropdown() {
           />
         </svg>
       </button>
-      <Dropdown
-        isOpen={isOpen}
-        onClose={closeDropdown}
-        className="absolute -right-[240px] mt-[17px] flex max-h-[480px] w-[350px] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark sm:w-[361px] lg:right-0"
-      >
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 dark:border-gray-700">
-          <h5 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Thông báo</h5>
-          <button
-            type="button"
-            onClick={closeDropdown}
-            aria-label="Đóng"
-            className="text-gray-500 transition dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-          >
-            ✕
-          </button>
-        </div>
-        <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar" aria-live="polite">
-          {isLoading && <li className="p-4 text-theme-sm text-gray-500">Đang tải…</li>}
-          {error && !isLoading && <li className="p-4 text-theme-sm text-error-600">{error.message}</li>}
-          {!isLoading && !error && data.data.length === 0 && <li className="p-6 text-center text-theme-sm text-gray-500 dark:text-gray-400">Chưa có thông báo nào.</li>}
-          {data.data.map((item) => (
-            <li key={item.id}>
-              <DropdownItem
-                onItemClick={() => void openItem(item)}
-                className={`flex gap-3 rounded-lg border-b border-gray-100 px-4 py-3 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-white/5 ${item.isRead ? "" : "bg-brand-25 dark:bg-brand-500/[0.06]"}`}
-              >
-                <span aria-hidden="true" className={`mt-2 h-2 w-2 shrink-0 rounded-full ${item.isRead ? "bg-transparent" : "bg-brand-500"}`} />
-                <span className="block min-w-0">
-                  <span className={`mb-1 block text-theme-sm text-gray-800 dark:text-white/90 ${item.isRead ? "" : "font-semibold"}`}>{item.title}</span>
-                  <span className="mb-1 block text-theme-xs text-gray-500 dark:text-gray-400">{item.body}</span>
-                  <span className="flex items-center gap-2 text-gray-500 text-theme-xs dark:text-gray-400">
-                    <span>{getNotificationTypeLabel(item.type)}</span>
-                    <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
-                    <span>{formatVnRelative(item.createdAt)}</span>
-                  </span>
-                </span>
-              </DropdownItem>
-            </li>
-          ))}
-        </ul>
-        <Link
-          to="/notifications"
-          onClick={closeDropdown}
-          className="flex justify-center p-3 mt-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+      {isPanelVisible && (
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-label="Thông báo"
+          data-testid="notification-dropdown"
+          style={shiftX === 0 && maxHeightPx === null ? undefined : { transform: shiftX === 0 ? undefined : `translateX(${shiftX}px)`, maxHeight: maxHeightPx ?? undefined }}
+          className="absolute right-0 top-full z-40 mt-2 flex max-h-[min(36rem,calc(100dvh-5rem))] w-[360px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark"
         >
-          Xem tất cả thông báo
-        </Link>
-      </Dropdown>
+          <NotificationDropdownPanel onClose={closeDropdown} />
+        </div>
+      )}
     </div>
   );
 }

@@ -37,6 +37,7 @@ import {
   MAX_UNATTACHED_PER_UPLOADER,
 } from './care-log.constants';
 import { assertCanModifyCareLog } from './care-log.rules';
+import { AttachmentThumbnailQueueService } from './attachment-thumbnail-queue.service';
 import type { AttachmentUrls, CareLogLean } from './care-log.mapper';
 import { AttachmentUploadResponseDto } from './dtos/care-log.dto';
 import { CareLog, CareLogDocument } from './schemas/care-log.schema';
@@ -95,6 +96,7 @@ export class CareLogAttachmentsService {
     private readonly access: CustomerAccessService,
     private readonly rateLimit: CrmRateLimitService,
     private readonly audit: CrmAuditLogService,
+    private readonly thumbnailQueue: AttachmentThumbnailQueueService,
   ) {}
 
   /**
@@ -169,8 +171,9 @@ export class CareLogAttachmentsService {
       prefix: attachmentPrefix(customerId),
     });
 
+    let response: AttachmentUploadResponseDto;
     try {
-      return await withTransaction(this.connection, async (session) => {
+      response = await withTransaction(this.connection, async (session) => {
         const [created] = await this.attachmentModel.create(
           [
             {
@@ -211,6 +214,10 @@ export class CareLogAttachmentsService {
       await this.purgeFiles([stored.key]);
       throw error;
     }
+    // Thumbnail (FR-26) xử lý bất đồng bộ: xếp job SAU khi transaction đã commit, upload vẫn trả ngay `READY`.
+    // Lỗi xếp hàng chỉ ghi log (bước bù thumbnail xếp lại sau), không làm hỏng upload.
+    await this.thumbnailQueue.enqueue(response.id);
+    return response;
   }
 
   /**

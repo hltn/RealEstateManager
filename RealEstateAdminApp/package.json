@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "node e2e/run.mjs",
-    "e2e:headed": "node e2e/run.mjs --headed"
+    "e2e:headed": "node e2e/run.mjs --headed",
+    "e2e:mock": "playwright test -c e2e/playwright.mock.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.5.7",

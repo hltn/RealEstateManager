@@ -17,10 +17,11 @@ const CATALOG_DESCRIPTIONS: Record<AdminCatalogKind, string> = {
   statuses:
     `Tình trạng khách và danh sách tương ứng (${Object.values(LIST_GROUP_LABELS).join(' / ')}). Tình trạng hệ thống không ẩn được nếu là mặc định hoặc là tình trạng cuối của 1 danh sách.`,
   leadSources: 'Nguồn khách dùng khi tạo khách, lọc danh sách và báo cáo.',
+  contactResults: 'Kết quả liên hệ chọn trong form Ghi chú chăm sóc; có thể gợi ý số ngày hẹn lại và việc tiếp theo. Mục ẩn không còn xuất hiện ở lựa chọn mới, nhật ký cũ vẫn giữ nguyên.',
   areas: 'Danh sách 34 tỉnh/thành phố dùng cho khu vực khách đang sinh sống. Quản trị có thể thêm, đổi tên hoặc ẩn; chọn khu vực cha nếu cần tạo cấp con.',
 };
 
-const isCatalogTab = (tab: SettingsTab): tab is AdminCatalogKind => tab === 'statuses' || tab === 'leadSources' || tab === 'areas';
+const isCatalogTab = (tab: SettingsTab): tab is AdminCatalogKind => tab === 'statuses' || tab === 'leadSources' || tab === 'contactResults' || tab === 'areas';
 
 interface SettingsViewProps {
   variant: 'desktop' | 'mobile';

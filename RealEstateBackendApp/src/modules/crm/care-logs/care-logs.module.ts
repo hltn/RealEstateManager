@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
+import { QueueRuntimeModule } from '../../../shared/queue/queue-runtime.module';
 import { RedisModule } from '../../../shared/redis/redis.module';
 import { StorageModule } from '../../../shared/storage/storage.module';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
@@ -11,6 +12,8 @@ import { CustomersModule } from '../customers/customers.module';
 import { RemindersCoreModule } from '../reminders/reminders-core.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { AttachmentCleanupService } from './attachment-cleanup.service';
+import { AttachmentThumbnailProcessor } from './attachment-thumbnail.processor';
+import { AttachmentThumbnailQueueService } from './attachment-thumbnail-queue.service';
 import { CareLogAttachmentsController } from './care-log-attachments.controller';
 import { CareLogAttachmentsService } from './care-log-attachments.service';
 import { CareLogsController } from './care-logs.controller';
@@ -37,6 +40,7 @@ import {
     CrmSecurityModule,
     RedisModule,
     StorageModule,
+    QueueRuntimeModule,
   ],
   controllers: [CareLogsController, CareLogAttachmentsController],
   providers: [
@@ -44,6 +48,9 @@ import {
     CareLogsService,
     CareLogAttachmentsService,
     AttachmentCleanupService,
+    // Thumbnail ảnh đính kèm (FR-26): processor + worker/bộ xếp hàng của queue `crm-image`.
+    AttachmentThumbnailProcessor,
+    AttachmentThumbnailQueueService,
   ],
   // `CareLogsService`: hoàn thành lịch hẹn kèm nhật ký; `AttachmentCleanupService`: job dọn ảnh của scheduler (M5).
   exports: [CareLogsService, AttachmentCleanupService],

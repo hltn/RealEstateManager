@@ -24,6 +24,16 @@ export enum AttachmentStatus {
   REMOVED = 'REMOVED',
 }
 
+/**
+ * `crm_attachments.thumbStatus` (FR-26). Thiếu field (ảnh cũ) coi như `NONE`; `FAILED` = job thumbnail hết lượt
+ * thử, ảnh vẫn dùng được (`thumbUrl` rơi về `url`) và không được bù lại.
+ */
+export enum ThumbStatus {
+  NONE = 'NONE',
+  READY = 'READY',
+  FAILED = 'FAILED',
+}
+
 export enum AttachmentKind {
   CARE_LOG_IMAGE = 'CARE_LOG_IMAGE',
 }

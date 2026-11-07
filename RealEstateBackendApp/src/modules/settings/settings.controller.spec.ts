@@ -12,6 +12,7 @@ import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { CrmActorService } from '../crm/common/access/crm-actor.service';
 
 describe('SettingsController (contract mục 1/3)', () => {
   let controller: SettingsController;
@@ -27,7 +28,11 @@ describe('SettingsController (contract mục 1/3)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SettingsController],
-      providers: [{ provide: SettingsService, useValue: service }],
+      providers: [
+        { provide: SettingsService, useValue: service },
+        // @AdminOnly() (FR-21) gắn ActiveAdminGuard: Nest cần CrmActorService để dựng guard (guard không chạy trong unit test).
+        { provide: CrmActorService, useValue: {} },
+      ],
     }).compile();
 
     controller = module.get<SettingsController>(SettingsController);
