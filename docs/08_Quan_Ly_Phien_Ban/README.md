@@ -52,12 +52,12 @@ Thẻ git (**đã quyết**, Oniichan, 2026-11-04):
 
 | Thành phần | Thư mục | Tệp chứa số phiên bản | Phiên bản | Ghi chú |
 |---|---|---|---|---|
-| Backend | `RealEstateBackendApp/` | `package.json` + `package-lock.json` | 1.0.3 | Đi theo bản phát hành |
-| Web admin | `RealEstateAdminApp/` | `package.json` + `package-lock.json` | 1.0.3 | Đi theo bản phát hành |
-| Mobile | `RealEstateApp/` | `package.json` + `package-lock.json` + `app.json` (`expo.version`) | 1.0.3 | Đi theo bản phát hành |
+| Backend | `RealEstateBackendApp/` | `package.json` + `package-lock.json` | 1.0.4 | Đi theo bản phát hành |
+| Web admin | `RealEstateAdminApp/` | `package.json` + `package-lock.json` | 1.0.4 | Đi theo bản phát hành |
+| Mobile | `RealEstateApp/` | `package.json` + `package-lock.json` + `app.json` (`expo.version`) | 1.0.4 | Đi theo bản phát hành |
 | Prototype CRM | `stnd-crm-unified/` | `package.json` | 0.2.0 | **Độc lập, không đi theo bản phát hành**; dùng dữ liệu mock thay API thật, giữ số riêng |
 
-Manifest hiện là **1.0.3** (commit `b40b851`, 2026-11-03). Số **1.0.2** là số tại `d0037f2` (commit mang thẻ `v1.0.2`).
+Manifest hiện là **1.0.4** (commit `b40b851`, 2026-11-03). Số **1.0.2** là số tại `d0037f2` (commit mang thẻ `v1.0.2`).
 
 ## 4. Phiên bản từng tài liệu
 
