@@ -107,6 +107,7 @@ export type CrmAction =
   | { type: 'settings/update'; changes: Partial<CrmSettings> }
   | { type: 'filters/set'; changes: Partial<CustomerFilters> }
   | { type: 'filters/reset' }
+  | { type: 'filters/dropTags'; tagIds: string[] }
   | { type: 'modal/open'; modal: ActiveModal }
   | { type: 'modal/close' };
 
@@ -453,6 +454,12 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
 
     case 'filters/reset':
       return { ...state, filters: { ...DEFAULT_FILTERS, listGroup: state.filters.listGroup } };
+
+    // Thẻ bị gộp/xóa: gỡ id khỏi bộ lọc thẻ đang lưu (id mồ côi làm danh sách rỗng mà chip để bỏ chọn không còn hiện).
+    case 'filters/dropTags': {
+      if (!state.filters.tagIds.some((id) => action.tagIds.includes(id))) return state;
+      return { ...state, filters: { ...state.filters, tagIds: state.filters.tagIds.filter((id) => !action.tagIds.includes(id)) } };
+    }
 
     case 'modal/open':
       return { ...state, activeModal: action.modal };

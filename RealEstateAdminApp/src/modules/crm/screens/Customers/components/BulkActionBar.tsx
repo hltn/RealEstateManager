@@ -13,6 +13,7 @@ import { DeleteReasonDialog } from '@crm/components/DeleteReasonDialog';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { BULK_DELETE_LIMIT, canOfferBulkDelete, describeDeleteBatchError } from '@crm/lib/customerDeletion';
 import { isDroppedStatus } from '@crm/lib/customerRules';
+import { groupTagsByCategory } from '@crm/lib/tagCategories';
 import { downloadCsv } from '@crm/lib/csv';
 import { BUTTON_PRIMARY_CLASS, DANGER_BUTTON_CLASS, FILTER_INPUT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
@@ -69,11 +70,11 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const valueOptions =
     kind === 'CHANGE_STATUS'
       ? catalogs.statuses.filter((status) => status.isActive).map((status) => ({ value: status.id, label: status.label }))
-      : kind === 'ADD_TAGS'
-        ? catalogs.tags.filter((tag) => tag.isActive).map((tag) => ({ value: tag.id, label: `#${tag.name}` }))
-        : kind === 'ASSIGN'
-          ? assignableUsers.map((user) => ({ value: user.id, label: user.fullName }))
-          : [];
+      : kind === 'ASSIGN'
+        ? assignableUsers.map((user) => ({ value: user.id, label: user.fullName }))
+        : [];
+  // Gắn thẻ: gom theo nhóm (Sở thích, Nghề nghiệp, Khác) bằng `<optgroup>` (FR-48).
+  const tagGroups = kind === 'ADD_TAGS' ? groupTagsByCategory(catalogs.tags.filter((tag) => tag.isActive)) : [];
 
   const finish = () => {
     setSelectedKind('');
@@ -209,6 +210,15 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
+          ))}
+          {tagGroups.map((group) => (
+            <optgroup key={group.category} label={group.title}>
+              {group.tags.map((tag) => (
+                <option key={tag.id} value={tag.id}>
+                  #{tag.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       )}

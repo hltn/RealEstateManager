@@ -124,6 +124,21 @@ describe('crmReducer — UI state', () => {
     expect(reset.filters.q).toBe('');
   });
 
+  it('filters/dropTags gỡ đúng id thẻ đã gộp/xóa, giữ thẻ khác và bộ lọc khác', () => {
+    const state = createTestState();
+    const filtered = crmReducer(state, { type: 'filters/set', changes: { tagIds: ['t-golf', 't-bs', 't-gon'], projectIds: ['QTERRA'] } });
+    const next = crmReducer(filtered, { type: 'filters/dropTags', tagIds: ['t-golf', 't-gon'] });
+    expect(next.filters.tagIds).toEqual(['t-bs']);
+    expect(next.filters.projectIds).toEqual(['QTERRA']);
+  });
+
+  it('filters/dropTags không có id khớp: trả nguyên state (không render lại)', () => {
+    const state = createTestState();
+    const filtered = crmReducer(state, { type: 'filters/set', changes: { tagIds: ['t-bs'] } });
+    expect(crmReducer(filtered, { type: 'filters/dropTags', tagIds: ['t-golf'] })).toBe(filtered);
+    expect(crmReducer(state, { type: 'filters/dropTags', tagIds: ['t-golf'] })).toBe(state);
+  });
+
   it('session/setUser bỏ qua người dùng không tồn tại', () => {
     const state = createTestState();
     expect(crmReducer(state, { type: 'session/setUser', userId: 'ghost' })).toBe(state);

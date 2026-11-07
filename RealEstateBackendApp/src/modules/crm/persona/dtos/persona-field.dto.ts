@@ -175,7 +175,7 @@ export class CreatePersonaFieldDto {
 }
 
 /**
- * Sửa trường: mọi thuộc tính của POST trừ `key` (bất biến). `type` chỉ đổi được khi chưa có dữ liệu.
+ * Sửa trường: mọi thuộc tính của POST trừ `key` (bất biến). `type` chỉ đổi được khi chưa có dữ liệu và không phải trường hệ thống.
  * `options` là DANH SÁCH MONG MUỐN: lựa chọn vắng mặt bị tắt (không xóa).
  */
 export class UpdatePersonaFieldDto {
@@ -196,7 +196,8 @@ export class UpdatePersonaFieldDto {
 
   @ApiPropertyOptional({
     enum: PersonaFieldType,
-    description: 'Khóa khi đã có dữ liệu (409 PERSONA_FIELD_TYPE_LOCKED)',
+    description:
+      'Khóa khi đã có dữ liệu (409 PERSONA_FIELD_TYPE_LOCKED); không đổi được với trường hệ thống (409 PERSONA_FIELD_SYSTEM)',
   })
   @OptionalNotNull()
   @IsEnum(PersonaFieldType)

@@ -16,6 +16,7 @@ import {
   MongooseModule,
 } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
+import type { Db } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Model, Types } from 'mongoose';
 import sharp from 'sharp';
@@ -38,7 +39,12 @@ import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { CustomerAccessService } from '../customers/access/customer-access.service';
 import { CustomersRepository } from '../customers/customers.repository';
-import { AttachmentCleanupService } from './attachment-cleanup.service';
+import { createNotificationAttachmentIndexes } from '../../../migrations/notification-attachment-indexes';
+import {
+  AttachmentCleanupService,
+  THUMBNAIL_BACKFILL_BATCH_SIZE,
+  thumbnailBackfillFilter,
+} from './attachment-cleanup.service';
 import { AttachmentThumbnailProcessor } from './attachment-thumbnail.processor';
 import { AttachmentThumbnailQueueService } from './attachment-thumbnail-queue.service';
 import { CareLogAttachmentsService } from './care-log-attachments.service';
@@ -113,7 +119,12 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
   /** Hàng đợi giả: `jobId` đã có thì bỏ qua như BullMQ; `isRedisDown` mô phỏng Redis lỗi. */
   const jobs = new Map<
     string,
-    { name: string; data: { attachmentId: string } }
+    {
+      name: string;
+      data: { attachmentId: string };
+      /** Trạng thái giả của job trong Redis (mặc định đang chờ). */
+      state: 'waiting' | 'completed' | 'failed';
+    }
   >();
   let isRedisDown = false;
   const runtime = {
@@ -127,10 +138,27 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
         options: { jobId: string },
       ) => {
         if (isRedisDown) return Promise.reject(new Error('redis down'));
-        if (!jobs.has(options.jobId)) jobs.set(options.jobId, { name, data });
+        if (!jobs.has(options.jobId)) {
+          jobs.set(options.jobId, { name, data, state: 'waiting' });
+        }
         return Promise.resolve({ id: options.jobId });
       },
     ),
+    /** Job còn trong "Redis" (kể cả completed/failed như BullMQ giữ lại), có `getState`/`remove`. */
+    getJob: jest.fn((_queue: string, jobId: string) => {
+      const job = jobs.get(jobId);
+      return Promise.resolve(
+        job
+          ? {
+              getState: () => Promise.resolve(job.state),
+              remove: () => {
+                jobs.delete(jobId);
+                return Promise.resolve();
+              },
+            }
+          : null,
+      );
+    }),
   };
 
   const customerId = new Types.ObjectId();
@@ -467,7 +495,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
       ) => {
         wasPersistedAtEnqueue =
           (await attachments.countDocuments({ _id: data.attachmentId })) === 1;
-        jobs.set(o.jobId, { name, data });
+        jobs.set(o.jobId, { name, data, state: 'waiting' });
         return { id: o.jobId };
       },
     );
@@ -578,6 +606,93 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
 
       expect(first).toHaveLength(4);
       expect([...jobs.keys()].sort()).toEqual(first);
+    });
+
+    it('FR-26: job cũ completed/failed còn trong Redis => bù xóa job cũ rồi xếp lại và đếm đúng; job đang chờ giữ nguyên, không đếm', async () => {
+      const [completed, failed, waiting, fresh] = await insertLegacy(4, {
+        thumbStatus: ThumbStatus.NONE,
+      });
+      const jobOf = (id: Types.ObjectId) => `thumb-${String(id)}`;
+      const stale = (state: 'completed' | 'failed') => ({
+        name: 'attachment.thumbnail',
+        data: { attachmentId: 'cu' },
+        state,
+      });
+      jobs.set(jobOf(completed), stale('completed'));
+      jobs.set(jobOf(failed), stale('failed'));
+      jobs.set(jobOf(waiting), { ...stale('completed'), state: 'waiting' });
+
+      const queued = await cleanup.backfillThumbnails();
+
+      // completed + failed + ảnh chưa có job = 3 ảnh thật sự xếp mới; ảnh đang chờ không đếm.
+      expect(queued).toBe(3);
+      for (const id of [completed, failed, fresh]) {
+        const job = jobs.get(jobOf(id))!;
+        expect(job.state).toBe('waiting');
+        expect(job.data.attachmentId).toBe(String(id)); // job mới thay job cũ
+      }
+      expect(jobs.get(jobOf(waiting))!.data.attachmentId).toBe('cu'); // job đang chờ không bị đụng
+    });
+
+    describe('kế hoạch truy vấn bù thumbnail với index một phần của migration 009', () => {
+      const explainStages = async (
+        thumbStatus: ThumbStatus | { $exists: false },
+      ) => {
+        const plan = (await attachments
+          .find(thumbnailBackfillFilter(thumbStatus))
+          .sort({ createdAt: 1 })
+          .limit(THUMBNAIL_BACKFILL_BATCH_SIZE)
+          .explain('queryPlanner')) as unknown as {
+          queryPlanner: { winningPlan: unknown };
+        };
+        return JSON.stringify(plan.queryPlanner.winningPlan);
+      };
+
+      beforeAll(async () => {
+        // Index CHỈ tạo qua migration 009 (schema không khai báo): dựng đúng như migration dựng.
+        await createNotificationAttachmentIndexes(
+          connection.db as unknown as Db,
+          true,
+        );
+      });
+
+      beforeEach(async () => {
+        // Có dữ liệu thật để planner chọn kế hoạch theo chi phí chứ không hòa trên collection rỗng.
+        await insertLegacy(30, { thumbStatus: ThumbStatus.NONE });
+        await insertLegacy(5);
+        await insertLegacy(5, { thumbStatus: ThumbStatus.FAILED });
+      });
+
+      it('FR-26: truy vấn thumbStatus NONE dùng đúng index partial thumbStatus_1_createdAt_1 (đã sắp theo createdAt, không SORT trong bộ nhớ)', async () => {
+        const plan = await explainStages(ThumbStatus.NONE);
+
+        expect(plan).toContain('"indexName":"thumbStatus_1_createdAt_1"');
+        expect(plan).not.toContain('"stage":"SORT"');
+        expect(plan).not.toContain('"stage":"COLLSCAN"');
+      });
+
+      it('FR-26: truy vấn cũ thumbStatus {$ne: FAILED} KHÔNG dùng được index partial (lý do tách hai truy vấn)', async () => {
+        const plan = (await attachments
+          .find({
+            ...thumbnailBackfillFilter(ThumbStatus.NONE),
+            thumbStatus: { $ne: ThumbStatus.FAILED },
+          })
+          .sort({ createdAt: 1 })
+          .explain('queryPlanner')) as unknown as {
+          queryPlanner: { winningPlan: unknown };
+        };
+
+        expect(JSON.stringify(plan.queryPlanner.winningPlan)).not.toContain(
+          'thumbStatus_1_createdAt_1',
+        );
+      });
+
+      it('FR-26: truy vấn ảnh thiếu field thumbStatus không COLLSCAN (đi qua index status_1_createdAt_1)', async () => {
+        const plan = await explainStages({ $exists: false });
+
+        expect(plan).not.toContain('"stage":"COLLSCAN"');
+        expect(plan).toContain('status_1_createdAt_1');
+      });
     });
 
     it('FR-26: bù tối đa 200 ảnh mỗi lần, cũ nhất trước; phần còn lại bù ở lần sau', async () => {

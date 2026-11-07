@@ -3,6 +3,7 @@
  * kiểm tài khoản/nhóm. Không phụ thuộc React -> test trực tiếp. Backend vẫn kiểm lại mọi thứ (nguồn sự thật).
  */
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
+import { TAG_CATEGORY_LABELS, TAG_CATEGORY_ORDER } from '@crm/lib/tagCategories';
 import { toSlug } from '@crm/lib/text';
 import type { ApiError, CatalogEndpoint } from '@crm/api';
 import { isGenericForbidden } from '@crm/api/http/crmErrors';
@@ -426,9 +427,9 @@ export const listAddableUsers = (users: readonly AdminUser[], teamId: string): A
 /** Giới hạn tên thẻ của backend (`TAG_NAME_MAX_LENGTH`). */
 export const TAG_NAME_MAX_LENGTH = 50;
 
-export const TAG_CATEGORY_LABELS: Record<TagCategory, string> = { INTEREST: 'Sở thích', OCCUPATION: 'Nghề nghiệp', OTHER: 'Khác' };
+export { TAG_CATEGORY_LABELS };
 
-export const TAG_CATEGORY_OPTIONS: { value: TagCategory; label: string }[] = (Object.keys(TAG_CATEGORY_LABELS) as TagCategory[]).map((value) => ({ value, label: TAG_CATEGORY_LABELS[value] }));
+export const TAG_CATEGORY_OPTIONS: { value: TagCategory; label: string }[] = TAG_CATEGORY_ORDER.map((value) => ({ value, label: TAG_CATEGORY_LABELS[value] }));
 
 /** Màu thẻ chọn được: tên màu thiết kế (backend nhận `^[a-z][a-z0-9_-]{0,19}$`). Rỗng = không màu. */
 export const TAG_COLOR_OPTIONS: { value: string; label: string }[] = [{ value: '', label: 'Không màu' }, ...STATUS_TONE_OPTIONS];

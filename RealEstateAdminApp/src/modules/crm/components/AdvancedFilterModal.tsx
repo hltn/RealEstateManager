@@ -9,6 +9,7 @@ import { Check, ListFilter, RotateCcw, Search } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
 import { useAssigneeFilterOptions, useCatalogs, useProjectFilterOptions } from '@crm/api';
 import { PROGRESS_FILTER_OPTIONS, toggleValue } from '@crm/lib/customerFilters';
+import { groupTagsByCategory } from '@crm/lib/tagCategories';
 import { includesVietnamese } from '@crm/lib/text';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CAPTION_CLASS, MODAL_INPUT_CLASS, PILL_ACTIVE_CLASS, PILL_IDLE_CLASS } from '@crm/lib/uiClasses';
 import type { CustomerFilters } from '@crm/types/app';
@@ -71,6 +72,7 @@ const ChipGroup = <T extends string | number>({ title, options, selected, onTogg
 
 export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClose }: AdvancedFilterModalProps) => {
   const { catalogs } = useCatalogs();
+  const tagGroups = useMemo(() => groupTagsByCategory(catalogs.tags.filter((tag) => tag.isActive)), [catalogs.tags]);
   const staffOptions = useAssigneeFilterOptions();
   const [draft, setDraft] = useState<CustomerFilters>(filters);
   const [projectKeyword, setProjectKeyword] = useState('');
@@ -148,12 +150,21 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
         selected={draft.progress}
         onToggle={(value) => setDraft((current) => ({ ...current, progress: toggleValue(current.progress, value) }))}
       />
-      <ChipGroup
-        title="Thẻ sở thích / nghề nghiệp (khớp tất cả thẻ chọn)"
-        options={catalogs.tags.filter((tag) => tag.isActive).map((tag) => ({ value: tag.id, label: `#${tag.name}` }))}
-        selected={draft.tagIds}
-        onToggle={(value) => toggle('tagIds', value)}
-      />
+      {tagGroups.length === 0 ? (
+        <ChipGroup title="Thẻ (khớp tất cả thẻ chọn)" options={[]} selected={draft.tagIds} onToggle={(value) => toggle('tagIds', value)} />
+      ) : (
+        tagGroups.map((group, index) => (
+          <ChipGroup
+            key={group.category}
+            title={group.title}
+            options={group.tags.map((tag) => ({ value: tag.id, label: `#${tag.name}` }))}
+            selected={draft.tagIds.filter((id) => group.tags.some((tag) => tag.id === id))}
+            onToggle={(value) => toggle('tagIds', value)}
+          >
+            {index === 0 && <p className="text-theme-xs text-gray-500 dark:text-gray-400">Khách phải có tất cả thẻ đã chọn.</p>}
+          </ChipGroup>
+        ))
+      )}
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="space-y-1.5">

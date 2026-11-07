@@ -37,15 +37,21 @@ export class AttachmentThumbnailQueueService implements OnApplicationBootstrap {
   /**
    * Xếp job thumbnail cho một ảnh (`jobId = thumb-{attachmentId}` nên xếp hai lần không nhân đôi). BEST-EFFORT: gọi
    * SAU khi transaction ghi ảnh đã commit; lỗi xếp hàng (Redis lỗi) chỉ ghi log, không làm hỏng upload.
-   * @returns `true` khi job đã được gửi vào queue.
+   *
+   * BullMQ bỏ qua `add` khi `jobId` còn trong Redis (completed giữ 1 giờ, failed giữ 7 ngày) mà vẫn trả về job cũ, nên
+   * bước bù ảnh sẽ tưởng đã xếp. Luồng (cùng mẫu `PushSweepService`): không có job thì xếp; job `failed`/`completed`
+   * thì xóa rồi xếp lại; job đang `waiting`/`active`/`delayed` thì giữ nguyên (không xếp trùng, không đụng job đang chạy).
+   * @returns `true` chỉ khi job MỚI thật sự được gửi vào queue (đã có job đang chờ/chạy, runtime tắt hoặc lỗi => `false`).
    */
   async enqueue(attachmentId: string): Promise<boolean> {
     try {
+      const jobId = attachmentThumbnailJobId(attachmentId);
+      if (!(await this.clearFinishedJob(jobId))) return false;
       const job = await this.runtime.add(
         QueueNames.CRM_IMAGE,
         AttachmentThumbnailJobNames.THUMBNAIL,
         { attachmentId },
-        { jobId: attachmentThumbnailJobId(attachmentId) },
+        { jobId },
       );
       return job !== null;
     } catch (error) {
@@ -54,6 +60,16 @@ export class AttachmentThumbnailQueueService implements OnApplicationBootstrap {
       );
       return false;
     }
+  }
+
+  /** `true` khi bên gọi nên `add`: chưa có job, hoặc job cũ đã chốt (failed/completed) và đã được xóa. */
+  private async clearFinishedJob(jobId: string): Promise<boolean> {
+    const job = await this.runtime.getJob(QueueNames.CRM_IMAGE, jobId);
+    if (!job) return true;
+    const state = await job.getState();
+    if (state !== 'failed' && state !== 'completed') return false;
+    await job.remove();
+    return true;
   }
 
   async handle(

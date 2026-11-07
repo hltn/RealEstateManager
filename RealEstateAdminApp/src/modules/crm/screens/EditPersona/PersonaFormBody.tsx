@@ -18,6 +18,7 @@ import { SearchableMultiSelect } from '@crm/components/form/SearchableMultiSelec
 import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
+import { TAG_CATEGORY_ORDER, TAG_GROUP_TITLES } from '@crm/lib/tagCategories';
 import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
 import type { PersonaGroupCode, TagCategory } from '@crm/types/crm';
 import { DuplicatePhoneBanner } from '../CreateCustomer/components/DuplicatePhoneBanner';
@@ -34,10 +35,8 @@ const GROUP_ICONS: Record<PersonaGroupCode, typeof User> = {
   REAL_ESTATE: Building2,
 };
 
-const TAG_GROUPS: { category: TagCategory; label: string }[] = [
-  { category: 'INTEREST', label: 'Thẻ sở thích' },
-  { category: 'OCCUPATION', label: 'Thẻ nghề nghiệp' },
-];
+/** Đủ 3 nhóm (kể cả "Khác", FR-48): mỗi nhóm có ô "Gắn nhanh thẻ mới" tạo thẻ đúng nhóm đó. */
+const TAG_GROUPS: { category: TagCategory; label: string }[] = TAG_CATEGORY_ORDER.map((category) => ({ category, label: TAG_GROUP_TITLES[category] }));
 
 /** Nhóm thẻ: chọn thẻ có sẵn + gắn nhanh thẻ mới (C11). */
 const TagPicker = ({ form, category, label }: { form: PersonaFormApi; category: TagCategory; label: string }) => {

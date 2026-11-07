@@ -81,13 +81,34 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
     return { id: String(user._id), token };
   };
 
-  const get = async (url: string, token?: string) => {
-    const res = await app.inject({
+  const request = (url: string, token?: string) =>
+    app.inject({
       method: 'GET',
       url: `/api/v1${url}`,
       headers: token ? { authorization: `Bearer ${token}` } : {},
     });
-    return res.statusCode;
+
+  const get = async (url: string, token?: string) =>
+    (await request(url, token)).statusCode;
+
+  /** Body lỗi chuẩn của `GlobalExceptionFilter`: `{ statusCode, message, timestamp, path }` (không lộ query/stack). */
+  const expectStandardErrorBody = (
+    res: { statusCode: number; body: string },
+    statusCode: number,
+    path: string,
+  ) => {
+    expect(res.statusCode).toBe(statusCode);
+    const body = JSON.parse(res.body) as Record<string, unknown>;
+    expect(body).toEqual({
+      statusCode,
+      message: expect.any(String) as unknown,
+      timestamp: expect.any(String) as unknown,
+      path: `/api/v1${path}`,
+      errorCode: expect.any(String) as unknown,
+    });
+    expect((body.message as string).length).toBeGreaterThan(0);
+    expect(Number.isNaN(Date.parse(body.timestamp as string))).toBe(false);
+    expect(JSON.stringify(body)).not.toMatch(/stack|at .*\(/);
   };
 
   beforeAll(async () => {
@@ -188,6 +209,34 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
 
     it('FR-21: không có token: 401', async () => {
       expect(await get(route)).toBe(401);
+    });
+
+    it('FR-21: body lỗi 403 (DB đã hạ xuống EDITOR) đúng chuẩn { statusCode, message, timestamp, path }', async () => {
+      const user = await createUser([UserRole.EDITOR], UserRole.STAFF);
+      // Kèm query string để chứng minh `path` không trả query (có thể chứa PII).
+      const res = await request(`${route}?phone=0901234567`, user.token);
+      expect(res.statusCode).toBe(403);
+      const body = JSON.parse(res.body) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        statusCode: 403,
+        message: expect.any(String) as unknown,
+        timestamp: expect.any(String) as unknown,
+        path: `/api/v1${route}`,
+      });
+      expect(JSON.stringify(body)).not.toContain('0901234567');
+      expectStandardErrorBody(await request(route, user.token), 403, route);
+    });
+
+    it('FR-21: body lỗi 403 của EDITOR thật (lớp @Roles) và 401 của tài khoản bị khóa cùng đúng chuẩn', async () => {
+      const editor = await createUser([UserRole.EDITOR], UserRole.EDITOR);
+      expectStandardErrorBody(await request(route, editor.token), 403, route);
+
+      const blocked = await createUser([UserRole.STAFF], UserRole.STAFF);
+      await userModel.updateOne(
+        { _id: new Types.ObjectId(blocked.id) },
+        { $set: { status: UserStatus.BLOCKED } },
+      );
+      expectStandardErrorBody(await request(route, blocked.token), 401, route);
     });
   });
 });

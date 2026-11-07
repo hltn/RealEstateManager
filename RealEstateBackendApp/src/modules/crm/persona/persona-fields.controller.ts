@@ -101,7 +101,11 @@ export class PersonaFieldsController {
       'Sửa trường (nhãn, lựa chọn, trọng số, bật/tắt...); key bất biến, type khóa khi đã có dữ liệu',
   })
   @ApiDataResponse(PersonaFieldResponseDto)
-  @ApiResponse({ status: 409, description: 'PERSONA_FIELD_TYPE_LOCKED' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PERSONA_FIELD_TYPE_LOCKED (đã có dữ liệu khách) hoặc PERSONA_FIELD_SYSTEM (đổi kiểu trường hệ thống)',
+  })
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

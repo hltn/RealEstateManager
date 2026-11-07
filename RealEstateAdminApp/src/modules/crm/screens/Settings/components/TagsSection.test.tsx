@@ -30,7 +30,8 @@ vi.mock('@crm/api/http/crmHttp', async (importOriginal) => ({
 }));
 
 const showToast = vi.fn();
-vi.mock('@crm/store', () => ({ useCrmActions: () => ({ showToast }) }));
+const dropTagsFromFilters = vi.fn();
+vi.mock('@crm/store', () => ({ useCrmActions: () => ({ showToast, dropTagsFromFilters }) }));
 
 import { CrmApiException } from '@crm/api/http/crmErrors';
 import { TagsSection } from './TagsSection';
@@ -57,6 +58,7 @@ beforeEach(() => {
     serverTags = serverTags.filter((tag) => tag.id !== id);
   });
   showToast.mockReset();
+  dropTagsFromFilters.mockReset();
   signIn('ADMIN');
 });
 
@@ -196,6 +198,8 @@ describe('TagsSection: gộp thẻ', () => {
     const target = screen.getByText('Gôn').closest('li') as HTMLElement;
     expect(within(target).getByText('6 khách đang gắn')).toBeInTheDocument();
     expect(showToast).toHaveBeenCalledWith({ title: 'Đã gộp thẻ "Golf" vào "Gôn"' });
+    // Thẻ nguồn đã biến mất: phải được gỡ khỏi bộ lọc thẻ đang lưu của danh sách khách.
+    expect(dropTagsFromFilters).toHaveBeenCalledExactlyOnceWith(['t-golf']);
   });
 
   it('máy chủ từ chối gộp: giữ thẻ, hiện lỗi trong form gộp', async () => {
@@ -207,6 +211,7 @@ describe('TagsSection: gộp thẻ', () => {
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Gộp thẻ' }));
     expect(await screen.findByText('Chỉ gộp được các thẻ cùng nhóm')).toBeInTheDocument();
     expect(screen.getByText('Golf')).toBeInTheDocument();
+    expect(dropTagsFromFilters).not.toHaveBeenCalled();
   });
 });
 
@@ -222,6 +227,7 @@ describe('TagsSection: xóa mềm', () => {
     await waitFor(() => expect(del).toHaveBeenCalledWith('/crm/tags/t-bs'));
     await waitFor(() => expect(screen.queryByText('Bác sĩ')).not.toBeInTheDocument());
     expect(showToast).toHaveBeenCalledWith({ title: 'Đã xoá thẻ "Bác sĩ"' });
+    expect(dropTagsFromFilters).toHaveBeenCalledExactlyOnceWith(['t-bs']);
   });
 
   it('huỷ xác nhận: không gọi API', async () => {
@@ -239,5 +245,6 @@ describe('TagsSection: xóa mềm', () => {
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Xoá thẻ' }));
     await waitFor(() => expect(showToast).toHaveBeenCalledWith({ type: 'error', title: 'Bạn không có quyền.' }));
     expect(screen.getByText('Golf')).toBeInTheDocument();
+    expect(dropTagsFromFilters).not.toHaveBeenCalled();
   });
 });

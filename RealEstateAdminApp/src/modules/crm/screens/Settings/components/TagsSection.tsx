@@ -44,7 +44,7 @@ export const TagsSection = () => {
   // Không phải Quản trị thì không gọi API (backend cũng trả 403): chỉ hiện thông báo.
   const { data: tags, isLoading, error: loadError, refetch } = useAdminTags(isAdmin);
   const api = useCrmApi();
-  const { showToast } = useCrmActions();
+  const { showToast, dropTagsFromFilters } = useCrmActions();
   const [keyword, setKeyword] = useState('');
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [merging, setMerging] = useState<MergingState | null>(null);
@@ -108,6 +108,8 @@ export const TagsSection = () => {
       setMerging({ ...merging, error: result.error.message });
       return;
     }
+    // Thẻ nguồn đã biến mất: gỡ khỏi bộ lọc thẻ đang lưu của danh sách khách.
+    dropTagsFromFilters([merging.source.id]);
     showToast({ title: `Đã gộp thẻ "${merging.source.name}" vào "${result.data.name}"` });
     setMerging(null);
   };
@@ -115,6 +117,7 @@ export const TagsSection = () => {
   const confirmDelete = async () => {
     if (!deleting) return;
     const result = await api.deleteTag(deleting.id);
+    if (result.ok) dropTagsFromFilters([deleting.id]);
     showToast(result.ok ? { title: `Đã xoá thẻ "${deleting.name}"` } : { type: 'error', title: result.error.message });
     setDeleting(null);
   };

@@ -1632,11 +1632,11 @@ TOKEN=$(printf '{"email":"%s","password":"%s"}' "$E" "$P" \
   | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
 unset P
 curl -s "http://localhost/api/v1/crm/audit-logs?action=PHONE_VIEWED&limit=3" -H "Authorization: Bearer $TOKEN" \
-  | grep -o '"ip":"[^"]*"'
+  | grep -o '"ip":[^,}]*'
 unset TOKEN
 ```
 
-Dòng đầu tiên (mới nhất) phải có `"ip":"<IP A>"` đúng từng ký tự. Cách khác (Mongo, chỉ đọc; dòng `auth` giống 15.9):
+Dòng đầu tiên (mới nhất) phải có `"ip":"<IP A>"` đúng từng ký tự. Lệnh in cả trường hợp `"ip":null` (backend trả `null` khi request không có IP trong ngữ cảnh): thấy `"ip":null` là lỗi, xem dòng cuối bảng bên dưới. Nếu không in dòng nào thì token sai/hết hạn hoặc chưa có dòng `PHONE_VIEWED` (làm lại bước 3 và đăng nhập lại), không phải IP đúng. Cách khác (Mongo, chỉ đọc; dòng `auth` giống 15.9):
 
 ```bash
 docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'

@@ -6,6 +6,7 @@ const build = (enabled = true) => {
     isEnabled: jest.fn(() => enabled),
     registerWorker: jest.fn(),
     add: jest.fn().mockResolvedValue({ id: 'job' }),
+    getJob: jest.fn().mockResolvedValue(null),
   };
   const processor = { process: jest.fn().mockResolvedValue('CREATED') };
   const service = new AttachmentThumbnailQueueService(
@@ -51,6 +52,73 @@ describe('AttachmentThumbnailQueueService (FR-26)', () => {
       { jobId: 'thumb-abc123' },
     );
     expect('thumb-abc123').not.toContain(':');
+  });
+
+  describe('job cũ còn trong Redis (BullMQ bỏ qua add khi jobId còn)', () => {
+    const oldJob = (state: string) => ({
+      getState: jest.fn().mockResolvedValue(state),
+      remove: jest.fn().mockResolvedValue(undefined),
+    });
+
+    it.each(['completed', 'failed'])(
+      'FR-26: job %s còn giữ => xóa rồi mới add, trả true',
+      async (state) => {
+        const { service, runtime } = build();
+        const job = oldJob(state);
+        runtime.getJob.mockResolvedValue(job);
+        const order: string[] = [];
+        job.remove.mockImplementation(() => {
+          order.push('remove');
+          return Promise.resolve();
+        });
+        runtime.add.mockImplementation(() => {
+          order.push('add');
+          return Promise.resolve({ id: 'job' });
+        });
+
+        expect(await service.enqueue('abc123')).toBe(true);
+
+        expect(runtime.getJob).toHaveBeenCalledWith(
+          'crm-image',
+          'thumb-abc123',
+        );
+        expect(order).toEqual(['remove', 'add']);
+      },
+    );
+
+    it.each(['waiting', 'active', 'delayed', 'prioritized'])(
+      'FR-26: job đang %s => KHÔNG xóa, KHÔNG add, trả false (không đếm là đã xếp)',
+      async (state) => {
+        const { service, runtime } = build();
+        const job = oldJob(state);
+        runtime.getJob.mockResolvedValue(job);
+
+        expect(await service.enqueue('abc123')).toBe(false);
+
+        expect(job.remove).not.toHaveBeenCalled();
+        expect(runtime.add).not.toHaveBeenCalled();
+      },
+    );
+
+    it('FR-26: xóa job cũ lỗi (Redis lỗi/job bị khóa) => trả false, không add, không ném', async () => {
+      const { service, runtime } = build();
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const job = oldJob('failed');
+      job.remove.mockRejectedValue(new Error('locked'));
+      runtime.getJob.mockResolvedValue(job);
+
+      await expect(service.enqueue('abc123')).resolves.toBe(false);
+
+      expect(runtime.add).not.toHaveBeenCalled();
+    });
+
+    it('FR-26: getJob lỗi (Redis down) => trả false, không ném', async () => {
+      const { service, runtime } = build();
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      runtime.getJob.mockRejectedValue(new Error('redis down'));
+
+      await expect(service.enqueue('abc123')).resolves.toBe(false);
+    });
   });
 
   it('FR-26: runtime tắt (add trả null) => enqueue trả false, không lỗi', async () => {

@@ -41,6 +41,8 @@ export interface CrmActions {
   openCreateAppointment: (link?: CreateAppointmentLink) => void;
   setFilters: (changes: Partial<CustomerFilters>) => void;
   resetFilters: () => void;
+  /** Gỡ các thẻ đã gộp/xóa khỏi bộ lọc thẻ đang lưu của danh sách khách (FR-42). */
+  dropTagsFromFilters: (tagIds: string[]) => void;
   showToast: (input: ToastInput) => string;
   openModal: (modal: ActiveModal) => void;
   /** `phone` phải là số đầy đủ lấy từ `createPhoneView` (để việc xem số có log). */
@@ -111,6 +113,7 @@ export const createCrmActions = ({ dispatch, getState, router }: CrmActionDepend
     openCreateAppointment: (link) => router.navigateTo(buildCreateAppointmentPath(link)),
     setFilters: (changes) => dispatch({ type: 'filters/set', changes }),
     resetFilters: () => dispatch({ type: 'filters/reset' }),
+    dropTagsFromFilters: (tagIds) => dispatch({ type: 'filters/dropTags', tagIds }),
     showToast,
     openModal,
     openCallModal: (customerId, phone) => openModal({ kind: 'call', customerId, phone }),

@@ -2,16 +2,20 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
 import { DeviceListSection } from './DeviceListSection';
+import { QuietHoursSection } from './QuietHoursSection';
 import { ThisDeviceSection } from './ThisDeviceSection';
+import { TypePreferencesSection } from './TypePreferencesSection';
+import { useNotificationPreferences } from './useNotificationPreferences';
 import { useNotificationSettings } from './useNotificationSettings';
 
 /**
- * Trang "Cài đặt thông báo" cá nhân (`/notification-settings`, T-41, FR-09, FR-01): bật/tắt thông báo đẩy của thiết bị này
- * và quản lý các thiết bị đã bật. Công tắc theo loại và giờ yên lặng thuộc T-42 (thêm sau, cùng trang).
+ * Trang "Cài đặt thông báo" cá nhân (`/notification-settings`, T-41, T-42, FR-09, FR-01, FR-10, FR-43): bật/tắt thông báo đẩy
+ * của thiết bị này, quản lý các thiết bị đã bật, công tắc đẩy theo loại và giờ yên lặng.
  * Nằm ngoài `/crm` (không có CrmProvider) giống màn Thông báo.
  */
 export const NotificationSettingsScreen = () => {
   const settings = useNotificationSettings();
+  const prefs = useNotificationPreferences();
 
   return (
     <div className="flex w-full max-w-2xl flex-col gap-6">
@@ -21,7 +25,7 @@ export const NotificationSettingsScreen = () => {
           Quay lại Thông báo
         </Link>
         <h2 className={PAGE_TITLE_CLASS}>Cài đặt thông báo</h2>
-        <p className={PAGE_DESCRIPTION_CLASS}>Chọn thiết bị nhận thông báo đẩy từ STND.</p>
+        <p className={PAGE_DESCRIPTION_CLASS}>Chọn thiết bị, loại thông báo và giờ nhận thông báo đẩy từ STND.</p>
       </header>
 
       <ThisDeviceSection push={settings.push} onEnable={() => void settings.enableThisDevice()} onDisable={() => void settings.disableThisDevice()} />
@@ -36,6 +40,13 @@ export const NotificationSettingsScreen = () => {
         onRetry={settings.retryDevices}
         onRemove={(deviceId) => void settings.removeDevice(deviceId)}
       />
+      <TypePreferencesSection preferences={prefs.preferences} isLoading={prefs.isLoading} loadError={prefs.loadError} onRetry={prefs.retry} onChange={prefs.setTypePush} />
+      <QuietHoursSection isReady={prefs.preferences !== null} saved={prefs.preferences?.quietHours ?? null} isSaving={prefs.isSavingQuietHours} onSave={prefs.saveQuietHours} />
+      {prefs.saveError && (
+        <p role="alert" className="text-theme-sm text-error-600 dark:text-error-500">
+          {prefs.saveError}
+        </p>
+      )}
     </div>
   );
 };

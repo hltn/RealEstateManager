@@ -60,30 +60,57 @@ describe('AttachmentCleanupService (FR-26)', () => {
   afterEach(() => jest.restoreAllMocks());
 
   describe('backfillThumbnails (bù ảnh cũ)', () => {
-    it('FR-26: chỉ chọn ảnh còn dùng, chưa xóa file, chưa có thumbKey, thumbStatus khác FAILED; cũ nhất trước, tối đa 200', async () => {
+    const baseFilter = {
+      kind: AttachmentKind.CARE_LOG_IMAGE,
+      status: { $in: [AttachmentStatus.READY, AttachmentStatus.ATTACHED] },
+      purgedAt: null,
+      thumbKey: null,
+    };
+
+    it('FR-26: truy vấn 1 = thumbStatus NONE (dùng index một phần), cũ nhất trước, tối đa 200; truy vấn 2 = thiếu field, chỉ lấy phần lô còn thiếu', async () => {
       const { service, attachmentModel } = build();
-      const query = chain([]);
-      attachmentModel.find.mockReturnValue(query);
+      const first = chain([row('a.jpg'), row('b.jpg')]);
+      const second = chain([]);
+      attachmentModel.find
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(second);
 
       await service.backfillThumbnails();
 
       expect(THUMBNAIL_BACKFILL_BATCH_SIZE).toBe(200);
-      expect(attachmentModel.find).toHaveBeenCalledWith({
-        kind: AttachmentKind.CARE_LOG_IMAGE,
-        status: { $in: [AttachmentStatus.READY, AttachmentStatus.ATTACHED] },
-        purgedAt: null,
-        thumbKey: null,
-        thumbStatus: { $ne: ThumbStatus.FAILED },
-      });
-      expect(query.sort).toHaveBeenCalledWith({ createdAt: 1 });
-      expect(query.limit).toHaveBeenCalledWith(200);
+      expect(attachmentModel.find.mock.calls).toEqual([
+        [{ ...baseFilter, thumbStatus: ThumbStatus.NONE }],
+        [{ ...baseFilter, thumbStatus: { $exists: false } }],
+      ]);
+      expect(first.sort).toHaveBeenCalledWith({ createdAt: 1 });
+      expect(first.limit).toHaveBeenCalledWith(200);
+      expect(second.sort).toHaveBeenCalledWith({ createdAt: 1 });
+      expect(second.limit).toHaveBeenCalledWith(198);
+      // Không bao giờ dùng $ne (không suy ra được bộ lọc của index một phần).
+      expect(JSON.stringify(attachmentModel.find.mock.calls)).not.toContain(
+        '$ne',
+      );
     });
 
-    it('FR-26: xếp job thumbnail cho từng ảnh tìm được và trả số ảnh xếp thành công', async () => {
+    it('FR-26: truy vấn 1 đã đủ lô 200 thì KHÔNG chạy truy vấn 2', async () => {
+      const { service, attachmentModel } = build();
+      attachmentModel.find.mockReturnValue(
+        chain(Array.from({ length: 200 }, (_, i) => row(`${i}.jpg`))),
+      );
+
+      await service.backfillThumbnails();
+
+      expect(attachmentModel.find).toHaveBeenCalledTimes(1);
+    });
+
+    it('FR-26: xếp job thumbnail cho từng ảnh (NONE rồi thiếu field) và chỉ đếm ảnh được xếp mới', async () => {
       const { service, attachmentModel, thumbnailQueue } = build();
-      const rows = [row('a.jpg'), row('b.jpg'), row('c.jpg')];
-      attachmentModel.find.mockReturnValue(chain(rows));
-      // Ảnh thứ hai xếp hàng thất bại (Redis lỗi): không tính, không dừng ảnh sau.
+      const rows = [row('a.jpg'), row('b.jpg')];
+      const legacy = [row('c.jpg')];
+      attachmentModel.find
+        .mockReturnValueOnce(chain(rows))
+        .mockReturnValueOnce(chain(legacy));
+      // Ảnh thứ hai không xếp được (đang có job chờ/chạy hoặc Redis lỗi): không tính, không dừng ảnh sau.
       thumbnailQueue.enqueue
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false)
@@ -92,7 +119,7 @@ describe('AttachmentCleanupService (FR-26)', () => {
       const queued = await service.backfillThumbnails();
 
       expect(thumbnailQueue.enqueue.mock.calls).toEqual(
-        rows.map((item) => [String(item._id)]),
+        [...rows, ...legacy].map((item) => [String(item._id)]),
       );
       expect(queued).toBe(2);
     });
@@ -103,6 +130,17 @@ describe('AttachmentCleanupService (FR-26)', () => {
 
       expect(await service.backfillThumbnails()).toBe(0);
       expect(thumbnailQueue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('FR-26: ảnh còn job đang chờ/chạy trong Redis (enqueue trả false) thì không được đếm là đã xếp', async () => {
+      const { service, attachmentModel, thumbnailQueue } = build();
+      attachmentModel.find
+        .mockReturnValueOnce(chain([row('a.jpg'), row('b.jpg')]))
+        .mockReturnValueOnce(chain([]));
+      thumbnailQueue.enqueue.mockResolvedValue(false);
+
+      expect(await service.backfillThumbnails()).toBe(0);
+      expect(thumbnailQueue.enqueue).toHaveBeenCalledTimes(2);
     });
   });
 

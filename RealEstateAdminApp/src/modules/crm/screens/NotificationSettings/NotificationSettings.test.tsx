@@ -21,6 +21,12 @@ vi.mock('@crm/api/http/pushApi', () => ({
   deletePushSubscription: (...args: unknown[]) => deletePushSubscription(...args),
 }));
 
+// Khối loại thông báo/giờ yên lặng (T-42) có file test riêng; ở đây chỉ chặn mạng thật.
+vi.mock('@crm/api/http/notificationPreferencesApi', () => ({
+  fetchNotificationPreferences: () => Promise.resolve({ types: {}, quietHours: null, pushTypes: [] }),
+  updateNotificationPreferences: () => Promise.resolve({ types: {}, quietHours: null, pushTypes: [] }),
+}));
+
 const readDeviceSnapshot = vi.fn();
 const enablePush = vi.fn();
 const unsubscribeLocalPush = vi.fn();
