@@ -13,6 +13,13 @@ export const TAG_CATEGORY_LABELS: Record<TagCategory, string> = { INTEREST: 'S�
 /** Tiêu đề nhóm khi gom thẻ (form chân dung, bộ lọc, gắn hàng loạt). */
 export const TAG_GROUP_TITLES: Record<TagCategory, string> = { INTEREST: 'Thẻ sở thích', OCCUPATION: 'Thẻ nghề nghiệp', OTHER: 'Thẻ khác' };
 
+/**
+ * Thẻ có thuộc nhóm `category` không. Nhóm lạ (máy chủ thêm nhóm mới mà FE chưa biết) tính vào "Khác" để thẻ không biến mất;
+ * dùng chung cho `groupTagsByCategory` và ô chọn thẻ ở form chân dung nên hai nơi không lệch nhau.
+ */
+export const isTagInCategory = (tag: { category: TagCategory }, category: TagCategory): boolean =>
+  TAG_CATEGORY_ORDER.includes(tag.category) ? tag.category === category : category === 'OTHER';
+
 export interface TagGroup<T> {
   category: TagCategory;
   title: string;
@@ -24,10 +31,9 @@ export interface TagGroup<T> {
  * được xếp vào "Khác" thay vì biến mất khỏi bộ lọc/gắn hàng loạt.
  */
 export const groupTagsByCategory = <T extends { category: TagCategory }>(tags: readonly T[]): TagGroup<T>[] => {
-  const known = new Set<TagCategory>(TAG_CATEGORY_ORDER);
   return TAG_CATEGORY_ORDER.map((category) => ({
     category,
     title: TAG_GROUP_TITLES[category],
-    tags: tags.filter((tag) => (known.has(tag.category) ? tag.category === category : category === 'OTHER')),
+    tags: tags.filter((tag) => isTagInCategory(tag, category)),
   })).filter((group) => group.tags.length > 0);
 };

@@ -18,7 +18,7 @@ import { SearchableMultiSelect } from '@crm/components/form/SearchableMultiSelec
 import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
-import { TAG_CATEGORY_ORDER, TAG_GROUP_TITLES } from '@crm/lib/tagCategories';
+import { TAG_CATEGORY_ORDER, TAG_GROUP_TITLES, isTagInCategory } from '@crm/lib/tagCategories';
 import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
 import type { PersonaGroupCode, TagCategory } from '@crm/types/crm';
 import { DuplicatePhoneBanner } from '../CreateCustomer/components/DuplicatePhoneBanner';
@@ -42,7 +42,7 @@ const TAG_GROUPS: { category: TagCategory; label: string }[] = TAG_CATEGORY_ORDE
 const TagPicker = ({ form, category, label }: { form: PersonaFormApi; category: TagCategory; label: string }) => {
   const { catalogs } = useCatalogs();
   const [draftName, setDraftName] = useState('');
-  const tags = catalogs.tags.filter((tag) => tag.isActive && tag.category === category);
+  const tags = catalogs.tags.filter((tag) => tag.isActive && isTagInCategory(tag, category));
   const add = () => {
     if (!draftName.trim()) return;
     form.addNewTag(draftName, category);

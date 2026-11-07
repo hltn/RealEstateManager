@@ -125,6 +125,11 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     mergeTag: (id: string, mergeIntoId: string) => write(() => admin.mergeTag(id, mergeIntoId), { shouldIncludeCatalogs: true }),
     deleteTag: (id: string) => write(() => admin.deleteTag(id), { shouldIncludeCatalogs: true }),
 
+    // --- Trường chân dung (Quản trị, FR-41) --------------------------------------------------------------------------
+    // Đổi cấu hình trường đổi cả form chân dung/bộ lọc (danh mục `persona-fields`) lẫn độ đầy đủ của khách -> làm mới cả danh mục và dữ liệu.
+    updatePersonaField: (id: string, body: admin.PersonaFieldPatchBody) => write(() => admin.patchPersonaField(id, body), { shouldIncludeCatalogs: true }),
+    reorderPersonaFields: (items: admin.PersonaFieldOrderItem[]) => write(() => admin.putPersonaFieldOrder(items), { shouldIncludeCatalogs: true }),
+
     // --- Quản trị -----------------------------------------------------------------------------------------------------
     createProject: (body: admin.ProjectBody) => write(() => admin.postProject(body), { shouldIncludeCatalogs: true }),
     updateProject: (id: string, body: admin.ProjectBody) => write(() => admin.patchProject(id, body), { shouldIncludeCatalogs: true }),

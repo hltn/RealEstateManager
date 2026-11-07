@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PERSONA_FIELDS } from '@crm/data/personaFields';
-import { fieldsOfGroups, getChangedBasicInput, getChangedPersonaInputs, toPersonaDraft, toPersonaInputs, validateBasicInfo, validatePersonaDraft } from './personaForm';
+import { fieldsOfGroups, withCurrentOptions, getChangedBasicInput, getChangedPersonaInputs, toPersonaDraft, toPersonaInputs, validateBasicInfo, validatePersonaDraft } from './personaForm';
 
 const REAL_ESTATE = fieldsOfGroups(PERSONA_FIELDS, ['REAL_ESTATE']);
 const PERSONAL = fieldsOfGroups(PERSONA_FIELDS, ['PERSONAL', 'OCCUPATION']);
@@ -70,5 +70,17 @@ describe('chỉ gửi phần thật sự đổi (tránh xóa nhầm/ghi đè d�
       { fieldKey: 'occupation', source: 'STAFF_OBSERVED', value: null },
       ...(select ? [{ fieldKey: select.key, source: 'STAFF_OBSERVED', value: { valueOptions: ['Khách tự quyết'] } }] : []),
     ]);
+  });
+});
+
+describe('withCurrentOptions (FR-41: lựa chọn đã tắt vẫn hiện cho khách đang dùng)', () => {
+  it('giữ lựa chọn đang dùng và thêm giá trị khách đang có mà đã bị tắt', () => {
+    expect(withCurrentOptions(['Căn hộ', 'Biệt thự'], ['Loại cũ'])).toEqual(['Căn hộ', 'Biệt thự', 'Loại cũ']);
+  });
+
+  it('không nhân đôi giá trị đã có trong danh sách; bỏ giá trị rỗng; không có gì đang chọn thì không đổi', () => {
+    expect(withCurrentOptions(['Căn hộ'], ['Căn hộ', '', 'Cũ'])).toEqual(['Căn hộ', 'Cũ']);
+    expect(withCurrentOptions(['Căn hộ'], [''])).toEqual(['Căn hộ']);
+    expect(withCurrentOptions(['Căn hộ'], [])).toEqual(['Căn hộ']);
   });
 });

@@ -13,7 +13,7 @@ import { hasTeamRole, isSameSet, normalizeRoles } from '../../../../utils/userRo
 /** Danh mục chỉnh bằng form chung (dự án có màn riêng nên dùng `ProjectFormDialog`). */
 export type AdminCatalogKind = 'statuses' | 'leadSources' | 'contactResults' | 'areas';
 
-export type SettingsTab = AdminCatalogKind | 'projects' | 'tags' | 'users' | 'teams' | 'reminders';
+export type SettingsTab = AdminCatalogKind | 'projects' | 'tags' | 'personaFields' | 'users' | 'teams' | 'reminders';
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'statuses', label: 'Tình trạng khách' },
@@ -22,6 +22,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'areas', label: 'Khu vực' },
   { id: 'projects', label: 'Dự án' },
   { id: 'tags', label: 'Thẻ' },
+  { id: 'personaFields', label: 'Trường chân dung' },
   { id: 'users', label: 'Người dùng' },
   { id: 'teams', label: 'Nhóm' },
   { id: 'reminders', label: 'Nhắc việc' },

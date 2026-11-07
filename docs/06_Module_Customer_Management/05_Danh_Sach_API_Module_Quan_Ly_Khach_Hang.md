@@ -1,9 +1,9 @@
 # Danh sách API: Module Quản lý & chăm sóc khách hàng (CRM)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.4
 
 > Đi kèm [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) (data model mục 3, ma trận quyền mục 4.2). Mã yêu cầu (C*, X*, QT* = quy tắc mục 4) theo [`01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md`](01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md).
-> **Tổng: 116 endpoint** — 10 dùng lại (Auth, Users, Health), 106 mới. Cập nhật 2026-10-22 (xem nhật ký quyết định ở 04 mục 11): bỏ mã khách hàng; thêm email; `listGroup` tách 4 giá trị + tab ảo `ALL`; thêm `phone-views` (xem/gọi SĐT, ghi `PHONE_VIEWED`); thêm ảnh đính kèm nhật ký (2 endpoint); dự án có CRUD đầy đủ + khôi phục (1 endpoint mới); import 3 sheet cũ hoãn giai đoạn sau. Mọi path dưới đây đã có global prefix **`/api/v1`** (ví dụ `GET /crm/customers` = `GET /api/v1/crm/customers`). Swagger: `/api/v1/docs`.
+> **Tổng: 118 endpoint** — 10 dùng lại (Auth, Users, Health), 108 mới (v1.0.4 thay 2 endpoint `/device-tokens` bằng 4 endpoint `/push-subscriptions`). Cập nhật 2026-10-22 (xem nhật ký quyết định ở 04 mục 11): bỏ mã khách hàng; thêm email; `listGroup` tách 4 giá trị + tab ảo `ALL`; thêm `phone-views` (xem/gọi SĐT, ghi `PHONE_VIEWED`); thêm ảnh đính kèm nhật ký (2 endpoint); dự án có CRUD đầy đủ + khôi phục (1 endpoint mới); import 3 sheet cũ hoãn giai đoạn sau. Mọi path dưới đây đã có global prefix **`/api/v1`** (ví dụ `GET /crm/customers` = `GET /api/v1/crm/customers`). Swagger: `/api/v1/docs`.
 
 ---
 
@@ -25,7 +25,7 @@
 | Danh sách | `{ data: T[], meta: { total, page, limit, totalPages } }` (dùng `buildPaginationMeta` có sẵn) |
 | Một đối tượng | `{ data: T }` |
 | Job bất đồng bộ | `202 { data: { jobId, status } }` |
-| Không nội dung | `204` (DELETE mềm, đăng xuất thiết bị) |
+| Không nội dung | `204` (DELETE mềm, gỡ thiết bị push) |
 
 > Ghi chú: một số controller cũ (`/users`) đang trả object trần; CRM thống nhất bọc `{ data }`. Không sửa API cũ để giữ tương thích.
 
@@ -86,7 +86,7 @@
 |---|---|---|---|---|---|---|
 | POST | `/auth/login` | Đăng nhập (có sẵn, throttle 5/phút). Mở rộng: client mobile nhận `refreshToken` trong body | Public | body `{ email, password }`; header `X-Client-Type` | `{ accessToken, user, refreshToken? (mobile) }` + cookie (web) | X1 |
 | POST | `/auth/refresh` | Xoay refresh token (có sẵn). Mở rộng: mobile gửi token trong body | Public | cookie (web) hoặc body `{ refreshToken }` (mobile) | `{ accessToken, refreshToken? }` | X1 |
-| POST | `/auth/logout` | Thu hồi refresh token (có sẵn). Mở rộng: kèm `deviceTokenId` để gỡ thiết bị nhận push | Đã đăng nhập | body `{ deviceTokenId? }` | `{ message }` | X1, X5 |
+| POST | `/auth/logout` | Thu hồi refresh token (có sẵn). Mở rộng (v1.0.4): body tùy chọn `pushSubscriptionId` để gỡ thiết bị Web Push của chính mình (lý do `LOGOUT`); id hợp lệ nhưng lạ/của người khác bị bỏ qua im lặng, sai kiểu hoặc field lạ ⇒ 400 | Đã đăng nhập | body `{ pushSubscriptionId? }` | `{ message }` | X1, X5 |
 | GET | `/auth/me` | Hồ sơ người dùng (có sẵn). Mở rộng: thêm `teamId`, `managedTeamIds` | Đã đăng nhập | — | `{ _id, email, displayName, role, status, teamId, managedTeamIds }` | X1 |
 
 ### 2.2 Người dùng & nhóm (10: 4 dùng lại, 6 mới)
@@ -169,13 +169,19 @@
 | PATCH | `/crm/customers/:id/persona` | Cập nhật nhiều giá trị (1-50, không trùng `fieldKey`); `value: null` để xóa (kể cả trường đã tắt/xóa mềm, để quyền xóa dữ liệu cá nhân không phụ thuộc cấu hình). Ghi người/ngày/nguồn từng giá trị; một giá trị sai làm hỏng cả lô (không ghi gì); ghi lại đúng giá trị và nguồn cũ là no-op (không tăng version, không audit). Độ đầy đủ, token lọc, dịp đặc biệt tính lại trong cùng lệnh `updateOne` với khóa lạc quan `__v`; ghi chân dung tăng `version` hồ sơ. Audit `PERSONA_UPDATED` theo `persona.<fieldKey>` (giá trị trường nhạy cảm không được ghi); xóa giá trị còn ghi đè giá trị đó trong các audit cũ của đúng trường (`[đã xóa]`). Không nhập mới được cho trường đã tắt/xóa | A, M-P, S-P | body `{ version*, values*: [{ fieldKey*, value* (theo type, hoặc null), source* (CUSTOMER_SHARED\|STAFF_OBSERVED), sensitiveAcknowledged? }] }` | `{ data: { completeness, updated: PersonaFieldValue[], version } }`; 400 `PERSONA_VALUE_INVALID` (kèm `fieldKey`: sai kiểu, lựa chọn không hợp lệ, trường không tồn tại/đang tắt), `SENSITIVE_FIELD_CONSENT_REQUIRED`; 409 `VERSION_CONFLICT` | C10, C12, C13, QT9, X10 |
 | GET | `/crm/persona-fields` | Cấu hình trường chân dung (render form, bộ lọc), theo thứ tự hiển thị `order`; không gồm trường đã xóa mềm. Mặc định `limit=100` | A, M, S | query `isActive, groupCode, page, limit` | `{ data: PersonaField[], meta }` — `PersonaField { id, key, label, helpText, placeholder, groupCode, type, options: [{ value, label, isActive }], order, weight, suggestPriority, isFilterable, isOccasion, occasionLabel, linkedCriterion, isSensitive, isSystem, isActive }` | X10 |
 | POST | `/crm/persona-fields` | Thêm trường. `key` slug `^[a-z][a-z0-9_]{0,39}$`, duy nhất kể cả trường đã xóa; `groupCode` phải là nhóm có thật (seed: PERSONAL, OCCUPATION, LIFESTYLE, OCCASION, FAMILY, CONTACT, REAL_ESTATE); SELECT/MULTI_SELECT bắt buộc có lựa chọn (`value` không trùng sau khi chuẩn hóa), kiểu khác không được có `options`; `isOccasion` chỉ cho DATE; `isFilterable` chỉ cho TEXT/SELECT/MULTI_SELECT/BOOLEAN và không đi cùng `isSensitive`; tối đa 100 lựa chọn kể cả đã tắt; `weight` 0-100 (mặc định 1, 0 = không tính). Tăng phiên bản cấu hình và chạy job nền tính lại cho khách | A | body `{ key*, label*, groupCode*, type*, options?, helpText?, placeholder?, weight?, suggestPriority?, isFilterable?, isOccasion?, occasionLabel?, linkedCriterion?, isSensitive? }` | `201 { data: PersonaField }`; 400 `VALIDATION_FAILED`; 409 `CATALOG_DUPLICATED` (trùng `key`) | X10, C12 |
-| PATCH | `/crm/persona-fields/:id` | Sửa nhãn, nhóm, lựa chọn, trọng số, bật/tắt... `key` bất biến; `type` khóa khi đã có khách có giá trị của trường (kể cả khách xóa mềm). `options` là DANH SÁCH MONG MUỐN: lựa chọn vắng mặt bị tắt (`isActive: false`), không bao giờ xóa, nên giá trị khách đã chọn vẫn đọc và lưu lại được; lựa chọn đã tắt không chọn mới được. Đổi `weight`/`isActive`/`isFilterable`/`isOccasion`/`type` tăng phiên bản cấu hình và chạy job nền tính lại. Không bao giờ ghi vào dữ liệu chân dung của khách | A | body các field của POST trừ `key` + `isActive?` | `{ data: PersonaField }`; 409 `PERSONA_FIELD_TYPE_LOCKED` `{ valueCount }` | X10 |
-| DELETE | `/crm/persona-fields/:id` | Bớt trường = xóa mềm (`deletedAt`, kèm tắt), giữ nguyên dữ liệu cũ của khách; `key` vẫn bị giữ chỗ. Không áp dụng trường `isSystem` (chỉ tắt bằng PATCH `isActive: false`) | A | — | `204`; 409 `PERSONA_FIELD_SYSTEM` `{ valueCount }` | X10 |
+| PATCH | `/crm/persona-fields/:id` | Sửa nhãn, nhóm, lựa chọn, trọng số, bật/tắt... `key` bất biến; `type` khóa khi đã có khách có giá trị của trường (kể cả khách xóa mềm). `options` là DANH SÁCH MONG MUỐN: lựa chọn vắng mặt bị tắt (`isActive: false`), không bao giờ xóa, nên giá trị khách đã chọn vẫn đọc và lưu lại được; lựa chọn đã tắt không chọn mới được. Đổi `weight`/`isActive`/`isFilterable`/`isOccasion`/`type` tăng phiên bản cấu hình và chạy job nền tính lại. Không bao giờ ghi vào dữ liệu chân dung của khách | A | body các field của POST trừ `key` + `isActive?` | `{ data: PersonaField }`; 409 `PERSONA_FIELD_TYPE_LOCKED` `{ valueCount }` (đổi `type` khi đã có khách có giá trị; **được ưu tiên** hơn mã dưới đây); 409 `PERSONA_FIELD_SYSTEM` `{ field: 'type' }` (đổi `type` của trường `isSystem` khi chưa khách nào có giá trị; vẫn sửa được nhãn, lựa chọn, bật/tắt); 400 `VALIDATION_FAILED` (hình dạng sai: tắt hết lựa chọn, lựa chọn trùng `value`, quá 100 lựa chọn kể cả đã tắt) | X10 |
+| DELETE | `/crm/persona-fields/:id` | Bớt trường = xóa mềm (`deletedAt`, kèm tắt), giữ nguyên dữ liệu cũ của khách; `key` vẫn bị giữ chỗ. Không áp dụng trường `isSystem` (chỉ tắt bằng PATCH `isActive: false`) | A | — | `204`; 409 `PERSONA_FIELD_SYSTEM` `{ valueCount }` (trường hệ thống không xóa được; `valueCount` = số khách đang có giá trị, kể cả khách xóa mềm) | X10 |
 | PUT | `/crm/persona-fields/order` | Sắp lại thứ tự trường (và chuyển nhóm bằng `groupCode`). `order` là thứ tự toàn cục, trong một nhóm hiển thị theo thứ tự này. Tối đa 200 mục, `id` không trùng, id không tồn tại ⇒ 404 | A | body `{ items*: [{ id, order, groupCode? }] }` | `{ data: PersonaField[] }` (toàn bộ trường theo thứ tự mới) | X10 |
 | GET | `/crm/tags` | Danh sách / gợi ý thẻ khi gõ (`q` không dấu, khớp chứa từ khóa; không gồm thẻ đã xóa). `label` = tên thẻ; `usageCount` = số khách đang gắn (kể cả khách xóa mềm). Mặc định `limit=100`, `sort=name` | A, M, S | query `q, category, page, limit, sort ∈ {name, usageCount}` | `{ data: [Ref + { category, usageCount, color }], meta }` | C11 |
 | POST | `/crm/tags` | Tạo thẻ (trùng tên đã chuẩn hóa — không dấu, không phân biệt hoa thường, gom khoảng trắng — trong cùng `category` ⇒ trả thẻ có sẵn; nhiều người tạo cùng tên đồng thời chỉ ra một thẻ). Tên được chuẩn hóa NFKC và bỏ ký tự vô hình; tên không còn ký tự hiển thị ⇒ 400 `VALIDATION_FAILED`. Giới hạn 30 lần/phút/người (`RATE_LIMITED`) | A, M, S | body `{ name* (1-50), category* (INTEREST\|OCCUPATION\|OTHER) }` | `201 { data: Tag }` hoặc `200` nếu đã tồn tại; 429 `RATE_LIMITED` | C11 |
 | PATCH | `/crm/tags/:id` | Sửa tên/nhóm/màu (trùng tên trong nhóm ⇒ 409 `CATALOG_DUPLICATED`); hoặc gộp vào thẻ khác CÙNG `category` bằng `mergeIntoId` (không đi kèm field khác, không gộp vào chính nó, khác nhóm ⇒ 400 `VALIDATION_FAILED`): khách đang gắn thẻ nguồn chuyển sang thẻ đích (gắn cả hai chỉ còn một), thẻ nguồn xóa mềm (`mergedIntoId`), `usageCount` thẻ đích đếm lại. Gộp chạy ĐỒNG BỘ trong một transaction (không dùng job nền, xem 06 M4); không tăng `version`/`lastUpdatedAt` của từng khách | A | body `{ name?, category?, color?, mergeIntoId? }` | `{ data: Tag }` (gộp: trả thẻ đích) | C11 |
 | DELETE | `/crm/tags/:id` | Xóa mềm thẻ và gỡ khỏi mọi khách (kể cả khách xóa mềm) ĐỒNG BỘ trong cùng transaction (không dùng job nền); không có thời điểm nào khách còn thẻ đã xóa | A | — | `204` | C11 |
+
+**Kết quả kiểm quy tắc BE `/crm/persona-fields` (T-62, FR-41, v1.0.4; test tích hợp `crm-fr41-persona-fields-rules.integration.spec.ts`)** để FE (màn "Trường chân dung") dựa vào, mọi lỗi đều có `errorCode` + `details`:
+
+- Xóa trường hệ thống ⇒ 409 `PERSONA_FIELD_SYSTEM` `{ valueCount }`. Đổi kiểu khi đã có dữ liệu khách ⇒ 409 `PERSONA_FIELD_TYPE_LOCKED` `{ valueCount }`. Đổi kiểu trường hệ thống chưa có dữ liệu ⇒ 409 `PERSONA_FIELD_SYSTEM` `{ field: 'type' }`.
+- PATCH `options`: lựa chọn vắng mặt bị `isActive: false`, không xóa; đổi nhãn giữ nguyên `value`; tắt hết mọi lựa chọn hoặc trùng `value` ⇒ 400; trần 100 lựa chọn tính cả lựa chọn đã tắt.
+- `PUT /crm/persona-fields/order` nhận `{ items: [{ id, order, groupCode? }] }`, trả toàn bộ danh sách theo thứ tự mới; thao tác không đổi gì (no-op) thì không ghi audit.
 
 ### 2.8 Danh mục & dự án (22)
 
@@ -219,7 +225,7 @@ Bốn danh mục dùng chung một mẫu CRUD (4 endpoint mỗi loại). Đọc:
 | GET | `/crm/daily-tasks` | "Việc hôm nay" theo nhóm Quá hạn / Hôm nay / Sắp tới (lịch hẹn, bước tiếp theo, dịp đặc biệt, khách lâu chưa chăm sóc). **M5:** TÍNH từ dữ liệu thật theo ngày giờ VN (không lưu việc), mọi nguồn lọc theo phạm vi khách của người gọi. Nhóm theo NGÀY VN của `dueAt`: trước hôm nay = Quá hạn, trong hôm nay (kể cả giờ đã qua) = Hôm nay, sau hôm nay tới hết `upcomingDays` (mặc định 7, tối đa 30) = Sắp tới. Nguồn: APPOINTMENT (lịch SCHEDULED); FOLLOW_UP (`nextAction.dueAt` của nhật ký MỚI NHẤT của khách, chưa có lịch hẹn kèm; có nhật ký mới hơn là việc biến mất); OCCASION (từ hôm nay tới hết `max(occasionLeadDays)` ngày, bỏ khách nhóm Rớt; `dueAt` = 08:00 VN của ngày dịp); STALE_CUSTOMER (Chưa tiếp cận/Có quan tâm quá `staleCustomerDays`, luôn nhóm Hôm nay, `dueAt` = bây giờ). `scope=mine` (mặc định): lịch mình thực hiện hoặc khách mình phụ trách chính; FOLLOW_UP mình ghi hoặc phụ trách chính; OCCASION khách mình thuộc nhóm chăm sóc; STALE khách mình phụ trách chính. `scope=team` chỉ Quản trị/Quản lý (NV ⇒ 403). Sắp theo `dueAt` tăng dần, phân trang chính xác giữa các nguồn. Response `DailyTask` có thêm `id`, `title`, `careLogId?`, `assignee` so với 1.6. **G7:** thêm `project: Ref\|null` ở cấp việc = dự án của lịch hẹn (chỉ việc APPOINTMENT có lịch gắn dự án, vẫn trả tên khi dự án đã ngừng/ẩn; việc khác và lịch chưa gắn dự án = `null`); `customer.projects` giữ nguyên nghĩa là các dự án khách quan tâm | A, M, S (mặc định việc của mình) | query `group? (OVERDUE\|TODAY\|UPCOMING; bỏ trống = cả 3 nhóm, dùng cho chế độ Kanban), scope (mine\|team — team chỉ A/M), kinds, upcomingDays (mặc định 7), page, limit` | `{ data: DailyTask[], meta }` | C3, C13, X5 |
 | GET | `/crm/daily-tasks/summary` | Số việc mỗi nhóm (badge tab, app); cùng quy tắc nhóm/phạm vi với `GET /crm/daily-tasks` (`scope=team` chỉ A/M) | A, M, S | query `scope, upcomingDays` | `{ data: { overdue, today, upcoming } }` | C3 |
 
-### 2.10 Thông báo & thiết bị (8) — dùng chung toàn app. **M5 làm 6 endpoint (hộp thông báo 4 + cài đặt 2); `device-tokens` (2) thuộc M7**
+### 2.10 Thông báo & thiết bị (10) — dùng chung toàn app. **M5 làm 6 endpoint (hộp thông báo 4 + cài đặt 2); v1.0.4 (M7) thêm `/push-subscriptions` (4, Web Push VAPID cho PWA) thay cho `/device-tokens` (FCM, không còn dùng)**
 
 | Method | Path | Mô tả | Quyền | Request | Response | ID |
 |---|---|---|---|---|---|---|
@@ -227,10 +233,12 @@ Bốn danh mục dùng chung một mẫu CRUD (4 endpoint mỗi loại). Đọc:
 | GET | `/notifications/unread-count` | Số chưa đọc | Self | — | `{ data: { count } }` | X5 |
 | PATCH | `/notifications/:id` | Đánh dấu một thông báo đã đọc/chưa đọc (giữ mốc `readAt` đầu tiên); thông báo của người khác hoặc không tồn tại ⇒ 404 `RESOURCE_NOT_FOUND` | Self | body `{ isRead* }` | `{ data: Notification }` | X5 |
 | PATCH | `/notifications` | Đánh dấu đã đọc hàng loạt (chỉ thông báo của mình; `ids` tối đa 200; `isRead` chỉ nhận `true`) | Self | body `{ isRead: true, ids? (bỏ trống = tất cả), before? }` | `{ data: { updated } }` | X5 |
-| POST | `/device-tokens` | Đăng ký/làm mới device token (upsert theo token, gán lại cho user hiện tại) | Self | body `{ token*, platform* (IOS\|ANDROID\|WEB), deviceId?, appVersion? }` | `201 { data: { id, platform, lastSeenAt } }` | X5, X9 |
-| DELETE | `/device-tokens/:id` | Hủy đăng ký thiết bị (đăng xuất, tắt push) | Self | — | `204` | X5 |
-| GET | `/notification-preferences/me` | Cài đặt bật/tắt từng loại thông báo; trả đủ mọi loại (loại chưa lưu = bật cả `push` và `inApp`) | Self | — | `{ data: { types: { [type]: { push, inApp } }, quietHours } }` | X5, §5 |
-| PUT | `/notification-preferences/me` | Lưu cài đặt. **M5:** chỉ cập nhật các loại gửi lên (loại khác giữ nguyên); khóa không phải NotificationType hoặc giá trị không đủ `{ push, inApp }` boolean ⇒ 400; `quietHours: null` bỏ giờ yên lặng, `start` ≠ `end`. `inApp=false` ⇒ loại đó không được ghi vào hộp thông báo của người này; `push` chỉ có tác dụng từ M7 | Self | body `{ types*: { [type]: { push, inApp } }, quietHours?: { start, end } \| null }` | `{ data: Preferences }` | X5, §5 |
+| GET | `/push-subscriptions/config` | Cấu hình push cho trình duyệt (v1.0.4, M7). `enabled` = cờ `FEATURE_CRM_PUSH` bật **và** đủ `VAPID_*` hợp lệ; `publicKey` là khóa công khai VAPID (không bí mật) để `pushManager.subscribe`, `null` khi `enabled=false`. Vẫn gọi được khi cờ push tắt | Self (CRM) | — | `{ data: { enabled, publicKey } }` | X5, X9 |
+| GET | `/push-subscriptions` | Thiết bị của chính mình: `active` (đang hiệu lực) và `recentlyRevoked` (thu hồi trong 7 ngày gần nhất, mới nhất trước, kèm lý do). Không bao giờ trả `endpoint`, `keys` hay `auth` | Self (CRM) | — | `{ data: { active: [{ id, deviceLabel, platform, lastSeenAt, createdAt }], recentlyRevoked: [{ deviceLabel, reason (USER\|LOGOUT\|GONE\|LIMIT_EXCEEDED\|ACCOUNT_DISABLED), revokedAt }] } }` | X5, X9 |
+| POST | `/push-subscriptions` | Đăng ký/làm mới thiết bị nhận push (upsert theo `endpoint`, gán lại cho người gọi). `userId` luôn lấy từ JWT. Tối đa 3 thiết bị còn hiệu lực mỗi người: đăng ký thiết bị thứ 4 thì thiết bị ít hoạt động nhất bị gỡ (lý do `LIMIT_EXCEEDED`, trả trong `displaced`). `endpoint` phải là `https`, tối đa 1024 ký tự, host thuộc dịch vụ push cho phép (FCM, Mozilla, Apple, WNS, cộng `PUSH_ENDPOINT_HOST_ALLOWLIST` nếu cấu hình) để chống SSRF. `auth` được mã hóa khi lưu, không trả lại. Giới hạn 10 yêu cầu/phút/người | Self (CRM) | body `{ endpoint*, keys*: { p256dh*, auth* }, expirationTime? }` | `201` (mới) hoặc `200` (endpoint đã có) `{ data: { id, deviceLabel, platform (IOS\|ANDROID\|DESKTOP\|OTHER), createdAt, lastSeenAt, displaced: { id, deviceLabel } \| null } }`; 400 `PUSH_SUBSCRIPTION_INVALID` (endpoint không https/ngoài allowlist/khóa sai) hoặc `VALIDATION_FAILED`; 429 `RATE_LIMITED` | X5, X9 |
+| DELETE | `/push-subscriptions/:id` | Gỡ một thiết bị của chính mình (lý do `USER`). Idempotent: gỡ lại vẫn `204`. Thiết bị không có hoặc của người khác ⇒ 404 `RESOURCE_NOT_FOUND`. Bản gỡ được giữ 7 ngày (hiển thị "đã gỡ thiết bị X") rồi tự xóa | Self (CRM) | — | `204` | X5 |
+| GET | `/notification-preferences/me` | Cài đặt bật/tắt từng loại thông báo; trả đủ mọi loại (loại chưa lưu = bật cả `push` và `inApp`). **v1.0.4:** kèm `pushTypes` lấy từ danh mục push (đúng 4 loại, theo thứ tự danh mục) để FE hiện công tắc push; loại ngoài danh mục không có push | Self | — | `{ data: { types: { [type]: { push, inApp } }, quietHours, pushTypes: [{ type, label, description, defaultEnabled, canDisable }] } }` | X5, §5 |
+| PUT | `/notification-preferences/me` | Lưu cài đặt. **M5:** chỉ cập nhật các loại gửi lên (loại khác giữ nguyên); khóa không phải NotificationType hoặc giá trị không đủ `{ push, inApp }` boolean ⇒ 400; `quietHours: null` bỏ giờ yên lặng, `start` ≠ `end`. `inApp=false` ⇒ loại đó không được ghi vào hộp thông báo của người này **và cũng không có push** (push đi theo thông báo gốc). **v1.0.4:** `push=false` tắt push của loại đó; giờ yên lặng (`quietHours`, giờ VN, `start` bao gồm, `end` không bao gồm, `start > end` là qua nửa đêm) có hiệu lực: push trong khung này bị bỏ qua (`SKIPPED`), thông báo vẫn nằm trong hộp thông báo | Self | body `{ types*: { [type]: { push, inApp } }, quietHours?: { start, end } \| null }` | `{ data: Preferences }` | X5, §5 |
 
 ### 2.11 Lịch sử & audit (2)
 
@@ -240,6 +248,8 @@ Bốn danh mục dùng chung một mẫu CRUD (4 endpoint mỗi loại). Đọc:
 | GET | `/crm/audit-logs` | Audit toàn CRM (export, import, danh mục, xem CCCD, dò số…); `entityType` phải thuộc enum, sai ⇒ 400 | A | query `entityType, action, actorId, customerId, from, to, page, limit` | `{ data: [HistoryEntry + { entityType, entityId, customerId, requestId, ip }], meta }` | X4, §5 |
 
 ### 2.12 Import / Export (12)
+
+> **Ghi chú v1.0.4 (FR-13, FR-40):** dữ liệu danh mục của khách và nhật ký đã lưu kèm `…Code` (mã chữ ổn định) bên cạnh `…Id`. Các endpoint export dưới đây (M8) chưa được làm ở v1.0.4; khi làm, **mỗi cột danh mục (tình trạng, nguồn, khu vực, dự án quan tâm, kết quả liên hệ) trong file xuất phải có cặp `code` + `label`** để người đọc file (kể cả công cụ/agent bên ngoài) hiểu nghĩa mà không cần tra ObjectId.
 
 | Method | Path | Mô tả | Quyền | Request | Response | ID |
 |---|---|---|---|---|---|---|
@@ -295,13 +305,13 @@ Tất cả nhận query chung: `from, to` (ngày VN, theo `createdAt` hoặc `st
 | 2.7 Chân dung & thẻ | 0 | 11 | 11 |
 | 2.8 Danh mục & dự án | 0 | 22 | 22 |
 | 2.9 Lịch hẹn & việc hôm nay | 0 | 8 | 8 |
-| 2.10 Thông báo & thiết bị | 0 | 8 | 8 |
+| 2.10 Thông báo & thiết bị | 0 | 10 | 10 |
 | 2.11 Lịch sử & audit | 0 | 2 | 2 |
 | 2.12 Import / Export | 0 | 12 | 12 |
 | 2.13 Dashboard | 0 | 3 | 3 |
 | 2.14 Cài đặt CRM | 0 | 2 | 2 |
 | 2.15 Health | 2 | 0 | 2 |
-| **Tổng** | **10** | **106** | **116** |
+| **Tổng** | **10** | **108** | **118** |
 
 ---
 
@@ -325,11 +335,11 @@ Tất cả nhận query chung: `from, to` (ngày VN, theo `createdAt` hoặc `st
 | X2 | `POST /crm/customers/phone-lookups`, 409 khi tạo, `/crm/care-team-requests` (3) |
 | X3 | Query của `GET /crm/customers` |
 | X4 | `GET /crm/customers/:id/histories`, `GET /crm/audit-logs` |
-| X5 | `/notifications` (4), `/device-tokens` (2), `/notification-preferences/me` (2), scheduler |
+| X5 | `/notifications` (4), `/push-subscriptions` (4, Web Push v1.0.4), `/notification-preferences/me` (2), scheduler |
 | X6 | `/crm/dashboard/*` (3) |
 | X7 | 2.8 (22, gồm CRUD dự án + `/crm/project-restorations`), `/users`, `/teams` |
 | X8 | 2.12 (12, nhập/xuất chung; mẫu 3 sheet cũ giai đoạn sau) |
-| X9 | Cùng API cho web và app; `/device-tokens`; `X-Client-Type` ở auth |
+| X9 | Cùng API cho web và app; `/push-subscriptions` (Web Push VAPID cho PWA; push native FCM/APNs thuộc M9 là phương án cho app di động, không phải thiết kế hiện tại, hiện tại dùng Web Push VAPID); `X-Client-Type` ở auth |
 | X10 | `/crm/persona-fields` (5) |
 
 ---
@@ -345,6 +355,7 @@ Tất cả nhận query chung: `from, to` (ngày VN, theo `createdAt` hoặc `st
 | 400 | `USER_NOT_ASSIGNABLE` | Người được phân không ACTIVE hoặc không phải MANAGER/STAFF | `{ userIds }` |
 | 400 | `PERSONA_VALUE_INVALID` | Giá trị sai kiểu trường / lựa chọn không tồn tại | `{ fieldKey }` |
 | 400 | `SENSITIVE_FIELD_CONSENT_REQUIRED` | Trường nhạy cảm thiếu `source=CUSTOMER_SHARED` + xác nhận | `{ fieldKey }` |
+| 400 | `PUSH_SUBSCRIPTION_INVALID` | Đăng ký thiết bị push: `endpoint` không `https`/quá dài/ngoài allowlist host, hoặc khóa `p256dh`/`auth` sai định dạng (v1.0.4) | — |
 | 400 | `INVALID_SORT_FIELD` | `sort` ngoài whitelist | `{ allowed }` |
 | 401 | `UNAUTHORIZED` | Token thiếu/hết hạn | — |
 | 403 | `INSUFFICIENT_ROLE` | Vai trò không đủ (RolesGuard) | — |
@@ -366,7 +377,8 @@ Tất cả nhận query chung: `from, to` (ngày VN, theo `createdAt` hoặc `st
 | 409 | `TEAM_CODE_DUPLICATED` | Trùng mã nhóm (kể cả nhóm đã xóa mềm) | `{ code }` |
 | 409 | `LAST_ADMIN_REQUIRED` | Khóa hoặc hạ vai trò Quản trị đang hoạt động cuối cùng | — |
 | 409 | `CATALOG_IN_USE` / `CATALOG_SYSTEM` | Xóa danh mục đang dùng / hệ thống | `{ usageCount }` |
-| 409 | `PERSONA_FIELD_TYPE_LOCKED` / `PERSONA_FIELD_SYSTEM` | Đổi kiểu trường đã có dữ liệu / xóa trường hệ thống | `{ valueCount }` |
+| 409 | `PERSONA_FIELD_TYPE_LOCKED` | Đổi kiểu trường đã có dữ liệu khách (ưu tiên hơn `PERSONA_FIELD_SYSTEM` khi cả hai cùng đúng) | `{ valueCount }` |
+| 409 | `PERSONA_FIELD_SYSTEM` | Xóa trường hệ thống (`{ valueCount }`), hoặc đổi kiểu trường hệ thống chưa có dữ liệu khách (`{ field: 'type' }`) | `{ valueCount }` hoặc `{ field }` |
 | 409 | `TEAM_NOT_EMPTY` | Xóa nhóm còn thành viên | `{ memberCount }` |
 | 409 | `IMPORT_NOT_VALIDATED` | Xác nhận import khi chưa chạy thử xong | `{ status }` |
 | 409 | `APPOINTMENT_STATUS_INVALID` | Sửa lịch hẹn không còn ở trạng thái SCHEDULED, hoặc chuyển trạng thái không hợp lệ (DONE ↔ CANCELED phải mở lại trước) — thêm ở M5 | — |

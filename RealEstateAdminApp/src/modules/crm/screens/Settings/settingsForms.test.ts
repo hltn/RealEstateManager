@@ -305,6 +305,10 @@ describe('thẻ (FR-42)', () => {
 
   it('có tab "Thẻ"; màu chọn được gồm "Không màu" (giá trị rỗng) và các tông thiết kế', () => {
     expect(SETTINGS_TABS).toContainEqual({ id: 'tags', label: 'Thẻ' });
+    // FR-41: tab "Trường chân dung" nằm ngay sau "Thẻ".
+    const ids = SETTINGS_TABS.map((tab) => tab.id);
+    expect(SETTINGS_TABS).toContainEqual({ id: 'personaFields', label: 'Trường chân dung' });
+    expect(ids.indexOf('personaFields')).toBe(ids.indexOf('tags') + 1);
     expect(TAG_COLOR_OPTIONS[0]).toEqual({ value: '', label: 'Không màu' });
     expect(TAG_COLOR_OPTIONS.map((option) => option.value)).toContain('brand');
   });

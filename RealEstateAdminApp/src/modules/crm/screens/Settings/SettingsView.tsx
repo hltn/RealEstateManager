@@ -7,6 +7,7 @@ import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import { PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS, PAGE_TITLE_MOBILE_CLASS, TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { CatalogSection } from './components/CatalogSection';
+import { PersonaFieldsSection } from './components/PersonaFieldsSection';
 import { ProjectsCatalogSection } from './components/ProjectsCatalogSection';
 import { ReminderSettingsSection } from './components/ReminderSettingsSection';
 import { TagsSection } from './components/TagsSection';
@@ -37,7 +38,7 @@ export const SettingsView = ({ variant }: SettingsViewProps) => {
       <div className="flex flex-col gap-4">
         <header className="flex flex-col gap-2">
           <h2 className={isDesktop ? PAGE_TITLE_CLASS : PAGE_TITLE_MOBILE_CLASS}>Cài đặt CRM</h2>
-          <p className={`${PAGE_DESCRIPTION_CLASS} max-w-2xl`}>Danh mục, người dùng, nhóm và nhắc việc. Mục đã dùng chỉ được ẩn, không xoá.</p>
+          <p className={`${PAGE_DESCRIPTION_CLASS} max-w-2xl`}>Danh mục, trường chân dung, người dùng, nhóm và nhắc việc. Mục đã dùng chỉ được ẩn, không xoá.</p>
         </header>
         {isDesktop && <CrmModuleTabs />}
       </div>
@@ -67,6 +68,7 @@ export const SettingsView = ({ variant }: SettingsViewProps) => {
         {activeTab === 'teams' && <TeamsSection />}
         {activeTab === 'projects' && <ProjectsCatalogSection />}
         {activeTab === 'tags' && <TagsSection />}
+        {activeTab === 'personaFields' && <PersonaFieldsSection />}
         {activeTab === 'reminders' && <ReminderSettingsSection />}
         {isCatalogTab(activeTab) && <CatalogSection key={activeTab} kind={activeTab} description={CATALOG_DESCRIPTIONS[activeTab]} />}
       </div>

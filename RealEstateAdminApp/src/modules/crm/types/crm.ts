@@ -232,6 +232,29 @@ export interface PersonaFieldDefinition {
   isActive: boolean;
 }
 
+/** Một lựa chọn của trường SELECT/MULTI_SELECT: `value` là mã lưu vào dữ liệu khách (bất biến), `label` là nhãn hiển thị. */
+export interface PersonaOptionItem {
+  value: string;
+  label: string;
+  isActive: boolean;
+}
+
+/**
+ * Trường chân dung ở màn quản trị (FR-41, chỉ Quản trị): khác `PersonaFieldDefinition` ở chỗ giữ `id`, `order`, `isSystem`
+ * và `groupCode` NGUYÊN BẢN của máy chủ (nhóm lạ không bị gom về "Cá nhân") để sắp xếp/sửa đúng bản ghi.
+ */
+export interface AdminPersonaField {
+  id: string;
+  key: string;
+  label: string;
+  groupCode: string;
+  type: PersonaFieldType;
+  options: PersonaOptionItem[];
+  order: number;
+  isSystem: boolean;
+  isActive: boolean;
+}
+
 export type PersonaSource = 'CUSTOMER_SHARED' | 'STAFF_OBSERVED' | 'IMPORTED';
 
 export interface PersonaValue {

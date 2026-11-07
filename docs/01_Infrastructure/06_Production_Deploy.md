@@ -1636,7 +1636,7 @@ curl -s "http://localhost/api/v1/crm/audit-logs?action=PHONE_VIEWED&limit=3" -H 
 unset TOKEN
 ```
 
-Dòng đầu tiên (mới nhất) phải có `"ip":"<IP A>"` đúng từng ký tự. Lệnh in cả trường hợp `"ip":null` (backend trả `null` khi request không có IP trong ngữ cảnh): thấy `"ip":null` là lỗi, xem dòng cuối bảng bên dưới. Nếu không in dòng nào thì token sai/hết hạn hoặc chưa có dòng `PHONE_VIEWED` (làm lại bước 3 và đăng nhập lại), không phải IP đúng. Cách khác (Mongo, chỉ đọc; dòng `auth` giống 15.9):
+Dòng đầu tiên (mới nhất) phải có `"ip":"<IP A>"` đúng từng ký tự. Lệnh in cả trường hợp `"ip":null` (backend trả `null` khi request không có IP trong ngữ cảnh): thấy `"ip":null` là lỗi, xem dòng thứ ba của bảng "Cách đọc kết quả sai" bên dưới. Nếu không in dòng nào thì token sai/hết hạn hoặc chưa có dòng `PHONE_VIEWED` (làm lại bước 3 và đăng nhập lại), không phải IP đúng. Cách khác (Mongo, chỉ đọc; dòng `auth` giống 15.9):
 
 ```bash
 docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
@@ -1734,7 +1734,7 @@ Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo tạm (đã xóa), d
 
 **Chưa kiểm chứng (cần VPS/Cloudflare thật, việc của Oniichan):**
 - Toàn bộ 16.1 trên cloudflared và Cloudflare thật: IP thật ghi vào audit, hành vi `CF-Connecting-IP` (kể cả IPv6/Pseudo IPv4), phép thử 429 qua tunnel.
-- Lệnh `docker exec realestate_frontend nginx -T` (16.1 bước 2) và route `GET /api/v1/crm/audit-logs` bằng `curl` + `grep -o` **chưa chạy thật** (chưa dựng stack đầy đủ; dạng JSON trả về chỉ đọc từ mã, `grep -o '"ip":"..."'` không phụ thuộc cấu trúc bọc ngoài). Dòng `auth` Mongo trong container thật đã nêu ở 15.14.
+- Lệnh `docker exec realestate_frontend nginx -T` (16.1 bước 2) và route `GET /api/v1/crm/audit-logs` bằng `curl` + `grep -o` **chưa chạy thật** (chưa dựng stack đầy đủ; dạng JSON trả về chỉ đọc từ mã, `grep -o '"ip":[^,}]*'` không phụ thuộc cấu trúc bọc ngoài). Dòng `auth` Mongo trong container thật đã nêu ở 15.14.
 - 16.2 trên dữ liệu production thật: số lượng và hình dạng cặp trùng thực tế, thao tác "Xoá dự án"/"Ngừng hoạt động"/"Khôi phục" trên giao diện thật (chỉ đọc mã giao diện).
 - Chưa có số liệu nào về việc production có thực sự đang có dự án trùng hay không.
 

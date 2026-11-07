@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TagCategory } from '@crm/types/crm';
-import { groupTagsByCategory, TAG_CATEGORY_LABELS, TAG_CATEGORY_ORDER, TAG_GROUP_TITLES } from './tagCategories';
+import { groupTagsByCategory, isTagInCategory, TAG_CATEGORY_LABELS, TAG_CATEGORY_ORDER, TAG_GROUP_TITLES } from './tagCategories';
 
 const tag = (id: string, category: string) => ({ id, category: category as TagCategory });
 
@@ -29,5 +29,13 @@ describe('tagCategories (FR-48)', () => {
     const groups = groupTagsByCategory([tag('i1', 'INTEREST'), tag('x1', 'FUTURE_GROUP')]);
     expect(groups.map((group) => group.category)).toEqual(['INTEREST', 'OTHER']);
     expect(groups[1].tags.map((item) => item.id)).toEqual(['x1']);
+  });
+
+  it('isTagInCategory: nhóm biết thì khớp đúng nhóm; nhóm lạ chỉ thuộc Khác', () => {
+    expect(isTagInCategory(tag('i1', 'INTEREST'), 'INTEREST')).toBe(true);
+    expect(isTagInCategory(tag('i1', 'INTEREST'), 'OTHER')).toBe(false);
+    expect(isTagInCategory(tag('x1', 'FUTURE_GROUP'), 'OTHER')).toBe(true);
+    expect(isTagInCategory(tag('x1', 'FUTURE_GROUP'), 'INTEREST')).toBe(false);
+    expect(isTagInCategory(tag('x1', 'FUTURE_GROUP'), 'OCCUPATION')).toBe(false);
   });
 });

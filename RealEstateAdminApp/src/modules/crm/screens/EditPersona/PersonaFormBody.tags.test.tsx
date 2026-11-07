@@ -17,6 +17,8 @@ const catalogs: CrmCatalogs = {
     { id: 't-golf', name: 'Golf', category: 'INTEREST', isActive: true },
     { id: 't-vip', name: 'Khách VIP', category: 'OTHER', isActive: true },
     { id: 't-old', name: 'Thẻ đã tắt', category: 'OTHER', isActive: false },
+    // Nhóm máy chủ thêm mà FE chưa biết: phải còn ở form (xếp vào "Thẻ khác"), khớp `groupTagsByCategory`.
+    { id: 't-future', name: 'Thẻ nhóm lạ', category: 'FUTURE_GROUP' as never, isActive: true },
   ],
   contactResults: [],
 };
@@ -66,6 +68,16 @@ describe('PersonaFormBody: thẻ nhóm Khác (FR-48)', () => {
     expect(within(other).queryByText('Thẻ đã tắt')).not.toBeInTheDocument();
     fireEvent.click(within(other).getByLabelText(/Khách VIP/));
     expect(form.toggleTag).toHaveBeenCalledWith('t-vip');
+  });
+
+  it('thẻ có nhóm lạ hiện ở "Thẻ khác" (không biến mất) và không lọt vào nhóm khác', () => {
+    const form = makeForm();
+    renderBody(form);
+    const other = screen.getByRole('group', { name: 'Thẻ khác' });
+    fireEvent.click(within(other).getByLabelText(/Thẻ nhóm lạ/));
+    expect(form.toggleTag).toHaveBeenCalledWith('t-future');
+    expect(within(screen.getByRole('group', { name: 'Thẻ sở thích' })).queryByText('Thẻ nhóm lạ')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Thẻ nghề nghiệp' })).queryByText('Thẻ nhóm lạ')).not.toBeInTheDocument();
   });
 
   it('gắn nhanh thẻ mới ở nhóm "Thẻ khác": tạo thẻ với category OTHER', () => {

@@ -11,7 +11,7 @@ import { isValidPhone } from '@crm/lib/phone';
 import { includesVietnamese } from '@crm/lib/text';
 import { listProjectFilterOptions, type ProjectFilterOption } from '@crm/lib/projectRules';
 import { buildAssigneeFilterOptions, type AssigneeFilterOption } from '@crm/lib/assigneeFilter';
-import type { AdminTag, AdminUser, CrmCatalogs, CrmSettings, CrmUser, PersonaFieldDefinition, Team, TeamMember } from '@crm/types/crm';
+import type { AdminPersonaField, AdminTag, AdminUser, CrmCatalogs, CrmSettings, CrmUser, PersonaFieldDefinition, Team, TeamMember } from '@crm/types/crm';
 import type { CrmActor } from './access';
 import * as admin from './http/adminApi';
 import * as catalogApi from './http/catalogApi';
@@ -116,6 +116,7 @@ const EMPTY_FIELDS: PersonaFieldDefinition[] = [];
 const EMPTY_USERS: CrmUser[] = [];
 const EMPTY_ADMIN_USERS: AdminUser[] = [];
 const EMPTY_ADMIN_TAGS: AdminTag[] = [];
+const EMPTY_ADMIN_PERSONA_FIELDS: AdminPersonaField[] = [];
 const EMPTY_TEAMS: (Team & { code: string; memberCount: number; isActive: boolean })[] = [];
 
 /** Danh mục + người dùng + nhóm + cấu hình chân dung. `isLoading` = còn danh mục bắt buộc chưa tải xong. */
@@ -560,6 +561,22 @@ export const useAdminTags = (isEnabled = true): QueryState<AdminTag[]> => {
     refetchOnWindowFocus: false,
   });
   return stateOf(result, EMPTY_ADMIN_TAGS);
+};
+
+/**
+ * `GET /crm/persona-fields` cho màn quản trị (có id, thứ tự, cờ hệ thống, cả trường đã tắt). Cùng nhóm khóa `catalogs` với
+ * `persona-fields` nên sau khi sửa/sắp xếp, cả màn này lẫn form chân dung/bộ lọc đều được làm mới.
+ */
+export const useAdminPersonaFields = (isEnabled = true): QueryState<AdminPersonaField[]> => {
+  const result = useQuery({
+    queryKey: [...crmKeys.catalogs, 'admin-persona-fields'],
+    queryFn: ({ signal }) => admin.fetchAdminPersonaFields(signal),
+    enabled: isEnabled,
+    staleTime: DATA_STALE_MS,
+    retry: retryTransient,
+    refetchOnWindowFocus: false,
+  });
+  return stateOf(result, EMPTY_ADMIN_PERSONA_FIELDS);
 };
 
 /** `GET /teams/:id/members` — phân trang + tìm theo tên; giữ trang cũ khi đổi trang/tìm để danh sách không nhấp nháy. */

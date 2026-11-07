@@ -1,11 +1,11 @@
 # Tài liệu kỹ thuật: Module Quản lý & chăm sóc khách hàng (CRM)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.4
 
 > **Phạm vi:** giai đoạn 1 của [`01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md`](01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md) (C1–C14, X1–X11, quy tắc mục 4, yêu cầu chung mục 5). **Nhập dữ liệu 3 sheet cũ (DSKH, DSKH_DROP, DSKH_NET) hoãn sang giai đoạn sau** (D7). Zalo (3.3) và ghi âm (3.4) chỉ phác thảo ở [mục 8](#8-giai-đoạn-sau-zalo-ghi-âm--phác-thảo).
 > **Danh sách API đầy đủ:** [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md).
 > **Chuẩn áp dụng:** skill `nodejs-react-mongo-coding-guidelines` (naming, `/api/v1`, Swagger, phân trang `{ data, meta }`, lỗi `{ statusCode, message, timestamp, path }`, soft delete, transaction, audit trail, queue, Correlation ID).
-> Các điểm **[Giả định]** gom ở [mục 9](#9-giả-định--câu-hỏi-mở): **đã xác nhận ngày 2026-10-22** (D5 chốt dùng Redis + BullMQ; D7 hoãn; FCM chưa làm ở giai đoạn 1). Nhật ký quyết định đầy đủ ở [mục 11](#11-nhật-ký-quyết-định-2026-10-22).
+> Các điểm **[Giả định]** gom ở [mục 9](#9-giả-định--câu-hỏi-mở): **đã xác nhận ngày 2026-10-22** (D5 chốt dùng Redis + BullMQ; D7 hoãn; push chưa làm ở giai đoạn 1; **v1.0.4: M7 làm bằng Web Push VAPID cho PWA, không dùng FCM/Firebase cho web**, xem mục 3.6, 6.3, 10). Nhật ký quyết định đầy đủ ở [mục 11](#11-nhật-ký-quyết-định-2026-10-22).
 
 ---
 
@@ -20,7 +20,7 @@
 | Phân quyền theo khách được phân | Bộ lọc phạm vi (row-level scope) bắt buộc ở tầng repository, không chỉ guard (X1, quy tắc 6) |
 | Tự động hóa việc làm tay | Tiến độ (C5), `lastUpdatedAt` (C7), chống trùng SĐT (X2), nhắc lịch (C3, C13, X5) đều do server tính; từ v1.0.3 tiến độ đạt 3/4 tiêu chí còn tự đổi tình trạng khách (mục 6.2a) |
 | Chân dung động | `persona_fields` do Quản trị cấu hình (X10) + giá trị lưu kiểu attribute pattern có metadata người/ngày/nguồn (quy tắc 9) |
-| Di động có đẩy thông báo | App Expo (iOS/Android) + FCM HTTP v1 (APNs qua Firebase) + hộp thông báo trong app (X5, X9). **Giai đoạn 1 chỉ có hộp thông báo trong app (Web Admin chạy API thật); FCM, `device_tokens` và app di động làm ở giai đoạn 2** (thiết kế giữ nguyên, chỉ để cấu hình/placeholder) |
+| Đẩy thông báo ra điện thoại | Hộp thông báo trong app (X5, X9) + **Web Push (giao thức VAPID) cho PWA** của Web Admin cài trên iPhone/Android (v1.0.4, M7); dịch vụ push do trình duyệt cung cấp (FCM, Mozilla, Apple, WNS), backend không cần Firebase project hay APNs key. **Giai đoạn 1 chỉ có hộp thông báo trong app; Web Push làm ở v1.0.4 (M7), mặc định tắt bằng `FEATURE_CRM_PUSH` cho tới khi bật production (T-48, sau deploy)**. Push cho app native Expo (FCM/APNs) thuộc M9 |
 
 ### 1.2 Trong / ngoài phạm vi giai đoạn 1
 
@@ -49,8 +49,7 @@ flowchart LR
   DB[("MongoDB<br/>Replica Set (transaction)")]
   RDS[("Redis<br/>queue, idempotency,<br/>throttler storage")]
   S3[("Object storage S3 / MinIO<br/>ảnh đính kèm, file import, export")]
-  FCM["FCM HTTP v1"]
-  APNS["APNs"]
+  PUSHSVC["Dịch vụ Web Push của trình duyệt<br/>(FCM / Mozilla / Apple / WNS)"]
 
   WEB -- "HTTPS + Bearer JWT<br/>X-Request-ID, X-Idempotency-Key" --> API
   MOB -- "HTTPS + Bearer JWT" --> API
@@ -61,10 +60,8 @@ flowchart LR
   RDS -- "jobs" --> WRK
   WRK --> DB
   WRK --> S3
-  WRK -- "gửi push" --> FCM
-  FCM -- "Android" --> MOB
-  FCM --> APNS
-  APNS -- "iOS" --> MOB
+  WRK -- "gửi Web Push (VAPID)" --> PUSHSVC
+  PUSHSVC -- "push đến PWA (iOS/Android/desktop)" --> WEB
   WEB -. "tải file export qua signed URL" .-> S3
 ```
 
@@ -75,7 +72,7 @@ flowchart LR
 | Queue + Scheduler | **BullMQ + Redis** (mới) | Tác vụ nặng (import/export, gửi push có retry/backoff) phải tách khỏi request; repeatable job chạy đúng 1 lần dù nhiều instance. Redis cũng thay `IdempotencyService` in-memory hiện tại (không stateless) |
 | Worker | Cùng codebase, biến `APP_ROLE=api|worker|all`; giai đoạn 1 chạy `all` trong 1 container | Tối giản hạ tầng; tách container khi tải tăng |
 | Lưu file | S3-compatible (MinIO ở dev) qua `FileStorageService` | Backend stateless; file export có hạn (signed URL 15 phút, xóa sau 7 ngày); ảnh đính kèm nhật ký lưu bucket riêng, đọc qua signed URL 15 phút |
-| Push (**giai đoạn 2**; GĐ1 chỉ có `PushProvider` interface + `NoopPushProvider`, biến môi trường `FCM_*` để trống, `FEATURE_CRM_PUSH=false`) | FCM HTTP v1 cho cả Android và iOS (upload APNs key lên Firebase); app lấy **device token gốc** qua `expo-notifications` | Một nhà cung cấp, một API; Expo Push Service là phương án dự phòng |
+| Push (**v1.0.4, M7**; GĐ1 chỉ có `PushProvider` interface + `NoopPushProvider`) | **Web Push VAPID** qua thư viện `web-push`: `WebPushProvider` khi `FEATURE_CRM_PUSH` bật **và** đủ `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` hợp lệ, ngược lại `NoopPushProvider` (chọn một lần lúc khởi động; thiếu/sai biến thì log lỗi và chạy Noop, không sập app). Trình duyệt đăng ký `PushSubscription` (`endpoint` + khóa), backend lưu ở `push_subscriptions` | Chạy được cho PWA đã cài (kể cả iOS 16.4+) mà không cần Firebase/APNs; một cặp khóa VAPID tạo một lần. Push app native (FCM/APNs) để M9 |
 | Cache | **Không dùng** ở giai đoạn 1 | Vài nghìn khách, index đủ nhanh; theo skill, cache phải hỏi trước |
 
 ---
@@ -109,7 +106,7 @@ src/
 │   └── storage/               # FileStorageService (S3/MinIO, signed URL, UUID filename)
 ├── modules/
 │   ├── teams/                 # [MỚI] nhóm làm việc (org-level): teams.controller/service/repository
-│   ├── notifications/         # [MỚI] app-wide: inbox, device-tokens, preferences, FcmPushProvider
+│   ├── notifications/         # [MỚI] app-wide: inbox, preferences, Dispatcher, push (push-subscriptions, WebPushProvider)
 │   └── crm/
 │       ├── crm.module.ts      # module tổng, import các sub-module, bật bằng FEATURE_CRM_ENABLED
 │       ├── common/
@@ -137,7 +134,7 @@ src/
 | Module | Controller (route gốc) | Service chính | Collection | Phụ thuộc |
 |---|---|---|---|---|
 | `teams` | `/teams` | `TeamsService` | `teams` | users |
-| `notifications` | `/notifications`, `/device-tokens`, `/notification-preferences` | `NotificationsService`, `PushDispatchService`, `FcmPushProvider` | `notifications`, `device_tokens`, `notification_preferences` | queue |
+| `notifications` | `/notifications`, `/push-subscriptions`, `/notification-preferences` (và `POST /auth/logout` gỡ thiết bị push) | `NotificationsService` (hộp thông báo), **`NotificationDispatcherService`** (cổng phát thông báo dùng chung: bỏ trùng người nhận, `dedupeKey` bắt buộc, quyết `pushStatus`, xếp job `push.send` sau commit), `PushSubscriptionsService` + `PushSubscriptionManagementService`, `PushDeliveryProcessor` + `PushQueueWorker` (job `push.send`/`push.sweep`/`push.cleanup`), `WebPushProvider` / `NoopPushProvider` (`PUSH_PROVIDER`), danh mục `PUSH_CATALOG` (mục 3.6.2) | `notifications`, `push_subscriptions`, `push_deliveries`, `notification_preferences` | queue `push`, Redis |
 | `crm/customers` | `/crm/customers`, `/crm/deleted-customers`, `/crm/customer-*` | `CustomersService`, `CustomerStatusService`, `CriteriaService`, `NationalIdService`, `CustomerPhoneAccessService` (xem/gọi SĐT + PHONE_VIEWED), `CustomerBulkService` | `customers` | access, audit-logs, catalogs, persona, notifications |
 | `crm/care-teams` | `/crm/customers/:id/care-team`, `/crm/care-team-requests` | `CareTeamService`, `CareTeamRequestsService` | `customers` (careTeam), `care_team_requests` | access, notifications, audit-logs |
 | `crm/care-logs` | `/crm/customers/:id/care-logs`, `/crm/customers/:id/care-log-attachments` | `CareLogsService`, `CareLogAttachmentsService`, `ImageProcessor` | `care_logs`, `crm_attachments` | access, appointments, notifications, storage, queue |
@@ -181,7 +178,9 @@ erDiagram
   customers ||--o{ crm_audit_logs : "customerId"
   customers ||--o{ reminders : "customerId"
   users ||--o{ notifications : "userId"
-  users ||--o{ device_tokens : "userId"
+  users ||--o{ push_subscriptions : "userId"
+  push_subscriptions ||--o{ push_deliveries : "subscriptionId"
+  notifications ||--o{ push_deliveries : "notificationId"
   users ||--|| notification_preferences : "userId"
   import_jobs ||--o{ import_job_rows : "jobId"
 ```
@@ -316,7 +315,7 @@ Khi lưu chân dung, service tính lại trong cùng một lệnh `updateOne`: `
 | `key` | string slug (unique, **bất biến**) | Ví dụ `birthday`, `occupation`, `budget` |
 | `label`, `helpText?`, `placeholder?` | string | Nhãn hiển thị |
 | `groupCode` | string → `catalog_items` (PERSONA_GROUP) | Cá nhân / Nghề nghiệp / Sở thích / Dịp đặc biệt / Gia đình / Liên hệ / Nhu cầu BĐS |
-| `type` | `'TEXT'\|'TEXTAREA'\|'NUMBER'\|'NUMBER_RANGE'\|'DATE'\|'SELECT'\|'MULTI_SELECT'\|'BOOLEAN'` | **Không đổi được khi đã có dữ liệu** (409 `PERSONA_FIELD_TYPE_LOCKED`) |
+| `type` | `'TEXT'\|'TEXTAREA'\|'NUMBER'\|'NUMBER_RANGE'\|'DATE'\|'SELECT'\|'MULTI_SELECT'\|'BOOLEAN'` | **Không đổi được khi đã có dữ liệu** (409 `PERSONA_FIELD_TYPE_LOCKED`, ưu tiên); trường `isSystem` không đổi được kiểu dù chưa có dữ liệu (409 `PERSONA_FIELD_SYSTEM` `{ field: 'type' }`); xóa trường hệ thống cũng 409 `PERSONA_FIELD_SYSTEM` `{ valueCount }` |
 | `options` | `[{ value, label, isActive }]` | Cho SELECT/MULTI_SELECT; bỏ lựa chọn = `isActive:false`, không xóa (dữ liệu cũ vẫn đọc được) |
 | `order`, `weight` (mặc định 1), `suggestPriority` | number | Sắp xếp, trọng số độ đầy đủ, ưu tiên gợi ý |
 | `isFilterable` | boolean | Sinh token vào `customers.personaFilterKeys` |
@@ -346,8 +345,9 @@ Index: `{ key: 1 }` unique; `{ isActive: 1, groupCode: 1, order: 1 }`.
 
 | Collection | Field chính | Index |
 |---|---|---|
-| `notifications` | `userId`, `type` (3.6.1), `title`, `body` (**không chứa SĐT, CCCD**), `data: { customerId?, appointmentId?, requestId?, deepLink }`, `priority: 'HIGH'\|'NORMAL'`, `readAt?`, `pushStatus: 'PENDING'\|'SENT'\|'SKIPPED'\|'FAILED'` (M5: luôn `SKIPPED`, `NoopPushProvider`), `dedupeKey?` (duy nhất theo `userId` khi có: job nhắc retry/chạy lại không sinh thông báo thứ hai), `createdAt` | `{ userId: 1, readAt: 1, createdAt: -1 }`; `{ userId: 1, dedupeKey: 1 }` unique một phần; `{ data.customerId: 1 }` sparse (xóa khi ẩn danh hóa); TTL 180 ngày |
-| `device_tokens` | `userId`, `token` (unique), `platform: 'IOS'\|'ANDROID'\|'WEB'`, `deviceId?`, `appVersion?`, `lastSeenAt`, `revokedAt?` | `{ token: 1 }` unique; `{ userId: 1, revokedAt: 1 }` |
+| `notifications` | `userId`, `type` (3.6.1), `title`, `body` (**không chứa SĐT, CCCD**), `data: { customerId?, appointmentId?, requestId?, deepLink }`, `priority: 'HIGH'\|'NORMAL'`, `readAt?`, `pushStatus: 'PENDING'\|'SENT'\|'SKIPPED'\|'FAILED'` (M5: luôn `SKIPPED`, `NoopPushProvider`; **v1.0.4:** `PENDING` khi cờ push bật và đủ VAPID, loại thuộc `PUSH_CATALOG`, đúng tình huống `pushWhen` và người nhận chưa tắt push; ngược lại `SKIPPED`; worker chốt `SENT`/`SKIPPED`/`FAILED`), `push?` (nội dung push dựng sẵn từ mẫu danh mục; có thể chứa tên khách nên bị xóa khi ẩn danh hóa), `pushGroupKey?` (khóa gộp đợt hàng loạt), `pushSentAt?`, `dedupeKey?` (duy nhất theo `userId` khi có: job nhắc retry/chạy lại không sinh thông báo thứ hai), `createdAt` | `{ userId: 1, readAt: 1, createdAt: -1 }`; `{ userId: 1, dedupeKey: 1 }` unique một phần; `{ data.customerId: 1 }` sparse (xóa khi ẩn danh hóa); `{ pushStatus: 1, createdAt: 1 }` một phần theo `PENDING` (cho job quét `push.sweep`, tạo bằng migration `009`); TTL 180 ngày |
+| `push_subscriptions` (v1.0.4; thay cho `device_tokens`/FCM) | `userId`, `endpoint` (URL dịch vụ push do trình duyệt cấp, ≤ 1024 ký tự, unique toàn hệ thống kể cả đã thu hồi; **không ghi log thô**), `endpointHash`, `keys: { p256dh, authEnc }` (`auth` chỉ lưu bản mã AES-256-GCM, không bao giờ trả API/log), `expirationTime?`, `platform: 'IOS'\|'ANDROID'\|'DESKTOP'\|'OTHER'` (suy từ `User-Agent`, không lưu UA thô), `deviceLabel` (≤ 60), `lastSeenAt`, `revokedAt?`, `revokedReason?: 'USER'\|'LOGOUT'\|'GONE'\|'LIMIT_EXCEEDED'\|'ACCOUNT_DISABLED'`, `purgeAt?` (= `revokedAt` + 7 ngày) | `{ endpoint: 1 }` unique; `{ userId: 1, revokedAt: 1, lastSeenAt: -1 }`; `{ endpointHash: 1 }`; TTL `{ purgeAt: 1 }` (`expireAfterSeconds: 0`, bản đã thu hồi tự xóa sau 7 ngày) |
+| `push_deliveries` (v1.0.4) | Sổ gửi theo cặp (thông báo, thiết bị): `notificationId`, `subscriptionId`, `userId`, `status: 'SENDING'\|'SENT'\|'GONE'\|'FAILED'`, `attempts`, `lastErrorCode?` (chỉ mã, không lưu thân phản hồi/payload), `sentAt?` | `{ notificationId: 1, subscriptionId: 1 }` unique (retry/restart/hai instance không gửi trùng); TTL 30 ngày theo `createdAt` |
 | `notification_preferences` | `userId` (unique), `types: { [NotificationType]: { push: boolean, inApp: boolean } }`, `quietHours?: { start: 'HH:mm', end: 'HH:mm' }` | `{ userId: 1 }` unique |
 
 #### 3.6.1 Loại thông báo
@@ -365,7 +365,24 @@ Index: `{ key: 1 }` unique; `{ isActive: 1, groupCode: 1, order: 1 }`.
 | `IMPORT_COMPLETED`, `EXPORT_READY` | Job nền xong (M8) | Người tạo job | X8 |
 | `SECURITY_ALERT` (thêm ở M5) | Cảnh báo bất thường `PHONE_SEARCH_ANOMALY`/`PHONE_VIEW_ALERT`/`NATIONAL_ID_VIEW_ALERT` (cùng điều kiện, tối đa 1/người/giờ) | Mọi Quản trị đang hoạt động (`priority=HIGH`, nội dung không có SĐT) | M2, X5 |
 
-Mặc định bật tất cả, trừ `STALE_CUSTOMER` cho thành viên không phải phụ trách chính. Người dùng bật/tắt từng loại (§5 "Thông báo"). **M5:** `inApp=false` ⇒ loại đó không được ghi vào hộp thông báo của người này; GET trả đủ mọi loại (chưa lưu = bật); **`STALE_CUSTOMER` hiện chỉ gửi phụ trách chính** — tùy chọn "thành viên tự bật" cần một cờ riêng trong cài đặt (nếu dùng `types.STALE_CUSTOMER` thì FE lưu đủ mọi loại sẽ vô tình bật cho mọi thành viên), để lại cho bản sau. Quy tắc `quietHours` (không đẩy push trong khoảng) có hiệu lực cùng push ở M7.
+Mặc định bật tất cả, trừ `STALE_CUSTOMER` cho thành viên không phải phụ trách chính. Người dùng bật/tắt từng loại (§5 "Thông báo"). **M5:** `inApp=false` ⇒ loại đó không được ghi vào hộp thông báo của người này; GET trả đủ mọi loại (chưa lưu = bật); **`STALE_CUSTOMER` hiện chỉ gửi phụ trách chính** — tùy chọn "thành viên tự bật" cần một cờ riêng trong cài đặt (nếu dùng `types.STALE_CUSTOMER` thì FE lưu đủ mọi loại sẽ vô tình bật cho mọi thành viên), để lại cho bản sau. Quy tắc `quietHours` (không đẩy push trong khoảng) **có hiệu lực từ v1.0.4 (M7)**: worker đọc cài đặt hiện tại lúc gửi, giờ quy về `Asia/Ho_Chi_Minh`, `start` bao gồm, `end` không bao gồm, `start > end` là khung qua nửa đêm; push trong khung bị đặt `SKIPPED` nhưng thông báo vẫn nằm trong hộp thông báo. **Tắt `inApp` của một loại nghĩa là cũng không có push loại đó** (push đi theo thông báo gốc).
+
+#### 3.6.2 Danh mục thông báo push và Dispatcher (v1.0.4, M7)
+
+Chỉ **4 loại** thông báo có push (danh sách đóng `PUSH_CATALOG` ở `modules/notifications/push/push-catalog.ts`; thêm loại = thêm một dòng danh mục). Mỗi dòng có mẫu tiêu đề/nội dung cố định với biến cho phép (`customerName`, `actorName`, `appointmentTypeLabel`, `appointmentTimeLabel`, `newStatusLabel`), deep link `/crm/customers/:id`, mức khẩn (`normal`/`high`), TTL giữ tin ở dịch vụ push, và điều kiện `pushWhen`:
+
+| `type` | Khi nào có push | Khẩn | TTL |
+|---|---|---|---|
+| `CUSTOMER_ASSIGNED` | Chỉ người được thêm làm **người cùng phụ trách** (thêm vào nhóm, duyệt đề nghị, thêm hàng loạt); không push khi làm phụ trách chính hoặc khi khách mới tạo | `normal` | 24 giờ |
+| `CARE_LOG_ADDED` | Người cùng chăm sóc ghi nhật ký mới cho khách của mình | `normal` | 24 giờ |
+| `APPOINTMENT_DUE` | Sắp đến giờ hẹn | `high` | 1 giờ |
+| `CUSTOMER_STATUS_AUTO_CHANGED` | Tình trạng khách tự đổi theo tiến độ tiêu chí | `normal` | 24 giờ |
+
+Các loại khác (`FOLLOW_UP_DUE`, `CUSTOMER_OCCASION`, `STALE_CUSTOMER`, `CARE_TEAM_JOIN_*`, `SECURITY_ALERT`, `IMPORT_COMPLETED`, `EXPORT_READY`) chỉ vào hộp thông báo, không push. `GET /notification-preferences/me` trả `pushTypes` (từ danh mục) để FE hiện công tắc push.
+
+**`NotificationDispatcherService`** là cổng chung để phát thông báo (FR-43, FR-44): nơi gọi truyền "yêu cầu thông báo" gồm `type`, `recipientIds`, `excludeUserIds`, nội dung hộp thông báo, `vars` (chỉ biến cho phép), `data` (id và `deepLink` do backend dựng), `context` cho `pushWhen` và `dedupeKey` **bắt buộc** (trùng `(userId, dedupeKey)` thì không tạo thông báo hay push thứ hai). Dispatcher upsert thông báo trong transaction của nghiệp vụ, đặt `pushStatus`, rồi đăng ký `afterCommit` xếp job `push.send` (`jobId` theo id thông báo, queue `push`, retry tối đa 5 lần, backoff mũ + jitter) nên rollback không bao giờ gửi push. Không có đường nhập `title/body` push tự do; nội dung push dựng bởi `push-content.renderer.ts` (tiêu đề ≤ 50, nội dung ≤ 120 ký tự, quét PII hậu kiểm; vi phạm thì dùng chuỗi dự phòng "Bạn có thông báo mới").
+
+Lưới an toàn: job lặp `push.sweep` (60 giây) xếp lại thông báo còn `PENDING` quá 30 giây hoặc chuyển `SKIPPED` khi cờ tắt/quá TTL; job lặp `push.cleanup` (6 giờ) thu hồi thiết bị hết hạn hoặc của người không còn hoạt động và xóa cứng thiết bị không hoạt động quá 90 ngày. Mỗi người tối đa 3 thiết bị còn hiệu lực; thêm hàng loạt chỉ đẩy tối đa 3 push cho mỗi (người nhận, đợt), phần vượt `SKIPPED` (Redis lỗi thì vẫn gửi).
 
 ### 3.7 Audit & job
 
@@ -596,43 +613,48 @@ Lưu ý (v1.0.3, PT-023): lệnh `PATCH /status`, đổi hàng loạt và Hoàn 
 
 **Frontend:** khi response có `autoStatusChange`, hiện toast 6 giây nêu tình trạng cũ và mới kèm lý do (đạt hoặc xuống dưới 3/4 tiêu chí); **không có Hoàn tác 10 giây** (hoàn tác riêng tình trạng làm lệch quy tắc 3/4; muốn đảo thì bỏ tick tiêu chí hoặc đổi tay). Lịch sử thay đổi hiện chip "Tự động theo tiến độ". Ghi dữ liệu CRM ở FE đã làm mới toàn bộ truy vấn liên quan nên không cần thêm bước làm mới.
 
-### 6.3 Phân khách & gửi push (C8, QT7, QT8, X5)
+### 6.3 Phân khách & gửi push (C8, QT7, QT8, X5; Web Push VAPID từ v1.0.4)
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor M as Quản lý
   participant S as CareTeamService
+  participant D as NotificationDispatcher
   participant DB as MongoDB
-  participant Q as BullMQ (crm-notifications)
-  participant W as PushProcessor
-  participant F as FCM / APNs
-  actor N as Nhân viên
+  participant Q as BullMQ (queue push)
+  participant W as PushDeliveryProcessor
+  participant P as Dịch vụ Web Push (FCM / Mozilla / Apple / WNS)
+  actor N as Nhân viên (PWA đã cài)
 
   M->>S: POST /crm/customers/:id/care-team/members { userIds, primaryUserId? }
   S->>DB: assertCanAccess + kiểm userIds là STAFF/MANAGER đang ACTIVE
   S->>S: Nếu careTeam rỗng và thiếu primaryUserId ⇒ 400 PRIMARY_REQUIRED
   S->>DB: transaction: cập nhật careTeam, primaryAssigneeId, teamIds, lastUpdatedAt
   S->>DB: insert crm_audit_logs CARE_TEAM_MEMBER_ADDED (+ PRIMARY_CHANGED)
-  S->>DB: insert notifications CUSTOMER_ASSIGNED cho từng người mới
+  S->>D: yêu cầu thông báo CUSTOMER_ASSIGNED cho từng người mới (dedupeKey, context: vai trò, nguồn)
+  D->>DB: upsert notifications theo (userId, dedupeKey); pushStatus = PENDING hoặc SKIPPED
   S->>DB: commit
-  S->>Q: enqueue push.send { notificationIds } (sau commit)
+  D->>Q: afterCommit: push.send { notificationId } (jobId theo id thông báo)
   Q->>W: job
-  W->>DB: đọc notification_preferences + device_tokens (revokedAt=null)
-  alt Người nhận tắt loại này hoặc trong giờ yên lặng
+  W->>DB: kiểm cờ + provider, thông báo còn PENDING, người nhận còn ACTIVE, notification_preferences, push_subscriptions (revokedAt=null, tối đa 3)
+  alt Cờ tắt, người nhận tắt loại này, trong giờ yên lặng, không có thiết bị hoặc vượt hạn mức đợt hàng loạt
     W->>DB: pushStatus=SKIPPED (vẫn có trong hộp thông báo)
   else
-    W->>F: send (timeout 5s, data: deepLink, không có SĐT/CCCD)
-    alt Lỗi tạm thời
-      W->>Q: retry exponential backoff + jitter (tối đa 5 lần)
-    else Token không hợp lệ
-      W->>DB: device_tokens.revokedAt = now
+    W->>DB: push_deliveries (claim theo thiết bị, unique)
+    W->>P: Web Push VAPID (timeout 5s; payload dưới 1 KB: tiêu đề, nội dung, url nội bộ, không SĐT/CCCD)
+    alt Lỗi tạm thời (429, 5xx, timeout)
+      W->>Q: ném lỗi, BullMQ retry exponential backoff + jitter (tối đa 5 lần, chỉ thiết bị chưa xong)
+    else 404/410 (subscription hết hạn)
+      W->>DB: push_subscriptions.revokedAt = now (lý do GONE)
     end
-    F-->>N: Push "Bạn được phân chăm sóc khách Nguyễn Văn A"
-    W->>DB: pushStatus=SENT
+    P-->>N: Push "Bạn được mời cùng phụ trách một khách"
+    W->>DB: pushStatus=SENT (có ít nhất một thiết bị nhận), toàn thiết bị GONE (404/410) hoặc không có thiết bị ⇒ SKIPPED, còn lại (lỗi cố định hoặc hết retry mà không ai nhận) ⇒ FAILED
   end
   Note over S,DB: Gỡ thành viên: nếu gỡ PRIMARY mà thiếu newPrimaryUserId ⇒ 400 PRIMARY_REPLACEMENT_REQUIRED, người bị gỡ mất quyền ngay (404)
 ```
+
+Chỉ người được thêm làm **người cùng phụ trách** mới có push `CUSTOMER_ASSIGNED` (xem 3.6.2); nội dung mẫu nêu tên người thêm và tên khách. Lỗi cố định của một thiết bị (400/401/403/413...) không retry. Thông báo lệch trạng thái (Redis lỗi lúc commit, instance chết giữa chừng) được job `push.sweep` xếp lại.
 
 ### 6.4 Nhắc lịch hẹn / sinh nhật / khách lâu chưa chăm sóc (C3, C13, X5)
 
@@ -642,8 +664,8 @@ sequenceDiagram
   participant SCH as Scheduler (BullMQ repeatable, tz Asia/Ho_Chi_Minh)
   participant R as ReminderService
   participant DB as MongoDB
-  participant Q as crm-notifications
-  participant W as PushProcessor
+  participant Q as BullMQ (queue push)
+  participant W as PushDeliveryProcessor
 
   Note over SCH: Khi tạo/sửa lịch hẹn: upsert reminders theo remindBeforeMinutes (dedupeKey), hủy/hoàn thành ⇒ reminders CANCELED
   loop Mỗi 1 phút: reminders.dispatch
@@ -809,7 +831,7 @@ sequenceDiagram
 | Kiểm soát truy cập | Row-level scope (4.3); xem CCCD qua endpoint riêng, giới hạn 10 lần/phút/người, header `Cache-Control: no-store` |
 | Nhật ký xử lý | `crm_audit_logs`: mọi lần xem CCCD, export, import, đổi người chăm sóc, sửa chân dung; lưu ≥ 2 năm **[Giả định]** |
 | Quyền sửa, xóa của khách | **Luồng ẩn danh hóa phải được mở rộng khi có dữ liệu mới:** M3 (nhật ký chăm sóc, ảnh đính kèm) và M4 (chân dung) bắt buộc thêm bước xóa/ghi đè dữ liệu của khách đó vào `CustomerLifecycleService.anonymize`; audit của khách được ghi đè theo trường cố định (`fullName`, `phone`, `email`, `nationalId`) và theo MẪU regex (hiện có `^criteria\..+\.description$`; module sau thêm mẫu vào `PII_AUDIT_FIELD_PATTERNS`). Sửa: API thường. Xóa: `POST /crm/customer-anonymizations` (Quản trị) ghi đè PII bằng giá trị ẩn danh, xóa nhật ký/chân dung, giữ khung thống kê — không xóa cứng document (tương thích quy tắc soft delete) |
-| Chuyển dữ liệu ra ngoài | Payload push qua FCM (máy chủ nước ngoài) **không chứa SĐT, CCCD, nội dung nhật ký** — chỉ tên khách và loại việc; không gửi CCCD/nhạy cảm sang dịch vụ phân tích bên ngoài (QT10) |
+| Chuyển dữ liệu ra ngoài | Payload Web Push đi qua dịch vụ push của trình duyệt (FCM/Mozilla/Apple/WNS, máy chủ nước ngoài) **không chứa SĐT, CCCD, nội dung nhật ký** — chỉ tên khách (cắt ≤ 30 ký tự), tên người thực hiện và loại việc, quét PII trước khi gửi; `endpoint`/khóa của thiết bị không ghi log thô và `auth` chỉ lưu bản mã; không gửi CCCD/nhạy cảm sang dịch vụ phân tích bên ngoài (QT10) |
 | Chống dò số | `phone-lookups` giới hạn 30 lần/phút/người, chỉ trả tên hiển thị người phụ trách, audit khi tra khách ngoài phạm vi |
 | Xem/gọi SĐT của thành viên nhóm (quyết định #10) | Không che SĐT theo vai trò trong nhóm: A, M (phạm vi), PR và MEMBER đều xem/gọi được. Danh sách/chi tiết chỉ trả `phoneMasked`; số đầy đủ qua `phone-views` (giới hạn 60 lần/phút/người, `no-store`, audit `PHONE_VIEWED` không lưu số); người bị gỡ khỏi nhóm mất quyền ngay (404) |
 | Export (D10 cập nhật 2026-10-22) | Export **không chứa CCCD đầy đủ** (chỉ `••••1234`) nhưng **chứa SĐT đầy đủ**. Chỉ Quản trị và Quản lý (trong phạm vi) tạo được; áp `CustomerScope`; throttle 5/giờ; file có hạn 7 ngày, signed URL 15 phút; chặn CSV formula injection; **mỗi lần export ghi audit `CUSTOMER_EXPORTED`** (người export, bộ lọc, cột, số dòng, `requestId`, `ip`) **không lưu danh sách số điện thoại vào audit** |
@@ -895,7 +917,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | D2. Tình trạng khác | Danh mục động có `listGroup`; seed 4 giá trị. **Không còn nhóm gộp CARING** — mỗi tình trạng một `listGroup` riêng (`NOT_CONTACTED`, `INTERESTED`, `NET`, `DROPPED`); tab `ALL` là tab ảo | **ĐÃ XÁC NHẬN** |
 | D3. Phụ trách chính khác gì thành viên | Xem G5 + xem CCCD đầy đủ + duyệt đề nghị tham gia. **Mọi thành viên** (PRIMARY và MEMBER) đều được xem/gọi SĐT | **ĐÃ XÁC NHẬN** |
 | D4. "Khách lâu chưa chăm sóc" | 14 ngày (cấu hình được), áp cho cả hai tình trạng **Chưa tiếp cận (`NOT_CONTACTED`) và Có quan tâm (`INTERESTED`)** | **ĐÃ XÁC NHẬN** |
-| D5. Hạ tầng mới | **Đã chốt:** MongoDB Replica Set + **Redis + BullMQ** + S3/MinIO. Firebase/FCM có trong thiết kế nhưng **chưa làm ở giai đoạn 1** (chỉ cấu hình/placeholder). Phương án không Redis bị loại | **ĐÃ XÁC NHẬN (2026-10-22, cập nhật)** |
+| D5. Hạ tầng mới | **Đã chốt:** MongoDB Replica Set + **Redis + BullMQ** + S3/MinIO. Push **chưa làm ở giai đoạn 1**; từ v1.0.4 làm bằng Web Push VAPID (không Firebase). Phương án không Redis bị loại | **ĐÃ XÁC NHẬN (2026-10-22, cập nhật)** |
 | D6. Refresh token cho app di động | App gửi `X-Client-Type: mobile` ⇒ refresh token trong body, lưu `expo-secure-store` | **ĐÃ XÁC NHẬN** |
 | D7. Import 3 sheet cũ (DSKH, DSKH_DROP, DSKH_NET) | **HOÃN sang giai đoạn sau** — cần file mẫu thật để chốt cột, định dạng. Import/Export chung (tự ghép cột) vẫn giữ trong milestone hiện tại; không xung đột vì prototype IMPORT_PRESETS DSKH* sẽ tách ra | **HOÃN (giai đoạn sau)** |
 | D8. Ngày cập nhật cuối khi import | Lấy từ file nếu hợp lệ, ngược lại = thời điểm import | **ĐÃ XÁC NHẬN** |
@@ -908,7 +930,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 
 ## 10. Kế hoạch triển khai theo milestone
 
-> **Chia giai đoạn (cập nhật 2026-10-22, bản sau):** Giai đoạn 1 = backend lõi đầy đủ nghiệp vụ **và Web Admin chạy API thật** (M0–M6), **không có push FCM**. Giai đoạn 2 = những việc cần Firebase, dữ liệu/đối tác bên ngoài hoặc làm sau (M7–M12). **Đánh số lại:** Web Admin ghép API thật từ M8 cũ nay là **M6** (giai đoạn 1); Push FCM từ M6 cũ thành **M7**; Import/Export & Dashboard từ M7 cũ thành **M8**; M9–M12 giữ nguyên. Theo dõi trạng thái từng milestone ở [`06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md`](06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md).
+> **Chia giai đoạn (cập nhật 2026-10-22, bản sau):** Giai đoạn 1 = backend lõi đầy đủ nghiệp vụ **và Web Admin chạy API thật** (M0–M6), **không có push**. Giai đoạn 2 = những việc cần dữ liệu/đối tác bên ngoài hoặc làm sau (M7–M12; M7 push đã chuyển sang Web Push VAPID, làm ở v1.0.4, không còn cần Firebase). **Đánh số lại:** Web Admin ghép API thật từ M8 cũ nay là **M6** (giai đoạn 1); Push (trước là FCM, nay Web Push) từ M6 cũ thành **M7**; Import/Export & Dashboard từ M7 cũ thành **M8**; M9–M12 giữ nguyên. Theo dõi trạng thái từng milestone ở [`06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md`](06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md).
 
 | Milestone | GĐ | Nội dung | Phụ thuộc | Agent | Tiêu chí xong |
 |---|---|---|---|---|---|
@@ -919,7 +941,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | **M4 – Chân dung & thẻ** | 1 | persona-fields (X10) + seed (gồm nhóm REAL_ESTATE), persona khách, completeness + job recompute, tags | M2 | coder-backend-agent → qa-agent | Đổi cấu hình trường không làm mất dữ liệu cũ |
 | **M5 – Lịch hẹn, nhắc việc (không push)** | 1 | appointments (có loại ký cọc / HĐMB), daily-tasks, reminders scheduler (BullMQ repeatable), notifications **hộp thông báo trong app** + `notification-preferences`; `PushProvider` interface + `NoopPushProvider` (pushStatus=SKIPPED) | M3 | coder-backend-agent → qa-agent | Nhắc đúng hạn, không gửi trùng khi restart; thông báo xuất hiện ở hộp thông báo |
 | **M6 – Web Admin ghép API thật** | 1 | Nối prototype `RealEstateAdminApp/src/modules/crm` với API thật (React Query/Zustand), **ghép từng API khi milestone tương ứng xong**: dự án, cài đặt (M1) → danh sách 5 tab, chi tiết (xem/gọi SĐT), tạo khách (M2) → nhóm chăm sóc, nhật ký + ảnh (M3) → chân dung, thẻ (M4) → việc hôm nay (Kanban/danh sách), lịch hẹn, hộp thông báo trong app (M5). **Chỉ bắt đầu sau khi Oniichan duyệt UI prototype.** Phần chưa có API (đẩy thông báo M7, import/export và dashboard M8) vẫn dùng mock, **bọc sau cờ cấu hình** (mặc định bật mock cho nhóm đó, gỡ khi API xong ở giai đoạn 2) | **Oniichan duyệt UI** (điều kiện bắt đầu); API từ M1–M5 (ghép theo từng API) | coder-frontend-agent → qa-agent | Mọi màn thuộc M1–M5 chạy API thật, không còn mock store ở các màn này; Báo cáo, nhập/xuất, đẩy thông báo còn mock có cờ và ghi rõ; Skeleton loading; lỗi tiếng Việt; qa-agent review |
-| **M7 – Push FCM** | 2 | `FcmPushProvider`, `device_tokens` + `/device-tokens`, Firebase project + APNs key, bật `FEATURE_CRM_PUSH` | M5, **Oniichan chuẩn bị Firebase** | devops-agent (Firebase), coder-backend-agent → qa-agent | Push thật đến iOS + Android; không gửi trùng; token hỏng bị thu hồi |
+| **M7 – Web Push (VAPID) cho PWA** (v1.0.4) | 2 | `WebPushProvider`, `push_subscriptions` + `/push-subscriptions`, danh mục push + `NotificationDispatcher`, sổ gửi `push_deliveries`, job `push.sweep`/`push.cleanup`, cặp khóa VAPID (`VAPID_*`), bật `FEATURE_CRM_PUSH` (compose đặt từ `CRM_PUSH_ENABLED`) | M5, **Oniichan tạo cặp khóa VAPID** (không cần Firebase/APNs) | devops-agent (biến môi trường, compose), coder-backend-agent, coder-frontend-agent → qa-agent | Push thật đến PWA trên iPhone + Android; không gửi trùng; subscription hỏng bị thu hồi. Bật production và thử thiết bị thật là việc sau deploy (T-48) |
 | **M8 – Import/Export & Dashboard** | 2 | import-mapping-templates (tự tạo), customer-imports (dry-run → confirm), customer-exports, dashboard; **gỡ mock có cờ của Báo cáo và nhập/xuất ở Web Admin** | M2, M3 | coder-backend-agent, coder-frontend-agent → qa-agent | Import thử với file CSV tự tạo; số liệu dashboard khớp truy vấn kiểm |
 | **M9 – App di động** | 2 | Expo app dùng chung API: đăng nhập (D6), danh sách, chi tiết, ghi chú nhanh, lịch hẹn, thông báo đẩy + deep link | M6, M7 (Web Admin chạy ổn, push có sẵn) | coder-frontend-agent → qa-agent | TestFlight + Android internal testing |
 | **M10 – Hardening** | 2 | Load test k6, security review (CCCD, SĐT, scope, dò số), sao lưu/khôi phục, bật flag production | Tất cả GĐ2 trước đó | qa-agent, devops-agent | Checklist Quality Gates đạt |
@@ -927,8 +949,8 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | **M12 – Ghi âm (§8.2) và Zalo (§8.1)** | 2 (sau cùng) | Theo phác thảo mục 8; Zalo Z1 chỉ FE có thể làm sớm | M10 | architect-agent thiết kế chi tiết trước | Thiết kế chi tiết được duyệt trước khi code |
 
 **Lý do ranh giới (điều chỉnh so với đề xuất):**
-- **`device_tokens` và push chuyển sang M7 (GĐ2)**: chỉ phục vụ push, không có Firebase thì không kiểm thử thật được; GĐ1 vẫn có hộp thông báo trong app nên nghiệp vụ nhắc việc đầy đủ.
-- **Hộp thông báo và `notification-preferences` ở lại M5 (GĐ1)**: không phụ thuộc Firebase, và Web Admin cần chuông thông báo.
+- **Đăng ký thiết bị và push chuyển sang M7 (GĐ2)**: chỉ phục vụ push, cần khóa VAPID và thiết bị thật mới kiểm thử được (v1.0.4: `push_subscriptions` thay `device_tokens`); GĐ1 vẫn có hộp thông báo trong app nên nghiệp vụ nhắc việc đầy đủ.
+- **Hộp thông báo và `notification-preferences` ở lại M5 (GĐ1)**: không phụ thuộc dịch vụ push bên ngoài, và Web Admin cần chuông thông báo.
 - **Kiểm tải sơ bộ nằm trong M2** (10k khách, danh sách) và E2E ma trận quyền ở M2/M3, để lỗi hiệu năng/phân quyền lộ sớm; **hardening đầy đủ** (k6 toàn bộ, bảo mật, backup) vẫn ở GĐ2 (M10).
 - **Web Admin (M6) thuộc giai đoạn 1 nhưng chỉ bắt đầu sau khi Oniichan duyệt UI**: tránh ghép API vào giao diện còn thay đổi. Ghép theo từng API khi M1–M5 xong; phần phụ thuộc M7 (push) và M8 (import/export, dashboard) dùng mock có cờ rồi gỡ ở giai đoạn 2, nên không phải chờ.
 - **M9 phụ thuộc M6 và M7**: app di động cần push và Web Admin/API đã ổn định.
@@ -936,12 +958,12 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 
 ### 10.0 M5 — kết quả triển khai (2026-10-24)
 
-- **API:** 14 endpoint (lịch hẹn 6, việc hôm nay 2, hộp thông báo 4, cài đặt thông báo 2); `device-tokens` (2) và push FCM thuộc M7. Thêm mã lỗi `APPOINTMENT_STATUS_INVALID`, loại thông báo `SECURITY_ALERT`.
+- **API:** 14 endpoint (lịch hẹn 6, việc hôm nay 2, hộp thông báo 4, cài đặt thông báo 2); đăng ký thiết bị và push thuộc M7 (v1.0.4: `/push-subscriptions`, Web Push VAPID). Thêm mã lỗi `APPOINTMENT_STATUS_INVALID`, loại thông báo `SECURITY_ALERT`.
 - **Quyết định chưa có trong tài liệu gốc (đã chốt khi làm):** không hẹn quá khứ (dung sai 5 phút) khi tạo/dời giờ; `endAt` > `startAt`, ≤ 24 giờ; KHÔNG chặn trùng/giao lịch; mốc nhắc tối đa 5 mốc khác nhau (0 – 10080 phút), mốc đã qua lúc tạo thì bỏ (trừ khi mọi mốc đã qua mà lịch còn ở tương lai: tạo MỘT nhắc ngay cho mốc nhỏ nhất); chỉ lịch SCHEDULED được sửa, DONE ↔ CANCELED phải mở lại; lịch của khách ngoài phạm vi hoặc không tồn tại cùng trả 404 `RESOURCE_NOT_FOUND` (không lộ tồn tại), riêng tạo lịch cho khách ngoài phạm vi trả `CUSTOMER_NOT_FOUND`; `nextAppointmentAt` = lịch SCHEDULED chưa xóa sớm nhất (kể cả đã quá giờ mà chưa xử lý, để lịch bị bỏ sót luôn hiện cho tới khi xử lý).
 - **Ẩn danh hóa khách** dọn trong cùng transaction: ghi đè `title/note/location/outcome` của lịch hẹn, hủy nhắc chưa gửi, XÓA thông báo có `data.customerId` của khách (nội dung có tên khách), ghi đè audit `appointment.*` (thêm vào `PII_AUDIT_FIELD_PATTERNS`), `nextAppointmentAt = null`. Xóa mềm khách hủy nhắc chưa gửi; khôi phục dựng lại nhắc cho lịch SCHEDULED còn ở tương lai và bước tiếp theo còn hạn.
 - **Thông báo sinh ra từ các luồng khác:** `CUSTOMER_ASSIGNED` (thêm vào nhóm chăm sóc, tạo khách có phân người, duyệt đề nghị, phân hàng loạt; không báo cho chính người làm), `CARE_LOG_ADDED` (gộp theo khách trong `careLogNotifyDebounceMinutes`; 0 = không gộp), `CARE_TEAM_JOIN_REQUESTED` (phụ trách chính + Quản lý nhóm chứa khách, nội dung không nêu tên khách) và `CARE_TEAM_JOIN_RESOLVED`, `SECURITY_ALERT` cho Quản trị. Tất cả ghi cùng transaction với thay đổi nghiệp vụ.
 - **Yêu cầu hạ tầng / deploy:** Redis bắt buộc (BullMQ + dấu quét theo ngày + idempotency); biến mới `QUEUE_WORKERS_ENABLED` (xem `.env.example`); không có migration (collection `appointments`, `reminders`, `notifications`, `notification_preferences` tự tạo, index do Mongoose tạo nếu `autoIndex` bật, nếu tắt thì tạo index ở các schema mới trước khi bật `FEATURE_CRM_ENABLED`); `FEATURE_CRM_ENABLED` tắt thì job nền chạy rỗng và mọi route mới trả 404. Chạy 2 instance an toàn: job lặp idempotent, nhắc nhận nguyên tử.
-- **Việc để lại:** (1) job tính lại chân dung (M4) và xóa/gộp thẻ lớn vẫn chạy nền trong tiến trình (đã tự lành theo dữ liệu, chuyển BullMQ không thêm lợi ích nên để M10 nếu cần); (2) `ImageProcessor`/thumbnail ảnh đính kèm: M10; (3) tùy chọn "thành viên tự bật STALE_CUSTOMER" (xem 3.6.1); (4) `device_tokens`, push FCM, giờ yên lặng có hiệu lực: M7; (5) danh sách "Việc hôm nay" tính theo yêu cầu (chưa cache), kiểm tải ở M10.
+- **Việc để lại:** (1) job tính lại chân dung (M4) và xóa/gộp thẻ lớn vẫn chạy nền trong tiến trình (đã tự lành theo dữ liệu, chuyển BullMQ không thêm lợi ích nên để M10 nếu cần); (2) `ImageProcessor`/thumbnail ảnh đính kèm: M10; (3) tùy chọn "thành viên tự bật STALE_CUSTOMER" (xem 3.6.1); (4) đăng ký thiết bị push, Web Push thật, giờ yên lặng có hiệu lực: M7 (đã làm ở v1.0.4, xem 3.6.2); (5) danh sách "Việc hôm nay" tính theo yêu cầu (chưa cache), kiểm tải ở M10.
 
 ### 10.1 Chiến lược kiểm thử (TDD)
 
@@ -964,7 +986,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 - [ ] Không xóa cứng dữ liệu nghiệp vụ; schema chỉ thêm field/enum. Xóa dự án: kiểm tham chiếu khách trước, tự động "ngừng hoạt động" nếu đang có khách.
 - [ ] Thao tác ≥ 2 collection chạy trong transaction; push/job enqueue **sau** commit.
 - [ ] POST tạo khách/nhật ký/lịch hẹn/import/bulk kiểm `X-Idempotency-Key`.
-- [ ] Gọi FCM/S3 có timeout 5 s, retry exponential backoff + jitter.
+- [ ] Gọi dịch vụ Web Push/S3 có timeout 5 s, retry exponential backoff + jitter.
 - [ ] Không `console.log`; log có `requestId`.
 - [ ] Tìm kiếm theo SĐT: từ khóa số tối thiểu 6 chữ số (hoặc chỉ khớp đuôi số), rate-limit riêng, có cảnh báo dò số; test chứng minh tìm 3 chữ số không trả kết quả.
 - [ ] Mã dự án chỉ A-Z, 0-9 viết liền, 1-30 ký tự (mã cũ có `-`/`_` giữ nguyên, chỉ áp quy tắc mới khi tạo/đổi mã); unique không phân biệt hoa thường (kể cả đã xóa mềm); trạng thái dự án luôn thuộc enum; `propertyTypes` luôn là mảng; dữ liệu cũ đã được chuyển theo quy ước 3.3.
@@ -997,7 +1019,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | 18 | C | **D2 ĐÃ XÁC NHẬN** — tách 4 `listGroup` riêng | Xem quyết định #9 |
 | 19 | C | **D3 ĐÃ XÁC NHẬN** — phụ trách chính + mọi thành viên xem/gọi SĐT | Xem quyết định #10 |
 | 20 | C | **D4 ĐÃ XÁC NHẬN** — ngưỡng 14 ngày áp cho cả NOT_CONTACTED và INTERESTED | Xem quyết định #9; scheduler `stale-customers.scan` filter hai listGroup |
-| 21 | C | **D5 ĐÃ CHỐT** — dùng Redis + BullMQ; Firebase/FCM chưa làm ở giai đoạn 1 | Redis/BullMQ/MinIO/Replica Set thuộc M0. FCM: chỉ `PushProvider` interface + `NoopPushProvider` + biến `FCM_*` trống, `FEATURE_CRM_PUSH=false`; làm thật ở giai đoạn 2 (M7) |
+| 21 | C | **D5 ĐÃ CHỐT** — dùng Redis + BullMQ; push chưa làm ở giai đoạn 1 (cập nhật v1.0.4: M7 làm bằng Web Push VAPID, không Firebase/FCM cho web) | Redis/BullMQ/MinIO/Replica Set thuộc M0. Giai đoạn 1: chỉ `PushProvider` interface + `NoopPushProvider`, `FEATURE_CRM_PUSH=false`. v1.0.4 (M7): `WebPushProvider` + biến `VAPID_*` (xem 3.6.2); push app native FCM/APNs để M9 |
 | 22 | C | **D6 ĐÃ XÁC NHẬN** — refresh token trong body cho mobile | Giữ nguyên thiết kế |
 | 23 | C | **D7 HOÃN GIAI ĐOẠN SAU** — import 3 sheet cũ | Import/Export CSV chung giữ nguyên trong milestone; không phụ thuộc IMPORT_PRESETS; mẫu hệ thống DSKH* và trường `legacy` tách giai đoạn sau; cần file mẫu thật khi làm |
 | 24 | C | **D8 ĐÃ XÁC NHẬN** — ngày import | Giữ nguyên thiết kế |

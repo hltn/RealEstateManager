@@ -73,7 +73,7 @@ Cột "Phiên bản tài liệu" khớp với dòng `> **Phiên bản tài liệ
 | [`01_Infrastructure/03_Database_Mongo_Plan.md`](../01_Infrastructure/03_Database_Mongo_Plan.md) | v1.0.1 |  |
 | [`01_Infrastructure/04_Request_Logging_Plan.md`](../01_Infrastructure/04_Request_Logging_Plan.md) | v1.0.1 |  |
 | [`01_Infrastructure/05_External_Log_Module_Design.md`](../01_Infrastructure/05_External_Log_Module_Design.md) | v1.0.1 |  |
-| [`01_Infrastructure/06_Production_Deploy.md`](../01_Infrastructure/06_Production_Deploy.md) | v1.0.2 | Nâng cấp production lên stack mới (9Router trong compose, `deploy.sh`, migration runner) |
+| [`01_Infrastructure/06_Production_Deploy.md`](../01_Infrastructure/06_Production_Deploy.md) | v1.0.4 | Nâng cấp production lên stack mới (9Router trong compose, `deploy.sh`, migration runner); v1.0.3 đến v1.0.4: hướng dẫn kiểm IP thật, lệnh `grep -o '"ip":[^,}]*'` |
 | [`01_Infrastructure/README.md`](../01_Infrastructure/README.md) | v1.0.1 |  |
 | [`02_Module_Auth/01_Auth_Module_Plan.md`](../02_Module_Auth/01_Auth_Module_Plan.md) | v1.0.1 |  |
 | [`02_Module_Auth/02_Auth_Module_Architecture.md`](../02_Module_Auth/02_Auth_Module_Architecture.md) | v1.0.2 | `roles[]`/`teamIds[]`, claim `roles` trong JWT |
@@ -93,9 +93,9 @@ Cột "Phiên bản tài liệu" khớp với dòng `> **Phiên bản tài liệ
 | [`06_Module_Customer_Management/01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md) | v1.0.1 |  |
 | [`06_Module_Customer_Management/02_Thiet_Ke_Giao_Dien__module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/02_Thiet_Ke_Giao_Dien__module_Quan_Ly_Khach_Hang.md) | v1.0.1 |  |
 | [`06_Module_Customer_Management/03_Design_System_Quy_Tac_Phong_Cach.md`](../06_Module_Customer_Management/03_Design_System_Quy_Tac_Phong_Cach.md) | v1.0.2 | Giao diện mặc định light |
-| [`06_Module_Customer_Management/04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) | v1.0.2 | Data model nhiều role/nhóm, 34 tỉnh, `purgingAt` |
-| [`06_Module_Customer_Management/05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) | v1.0.2 | Endpoint mới: roles, teams, thành viên nhóm, xóa/xóa vĩnh viễn khách |
-| [`06_Module_Customer_Management/06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md) | v1.0.1 |  |
+| [`06_Module_Customer_Management/04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) | v1.0.4 | Data model nhiều role/nhóm, 34 tỉnh, `purgingAt`; v1.0.4: Web Push VAPID, `push_subscriptions`/`push_deliveries`, danh mục push + Dispatcher (thay FCM/`device_tokens`) |
+| [`06_Module_Customer_Management/05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) | v1.0.4 | Endpoint mới: roles, teams, thành viên nhóm, xóa/xóa vĩnh viễn khách; v1.0.4: `/push-subscriptions`, `pushTypes`, lỗi persona-fields |
+| [`06_Module_Customer_Management/06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md`](../06_Module_Customer_Management/06_Theo_Doi_Milestone_Module_Quan_Ly_Khach_Hang.md) | v1.0.4 | M7 chuyển sang Web Push VAPID, bỏ Firebase/APNs khỏi việc Oniichan chuẩn bị |
 | [`06_Module_Customer_Management/07_Ke_Hoach_Kiem_Thu_Giao_Dien_Tu_Dong.md`](../06_Module_Customer_Management/07_Ke_Hoach_Kiem_Thu_Giao_Dien_Tu_Dong.md) | v1.0.1 |  |
 | [`06_Module_Customer_Management/08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md`](../06_Module_Customer_Management/08_Kich_Ban_Kiem_Thu_Giao_Dien_Chi_Tiet.md) | v1.0.1 |  |
 | [`06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) | v1.0.2 | Đợt sửa đổi A–D (đánh số lại thành v1.0.2 ngày 2026-11-02) |

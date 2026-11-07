@@ -1,9 +1,9 @@
 /**
  * API quản trị (chỉ Quản trị): người dùng, nhóm, danh mục, dự án, thẻ, cài đặt (05 §2.2, §2.7, §2.8, §2.14).
  */
-import type { AccountRole, AdminTag, AdminUser, CrmSettings, Project, TagCategory, TeamMember } from '@crm/types/crm';
+import type { AccountRole, AdminPersonaField, AdminTag, AdminUser, CrmSettings, PersonaOptionItem, Project, TagCategory, TeamMember } from '@crm/types/crm';
 import type { Paginated } from '../types';
-import type { CrmSettingsDto, ProjectDto, TagDto, TeamMemberDto, UserDto } from './dto';
+import type { CrmSettingsDto, PersonaFieldDto, ProjectDto, TagDto, TeamMemberDto, UserDto } from './dto';
 import { crmHttp } from './crmHttp';
 import { toCrmSettings, toProject, toTeamMember, userDtoToUser } from './catalogMappers';
 import { fetchAllPages } from './catalogApi';
@@ -47,6 +47,48 @@ export const patchTag = async (id: string, body: TagPatchBody): Promise<AdminTag
 export const mergeTag = async (id: string, mergeIntoId: string): Promise<AdminTag> => toAdminTag(await crmHttp.patch<TagDto>(`/crm/tags/${encodeURIComponent(id)}`, { mergeIntoId }));
 /** `DELETE /crm/tags/:id` (xóa mềm, gỡ thẻ khỏi mọi khách; 204). */
 export const deleteTag = (id: string): Promise<void> => crmHttp.del(`/crm/tags/${encodeURIComponent(id)}`);
+
+// --- Trường chân dung (Quản trị, FR-41) -----------------------------------------------------------------------------------
+
+export const toAdminPersonaField = (dto: PersonaFieldDto): AdminPersonaField => ({
+  id: dto.id,
+  key: dto.key,
+  label: dto.label,
+  groupCode: dto.groupCode,
+  type: dto.type,
+  options: dto.options.map((option) => ({ value: option.value, label: option.label, isActive: option.isActive })),
+  order: dto.order,
+  isSystem: dto.isSystem,
+  isActive: dto.isActive,
+});
+
+/** `GET /crm/persona-fields` (gom mọi trang, `limit` 100 là mức tối đa của máy chủ): có cả trường đã tắt, theo thứ tự `order`. */
+export const fetchAdminPersonaFields = async (signal?: AbortSignal): Promise<AdminPersonaField[]> => (await fetchAllPages<PersonaFieldDto>('/crm/persona-fields', {}, signal)).map(toAdminPersonaField);
+
+/**
+ * Sửa trường: chỉ gửi phần đổi. `options` là DANH SÁCH MONG MUỐN: lựa chọn không có trong danh sách bị TẮT (không xóa); đổi nhãn giữ
+ * `value`; tắt hết hoặc trùng `value` -> 400 `VALIDATION_FAILED`; tổng lựa chọn (kể cả đã tắt) tối đa 100, mỗi lần gửi tối đa 50.
+ */
+export interface PersonaFieldPatchBody {
+  label?: string;
+  options?: PersonaOptionItem[];
+  isActive?: boolean;
+}
+
+/** `PATCH /crm/persona-fields/:id` (Quản trị). */
+export const patchPersonaField = async (id: string, body: PersonaFieldPatchBody): Promise<AdminPersonaField> =>
+  toAdminPersonaField(await crmHttp.patch<PersonaFieldDto>(`/crm/persona-fields/${encodeURIComponent(id)}`, body));
+
+export interface PersonaFieldOrderItem {
+  id: string;
+  order: number;
+  /** Chuyển sang nhóm khác (T-63 chưa dùng). */
+  groupCode?: string;
+}
+
+/** `PUT /crm/persona-fields/order`: trả TOÀN BỘ trường theo thứ tự mới. */
+export const putPersonaFieldOrder = async (items: PersonaFieldOrderItem[]): Promise<AdminPersonaField[]> =>
+  (await crmHttp.put<PersonaFieldDto[]>('/crm/persona-fields/order', { items })).map(toAdminPersonaField);
 
 // --- Dự án --------------------------------------------------------------------------------------------------------------
 

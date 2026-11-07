@@ -118,6 +118,15 @@ export const toPersonaDraft = (persona: readonly PersonaValue[], fields: readonl
     }),
   );
 
+/**
+ * Lựa chọn hiển thị cho ô chọn: các lựa chọn đang dùng + giá trị khách ĐANG CÓ mà đã bị tắt ở cấu hình (FR-41). Nhờ vậy khách đang dùng
+ * một lựa chọn đã tắt vẫn thấy đúng lựa chọn đó khi sửa (không hiện ô trống rồi vô tình mất ngữ cảnh); bỏ chọn rồi thì nó biến mất.
+ */
+export const withCurrentOptions = (options: readonly string[], selected: readonly string[]): string[] => [
+  ...options,
+  ...selected.filter((item) => item !== '' && !options.includes(item)),
+];
+
 export const getDraftValue = (draft: PersonaDraft, fieldKey: string): PersonaDraftValue => draft[fieldKey] ?? emptyDraftValue();
 
 /** Lỗi trường chân dung (chỉ kiểm định dạng; không có trường bắt buộc — QT9). */
