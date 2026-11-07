@@ -154,6 +154,15 @@ export interface Tag {
   isActive: boolean;
 }
 
+/** Thẻ ở màn quản trị (FR-42): kèm số khách đang gắn và màu (`#RRGGBB`, tên màu thiết kế hoặc null). */
+export interface AdminTag {
+  id: string;
+  name: string;
+  category: TagCategory;
+  usageCount: number;
+  color: string | null;
+}
+
 /** Kết quả liên hệ + mốc hẹn gợi ý (04 §3.3 `CONTACT_RESULT`). */
 export interface ContactResult {
   id: string;

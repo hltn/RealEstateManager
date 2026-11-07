@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import { buildCrmRoute } from './crmRoute';
+import { buildCrmRoute, buildNotificationSettingsRoute } from './crmRoute';
 import { withCrmMenu } from './navigation';
 
 describe('Th9 cờ VITE_CRM_PROTOTYPE tắt -> không có route /crm', () => {
@@ -38,5 +38,14 @@ describe('Th9 menu CRM theo cờ', () => {
     const result = withCrmMenu(items, crmSub, true);
     expect(result.map((item) => item.name)).toEqual(['Tin tức', 'Quản lý khách hàng', 'Cài đặt']);
     expect((result[1] as { subItems?: unknown }).subItems).toEqual(crmSub);
+  });
+});
+
+describe('T-41 route /notification-settings theo cờ CRM', () => {
+  it('cờ tắt: không có route; cờ bật: route "notification-settings" nằm ngoài /crm', () => {
+    expect(buildNotificationSettingsRoute(false)).toBeNull();
+    const route = buildNotificationSettingsRoute(true);
+    expect(route).not.toBeNull();
+    expect((route as { props: { path?: string } }).props.path).toBe('notification-settings');
   });
 });

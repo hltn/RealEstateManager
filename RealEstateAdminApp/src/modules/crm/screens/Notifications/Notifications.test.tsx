@@ -157,6 +157,13 @@ describe('màn Thông báo: cuộn vô hạn (FR-38, T-56)', () => {
     expect(screen.queryByText('Đã hết thông báo')).not.toBeInTheDocument();
   });
 
+  it('có liên kết "Cài đặt thông báo" tới /notification-settings (T-41, FR-09)', async () => {
+    fetchNotifications.mockResolvedValueOnce(makePage(1, 0));
+    renderScreen();
+
+    expect(await screen.findByRole('link', { name: /Cài đặt thông báo/ })).toHaveAttribute('href', '/notification-settings');
+  });
+
   it('đổi sang tab "Chưa đọc" gọi lại từ trang 1 với isRead=false', async () => {
     fetchNotifications.mockImplementation(async (query: { isRead?: boolean }) => (query.isRead === false ? makePage(1, 1) : makePage(1, 30)));
     renderScreen();

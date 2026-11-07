@@ -9,6 +9,7 @@ import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { CatalogSection } from './components/CatalogSection';
 import { ProjectsCatalogSection } from './components/ProjectsCatalogSection';
 import { ReminderSettingsSection } from './components/ReminderSettingsSection';
+import { TagsSection } from './components/TagsSection';
 import { TeamsSection } from './components/TeamsSection';
 import { UsersSection } from './components/UsersSection';
 import { SETTINGS_TABS, type AdminCatalogKind, type SettingsTab } from './settingsForms';
@@ -65,6 +66,7 @@ export const SettingsView = ({ variant }: SettingsViewProps) => {
         {activeTab === 'users' && <UsersSection />}
         {activeTab === 'teams' && <TeamsSection />}
         {activeTab === 'projects' && <ProjectsCatalogSection />}
+        {activeTab === 'tags' && <TagsSection />}
         {activeTab === 'reminders' && <ReminderSettingsSection />}
         {isCatalogTab(activeTab) && <CatalogSection key={activeTab} kind={activeTab} description={CATALOG_DESCRIPTIONS[activeTab]} />}
       </div>

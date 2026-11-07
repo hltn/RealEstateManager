@@ -3,6 +3,13 @@ import { Share, X } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { readIosInstallHintDismissed, readInstallEnvironment, saveIosInstallHintDismissed, shouldShowIosInstallHint } from './iosInstallHintLogic';
 
+/** Câu hướng dẫn cài lên Màn hình chính; dùng chung cho banner và trang "Cài đặt thông báo" (T-41, FR-09). */
+export const IosInstallGuideText = () => (
+  <>
+    Cài STND lên Màn hình chính: bấm nút <strong>Chia sẻ</strong> của Safari, rồi chọn <strong>Thêm vào MH chính</strong>.
+  </>
+);
+
 /**
  * Banner mỏng hướng dẫn cài app lên Màn hình chính trên iPhone/iPad Safari.
  * Chỉ hiện khi đã đăng nhập, chưa cài và chưa bấm "Đã hiểu" (cờ lưu localStorage). Nằm trong luồng bình thường
@@ -27,7 +34,7 @@ const IosInstallHint = () => {
     >
       <Share size={18} className="mt-0.5 shrink-0 text-brand-500" aria-hidden="true" />
       <p className="min-w-0 flex-1">
-        Cài STND lên Màn hình chính: bấm nút <strong>Chia sẻ</strong> của Safari, rồi chọn <strong>Thêm vào MH chính</strong>.
+        <IosInstallGuideText />
       </p>
       <button
         type="button"

@@ -11,7 +11,7 @@ import { isValidPhone } from '@crm/lib/phone';
 import { includesVietnamese } from '@crm/lib/text';
 import { listProjectFilterOptions, type ProjectFilterOption } from '@crm/lib/projectRules';
 import { buildAssigneeFilterOptions, type AssigneeFilterOption } from '@crm/lib/assigneeFilter';
-import type { AdminUser, CrmCatalogs, CrmSettings, CrmUser, PersonaFieldDefinition, Team, TeamMember } from '@crm/types/crm';
+import type { AdminTag, AdminUser, CrmCatalogs, CrmSettings, CrmUser, PersonaFieldDefinition, Team, TeamMember } from '@crm/types/crm';
 import type { CrmActor } from './access';
 import * as admin from './http/adminApi';
 import * as catalogApi from './http/catalogApi';
@@ -115,6 +115,7 @@ const EMPTY_CATALOGS: CrmCatalogs = { statuses: [], leadSources: [], areas: [], 
 const EMPTY_FIELDS: PersonaFieldDefinition[] = [];
 const EMPTY_USERS: CrmUser[] = [];
 const EMPTY_ADMIN_USERS: AdminUser[] = [];
+const EMPTY_ADMIN_TAGS: AdminTag[] = [];
 const EMPTY_TEAMS: (Team & { code: string; memberCount: number; isActive: boolean })[] = [];
 
 /** Danh mục + người dùng + nhóm + cấu hình chân dung. `isLoading` = còn danh mục bắt buộc chưa tải xong. */
@@ -546,6 +547,19 @@ export const useAdminUsers = (isEnabled = true): QueryState<AdminUser[]> => {
     retry: retryTransient,
   });
   return stateOf(result, EMPTY_ADMIN_USERS);
+};
+
+/** `GET /crm/tags` cho màn quản trị (có số khách). Cùng nhóm khóa `catalogs` nên làm mới cùng danh mục sau khi sửa/gộp/xóa thẻ. */
+export const useAdminTags = (isEnabled = true): QueryState<AdminTag[]> => {
+  const result = useQuery({
+    queryKey: [...crmKeys.catalogs, 'admin-tags'],
+    queryFn: ({ signal }) => admin.fetchAdminTags(signal),
+    enabled: isEnabled,
+    staleTime: DATA_STALE_MS,
+    retry: retryTransient,
+    refetchOnWindowFocus: false,
+  });
+  return stateOf(result, EMPTY_ADMIN_TAGS);
 };
 
 /** `GET /teams/:id/members` — phân trang + tìm theo tên; giữ trang cũ khi đổi trang/tìm để danh sách không nhấp nháy. */

@@ -3,7 +3,8 @@
  * trên MongoDB Replica Set thật (mongodb-memory-server, có transaction thật) với ảnh thật xử lý bằng `sharp`.
  * Kho ảnh là bản giả trong bộ nhớ (kiểm MIME/magic bytes thật như `FileStorageService`, có công tắc "kho lỗi") và hàng
  * đợi BullMQ là bản giả có hành vi `jobId` (đã có thì bỏ qua) + công tắc "Redis lỗi": không dùng Redis/MinIO/Docker.
- * Phần phục vụ (mapper, bù ảnh cũ, dọn kèm thumbKey) là T-54, không kiểm ở đây.
+ * Phần phục vụ và dọn dẹp (T-54): ký URL thumbnail, bù ảnh cũ (`AttachmentCleanupService.backfillThumbnails`), xóa/dọn kèm
+ * thumbKey; mapper fallback `thumbUrl = url` kiểm ở `care-log.mapper.spec.ts`; purge khách ở `crm-customer-deletion`.
  *
  * Chạy: npx jest --testRegex ".*\.integration\.spec\.ts$" --testPathIgnorePatterns "/node_modules/" --runInBand attachment-thumbnail --forceExit
  */
@@ -37,6 +38,7 @@ import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { CustomerAccessService } from '../customers/access/customer-access.service';
 import { CustomersRepository } from '../customers/customers.repository';
+import { AttachmentCleanupService } from './attachment-cleanup.service';
 import { AttachmentThumbnailProcessor } from './attachment-thumbnail.processor';
 import { AttachmentThumbnailQueueService } from './attachment-thumbnail-queue.service';
 import { CareLogAttachmentsService } from './care-log-attachments.service';
@@ -104,6 +106,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
   let attachments: Model<CrmAttachmentDocument>;
   let careLogs: Model<CareLogDocument>;
   let service: CareLogAttachmentsService;
+  let cleanup: AttachmentCleanupService;
   let queue: AttachmentThumbnailQueueService;
   const storage = new InMemoryFileStorage();
 
@@ -179,6 +182,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
         CareLogAttachmentsService,
         AttachmentThumbnailProcessor,
         AttachmentThumbnailQueueService,
+        AttachmentCleanupService,
         { provide: FILE_STORAGE, useValue: storage },
         { provide: QueueRuntimeService, useValue: runtime },
         { provide: FeatureFlagService, useValue: { isEnabled: () => true } },
@@ -211,6 +215,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
     careLogs = moduleRef.get(getModelToken(CareLog.name));
     service = moduleRef.get(CareLogAttachmentsService);
     queue = moduleRef.get(AttachmentThumbnailQueueService);
+    cleanup = moduleRef.get(AttachmentCleanupService);
     await attachments.init();
   });
 
@@ -369,7 +374,8 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
         attachments: [{ attachmentId: failed._id, fileKey: failed.fileKey }],
       } as never,
     ]);
-    expect(urls.get(String(failed._id))).toContain(failed.fileKey);
+    expect(urls.get(String(failed._id))?.url).toContain(failed.fileKey);
+    expect(urls.get(String(failed._id))?.thumbUrl).toBeNull();
     expect(storage.objects.has(failed.fileKey)).toBe(true);
     expect(thumbObjects()).toEqual([]);
   });
@@ -469,5 +475,163 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
     await upload(await sampleImage('jpeg', 400, 400));
 
     expect(wasPersistedAtEnqueue).toBe(true);
+  });
+
+  describe('T-54: phần phục vụ, bù ảnh cũ, xóa/dọn kèm thumbnail', () => {
+    /** Ảnh kiểu cũ: có file gốc trong kho, KHÔNG có `thumbStatus`/`thumbAttempts` (tải lên trước khi có tính năng). */
+    const insertLegacy = async (count: number, extra: object = {}) => {
+      const ids: Types.ObjectId[] = [];
+      for (let index = 0; index < count; index += 1) {
+        const _id = new Types.ObjectId();
+        const fileKey = `customers/${String(customerId)}/care-logs/${randomUUID()}.jpg`;
+        storage.objects.set(fileKey, await sampleImage('jpeg', 400, 300));
+        await attachments.collection.insertOne({
+          _id,
+          customerId,
+          uploaderId: userId,
+          kind: 'CARE_LOG_IMAGE',
+          fileKey,
+          thumbKey: null,
+          originalName: 'cu.jpg',
+          mimeType: 'image/jpeg',
+          size: 100,
+          status: AttachmentStatus.READY,
+          careLogId: null,
+          purgedAt: null,
+          createdAt: new Date(Date.now() - 1000 * (count - index)),
+          ...extra,
+        });
+        ids.push(_id);
+      }
+      return ids;
+    };
+
+    beforeEach(async () => {
+      await attachments.deleteMany({});
+    });
+
+    it('FR-26: ảnh có thumbnail => signUrls ký cả file gốc lẫn thumbnail với khóa khác nhau', async () => {
+      const id = await upload(await sampleImage('jpeg', 800, 600));
+      await runJob(id);
+      const att = (await findAttachment(id))!;
+
+      const urls = await service.signUrls([
+        {
+          attachments: [
+            {
+              attachmentId: att._id,
+              fileKey: att.fileKey,
+              thumbKey: att.thumbKey,
+            },
+          ],
+        } as never,
+      ]);
+
+      const signed = urls.get(String(att._id))!;
+      expect(signed.url).toContain(att.fileKey);
+      expect(signed.thumbUrl).toContain(att.thumbKey!);
+      expect(signed.thumbUrl).not.toBe(signed.url);
+    });
+
+    it('FR-26: bù ảnh cũ chỉ chọn READY/ATTACHED chưa có thumbKey và khác FAILED; chạy job xong thì lần bù sau không chọn lại', async () => {
+      const [legacy] = await insertLegacy(1); // thiếu hẳn thumbStatus
+      const [none] = await insertLegacy(1, { thumbStatus: ThumbStatus.NONE });
+      const [attached] = await insertLegacy(1, {
+        status: AttachmentStatus.ATTACHED,
+        careLogId: new Types.ObjectId(),
+      });
+      // Các ảnh KHÔNG được bù.
+      await insertLegacy(1, { thumbStatus: ThumbStatus.FAILED });
+      await insertLegacy(1, {
+        thumbKey: 'x/da-co.webp',
+        thumbStatus: ThumbStatus.READY,
+      });
+      await insertLegacy(1, { status: AttachmentStatus.REMOVED });
+      await insertLegacy(1, { purgedAt: new Date() });
+
+      const queued = await cleanup.backfillThumbnails();
+
+      const expected = [legacy, none, attached].map(
+        (item) => `thumb-${String(item)}`,
+      );
+      expect(queued).toBe(3);
+      expect([...jobs.keys()].sort()).toEqual(expected.sort());
+
+      for (const item of [legacy, none, attached]) await runJob(String(item));
+      for (const item of [legacy, none, attached]) {
+        expect((await findAttachment(String(item)))!).toMatchObject({
+          thumbStatus: ThumbStatus.READY,
+          thumbKey: expect.stringMatching(/\.webp$/) as unknown,
+        });
+      }
+      jobs.clear();
+      expect(await cleanup.backfillThumbnails()).toBe(0);
+      expect(jobs.size).toBe(0);
+    });
+
+    it('FR-26: bù ảnh cũ idempotent: chạy hai lần khi job chưa xử lý không nhân đôi job (jobId thumb-{id})', async () => {
+      await insertLegacy(4);
+
+      await cleanup.backfillThumbnails();
+      const first = [...jobs.keys()].sort();
+      await cleanup.backfillThumbnails();
+
+      expect(first).toHaveLength(4);
+      expect([...jobs.keys()].sort()).toEqual(first);
+    });
+
+    it('FR-26: bù tối đa 200 ảnh mỗi lần, cũ nhất trước; phần còn lại bù ở lần sau', async () => {
+      const ids = await insertLegacy(205);
+
+      expect(await cleanup.backfillThumbnails()).toBe(200);
+      const queuedIds = new Set([...jobs.keys()]);
+      expect(queuedIds.size).toBe(200);
+      // 5 ảnh mới nhất (cuối danh sách) chưa được xếp.
+      for (const id of ids.slice(-5)) {
+        expect(queuedIds.has(`thumb-${String(id)}`)).toBe(false);
+      }
+      // Lô đầu đã xử lý xong (có thumbKey) thì lần bù sau lấy nốt 5 ảnh còn lại.
+      await attachments.updateMany(
+        { _id: { $in: ids.slice(0, 200) } },
+        { $set: { thumbKey: 'x/xong.webp', thumbStatus: ThumbStatus.READY } },
+      );
+      jobs.clear();
+      expect(await cleanup.backfillThumbnails()).toBe(5);
+    });
+
+    it('FR-26: gỡ ảnh (remove) xóa cả file gốc lẫn thumbnail khỏi kho và ghi purgedAt', async () => {
+      const id = await upload(await sampleImage('jpeg', 800, 600));
+      await runJob(id);
+      const att = (await findAttachment(id))!;
+      expect(storage.objects.has(att.thumbKey!)).toBe(true);
+
+      await service.remove(jwt, String(customerId), id, 'web');
+
+      expect(storage.objects.has(att.fileKey)).toBe(false);
+      expect(storage.objects.has(att.thumbKey!)).toBe(false);
+      expect(thumbObjects()).toEqual([]);
+      expect((await findAttachment(id))!).toMatchObject({
+        status: AttachmentStatus.REMOVED,
+        purgedAt: expect.any(Date) as unknown,
+      });
+    });
+
+    it('FR-26: job dọn xóa cả thumbnail của ảnh REMOVED chưa purge (kể cả ảnh bị gỡ lúc ẩn danh hóa), lần dọn sau không còn gì', async () => {
+      const id = await upload(await sampleImage('jpeg', 800, 600));
+      await runJob(id);
+      const att = (await findAttachment(id))!;
+      await attachments.updateOne(
+        { _id: id },
+        { $set: { status: AttachmentStatus.REMOVED, removedAt: new Date() } },
+      );
+
+      const result = await cleanup.cleanup();
+
+      expect(result.purged).toBe(1);
+      expect(storage.objects.has(att.fileKey)).toBe(false);
+      expect(storage.objects.has(att.thumbKey!)).toBe(false);
+      expect((await findAttachment(id))!.purgedAt).toBeInstanceOf(Date);
+      expect(await cleanup.cleanup()).toEqual({ expired: 0, purged: 0 });
+    });
   });
 });

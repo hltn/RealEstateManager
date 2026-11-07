@@ -9,8 +9,17 @@ import { CareLog } from './schemas/care-log.schema';
 
 export type CareLogLean = CareLog & { _id: Types.ObjectId };
 
-/** Chữ ký ảnh theo `attachmentId` (đã ký trước, bất đồng bộ) để mapper giữ thuần đồng bộ. */
-export type AttachmentUrls = Map<string, string>;
+/**
+ * URL ký của một ảnh (đã ký trước, bất đồng bộ) để mapper giữ thuần đồng bộ. `thumbUrl` là `null` khi ảnh chưa có
+ * `thumbKey` (ảnh cũ, job thumbnail chưa chạy hoặc `FAILED`): mapper rơi về `url`.
+ */
+export interface AttachmentUrl {
+  url: string;
+  thumbUrl: string | null;
+}
+
+/** URL ký theo `attachmentId`. */
+export type AttachmentUrls = Map<string, AttachmentUrl>;
 
 /** Mã + nhãn của kết quả liên hệ theo `id` (dịch lô qua `CustomerRefsService.resolveByIds`). */
 export type ContactResultRefs = Map<string, { code: string; label: string }>;
@@ -49,10 +58,12 @@ export const toCareLogResponse = (
   occurredAt: log.occurredAt.toISOString(),
   content: log.content,
   attachments: (log.attachments ?? []).map((attachment) => {
-    const url = urls.get(String(attachment.attachmentId)) ?? '';
+    const signed = urls.get(String(attachment.attachmentId));
+    const url = signed?.url ?? '';
     return {
       id: String(attachment.attachmentId),
-      thumbUrl: url,
+      // Có thumbnail thì dùng URL ký của thumbnail; chưa có (hoặc FAILED) thì dùng luôn ảnh gốc (FR-26).
+      thumbUrl: signed?.thumbUrl ?? url,
       url,
       mimeType: attachment.mimeType,
       size: attachment.size,

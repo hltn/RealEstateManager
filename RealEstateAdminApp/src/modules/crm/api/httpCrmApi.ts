@@ -120,6 +120,10 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     // --- Hàng loạt, thẻ ----------------------------------------------------------------------------------------------
     bulkOperation: (operation: BulkOperation): Promise<ApiResult<BulkResult>> => write(() => care.postBulkOperation(operation)),
     createTag: (body: { name: string; category: string }) => write(() => admin.createTag(body), { shouldIncludeCatalogs: true }),
+    // Sửa/gộp/xóa thẻ đổi cả danh mục `tags` (bộ lọc, gắn hàng loạt, form chân dung) lẫn thẻ gắn trên khách -> làm mới cả danh mục và dữ liệu.
+    updateTag: (id: string, body: admin.TagPatchBody) => write(() => admin.patchTag(id, body), { shouldIncludeCatalogs: true }),
+    mergeTag: (id: string, mergeIntoId: string) => write(() => admin.mergeTag(id, mergeIntoId), { shouldIncludeCatalogs: true }),
+    deleteTag: (id: string) => write(() => admin.deleteTag(id), { shouldIncludeCatalogs: true }),
 
     // --- Quản trị -----------------------------------------------------------------------------------------------------
     createProject: (body: admin.ProjectBody) => write(() => admin.postProject(body), { shouldIncludeCatalogs: true }),

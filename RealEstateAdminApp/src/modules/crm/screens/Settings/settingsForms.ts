@@ -6,13 +6,13 @@ import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
 import { toSlug } from '@crm/lib/text';
 import type { ApiError, CatalogEndpoint } from '@crm/api';
 import { isGenericForbidden } from '@crm/api/http/crmErrors';
-import type { AccountRole, AdminUser, Area, CatalogItem, ContactResult, CrmSettings, CustomerStatusItem, ListGroup, StatusTone, UserRole } from '@crm/types/crm';
+import type { AccountRole, AdminTag, AdminUser, Area, CatalogItem, ContactResult, CrmSettings, CustomerStatusItem, ListGroup, StatusTone, TagCategory, UserRole } from '@crm/types/crm';
 import { hasTeamRole, isSameSet, normalizeRoles } from '../../../../utils/userRoles';
 
 /** Danh mục chỉnh bằng form chung (dự án có màn riêng nên dùng `ProjectFormDialog`). */
 export type AdminCatalogKind = 'statuses' | 'leadSources' | 'contactResults' | 'areas';
 
-export type SettingsTab = AdminCatalogKind | 'projects' | 'users' | 'teams' | 'reminders';
+export type SettingsTab = AdminCatalogKind | 'projects' | 'tags' | 'users' | 'teams' | 'reminders';
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'statuses', label: 'Tình trạng khách' },
@@ -20,6 +20,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'contactResults', label: 'Kết quả liên hệ' },
   { id: 'areas', label: 'Khu vực' },
   { id: 'projects', label: 'Dự án' },
+  { id: 'tags', label: 'Thẻ' },
   { id: 'users', label: 'Người dùng' },
   { id: 'teams', label: 'Nhóm' },
   { id: 'reminders', label: 'Nhắc việc' },
@@ -419,3 +420,45 @@ export const validateTeam = (draft: TeamDraft): string | null => {
 
 /** Người có thể thêm vào nhóm: đang hoạt động, có Quản lý/Nhân viên và chưa thuộc nhóm. */
 export const listAddableUsers = (users: readonly AdminUser[], teamId: string): AdminUser[] => users.filter((user) => user.isActive && hasTeamRole(user.roles) && !user.teamIds.includes(teamId));
+
+// --- Thẻ (FR-42, chỉ Quản trị) ------------------------------------------------------------------------------------------
+
+/** Giới hạn tên thẻ của backend (`TAG_NAME_MAX_LENGTH`). */
+export const TAG_NAME_MAX_LENGTH = 50;
+
+export const TAG_CATEGORY_LABELS: Record<TagCategory, string> = { INTEREST: 'Sở thích', OCCUPATION: 'Nghề nghiệp', OTHER: 'Khác' };
+
+export const TAG_CATEGORY_OPTIONS: { value: TagCategory; label: string }[] = (Object.keys(TAG_CATEGORY_LABELS) as TagCategory[]).map((value) => ({ value, label: TAG_CATEGORY_LABELS[value] }));
+
+/** Màu thẻ chọn được: tên màu thiết kế (backend nhận `^[a-z][a-z0-9_-]{0,19}$`). Rỗng = không màu. */
+export const TAG_COLOR_OPTIONS: { value: string; label: string }[] = [{ value: '', label: 'Không màu' }, ...STATUS_TONE_OPTIONS];
+
+/** Bản nháp form sửa thẻ (`color` rỗng = không màu). */
+export interface TagDraft {
+  id: string;
+  name: string;
+  category: TagCategory;
+  color: string;
+}
+
+export const toTagDraft = (tag: AdminTag): TagDraft => ({ id: tag.id, name: tag.name, category: tag.category, color: tag.color ?? '' });
+
+export const validateTagDraft = (draft: TagDraft): string | null => {
+  const name = draft.name.trim();
+  if (!name) return 'Vui lòng nhập tên thẻ.';
+  if (name.length > TAG_NAME_MAX_LENGTH) return `Tên thẻ tối đa ${TAG_NAME_MAX_LENGTH} ký tự.`;
+  return null;
+};
+
+/** Body PATCH chỉ gồm field thật sự đổi (`color` rỗng -> `null` = bỏ màu); rỗng nghĩa là không có gì để lưu. */
+export const buildTagPatch = (before: AdminTag, draft: TagDraft): { name?: string; category?: TagCategory; color?: string | null } => {
+  const patch: { name?: string; category?: TagCategory; color?: string | null } = {};
+  const name = draft.name.trim();
+  if (name !== before.name) patch.name = name;
+  if (draft.category !== before.category) patch.category = draft.category;
+  if (draft.color !== (before.color ?? '')) patch.color = draft.color === '' ? null : draft.color;
+  return patch;
+};
+
+/** Thẻ đích để gộp: backend chỉ gộp thẻ CÙNG NHÓM và không gộp vào chính nó. */
+export const listMergeTargets = (tags: readonly AdminTag[], source: AdminTag): AdminTag[] => tags.filter((tag) => tag.id !== source.id && tag.category === source.category);

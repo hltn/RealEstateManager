@@ -720,6 +720,7 @@ docker inspect realestate_backend --format '{{.State.Health.Status}}'           
 12. Từ nay cập nhật bằng `deploy.sh` trong repo (mục 11), thay script cũ trên VPS. Người commit `deploy.sh` từ Windows chạy `git add --chmod=+x deploy.sh scripts/run-migration.sh` để giữ bit thực thi (tài liệu vẫn dùng `bash deploy.sh` nên không phụ thuộc bit này).
 13. Dọn định kỳ thẻ image dự phòng `realestatemanager-backend:pre-*` và image `realestate-migrate:*` (mục 5.7/11); script từ chối chạy khi dung lượng đĩa thấp.
 14. Web Push (v1.0.4): sinh khóa VAPID một lần, đặt `VAPID_*` + `CRM_PUSH_ENABLED` rồi bật theo đúng thứ tự: làm theo **mục 15** (kèm cách tắt khẩn cấp, đổi khóa và checklist thử trên điện thoại thật).
+15. Việc kiểm tay sau deploy v1.0.4 (hậu-deploy, không chặn phát hành): IP thật sau cloudflared (FR-23) và dự án mẫu bị trùng (FR-35): làm theo **mục 16**, điền ô kiểm ở 16.3.
 
 ## 10. Bật CRM trên production
 
@@ -1491,7 +1492,7 @@ Hệ thống **không có** endpoint gửi thử; thử bằng đúng luồng ng
 1. Trên điện thoại, mở web admin bằng HTTPS (domain thật). **PWA phải cập nhật bản mới trước**: khi thấy thông báo bản mới, bấm **"Cập nhật"**. Thiết bị chưa cập nhật còn chạy service worker cũ, **không xử lý được push** nên sẽ không hiện thông báo dù backend đã gửi.
 2. iPhone: bắt buộc **"Thêm vào Màn hình chính"** rồi mở từ biểu tượng đó (iOS 16.4 trở lên); mở trong tab Safari thường không nhận push.
 3. Đăng nhập tài khoản thử, vào **Cài đặt thông báo**, bật thông báo và cho phép quyền khi trình duyệt hỏi. Kiểm: thiết bị hiện trong danh sách thiết bị của chính mình (`GET /push-subscriptions`).
-4. Dùng tài khoản khác (admin, hoặc người có quyền quản lý nhóm phụ trách của khách đó theo quy tắc nhóm hiện hành) vào một khách thử, **thêm tài khoản thử làm thành viên cùng phụ trách (MEMBER)**.
+4. Dùng một tài khoản **có quyền thêm thành viên** vào một khách thử, **thêm tài khoản thử làm thành viên cùng phụ trách (MEMBER)**. Quy tắc thật là hàm `canManageMembers` trong `RealEstateBackendApp/src/modules/crm/care-teams/care-team.rules.ts`, ba nhóm người được thêm: (a) **ADMIN**; (b) **MANAGER trong phạm vi quản lý** (khách phải nằm trong phạm vi của MANAGER đó, ngoài phạm vi sẽ báo không tìm thấy khách; người được thêm cũng bị kiểm theo phạm vi của người thao tác); (c) **PRIMARY (phụ trách chính) của chính khách đó**. STAFF **không** phải PRIMARY của khách đó thì không thêm được (kể cả đang là MEMBER của khách đó): backend trả 403 "Chỉ Quản trị, Quản lý hoặc phụ trách chính được thêm thành viên". Nên dùng tài khoản ADMIN của Oniichan cho bước này.
 5. Mong đợi trong khoảng 1 phút: điện thoại hiện push tiêu đề **"Bạn được mời cùng phụ trách một khách"**; chạm vào mở `/crm/customers/<id>` của khách đó. Thông báo trong app xuất hiện, `pushStatus` của nó chuyển `SENT` (truy vấn ở 15.9).
 6. Dọn: gỡ tài khoản thử khỏi nhóm phụ trách của khách thử (không để dữ liệu thử lẫn vào dữ liệu thật).
 
@@ -1592,6 +1593,149 @@ Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo/Redis tạm (đã x�
 - Push thật tới thiết bị thật (iPhone/Android) và toàn bộ checklist 15.12, gồm hành vi PWA phải bấm "Cập nhật" trên máy thật.
 - VPS thật và Cloudflare: lệnh `docker compose run ... backend node -e ...` (15.2) trong stack thật, `read -rsp` + `curl` qua nginx (15.4), `shred` trên VPS, dòng `auth` bằng biến root trong container Mongo thật (15.9; trên máy dev đã chạy nội dung truy vấn nhưng với Mongo tạm).
 - Đổi khóa (15.11) và tắt khẩn cấp (15.10): mới thử ở mức đổi biến và khởi động lại tiến trình backend trên máy dev, chưa với stack compose đầy đủ.
-- Quy tắc nhóm phụ trách quyết định ai được thêm MEMBER (15.8 bước 4) lấy theo ứng dụng hiện hành; chưa đối chiếu từng vai trò trên bản chạy thật.
+- Quy tắc ai được thêm MEMBER (15.8 bước 4) đã **đối chiếu với mã nguồn** (`canManageMembers`: ADMIN, MANAGER trong phạm vi, hoặc PRIMARY của khách đó; đọc code, ngày 2026-11-07); **chưa thử từng vai trò trên bản chạy thật**.
+
+## 16. Việc kiểm tay sau deploy (v1.0.4, T-44, FR-23, FR-35)
+
+Hai việc **Oniichan tự làm trên production sau khi deploy v1.0.4**; code đã xong hoặc không có code, **không có test tự động**, không chặn phát hành (hậu-deploy). Ô kiểm và chỗ ghi kết quả nằm ở 16.3. Quy ước chung: không dán token/mật khẩu vào chat hay file; thay `<domain-admin>` bằng tên miền thật; mọi lệnh VPS chạy ở thư mục gốc repo (nơi có `docker-compose.yml` và `.env.docker`).
+
+| Việc | FR | Cần quyền | Kết quả cần có |
+|---|---|---|---|
+| 16.1 IP thật sau cloudflared | FR-23 | ADMIN + SSH VPS | IP ghi ở audit và IP dùng cho giới hạn tần suất là IP thật của người dùng |
+| 16.2 Dự án mẫu bị trùng | FR-35 | ADMIN | Không còn dự án mẫu trùng trong danh sách dự án |
+
+### 16.1. FR-23: IP thật của người dùng sau cloudflared
+
+**Vì sao cần.** Cấu hình lấy IP thật (mục 2.1: nginx `set_real_ip_from` đúng một IP cloudflared, `CF-Connecting-IP`, backend `TRUST_PROXY=1`) đã chạy được trên stack thử nhưng **chưa từng thử với cloudflared và Cloudflare thật**. Nếu sai, mọi người dùng chung một IP proxy: audit ghi sai IP và 5 lần đăng nhập sai/phút tính cho cả hệ thống.
+
+**Chuẩn bị.** Một thiết bị truy cập web admin **qua Cloudflare** (domain thật, không qua `localhost`/IP của VPS). Dùng điện thoại bật 4G/5G (tắt Wi-Fi) để có IP công khai khác IP của VPS và của máy tính.
+
+**Bước 1. Ghi lại IP công khai thật của thiết bị (IP A).** Trên điện thoại 4G mở một trang "what is my IP" (ví dụ `https://ifconfig.me`) và chép IP. Lưu ý: thiết bị có IPv6 thì Cloudflare gửi IPv6, nên IP A có thể là IPv6.
+
+**Bước 2. Kiểm cấu hình đang chạy trên VPS (chỉ đọc).**
+
+```bash
+docker compose --env-file .env.docker logs backend | grep trustProxy   # kỳ vọng: "trustProxy bật: tin 1 proxy ..."
+docker compose --env-file .env.docker config | grep TRUST_PROXY        # kỳ vọng: TRUST_PROXY: "1"
+docker exec realestate_frontend nginx -T 2>/dev/null | grep -E 'set_real_ip_from|real_ip_header'
+# kỳ vọng: đúng MỘT dòng set_real_ip_from 10.213.77.250 và real_ip_header CF-Connecting-IP (không phải dải mạng)
+```
+
+**Bước 3. Tạo một dòng audit từ thiết bị đó.** Trên điện thoại 4G, đăng nhập web admin bằng tài khoản **ADMIN**, mở một khách thử và bấm **"Hiện số"** ở số điện thoại (ghi audit `PHONE_VIEWED` kèm IP của request, không đổi dữ liệu; chịu giới hạn tần suất xem số theo từng người dùng nên chỉ bấm một hai lần).
+
+**Bước 4. Đọc IP đã ghi (VPS, chỉ đọc, ADMIN).** Mật khẩu nhập tay (cùng cách 15.4); route audit chỉ dành cho ADMIN:
+
+```bash
+read -rp 'Email admin: ' E; read -rsp 'Mật khẩu: ' P; echo
+TOKEN=$(printf '{"email":"%s","password":"%s"}' "$E" "$P" \
+  | curl -s http://localhost/api/v1/auth/login -H 'content-type: application/json' -d @- \
+  | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+unset P
+curl -s "http://localhost/api/v1/crm/audit-logs?action=PHONE_VIEWED&limit=3" -H "Authorization: Bearer $TOKEN" \
+  | grep -o '"ip":"[^"]*"'
+unset TOKEN
+```
+
+Dòng đầu tiên (mới nhất) phải có `"ip":"<IP A>"` đúng từng ký tự. Cách khác (Mongo, chỉ đọc; dòng `auth` giống 15.9):
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+db.getSiblingDB("realestate").crm_audit_logs.find({ action: "PHONE_VIEWED" }, { ip: 1, createdAt: 1, _id: 0 }).sort({ createdAt: -1 }).limit(3).forEach(r => print(r.createdAt.toISOString() + " " + r.ip));
+EOF
+```
+
+Cách đọc kết quả sai:
+
+| `ip` ghi được | Nghĩa là | Việc cần làm |
+|---|---|---|
+| `10.213.77.x` (`.250` cloudflared, `.1` gateway, hoặc IP container khác) | Backend đang thấy IP nội bộ docker: `set_real_ip_from` không khớp IP thật của cloudflared, hoặc `TRUST_PROXY` thiếu | Đối chiếu IP thật của container `realestate_cloudflared` với `ipv4_address` trong compose và `set_real_ip_from` (mục 2.1); KHÔNG nới thành cả dải mạng |
+| IP của Cloudflare (ví dụ `104.16.x.x`, `172.64.x.x` đến `172.71.x.x`, `2606:4700:...`) | Header `CF-Connecting-IP` không được dùng | Kiểm `real_ip_header CF-Connecting-IP` trong nginx đang chạy (bước 2) |
+| `127.0.0.1`, IP của VPS hoặc `null` | Request không đi qua tunnel hoặc không có IP trong ngữ cảnh | Kiểm lại bước 3 thực sự đi qua `<domain-admin>` (HTTPS), không phải `localhost` |
+| IP khác IP A nhưng là IP công khai | Thiết bị đổi mạng giữa chừng hoặc IPv4/IPv6 khác nhau | Lặp bước 1 và 3 sát nhau, ghi cả IPv4 lẫn IPv6 nếu có |
+
+**Bước 5. Giới hạn tần suất đăng nhập tính theo IP thật.** Dùng **email không tồn tại** (không khóa tài khoản thật nào); mỗi IP được 5 lần/phút:
+
+```bash
+# Từ máy tính nối Wi-Fi/mạng khác (IP B), gửi 6 lần đăng nhập sai
+for i in 1 2 3 4 5 6; do
+  curl -s -o /dev/null -w "%{http_code} " -X POST https://<domain-admin>/api/v1/auth/login \
+    -H 'content-type: application/json' -d '{"email":"khong-ton-tai@example.invalid","password":"sai-mat-khau-1"}'
+done; echo
+# kỳ vọng: 401 401 401 401 401 429
+```
+
+Ngay sau đó (trong vòng 60 giây) đổi sang mạng của IP A (ví dụ máy tính nối điểm phát sóng 4G của điện thoại, hoặc nhờ người khác ở mạng khác) và gửi **một** lần cùng lệnh: kỳ vọng **401** (không phải 429), vì IP A có bộ đếm riêng. Nếu thiết bị thứ hai cũng nhận 429 thì mọi người đang chung một IP proxy: FR-23 chưa đạt, quay lại bảng ở bước 4. Phân biệt 429 của backend (JSON có `statusCode`) với chặn của Cloudflare (trang HTML hoặc mã 1015/403): nếu là Cloudflare thì đó là luật WAF/Rate limiting riêng của Cloudflare, không phải kết quả của phép thử này. Sau 60 giây bộ đếm tự reset.
+
+**Kết quả mong đợi (đạt FR-23):** bước 2 khớp; bước 4 ra đúng IP A; bước 5 hai IP khác nhau có bộ đếm tách biệt. Lệch thì **ghi nhận làm lỗi mới** (mã PT tiếp theo của Plan 03) kèm dòng sai ở bảng bước 4; không tự sửa `nginx.conf` trên VPS.
+
+### 16.2. FR-35: dự án mẫu bị trùng trên production
+
+**Vì sao cần.** Dự án mẫu (seed) hiện nhận diện bằng `seedKey` bất biến, nhưng bản seed **cũ** (trước khi có `seedKey`) có thể đã để lại dự án mẫu bị đổi tên/mã: lần seed sau không nhận ra bản đổi tên và tạo thêm một bản mẫu mới, nên danh sách có hai dự án giống nhau. Đây là việc kiểm dữ liệu, **không còn việc sửa code**. 8 dự án mẫu (mã/tên): `QTERRA` Q'Terra, `PRIVIA` The Privia, `ECOPARK` Ecopark Grand, `VHOP` Vinhomes Ocean Park, `LUMIERE` Lumiere Riverside, `MASTERI` Masteri Centre Point, `AQUA` Aqua City Waterfront, `VHGP` Vinhomes Grand Park.
+
+**Chuẩn bị.** Tài khoản **ADMIN** (xóa/khôi phục dự án chỉ dành cho ADMIN). Đã có bản sao lưu từ lần deploy (`deploy.sh` backup trước khi chạy); xóa ở đây là **xóa mềm, khôi phục được** nên không cần backup riêng.
+
+**Bước 1. Xem danh sách trên web.** Vào menu **Quản lý khách hàng > Danh sách dự án** (`/crm/projects`), bật **"Hiện cả dự án ngừng hoạt động"**. So với 8 dự án mẫu ở trên và ghi lại các cặp trùng (cùng tên, hoặc tên gần giống và cùng chủ đầu tư). Mỗi thẻ có số **"Khách quan tâm"**.
+
+**Bước 2. (Khuyến nghị) Đối chiếu bằng truy vấn chỉ đọc để không sót.** Chạy trên VPS; dòng `auth` giống 15.9:
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+print("(1) Du an chua xoa (so luong): " + d.projects.countDocuments({ deletedAt: null }));
+print("(2) Ten trung (khong phan biet hoa/thuong, dau), chi du an chua xoa:");
+d.projects.aggregate(
+  [
+    { $match: { deletedAt: null } },
+    { $group: { _id: "$name", n: { $sum: 1 }, codes: { $push: "$code" } } },
+    { $match: { n: { $gt: 1 } } },
+    { $sort: { _id: 1 } },
+  ],
+  { collation: { locale: "vi", strength: 1 } }
+).forEach(r => print("  " + r._id + " x" + r.n + " ma=" + r.codes.join(",")));
+print("(3) Toan bo du an chua xoa (ten | ma | nha phat trien | dang hoat dong | co seedKey):");
+d.projects.find({ deletedAt: null }).sort({ developer: 1, name: 1 }).collation({ locale: "vi" }).forEach(p =>
+  print("  " + p.name + " | " + p.code + " | " + (p.developer || "-") + " | " + p.isActive + " | " + (p.seedKey ? "co" : "KHONG")));
+EOF
+```
+
+Mục (2) rỗng và mục (3) không có hai dòng giống nhau là đạt. Mục (2) chỉ bắt trùng **tên**; trùng do đổi tên phải nhìn mục (3) (cùng chủ đầu tư, tên gần giống).
+
+**Bước 3. Quyết định bản giữ và bản xóa cho từng cặp trùng.**
+- **Giữ** bản đang có khách quan tâm (hoặc bản đã được Quản trị chỉnh tên/mã).
+- **Xóa** bản còn lại, thường là bản mẫu mới sinh ra: `seedKey` = `co`, mã nằm trong 8 mã mẫu, **0 khách**. Xóa mềm vẫn giữ `seedKey` nên lần seed sau **không tạo lại** (seed bỏ qua khi `seedKey` đã tồn tại, kể cả đã xóa mềm).
+- Bấm **"Xoá dự án"** trên thẻ bản cần xóa. Nếu dự án còn khách, hệ thống chặn xóa (409 `PROJECT_IN_USE`) và chỉ đề nghị **"Ngừng hoạt động"** (ẩn khỏi lựa chọn mới, khách cũ giữ liên kết). Hai bản cùng có khách thì **không xóa**: chọn ngừng hoạt động bản kém quan trọng hơn hoặc để nguyên và ghi vào 16.3 (hệ thống chưa có công cụ gộp dự án).
+- **Reversible**: dự án đã xóa nằm ở **"Hiện dự án đã xoá" > "Khôi phục"** (ADMIN).
+
+**Bước 4. Xác nhận.** Tải lại trang; chạy lại truy vấn bước 2 (nếu dùng) và xem danh sách: không còn cặp trùng ngoài các trường hợp đã ghi nhận ở 16.3.
+
+**Kết quả mong đợi (đạt FR-35):** danh sách dự án không còn dự án mẫu trùng, hoặc phần trùng còn lại đã được ghi rõ lý do (cùng có khách) ở 16.3.
+
+### 16.3. Ô kiểm và ghi kết quả (Oniichan điền sau deploy)
+
+Điền trực tiếp vào bảng này (không ghi mật khẩu/token; IP người dùng được ghi dạng rút gọn nếu ngại, ví dụ che octet cuối).
+
+| # | Việc | Đạt | Ngày/Người | Ghi chú (lệch thì ghi mã PT mới) |
+|---|---|---|---|---|
+| 1 | 16.1 bước 2: `trustProxy` bật, `TRUST_PROXY=1`, nginx đúng một `set_real_ip_from` | [ ] | | |
+| 2 | 16.1 bước 4: `ip` trong audit khớp IP thật của thiết bị | [ ] | | |
+| 3 | 16.1 bước 5: hai IP khác nhau có bộ đếm đăng nhập riêng | [ ] | | |
+| 4 | 16.2 bước 1-2: đã xem danh sách dự án và ghi các cặp trùng (nếu có) | [ ] | | |
+| 5 | 16.2 bước 3-4: đã xóa/ngừng bản trùng (hoặc xác nhận không có) và danh sách sạch | [ ] | | |
+
+### 16.4. Đã kiểm chứng / chưa kiểm chứng
+
+Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo tạm (đã xóa), dữ liệu mẫu giả, không đụng môi trường dev/prod.
+
+**Đã làm:**
+- Truy vấn Mongo ở 16.2 bước 2 (gồm `collation` tiếng Việt `strength: 1` cho `$group`) chạy được trên `mongo:7` với dữ liệu giả có sẵn cặp trùng tên (khác chữ hoa/thường, khác hoặc không có `seedKey`) và một bản đã xóa mềm: mục (2) chỉ bắt các bản chưa xóa, mục (3) in đúng cột.
+- Đối chiếu mã nguồn: `req.ip` được ghi vào audit (`request-context.middleware.ts` rồi `crm-audit-log.service.ts`, trường `ip` của `crm_audit_logs`); `GET /api/v1/crm/audit-logs` chỉ ADMIN và trả `ip`, nhận tham số `action`, `limit`; hành động `PHONE_VIEWED` ghi audit; xóa dự án chỉ ADMIN, xóa mềm, chặn 409 khi còn khách; `ensureSeeded` bỏ qua khi `seedKey` đã tồn tại kể cả đã xóa mềm; đăng nhập giới hạn 5 lần/phút/IP ở production (mục 2.1).
+
+**Chưa kiểm chứng (cần VPS/Cloudflare thật, việc của Oniichan):**
+- Toàn bộ 16.1 trên cloudflared và Cloudflare thật: IP thật ghi vào audit, hành vi `CF-Connecting-IP` (kể cả IPv6/Pseudo IPv4), phép thử 429 qua tunnel.
+- Lệnh `docker exec realestate_frontend nginx -T` (16.1 bước 2) và route `GET /api/v1/crm/audit-logs` bằng `curl` + `grep -o` **chưa chạy thật** (chưa dựng stack đầy đủ; dạng JSON trả về chỉ đọc từ mã, `grep -o '"ip":"..."'` không phụ thuộc cấu trúc bọc ngoài). Dòng `auth` Mongo trong container thật đã nêu ở 15.14.
+- 16.2 trên dữ liệu production thật: số lượng và hình dạng cặp trùng thực tế, thao tác "Xoá dự án"/"Ngừng hoạt động"/"Khôi phục" trên giao diện thật (chỉ đọc mã giao diện).
+- Chưa có số liệu nào về việc production có thực sự đang có dự án trùng hay không.
 
 [← Về chỉ mục Hạ tầng](README.md)

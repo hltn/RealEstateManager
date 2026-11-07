@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Bell, CheckCheck, Settings } from 'lucide-react';
 import { useInfiniteNotifications, useNotificationActions, type NotificationItem } from '@crm/api';
 import { CrmUnavailable } from '@crm/components/CrmUnavailable';
 import { useLoadMoreOnVisible } from '@crm/hooks/useLoadMoreOnVisible';
@@ -53,10 +53,16 @@ export const NotificationsScreen = () => {
           <h2 className={PAGE_TITLE_CLASS}>Thông báo</h2>
           <p className={`${PAGE_DESCRIPTION_CLASS} max-w-2xl`}>Nhắc việc, lịch hẹn, phân khách và các cảnh báo gửi cho bạn.</p>
         </div>
-        <button type="button" onClick={() => void markAll()} disabled={isBusy} className={BUTTON_OUTLINE_CLASS}>
-          <CheckCheck size={18} aria-hidden="true" />
-          Đánh dấu đã đọc tất cả
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/notification-settings" className={BUTTON_OUTLINE_CLASS}>
+            <Settings size={18} aria-hidden="true" />
+            Cài đặt thông báo
+          </Link>
+          <button type="button" onClick={() => void markAll()} disabled={isBusy} className={BUTTON_OUTLINE_CLASS}>
+            <CheckCheck size={18} aria-hidden="true" />
+            Đánh dấu đã đọc tất cả
+          </button>
+        </div>
       </header>
 
       <div role="tablist" aria-label="Lọc thông báo" className="flex gap-5 border-b border-gray-200 dark:border-white/[0.05]">

@@ -1,9 +1,9 @@
 /**
  * API quản trị (chỉ Quản trị): người dùng, nhóm, danh mục, dự án, thẻ, cài đặt (05 §2.2, §2.7, §2.8, §2.14).
  */
-import type { AccountRole, AdminUser, CrmSettings, Project, TeamMember } from '@crm/types/crm';
+import type { AccountRole, AdminTag, AdminUser, CrmSettings, Project, TagCategory, TeamMember } from '@crm/types/crm';
 import type { Paginated } from '../types';
-import type { CrmSettingsDto, ProjectDto, TeamMemberDto, UserDto } from './dto';
+import type { CrmSettingsDto, ProjectDto, TagDto, TeamMemberDto, UserDto } from './dto';
 import { crmHttp } from './crmHttp';
 import { toCrmSettings, toProject, toTeamMember, userDtoToUser } from './catalogMappers';
 import { fetchAllPages } from './catalogApi';
@@ -26,6 +26,27 @@ export const updateCatalogItem = (endpoint: CatalogEndpoint, id: string, body: R
 export const deleteCatalogItem = (endpoint: CatalogEndpoint, id: string): Promise<void> => crmHttp.del(`/crm/${endpoint}/${encodeURIComponent(requireServerCatalogId(CATALOG_KINDS[endpoint], id))}`);
 
 export const createTag = (body: { name: string; category: string }): Promise<{ id: string; label: string; category: string }> => crmHttp.post('/crm/tags', body);
+
+// --- Thẻ (Quản trị, FR-42) ----------------------------------------------------------------------------------------------
+
+const toAdminTag = (dto: TagDto): AdminTag => ({ id: dto.id, name: dto.label, category: dto.category, usageCount: dto.usageCount, color: dto.color ?? null });
+
+/** `GET /crm/tags` (gom mọi trang, theo tên): có `usageCount` và `color` mà danh mục chung (`fetchTags`) không cần. */
+export const fetchAdminTags = async (signal?: AbortSignal): Promise<AdminTag[]> => (await fetchAllPages<TagDto>('/crm/tags', { sort: 'name' }, signal)).map(toAdminTag);
+
+/** Sửa thẻ: chỉ gửi field đổi. `color: null` = bỏ màu. Trùng tên trong cùng nhóm -> 409 `CATALOG_DUPLICATED`. */
+export interface TagPatchBody {
+  name?: string;
+  category?: TagCategory;
+  color?: string | null;
+}
+
+/** `PATCH /crm/tags/:id` (Quản trị). */
+export const patchTag = async (id: string, body: TagPatchBody): Promise<AdminTag> => toAdminTag(await crmHttp.patch<TagDto>(`/crm/tags/${encodeURIComponent(id)}`, body));
+/** `PATCH /crm/tags/:id` với `mergeIntoId` (không đi kèm field khác; chỉ gộp thẻ cùng nhóm). Trả thẻ đích. */
+export const mergeTag = async (id: string, mergeIntoId: string): Promise<AdminTag> => toAdminTag(await crmHttp.patch<TagDto>(`/crm/tags/${encodeURIComponent(id)}`, { mergeIntoId }));
+/** `DELETE /crm/tags/:id` (xóa mềm, gỡ thẻ khỏi mọi khách; 204). */
+export const deleteTag = (id: string): Promise<void> => crmHttp.del(`/crm/tags/${encodeURIComponent(id)}`);
 
 // --- Dự án --------------------------------------------------------------------------------------------------------------
 

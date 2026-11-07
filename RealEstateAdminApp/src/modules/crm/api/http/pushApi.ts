@@ -33,3 +33,30 @@ export const registerPushSubscription = (body: PushSubscriptionBody): Promise<Pu
 
 /** `DELETE /push-subscriptions/:id` (204, idempotent). */
 export const deletePushSubscription = (id: string): Promise<void> => crmHttp.del(`/push-subscriptions/${encodeURIComponent(id)}`);
+
+/** Lý do một thiết bị bị thu hồi (Architecture 4.1). `LIMIT_EXCEEDED` = bị gỡ để nhường chỗ thiết bị thứ 4. */
+export type PushRevokedReason = 'LIMIT_EXCEEDED' | 'GONE' | 'USER' | 'LOGOUT' | 'ACCOUNT_DISABLED';
+
+/** Thiết bị đang nhận thông báo của chính người dùng (`GET /push-subscriptions` -> `active`). */
+export interface PushDevice {
+  id: string;
+  deviceLabel: string;
+  platform: string;
+  lastSeenAt: string;
+  createdAt: string;
+}
+
+/** Thiết bị đã bị gỡ trong 7 ngày gần nhất (không có id: chỉ để báo cho người dùng). */
+export interface PushRevokedDevice {
+  deviceLabel: string;
+  reason: PushRevokedReason;
+  revokedAt: string;
+}
+
+export interface PushSubscriptionList {
+  active: PushDevice[];
+  recentlyRevoked: PushRevokedDevice[];
+}
+
+/** `GET /push-subscriptions` (Self): danh sách thiết bị của chính mình, nguồn của khối "Thiết bị của bạn". */
+export const fetchPushSubscriptions = (signal?: AbortSignal): Promise<PushSubscriptionList> => crmHttp.get<PushSubscriptionList>('/push-subscriptions', { signal });

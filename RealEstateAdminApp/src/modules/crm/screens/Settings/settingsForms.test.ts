@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiError } from '@crm/api';
-import type { AdminUser, ContactResult, CrmSettings, CustomerStatusItem, UserRole } from '@crm/types/crm';
+import type { AdminTag, AdminUser, ContactResult, CrmSettings, CustomerStatusItem, UserRole } from '@crm/types/crm';
 import {
   CATALOG_ENDPOINTS,
   SETTINGS_TABS,
+  TAG_COLOR_OPTIONS,
+  buildTagPatch,
+  listMergeTargets,
+  toTagDraft,
+  validateTagDraft,
   createEmptyDraft,
   parseFollowUpDays,
   withAreaParent,
@@ -292,5 +297,35 @@ describe('FR-39: danh mục Kết quả liên hệ', () => {
     const draft = { ...createEmptyDraft([]), name: 'Zalo', suggestedFollowUpDays: '999', suggestionText: 'x'.repeat(500) };
     expect(validateDraft('leadSources', draft)).toBeNull();
     expect(toCatalogBody('leadSources', draft)).toEqual({ code: 'ZALO', label: 'Zalo', order: 1 });
+  });
+});
+
+describe('thẻ (FR-42)', () => {
+  const tag = (patchValue: Partial<AdminTag> = {}): AdminTag => ({ id: 't1', name: 'Golf', category: 'INTEREST', usageCount: 3, color: null, ...patchValue });
+
+  it('có tab "Thẻ"; màu chọn được gồm "Không màu" (giá trị rỗng) và các tông thiết kế', () => {
+    expect(SETTINGS_TABS).toContainEqual({ id: 'tags', label: 'Thẻ' });
+    expect(TAG_COLOR_OPTIONS[0]).toEqual({ value: '', label: 'Không màu' });
+    expect(TAG_COLOR_OPTIONS.map((option) => option.value)).toContain('brand');
+  });
+
+  it('validateTagDraft: tên trống/quá dài báo lỗi, hợp lệ trả null', () => {
+    expect(validateTagDraft({ ...toTagDraft(tag()), name: '  ' })).toBe('Vui lòng nhập tên thẻ.');
+    expect(validateTagDraft({ ...toTagDraft(tag()), name: 'x'.repeat(51) })).toBe('Tên thẻ tối đa 50 ký tự.');
+    expect(validateTagDraft({ ...toTagDraft(tag()), name: 'x'.repeat(50) })).toBeNull();
+  });
+
+  it('buildTagPatch: không đổi gì thì rỗng; chỉ gồm field đổi; trim tên; màu rỗng -> null, không màu -> có màu', () => {
+    expect(buildTagPatch(tag(), toTagDraft(tag()))).toEqual({});
+    expect(buildTagPatch(tag(), { ...toTagDraft(tag()), name: ' Golf ' })).toEqual({});
+    expect(buildTagPatch(tag(), { ...toTagDraft(tag()), name: 'Gôn', category: 'OTHER' })).toEqual({ name: 'Gôn', category: 'OTHER' });
+    expect(buildTagPatch(tag({ color: 'brand' }), { ...toTagDraft(tag({ color: 'brand' })), color: '' })).toEqual({ color: null });
+    expect(buildTagPatch(tag(), { ...toTagDraft(tag()), color: 'error' })).toEqual({ color: 'error' });
+  });
+
+  it('listMergeTargets: cùng nhóm, loại chính nó', () => {
+    const source = tag({ id: 'a' });
+    const tags = [source, tag({ id: 'b' }), tag({ id: 'c', category: 'OCCUPATION' })];
+    expect(listMergeTargets(tags, source).map((item) => item.id)).toEqual(['b']);
   });
 });

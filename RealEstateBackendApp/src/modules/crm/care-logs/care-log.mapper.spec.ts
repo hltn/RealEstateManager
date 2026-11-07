@@ -117,3 +117,79 @@ describe('toCareLogResponse: contactResult dạng CatalogRefDto (FR-40)', () => 
     expect(response.contactResult).toBeNull();
   });
 });
+
+describe('toCareLogResponse: URL ảnh và thumbnail (FR-26)', () => {
+  const attachmentId = new Types.ObjectId();
+  const attachment = (extra: Record<string, unknown> = {}) => ({
+    attachmentId,
+    fileKey: 'customers/c1/care-logs/goc.jpg',
+    thumbKey: null,
+    mimeType: 'image/jpeg',
+    size: 1234,
+    ...extra,
+  });
+  const run = (
+    attachments: unknown[],
+    urls: Map<string, { url: string; thumbUrl: string | null }>,
+  ) =>
+    toCareLogResponse(logWith({ attachments }), actor, map(new Map()), urls)
+      .attachments;
+
+  it('FR-26: ảnh có thumbKey thì thumbUrl là URL ký của thumbnail, url vẫn là ảnh gốc', () => {
+    const [item] = run(
+      [attachment({ thumbKey: 'customers/c1/care-logs/nho.webp' })],
+      new Map([
+        [
+          String(attachmentId),
+          { url: 'https://s3/goc?sig=1', thumbUrl: 'https://s3/nho?sig=2' },
+        ],
+      ]),
+    );
+
+    expect(item).toEqual({
+      id: String(attachmentId),
+      thumbUrl: 'https://s3/nho?sig=2',
+      url: 'https://s3/goc?sig=1',
+      mimeType: 'image/jpeg',
+      size: 1234,
+    });
+  });
+
+  it('FR-26: ảnh cũ chưa có thumbKey (thumbUrl null) thì thumbUrl rơi về url', () => {
+    const [item] = run(
+      [attachment()],
+      new Map([
+        [String(attachmentId), { url: 'https://s3/goc?sig=1', thumbUrl: null }],
+      ]),
+    );
+
+    expect(item.thumbUrl).toBe('https://s3/goc?sig=1');
+    expect(item.url).toBe('https://s3/goc?sig=1');
+  });
+
+  it('FR-26: chưa ký được URL nào cho ảnh (không có trong map) thì cả url và thumbUrl là chuỗi rỗng, không ném lỗi', () => {
+    const [item] = run([attachment()], new Map());
+
+    expect(item.url).toBe('');
+    expect(item.thumbUrl).toBe('');
+  });
+
+  it('FR-26: nhật ký nhiều ảnh, mỗi ảnh dùng đúng URL của mình (ảnh có thumbnail lẫn ảnh chưa có)', () => {
+    const second = new Types.ObjectId();
+    const items = run(
+      [
+        attachment(),
+        attachment({ attachmentId: second, thumbKey: 'x/nho2.webp' }),
+      ],
+      new Map([
+        [String(attachmentId), { url: 'u1', thumbUrl: null }],
+        [String(second), { url: 'u2', thumbUrl: 't2' }],
+      ]),
+    );
+
+    expect(items.map((item) => [item.url, item.thumbUrl])).toEqual([
+      ['u1', 'u1'],
+      ['u2', 't2'],
+    ]);
+  });
+});

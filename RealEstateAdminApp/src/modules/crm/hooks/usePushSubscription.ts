@@ -46,6 +46,7 @@ export interface UsePushSubscriptionResult {
   canEnable: boolean;
   /** Được hiện nút "Tắt": thiết bị đang `subscribed` (cho tắt kể cả khi cờ server đã tắt). */
   canDisable: boolean;
+  /** Đang xác định cấu hình máy chủ hoặc trạng thái thiết bị (giao diện hiện khung chờ, tránh nháy "chưa bật"). */
   isLoading: boolean;
   isBusy: boolean;
   error: string | null;
@@ -143,7 +144,7 @@ export const usePushSubscription = (): UsePushSubscriptionResult => {
     isAvailable,
     canEnable: isAvailable && state === 'ready',
     canDisable: state === 'subscribed',
-    isLoading: deviceQuery.isLoading,
+    isLoading: configQuery.isLoading || deviceQuery.isLoading,
     isBusy,
     error,
     enable,
