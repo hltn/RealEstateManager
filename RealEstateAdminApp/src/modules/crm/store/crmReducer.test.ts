@@ -144,6 +144,39 @@ describe('crmReducer — UI state', () => {
     expect(crmReducer(state, { type: 'filters/dropTags', tagIds: ['t-golf'] })).toBe(state);
   });
 
+  it('filters/replaceTag (gộp A vào B): thay A bằng B tại chỗ, giữ thẻ khác và bộ lọc khác', () => {
+    const filtered = crmReducer(createTestState(), { type: 'filters/set', changes: { tagIds: ['t-bs', 't-golf', 't-gon'], projectIds: ['QTERRA'] } });
+    const next = crmReducer(filtered, { type: 'filters/replaceTag', fromTagId: 't-golf', toTagId: 't-new' });
+    expect(next.filters.tagIds).toEqual(['t-bs', 't-new', 't-gon']);
+    expect(next.filters.projectIds).toEqual(['QTERRA']);
+  });
+
+  it('filters/replaceTag khi B đã trong bộ lọc: không trùng id', () => {
+    const filtered = crmReducer(createTestState(), { type: 'filters/set', changes: { tagIds: ['t-golf', 't-gon'] } });
+    expect(crmReducer(filtered, { type: 'filters/replaceTag', fromTagId: 't-golf', toTagId: 't-gon' }).filters.tagIds).toEqual(['t-gon']);
+    const reversed = crmReducer(createTestState(), { type: 'filters/set', changes: { tagIds: ['t-gon', 't-golf'] } });
+    expect(crmReducer(reversed, { type: 'filters/replaceTag', fromTagId: 't-golf', toTagId: 't-gon' }).filters.tagIds).toEqual(['t-gon']);
+  });
+
+  it('filters/replaceTag khi A không có trong bộ lọc: trả nguyên state và KHÔNG thêm B', () => {
+    const filtered = crmReducer(createTestState(), { type: 'filters/set', changes: { tagIds: ['t-bs'] } });
+    expect(crmReducer(filtered, { type: 'filters/replaceTag', fromTagId: 't-golf', toTagId: 't-gon' })).toBe(filtered);
+  });
+
+  it('filters/pruneStaleTags gỡ id thẻ không còn tồn tại, giữ id còn tồn tại', () => {
+    const filtered = crmReducer(createTestState(), { type: 'filters/set', changes: { tagIds: ['t-golf', 't-gone', 't-bs'], q: 'an' } });
+    const next = crmReducer(filtered, { type: 'filters/pruneStaleTags', existingTagIds: ['t-golf', 't-bs', 't-other'] });
+    expect(next.filters.tagIds).toEqual(['t-golf', 't-bs']);
+    expect(next.filters.q).toBe('an');
+  });
+
+  it('filters/pruneStaleTags không có id mồ côi (hoặc bộ lọc rỗng): trả nguyên state', () => {
+    const state = createTestState();
+    expect(crmReducer(state, { type: 'filters/pruneStaleTags', existingTagIds: [] })).toBe(state);
+    const filtered = crmReducer(state, { type: 'filters/set', changes: { tagIds: ['t-golf'] } });
+    expect(crmReducer(filtered, { type: 'filters/pruneStaleTags', existingTagIds: ['t-golf'] })).toBe(filtered);
+  });
+
   it('session/setUser bỏ qua người dùng không tồn tại', () => {
     const state = createTestState();
     expect(crmReducer(state, { type: 'session/setUser', userId: 'ghost' })).toBe(state);

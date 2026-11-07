@@ -44,7 +44,7 @@ export const TagsSection = () => {
   // Không phải Quản trị thì không gọi API (backend cũng trả 403): chỉ hiện thông báo.
   const { data: tags, isLoading, error: loadError, refetch } = useAdminTags(isAdmin);
   const api = useCrmApi();
-  const { showToast, dropTagsFromFilters } = useCrmActions();
+  const { showToast, dropTagsFromFilters, replaceTagInFilters } = useCrmActions();
   const [keyword, setKeyword] = useState('');
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [merging, setMerging] = useState<MergingState | null>(null);
@@ -101,15 +101,17 @@ export const TagsSection = () => {
   const confirmMerge = async () => {
     if (!merging || isSaving) return;
     setIsSaving(true);
+    // Lạc quan: thay thẻ nguồn bằng thẻ đích trong bộ lọc TRƯỚC khi gọi API (khách của A chuyển sang B nên danh sách không nở ra). Làm trước
+    // vì API làm mới danh mục ngay khi xong; nếu thay sau thì bước dọn id thẻ không còn tồn tại có thể gỡ A trước và B không được thêm.
+    const undoReplace = replaceTagInFilters(merging.source.id, merging.targetId);
     const result = await api.mergeTag(merging.source.id, merging.targetId);
     setIsSaving(false);
     setIsConfirmingMerge(false);
     if (!result.ok) {
+      undoReplace();
       setMerging({ ...merging, error: result.error.message });
       return;
     }
-    // Thẻ nguồn đã biến mất: gỡ khỏi bộ lọc thẻ đang lưu của danh sách khách.
-    dropTagsFromFilters([merging.source.id]);
     showToast({ title: `Đã gộp thẻ "${merging.source.name}" vào "${result.data.name}"` });
     setMerging(null);
   };

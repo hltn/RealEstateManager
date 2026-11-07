@@ -146,6 +146,10 @@ export const useCatalogs = () => {
     [statuses.data, leadSources.data, areas.data, projects.data, tags.data, contactResults.data],
   );
 
+  const tagsData = tags.data;
+  const hasTagsError = tags.isError;
+  const existingTagIds = useMemo<string[] | null>(() => (tagsData && !hasTagsError ? tagsData.map((tag) => tag.id) : null), [tagsData, hasTagsError]);
+
   /** Người phân chăm sóc được + bản thân (để tên mình luôn tra được). */
   const users = useMemo<CrmUser[]>(() => {
     const base = assignable.data ?? EMPTY_USERS;
@@ -162,6 +166,11 @@ export const useCatalogs = () => {
     settings: (settings.data ?? null) as CrmSettings | null,
     personaFields: personaFields.data ?? EMPTY_FIELDS,
     isLoading: required.some((query) => query.isLoading),
+    /**
+     * Id thẻ THẬT từ server, độc lập với việc 5 danh mục khác đã tải đủ chưa (`catalogs.tags` là `[]` khi còn thiếu danh mục khác).
+     * `null` = chưa có dữ liệu thật hoặc lần tải thẻ đang lỗi -> KHÔNG được dọn id thẻ mồ côi khỏi bộ lọc.
+     */
+    existingTagIds,
     isError: Boolean(firstError),
     error: firstError ? toApiError(firstError.error) : null,
     refetch,

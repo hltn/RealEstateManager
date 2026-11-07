@@ -105,3 +105,16 @@ export const pruneOrphanPersonaFilters = (selected: readonly string[], visibleFi
   const visibleKeys = new Set(visibleFields.map((field) => field.key));
   return selected.filter((entry) => visibleKeys.has(personaFilterKeyOf(entry)));
 };
+
+/** Gộp thẻ A vào B: thay A bằng B trong bộ lọc thẻ (giữ vị trí của A), khử trùng nếu B đã được chọn. Không có A thì trả nguyên mảng. */
+export const replaceTagInFilter = (selected: readonly string[], fromTagId: string, toTagId: string): readonly string[] => {
+  if (!selected.includes(fromTagId)) return selected;
+  const replaced = selected.map((id) => (id === fromTagId ? toTagId : id));
+  return replaced.filter((id, index) => replaced.indexOf(id) === index);
+};
+
+/** Gỡ id thẻ không còn tồn tại (bị admin khác xóa/gộp) khỏi bộ lọc. Không có id mồ côi thì trả nguyên mảng (giữ tham chiếu). */
+export const pruneStaleTagFilters = (selected: readonly string[], existingTagIds: readonly string[]): readonly string[] => {
+  const existing = new Set(existingTagIds);
+  return selected.every((id) => existing.has(id)) ? selected : selected.filter((id) => existing.has(id));
+};

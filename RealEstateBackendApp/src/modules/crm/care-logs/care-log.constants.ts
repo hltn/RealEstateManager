@@ -14,7 +14,10 @@ export enum CareLogSource {
   SYSTEM = 'SYSTEM',
 }
 
-/** `crm_attachments.status`. M3 không có job xử lý ảnh nên ảnh upload xong vào thẳng `READY`. */
+/**
+ * `crm_attachments.status`. Ảnh upload xong vào thẳng `READY` (không chờ xử lý); từ v1.0.4 job `attachment.thumbnail`
+ * chạy bất đồng bộ sau đó để sinh thumbnail và chỉ cập nhật `thumbStatus`, không đổi `status`.
+ */
 export enum AttachmentStatus {
   PENDING = 'PENDING',
   PROCESSING = 'PROCESSING',

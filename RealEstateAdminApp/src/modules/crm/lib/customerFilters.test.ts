@@ -8,6 +8,8 @@ import {
   PERSONA_FILTER_MAX_VALUES,
   PROGRESS_FILTER_OPTIONS,
   pruneOrphanPersonaFilters,
+  pruneStaleTagFilters,
+  replaceTagInFilter,
   togglePersonaFilter,
   toggleValue,
 } from './customerFilters';
@@ -141,5 +143,18 @@ describe('personaFilters: chọn, đếm, gỡ (FR-49)', () => {
   it('pruneOrphanPersonaFilters gỡ giá trị của trường không còn hiện, giữ trường còn hiện', () => {
     const visible = buildPersonaFilterFields([propertyType], []);
     expect(pruneOrphanPersonaFilters(['property_type:APT', 'hobby:GOLF'], visible)).toEqual(['property_type:APT']);
+  });
+
+  it('replaceTagInFilter thay A bằng B, khử trùng, và giữ nguyên tham chiếu khi không có A', () => {
+    expect(replaceTagInFilter(['a', 'b', 'c'], 'a', 'x')).toEqual(['x', 'b', 'c']);
+    expect(replaceTagInFilter(['a', 'b'], 'a', 'b')).toEqual(['b']);
+    const untouched = ['b'];
+    expect(replaceTagInFilter(untouched, 'a', 'x')).toBe(untouched);
+  });
+
+  it('pruneStaleTagFilters gỡ id không tồn tại, giữ nguyên tham chiếu khi không có id mồ côi', () => {
+    expect(pruneStaleTagFilters(['a', 'gone', 'b'], ['a', 'b'])).toEqual(['a', 'b']);
+    const clean = ['a'];
+    expect(pruneStaleTagFilters(clean, ['a', 'b'])).toBe(clean);
   });
 });

@@ -1,6 +1,6 @@
 /**
- * INTEGRATION FR-21 (T-50, Q8) — 7 GET danh mục CRM (tình trạng, nguồn, kết quả liên hệ, khu vực, dự án, thẻ, trường
- * chân dung) đọc status/role từ DB qua HTTP thật (Fastify + guard toàn cục + MongoDB Replica Set in-memory, module CRM thật):
+ * INTEGRATION FR-21 (T-50, Q8) — 8 GET danh mục CRM (tình trạng, nguồn, kết quả liên hệ, khu vực, dự án x2 gồm danh sách và
+ * chi tiết, thẻ, trường chân dung) đọc status/role từ DB qua HTTP thật (Fastify + guard toàn cục + MongoDB Replica Set in-memory, module CRM thật):
  * - STAFF/MANAGER/ADMIN đang hoạt động: 200;
  * - token còn hạn nhưng tài khoản bị khóa hoặc xóa mềm: 401 (không đợi JWT hết hạn);
  * - token còn ghi STAFF nhưng DB đã hạ xuống EDITOR (mất vai trò CRM): 403;
@@ -36,6 +36,7 @@ import { TeamsModule } from '../teams/teams.module';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
 import { CrmModule } from './crm.module';
+import { Project, ProjectDocument } from './projects/schemas/project.schema';
 import { CrmSeedService } from './seed/crm-seed.service';
 
 jest.setTimeout(240_000);
@@ -43,13 +44,17 @@ jest.setTimeout(240_000);
 const JWT_SECRET = 'integration-secret';
 const RUN_ID = randomUUID().slice(0, 8);
 
-/** 7 GET danh mục CRM (đều là route đọc, không tác dụng phụ). */
+/** Mã giữ chỗ trong route chi tiết, được thay bằng id dự án fixture thật khi gọi (xem `resolveRoute`). */
+const PROJECT_ID_PLACEHOLDER = ':id';
+
+/** 8 GET danh mục CRM (đều là route đọc, không tác dụng phụ). */
 const CATALOG_ROUTES = [
   '/crm/customer-statuses',
   '/crm/lead-sources',
   '/crm/contact-results',
   '/crm/areas',
   '/crm/projects',
+  `/crm/projects/${PROJECT_ID_PLACEHOLDER}`,
   '/crm/tags',
   '/crm/persona-fields',
 ];
@@ -59,6 +64,7 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
   let app: NestFastifyApplication;
   let connection: Connection;
   let userModel: Model<UserDocument>;
+  let projectId = '';
   let jwt: JwtService;
   let seq = 0;
 
@@ -81,10 +87,14 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
     return { id: String(user._id), token };
   };
 
+  /** Thay `:id` bằng id dự án fixture để route chi tiết trả 200 thật cho tài khoản hợp lệ. */
+  const resolveRoute = (route: string) =>
+    route.replace(PROJECT_ID_PLACEHOLDER, projectId);
+
   const request = (url: string, token?: string) =>
     app.inject({
       method: 'GET',
-      url: `/api/v1${url}`,
+      url: `/api/v1${resolveRoute(url)}`,
       headers: token ? { authorization: `Bearer ${token}` } : {},
     });
 
@@ -103,7 +113,7 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
       statusCode,
       message: expect.any(String) as unknown,
       timestamp: expect.any(String) as unknown,
-      path: `/api/v1${path}`,
+      path: `/api/v1${resolveRoute(path)}`,
       errorCode: expect.any(String) as unknown,
     });
     expect((body.message as string).length).toBeGreaterThan(0);
@@ -155,6 +165,16 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
       connection.modelNames().map((name) => connection.model(name).init()),
     );
     await app.get(CrmSeedService).seedAll();
+
+    // Fixture dự án riêng cho `GET /crm/projects/:id` (không phụ thuộc dữ liệu seed).
+    const project = await app
+      .get<Model<ProjectDocument>>(getModelToken(Project.name))
+      .create({
+        name: `FR21 Project ${RUN_ID}`,
+        code: `FR21${RUN_ID}`,
+        codeNormalized: `FR21${RUN_ID}`.toUpperCase(),
+      });
+    projectId = String(project._id);
   });
 
   afterAll(async () => {
@@ -221,7 +241,7 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
         statusCode: 403,
         message: expect.any(String) as unknown,
         timestamp: expect.any(String) as unknown,
-        path: `/api/v1${route}`,
+        path: `/api/v1${resolveRoute(route)}`,
       });
       expect(JSON.stringify(body)).not.toContain('0901234567');
       expectStandardErrorBody(await request(route, user.token), 403, route);

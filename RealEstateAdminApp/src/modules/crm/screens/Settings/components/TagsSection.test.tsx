@@ -31,7 +31,9 @@ vi.mock('@crm/api/http/crmHttp', async (importOriginal) => ({
 
 const showToast = vi.fn();
 const dropTagsFromFilters = vi.fn();
-vi.mock('@crm/store', () => ({ useCrmActions: () => ({ showToast, dropTagsFromFilters }) }));
+const undoReplace = vi.fn();
+const replaceTagInFilters = vi.fn();
+vi.mock('@crm/store', () => ({ useCrmActions: () => ({ showToast, dropTagsFromFilters, replaceTagInFilters }) }));
 
 import { CrmApiException } from '@crm/api/http/crmErrors';
 import { TagsSection } from './TagsSection';
@@ -59,6 +61,8 @@ beforeEach(() => {
   });
   showToast.mockReset();
   dropTagsFromFilters.mockReset();
+  undoReplace.mockReset();
+  replaceTagInFilters.mockReset().mockReturnValue(undoReplace);
   signIn('ADMIN');
 });
 
@@ -198,8 +202,23 @@ describe('TagsSection: gộp thẻ', () => {
     const target = screen.getByText('Gôn').closest('li') as HTMLElement;
     expect(within(target).getByText('6 khách đang gắn')).toBeInTheDocument();
     expect(showToast).toHaveBeenCalledWith({ title: 'Đã gộp thẻ "Golf" vào "Gôn"' });
-    // Thẻ nguồn đã biến mất: phải được gỡ khỏi bộ lọc thẻ đang lưu của danh sách khách.
-    expect(dropTagsFromFilters).toHaveBeenCalledExactlyOnceWith(['t-golf']);
+    // Thẻ nguồn đã biến mất: bộ lọc thẻ đang lưu phải thay A bằng B (không gỡ, không hoàn tác).
+    expect(replaceTagInFilters).toHaveBeenCalledExactlyOnceWith('t-golf', 't-gon');
+    expect(dropTagsFromFilters).not.toHaveBeenCalled();
+    expect(undoReplace).not.toHaveBeenCalled();
+  });
+
+  it('thay thẻ trong bộ lọc chạy TRƯỚC khi gọi API gộp (API làm mới danh mục ngay khi xong, thay sau sẽ bị dọn thẻ mồ côi gỡ mất A)', async () => {
+    patch.mockImplementation(async (_url: string, body: { mergeIntoId: string }) => serverTags.find((tag) => tag.id === body.mergeIntoId));
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Gộp thẻ Golf' }));
+    fireEvent.change(screen.getByLabelText(/Gộp vào thẻ/), { target: { value: 't-gon' } });
+    fireEvent.click(within(screen.getByRole('form', { name: 'Gộp thẻ' })).getByRole('button', { name: 'Gộp thẻ' }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Gộp thẻ' }));
+
+    await waitFor(() => expect(patch).toHaveBeenCalledOnce());
+    expect(replaceTagInFilters).toHaveBeenCalledOnce();
+    expect(replaceTagInFilters.mock.invocationCallOrder[0]).toBeLessThan(patch.mock.invocationCallOrder[0]);
   });
 
   it('máy chủ từ chối gộp: giữ thẻ, hiện lỗi trong form gộp', async () => {
@@ -211,6 +230,8 @@ describe('TagsSection: gộp thẻ', () => {
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Gộp thẻ' }));
     expect(await screen.findByText('Chỉ gộp được các thẻ cùng nhóm')).toBeInTheDocument();
     expect(screen.getByText('Golf')).toBeInTheDocument();
+    // Gộp lỗi: bộ lọc đã thay lạc quan phải được hoàn tác.
+    expect(undoReplace).toHaveBeenCalledOnce();
     expect(dropTagsFromFilters).not.toHaveBeenCalled();
   });
 });

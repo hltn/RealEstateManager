@@ -766,7 +766,7 @@ sequenceDiagram
   API-->>FE: 201 { data: { id, status: READY } }
   Q->>W: attachment.thumbnail
   W->>ST: tải ảnh gốc, tạo thumbnail WebP (cạnh dài ≤ 320px, không metadata), upload khóa UUID mới
-  W->>DB: transaction: crm_attachments (thumbKey, thumbStatus=READY, width, height) + care_logs.attachments[] (bản chụp)
+  W->>DB: transaction: crm_attachments (thumbKey, thumbStatus=READY, width, height) + care_logs.attachments[] (bản chụp, chỉ thumbKey, width, height)
   U->>FE: Bấm Lưu ghi chú
   FE->>API: POST /crm/customers/:id/care-logs { content, attachmentIds[] } (X-Idempotency-Key)
   API->>DB: transaction: insert care_logs, crm_attachments → ATTACHED, audit

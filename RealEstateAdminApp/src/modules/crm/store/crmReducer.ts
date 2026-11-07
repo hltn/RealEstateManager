@@ -15,6 +15,7 @@ import {
   getPrimaryUserId,
   isCareTeamValid,
 } from '@crm/lib/customerRules';
+import { pruneStaleTagFilters, replaceTagInFilter } from '@crm/lib/customerFilters';
 import { normalizePhone } from '@crm/lib/phone';
 import type { ActiveModal, CustomerFilters } from '@crm/types/app';
 import type {
@@ -108,6 +109,8 @@ export type CrmAction =
   | { type: 'filters/set'; changes: Partial<CustomerFilters> }
   | { type: 'filters/reset' }
   | { type: 'filters/dropTags'; tagIds: string[] }
+  | { type: 'filters/replaceTag'; fromTagId: string; toTagId: string }
+  | { type: 'filters/pruneStaleTags'; existingTagIds: string[] }
   | { type: 'modal/open'; modal: ActiveModal }
   | { type: 'modal/close' };
 
@@ -460,6 +463,18 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
     case 'filters/dropTags': {
       if (!state.filters.tagIds.some((id) => action.tagIds.includes(id))) return state;
       return { ...state, filters: { ...state.filters, tagIds: state.filters.tagIds.filter((id) => !action.tagIds.includes(id)) } };
+    }
+
+    // Gộp thẻ A vào B: thay A bằng B trong bộ lọc (khử trùng nếu B đã chọn) để danh sách khách không tự nở ra khi A biến mất.
+    case 'filters/replaceTag': {
+      const tagIds = replaceTagInFilter(state.filters.tagIds, action.fromTagId, action.toTagId);
+      return tagIds === state.filters.tagIds ? state : { ...state, filters: { ...state.filters, tagIds: [...tagIds] } };
+    }
+
+    // Danh sách thẻ đã tải xong: gỡ id thẻ không còn tồn tại (xóa/gộp bởi admin khác). Bên gọi chỉ dispatch khi danh sách ĐÃ tải.
+    case 'filters/pruneStaleTags': {
+      const tagIds = pruneStaleTagFilters(state.filters.tagIds, action.existingTagIds);
+      return tagIds === state.filters.tagIds ? state : { ...state, filters: { ...state.filters, tagIds: [...tagIds] } };
     }
 
     case 'modal/open':
