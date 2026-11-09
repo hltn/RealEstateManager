@@ -187,7 +187,7 @@ const isPhoneTaken = (customers: readonly Customer[], phone: string, excludeCust
   );
 };
 
-/** Lịch hẹn sắp tới gần nhất (SCHEDULED, chưa qua) của khách — cột "HẸN" (04 §3.2 `nextAppointmentAt`). */
+/** Lịch hẹn sắp tới gần nhất (SCHEDULED, chưa qua) của khách — `nextAppointmentAt` (04 §3.2; hiện ở thẻ khách trên điện thoại). */
 const getNextAppointmentAt = (appointments: readonly Appointment[], customerId: string, now: string): string | null =>
   appointments
     .filter((appointment) => appointment.customerId === customerId && appointment.status === 'SCHEDULED' && appointment.startAt >= now)

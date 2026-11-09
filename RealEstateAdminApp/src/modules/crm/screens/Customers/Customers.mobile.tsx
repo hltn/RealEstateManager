@@ -2,6 +2,8 @@
 // Tab danh sách + ô tìm (không dấu) + sắp xếp + Bộ lọc nâng cao (bottom sheet), thẻ khách, phân trang Admin.
 import { ArrowUpDown, CircleX, Plus, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import { Pagination } from '../../../../components/common/Pagination';
+import { usePersonaFieldMap } from '@crm/api';
+import { PURCHASE_PURPOSES_FIELD_KEY } from '@crm/data/personaFields';
 import { countActiveAdvancedFilters, hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import {
   BUTTON_OUTLINE_BASE_CLASS,
@@ -26,6 +28,7 @@ export const CustomersMobile = () => {
   const screen = useCustomerListScreen(MOBILE_PAGE_SIZE);
   const { list, counts, filters, sort, setSort, updateFilters, setPage, isLoading, error, refetch } = screen;
   const { navigate, openAdvancedFilter, resetFilters } = useCrmActions();
+  const purchasePurposeField = usePersonaFieldMap().get(PURCHASE_PURPOSES_FIELD_KEY);
   const hasActiveFilters = hasActiveCustomerFilters(filters);
   const advancedCount = countActiveAdvancedFilters(filters);
   const sortIndex = CUSTOMER_SORT_OPTIONS.findIndex((option) => option.value === sort);
@@ -100,7 +103,7 @@ export const CustomersMobile = () => {
 
       <div className="flex flex-col gap-3">
         {list.data.map((customer) => (
-          <CustomerCard key={customer.id} customer={customer} />
+          <CustomerCard key={customer.id} customer={customer} purchasePurposeField={purchasePurposeField} />
         ))}
         {isLoading &&
           Array.from({ length: 4 }).map((_, index) => <div key={index} aria-hidden="true" className="h-28 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />)}

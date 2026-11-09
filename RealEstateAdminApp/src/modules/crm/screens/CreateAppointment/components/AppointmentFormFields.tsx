@@ -218,7 +218,7 @@ export const SyncNotice = ({ assigneeName }: { assigneeName: string }) => (
     <Info size={20} aria-hidden="true" className="mt-0.5 shrink-0" />
     <p className="text-theme-sm leading-relaxed text-gray-700 dark:text-gray-300">
       Lịch hẹn sau khi tạo sẽ hiện trong mục <strong className="font-semibold">“Việc hôm nay”</strong> của {assigneeName || 'người thực hiện'} vào đúng ngày hẹn
-      và cập nhật cột "Hẹn" của khách.
+      và cập nhật lịch hẹn kế tiếp của khách.
     </p>
   </div>
 );

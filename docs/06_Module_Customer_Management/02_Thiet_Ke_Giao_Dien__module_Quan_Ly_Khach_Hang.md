@@ -1,6 +1,6 @@
 # Thiết kế giao diện: Module Quản lý khách hàng (tích hợp vào app STND hiện có)
 
-> **Phiên bản tài liệu:** v1.0.1
+> **Phiên bản tài liệu:** v1.0.4
 
 > Tài liệu mô tả cách thiết kế giao diện để module **hòa vào app hiện có**, dựa trên ảnh chụp trang "Quản lý Đăng tin WordPress". Toàn bộ phần quản lý khách hàng nằm trong **một tab ở menu bên trái**. Các mục đánh dấu **[Đề xuất]** cần bạn chốt.
 
@@ -82,13 +82,16 @@ Hành động hàng loạt: [Chọn ▾] [Áp dụng]  🔍 Tìm trong trang…
 [Tất cả 190] [Chưa tiếp cận 40] [Có quan tâm 88] [Khách net 14] [Bỏ 32]
 Hiển thị 1–20 / 190 khách · Trang 1/10
 ┌────────────────────────────────────────────────────────────────┐
-│☐ STT KHÁCH           TÌNH TRẠNG   DỰ ÁN    TIẾN ĐỘ  HẸN   THAO TÁC │
-│☐ 1   Nguyễn Văn A    [Quan tâm]   Q'Terra  ●●○○    09/10  [Gọi][Zalo]│
-│      0912 xxx xxx    H★ T                                [Ghi chú][Xem]│
+│☐ STT KHÁCH           TÌNH TRẠNG   DỰ ÁN    TIẾN ĐỘ  THAO TÁC       │
+│☐ 1   Nguyễn Văn A    [Quan tâm]   Q'Terra  ●●○○    [Gọi][Zalo]     │
+│      0912 xxx xxx    H★ T                          [Ghi chú][Xem]  │
+│      ◎ Ở, Đầu tư cho thuê                                          │
 └────────────────────────────────────────────────────────────────┘
 ```
 
 - Tab mặc định khi mở danh sách là **Tất cả**; mỗi tab hiện số khách.
+- **Mục đích mua (v1.0.4):** ngay dưới SĐT trong ô **Khách hàng** (bảng desktop và thẻ mobile) có một dòng "Mục đích mua": các mục ngăn bằng dấu phẩy, **một dòng**, chữ nhỏ xám cùng kiểu dòng SĐT, có icon nhỏ phía trước; quá dài thì cắt bằng "…" (`truncate`) và rê chuột xem đủ qua `title`. Khách chưa có mục đích mua (hoặc đã ẩn danh) thì **không hiện dòng** (không chừa khoảng trống). Nhãn lấy theo cấu hình trường chân dung `purchase_purposes` hiện hành (API chỉ trả mã lựa chọn trong `purchasePurposes`; màn tải cấu hình trường một lần rồi dịch mã sang nhãn). Ví dụ trong khung trên (`Ở, Đầu tư cho thuê`) chỉ để minh họa.
+- **Lịch hẹn kế tiếp (v1.0.4):** bảng desktop **không còn cột "HẸN"**. Lịch hẹn kế tiếp chỉ còn hiện ở **thẻ mobile** (dòng "Hẹn tiếp theo", hiện "Chưa có hẹn" khi không có) và qua tùy chọn sắp xếp **"Hẹn gần nhất"** (giữ ở cả desktop lẫn điện thoại; Oniichan quyết giữ). Desktop không còn cột để xem trực tiếp; muốn xem lịch của một khách thì mở chi tiết khách hoặc màn Lịch hẹn. `nextAppointmentAt` vẫn có trong API và file xuất CSV.
 - Danh sách hiện SĐT dạng che (`0912 xxx xxx`). **Mọi thành viên nhóm chăm sóc** bấm "Gọi" hoặc "Hiện số" để xem/gọi số đầy đủ; mỗi lần ghi nhật ký (`PHONE_VIEWED`).
 - Ô **Hành động hàng loạt** chứa: phân người chăm sóc, đổi tình trạng, gắn thẻ.
 - Nhóm nút thao tác giữ **bố cục 2 hàng × 2 nút** như app: hàng trên Gọi (xanh dương) và Zalo (xanh lá), hàng dưới Ghi chú và Xem (nền xám nhạt).

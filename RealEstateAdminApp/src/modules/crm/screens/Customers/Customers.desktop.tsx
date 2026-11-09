@@ -6,10 +6,11 @@ import { Download, Plus, SearchX } from 'lucide-react';
 import { TableSkeletonRows } from '../../../../components/common/TableSkeletonRows';
 import { Pagination } from '../../../../components/common/Pagination';
 import { DEFAULT_PAGE_SIZE } from '../../../../types/pagination';
-import { canExportCustomers, canImportCustomers, useCrmActor, type BulkResult, type CustomerListItem } from '@crm/api';
+import { canExportCustomers, canImportCustomers, useCrmActor, usePersonaFieldMap, type BulkResult, type CustomerListItem } from '@crm/api';
 import { useCustomerExport } from '@crm/api/mockHooks';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
+import { PURCHASE_PURPOSES_FIELD_KEY } from '@crm/data/personaFields';
 import { downloadCsv } from '@crm/lib/csv';
 import { hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHECKBOX_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
@@ -32,7 +33,6 @@ const CUSTOMER_TABLE_COLUMNS: { label: string; className?: string; isRightAligne
   { label: 'Khu vực', className: 'hidden xl:table-cell' },
   { label: 'Tiến độ', className: 'min-w-[110px]' },
   { label: 'Phụ trách', className: 'hidden lg:table-cell' },
-  { label: 'Hẹn', className: 'hidden xl:table-cell' },
   { label: 'Cập nhật', className: 'hidden 2xl:table-cell' },
   { label: 'Thao tác', isRightAligned: true },
 ];
@@ -44,6 +44,8 @@ export const CustomersDesktop = () => {
   const hasActiveFilters = hasActiveCustomerFilters(filters);
   const actor = useCrmActor();
   const exportCustomers = useCustomerExport();
+  /** Cấu hình trường "Mục đích mua" (đã cache theo danh mục): dịch mã -> nhãn một lần cho cả bảng. */
+  const purchasePurposeField = usePersonaFieldMap().get(PURCHASE_PURPOSES_FIELD_KEY);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** Kết quả xóa hàng loạt có khách lỗi: giữ ở đây (không trong thanh chọn) vì thanh biến mất khi không còn khách nào được chọn. */
   const [deleteResult, setDeleteResult] = useState<BulkResult | null>(null);
@@ -144,7 +146,13 @@ export const CustomersDesktop = () => {
                   </tr>
                 )}
                 {list.data.map((customer) => (
-                  <CustomerTableRow key={customer.id} customer={customer} isSelected={selectedIds.includes(customer.id)} onToggleSelect={toggleSelect} />
+                  <CustomerTableRow
+                    key={customer.id}
+                    customer={customer}
+                    isSelected={selectedIds.includes(customer.id)}
+                    onToggleSelect={toggleSelect}
+                    purchasePurposeField={purchasePurposeField}
+                  />
                 ))}
                 {!isLoading && !error && list.data.length === 0 && (
                   <tr>

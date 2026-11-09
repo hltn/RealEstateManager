@@ -188,6 +188,8 @@ export interface CustomerListItemDto {
   id: string;
   fullName: string;
   phoneMasked: string;
+  /** Mã lựa chọn "Mục đích mua"; backend cũ chưa trả field này nên để optional (mapper mặc định `[]`). */
+  purchasePurposes?: string[];
   status: StatusRefDto;
   source: CatalogRefDto | null;
   projects: CatalogRefDto[];

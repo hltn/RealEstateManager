@@ -64,6 +64,13 @@ export class CustomerListItemDto {
   @ApiProperty() id: string;
   @ApiProperty() fullName: string;
   @ApiProperty({ example: '0912 ••• 678' }) phoneMasked: string;
+  @ApiProperty({
+    type: [String],
+    example: ['LIVING', 'INVEST_RENT'],
+    description:
+      'Mã lựa chọn trường chân dung "Mục đích mua" (purchase_purposes); rỗng khi chưa có hoặc khách đã ẩn danh. FE dịch mã sang nhãn theo cấu hình trường',
+  })
+  purchasePurposes: string[];
   @ApiProperty({ type: StatusRefDto }) status: StatusRefDto;
   @ApiProperty({ nullable: true, type: CatalogRefDto })
   source: CatalogRefDto | null;

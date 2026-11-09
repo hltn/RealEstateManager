@@ -73,6 +73,8 @@ export interface CustomerListItem {
   fullName: string;
   /** SĐT đã che ("0912 345 •••"). Số đầy đủ CHỈ lấy qua `createPhoneView` (kiểm phạm vi + ghi log PHONE_VIEWED). */
   phoneMasked: string;
+  /** MÃ lựa chọn trường chân dung "Mục đích mua" (`purchase_purposes`, vd `LIVING`); rỗng khi chưa có. UI dịch mã sang nhãn. */
+  purchasePurposes: string[];
   status: StatusRef;
   source: Ref | null;
   projects: Ref[];

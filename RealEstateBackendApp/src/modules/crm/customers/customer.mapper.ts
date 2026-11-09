@@ -4,7 +4,11 @@ import { maskPhone } from '../common/utils/phone-normalizer.util';
 import { ListGroup } from '../catalogs/catalog.enums';
 import { getDeleteDenial } from './access/customer-delete-policy';
 import { isAdminOrManager } from './access/customer-scope';
-import { CareRole, CRITERIA_KEYS } from './customer.constants';
+import {
+  CareRole,
+  CRITERIA_KEYS,
+  PURCHASE_PURPOSES_FIELD_KEY,
+} from './customer.constants';
 import type { CustomerLean } from './customers.repository';
 import type { RefIds, RefMaps } from './customer-refs.service';
 import { toCatalogRef, toRef, toUserRef } from './customer-refs.service';
@@ -22,8 +26,17 @@ import {
 import { maskNationalId } from './utils/customer-rules.util';
 
 /** Field cần đọc để dựng list item (KHÔNG gồm nationalId, searchText). */
-export const LIST_PROJECTION =
+const LIST_FIELDS =
   'fullName phone statusId sourceId sourceCode interestedProjectIds areaId areaCode tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
+
+/**
+ * Projection của danh sách khách. `persona` chứa trường nhạy cảm nên KHÔNG lấy cả mảng: `$elemMatch` chỉ đọc
+ * đúng phần tử `purchase_purposes` (tối đa một phần tử mỗi khách, cùng document nên không thêm query).
+ */
+export const LIST_PROJECTION: Record<string, unknown> = {
+  ...Object.fromEntries(LIST_FIELDS.split(' ').map((field) => [field, 1])),
+  persona: { $elemMatch: { fieldKey: PURCHASE_PURPOSES_FIELD_KEY } },
+};
 
 const iso = (date: Date | null | undefined): string | null =>
   date ? new Date(date).toISOString() : null;
@@ -69,6 +82,26 @@ export const toPhoneMasked = (doc: {
   return doc.phone ? maskPhone(doc.phone) : '';
 };
 
+/**
+ * Mã lựa chọn "Mục đích mua" của khách (VD `LIVING`), rỗng khi chưa có. Chỉ trích đúng giá trị của trường này, không
+ * trả phần tử persona nào khác; khách ẩn danh trả rỗng. Trường bị tắt/xóa mềm vẫn giữ giá trị nên không kiểm tra cấu hình.
+ */
+export const toPurchasePurposes = (
+  doc: Pick<CustomerLean, 'persona' | 'anonymizedAt'>,
+): string[] => {
+  if (doc.anonymizedAt) return [];
+  const entry = (doc.persona ?? []).find(
+    (item) => item.fieldKey === PURCHASE_PURPOSES_FIELD_KEY,
+  );
+  // Dữ liệu cũ có thể lưu `valueOptions` sai kiểu (chuỗi, object): coi như chưa chọn thay vì ném lỗi làm hỏng cả trang danh sách.
+  const options: unknown = entry?.valueOptions;
+  if (!Array.isArray(options)) return [];
+  const picked = options.filter(
+    (code): code is string => typeof code === 'string' && code !== '',
+  );
+  return [...new Set(picked)];
+};
+
 export const toListItem = (
   doc: CustomerLean,
   refs: RefMaps,
@@ -76,6 +109,7 @@ export const toListItem = (
   id: String(doc._id),
   fullName: doc.fullName,
   phoneMasked: toPhoneMasked(doc),
+  purchasePurposes: toPurchasePurposes(doc),
   status: refs.statuses.get(String(doc.statusId)) ?? emptyStatus(doc.statusId),
   // FR-40: `code` dịch từ id (đổi nhãn không đổi mã); danh mục bị xóa cứng thì rơi về mã đã lưu (nguồn, khu vực) hoặc rỗng, không lỗi.
   source: toCatalogRef(

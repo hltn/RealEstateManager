@@ -19,6 +19,7 @@ vi.mock('@crm/api', async () => {
     useCrmActor: () => ({ userId: 'admin', role: 'ADMIN', teamId: null, managedTeamIds: [] }),
     useCatalogs: () => ({ catalogs: { statuses: [], tags: [] }, users: [] }),
     useAssignableUsers: () => ({ data: [] }),
+    usePersonaFieldMap: () => new Map(),
   };
 });
 vi.mock('@crm/api/mockHooks', async () => ({ ...(await vi.importActual<object>('@crm/api/mockHooks')), useCustomerExport: () => vi.fn() }));
@@ -78,5 +79,12 @@ describe('CustomersDesktop - xóa hàng loạt', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Đã hiểu' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Kết quả xóa khách' })).not.toBeInTheDocument());
     expect(document.activeElement).toBe(document.querySelector('[data-focus-fallback]'));
+  });
+
+  it('cột "Hẹn" không còn trên bảng; các cột còn lại giữ nguyên thứ tự', () => {
+    render(<CustomersDesktop />);
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
+    expect(headers).not.toContain('Hẹn');
+    expect(headers.slice(1)).toEqual(['Khách hàng', 'Tình trạng', 'Dự án', 'Nguồn', 'Khu vực', 'Tiến độ', 'Phụ trách', 'Cập nhật', 'Thao tác']);
   });
 });

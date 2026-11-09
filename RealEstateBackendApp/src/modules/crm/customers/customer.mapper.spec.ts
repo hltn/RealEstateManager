@@ -2,7 +2,13 @@ import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { ListGroup } from '../catalogs/catalog.enums';
 import { CareRole } from './customer.constants';
-import { toDetail, toListItem, toPhoneMasked } from './customer.mapper';
+import {
+  LIST_PROJECTION,
+  toDetail,
+  toListItem,
+  toPhoneMasked,
+  toPurchasePurposes,
+} from './customer.mapper';
 import type { RefMaps } from './customer-refs.service';
 import type { CustomerLean } from './customers.repository';
 import {
@@ -283,5 +289,97 @@ describe('thẻ trên list item', () => {
     expect(toListItem(withTags, refsWithTag).tags).toEqual([
       { id: String(liveTag), label: 'Golf' },
     ]);
+  });
+});
+
+describe('purchasePurposes của list item (Mục đích mua)', () => {
+  const entry = (fieldKey: string, valueOptions?: string[]) => ({
+    fieldKey,
+    valueOptions,
+    valueText: 'nhạy cảm',
+    source: 'MANUAL',
+    updatedBy: me,
+    updatedAt: new Date(),
+  });
+  const withPersona = (persona: unknown, extra = {}) =>
+    ({ ...doc, persona, ...extra }) as unknown as CustomerLean;
+
+  it('trả mã lựa chọn theo thứ tự đã lưu', () => {
+    const item = toListItem(
+      withPersona([
+        entry('occupation'),
+        entry('purchase_purposes', ['LIVING', 'INVEST_RENT']),
+      ]),
+      refs,
+    );
+    expect(item.purchasePurposes).toEqual(['LIVING', 'INVEST_RENT']);
+  });
+
+  it('chưa có persona, persona rỗng hoặc chưa nhập trường này: mảng rỗng', () => {
+    expect(toListItem(doc, refs).purchasePurposes).toEqual([]);
+    expect(toListItem(withPersona([]), refs).purchasePurposes).toEqual([]);
+    expect(
+      toListItem(withPersona([entry('occupation')]), refs).purchasePurposes,
+    ).toEqual([]);
+    expect(
+      toListItem(withPersona([entry('purchase_purposes')]), refs)
+        .purchasePurposes,
+    ).toEqual([]);
+  });
+
+  it('giữ giá trị của lựa chọn đã tắt (không tra cấu hình); bỏ phần tử rác và trùng', () => {
+    expect(
+      toPurchasePurposes(
+        withPersona([
+          entry('purchase_purposes', ['OLD_OPTION', 'LIVING', 'LIVING', '']),
+        ]),
+      ),
+    ).toEqual(['OLD_OPTION', 'LIVING']);
+  });
+
+  it('dữ liệu cũ lưu valueOptions sai kiểu (chuỗi, object, null): trả mảng rỗng, không ném lỗi', () => {
+    for (const bad of ['LIVING', { 0: 'LIVING' }, null, 7]) {
+      const badDoc = withPersona([
+        { ...entry('purchase_purposes'), valueOptions: bad },
+      ]);
+      expect(() => toListItem(badDoc, refs)).not.toThrow();
+      expect(toPurchasePurposes(badDoc)).toEqual([]);
+    }
+  });
+
+  it('khách ẩn danh: rỗng dù còn dữ liệu persona', () => {
+    const item = toListItem(
+      withPersona([entry('purchase_purposes', ['LIVING'])], {
+        anonymizedAt: new Date(),
+      }),
+      refs,
+    );
+    expect(item.purchasePurposes).toEqual([]);
+  });
+
+  it('không lộ phần tử persona nào khác ra response; detail dùng chung cùng giá trị', () => {
+    const full = withPersona([
+      entry('purchase_purposes', ['RESORT']),
+      { ...entry('occupation'), valueText: 'BAC_SI_BI_MAT' },
+    ]);
+    const json = JSON.stringify([
+      toListItem(full, refs),
+      toDetail(full, refs, actor(UserRole.ADMIN)),
+    ]);
+    expect(json).not.toContain('BAC_SI_BI_MAT');
+    expect(json).not.toContain('nhạy cảm');
+    expect(json).not.toContain('"persona"');
+    expect(
+      toDetail(full, refs, actor(UserRole.ADMIN)).purchasePurposes,
+    ).toEqual(['RESORT']);
+  });
+
+  it('LIST_PROJECTION chỉ đọc đúng phần tử purchase_purposes của persona, không lấy cả mảng', () => {
+    expect(LIST_PROJECTION.persona).toEqual({
+      $elemMatch: { fieldKey: 'purchase_purposes' },
+    });
+    expect(LIST_PROJECTION).toMatchObject({ fullName: 1, anonymizedAt: 1 });
+    expect(LIST_PROJECTION).not.toHaveProperty('nationalId');
+    expect(LIST_PROJECTION).not.toHaveProperty('searchText');
   });
 });

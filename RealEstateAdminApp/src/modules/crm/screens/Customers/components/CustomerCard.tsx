@@ -1,6 +1,6 @@
 /**
  * Thẻ khách của danh sách trên điện thoại (02 §7: bảng chuyển thành danh sách thẻ).
- * Tên + SĐT che + tình trạng, dự án, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, cập nhật cuối + 4 nút liên hệ.
+ * Tên + SĐT che + mục đích mua + tình trạng, dự án, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, cập nhật cuối + 4 nút liên hệ.
  */
 import { CalendarDays, Star } from 'lucide-react';
 import type { CustomerListItem } from '@crm/api';
@@ -11,14 +11,18 @@ import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { formatVnDate, formatVnRelative } from '@crm/lib/dateTime';
 import { CARD_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
+import type { PersonaFieldDefinition } from '@crm/types/crm';
+import { PurchasePurposesLine } from './PurchasePurposesLine';
 
 const FIELD_LABEL_CLASS = 'shrink-0 text-theme-xs text-gray-400 dark:text-gray-500';
 
 interface CustomerCardProps {
   customer: CustomerListItem;
+  /** Định nghĩa trường `purchase_purposes` để dịch mã -> nhãn (màn tải 1 lần, truyền xuống). */
+  purchasePurposeField?: Pick<PersonaFieldDefinition, 'optionItems'>;
 }
 
-export const CustomerCard = ({ customer }: CustomerCardProps) => {
+export const CustomerCard = ({ customer, purchasePurposeField }: CustomerCardProps) => {
   const { selectCustomer } = useCrmActions();
   const projectSummary = formatProjectSummary(customer.projects);
 
@@ -32,6 +36,7 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
             </span>
           </button>
           <p className="font-mono text-theme-xs text-gray-500 dark:text-gray-400">{customer.phoneMasked}</p>
+          <PurchasePurposesLine purposes={customer.purchasePurposes} field={purchasePurposeField} />
         </div>
         <CustomerStatusChip status={customer.status} />
       </div>

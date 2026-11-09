@@ -214,7 +214,7 @@ erDiagram
 | `lastUpdatedAt` | Date | Có | **Server tự ghi** mỗi lần bất kỳ thông tin khách thay đổi; không có trong DTO | C7, QT5 |
 | `lastUpdatedBy` | ObjectId | Có | Người sửa cuối | C7 |
 | `lastCareLogAt` | Date \| null | Không | Lần chăm sóc gần nhất (nhật ký) — dùng cho "khách lâu chưa chăm sóc" | X5 |
-| `nextAppointmentAt` | Date \| null | Không | Lịch hẹn sắp tới gần nhất (cột "HẸN" trên danh sách) | C3 |
+| `nextAppointmentAt` | Date \| null | Không | Lịch hẹn sắp tới gần nhất. Từ v1.0.4 bảng danh sách desktop không còn cột "HẸN"; giá trị này hiện ở dòng "Hẹn tiếp theo" của thẻ mobile, dùng cho sắp xếp "Hẹn gần nhất" (desktop và mobile), và vẫn có trong API/CSV | C3 |
 | `searchText` | string | Có | `fullName` bỏ dấu + chữ thường + các biến thể số (`0912345678`, `84912345678`) + `email` chữ thường. Không trả ra API | X3, §5 |
 | `createdVia` | `'WEB'\|'MOBILE'\|'IMPORT'` | Có | Kênh tạo (`IMPORT` = nhập file chung) | X8 |
 | `legacy` | `{ sheet, rowNumber, importJobId }` | Không | **Hoãn giai đoạn sau (D7)** — chưa tạo ở giai đoạn 1; thêm sau là tương thích ngược (field mới, tùy chọn). Truy vết dữ liệu cũ từ 3 sheet | X8 |

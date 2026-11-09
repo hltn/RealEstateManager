@@ -43,6 +43,7 @@ export const toCustomerListItem = (dto: CustomerListItemDto): CustomerListItem =
   id: dto.id,
   fullName: dto.fullName,
   phoneMasked: dto.phoneMasked,
+  purchasePurposes: dto.purchasePurposes ?? [],
   status: toStatusRef(dto.status),
   source: toNullableCatalogRef('leadSources', dto.source),
   projects: dto.projects.map((project) => toCatalogRef('projects', project)),

@@ -1,6 +1,6 @@
 /**
- * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + SĐT che + mã), tình trạng, dự án, nguồn,
- * khu vực, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú).
+ * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + SĐT che + mục đích mua), tình trạng, dự án, nguồn,
+ * khu vực, tiến độ 4 chấm, phụ trách, ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú).
  * Cột phụ ẩn dần ở màn hẹp (khớp `CUSTOMER_TABLE_COLUMNS` ở màn), còn chật thì cuộn ngang trong vỏ bảng.
  */
 import type { MouseEvent } from 'react';
@@ -10,19 +10,23 @@ import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { ProgressDots } from '@crm/components/ProgressDots';
 import { TableContactActions } from '@crm/components/TableContactActions';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
-import { formatVnDate, formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
+import { formatVnDate, formatVnDateTime } from '@crm/lib/dateTime';
 import { CHECKBOX_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
+import type { PersonaFieldDefinition } from '@crm/types/crm';
+import { PurchasePurposesLine } from './PurchasePurposesLine';
 
 interface CustomerTableRowProps {
   customer: CustomerListItem;
   isSelected: boolean;
   onToggleSelect: (customerId: string) => void;
+  /** Định nghĩa trường `purchase_purposes` để dịch mã -> nhãn (màn tải 1 lần, truyền xuống). */
+  purchasePurposeField?: Pick<PersonaFieldDefinition, 'optionItems'>;
 }
 
 const TEXT_MUTED = 'text-theme-xs text-gray-500 dark:text-gray-400';
 
-export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: CustomerTableRowProps) => {
+export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, purchasePurposeField }: CustomerTableRowProps) => {
   const { selectCustomer } = useCrmActions();
   const openDetail = () => selectCustomer(customer.id);
   const stop = (event: MouseEvent) => event.stopPropagation();
@@ -47,6 +51,7 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
         <p className={TEXT_MUTED}>
           <span className="tabular-nums">{customer.phoneMasked}</span>
         </p>
+        <PurchasePurposesLine purposes={customer.purchasePurposes} field={purchasePurposeField} className="max-w-[220px]" />
         <div className="pt-1.5 2xl:hidden">{projectSummary && <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span>}</div>
       </td>
       <td className="px-4 py-4">
@@ -68,9 +73,6 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
         ) : (
           <span className={TEXT_MUTED}>Chưa phân</span>
         )}
-      </td>
-      <td className="hidden whitespace-nowrap px-4 py-4 xl:table-cell" title={formatVnDateTime(customer.nextAppointmentAt)}>
-        <span className="text-theme-xs font-medium text-gray-800 dark:text-white/90">{customer.nextAppointmentAt ? formatVnRelative(customer.nextAppointmentAt) : '—'}</span>
       </td>
       <td className={`hidden whitespace-nowrap px-4 py-4 2xl:table-cell ${TEXT_MUTED}`} title={formatVnDateTime(customer.lastUpdatedAt)}>
         {formatVnDate(customer.lastUpdatedAt)}
