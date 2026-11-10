@@ -130,18 +130,30 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
     expect(canDelete(UserRole.MANAGER, ListGroup.DROPPED)).toBe(false);
   });
 
-  it('khách đã ẩn danh: phoneMasked không dựa trên số giả', () => {
+  it('FR-04/FR-06: khách đã ẩn danh (phone null): list item và detail trả phoneMasked null, không dựa trên số giả', () => {
+    const anonymized = { ...doc, phone: null, anonymizedAt: new Date() };
+    expect(toListItem(anonymized, refs).phoneMasked).toBeNull();
     expect(
-      toListItem({ ...doc, anonymizedAt: new Date() }, refs).phoneMasked,
-    ).toBe('••••');
+      toDetail(anonymized, refs, actor(UserRole.ADMIN)).phoneMasked,
+    ).toBeNull();
   });
 
-  it('toPhoneMasked: che số thường; thiếu SĐT (dữ liệu cũ) trả rỗng thay vì ném lỗi; ẩn danh ưu tiên hơn', () => {
+  it('FR-04: khách không có SĐT (phone null): list item và detail trả phoneMasked null, không ném lỗi', () => {
+    expect(toListItem({ ...doc, phone: null }, refs).phoneMasked).toBeNull();
+    expect(
+      toDetail({ ...doc, phone: null }, refs, actor(UserRole.ADMIN))
+        .phoneMasked,
+    ).toBeNull();
+  });
+
+  it('FR-04: toPhoneMasked che số thường; null/undefined/rỗng => null; ẩn danh => null kể cả khi còn số', () => {
     expect(toPhoneMasked({ phone: '+84912345678' })).toBe('0912 ••• 678');
-    expect(toPhoneMasked({ phone: undefined })).toBe('');
+    expect(toPhoneMasked({ phone: null })).toBeNull();
+    expect(toPhoneMasked({ phone: undefined })).toBeNull();
+    expect(toPhoneMasked({ phone: '' })).toBeNull();
     expect(
       toPhoneMasked({ phone: '+84912345678', anonymizedAt: new Date() }),
-    ).toBe('••••');
+    ).toBeNull();
   });
 });
 

@@ -8,8 +8,7 @@ import {
 
 /**
  * Đề nghị tham gia nhóm chăm sóc một khách đã có (`care_team_requests`, tài liệu 04 mục 3.5).
- * Giữ NGUYÊN tên collection và field `customerId`, `requesterId`, `status`: `CustomerPhoneService` đọc chúng
- * để trả `hasPendingRequest` cho `phone-lookups`.
+ * Giữ NGUYÊN tên collection và field `customerId`, `requesterId`, `status` (dữ liệu cũ không xóa, v1.0.5 11.1b #1).
  *
  * `message`/`resolutionNote` là văn bản tự do có thể nhắc tên khách => bị xóa khi ẩn danh hóa khách.
  */

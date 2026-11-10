@@ -32,6 +32,8 @@ export enum ErrorCode {
   CUSTOMER_NOT_DELETED = 'CUSTOMER_NOT_DELETED',
   /** Thêm ở v1.0.2 mục D: khách đang trong quá trình xóa vĩnh viễn nên không khôi phục/ẩn danh hóa/xóa vĩnh viễn song song được. */
   CUSTOMER_PURGE_IN_PROGRESS = 'CUSTOMER_PURGE_IN_PROGRESS',
+  /** Thêm ở v1.0.5 (FR-04): xem/gọi số của khách không có SĐT (`phone` null) — không có gì để xem, không ghi `PHONE_VIEWED`. */
+  CUSTOMER_PHONE_NOT_SET = 'CUSTOMER_PHONE_NOT_SET',
   VERSION_CONFLICT = 'VERSION_CONFLICT',
   IDEMPOTENCY_IN_PROGRESS = 'IDEMPOTENCY_IN_PROGRESS',
   JOIN_REQUEST_EXISTS = 'JOIN_REQUEST_EXISTS',

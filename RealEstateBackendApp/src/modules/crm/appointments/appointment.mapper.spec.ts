@@ -63,11 +63,20 @@ describe('toAppointmentResponse: phoneMasked của khách', () => {
     expect(JSON.stringify(response)).not.toContain('912345678');
   });
 
-  it('khách thiếu SĐT hoặc đã ẩn danh: không ném lỗi, không lộ số', () => {
+  it('FR-04: khách thiếu SĐT hoặc đã ẩn danh: phoneMasked null, không ném lỗi, không lộ số', () => {
     expect(
       toAppointmentResponse(row, customer({}), maps, actor, noProjects).customer
         .phoneMasked,
-    ).toBe('');
+    ).toBeNull();
+    expect(
+      toAppointmentResponse(
+        row,
+        customer({ phone: null }),
+        maps,
+        actor,
+        noProjects,
+      ).customer.phoneMasked,
+    ).toBeNull();
     expect(
       toAppointmentResponse(
         row,
@@ -76,7 +85,7 @@ describe('toAppointmentResponse: phoneMasked của khách', () => {
         actor,
         noProjects,
       ).customer.phoneMasked,
-    ).toBe('••••');
+    ).toBeNull();
   });
 });
 

@@ -7,8 +7,6 @@ import { REDIS_CLIENT } from '../../../../shared/redis/redis.constants';
 
 /** Giới hạn theo NGƯỜI DÙNG (tài liệu 04 mục 7.3): xác định sau khi đã xác thực, khác Throttler theo IP. */
 export const RATE_LIMITS = {
-  /** `phone-lookups`: 30 lần/phút/người. */
-  PHONE_LOOKUP: { limit: 30, windowMs: 60_000 },
   /** `phone-views`: 60 lần/phút/người. */
   PHONE_VIEW: { limit: 60, windowMs: 60_000 },
   /** `national-id-views`: 10 lần/phút/người. */

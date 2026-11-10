@@ -17,7 +17,7 @@ export interface AppointmentCustomerLean {
   fullName: string;
   statusId: Types.ObjectId;
   /** SĐT E.164 chỉ để che (`phoneMasked`), KHÔNG bao giờ trả nguyên ra API. */
-  phone?: string;
+  phone?: string | null;
   anonymizedAt?: Date | null;
 }
 

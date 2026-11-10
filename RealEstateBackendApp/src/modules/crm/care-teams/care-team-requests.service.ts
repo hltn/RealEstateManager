@@ -71,7 +71,7 @@ const resourceNotFound = (): BusinessException =>
 
 /**
  * Đề nghị tham gia nhóm chăm sóc một khách đã có (X2, tài liệu 05 mục 2.5).
- * - Gửi: Quản lý/Nhân viên, `customerRef` lấy từ `phone-lookups`; mỗi người chỉ 1 đề nghị PENDING cho 1 khách
+ * - Gửi: Quản lý/Nhân viên, `customerRef` lấy từ luồng tra SĐT cũ (đã bỏ ở v1.0.5); mỗi người chỉ 1 đề nghị PENDING cho 1 khách
  *   (unique index một phần, E11000 => 409 `JOIN_REQUEST_EXISTS`).
  * - Duyệt/từ chối: Quản trị, Quản lý (trong phạm vi), phụ trách chính; không tự duyệt đề nghị của chính mình.
  *   Duyệt = thêm MEMBER trong CÙNG transaction với việc chốt trạng thái.

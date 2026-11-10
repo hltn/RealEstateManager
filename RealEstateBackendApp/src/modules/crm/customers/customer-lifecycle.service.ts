@@ -169,8 +169,9 @@ export class CustomerLifecycleService {
           {
             $set: {
               fullName: ANONYMIZED_NAME,
-              // Giữ unique index `phone` hợp lệ cho khách đã ẩn danh mà không còn số thật.
-              phone: `anonymized:${String(customerId)}`,
+              // FR-06: không còn unique index `phone` nên không cần số giả `anonymized:<id>`; `customerCode` được GIỮ
+              // (không phải dữ liệu cá nhân, phục vụ truy vết, không bao giờ cấp lại).
+              phone: null,
               email: null,
               nationalId: null,
               nationalIdLast4: null,

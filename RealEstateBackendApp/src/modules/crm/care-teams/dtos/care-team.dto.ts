@@ -65,8 +65,7 @@ export class CareTeamResponseDto {
 
 export class CreateCareTeamRequestDto {
   @ApiProperty({
-    description:
-      '`customerRef` lấy từ kết quả phone-lookups / lỗi 409 trùng SĐT',
+    description: '`customerRef` lấy từ luồng tra SĐT cũ (đã bỏ ở v1.0.5)',
   })
   @IsMongoId()
   customerRef: string;

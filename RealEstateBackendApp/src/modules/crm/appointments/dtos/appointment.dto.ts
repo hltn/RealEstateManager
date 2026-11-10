@@ -330,10 +330,12 @@ export class AppointmentCustomerDto {
   @ApiProperty() fullName: string;
   @ApiProperty({
     example: '0912 ••• 678',
+    nullable: true,
+    type: String,
     description:
-      'SĐT khách đã che (cùng quy ước `phoneMasked` ở danh sách khách); không bao giờ trả số đầy đủ',
+      'SĐT khách đã che (cùng quy ước `phoneMasked` ở danh sách khách); null khi khách không có SĐT; không bao giờ trả số đầy đủ',
   })
-  phoneMasked: string;
+  phoneMasked: string | null;
   @ApiProperty({ type: StatusRefDto }) status: StatusRefDto;
 }
 

@@ -63,7 +63,13 @@ export class DataConsentResponseDto {
 export class CustomerListItemDto {
   @ApiProperty() id: string;
   @ApiProperty() fullName: string;
-  @ApiProperty({ example: '0912 ••• 678' }) phoneMasked: string;
+  @ApiProperty({
+    example: '0912 ••• 678',
+    nullable: true,
+    type: String,
+    description: 'null khi khách không có SĐT hoặc đã ẩn danh',
+  })
+  phoneMasked: string | null;
   @ApiProperty({
     type: [String],
     example: ['LIVING', 'INVEST_RENT'],
@@ -188,21 +194,6 @@ export class CriteriaUpdateResponseDto {
       'Chỉ có khi tình trạng khách vừa được tự chuyển (đạt 3/4 tiêu chí -> Khách net; xuống dưới 3/4 -> Có quan tâm)',
   })
   autoStatusChange?: AutoStatusChangeDto;
-}
-
-export class PhoneLookupResponseDto {
-  @ApiProperty({ example: '+84912345678' }) normalizedPhone: string;
-  @ApiProperty() exists: boolean;
-  @ApiProperty() isAccessible: boolean;
-  @ApiPropertyOptional() customerId?: string;
-  @ApiPropertyOptional() customerRef?: string;
-  @ApiPropertyOptional({ nullable: true, type: String }) caredByName?:
-    | string
-    | null;
-  @ApiProperty() canRequestJoin: boolean;
-  @ApiProperty() hasPendingRequest: boolean;
-  @ApiPropertyOptional({ description: 'Chỉ Quản trị thấy' })
-  isDeleted?: boolean;
 }
 
 export class PhoneViewResponseDto {

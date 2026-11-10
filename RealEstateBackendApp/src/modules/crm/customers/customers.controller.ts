@@ -35,7 +35,6 @@ import { runCrmIdempotent } from '../common/idempotency.helper';
 import { CustomerCriteriaService } from './customer-criteria.service';
 import { CustomerListService } from './customer-list.service';
 import { CustomerDeletionService } from './customer-deletion.service';
-import { CustomerPhoneService } from './customer-phone.service';
 import { CustomerStatusChangeService } from './customer-status-change.service';
 import { CustomersService } from './customers.service';
 import {
@@ -46,7 +45,6 @@ import {
   ChangeStatusDto,
   CreateCustomerDto,
   DeleteCustomerQueryDto,
-  PhoneLookupDto,
   UpdateCriteriaDto,
   UpdateCustomerDto,
   UpdateDataConsentDto,
@@ -58,7 +56,6 @@ import {
   CustomerListCountsDto,
   CustomerListItemDto,
   DataConsentResponseDto,
-  PhoneLookupResponseDto,
 } from './dtos/customer-response.dto';
 
 const CLIENT_TYPE_HEADER = 'x-client-type';
@@ -66,7 +63,7 @@ const CLIENT_TYPE_HEADER = 'x-client-type';
 /**
  * Khách hàng lõi (tài liệu 05 mục 2.3). Quyền: Quản trị, Quản lý (trong phạm vi), Nhân viên (trong phạm vi) —
  * phạm vi do `CustomerScope` ở tầng repository bảo đảm (ngoài phạm vi => 404 `CUSTOMER_NOT_FOUND`).
- * Route tĩnh (`list-counts`, `phone-lookups`) khai báo TRƯỚC `:id`.
+ * Route tĩnh (`list-counts`) khai báo TRƯỚC `:id`.
  */
 @ApiTags('CRM - Customers')
 @ApiBearerAuth()
@@ -76,7 +73,6 @@ export class CustomersController {
   constructor(
     private readonly customers: CustomersService,
     private readonly lists: CustomerListService,
-    private readonly phones: CustomerPhoneService,
     private readonly statusChanges: CustomerStatusChangeService,
     private readonly criteria: CustomerCriteriaService,
     private readonly deletion: CustomerDeletionService,
@@ -106,24 +102,6 @@ export class CustomersController {
     @Query() query: ListCustomerCountsQueryDto,
   ) {
     return { data: await this.lists.counts(user, query) };
-  }
-
-  @Post('phone-lookups')
-  @Roles(...CRM_ROLES)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Kiểm tra trùng SĐT trước khi tạo (POST để SĐT không nằm trên URL); giới hạn 30 lần/phút/người',
-  })
-  @ApiDataResponse(PhoneLookupResponseDto)
-  @ApiResponse({ status: 400, description: 'INVALID_PHONE' })
-  @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
-  async lookupPhone(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: PhoneLookupDto,
-    @Headers(CLIENT_TYPE_HEADER) clientType?: string,
-  ) {
-    return { data: await this.phones.lookup(user, dto, clientType) };
   }
 
   @Post()

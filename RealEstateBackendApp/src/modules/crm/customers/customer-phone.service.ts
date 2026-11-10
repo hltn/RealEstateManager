@@ -1,57 +1,40 @@
-import { Injectable } from '@nestjs/common';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
+import { HttpStatus, Injectable } from '@nestjs/common';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { UserRole } from '../../../common/enums/user-role.enum';
+import { BusinessException } from '../../../common/exceptions/business.exception';
+import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
-import { User, UserDocument } from '../../users/schemas/user.schema';
 import {
   CrmAuditAction,
   CrmAuditEntityType,
-  CrmAuditSource,
 } from '../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CrmAbuseMonitorService } from '../common/security/crm-abuse-monitor.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { CrmSettingsService } from '../crm-settings/crm-settings.service';
-import { CareTeamRequestStatus } from '../care-teams/care-team.constants';
-import {
-  CareTeamRequest,
-  CareTeamRequestDocument,
-} from '../care-teams/schemas/care-team-request.schema';
-import {
-  AccessContext,
-  CustomerAccessService,
-} from './access/customer-access.service';
-import {
-  customerNotFound,
-  normalizePhoneOrThrow,
-  resolveClientSource,
-} from './customer.errors';
+import { CustomerAccessService } from './access/customer-access.service';
+import { customerNotFound, resolveClientSource } from './customer.errors';
 import { CustomersRepository } from './customers.repository';
-import {
-  PhoneLookupResponseDto,
-  PhoneViewResponseDto,
-} from './dtos/customer-response.dto';
-import { PhoneLookupDto, PhoneViewDto } from './dtos/customer-request.dto';
+import { PhoneViewResponseDto } from './dtos/customer-response.dto';
+import { PhoneViewDto } from './dtos/customer-request.dto';
 
-type ExistingByPhone = NonNullable<
-  Awaited<ReturnType<CustomersRepository['findByPhoneForDuplicateCheck']>>
->;
+/** 409: khách không có SĐT (`phone` null, FR-04) nên không có gì để xem/gọi/sao chép. */
+export const customerPhoneNotSet = (): BusinessException =>
+  new BusinessException(
+    ErrorCode.CUSTOMER_PHONE_NOT_SET,
+    'Khách chưa có số điện thoại',
+    HttpStatus.CONFLICT,
+  );
 
 /**
- * Tra trùng SĐT (`phone-lookups`) và xem số đầy đủ (`phone-views`) — tài liệu 04 mục 6.1, 6.7.
- *
- * Quy tắc riêng tư: người tra chỉ biết "do [tên] chăm sóc" khi khách NGOÀI phạm vi của họ (không lộ họ tên, email,
- * SĐT); khách ngoài phạm vi bị tra thì ghi audit `PHONE_LOOKUP` để phát hiện dò số.
+ * Xem số đầy đủ (`phone-views`) — tài liệu 04 mục 6.7. Luồng tra trùng SĐT (`phone-lookups`) đã bị gỡ hẳn ở v1.0.5
+ * (FR-03, FR-20): hai khách được phép cùng SĐT nên không còn gì để tra.
  */
 @Injectable()
 export class CustomerPhoneService {
   constructor(
     @InjectConnection() private readonly connection: Connection,
-    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    @InjectModel(CareTeamRequest.name)
-    private readonly requestModel: Model<CareTeamRequestDocument>,
     private readonly repo: CustomersRepository,
     private readonly access: CustomerAccessService,
     private readonly rateLimit: CrmRateLimitService,
@@ -60,94 +43,11 @@ export class CustomerPhoneService {
     private readonly settings: CrmSettingsService,
   ) {}
 
-  async lookup(
-    jwt: JwtPayload,
-    dto: PhoneLookupDto,
-    clientType?: string,
-  ): Promise<PhoneLookupResponseDto> {
-    await this.rateLimit.consume(jwt.sub, 'PHONE_LOOKUP');
-    const ctx = await this.access.resolve(jwt);
-    const normalizedPhone = normalizePhoneOrThrow(dto.phone);
-
-    const existing =
-      await this.repo.findByPhoneForDuplicateCheck(normalizedPhone);
-    if (!existing) {
-      return {
-        normalizedPhone,
-        exists: false,
-        isAccessible: false,
-        canRequestJoin: false,
-        hasPendingRequest: false,
-      };
-    }
-    const described = await this.describeExisting(
-      ctx,
-      existing,
-      resolveClientSource(clientType).auditSource,
-    );
-    return { normalizedPhone, ...described };
-  }
-
   /**
-   * Mô tả khách đã có SĐT này theo góc nhìn của `ctx.actor` (dùng cho `phone-lookups`).
-   * Khách ngoài phạm vi: trả `customerRef` + `caredByName` (tên hiển thị phụ trách chính) và ghi `PHONE_LOOKUP`.
-   * Khách đã xóa mềm: chỉ Quản trị biết/thao tác được; người khác chỉ biết "đã tồn tại".
-   */
-  async describeExisting(
-    ctx: AccessContext,
-    existing: ExistingByPhone,
-    source: CrmAuditSource = 'WEB',
-  ): Promise<Omit<PhoneLookupResponseDto, 'normalizedPhone'>> {
-    const isAdmin = ctx.actor.role === UserRole.ADMIN;
-    const isDeleted =
-      existing.deletedAt !== null && existing.deletedAt !== undefined;
-    const adminExtra = isAdmin ? { isDeleted } : {};
-
-    const isAccessible = isDeleted
-      ? isAdmin
-      : (await this.repo.findOne(ctx.scope, existing._id, {
-          projection: { _id: 1 },
-        })) !== null;
-
-    if (isAccessible) {
-      return {
-        exists: true,
-        isAccessible: true,
-        customerId: String(existing._id),
-        canRequestJoin: false,
-        hasPendingRequest: false,
-        ...adminExtra,
-      };
-    }
-    if (isDeleted) {
-      return {
-        exists: true,
-        isAccessible: false,
-        canRequestJoin: false,
-        hasPendingRequest: false,
-      };
-    }
-
-    const [caredByName, hasPendingRequest] = await Promise.all([
-      this.primaryName(existing.primaryAssigneeId),
-      this.hasPendingJoinRequest(existing._id, ctx.actor.userId),
-    ]);
-    await this.recordLookupProbe(ctx, existing._id, source);
-    return {
-      exists: true,
-      isAccessible: false,
-      customerRef: String(existing._id),
-      caredByName,
-      canRequestJoin:
-        ctx.actor.role === UserRole.MANAGER ||
-        ctx.actor.role === UserRole.STAFF,
-      hasPendingRequest,
-    };
-  }
-
-  /**
-   * Xem số đầy đủ / gọi / sao chép: kiểm phạm vi (ngoài phạm vi => 404), ghi audit `PHONE_VIEWED` KHÔNG lưu số
-   * (chỉ lưu mục đích) trong cùng transaction với lần đọc, rồi mới trả số.
+   * Xem số đầy đủ / gọi / sao chép. Thứ tự (FR-04): (1) kiểm phạm vi — ngoài phạm vi/không tồn tại => 404, không
+   * lộ khách; (2) khách `phone` null => 409 `CUSTOMER_PHONE_NOT_SET` (không consume rate-limit, không ghi audit);
+   * (3) rate-limit `PHONE_VIEW`; (4) ghi audit `PHONE_VIEWED` KHÔNG lưu số (chỉ lưu mục đích) trong transaction,
+   * rồi mới trả số.
    */
   async view(
     jwt: JwtPayload,
@@ -155,18 +55,22 @@ export class CustomerPhoneService {
     dto: PhoneViewDto,
     clientType?: string,
   ): Promise<PhoneViewResponseDto> {
-    await this.rateLimit.consume(jwt.sub, 'PHONE_VIEW');
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
 
+    // Kiểm phạm vi và `phone` null TRƯỚC rate-limit: khách không có số không đốt lượt xem của người dùng.
+    const found = await this.repo.findOne(ctx.scope, customerId, {
+      projection: { phone: 1 },
+    });
+    if (!found) throw customerNotFound();
+    if (!found.phone) throw customerPhoneNotSet();
+
+    await this.rateLimit.consume(jwt.sub, 'PHONE_VIEW');
+
     const viewedAt = new Date();
-    const phone = await withTransaction(this.connection, async (session) => {
-      const customer = await this.repo.findOne(ctx.scope, customerId, {
-        session,
-        projection: { phone: 1 },
-      });
-      if (!customer) throw customerNotFound();
-      await this.audit.record(
+    // Audit phải commit xong rồi mới trả số: ghi thất bại thì không lộ số mà không có dấu vết.
+    await withTransaction(this.connection, (session) =>
+      this.audit.record(
         {
           entityType: CrmAuditEntityType.CUSTOMER,
           entityId: customerId,
@@ -177,60 +81,11 @@ export class CustomerPhoneService {
           source: auditSource,
         },
         session,
-      );
-      return customer.phone;
-    });
+      ),
+    );
 
     const { phoneViewAlertPerHour } = await this.settings.get();
     await this.abuse.trackPhoneView(jwt.sub, phoneViewAlertPerHour);
-    return { phone, viewedAt: viewedAt.toISOString() };
-  }
-
-  private async primaryName(
-    userId: Types.ObjectId | null | undefined,
-  ): Promise<string | null> {
-    if (!userId) return null;
-    const user = await this.userModel
-      .findById(userId)
-      .select('displayName')
-      .lean()
-      .exec();
-    return user?.displayName ?? null;
-  }
-
-  /** Người này đã có đề nghị tham gia nhóm chăm sóc khách này đang chờ duyệt (M3). */
-  private async hasPendingJoinRequest(
-    customerId: Types.ObjectId,
-    requesterId: Types.ObjectId,
-  ): Promise<boolean> {
-    const pending = await this.requestModel
-      .exists({
-        customerId,
-        requesterId,
-        status: CareTeamRequestStatus.PENDING,
-      })
-      .exec();
-    return pending !== null;
-  }
-
-  /** Ghi `PHONE_LOOKUP` (khách ngoài phạm vi) — không lưu số điện thoại. */
-  private async recordLookupProbe(
-    ctx: AccessContext,
-    customerId: Types.ObjectId,
-    source: CrmAuditSource,
-  ): Promise<void> {
-    await withTransaction(this.connection, (session) =>
-      this.audit.record(
-        {
-          entityType: CrmAuditEntityType.CUSTOMER,
-          entityId: customerId,
-          customerId,
-          action: CrmAuditAction.PHONE_LOOKUP,
-          actor: { sub: String(ctx.actor.userId) },
-          source,
-        },
-        session,
-      ),
-    );
+    return { phone: found.phone, viewedAt: viewedAt.toISOString() };
   }
 }

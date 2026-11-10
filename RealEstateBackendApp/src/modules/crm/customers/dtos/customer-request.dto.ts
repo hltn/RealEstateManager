@@ -410,15 +410,6 @@ export class AnonymizeCustomerDto {
   confirm: boolean;
 }
 
-export class PhoneLookupDto {
-  @ApiProperty({ example: '0912 345 678' })
-  @Trim()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(PHONE_INPUT_MAX_LENGTH)
-  phone: string;
-}
-
 export class PhoneViewDto {
   @ApiProperty({ enum: PhoneViewPurpose })
   @IsEnum(PhoneViewPurpose)

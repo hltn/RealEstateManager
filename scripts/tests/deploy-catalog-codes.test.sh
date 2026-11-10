@@ -59,6 +59,14 @@ docker() {
   if [[ "$1 $2" == "volume ls" ]]; then [[ -n "${FAKE_VOLUME:-}" ]] && echo "$FAKE_VOLUME"; return 0; fi
   if [[ "$1" == "inspect" && "$*" == *"$MONGO_CONTAINER"* ]]; then [[ "${FAKE_CONTAINER:-1}" == "1" ]]; return $?; fi
   if [[ "$1" == "inspect" && "$*" == *Labels* ]]; then return 1; fi
+  if [[ "$*" == *migrations/cli.js\ status* ]]; then   # cổng chặn của bước 90 (T-17): mặc định không còn migration pre-up chờ
+    echo '{"appVersion":"1.0.5","pending":[{"id":"011_x","description":"d","phase":"post-up"}],"locked":null}'
+    return 0
+  fi
+  if [[ "$*" == *crm-customer-codes.cli.js* ]]; then
+    echo "FAKE: bù mã khách (rc=${FAKE_CU_RC:-0})"
+    return "${FAKE_CU_RC:-0}"
+  fi
   if [[ "$*" == *migrations/cli.js\ reconcile* ]]; then
     echo "FAKE: reconcile (rc=${FAKE_RECONCILE_RC:-0})"
     return "${FAKE_RECONCILE_RC:-0}"
@@ -170,6 +178,7 @@ expect_eq "downgrade: deploy exit 0 (bỏ qua bước bù)" "0" "$rc"
 expect_eq "downgrade: không gọi lệnh bù" "0" "$(grep -c 'crm-catalog-codes.cli.js' "$TMP/order")"
 
 # ── Nhánh DB TRỐNG / cài mới (T-19): 6b bỏ qua nên reconcile --apply chạy SAU up + liveness, trước 8c ──────────
+pre_recon_lines() { grep 'migrations/cli.js reconcile' "$TMP/order" | grep -v -- '--phase post-up' || true; }
 RECON='compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy'
 rc="$(FAKE_FRESH=1 run_main 0)"
 expect_eq "cài mới: exit 0" "0" "$rc"
@@ -177,9 +186,9 @@ mapfile -t order < "$TMP/order"
 i_up="$(idx 'up -d --build')"; i_live="$(idx wait_backend_liveness)"; i_rc="$(idx 'migrations/cli.js reconcile')"; i_cc="$(idx crm-catalog-codes.cli.js)"
 (( i_rc > i_live && i_live > i_up )) && ok || fail "cài mới: reconcile phải SAU up và liveness (up=$i_up live=$i_live reconcile=$i_rc)"
 (( i_cc > i_rc )) && ok || fail "cài mới: bước bù 8c phải SAU reconcile (reconcile=$i_rc, bù=$i_cc)"
-expect_eq "cài mới: reconcile gọi đúng 1 lần (sync 8b không gọi thêm)" "1" "$(grep -c 'migrations/cli.js reconcile' "$TMP/order")"
-expect_contains "cài mới: đúng lệnh --apply --by deploy, không --skip-version" "$RECON" "$(grep 'migrations/cli.js reconcile' "$TMP/order")"
-expect_not_contains "cài mới: không --skip-version" "--skip-version" "$(grep 'migrations/cli.js reconcile' "$TMP/order")"
+expect_eq "cài mới: reconcile pre-up gọi đúng 1 lần (sync 8b không gọi thêm)" "1" "$(pre_recon_lines | wc -l | tr -d ' ')"
+expect_contains "cài mới: đúng lệnh --apply --by deploy, không --skip-version" "$RECON" "$(pre_recon_lines)"
+expect_not_contains "cài mới: không --skip-version" "--skip-version" "$(pre_recon_lines)"
 expect_contains "cài mới: deploy báo xong" "Deploy xong" "$(cat "$TMP/out")"
 
 rc="$(FAKE_FRESH=1 FAKE_RECONCILE_RC=1 run_main 0)"
@@ -195,11 +204,11 @@ expect_eq "cài mới, reconcile lỗi mã 4: deploy exit 1" "1" "$rc"
 # Nhánh KHÁC không đổi: DB đã có dữ liệu (không FRESH) => 8a không chạy, 8b (sync) vẫn gọi reconcile --apply 1 lần.
 rc="$(run_main 0)"
 expect_eq "DB có dữ liệu: exit 0" "0" "$rc"
-expect_eq "DB có dữ liệu: đúng 1 reconcile (8b), không thêm 8a" "1" "$(grep -c 'migrations/cli.js reconcile' "$TMP/order")"
+expect_eq "DB có dữ liệu: đúng 1 reconcile pre-up (8b), không thêm 8a" "1" "$(pre_recon_lines | wc -l | tr -d ' ')"
 expect_not_contains "DB có dữ liệu: không có log bước 8a" "Bước 8a" "$(cat "$TMP/out")"
 
 # ── migration_gate THẬT + docker inspect / volume ls giả (M1): chỉ cài mới khi KHÔNG container VÀ KHÔNG volume Mongo ──────
-RECON_N() { grep -c 'migrations/cli.js reconcile' "$TMP/order"; }
+RECON_N() { pre_recon_lines | wc -l | tr -d ' '; }
 rc="$(FAKE_REAL_GATE=1 FAKE_MONGO_HEALTHY=0 FAKE_CONTAINER=0 FAKE_VOLUME= run_main 0)"
 expect_eq "gate thật, không container+không volume: exit 0" "0" "$rc"
 expect_eq "gate thật, cài mới thật: 8a chạy reconcile 1 lần" "1" "$(RECON_N)"

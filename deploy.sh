@@ -14,12 +14,16 @@
 # Các bước: tiền điều kiện (+ dung lượng đĩa) -> git pull (ff-only) -> `compose config -q` -> kiểm tra migration 005
 # -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung; bỏ qua nếu DB chưa có dữ liệu: không `users`, không document nào) -> gắn thẻ image backend hiện tại làm bản dự phòng
 # -> build backend (kèm GIT_COMMIT) -> runner migration `reconcile` (PT-027, bước 6b): dry-run xem kế hoạch, rồi
-# `reconcile --apply --skip-version` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
-# rồi chạy migration 007+ còn chờ) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply`
-# (bước 8b, chỉ còn ghi `version`; CÀI MỚI không có container Mongo: 6b/8b bỏ qua, bước 8a chạy `reconcile --apply` đủ 007/008/009 + version ngay sau liveness) -> điểm gọi hậu-migrate DÙNG CHUNG `run_post_migrate_steps` (8c cũ, T-03): chạy các tệp scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên, bỏ qua toàn bộ khi downgrade; bước 10-catalog-codes.sh (v1.0.4) = `node dist/migrations/crm-catalog-codes.cli.js --apply`
-# chạy MỌI lần deploy, ngay sau khi backend sống (idempotent, vài giây). Bước thoát mã khác 0 thì in cảnh báo ĐỎ, ghi log
-# $LOGS_DIR/deploy-catalog-codes-<thời-gian>.log và deploy THẤT BẠI (exit khác 0, kèm tên bước), KHÔNG im lặng. Lý do: khoảng trống giữa 6b
-# (migration 007/008 chạy khi image cũ còn phục vụ) và `up` có thể để lại vài bản ghi chỉ có id, chưa có `code`.
+# `reconcile --apply --skip-version --phase pre-up` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
+# rồi chạy migration pre-up 007..010 còn chờ; migration pha `post-up` như 011 KHÔNG chạy ở đây) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply --phase pre-up`
+# (bước 8b, chỉ còn ghi `version`; CÀI MỚI không có container Mongo: 6b/8b bỏ qua, bước 8a chạy `reconcile --apply --phase pre-up` đủ 007..010 + version ngay sau liveness) -> điểm gọi hậu-migrate DÙNG CHUNG `run_post_migrate_steps` (8c cũ, T-03/T-17): chạy các tệp scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên, bỏ qua toàn bộ khi downgrade:
+#   10-catalog-codes.sh     (v1.0.4) `crm-catalog-codes.cli.js --apply`, log deploy-catalog-codes-<TS>.log
+#   20-customer-codes.sh    (v1.0.5) `crm-customer-codes.cli.js --apply`, log deploy-customer-codes-<TS>.log (CLI thoát 0 và không làm gì nếu sổ chưa có 010)
+#   90-post-up-migrations.sh (v1.0.5) `reconcile --apply --skip-version --phase post-up` = migration 011 MỘT CHIỀU (bỏ unique SĐT), log deploy-post-up-<TS>.log;
+#                           TỪ CHỐI chạy (exit khác 0) nếu `status` còn migration pre-up chờ (gồm 010) hoặc không đọc được trạng thái
+# chạy MỌI lần deploy, ngay sau khi backend sống (idempotent). Bước thoát mã khác 0 thì in cảnh báo ĐỎ, ghi log riêng của bước
+# và deploy THẤT BẠI (exit khác 0, kèm tên bước), các bước sau KHÔNG chạy, KHÔNG im lặng. Lý do: khoảng trống giữa 6b
+# (migration 007/008/010 chạy khi image cũ còn phục vụ) và `up` có thể để lại vài bản ghi chưa có `code`/`customerCode`.
 #
 # Tự migrate MẶC ĐỊNH BẬT (DEPLOY_AUTO_MIGRATE=1). Tắt bằng --no-migrate (giữ hành vi cũ: có việc chờ hoặc cần baseline
 # thì DỪNG trước `up`; cờ này chỉ chặn migrate TRƯỚC `up` ở 6b, còn 8b vẫn chạy `reconcile --apply` để ghi phiên bản khi DB sạch,
@@ -36,6 +40,8 @@
 # vẫn được lùi IMAGE về bản `pre-<thời-gian>` (L1, an toàn). Khi tiến lại thì bước hậu-migrate 10-catalog-codes (8c cũ) chạy lại và sửa bản ghi image cũ vừa ghi
 # thiếu `code`. Chỉ khi cần dọn trường mới mới `$unset` (L2, SAU khi đã lùi image); mongorestore từ deploy-pre-* là L3, cuối cùng.
 # Migration khác (005/006, nâng cấp Mongo...) vẫn KHÔNG lùi image. Chi tiết: tài liệu mục 11.
+# NGOẠI LỆ v1.0.5: 010 (index mã khách partial + counter) cũng chỉ thêm nên lùi được image TRƯỚC bước 90. Bước 90 chạy 011 (bỏ unique SĐT, MỘT CHIỀU):
+# SAU bước 90 chỉ sửa tiến, KHÔNG lùi image v1.0.3 (SĐT có thể null/trùng, v1.0.3 giả định chuỗi); print_recovery nêu rõ và nêu cách kiểm 011.
 #
 # Bí mật: script KHÔNG chứa bí mật. Mọi lệnh compose kèm `--env-file .env.docker`. Mật khẩu root Mongo chỉ được đọc
 # từ biến môi trường BÊN TRONG container và đưa cho mongodump/mongorestore qua pipe (không nằm trên dòng lệnh, không
@@ -141,7 +147,7 @@ Cập nhật stack production đang chạy lên bản mới nhất của nhánh 
                 chờ hoặc cần baseline thì script DỪNG trước `up` (stack không đổi) và in lệnh để chạy tay. Cờ này chỉ chặn migrate
                 TRƯỚC `up` (6b); bước 8b sau khi backend sống vẫn chạy `reconcile --apply` và vẫn ghi phiên bản khi DB sạch.
   --migrate     Bí danh của chế độ mặc định (tự migrate đã bật sẵn); giữ lại cho tương thích. Không dùng cùng --no-migrate.
-  --plan-only   Chạy đến hết `reconcile` dry-run (runner trong image backend vừa build) rồi THOÁT: không backup, không ghi
+  --plan-only   Chạy đến hết `reconcile` dry-run (runner trong image backend vừa build, MỌI pha: thấy cả 011 post-up) rồi THOÁT: không backup, không ghi
                 gì vào DB, không `up`, stack không đổi. Dùng một lần trước lần deploy 1.0.3 đầu tiên để xem kết quả probe.
                 Có git pull (trừ khi kèm --no-pull) và build image backend (vài phút, cần đĩa như deploy thường).
                 Kèm --no-migrate (hoặc DEPLOY_AUTO_MIGRATE=0): --plan-only VẪN thắng, vẫn chạy `reconcile` dry-run (script in một
@@ -151,10 +157,11 @@ Cập nhật stack production đang chạy lên bản mới nhất của nhánh 
 Tự migrate (mặc định): SAU backup, TRƯỚC `up`, runner `reconcile` (1) lập kế hoạch dry-run, (2) --apply --skip-version:
   - DB đã có dữ liệu mà `system` chưa có `version`: probe CHỈ-ĐỌC cho 002..006; đạt hết thì ghi sổ baseline (không chạy lại
     002..006), không đạt thì DỪNG (mã 4), không ghi gì;
-  - chạy migration 007 trở đi còn chờ (đúng thứ tự, dừng ở lỗi).
-Sau khi backend sống, bước 8b `reconcile --apply` chỉ còn ghi `version` (lỗi chỉ cảnh báo).
-Rồi điểm gọi hậu-migrate scripts/post-migrate/ (8c cũ; bước 10-catalog-codes.sh, MỌI lần deploy): `node dist/migrations/crm-catalog-codes.cli.js --apply` bù mã danh mục cho bản ghi image cũ ghi
-trong khoảng giữa 6b và `up`. Lệnh bù thoát mã khác 0 thì in cảnh báo đỏ, ghi log và deploy báo LỖI (exit khác 0), khác với 8b.
+  - chạy migration pre-up 007..010 còn chờ (`--phase pre-up`; đúng thứ tự, dừng ở lỗi). Migration post-up (011) KHÔNG chạy ở đây.
+Sau khi backend sống, bước 8b `reconcile --apply --phase pre-up` chỉ còn ghi `version` (lỗi chỉ cảnh báo).
+Rồi điểm gọi hậu-migrate scripts/post-migrate/ (8c cũ, MỌI lần deploy, theo thứ tự tên): 10-catalog-codes.sh (`crm-catalog-codes.cli.js --apply`: bù mã danh mục),
+20-customer-codes.sh (`crm-customer-codes.cli.js --apply`: bù mã khách), 90-post-up-migrations.sh (`reconcile --apply --skip-version --phase post-up`: migration 011 MỘT CHIỀU, bỏ
+unique SĐT; TỪ CHỐI chạy nếu còn migration pre-up chờ/gồm 010 chưa áp dụng). Bước thoát mã khác 0 thì in cảnh báo đỏ, ghi log và deploy báo LỖI (exit khác 0), khác với 8b; các bước sau không chạy.
 Dừng TRƯỚC `up` (stack chưa đổi) khi runner trả: 3 có khóa | 4 probe không đạt | 5 downgrade | 1 lỗi hoặc từ chối.
 Downgrade CỐ Ý (khôi phục image cũ): DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh ... : bỏ qua migrate, KHÔNG ghi/hạ `version`.
 
@@ -166,9 +173,10 @@ Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không
 -> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) -> gắn thẻ image backend hiện tại thành
 <project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `reconcile` (bước 6b, xem trên;
 với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần baseline) -> up -d --build -> chờ mongo healthy và
-backend liveness -> ghi phiên bản vào collection `system` (bước 8b) -> điểm gọi hậu-migrate scripts/post-migrate/ (bước 10 bù mã danh mục, lỗi = deploy báo lỗi).
+backend liveness -> ghi phiên bản vào collection `system` (bước 8b) -> điểm gọi hậu-migrate scripts/post-migrate/ (10 bù mã danh mục, 20 bù mã khách, 90 migration post-up 011; lỗi = deploy báo lỗi).
 
-Lùi image sau migration 007/008 (v1.0.4): ĐƯỢC, vì hai migration chỉ thêm trường (L1). Lần tiến lại, bước hậu-migrate 10-catalog-codes tự sửa bản ghi thiếu mã.
+Lùi image sau migration 007/008 (v1.0.4) và 010 (v1.0.5): ĐƯỢC, vì chỉ thêm trường/index (L1). Lần tiến lại, các bước hậu-migrate 10 và 20 tự sửa bản ghi thiếu mã.
+Lùi image TRƯỚC bước 90 (011 chưa chạy): được; sau bước 90 chỉ sửa tiến, KHÔNG lùi image v1.0.3 (011 một chiều). Kiểm 011 đã chạy chưa bằng `status` của runner (print_recovery hướng dẫn).
 
 KHÔNG dùng cho lần nâng cấp standalone đầu tiên (xem mục 5 tài liệu). KHÔNG rollback bằng git checkout.
 Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT,
@@ -205,6 +213,16 @@ print_recovery() {
     echo "   dù migration đã --apply. Khi tiến lại, bước hậu-migrate 10-catalog-codes.sh (crm-catalog-codes.cli.js --apply) tự sửa bản ghi image cũ ghi thiếu mã."
     echo "   Chỉ khi cần dọn trường mới: \$unset các trường mã SAU KHI đã lùi image (L2). mongorestore từ deploy-pre-* là L3, cuối cùng"
     echo "   (mất dữ liệu phát sinh sau backup). Không áp dụng ngoại lệ này cho migration khác."
+    echo
+    echo "2c) v1.0.5 — migration 010 (index mã khách partial + counter) chỉ THÊM nên lùi IMAGE v1.0.3 vẫn được, miễn là TRƯỚC bước 90."
+    echo "   Bước 90 (scripts/post-migrate/90-post-up-migrations.sh) chạy migration 011 MỘT CHIỀU: bỏ unique SĐT (phone_1 thành index thường),"
+    echo "   ẩn danh 'anonymized:' thành null. Kiểm 011 đã chạy chưa:"
+    echo "     $(runner_cmd_hint) status      # 011_crm_drop_unique_phone nằm trong mục 'đã áp dụng' = đã chạy (hoặc có file $LOGS_DIR/deploy-post-up-${TS}.log)"
+    echo "   - 011 CHƯA chạy (bước 10/20 lỗi, hoặc bước 90 từ chối vì còn migration pre-up chờ): lùi image v1.0.3 theo mục 2/2b như thường lệ"
+    echo "     (phone_1 vẫn unique, mã khách thừa không ảnh hưởng v1.0.3)."
+    echo "   - 011 ĐÃ chạy (bước 90 xong hoặc chạy dở): sau bước 90 chỉ sửa tiến (fix-forward), KHÔNG lùi image v1.0.3: phone có thể null/trùng,"
+    echo "     mapper v1.0.3 giả định phone là chuỗi. Sửa nguyên nhân rồi deploy lại. Quay lại duy nhất bằng mongorestore từ ${BACKUP_FILE:-file deploy-pre-*}"
+    echo "     (mất dữ liệu sau thời điểm dump) và do Oniichan quyết định."
     echo
     echo "3) Nếu dữ liệu ĐÃ đổi (migration 005/006, nâng cấp Mongo...): KHÔNG quay về code/image cũ, bản cũ có thể"
     echo "   không đọc được dữ liệu mới. Với deploy thường lệ (lâu sau lần nâng cấp standalone) CHỈ dùng mongorestore"
@@ -557,7 +575,7 @@ auto_reconcile() {
   local cli rc=0
   cli="$(runner_cmd_hint)"
   log "Lập kế hoạch migration (runner reconcile, dry-run, chỉ đọc) ..."
-  reconcile_dry_run --skip-version
+  reconcile_dry_run --skip-version --phase pre-up
   MIGRATION_GATE_RAN=1
   if (( DOWNGRADE_ACTIVE == 1 )); then
     return 0
@@ -579,8 +597,8 @@ auto_reconcile() {
   fi
   # Từ đây dữ liệu/sổ có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
   STACK_TOUCHED=1
-  log "reconcile --apply --skip-version (baseline nếu cần + migration chờ; backup: ${BACKUP_FILE:-không có, DB trống}) ..."
-  run_migration_cli reconcile --apply --by deploy --skip-version || rc=$?
+  log "reconcile --apply --skip-version --phase pre-up (baseline nếu cần + migration pre-up chờ; backup: ${BACKUP_FILE:-không có, DB trống}) ..."
+  run_migration_cli reconcile --apply --by deploy --skip-version --phase pre-up || rc=$?
   case "$rc" in
     0) ;;
     5)
@@ -706,7 +724,7 @@ sync_system_version() {
   fi
   mongo_is_healthy || return 0
   local rc=0
-  run_migration_cli reconcile --apply --by deploy || rc=$?
+  run_migration_cli reconcile --apply --by deploy --phase pre-up || rc=$?
   if (( rc != 0 )); then
     warn "Không ghi được phiên bản vào collection \`system\` (mã $rc; backend vẫn chạy). Ghi lại sau: $(runner_cmd_hint) reconcile --apply --by cli"
   fi
@@ -719,7 +737,7 @@ fresh_install_reconcile() {
   (( FRESH_INSTALL == 1 )) || return 0
   local rc=0
   log "Bước 8a (cài mới): reconcile --apply --by deploy (chạy 007/008/009 và ghi phiên bản trong cùng lần deploy) ..."
-  run_migration_cli reconcile --apply --by deploy || rc=$?
+  run_migration_cli reconcile --apply --by deploy --phase pre-up || rc=$?
   if (( rc != 0 )); then
     die "Bước 8a (cài mới) reconcile --apply thất bại (mã $rc): backend vẫn chạy nhưng migration/phiên bản chưa đủ. Xem: $(runner_cmd_hint) status ; sửa nguyên nhân rồi chạy: $(runner_cmd_hint) reconcile --apply --by cli"
   fi
@@ -727,8 +745,8 @@ fresh_install_reconcile() {
 }
 
 # Điểm gọi hậu-migrate DÙNG CHUNG (T-03, FR-23; thay bước 8c cũ): sau `up` + liveness + 8a/8b, chạy lần lượt các tệp
-# scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên (hiện có 10-catalog-codes.sh = hành vi 8c cũ: bù mã danh mục, MỌI lần deploy).
-# KHÔNG có logic bù mã trong deploy.sh. Hợp đồng mỗi tệp: nhận ENV_FILE, LOGS_DIR, TS, DOC, LOG_PREFIX qua môi trường, tự chạy lệnh trong
+# scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên (10-catalog-codes.sh = hành vi 8c cũ: bù mã danh mục; 20-customer-codes.sh = bù mã khách; 90-post-up-migrations.sh = migration pha post-up, 011; MỌI lần deploy).
+# KHÔNG có logic bù mã trong deploy.sh (T-17: cả cổng chặn 010 của bước 90 nằm trong tệp bước). Hợp đồng mỗi tệp: nhận ENV_FILE, LOGS_DIR, TS, DOC, LOG_PREFIX qua môi trường, tự chạy lệnh trong
 # container, tự ghi log `$LOGS_DIR/deploy-<tên>-<TS>.log` và tự in cảnh báo ĐỎ + thoát khác 0 khi lỗi. Tệp nào thoát khác 0 thì `die` kèm
 # tên bước (on_exit in hướng dẫn lùi), các tệp sau KHÔNG chạy. Downgrade có chủ ý (DOWNGRADE_ACTIVE=1): bỏ qua TOÀN BỘ (image cũ không có
 # các CLI này). Chạy bằng `bash <tệp>` nên không phụ thuộc bit thực thi (commit từ Windows có thể làm mất bit này).

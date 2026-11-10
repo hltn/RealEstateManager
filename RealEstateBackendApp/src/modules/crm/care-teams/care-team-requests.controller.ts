@@ -49,7 +49,7 @@ export class CareTeamRequestsController {
   @Roles(UserRole.MANAGER, UserRole.STAFF)
   @ApiOperation({
     summary:
-      'Đề nghị tham gia nhóm chăm sóc khách đã có (customerRef từ phone-lookups); giới hạn 20 lần/phút/người',
+      'Đề nghị tham gia nhóm chăm sóc khách đã có (customerRef lấy từ luồng tra SĐT cũ đã bỏ ở v1.0.5; endpoint này sẽ gỡ ở T-13); giới hạn 20 lần/phút/người',
   })
   @ApiDataResponse(CreateCareTeamRequestResponseDto, HttpStatus.CREATED)
   @ApiResponse({

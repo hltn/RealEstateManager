@@ -31,9 +31,8 @@ export interface ListOptions extends FindOptions {
 /**
  * Tầng truy vấn `customers` (tài liệu 04 mục 4.3): MỌI hàm đọc/ghi nhận `scope: CustomerScope` và gộp vào bộ
  * lọc — thiếu phạm vi là lỗi biên dịch vì `CustomerScope` chỉ `buildCustomerScope` tạo được.
- * Ngoại lệ không có scope chỉ gồm `findByPhoneForDuplicateCheck` (SĐT duy nhất toàn hệ thống nên phải tra
- * cả khách ngoài phạm vi để báo trùng) và `findByIdForJoinRequest` (đề nghị tham gia nhóm của người chưa thấy khách);
- * cả hai chỉ trả field tối thiểu.
+ * Ngoại lệ không có scope chỉ gồm `findByIdForJoinRequest` (đề nghị tham gia nhóm của người chưa thấy khách);
+ * chỉ trả field tối thiểu.
  */
 @Injectable()
 export class CustomersRepository {
@@ -189,26 +188,8 @@ export class CustomersRepository {
   }
 
   /**
-   * NGOẠI LỆ không phạm vi: tra khách theo SĐT chuẩn hóa (kể cả đã xóa mềm) để báo trùng/tra cứu trùng.
-   * Chỉ lấy field tối thiểu (không có tên, email, SĐT).
-   */
-  findByPhoneForDuplicateCheck(
-    phone: string,
-    session?: ClientSession,
-  ): Promise<Pick<
-    CustomerLean,
-    '_id' | 'careTeam' | 'primaryAssigneeId' | 'teamIds' | 'deletedAt'
-  > | null> {
-    const query = this.model
-      .findOne({ phone })
-      .select('careTeam primaryAssigneeId teamIds deletedAt');
-    if (session) query.session(session);
-    return query.lean().exec();
-  }
-
-  /**
-   * NGOẠI LỆ không phạm vi thứ hai: tra khách theo `_id` để gửi đề nghị tham gia nhóm chăm sóc. Người gửi đề nghị
-   * theo định nghĩa chưa thấy khách (ngoài phạm vi) nhưng đã có `customerRef` từ `phone-lookups`. Chỉ trả field
+   * NGOẠI LỆ không phạm vi: tra khách theo `_id` để gửi đề nghị tham gia nhóm chăm sóc. Người gửi đề nghị
+   * theo định nghĩa chưa thấy khách (ngoài phạm vi) nhưng đã có `customerRef` từ luồng tra SĐT cũ. Chỉ trả field
    * tối thiểu (không có tên, SĐT, email); khách đã xóa mềm/ẩn danh do service xử lý như không tồn tại.
    */
   findByIdForJoinRequest(
