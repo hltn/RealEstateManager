@@ -26,6 +26,8 @@ export enum ErrorCode {
   // 409
   /** Thêm ở v1.0.5 (FR-11): phụ trách chính bị khóa, không gỡ/đổi được (kể cả Quản trị/Quản lý). */
   PRIMARY_LOCKED = 'PRIMARY_LOCKED',
+  /** Thêm ở v1.0.5 (FR-17): mỗi khách tối đa 10 thành viên phụ (MEMBER); vượt thì chặn thêm. */
+  CARE_TEAM_LIMIT_EXCEEDED = 'CARE_TEAM_LIMIT_EXCEEDED',
   CUSTOMER_ANONYMIZED = 'CUSTOMER_ANONYMIZED',
   /** Thêm ở v1.0.2 mục D: xóa khách không thuộc nhóm "Bỏ" (hàng loạt, hoặc STAFF xóa đơn). */
   CUSTOMER_NOT_DROPPED = 'CUSTOMER_NOT_DROPPED',

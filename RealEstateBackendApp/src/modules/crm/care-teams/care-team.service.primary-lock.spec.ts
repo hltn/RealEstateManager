@@ -59,6 +59,7 @@ const build = (role: UserRole, userId: Types.ObjectId, careTeam: any[]) => {
     assignees as never,
     { record: jest.fn().mockResolvedValue(undefined) } as never,
     { dispatch: jest.fn().mockResolvedValue({ created: 0 }) } as never,
+    { consume: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, repo };
 };

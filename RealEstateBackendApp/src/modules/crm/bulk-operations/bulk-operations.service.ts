@@ -222,7 +222,6 @@ export class BulkOperationsService {
               now,
               { skipExisting: true },
             ),
-          restrictToActorScope: true,
           source,
           origin: 'BULK_ADD',
         },

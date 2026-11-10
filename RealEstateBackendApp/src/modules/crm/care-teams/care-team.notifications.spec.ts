@@ -44,6 +44,7 @@ const buildService = (before: { careTeam: any[]; __v: number }) => {
     assignees as never,
     audit as never,
     { dispatch } as never,
+    { consume: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, dispatch };
 };
@@ -63,7 +64,6 @@ const addMutation = (
     planAddMembers(current, { userIds, primaryUserId }, ACTOR, now, {
       skipExisting: true,
     }),
-  restrictToActorScope: true,
   source: 'WEB',
   origin,
 });
@@ -151,16 +151,21 @@ describe('CareTeamService thông báo CUSTOMER_ASSIGNED qua Dispatcher (T-34)', 
       addMutation('TEAM_ADD', [MEMBER_A, MEMBER_B], MEMBER_B),
       {} as never,
     );
-    const requests = dispatch.mock.calls[0][0];
-    const byUser = new Map<string, any>(
-      requests.map((r: any) => [String(r.recipientIds[0]), r]),
+    const requests = dispatch.mock.calls[0][0] as Array<{
+      recipientIds: unknown[];
+      dedupeKey: string;
+      context: { careRole: string };
+      inApp: { priority: unknown };
+    }>;
+    const byUser = new Map(
+      requests.map((r) => [String(r.recipientIds[0]), r] as const),
     );
     expect(byUser.get(String(MEMBER_A))!.context.careRole).toBe('MEMBER');
     expect(byUser.get(String(MEMBER_B))!.context.careRole).toBe('PRIMARY');
     expect(byUser.get(String(MEMBER_B))!.inApp.priority).toBe(
       NotificationPriority.HIGH,
     );
-    expect(new Set(requests.map((r: any) => r.dedupeKey)).size).toBe(1);
+    expect(new Set(requests.map((r) => r.dedupeKey)).size).toBe(1);
   });
 
   it('người thực hiện tự thêm mình thì không gửi cho chính mình (không yêu cầu nào)', async () => {

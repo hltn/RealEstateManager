@@ -56,7 +56,7 @@ export class CareTeamController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Thêm thành viên phụ (Quản trị, Quản lý trong phạm vi, phụ trách chính); primaryUserId chỉ nhận khi nhóm rỗng và người gọi là Quản trị/Quản lý',
+      'Mời thành viên phụ (Quản trị, Quản lý trong phạm vi, phụ trách chính); người được mời ACTIVE, vai trò Quản lý/Nhân viên, KHÔNG giới hạn theo nhóm; tối đa 10 thành viên phụ mỗi khách; rate-limit 30 lượt/phút/người; primaryUserId chỉ nhận khi nhóm rỗng và người gọi là Quản trị/Quản lý',
   })
   @ApiDataResponse(CareTeamResponseDto, HttpStatus.CREATED)
   @ApiResponse({
@@ -65,7 +65,15 @@ export class CareTeamController {
       'PRIMARY_REQUIRED | USER_NOT_ASSIGNABLE | VALIDATION_FAILED (primaryUserId khi nhóm đã có người)',
   })
   @ApiResponse({ status: 403, description: 'CARE_TEAM_ACTION_FORBIDDEN' })
-  @ApiResponse({ status: 409, description: 'ALREADY_IN_CARE_TEAM' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'ALREADY_IN_CARE_TEAM | CARE_TEAM_LIMIT_EXCEEDED (quá 10 thành viên phụ) | VERSION_CONFLICT',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'RATE_LIMITED (CARE_TEAM_INVITE: 30 lượt/phút/người)',
+  })
   async addMembers(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

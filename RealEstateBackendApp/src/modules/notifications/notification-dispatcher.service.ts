@@ -66,6 +66,12 @@ export interface NotificationRequest {
   dedupeKey: string;
 }
 
+/** Điều kiện "tài khoản được nhận thông báo": đang hoạt động và chưa xóa mềm (dùng chung cho mọi nơi chọn người nhận). */
+const ACTIVE_USER_FILTER = {
+  status: UserStatus.ACTIVE,
+  deletedAt: null,
+} as const;
+
 type StoredTypes = Record<string, { push?: boolean; inApp?: boolean }>;
 
 interface PreparedOperation {
@@ -84,6 +90,10 @@ interface PreparedOperation {
  * Điểm vào DUY NHẤT để tạo thông báo (FR-44): chuẩn hóa người nhận, tôn trọng `inApp`, ghi hộp thông báo bằng
  * upsert theo `(userId, dedupeKey)` (không bao giờ E11000, an toàn trong transaction), quyết `pushStatus` rồi
  * đăng ký `afterCommit` xếp job `push.send` (`jobId` theo id thông báo, xem `pushSendJobId`).
+ *
+ * Người nhận phải là tài khoản `ACTIVE` và chưa xóa (FR-16, FR-18): tài khoản bị khóa/xóa không nhận thông báo trong app
+ * lẫn push, áp cho MỌI loại thông báo vì đây là điểm vào duy nhất. Mở khóa lại thì các thông báo sau đó nhận bình
+ * thường (thông báo phát sinh lúc bị khóa không được bù).
  *
  * `pushStatus = PENDING` khi và chỉ khi: nhà cung cấp push đang bật (cờ + VAPID), loại thuộc `PUSH_CATALOG`, `pushWhen`
  * đúng với `context`, và người nhận chưa tắt `push` cho loại đó. Ngược lại `SKIPPED` và không lưu nội dung push.
@@ -113,16 +123,38 @@ export class NotificationDispatcher {
     requests: NotificationRequest[],
     session?: ClientSession,
   ): Promise<{ created: number }> {
+    return this.deliver(requests, session, false);
+  }
+
+  /**
+   * Thân của `dispatch`. `isRecipientsVerifiedActive = true` khi nơi gọi đã tự lọc `ACTIVE` bằng cùng điều kiện
+   * (`notifyAdmins`) để khỏi truy vấn `users` lần hai.
+   */
+  private async deliver(
+    requests: NotificationRequest[],
+    session: ClientSession | undefined,
+    isRecipientsVerifiedActive: boolean,
+  ): Promise<{ created: number }> {
     if (requests.length === 0) return { created: 0 };
 
     // Dựng nội dung push TRƯỚC khi ghi gì: lỗi lập trình (biến lạ, thiếu khóa) dừng sớm, không ghi dở.
     const contents = requests.map((request) => this.prepareContent(request));
 
-    const preferences = await this.loadPreferences(requests, session);
+    // Một truy vấn `users` theo lô cho mọi người nhận của mọi yêu cầu (không N+1); BLOCKED/đã xóa/không tồn tại bị loại.
+    const activeIds = isRecipientsVerifiedActive
+      ? null
+      : await this.loadActiveRecipientIds(requests, session);
+    const recipientLists = requests.map((request) =>
+      this.recipientsOf(request).filter(
+        (id) => activeIds === null || activeIds.has(String(id)),
+      ),
+    );
+
+    const preferences = await this.loadPreferences(recipientLists, session);
     const now = new Date();
     const operations: PreparedOperation[] = [];
     for (const [index, request] of requests.entries()) {
-      for (const userId of this.recipientsOf(request)) {
+      for (const userId of recipientLists[index]) {
         const stored = preferences.get(String(userId));
         if (!isInAppEnabled(stored, request.type)) continue;
         operations.push(
@@ -162,16 +194,16 @@ export class NotificationDispatcher {
       const admins = await this.userModel
         .find({
           roles: UserRole.ADMIN,
-          status: UserStatus.ACTIVE,
-          deletedAt: null,
+          ...ACTIVE_USER_FILTER,
         })
         .select('_id')
         .session(session ?? null)
         .lean()
         .exec();
-      const { created } = await this.dispatch(
+      const { created } = await this.deliver(
         [{ ...request, recipientIds: admins.map((admin) => admin._id) }],
         session,
+        true,
       );
       return created;
     } catch (error) {
@@ -220,12 +252,34 @@ export class NotificationDispatcher {
     return [...unique.values()];
   }
 
-  private async loadPreferences(
+  /**
+   * Tập `_id` (dạng chuỗi) các người nhận đang `ACTIVE` và chưa xóa trong số mọi người nhận của `requests`.
+   * Một truy vấn duy nhất theo lô.
+   */
+  private async loadActiveRecipientIds(
     requests: NotificationRequest[],
+    session?: ClientSession,
+  ): Promise<Set<string>> {
+    const candidateIds = [
+      ...new Set(requests.flatMap((r) => this.recipientsOf(r).map(String))),
+    ].map((id) => new Types.ObjectId(id));
+    if (candidateIds.length === 0) return new Set();
+    const rows = await this.userModel
+      .find({ _id: { $in: candidateIds }, ...ACTIVE_USER_FILTER })
+      .select('_id')
+      .session(session ?? null)
+      .lean()
+      .exec();
+    return new Set(rows.map((row) => String(row._id)));
+  }
+
+  /** Cài đặt thông báo của các người nhận đã qua lọc (một truy vấn theo lô). */
+  private async loadPreferences(
+    recipientLists: Types.ObjectId[][],
     session?: ClientSession,
   ): Promise<Map<string, StoredTypes>> {
     const userIds = [
-      ...new Set(requests.flatMap((r) => this.recipientsOf(r).map(String))),
+      ...new Set(recipientLists.flatMap((list) => list.map(String))),
     ].map((id) => new Types.ObjectId(id));
     if (userIds.length === 0) return new Map();
     const rows = await this.preferenceModel

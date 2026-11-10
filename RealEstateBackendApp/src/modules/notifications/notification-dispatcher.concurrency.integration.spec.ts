@@ -45,6 +45,22 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
 
   const notifications = () => connection.collection('notifications');
 
+  /** Người nhận phải là tài khoản ACTIVE chưa xóa (T-12, FR-18) mới được ghi thông báo. */
+  const seedActiveUser = async (): Promise<Types.ObjectId> => {
+    const _id = new Types.ObjectId();
+    await connection
+      .collection('users')
+
+      .insertOne({
+        _id,
+        status: 'ACTIVE',
+        deletedAt: null,
+        email: `${String(_id)}@example.test`,
+        username: String(_id),
+      });
+    return _id;
+  };
+
   const buildRequest = (
     userId: Types.ObjectId,
     dedupeKey: string,
@@ -152,7 +168,7 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it(`FR-25: ${PARALLEL} dispatch song song cùng (userId, dedupeKey) ngoài transaction: không E11000, đúng 1 thông báo, đúng 1 job`, async () => {
-    const userId = new Types.ObjectId();
+    const userId = await seedActiveUser();
     const dedupeKey = uniqueKey('same-outside-tx');
 
     const settled = await Promise.allSettled(
@@ -168,7 +184,7 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it(`FR-25: ${PARALLEL} dispatch song song cùng (userId, dedupeKey) trong transaction riêng: không E11000, đúng 1 thông báo, đúng 1 job sau commit`, async () => {
-    const userId = new Types.ObjectId();
+    const userId = await seedActiveUser();
     const dedupeKey = uniqueKey('same-in-tx');
 
     const settled = await Promise.allSettled(
@@ -186,7 +202,7 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it(`FR-25: ${PARALLEL} dispatch song song với HAI dedupeKey khác nhau (cùng user) ngoài transaction: mỗi khóa đúng 1 bản`, async () => {
-    const userId = new Types.ObjectId();
+    const userId = await seedActiveUser();
     const keyA = uniqueKey('two-keys-A');
     const keyB = uniqueKey('two-keys-B');
 
@@ -210,7 +226,7 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it(`FR-25: ${PARALLEL} dispatch song song với HAI dedupeKey khác nhau (cùng user) trong transaction: mỗi khóa đúng 1 bản`, async () => {
-    const userId = new Types.ObjectId();
+    const userId = await seedActiveUser();
     const keyA = uniqueKey('two-keys-tx-A');
     const keyB = uniqueKey('two-keys-tx-B');
 
@@ -237,7 +253,7 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it('FR-25: một dispatch chứa nhiều yêu cầu trùng (userId, dedupeKey) trong cùng lô bulkWrite: không E11000, đúng 1 bản', async () => {
-    const userId = new Types.ObjectId();
+    const userId = await seedActiveUser();
     const dedupeKey = uniqueKey('same-batch');
 
     const settled = await Promise.allSettled([
@@ -253,7 +269,9 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it(`FR-25: ${PARALLEL} dispatch song song, mỗi lô gồm nhiều người nhận trùng nhau và khóa trùng nhau: mỗi (user, khóa) đúng 1 bản`, async () => {
-    const users = Array.from({ length: 5 }, () => new Types.ObjectId());
+    const users = await Promise.all(
+      Array.from({ length: 5 }, () => seedActiveUser()),
+    );
     const dedupeKey = uniqueKey('multi-recipient');
 
     const settled = await Promise.allSettled(
@@ -276,7 +294,7 @@ describe('FR-25 / T-51 NotificationDispatcher: upsert (userId, dedupeKey) đồn
   });
 
   it('FR-25: đua xen kẽ lô trong transaction với lô ngoài transaction cùng (userId, dedupeKey): không E11000, đúng 1 bản', async () => {
-    const userId = new Types.ObjectId();
+    const userId = await seedActiveUser();
     const dedupeKey = uniqueKey('mixed-tx');
 
     const settled = await Promise.allSettled(

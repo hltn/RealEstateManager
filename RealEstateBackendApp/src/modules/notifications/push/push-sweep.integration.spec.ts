@@ -161,10 +161,19 @@ describe('T-32 push.sweep (tích hợp)', () => {
   it('Redis lỗi lúc commit: thông báo kẹt PENDING, sweep sau 30 giây xếp lại đúng jobId push-{id}', async () => {
     isRedisDown = true;
     const customerId = new Types.ObjectId();
+    // Người nhận phải là tài khoản ACTIVE thật: Dispatcher lọc bỏ user không tồn tại/bị khóa (T-12).
+    const recipientId = new Types.ObjectId();
+    await col('users').insertOne({
+      _id: recipientId,
+      status: 'ACTIVE',
+      deletedAt: null,
+      email: `${String(recipientId)}@example.test`,
+      username: String(recipientId),
+    });
     const result = await dispatcher.dispatch([
       {
         type: NotificationType.CUSTOMER_ASSIGNED,
-        recipientIds: [new Types.ObjectId()],
+        recipientIds: [recipientId],
         inApp: { title: 'Được thêm', body: 'Nội dung' },
         vars: { actorName: 'Lan', customerName: 'Minh' },
         data: {

@@ -60,6 +60,7 @@ const build = () => {
     assignees as never,
     { record: jest.fn().mockResolvedValue(undefined) } as never,
     { dispatch: jest.fn().mockResolvedValue({ created: 0 }) } as never,
+    { consume: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, refs };
 };
@@ -90,7 +91,6 @@ describe('CareTeamService: response nhóm chăm sóc mang isLocked và role (FR-
         planAddMembers(current, { userIds: [NEW_MEMBER] }, ACTOR, now, {
           skipExisting: true,
         }),
-      restrictToActorScope: true,
       source: 'WEB',
       origin: 'TEAM_ADD',
     };

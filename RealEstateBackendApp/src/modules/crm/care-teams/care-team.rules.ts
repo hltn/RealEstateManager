@@ -7,6 +7,7 @@ import { CrmActor } from '../common/access/crm-actor';
 import { isAdminOrManager } from '../customers/access/customer-scope';
 import { CareRole } from '../customers/customer.constants';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
+import { MAX_CARE_TEAM_MEMBERS } from './care-team.constants';
 
 /** Độ dài tối đa của phần `requestId` trong `pushGroupKey` (header `X-Request-ID` do client gửi, không tin độ dài). */
 export const MAX_PUSH_GROUP_REQUEST_ID_LENGTH = 128;
@@ -65,6 +66,27 @@ export const assertCareTeamInvariant = (careTeam: CareTeamEntry[]): void => {
   if (primaries.length !== 1 || distinct.size !== careTeam.length) {
     throw new Error(
       'Nhóm chăm sóc vi phạm bất biến: đúng 1 PRIMARY, không trùng người',
+    );
+  }
+};
+
+/**
+ * Giới hạn thành viên phụ (FR-17): sau thay đổi có THÊM người mà số MEMBER vượt `MAX_CARE_TEAM_MEMBERS` ⇒ 409
+ * `CARE_TEAM_LIMIT_EXCEEDED`. Thay đổi không thêm ai (gỡ người) luôn qua, nên khách cũ đã quá 10 vẫn gỡ được
+ * (không ép gỡ, chỉ chặn thêm). Gọi trong transaction của lần ghi (cùng khóa `__v`) để hai lời mời đồng thời
+ * không cùng vượt trần.
+ */
+export const assertMemberLimit = (change: CareTeamChange): void => {
+  if (change.addedUserIds.length === 0) return;
+  const members = change.careTeam.filter(
+    (member) => member.role === CareRole.MEMBER,
+  ).length;
+  if (members > MAX_CARE_TEAM_MEMBERS) {
+    throw new BusinessException(
+      ErrorCode.CARE_TEAM_LIMIT_EXCEEDED,
+      `Mỗi khách chỉ có tối đa ${MAX_CARE_TEAM_MEMBERS} thành viên phụ`,
+      HttpStatus.CONFLICT,
+      { limit: MAX_CARE_TEAM_MEMBERS, membersAfter: members },
     );
   }
 };

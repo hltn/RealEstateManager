@@ -58,7 +58,6 @@ describe('BulkOperationsService.ASSIGN (T-34)', () => {
     for (const call of careTeam.applyInSession.mock.calls) {
       expect(call[2]).toMatchObject({
         origin: 'BULK_ADD',
-        restrictToActorScope: true,
       });
       expect(call[3]).toBe(session);
     }

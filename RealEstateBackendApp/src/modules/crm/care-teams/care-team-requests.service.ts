@@ -408,7 +408,6 @@ export class CareTeamRequestsService {
             now,
             { skipExisting: true },
           ),
-        restrictToActorScope: false,
         source,
         origin: 'REQUEST_APPROVED',
       },

@@ -42,8 +42,10 @@ import {
 } from '../../shared/storage/file-validation';
 import { TeamsModule } from '../teams/teams.module';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 import { UsersModule } from '../users/users.module';
 import { PiiCryptoService } from './common/crypto/pii-crypto.service';
+import { CrmRateLimitService } from './common/security/crm-rate-limit.service';
 import { AttachmentCleanupService } from './care-logs/attachment-cleanup.service';
 import { CrmModule } from './crm.module';
 import { CrmSeedService } from './seed/crm-seed.service';
@@ -228,18 +230,45 @@ describe('CRM M3 — QA đối kháng', () => {
   /** SĐT VN hợp lệ, duy nhất theo thứ tự gọi (đầu 092 để không đụng M2). */
   const nextPhone = () => `092${String(1_000_000 + ++phoneSeq)}`;
 
+  /** Dựng nhóm chăm sóc ban đầu cho ca thử: người tạo là PRIMARY (FR-10), các thành viên phụ được mời sau đó. */
+  interface SeedCareTeam {
+    memberIds: string[];
+    primaryUserId: string;
+  }
+  /**
+   * Tạo khách. `careTeam` không còn là trường của `CreateCustomerDto` (T-07, gửi lên sẽ 400): để dựng nhóm có sẵn,
+   * helper tạo khách bằng CHÍNH người PRIMARY mong muốn rồi mời `memberIds` qua API. Mời tốn lượt `CARE_TEAM_INVITE`
+   * (Redis) nên lượt kiểm giới hạn được stub tạm trong lúc dựng dữ liệu, giống cách các suite CRM khác xử lý.
+   */
   const createCustomer = async (
     as: string,
     extra: Record<string, unknown> = {},
   ): Promise<{ id: string; phone: string }> => {
+    const { careTeam, ...body } = extra as {
+      careTeam?: SeedCareTeam;
+    } & Record<string, unknown>;
+    const creator = careTeam
+      ? Object.keys(ids).find((key) => ids[key] === careTeam.primaryUserId)
+      : as;
+    if (!creator) throw new Error('primaryUserId của careTeam không có token');
     const phone = nextPhone();
-    const res = await call('POST', '/crm/customers', as, {
+    const res = await call('POST', '/crm/customers', creator, {
       fullName: `Khách ${phone}`,
       phone,
-      ...extra,
+      ...body,
     });
     expect(res.status).toBe(201);
-    return { id: res.body.data.id, phone };
+    const id = res.body.data.id as string;
+    if (careTeam && careTeam.memberIds.length > 0) {
+      // Lượt CARE_TEAM_INVITE do stub mức describe (`stubRateLimit`) lo; không spy lại ở đây để khỏi gỡ nhầm stub của ca gọi ngoài.
+      if (!jest.isMockFunction(rateLimitProto.consume))
+        throw new Error(
+          'createCustomer({ careTeam }) cần stubRateLimit() trước',
+        );
+      const invited = await addMembers('admin', id, careTeam.memberIds);
+      expect(invited.status).toBe(201);
+    }
+    return { id, phone };
   };
 
   const customers = () => connection.collection('customers');
@@ -290,9 +319,6 @@ describe('CRM M3 — QA đối kháng', () => {
       expected,
     );
   };
-
-  const memberIdsOf = (res: Res) =>
-    res.body.data.members.map((member: any) => member.user.id);
 
   beforeAll(async () => {
     process.env[FLAG] = 'true';
@@ -416,7 +442,26 @@ describe('CRM M3 — QA đối kháng', () => {
       ...(primaryUserId ? { primaryUserId } : {}),
     });
 
+  /**
+   * Stub giới hạn tần suất ở MỨC DESCRIBE (Redis không có ở máy dev; lượt suite gọi thật > trần 30/phút).
+   * Spy trên prototype nên mọi instance (kể cả `app.get`) đều bị stub; `restoreAllMocks` trong `afterEach` gỡ sạch,
+   * không rò sang ca sau (ca CARE_TEAM_INVITE thật nằm ở describe riêng, không dùng stub này).
+   */
+  const rateLimitProto = CrmRateLimitService.prototype as {
+    consume: CrmRateLimitService['consume'];
+  };
+  const stubRateLimit = () => {
+    beforeEach(() => {
+      jest.spyOn(rateLimitProto, 'consume').mockResolvedValue(undefined);
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+  };
+
   describe('Bất biến PRIMARY dưới tải đồng thời', () => {
+    stubRateLimit();
+
     it('gỡ chính (bị khóa) / gỡ thành viên / thêm người song song: sau MỖI vòng PRIMARY vẫn là qa1, đúng 1 PRIMARY, không trùng, primaryAssigneeId khớp, không 5xx', async () => {
       for (const key of ['qa1', 'qa2', 'qa3', 'qa4'])
         await createUser(key, UserRole.STAFF);
@@ -475,11 +520,17 @@ describe('CRM M3 — QA đối kháng', () => {
     });
   });
 
-  describe('Phân công: người được phân phải hợp lệ cả khi đã nằm trong nhóm', () => {
+  describe('Phân công: người được phân phải hợp lệ (ACTIVE, Manager/Staff), không giới hạn theo nhóm', () => {
+    stubRateLimit();
+
     it('FR-11: không còn đường đổi phụ trách chính sang thành viên đã bị khóa — PUT primary trả 404 và PRIMARY giữ nguyên', async () => {
+      await createUser('qaPrimary11', UserRole.STAFF);
       await createUser('qaBlocked', UserRole.STAFF);
       const c = await createCustomer('admin', {
-        careTeam: { memberIds: [ids.qaBlocked], primaryUserId: ids.qa5 },
+        careTeam: {
+          memberIds: [ids.qaBlocked],
+          primaryUserId: ids.qaPrimary11,
+        },
       });
       await userModel.updateOne(
         { _id: ids.qaBlocked },
@@ -493,31 +544,126 @@ describe('CRM M3 — QA đối kháng', () => {
       );
       expect(res.status).toBe(404);
       expect((await customerDoc(c.id))!.primaryAssigneeId.toString()).toBe(
-        ids.qa5,
+        ids.qaPrimary11,
       );
     });
 
-    it('MANAGER không phân được người ngoài nhóm mình quản lý, kể cả qua bulk ASSIGN và qua duyệt', async () => {
+    it('FR-13: MANAGER mời được người ngoài nhóm mình quản lý (cả POST members lẫn bulk ASSIGN); người bị khóa/EDITOR vẫn bị từ chối', async () => {
+      // Lượt CARE_TEAM_INVITE/BULK_OPERATION đã được stub ở mức describe (`stubRateLimit`): ca này chỉ kiểm quyền phân công.
       const c = await createCustomer('manager1', {});
       expect((await addMembers('manager1', c.id, [ids.staffC])).status).toBe(
-        400,
+        201,
       );
+      expect(
+        (await customerDoc(c.id))!.careTeam.map((m: any) => String(m.userId)),
+      ).toContain(ids.staffC);
+
+      const other = await createCustomer('manager1', {});
       const bulk = await call(
         'POST',
         '/crm/customer-bulk-operations',
         'manager1',
         {
           type: 'ASSIGN',
-          customerIds: [c.id],
+          customerIds: [other.id],
           payload: { memberIds: [ids.staffC] },
         },
       );
-      expect(bulk.body.data.failed.map((f: any) => f.errorCode)).toContain(
-        'USER_NOT_ASSIGNABLE',
+      expect(bulk.body.data.succeeded).toEqual([other.id]);
+
+      const invalid = await createCustomer('manager1', {});
+      for (const user of ['blockedStaff', 'editor']) {
+        const res = await addMembers('manager1', invalid.id, [ids[user]]);
+        expect(res.status).toBe(400);
+        expect(res.body.errorCode).toBe('USER_NOT_ASSIGNABLE');
+      }
+    });
+  });
+
+  describe('Giới hạn 10 thành viên phụ dưới tải đồng thời (FR-17, Replica Set thật)', () => {
+    stubRateLimit();
+
+    it('nhiều lời mời song song vào khách đang 9 MEMBER: đúng MỘT lời mời thắng, các bên còn lại 409 (VERSION_CONFLICT hoặc CARE_TEAM_LIMIT_EXCEEDED), không 5xx, nhóm KHÔNG vượt 10 MEMBER', async () => {
+      const memberKeys = Array.from({ length: 9 }, (_v, i) => `limM${i}`);
+      const raceKeys = ['limX0', 'limX1', 'limX2', 'limX3'];
+      await createUser('limP', UserRole.STAFF);
+      for (const key of [...memberKeys, ...raceKeys])
+        await createUser(key, UserRole.STAFF);
+      // Lượt CARE_TEAM_INVITE đã được stub ở mức describe (`stubRateLimit`): ca này chỉ kiểm tranh chấp ghi trên Mongo.
+      for (let round = 0; round < 6; round += 1) {
+        const c = await createCustomer('admin', {
+          careTeam: {
+            memberIds: memberKeys.map((key) => ids[key]),
+            primaryUserId: ids.limP,
+          },
+        });
+        const results = await Promise.all(
+          raceKeys.map((key) => addMembers('admin', c.id, [ids[key]])),
+        );
+
+        expect(results.filter((r) => r.status >= 500)).toHaveLength(0);
+        expect(results.filter((r) => r.status === 201)).toHaveLength(1);
+        for (const loser of results.filter((r) => r.status !== 201)) {
+          expect(loser.status).toBe(409);
+          expect(['VERSION_CONFLICT', 'CARE_TEAM_LIMIT_EXCEEDED']).toContain(
+            loser.body.errorCode,
+          );
+        }
+        const team = (await customerDoc(c.id))!.careTeam as Array<{
+          userId: Types.ObjectId;
+          role: string;
+        }>;
+        expect(team.filter((m) => m.role === 'MEMBER')).toHaveLength(10);
+        expect(
+          team.filter((m) => raceKeys.some((k) => ids[k] === String(m.userId))),
+        ).toHaveLength(1);
+        await expectCareTeamInvariant(c.id);
+        await expectTeamIdsMatchMembers(c.id);
+      }
+    });
+  });
+
+  describe('Rate limit CARE_TEAM_INVITE (FR-17)', () => {
+    it('CrmRateLimitService THẬT qua HTTP: lượt thứ 30 vẫn mời được, lượt thứ 31 => 429 RATE_LIMITED + retryAfterSeconds, nhóm không đổi; gỡ thành viên không tốn lượt', async () => {
+      // Không cần Redis thật: chỉ thay lệnh `eval` (INCR + PTTL) bằng bộ đếm giả; mọi logic ngưỡng/mã lỗi là của service thật.
+      const redis = app.get<{ eval: (...args: unknown[]) => Promise<unknown> }>(
+        REDIS_CLIENT,
       );
-      expect(
-        (await customerDoc(c.id))!.careTeam.map((m: any) => String(m.userId)),
-      ).not.toContain(ids.staffC);
+      let nextCount = 30;
+      const evalSpy = jest
+        .spyOn(redis, 'eval')
+        .mockImplementation(() => Promise.resolve([nextCount, 42_000]));
+      try {
+        const c = await createCustomer('manager1', {});
+        const atLimit = await addMembers('manager1', c.id, [ids.staffC]);
+        nextCount = 31;
+        const overLimit = await addMembers('manager1', c.id, [ids.staffD]);
+
+        expect(atLimit.status).toBe(201);
+        expect(overLimit.status).toBe(429);
+        expect(overLimit.body.errorCode).toBe('RATE_LIMITED');
+        expect(overLimit.body.details).toEqual({ retryAfterSeconds: 42 });
+        expect(evalSpy).toHaveBeenLastCalledWith(
+          expect.any(String),
+          1,
+          `crm:rl:CARE_TEAM_INVITE:${ids.manager1}`,
+          60_000,
+        );
+        expect(
+          (await customerDoc(c.id))!.careTeam.map((m: any) => String(m.userId)),
+        ).not.toContain(ids.staffD);
+
+        const callsBeforeRemoval = evalSpy.mock.calls.length;
+        const removal = await call(
+          'DELETE',
+          `/crm/customers/${c.id}/care-team/members/${ids.staffC}`,
+          'manager1',
+        );
+        expect(removal.status).toBe(200);
+        expect(evalSpy.mock.calls).toHaveLength(callsBeforeRemoval);
+      } finally {
+        evalSpy.mockRestore();
+      }
     });
   });
 
@@ -622,9 +768,9 @@ describe('CRM M3 — QA đối kháng', () => {
       );
       expect(res.status).toBe(400);
       expect(
-        (await connection
-          .collection('care_team_requests')
-          .findOne({ _id: new Types.ObjectId(created.body.data.id) }))!.status,
+        (await connection.collection('care_team_requests').findOne({
+          _id: new Types.ObjectId(created.body.data.id as string),
+        }))!.status,
       ).toBe('PENDING');
       expect((await customerDoc(c.id))!.careTeam).toHaveLength(1);
     });

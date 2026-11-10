@@ -10,7 +10,7 @@ import {
   NotificationDispatcher,
   NotificationRequest,
 } from './notification-dispatcher.service';
-import { PushContext } from './push/push-catalog';
+import { getPushCatalogEntry, PushContext } from './push/push-catalog';
 import { PushRenderError } from './push/push-content.renderer';
 import { PushJobNames, pushSendJobId } from './push/push-queue.constants';
 
@@ -41,6 +41,12 @@ const build = (
     queueAdd?: jest.Mock;
     admins?: Array<{ _id: Types.ObjectId }>;
     adminLookupError?: Error;
+    /** Kho tài khoản giả cho lần tra người nhận; bỏ trống = mọi người nhận đều ACTIVE. */
+    users?: Array<{
+      _id: Types.ObjectId;
+      status: string;
+      deletedAt: Date | null;
+    }>;
   } = {},
 ) => {
   const preferenceQuery = {
@@ -63,15 +69,38 @@ const build = (
       });
     }),
   };
-  const userQuery = {
-    select: jest.fn().mockReturnThis(),
-    session: jest.fn().mockReturnThis(),
-    lean: jest.fn().mockReturnThis(),
-    exec: options.adminLookupError
-      ? jest.fn().mockRejectedValue(options.adminLookupError)
-      : jest.fn().mockResolvedValue(options.admins ?? []),
+  // Truy vấn Quản trị (`roles`) trả `admins`; truy vấn người nhận (`_id: $in`) áp ĐÚNG điều kiện status/deletedAt của
+  // bộ lọc lên kho `users` giả để test không phụ thuộc vào việc "tự trả về đúng thứ cần".
+  const userModel = {
+    find: jest.fn().mockImplementation((filter: Record<string, any>) => {
+      const rows = (): Promise<Array<{ _id: Types.ObjectId }>> => {
+        if (filter.roles !== undefined) {
+          return options.adminLookupError
+            ? Promise.reject(options.adminLookupError)
+            : Promise.resolve(options.admins ?? []);
+        }
+        const candidates = filter._id.$in as Types.ObjectId[];
+        if (!options.users)
+          return Promise.resolve(candidates.map((_id) => ({ _id })));
+        return Promise.resolve(
+          options.users
+            .filter(
+              (user) =>
+                candidates.some((id) => String(id) === String(user._id)) &&
+                user.status === filter.status &&
+                user.deletedAt === filter.deletedAt,
+            )
+            .map((user) => ({ _id: user._id })),
+        );
+      };
+      return {
+        select: jest.fn().mockReturnThis(),
+        session: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockImplementation(rows),
+      };
+    }),
   };
-  const userModel = { find: jest.fn().mockReturnValue(userQuery) };
   const provider = {
     initialStatus: jest
       .fn()
@@ -324,6 +353,202 @@ describe('NotificationDispatcher.dispatch', () => {
     });
   });
 
+  describe('FR-16/FR-18: tài khoản bị khóa không nhận thông báo', () => {
+    const user = (
+      status: 'ACTIVE' | 'BLOCKED',
+      deletedAt: Date | null = null,
+    ) => ({ _id: oid(), status, deletedAt });
+    const written = (notificationModel: { bulkWrite: jest.Mock }): string[] =>
+      notificationModel.bulkWrite.mock.calls.length === 0
+        ? []
+        : (notificationModel.bulkWrite.mock.calls[0][0] as Operation[]).map(
+            (o) => String(o.updateOne.filter.userId),
+          );
+
+    it('FR-18 người nhận BLOCKED bị loại: không hộp thông báo, không push', async () => {
+      const blocked = user('BLOCKED');
+      const { dispatcher, notificationModel, queue } = build({
+        users: [blocked],
+      });
+      await expect(
+        dispatcher.dispatch([request({ recipientIds: [blocked._id] })]),
+      ).resolves.toEqual({ created: 0 });
+      expect(notificationModel.bulkWrite).not.toHaveBeenCalled();
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('FR-16 người được mời ACTIVE nhận CUSTOMER_ASSIGNED kèm push PENDING', async () => {
+      const invitee = user('ACTIVE');
+      const { dispatcher, notificationModel, queue } = build({
+        users: [invitee],
+      });
+      await expect(
+        dispatcher.dispatch([request({ recipientIds: [invitee._id] })]),
+      ).resolves.toEqual({ created: 1 });
+      expect(written(notificationModel)).toEqual([String(invitee._id)]);
+      expect(writtenDoc(notificationModel)).toMatchObject({
+        type: NotificationType.CUSTOMER_ASSIGNED,
+        pushStatus: NotificationPushStatus.PENDING,
+      });
+      expect(queue.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('FR-18 danh sách lẫn ACTIVE và BLOCKED: chỉ ACTIVE nhận, đúng thứ tự', async () => {
+      const a = user('ACTIVE');
+      const blocked = user('BLOCKED');
+      const b = user('ACTIVE');
+      const { dispatcher, notificationModel, queue } = build({
+        users: [a, blocked, b],
+      });
+      await expect(
+        dispatcher.dispatch([
+          request({ recipientIds: [a._id, blocked._id, b._id] }),
+        ]),
+      ).resolves.toEqual({ created: 2 });
+      expect(written(notificationModel)).toEqual([
+        String(a._id),
+        String(b._id),
+      ]);
+      expect(queue.add).toHaveBeenCalledTimes(2);
+    });
+
+    it('FR-18 mở khóa lại thì nhận lại ở lần gửi sau (cùng người, đổi trạng thái)', async () => {
+      const staff = user('BLOCKED');
+      const { dispatcher, notificationModel } = build({ users: [staff] });
+      await dispatcher.dispatch([request({ recipientIds: [staff._id] })]);
+      expect(notificationModel.bulkWrite).not.toHaveBeenCalled();
+
+      staff.status = 'ACTIVE';
+      await expect(
+        dispatcher.dispatch([request({ recipientIds: [staff._id] })]),
+      ).resolves.toEqual({ created: 1 });
+      expect(written(notificationModel)).toEqual([String(staff._id)]);
+    });
+
+    it('FR-18 tất cả đều BLOCKED: không gửi gì, không ném lỗi, không tải cài đặt', async () => {
+      const x = user('BLOCKED');
+      const y = user('BLOCKED');
+      const { dispatcher, notificationModel, preferenceModel } = build({
+        users: [x, y],
+      });
+      await expect(
+        dispatcher.dispatch([request({ recipientIds: [x._id, y._id] })]),
+      ).resolves.toEqual({ created: 0 });
+      expect(notificationModel.bulkWrite).not.toHaveBeenCalled();
+      expect(preferenceModel.find).not.toHaveBeenCalled();
+    });
+
+    it('FR-18 tài khoản xóa mềm hoặc không tồn tại bị loại như BLOCKED', async () => {
+      const deleted = user('ACTIVE', new Date());
+      const active = user('ACTIVE');
+      const ghost = oid();
+      const { dispatcher, notificationModel } = build({
+        users: [deleted, active],
+      });
+      await expect(
+        dispatcher.dispatch([
+          request({ recipientIds: [deleted._id, ghost, active._id] }),
+        ]),
+      ).resolves.toEqual({ created: 1 });
+      expect(written(notificationModel)).toEqual([String(active._id)]);
+    });
+
+    it('FR-18 truy vấn users đúng điều kiện ACTIVE + chưa xóa, chỉ lấy _id, cùng session', async () => {
+      const staff = user('ACTIVE');
+      const { dispatcher, userModel } = build({ users: [staff] });
+      const session = { id: 's' } as never;
+      await dispatcher.dispatch(
+        [request({ recipientIds: [staff._id] })],
+        session,
+      );
+      expect(userModel.find).toHaveBeenCalledWith({
+        _id: { $in: [staff._id] },
+        status: 'ACTIVE',
+        deletedAt: null,
+      });
+      const query = userModel.find.mock.results[0].value;
+      expect(query.select).toHaveBeenCalledWith('_id');
+      expect(query.session).toHaveBeenCalledWith(session);
+    });
+
+    it('FR-18 nhiều yêu cầu một lượt: chỉ MỘT truy vấn users theo lô (không N+1), mỗi yêu cầu lọc riêng', async () => {
+      const a = user('ACTIVE');
+      const blocked = user('BLOCKED');
+      const c = user('ACTIVE');
+      const { dispatcher, notificationModel, userModel } = build({
+        users: [a, blocked, c],
+      });
+      await expect(
+        dispatcher.dispatch([
+          request({ recipientIds: [a._id, blocked._id], dedupeKey: 'K1' }),
+          request({ recipientIds: [blocked._id, c._id], dedupeKey: 'K2' }),
+        ]),
+      ).resolves.toEqual({ created: 2 });
+      expect(userModel.find).toHaveBeenCalledTimes(1);
+      const operations = notificationModel.bulkWrite.mock
+        .calls[0][0] as Operation[];
+      expect(
+        operations.map((o) => [
+          String(o.updateOne.filter.userId),
+          o.updateOne.filter.dedupeKey,
+        ]),
+      ).toEqual([
+        [String(a._id), 'K1'],
+        [String(c._id), 'K2'],
+      ]);
+    });
+
+    it('FR-16 người thực hiện (người mời) không nhận thông báo dù ACTIVE', async () => {
+      const inviter = user('ACTIVE');
+      const invitee = user('ACTIVE');
+      const { dispatcher, notificationModel } = build({
+        users: [inviter, invitee],
+      });
+      await dispatcher.dispatch([
+        request({
+          recipientIds: [inviter._id, invitee._id],
+          excludeUserIds: [inviter._id],
+        }),
+      ]);
+      expect(written(notificationModel)).toEqual([String(invitee._id)]);
+    });
+
+    it('FR-18 chỉ tải cài đặt của người đã qua lọc (BLOCKED không bị tra cài đặt)', async () => {
+      const blocked = user('BLOCKED');
+      const active = user('ACTIVE');
+      const { dispatcher, preferenceModel } = build({
+        users: [blocked, active],
+      });
+      await dispatcher.dispatch([
+        request({ recipientIds: [blocked._id, active._id] }),
+      ]);
+      expect(preferenceModel.find).toHaveBeenCalledWith({
+        userId: { $in: [active._id] },
+      });
+    });
+
+    it.each(Object.values(NotificationType))(
+      'FR-18 loại %s cũng đi qua cùng điểm lọc: BLOCKED bị loại, ACTIVE nhận',
+      async (type) => {
+        const blocked = user('BLOCKED');
+        const active = user('ACTIVE');
+        const { dispatcher, notificationModel } = build({
+          users: [blocked, active],
+        });
+        // Biến đủ cho mẫu push của loại (loại ngoài danh mục không có biến).
+        const allowedVars = getPushCatalogEntry(type)?.allowedVars ?? [];
+        await dispatcher.dispatch([
+          request({
+            type,
+            recipientIds: [blocked._id, active._id],
+            vars: Object.fromEntries(allowedVars.map((name) => [name, 'Lan'])),
+          }),
+        ]);
+        expect(written(notificationModel)).toEqual([String(active._id)]);
+      },
+    );
+  });
+
   describe('cài đặt push và cờ', () => {
     it('người tắt push cho loại này: vẫn có thông báo trong app nhưng SKIPPED, không xếp job', async () => {
       const user = oid();
@@ -392,7 +617,7 @@ describe('NotificationDispatcher.dispatch', () => {
       const [queueName, jobName, data, options] = queueAdd.mock.calls[0];
       expect(queueName).toBe(QueueNames.PUSH);
       expect(jobName).toBe(PushJobNames.SEND);
-      expect(options.jobId).toBe(pushSendJobId(data.notificationId));
+      expect(options.jobId).toBe(pushSendJobId(String(data.notificationId)));
       expect(options.jobId).not.toContain(':');
     });
 
@@ -532,6 +757,12 @@ describe('NotificationDispatcher.notifyAdmins (T-35: cảnh báo bảo mật kh�
       dedupeKey: 'ALERT:X:u1:1',
     });
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('Quản trị đã lọc ACTIVE ở bước tìm nên không truy vấn users lần hai', async () => {
+    const { dispatcher, userModel } = build({ admins: [{ _id: oid() }] });
+    await dispatcher.notifyAdmins(alert);
+    expect(userModel.find).toHaveBeenCalledTimes(1);
   });
 
   it('không có Quản trị nào thì không ghi gì và trả 0', async () => {

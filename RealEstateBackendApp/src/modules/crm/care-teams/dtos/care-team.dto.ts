@@ -25,7 +25,8 @@ import {
 export class AddCareTeamMembersDto {
   @ApiProperty({
     type: [String],
-    description: 'Người được thêm (MANAGER/STAFF đang hoạt động)',
+    description:
+      'Người được mời (MANAGER/STAFF đang hoạt động, không giới hạn theo nhóm); tối đa 10 thành viên phụ mỗi khách',
   })
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_MEMBERS_PER_ADD)

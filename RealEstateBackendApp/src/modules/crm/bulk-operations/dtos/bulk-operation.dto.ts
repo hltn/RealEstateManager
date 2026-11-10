@@ -63,7 +63,8 @@ export class BulkOperationPayloadDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'ASSIGN: người được thêm vào nhóm chăm sóc (đã có thì bỏ qua)',
+    description:
+      'ASSIGN: người được thêm vào nhóm chăm sóc (đã có thì bỏ qua; không giới hạn theo nhóm; khách đã đủ 10 thành viên phụ báo CARE_TEAM_LIMIT_EXCEEDED riêng từng khách)',
   })
   @OptionalNotNull()
   @ArrayMaxSize(MAX_MEMBERS)

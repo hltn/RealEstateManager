@@ -53,6 +53,43 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
     };
   };
 
+  /** Tài khoản thật trong `users`: Dispatcher chỉ ghi cho người nhận ACTIVE chưa xóa (T-12, FR-16/FR-18). */
+  const seedUser = async (
+    status: 'ACTIVE' | 'BLOCKED',
+    deletedAt: Date | null = null,
+  ): Promise<Types.ObjectId> => {
+    const _id = new Types.ObjectId();
+    await connection.collection('users').insertOne({
+      _id,
+      status,
+      deletedAt,
+      email: `${String(_id)}@example.test`,
+      username: String(_id),
+    });
+    return _id;
+  };
+  /** `request()` với mọi người nhận đã được tạo ACTIVE trong `users`. */
+  const activeRequest = async (
+    overrides: Partial<NotificationRequest> = {},
+  ): Promise<NotificationRequest> => {
+    const req = request(overrides);
+    for (const id of req.recipientIds) {
+      await connection.collection('users').updateOne(
+        { _id: id },
+        {
+          $setOnInsert: {
+            status: 'ACTIVE',
+            deletedAt: null,
+            email: `${String(id)}@example.test`,
+            username: String(id),
+          },
+        },
+        { upsert: true },
+      );
+    }
+    return req;
+  };
+
   beforeAll(async () => {
     process.env.FEATURE_CRM_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
@@ -98,7 +135,7 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
   beforeEach(() => queueAdd.mockClear());
 
   it('ghi PENDING + nội dung push, xếp đúng một job; gọi lại cùng dedupeKey không tạo thêm', async () => {
-    const req = request();
+    const req = await activeRequest();
     await expect(dispatcher.dispatch([req])).resolves.toEqual({ created: 1 });
     const doc = await notifications().findOne({ dedupeKey: req.dedupeKey });
     expect(doc).toMatchObject({
@@ -124,11 +161,11 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
 
   it('nhiều người nhận: mỗi người một thông báo và một job riêng', async () => {
     const recipients = [
-      new Types.ObjectId(),
-      new Types.ObjectId(),
-      new Types.ObjectId(),
+      await seedUser('ACTIVE'),
+      await seedUser('ACTIVE'),
+      await seedUser('ACTIVE'),
     ];
-    const req = request({ recipientIds: recipients });
+    const req = await activeRequest({ recipientIds: recipients });
     await expect(dispatcher.dispatch([req])).resolves.toEqual({ created: 3 });
     expect(queueAdd).toHaveBeenCalledTimes(3);
     const ids = queueAdd.mock.calls.map((call) => call[3].jobId);
@@ -136,7 +173,7 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
   });
 
   it('trong transaction: chỉ xếp job SAU commit', async () => {
-    const req = request();
+    const req = await activeRequest();
     await withTransaction(connection, async (session) => {
       await dispatcher.dispatch([req], session);
       expect(queueAdd).not.toHaveBeenCalled();
@@ -148,7 +185,7 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
   });
 
   it('rollback: không có thông báo và không xếp job nào', async () => {
-    const req = request();
+    const req = await activeRequest();
     await expect(
       withTransaction(connection, async (session) => {
         await dispatcher.dispatch([req], session);
@@ -163,7 +200,7 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
 
   it('Redis lỗi lúc commit: thông báo vẫn PENDING, dispatch không ném', async () => {
     queueAdd.mockRejectedValueOnce(new Error('redis down'));
-    const req = request();
+    const req = await activeRequest();
     await expect(dispatcher.dispatch([req])).resolves.toEqual({ created: 1 });
     expect(
       (await notifications().findOne({ dedupeKey: req.dedupeKey }))?.pushStatus,
@@ -171,7 +208,7 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
   });
 
   it('tình huống không push (phụ trách chính): ghi SKIPPED, không lưu push, không xếp job', async () => {
-    const req = request({
+    const req = await activeRequest({
       context: { careRole: 'PRIMARY', origin: 'TEAM_ADD' },
     });
     await dispatcher.dispatch([req]);
@@ -185,14 +222,14 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
   });
 
   it('người tắt push trong notification_preferences: SKIPPED, người khác vẫn PENDING', async () => {
-    const muted = new Types.ObjectId();
-    const other = new Types.ObjectId();
+    const muted = await seedUser('ACTIVE');
+    const other = await seedUser('ACTIVE');
     await connection.collection('notification_preferences').insertOne({
       userId: muted,
       types: { CUSTOMER_ASSIGNED: { push: false, inApp: true } },
       quietHours: null,
     });
-    const req = request({ recipientIds: [muted, other] });
+    const req = await activeRequest({ recipientIds: [muted, other] });
     await expect(dispatcher.dispatch([req])).resolves.toEqual({ created: 2 });
     const docs = await notifications()
       .find({ dedupeKey: req.dedupeKey })
@@ -201,5 +238,30 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
     expect(byUser.get(String(muted))).toBe('SKIPPED');
     expect(byUser.get(String(other))).toBe('PENDING');
     expect(queueAdd).toHaveBeenCalledTimes(1);
+  });
+  it('FR-18: người nhận BLOCKED/xóa mềm/không tồn tại không có thông báo và không có job; ACTIVE vẫn nhận; mở khóa thì nhận lại', async () => {
+    const active = await seedUser('ACTIVE');
+    const blocked = await seedUser('BLOCKED');
+    const deleted = await seedUser('ACTIVE', new Date());
+    const ghost = new Types.ObjectId();
+    const req = request({ recipientIds: [active, blocked, deleted, ghost] });
+    await expect(dispatcher.dispatch([req])).resolves.toEqual({ created: 1 });
+    const docs = await notifications()
+      .find({ dedupeKey: req.dedupeKey })
+      .toArray();
+    expect(docs.map((d) => String(d.userId))).toEqual([String(active)]);
+    expect(queueAdd).toHaveBeenCalledTimes(1);
+
+    // Mở khóa lại: lần gửi sau (cùng dedupeKey, người cũ đã có bản thì không tạo thêm) người vừa mở khóa nhận.
+    await connection
+      .collection('users')
+      .updateOne({ _id: blocked }, { $set: { status: 'ACTIVE' } });
+    await expect(dispatcher.dispatch([req])).resolves.toEqual({ created: 1 });
+    expect(
+      await notifications().countDocuments({
+        dedupeKey: req.dedupeKey,
+        userId: blocked,
+      }),
+    ).toBe(1);
   });
 });

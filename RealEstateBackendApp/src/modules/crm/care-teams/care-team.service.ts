@@ -19,6 +19,7 @@ import {
   resolveClientSource,
   versionConflict,
 } from '../customers/customer.errors';
+import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { CustomerRefsService } from '../customers/customer-refs.service';
 import { computeTeamIds } from '../customers/customer-team-sync.service';
 import { CustomersRepository } from '../customers/customers.repository';
@@ -45,6 +46,7 @@ import {
   planAddMembers,
   planRemoveMember,
   assertCareTeamInvariant,
+  assertMemberLimit,
   buildBulkPushGroupKey,
 } from './care-team.rules';
 import {
@@ -54,12 +56,11 @@ import {
 
 const oid = (id: string): Types.ObjectId => new Types.ObjectId(id);
 
-/** Một thay đổi nhóm chăm sóc: ai được làm, thay đổi ra sao, có giới hạn người được phân theo phạm vi người làm không. */
+/** Một thay đổi nhóm chăm sóc: ai được làm, thay đổi ra sao (người được mời không giới hạn theo nhóm của người mời, FR-13). */
 export interface CareTeamMutation {
   /** Ném 403 `CARE_TEAM_ACTION_FORBIDDEN` nếu người thực hiện không đủ quyền với nhóm hiện tại. */
   authorize: (careTeam: CareTeamEntry[]) => void;
   plan: (careTeam: CareTeamEntry[], now: Date) => CareTeamChange;
-  restrictToActorScope: boolean;
   source: CrmAuditSource;
   /** Nguồn của thay đổi: quyết có push `CUSTOMER_ASSIGNED` hay không và khóa gộp đợt hàng loạt (Architecture 5.2). */
   origin: PushOrigin;
@@ -81,6 +82,7 @@ export class CareTeamService {
     private readonly assignees: CareTeamAssigneesService,
     private readonly audit: CrmAuditLogService,
     private readonly notifications: NotificationDispatcher,
+    private readonly rateLimit: CrmRateLimitService,
   ) {}
 
   async get(jwt: JwtPayload, id: string): Promise<CareTeamResponseDto> {
@@ -95,12 +97,14 @@ export class CareTeamService {
     return toCareTeamResponse(customer.careTeam ?? [], maps);
   }
 
-  addMembers(
+  /** Rate-limit `CARE_TEAM_INVITE` (30/phút/người) tính một lần mỗi request `POST members`, trước khi mở transaction. */
+  async addMembers(
     jwt: JwtPayload,
     id: string,
     dto: AddCareTeamMembersDto,
     clientType?: string,
   ): Promise<CareTeamResponseDto> {
+    await this.rateLimit.consume(jwt.sub, 'CARE_TEAM_INVITE');
     return this.mutate(jwt, id, clientType, (ctx, source) => ({
       authorize: (careTeam) => {
         if (!canManageMembers(ctx.actor, careTeam)) {
@@ -131,7 +135,6 @@ export class CareTeamService {
           ctx.actor.userId,
           now,
         ),
-      restrictToActorScope: true,
       source,
       origin: 'TEAM_ADD',
     }));
@@ -153,7 +156,6 @@ export class CareTeamService {
       },
       // Gỡ PRIMARY luôn là 409 `PRIMARY_LOCKED` (kể cả Quản trị/Quản lý), do `planRemoveMember` quyết.
       plan: (careTeam) => planRemoveMember(careTeam, oid(userId)),
-      restrictToActorScope: true,
       source,
       origin: 'TEAM_ADD',
     }));
@@ -205,7 +207,6 @@ export class CareTeamService {
       return toCareTeamResponse(currentTeam, maps);
     }
     assertCareTeamInvariant(change.careTeam);
-
     // Người mới phải hợp lệ; tên nhóm của MỌI thành viên mới tính được `teamIds`.
     const memberIds = change.careTeam.map((member) => member.userId);
     const users = await this.assignees.load(memberIds, session);
@@ -219,12 +220,13 @@ export class CareTeamService {
     ) {
       checkedUserIds.push(primary.userId);
     }
-    this.assignees.assertAssignable(
-      ctx.actor,
-      checkedUserIds,
-      users,
-      mutation.restrictToActorScope,
-    );
+    this.assignees.assertAssignable(checkedUserIds, users);
+    // Giới hạn 10 thành viên phụ (FR-17): kiểm SAU `assertAssignable` để mời người không hợp lệ (khóa/EDITOR/đã xóa)
+    // vào khách đã đủ 10 báo đúng nguyên nhân USER_NOT_ASSIGNABLE thay vì lỗi giới hạn. Kiểm trên `before` đọc trong
+    // CHÍNH transaction này; ghi bên dưới khóa theo `__v` nên hai lời mời đồng thời không cùng vượt trần: bên ghi sau
+    // gặp WriteConflict (TransientTransactionError) và `withTransaction` chạy lại, lần này đọc thấy đủ 10 nên nhận
+    // CARE_TEAM_LIMIT_EXCEEDED; nếu `updateOne` khớp 0 bản ghi thì nhận VERSION_CONFLICT. Kết quả cuối không vượt 10.
+    assertMemberLimit(change);
     await this.assignees.lock(checkedUserIds, session);
 
     const teamIds = computeTeamIds(
