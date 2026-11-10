@@ -4,6 +4,7 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { CrmActor } from '../common/access/crm-actor';
+import { isAdminOrManager } from '../customers/access/customer-scope';
 import { CareRole } from '../customers/customer.constants';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
 
@@ -37,8 +38,6 @@ export interface AddMembersInput {
 export interface AddMembersOptions {
   /** Người đã có trong nhóm thì bỏ qua thay vì báo lỗi (thao tác hàng loạt). */
   skipExisting?: boolean;
-  /** Cho phép đổi phụ trách chính khi nhóm đã có người (thao tác hàng loạt của Quản trị/Quản lý). */
-  allowPrimaryChange?: boolean;
 }
 
 const uniqueIds = (ids: Types.ObjectId[]): Types.ObjectId[] => [
@@ -82,9 +81,14 @@ export const canManageMembers = (
       member.role === CareRole.PRIMARY && member.userId.equals(actor.userId),
   );
 
-/** Chỉ Quản trị và Quản lý (trong phạm vi) được đổi/gỡ phụ trách chính. */
-export const canChangePrimary = (actor: CrmActor): boolean =>
-  actor.role === UserRole.ADMIN || actor.role === UserRole.MANAGER;
+/**
+ * Đặt phụ trách chính LẦN ĐẦU (FR-11): chỉ Quản trị/Quản lý và chỉ khi nhóm đang rỗng (khách cũ chưa có PRIMARY).
+ * Đã có PRIMARY thì khóa vĩnh viễn nên không còn quyền nào đổi/gỡ.
+ */
+export const canSetInitialPrimary = (
+  actor: CrmActor,
+  careTeam: CareTeamEntry[],
+): boolean => careTeam.length === 0 && isAdminOrManager(actor);
 
 export const careTeamActionForbidden = (message: string): BusinessException =>
   new BusinessException(
@@ -108,49 +112,9 @@ const entry = (
 ): CareTeamEntry => ({ userId, role, addedBy: actorId, addedAt: now });
 
 /**
- * Đổi phụ trách chính: người mới tự được thêm nếu chưa có, người cũ thành MEMBER.
- * Đã là phụ trách chính thì không đổi gì.
- */
-export const planChangePrimary = (
-  current: CareTeamEntry[],
-  userId: Types.ObjectId,
-  actorId: Types.ObjectId,
-  now: Date,
-): CareTeamChange => {
-  if (findPrimary(current)?.userId.equals(userId)) {
-    return {
-      careTeam: current,
-      addedUserIds: [],
-      removedUserIds: [],
-      primaryChanged: false,
-    };
-  }
-  const isMember = hasUser(current, userId);
-  const demoted = current.map((member) =>
-    member.role === CareRole.PRIMARY
-      ? { ...member, role: CareRole.MEMBER }
-      : member,
-  );
-  const careTeam = isMember
-    ? demoted.map((member) =>
-        member.userId.equals(userId)
-          ? { ...member, role: CareRole.PRIMARY }
-          : member,
-      )
-    : [...demoted, entry(userId, CareRole.PRIMARY, actorId, now)];
-  assertCareTeamInvariant(careTeam);
-  return {
-    careTeam,
-    addedUserIds: isMember ? [] : [userId],
-    removedUserIds: [],
-    primaryChanged: true,
-  };
-};
-
-/**
  * Thêm thành viên. Nhóm đang rỗng (lần phân đầu): bắt buộc `primaryUserId` (400 `PRIMARY_REQUIRED`), người đó
- * tự được thêm. Nhóm đã có người: người mới là MEMBER; `primaryUserId` bị từ chối (dùng PUT primary) trừ khi
- * `allowPrimaryChange`.
+ * tự được thêm. Nhóm đã có người: người mới chỉ là MEMBER; `primaryUserId` bị từ chối (400 `VALIDATION_FAILED`)
+ * vì PRIMARY đã khóa (FR-11). Quyền đặt PRIMARY lần đầu (`canSetInitialPrimary`) do tầng service kiểm.
  */
 export const planAddMembers = (
   current: CareTeamEntry[],
@@ -198,41 +162,31 @@ export const planAddMembers = (
     };
   }
 
-  if (primaryUserId && !options.allowPrimaryChange) {
+  if (primaryUserId) {
     throw validationFailed(
-      'Nhóm đã có phụ trách chính, hãy dùng thao tác đổi phụ trách chính',
+      'Nhóm đã có phụ trách chính, không thể đặt hoặc đổi phụ trách chính',
     );
   }
-  const withMembers = [
+  const careTeam = [
     ...current,
     ...toAdd.map((id) => entry(id, CareRole.MEMBER, actorId, now)),
   ];
-  if (!primaryUserId) {
-    assertCareTeamInvariant(withMembers);
-    return {
-      careTeam: withMembers,
-      addedUserIds: toAdd,
-      removedUserIds: [],
-      primaryChanged: false,
-    };
-  }
-  const changed = planChangePrimary(withMembers, primaryUserId, actorId, now);
+  assertCareTeamInvariant(careTeam);
   return {
-    ...changed,
-    addedUserIds: uniqueIds([...toAdd, ...changed.addedUserIds]),
+    careTeam,
+    addedUserIds: toAdd,
+    removedUserIds: [],
+    primaryChanged: false,
   };
 };
 
 /**
- * Gỡ thành viên. Gỡ PRIMARY bắt buộc chỉ định người thay (400 `PRIMARY_REPLACEMENT_REQUIRED`); người thay
- * chưa có trong nhóm thì được thêm làm PRIMARY. Gỡ người không có trong nhóm: 404.
+ * Gỡ thành viên. PRIMARY bị khóa: gỡ PRIMARY (kể cả Quản trị/Quản lý, kể cả qua thao tác hàng loạt) luôn là
+ * 409 `PRIMARY_LOCKED` (FR-11). Gỡ người không có trong nhóm: 404.
  */
 export const planRemoveMember = (
   current: CareTeamEntry[],
   userId: Types.ObjectId,
-  newPrimaryUserId: Types.ObjectId | undefined,
-  actorId: Types.ObjectId,
-  now: Date,
 ): CareTeamChange => {
   const target = current.find((member) => member.userId.equals(userId));
   if (!target) {
@@ -242,33 +196,19 @@ export const planRemoveMember = (
       HttpStatus.NOT_FOUND,
     );
   }
-  const remaining = current.filter((member) => !member.userId.equals(userId));
-
-  if (target.role !== CareRole.PRIMARY) {
-    if (newPrimaryUserId) {
-      throw validationFailed(
-        'Chỉ truyền người thay thế khi gỡ phụ trách chính',
-      );
-    }
-    assertCareTeamInvariant(remaining);
-    return {
-      careTeam: remaining,
-      addedUserIds: [],
-      removedUserIds: [userId],
-      primaryChanged: false,
-    };
-  }
-
-  if (!newPrimaryUserId) {
+  if (target.role === CareRole.PRIMARY) {
     throw new BusinessException(
-      ErrorCode.PRIMARY_REPLACEMENT_REQUIRED,
-      'Gỡ phụ trách chính phải chọn người thay thế',
-      HttpStatus.BAD_REQUEST,
+      ErrorCode.PRIMARY_LOCKED,
+      'Người phụ trách chính đã bị khóa, không thể gỡ',
+      HttpStatus.CONFLICT,
     );
   }
-  if (newPrimaryUserId.equals(userId)) {
-    throw validationFailed('Người thay thế phải khác người bị gỡ');
-  }
-  const changed = planChangePrimary(remaining, newPrimaryUserId, actorId, now);
-  return { ...changed, removedUserIds: [userId], primaryChanged: true };
+  const remaining = current.filter((member) => !member.userId.equals(userId));
+  assertCareTeamInvariant(remaining);
+  return {
+    careTeam: remaining,
+    addedUserIds: [],
+    removedUserIds: [userId],
+    primaryChanged: false,
+  };
 };

@@ -35,26 +35,11 @@ export class AddCareTeamMembersDto {
 
   @ApiPropertyOptional({
     description:
-      'Bắt buộc ở lần phân đầu tiên (nhóm đang rỗng); nhóm đã có người thì dùng PUT primary',
+      'Chỉ hợp lệ khi nhóm đang rỗng và người gọi là Quản trị/Quản lý (đặt phụ trách chính lần đầu cho khách cũ); PRIMARY đã khóa nên nhóm đã có người thì 400 VALIDATION_FAILED',
   })
   @IsOptional()
   @IsMongoId()
   primaryUserId?: string;
-}
-
-export class RemoveCareTeamMemberQueryDto {
-  @ApiPropertyOptional({
-    description: 'Bắt buộc khi gỡ phụ trách chính: người thay thế',
-  })
-  @IsOptional()
-  @IsMongoId()
-  newPrimaryUserId?: string;
-}
-
-export class ChangePrimaryDto {
-  @ApiProperty({ description: 'Người làm phụ trách chính mới' })
-  @IsMongoId()
-  userId: string;
 }
 
 export class CareTeamResponseDto {

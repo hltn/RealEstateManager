@@ -7,8 +7,6 @@ import {
   HttpStatus,
   Param,
   Post,
-  Put,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -28,8 +26,6 @@ import { CareTeamService } from './care-team.service';
 import {
   AddCareTeamMembersDto,
   CareTeamResponseDto,
-  ChangePrimaryDto,
-  RemoveCareTeamMemberQueryDto,
 } from './dtos/care-team.dto';
 
 const CLIENT_TYPE_HEADER = 'x-client-type';
@@ -60,12 +56,13 @@ export class CareTeamController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Thêm người chăm sóc; lần phân đầu bắt buộc primaryUserId (Quản trị, Quản lý trong phạm vi, phụ trách chính)',
+      'Thêm thành viên phụ (Quản trị, Quản lý trong phạm vi, phụ trách chính); primaryUserId chỉ nhận khi nhóm rỗng và người gọi là Quản trị/Quản lý',
   })
   @ApiDataResponse(CareTeamResponseDto, HttpStatus.CREATED)
   @ApiResponse({
     status: 400,
-    description: 'PRIMARY_REQUIRED | USER_NOT_ASSIGNABLE',
+    description:
+      'PRIMARY_REQUIRED | USER_NOT_ASSIGNABLE | VALIDATION_FAILED (primaryUserId khi nhóm đã có người)',
   })
   @ApiResponse({ status: 403, description: 'CARE_TEAM_ACTION_FORBIDDEN' })
   @ApiResponse({ status: 409, description: 'ALREADY_IN_CARE_TEAM' })
@@ -84,48 +81,19 @@ export class CareTeamController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Gỡ người chăm sóc; gỡ phụ trách chính (chỉ Quản trị/Quản lý) bắt buộc newPrimaryUserId',
+      'Gỡ thành viên phụ; phụ trách chính bị khóa nên gỡ PRIMARY là 409 PRIMARY_LOCKED',
   })
   @ApiDataResponse(CareTeamResponseDto)
-  @ApiResponse({
-    status: 400,
-    description: 'PRIMARY_REPLACEMENT_REQUIRED | USER_NOT_ASSIGNABLE',
-  })
   @ApiResponse({ status: 403, description: 'CARE_TEAM_ACTION_FORBIDDEN' })
+  @ApiResponse({ status: 409, description: 'PRIMARY_LOCKED' })
   async removeMember(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,
     @Param('userId', ParseObjectIdPipe) userId: string,
-    @Query() query: RemoveCareTeamMemberQueryDto,
     @Headers(CLIENT_TYPE_HEADER) clientType?: string,
   ) {
     return {
-      data: await this.careTeam.removeMember(
-        user,
-        id,
-        userId,
-        query.newPrimaryUserId,
-        clientType,
-      ),
-    };
-  }
-
-  @Put('primary')
-  @Roles(...CRM_ROLES)
-  @ApiOperation({
-    summary:
-      'Đổi phụ trách chính (Quản trị, Quản lý trong phạm vi); người mới tự được thêm nếu chưa có, người cũ thành MEMBER',
-  })
-  @ApiDataResponse(CareTeamResponseDto)
-  @ApiResponse({ status: 403, description: 'CARE_TEAM_ACTION_FORBIDDEN' })
-  async changePrimary(
-    @CurrentUser() user: JwtPayload,
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Body() dto: ChangePrimaryDto,
-    @Headers(CLIENT_TYPE_HEADER) clientType?: string,
-  ) {
-    return {
-      data: await this.careTeam.changePrimary(user, id, dto, clientType),
+      data: await this.careTeam.removeMember(user, id, userId, clientType),
     };
   }
 }

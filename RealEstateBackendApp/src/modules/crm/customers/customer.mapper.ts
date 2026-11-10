@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { CrmActor } from '../common/access/crm-actor';
 import { maskPhone } from '../common/utils/phone-normalizer.util';
 import { ListGroup } from '../catalogs/catalog.enums';
+import { canSetInitialPrimary } from '../care-teams/care-team.rules';
 import { getDeleteDenial } from './access/customer-delete-policy';
 import { isAdminOrManager } from './access/customer-scope';
 import {
@@ -248,7 +249,8 @@ export const toDetail = (
     permissions: {
       canEdit: true,
       canManageCareTeam: privileged || primary,
-      canChangePrimary: privileged,
+      // Khách cũ chưa có PRIMARY: Admin/Manager được đặt đúng một lần (FR-11); đã có PRIMARY thì khóa.
+      canSetInitialPrimary: canSetInitialPrimary(actor, doc.careTeam ?? []),
       // Cùng một nguồn luật với route xóa (`getDeleteDenial`); FE chỉ hiện nút Xóa khi khách thuộc nhóm "Bỏ".
       canDelete:
         getDeleteDenial(actor, doc, {

@@ -73,7 +73,7 @@ export class BulkOperationPayloadDto {
 
   @ApiPropertyOptional({
     description:
-      'ASSIGN: phụ trách chính. Bắt buộc với khách chưa có nhóm; khách đã có nhóm thì đổi phụ trách chính sang người này',
+      'ASSIGN: KHÔNG được truyền (400 VALIDATION_FAILED) — PRIMARY đã khóa, hàng loạt chỉ thêm MEMBER; khách chưa có nhóm báo PRIMARY_REQUIRED riêng từng khách',
   })
   @IsOptional()
   @IsMongoId()

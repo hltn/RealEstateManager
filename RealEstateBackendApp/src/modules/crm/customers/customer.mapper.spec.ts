@@ -80,7 +80,7 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
     expect(asPrimary.canRevealNationalId).toBe(true);
     expect(asPrimary.permissions).toMatchObject({
       canManageCareTeam: true,
-      canChangePrimary: false,
+      canSetInitialPrimary: false,
       canDelete: false,
     });
     const asMember = toDetail(
@@ -96,6 +96,22 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
     expect(
       toDetail(doc, refs, actor(UserRole.ADMIN)).permissions.canDelete,
     ).toBe(true);
+  });
+
+  it('FR-11: permissions.canSetInitialPrimary chỉ true khi Admin/Manager và careTeam rỗng; không còn canChangePrimary', () => {
+    const empty = { ...doc, careTeam: [] } as unknown as CustomerLean;
+    const flag = (role: UserRole, d: CustomerLean) =>
+      toDetail(d, refs, actor(role)).permissions.canSetInitialPrimary;
+
+    expect(flag(UserRole.ADMIN, empty)).toBe(true);
+    expect(flag(UserRole.MANAGER, empty)).toBe(true);
+    expect(flag(UserRole.STAFF, empty)).toBe(false);
+    // Đã có PRIMARY thì khóa, kể cả Admin/Manager.
+    expect(flag(UserRole.ADMIN, doc)).toBe(false);
+    expect(flag(UserRole.MANAGER, doc)).toBe(false);
+    expect(
+      toDetail(doc, refs, actor(UserRole.ADMIN)).permissions,
+    ).not.toHaveProperty('canChangePrimary');
   });
 
   it('permissions.canDelete theo quyền xóa thật: STAFF phụ trách chính chỉ khi khách "Bỏ"; Manager chỉ khi khách thuộc nhóm mình quản lý', () => {

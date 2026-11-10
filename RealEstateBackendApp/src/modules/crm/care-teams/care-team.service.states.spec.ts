@@ -89,7 +89,6 @@ describe('CareTeamService: response nhóm chăm sóc mang isLocked và role (FR-
       plan: (current, now) =>
         planAddMembers(current, { userIds: [NEW_MEMBER] }, ACTOR, now, {
           skipExisting: true,
-          allowPrimaryChange: true,
         }),
       restrictToActorScope: true,
       source: 'WEB',

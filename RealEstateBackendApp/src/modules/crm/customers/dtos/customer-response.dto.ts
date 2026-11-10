@@ -121,7 +121,11 @@ export class CustomerListItemDto {
 export class CustomerPermissionsDto {
   @ApiProperty() canEdit: boolean;
   @ApiProperty() canManageCareTeam: boolean;
-  @ApiProperty() canChangePrimary: boolean;
+  @ApiProperty({
+    description:
+      'Admin/Manager và careTeam rỗng (khách cũ chưa có PRIMARY): được đặt PRIMARY đúng một lần',
+  })
+  canSetInitialPrimary: boolean;
   @ApiProperty() canDelete: boolean;
 }
 

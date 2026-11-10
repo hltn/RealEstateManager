@@ -37,13 +37,12 @@ import {
   toCareTeamResponse,
 } from './care-team.mapper';
 import {
-  canChangePrimary,
   canManageMembers,
+  canSetInitialPrimary,
   careTeamActionForbidden,
   CareTeamChange,
   findPrimary,
   planAddMembers,
-  planChangePrimary,
   planRemoveMember,
   assertCareTeamInvariant,
   buildBulkPushGroupKey,
@@ -51,7 +50,6 @@ import {
 import {
   AddCareTeamMembersDto,
   CareTeamResponseDto,
-  ChangePrimaryDto,
 } from './dtos/care-team.dto';
 
 const oid = (id: string): Types.ObjectId => new Types.ObjectId(id);
@@ -110,6 +108,16 @@ export class CareTeamService {
             'Chỉ Quản trị, Quản lý hoặc phụ trách chính được thêm thành viên',
           );
         }
+        // Đặt PRIMARY lần đầu (nhóm rỗng) chỉ Quản trị/Quản lý; nhóm đã có người thì `planAddMembers` trả 400.
+        if (
+          dto.primaryUserId &&
+          careTeam.length === 0 &&
+          !canSetInitialPrimary(ctx.actor, careTeam)
+        ) {
+          throw careTeamActionForbidden(
+            'Chỉ Quản trị hoặc Quản lý được đặt phụ trách chính lần đầu',
+          );
+        }
       },
       plan: (careTeam, now) =>
         planAddMembers(
@@ -133,7 +141,6 @@ export class CareTeamService {
     jwt: JwtPayload,
     id: string,
     userId: string,
-    newPrimaryUserId: string | undefined,
     clientType?: string,
   ): Promise<CareTeamResponseDto> {
     return this.mutate(jwt, id, clientType, (ctx, source) => ({
@@ -143,45 +150,9 @@ export class CareTeamService {
             'Chỉ Quản trị, Quản lý hoặc phụ trách chính được gỡ thành viên',
           );
         }
-        if (
-          findPrimary(careTeam)?.userId.equals(oid(userId)) &&
-          !canChangePrimary(ctx.actor)
-        ) {
-          throw careTeamActionForbidden(
-            'Chỉ Quản trị hoặc Quản lý được gỡ phụ trách chính',
-          );
-        }
       },
-      plan: (careTeam, now) =>
-        planRemoveMember(
-          careTeam,
-          oid(userId),
-          newPrimaryUserId ? oid(newPrimaryUserId) : undefined,
-          ctx.actor.userId,
-          now,
-        ),
-      restrictToActorScope: true,
-      source,
-      origin: 'TEAM_ADD',
-    }));
-  }
-
-  changePrimary(
-    jwt: JwtPayload,
-    id: string,
-    dto: ChangePrimaryDto,
-    clientType?: string,
-  ): Promise<CareTeamResponseDto> {
-    return this.mutate(jwt, id, clientType, (ctx, source) => ({
-      authorize: () => {
-        if (!canChangePrimary(ctx.actor)) {
-          throw careTeamActionForbidden(
-            'Chỉ Quản trị hoặc Quản lý được đổi phụ trách chính',
-          );
-        }
-      },
-      plan: (careTeam, now) =>
-        planChangePrimary(careTeam, oid(dto.userId), ctx.actor.userId, now),
+      // Gỡ PRIMARY luôn là 409 `PRIMARY_LOCKED` (kể cả Quản trị/Quản lý), do `planRemoveMember` quyết.
+      plan: (careTeam) => planRemoveMember(careTeam, oid(userId)),
       restrictToActorScope: true,
       source,
       origin: 'TEAM_ADD',

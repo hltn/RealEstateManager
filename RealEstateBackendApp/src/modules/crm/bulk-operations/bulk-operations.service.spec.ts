@@ -68,10 +68,64 @@ describe('BulkOperationsService.ASSIGN (T-34)', () => {
     ]);
   });
 
-  it('đổi phụ trách chính hàng loạt (primaryUserId) cũng đi với origin BULK_ADD', async () => {
+  it('FR-11: truyền primaryUserId bị từ chối 400 VALIDATION_FAILED cho cả lô, không khách nào bị đụng tới', async () => {
     const { service, careTeam } = build();
-    await run(service, { primaryUserId: PRIMARY });
-    expect(careTeam.applyInSession.mock.calls[0][2].origin).toBe('BULK_ADD');
+    await expect(
+      run(service, { memberIds: [MEMBER], primaryUserId: PRIMARY }),
+    ).rejects.toMatchObject({ errorCode: 'VALIDATION_FAILED' });
+    await expect(
+      run(service, { primaryUserId: PRIMARY }),
+    ).rejects.toMatchObject({ errorCode: 'VALIDATION_FAILED' });
+    expect(careTeam.applyInSession).not.toHaveBeenCalled();
+  });
+
+  it('FR-11: thiếu memberIds (rỗng hoặc không có) bị từ chối 400 VALIDATION_FAILED', async () => {
+    const { service, careTeam } = build();
+    await expect(run(service, {})).rejects.toMatchObject({
+      errorCode: 'VALIDATION_FAILED',
+    });
+    await expect(run(service, { memberIds: [] })).rejects.toMatchObject({
+      errorCode: 'VALIDATION_FAILED',
+    });
+    expect(careTeam.applyInSession).not.toHaveBeenCalled();
+  });
+
+  it('FR-11: kế hoạch từng khách chỉ thêm MEMBER (PRIMARY giữ nguyên, người đã có bị bỏ qua); khách careTeam rỗng báo PRIMARY_REQUIRED', async () => {
+    const { service, careTeam } = build();
+    await run(service, { memberIds: [MEMBER] });
+    const { plan } = careTeam.applyInSession.mock.calls[0][2];
+    const existing = new Types.ObjectId(PRIMARY);
+    const now = new Date();
+    const current = [
+      { userId: existing, role: 'PRIMARY', addedBy: ACTOR, addedAt: now },
+    ];
+
+    const change = plan(current, now);
+    expect(change.primaryChanged).toBe(false);
+    expect(
+      change.careTeam.map((m: { userId: Types.ObjectId; role: string }) => [
+        String(m.userId),
+        m.role,
+      ]),
+    ).toEqual([
+      [PRIMARY, 'PRIMARY'],
+      [MEMBER, 'MEMBER'],
+    ]);
+    // Người đã có trong nhóm thì bỏ qua (skipExisting), không lỗi.
+    const again = plan(change.careTeam, now);
+    expect(again.addedUserIds).toEqual([]);
+
+    expect(() => plan([], now)).toThrow(
+      expect.objectContaining({ errorCode: 'PRIMARY_REQUIRED' }),
+    );
+  });
+
+  it('FR-11: Nhân viên không được ASSIGN hàng loạt', async () => {
+    const { service, careTeam } = build('STAFF');
+    await expect(run(service, { memberIds: [MEMBER] })).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(careTeam.applyInSession).not.toHaveBeenCalled();
   });
 
   it('một khách lỗi không làm khách khác mất origin: khách còn lại vẫn BULK_ADD', async () => {

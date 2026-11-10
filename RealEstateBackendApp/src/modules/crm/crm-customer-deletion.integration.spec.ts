@@ -450,7 +450,7 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect(await isSoftDeleted(customer.id)).toBe(false);
     });
 
-    it('đổi người phụ trách chính: người phụ trách CŨ mất quyền xóa, người MỚI có quyền (quyền theo phụ trách HIỆN TẠI)', async () => {
+    it('FR-11: PRIMARY bị khóa — Quản trị không đổi được phụ trách chính (PUT primary 404), người phụ trách CŨ vẫn có quyền xóa, thành viên phụ không', async () => {
       const customer = await createCustomer('staffA', ['staffA2']);
       const change = await call(
         'PUT',
@@ -458,9 +458,9 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
         'admin',
         { userId: ids.staffA2 },
       );
-      expect(change.status).toBe(200);
-      expect((await del('staffA', customer.id)).status).toBe(403);
-      expect((await del('staffA2', customer.id)).status).toBe(204);
+      expect(change.status).toBe(404);
+      expect((await del('staffA2', customer.id)).status).toBe(403);
+      expect((await del('staffA', customer.id)).status).toBe(204);
     });
   });
 

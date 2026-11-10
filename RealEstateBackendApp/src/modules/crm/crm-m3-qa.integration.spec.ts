@@ -417,7 +417,7 @@ describe('CRM M3 — QA đối kháng', () => {
     });
 
   describe('Bất biến PRIMARY dưới tải đồng thời', () => {
-    it('đổi chính / gỡ chính / thêm người song song: sau MỖI vòng đúng 1 PRIMARY, không trùng, primaryAssigneeId khớp, không 5xx', async () => {
+    it('gỡ chính (bị khóa) / gỡ thành viên / thêm người song song: sau MỖI vòng PRIMARY vẫn là qa1, đúng 1 PRIMARY, không trùng, primaryAssigneeId khớp, không 5xx', async () => {
       for (const key of ['qa1', 'qa2', 'qa3', 'qa4'])
         await createUser(key, UserRole.STAFF);
       for (let round = 0; round < 15; round += 1) {
@@ -425,20 +425,32 @@ describe('CRM M3 — QA đối kháng', () => {
           careTeam: { memberIds: [ids.qa2, ids.qa3], primaryUserId: ids.qa1 },
         });
         const results = await Promise.all([
-          call('PUT', `/crm/customers/${c.id}/care-team/primary`, 'admin', {
-            userId: ids.qa2,
-          }),
-          call('PUT', `/crm/customers/${c.id}/care-team/primary`, 'admin', {
-            userId: ids.qa3,
-          }),
           call(
             'DELETE',
-            `/crm/customers/${c.id}/care-team/members/${ids.qa1}?newPrimaryUserId=${ids.qa4}`,
+            `/crm/customers/${c.id}/care-team/members/${ids.qa1}`,
+            'admin',
+          ),
+          call(
+            'DELETE',
+            `/crm/customers/${c.id}/care-team/members/${ids.qa1}`,
+            'admin',
+          ),
+          call(
+            'DELETE',
+            `/crm/customers/${c.id}/care-team/members/${ids.qa2}`,
             'admin',
           ),
           addMembers('admin', c.id, [ids.qa4]),
         ]);
         expect(results.filter((r) => r.status >= 500)).toHaveLength(0);
+        // PRIMARY bị khóa: hai lệnh gỡ qa1 đều 409, qa1 vẫn là phụ trách chính.
+        expect(results.slice(0, 2).map((r) => r.body.errorCode)).toEqual([
+          'PRIMARY_LOCKED',
+          'PRIMARY_LOCKED',
+        ]);
+        expect((await customerDoc(c.id))!.primaryAssigneeId.toString()).toBe(
+          ids.qa1,
+        );
         await expectCareTeamInvariant(c.id);
         await expectTeamIdsMatchMembers(c.id);
       }
@@ -464,7 +476,7 @@ describe('CRM M3 — QA đối kháng', () => {
   });
 
   describe('Phân công: người được phân phải hợp lệ cả khi đã nằm trong nhóm', () => {
-    it('đổi phụ trách chính sang thành viên ĐÃ CÓ nhưng đã bị khóa => 400 USER_NOT_ASSIGNABLE', async () => {
+    it('FR-11: không còn đường đổi phụ trách chính sang thành viên đã bị khóa — PUT primary trả 404 và PRIMARY giữ nguyên', async () => {
       await createUser('qaBlocked', UserRole.STAFF);
       const c = await createCustomer('admin', {
         careTeam: { memberIds: [ids.qaBlocked], primaryUserId: ids.qa5 },
@@ -479,10 +491,10 @@ describe('CRM M3 — QA đối kháng', () => {
         'admin',
         { userId: ids.qaBlocked },
       );
-      expect([res.status, res.body.errorCode]).toEqual([
-        400,
-        'USER_NOT_ASSIGNABLE',
-      ]);
+      expect(res.status).toBe(404);
+      expect((await customerDoc(c.id))!.primaryAssigneeId.toString()).toBe(
+        ids.qa5,
+      );
     });
 
     it('MANAGER không phân được người ngoài nhóm mình quản lý, kể cả qua bulk ASSIGN và qua duyệt', async () => {
@@ -497,7 +509,7 @@ describe('CRM M3 — QA đối kháng', () => {
         {
           type: 'ASSIGN',
           customerIds: [c.id],
-          payload: { memberIds: [ids.staffC], primaryUserId: ids.staffA },
+          payload: { memberIds: [ids.staffC] },
         },
       );
       expect(bulk.body.data.failed.map((f: any) => f.errorCode)).toContain(

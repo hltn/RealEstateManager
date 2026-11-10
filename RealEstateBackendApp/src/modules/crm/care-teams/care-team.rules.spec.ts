@@ -6,12 +6,11 @@ import { CareTeamEntry } from '../customers/schemas/customer.schema';
 import {
   assertCareTeamInvariant,
   buildBulkPushGroupKey,
-  canChangePrimary,
   canManageMembers,
+  canSetInitialPrimary,
   findPrimary,
   MAX_PUSH_GROUP_REQUEST_ID_LENGTH,
   planAddMembers,
-  planChangePrimary,
   planRemoveMember,
 } from './care-team.rules';
 
@@ -78,74 +77,82 @@ describe('care-team.rules', () => {
       ).toThrow(expect.objectContaining({ errorCode: 'VALIDATION_FAILED' }));
     });
 
-    it('thao tác hàng loạt: bỏ qua người đã có và cho phép đổi phụ trách chính', () => {
+    it('FR-11: skipExisting bỏ qua người đã có nhưng vẫn không đổi PRIMARY; gửi primaryUserId vào nhóm đã có người ⇒ 400 dù skipExisting', () => {
       const result = planAddMembers(
         team(a, b),
-        { userIds: [b, c], primaryUserId: c },
+        { userIds: [b, c] },
         ACTOR,
         NOW,
-        { skipExisting: true, allowPrimaryChange: true },
+        { skipExisting: true },
       );
-
       expect(result.careTeam).toHaveLength(3);
-      expect(findPrimary(result.careTeam)?.userId).toEqual(c);
+      expect(findPrimary(result.careTeam)?.userId).toEqual(a);
       expect(result.addedUserIds.map(String)).toEqual([String(c)]);
-      expect(result.primaryChanged).toBe(true);
+      expect(result.primaryChanged).toBe(false);
+
+      expect(() =>
+        planAddMembers(
+          team(a, b),
+          { userIds: [c], primaryUserId: c },
+          ACTOR,
+          NOW,
+          { skipExisting: true },
+        ),
+      ).toThrow(expect.objectContaining({ errorCode: 'VALIDATION_FAILED' }));
+    });
+
+    it('FR-11: primaryUserId bằng chính PRIMARY hiện tại hoặc một MEMBER cũng bị từ chối, nhóm không đổi', () => {
+      const current = team(a, b);
+      for (const primaryUserId of [a, b]) {
+        expect(() =>
+          planAddMembers(current, { userIds: [c], primaryUserId }, ACTOR, NOW),
+        ).toThrow(expect.objectContaining({ errorCode: 'VALIDATION_FAILED' }));
+      }
+      expect(roles(current)).toEqual([
+        [String(a), CareRole.PRIMARY],
+        [String(b), CareRole.MEMBER],
+      ]);
     });
   });
 
   describe('planRemoveMember', () => {
     it('gỡ MEMBER giữ nguyên PRIMARY; gỡ người không có trong nhóm ⇒ 404', () => {
-      const result = planRemoveMember(team(a, b), b, undefined, ACTOR, NOW);
+      const result = planRemoveMember(team(a, b), b);
       expect(result.careTeam).toHaveLength(1);
       expect(findPrimary(result.careTeam)?.userId).toEqual(a);
       expect(result.removedUserIds).toEqual([b]);
+      expect(result.primaryChanged).toBe(false);
 
-      expect(() =>
-        planRemoveMember(team(a, b), c, undefined, ACTOR, NOW),
-      ).toThrow(expect.objectContaining({ errorCode: 'RESOURCE_NOT_FOUND' }));
-    });
-
-    it('gỡ PRIMARY bắt buộc người thay; người thay là MEMBER thì được nâng lên, là người mới thì được thêm', () => {
-      expect(() =>
-        planRemoveMember(team(a, b), a, undefined, ACTOR, NOW),
-      ).toThrow(
-        expect.objectContaining({ errorCode: 'PRIMARY_REPLACEMENT_REQUIRED' }),
-      );
-      expect(() => planRemoveMember(team(a, b), a, a, ACTOR, NOW)).toThrow(
-        expect.objectContaining({ errorCode: 'VALIDATION_FAILED' }),
-      );
-
-      const promoted = planRemoveMember(team(a, b), a, b, ACTOR, NOW);
-      expect(roles(promoted.careTeam)).toEqual([[String(b), CareRole.PRIMARY]]);
-
-      const brandNew = planRemoveMember(team(a, b), a, d, ACTOR, NOW);
-      expect(brandNew.careTeam).toHaveLength(2);
-      expect(findPrimary(brandNew.careTeam)?.userId).toEqual(d);
-      expect(brandNew.addedUserIds).toEqual([d]);
-    });
-
-    it('gỡ MEMBER mà truyền người thay ⇒ 400 (tránh đổi phụ trách chính ngầm)', () => {
-      expect(() => planRemoveMember(team(a, b), b, c, ACTOR, NOW)).toThrow(
-        expect.objectContaining({ errorCode: 'VALIDATION_FAILED' }),
+      expect(() => planRemoveMember(team(a, b), c)).toThrow(
+        expect.objectContaining({
+          errorCode: 'RESOURCE_NOT_FOUND',
+          status: 404,
+        }),
       );
     });
-  });
 
-  describe('planChangePrimary', () => {
-    it('người cũ thành MEMBER, người mới (đã là MEMBER hoặc chưa có) thành PRIMARY; đã là PRIMARY thì không đổi', () => {
-      const swapped = planChangePrimary(team(a, b), b, ACTOR, NOW);
-      expect(roles(swapped.careTeam)).toEqual([
-        [String(a), CareRole.MEMBER],
-        [String(b), CareRole.PRIMARY],
-      ]);
+    it('FR-11: gỡ PRIMARY ⇒ 409 PRIMARY_LOCKED dù nhóm chỉ có một mình PRIMARY hay còn thành viên phụ', () => {
+      for (const current of [team(a), team(a, b, c)]) {
+        expect(() => planRemoveMember(current, a)).toThrow(
+          expect.objectContaining({ errorCode: 'PRIMARY_LOCKED', status: 409 }),
+        );
+      }
+    });
 
-      const added = planChangePrimary(team(a), c, ACTOR, NOW);
-      expect(added.careTeam).toHaveLength(2);
-      expect(added.addedUserIds).toEqual([c]);
+    it('FR-11: gỡ PRIMARY bị chặn không làm đổi nhóm đầu vào (không đột biến)', () => {
+      const current = team(a, b);
+      const snapshot = roles(current);
+      expect(() => planRemoveMember(current, a)).toThrow();
+      expect(roles(current)).toEqual(snapshot);
+    });
 
-      const same = planChangePrimary(team(a, b), a, ACTOR, NOW);
-      expect(same.primaryChanged).toBe(false);
+    it('FR-11: gỡ lần lượt mọi MEMBER vẫn được, PRIMARY còn lại đúng một và bất biến giữ', () => {
+      let current = team(a, b, c, d);
+      for (const user of [b, c, d]) {
+        current = planRemoveMember(current, user).careTeam;
+        expect(() => assertCareTeamInvariant(current)).not.toThrow();
+      }
+      expect(roles(current)).toEqual([[String(a), CareRole.PRIMARY]]);
     });
   });
 
@@ -174,11 +181,23 @@ describe('care-team.rules', () => {
             : operation === 0
               ? planAddMembers(current, { userIds: [user] }, ACTOR, NOW)
               : operation === 1
-                ? planRemoveMember(current, user, other, ACTOR, NOW)
-                : planChangePrimary(current, user, ACTOR, NOW);
+                ? planRemoveMember(current, user)
+                : planAddMembers(
+                    current,
+                    { userIds: [user], primaryUserId: other },
+                    ACTOR,
+                    NOW,
+                    { skipExisting: true },
+                  );
+        // PRIMARY đã đặt thì không bao giờ đổi bởi bất kỳ thao tác nào (FR-11).
+        if (current.length > 0) {
+          expect(findPrimary(change.careTeam)?.userId).toEqual(
+            findPrimary(current)?.userId,
+          );
+        }
         current = change.careTeam;
       } catch {
-        // Thao tác bị từ chối (trùng, thiếu người thay...) thì nhóm giữ nguyên.
+        // Thao tác bị từ chối (trùng, gỡ PRIMARY, đặt PRIMARY khi đã có...) thì nhóm giữ nguyên.
       }
       expect(() => assertCareTeamInvariant(current)).not.toThrow();
     }
@@ -203,9 +222,20 @@ describe('care-team.rules', () => {
       expect(canManageMembers(actorOf(UserRole.STAFF, b), current)).toBe(false);
     });
 
-    it('đổi phụ trách chính: chỉ Quản trị và Quản lý', () => {
-      expect(canChangePrimary(actorOf(UserRole.MANAGER))).toBe(true);
-      expect(canChangePrimary(actorOf(UserRole.STAFF, a))).toBe(false);
+    it('FR-11: đặt PRIMARY lần đầu chỉ Quản trị/Quản lý và chỉ khi nhóm rỗng; Staff (kể cả PRIMARY) và nhóm đã có người thì không', () => {
+      expect(canSetInitialPrimary(actorOf(UserRole.ADMIN), [])).toBe(true);
+      expect(canSetInitialPrimary(actorOf(UserRole.MANAGER), [])).toBe(true);
+      expect(canSetInitialPrimary(actorOf(UserRole.STAFF, a), [])).toBe(false);
+      // PRIMARY đã khóa: Admin/Manager cũng không đặt lại được.
+      expect(canSetInitialPrimary(actorOf(UserRole.ADMIN), team(a))).toBe(
+        false,
+      );
+      expect(canSetInitialPrimary(actorOf(UserRole.MANAGER), team(a, b))).toBe(
+        false,
+      );
+      expect(canSetInitialPrimary(actorOf(UserRole.STAFF, a), team(a))).toBe(
+        false,
+      );
     });
   });
 });

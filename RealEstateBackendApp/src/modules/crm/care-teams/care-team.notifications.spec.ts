@@ -62,10 +62,9 @@ const addMutation = (
   plan: (current, now) =>
     planAddMembers(current, { userIds, primaryUserId }, ACTOR, now, {
       skipExisting: true,
-      allowPrimaryChange: true,
     }),
   restrictToActorScope: true,
-  source: 'WEB' as never,
+  source: 'WEB',
   origin,
 });
 
@@ -141,9 +140,9 @@ describe('CareTeamService thông báo CUSTOMER_ASSIGNED qua Dispatcher (T-34)', 
     expect(request.inApp.priority).toBe(NotificationPriority.HIGH);
   });
 
-  it('một lần thêm cả người cùng phụ trách và phụ trách chính: mỗi người một yêu cầu đúng vai trò, cùng dedupeKey', async () => {
+  it('khách cũ chưa có nhóm, thêm cả người cùng phụ trách và phụ trách chính lần đầu: mỗi người một yêu cầu đúng vai trò, cùng dedupeKey', async () => {
     const { service, dispatch } = buildService({
-      careTeam: existingTeam(),
+      careTeam: [],
       __v: 2,
     });
     await service.applyInSession(
@@ -153,9 +152,9 @@ describe('CareTeamService thông báo CUSTOMER_ASSIGNED qua Dispatcher (T-34)', 
       {} as never,
     );
     const requests = dispatch.mock.calls[0][0];
-    const byUser = new Map(
+    const byUser = new Map<string, any>(
       requests.map((r: any) => [String(r.recipientIds[0]), r]),
-    ) as Map<string, any>;
+    );
     expect(byUser.get(String(MEMBER_A))!.context.careRole).toBe('MEMBER');
     expect(byUser.get(String(MEMBER_B))!.context.careRole).toBe('PRIMARY');
     expect(byUser.get(String(MEMBER_B))!.inApp.priority).toBe(
