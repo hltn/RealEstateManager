@@ -56,7 +56,7 @@ Cờ bật: `FEATURE_CRM_ENABLED`, `FEATURE_CRM_ATTACHMENTS`, `VITE_CRM_ENABLED`
 
 ## Tài khoản seed (chỉ tồn tại trong stack E2E, mật khẩu `Test@12345678`)
 
-`admin.e2e@example.test` (ADMIN), `mgr1.e2e@example.test` (MANAGER, nhóm 1), `staff1.e2e@example.test` (STAFF, nhóm 1), `staff2.e2e@example.test` (STAFF, nhóm 2). Dự án: bộ mẫu của CRM + `E2E-ACTIVE` (hoạt động) + `E2E-OFF` (ngừng). Khách: 3 của staff1 (nhóm 1), 1 của staff2 (nhóm 2). Seed đi qua REST API thật (`lib/seed.ts`); `assertIsolated()` (gọi trước mọi thao tác phá hủy: flush Redis, xóa bucket/object, teardown, seed) đọc lại cấu hình thật và từ chối nếu: Mongo không loopback / cổng 27017 / DB khác `e2e`; Redis không loopback, khác db 15 hoặc key prefix không phải `e2e:`; S3 endpoint không loopback hoặc bucket không bắt đầu bằng `e2e-`; cổng backend/Admin trùng 3000/5173. Vì vậy ghi đè `E2E_REDIS_*`/`E2E_S3_ENDPOINT` sang máy ngoài sẽ bị chặn.
+`admin.e2e@example.test` (ADMIN), `mgr1.e2e@example.test` (MANAGER, nhóm 1), `staff1.e2e@example.test` (STAFF, nhóm 1), `staff2.e2e@example.test` (STAFF, nhóm 2). Dự án: bộ mẫu của CRM + `E2EACTIVE` (hoạt động) + `E2EOFF` (ngừng). Khách: 3 của staff1 (nhóm 1), 1 của staff2 (nhóm 2). Seed đi qua REST API thật (`lib/seed.ts`); `assertIsolated()` (gọi trước mọi thao tác phá hủy: flush Redis, xóa bucket/object, teardown, seed) đọc lại cấu hình thật và từ chối nếu: Mongo không loopback / cổng 27017 / DB khác `e2e`; Redis không loopback, khác db 15 hoặc key prefix không phải `e2e:`; S3 endpoint không loopback hoặc bucket không bắt đầu bằng `e2e-`; cổng backend/Admin trùng 3000/5173. Vì vậy ghi đè `E2E_REDIS_*`/`E2E_S3_ENDPOINT` sang máy ngoài sẽ bị chặn.
 
 ## Thêm spec
 

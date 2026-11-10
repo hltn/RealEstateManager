@@ -208,14 +208,31 @@ describe('a11y lỗi ô Mã', () => {
     expect(alert).toHaveTextContent('Mã chỉ gồm chữ không dấu và số');
   });
 
-  it('lỗi 409 từ BE cũng gắn đúng aria cho ô Mã', async () => {
+  it('lỗi 409 từ BE với mã tự gõ tay: gắn đúng aria cho ô Mã', async () => {
+    api.createProject.mockResolvedValue({ ok: false, error: { statusCode: 409, errorCode: 'PROJECT_CODE_DUPLICATED', message: 'Mã dự án đã tồn tại' } });
+    const user = userEvent.setup();
+    setup();
+    await user.type(nameInput(), 'Sky');
+    await user.clear(codeInput());
+    await user.type(codeInput(), 'abc');
+    await user.click(screen.getByRole('button', { name: 'Thêm dự án' }));
+    const alert = await screen.findByRole('alert');
+    expect(codeInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(codeInput().getAttribute('aria-describedby')).toBe(alert.id);
+  });
+
+  it('hết lượt tự đổi mã tự điền: ô Tên aria-invalid trỏ đúng thông báo; ô Mã không báo lỗi và không giữ mã đã bị trùng', async () => {
     api.createProject.mockResolvedValue({ ok: false, error: { statusCode: 409, errorCode: 'PROJECT_CODE_DUPLICATED', message: 'Mã dự án đã tồn tại' } });
     const user = userEvent.setup();
     setup();
     await user.type(nameInput(), 'Sky');
     await user.click(screen.getByRole('button', { name: 'Thêm dự án' }));
-    const alert = await screen.findByRole('alert');
-    expect(codeInput()).toHaveAttribute('aria-invalid', 'true');
-    expect(codeInput().getAttribute('aria-describedby')).toBe(alert.id);
+    const nameAlert = await screen.findByText(/Không tạo được mã dự án không trùng/);
+    const sentCodes = api.createProject.mock.calls.map(([body]) => (body as { code: string }).code);
+    expect(sentCodes.length).toBeGreaterThan(1);
+    expect(nameInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput().getAttribute('aria-describedby')).toBe(nameAlert.closest('[id]')?.id);
+    expect(codeInput()).not.toHaveAttribute('aria-invalid', 'true');
+    expect(sentCodes).not.toContain(codeInput().value);
   });
 });

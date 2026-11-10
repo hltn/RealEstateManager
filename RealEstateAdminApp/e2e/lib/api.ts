@@ -37,7 +37,7 @@ export class Api {
   async callWithToken(accessToken: string, method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<{ status: number; data: Json }> {
     const res = await fetch(`${URLS.api}${path}`, {
       method,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}`, ...extraHeaders },
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), authorization: `Bearer ${accessToken}`, ...extraHeaders },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -55,7 +55,7 @@ export class Api {
   async createProject(label = 'Dự án'): Promise<{ id: string; name: string; code: string }> {
     const s = uid();
     const name = `${label} ${s}`;
-    const code = `E2E-${s}`;
+    const code = `E2E${s}`;
     const p = await this.ok('admin', 'POST', '/crm/projects', { name, code, status: 'SELLING', propertyTypes: ['Căn hộ'] });
     return { id: String(p.id ?? p._id), name, code };
   }

@@ -2,7 +2,7 @@
  * Dialog Thêm / Sửa dự án (chỉ Quản trị — 04 §4.2, X7). Desktop = modal giữa màn, mobile = bottom sheet.
  * Kiểm lỗi theo từng trường ngay ở client (cùng `getProjectErrors` với lớp dữ liệu), rồi gọi `createProject`/`updateProject`.
  */
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Building2, Save } from 'lucide-react';
 import { Modal } from '../../../../components/ui/modal';
 import { useCatalogs, useCrmApi } from '@crm/api';
@@ -33,6 +33,9 @@ import type { Project } from '@crm/types/crm';
 const FORM_ID = 'crm-project-form';
 const TITLE_ID = 'crm-project-form-title';
 const ID_PREFIX = 'project-form';
+/** Số lần tự sinh mã kế tiếp rồi gửi lại khi BE báo trùng mã mà mã còn là mã tự điền (không tính lần gửi đầu). */
+const MAX_CODE_RETRIES = 5;
+const CODE_RETRY_EXHAUSTED_MESSAGE = 'Không tạo được mã dự án không trùng từ tên này. Hãy đổi tên dự án hoặc nhập mã khác rồi thử lại.';
 
 interface ProjectFormDialogProps {
   /** Dự án đang sửa; `null` = thêm mới. */
@@ -50,11 +53,21 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
   const [errors, setErrors] = useState<ProjectErrors>({});
   /** Khi Thêm: người dùng đã tự sửa tay ô Mã thì ngừng tự điền theo tên (xoá trống = bật lại). */
   const [isCodeTouched, setIsCodeTouched] = useState(false);
+  /** Mã BE đã báo trùng (dự án xoá mềm mà danh sách không có): tránh khi tự tạo mã tiếp, kể cả lúc người dùng gõ lại tên. */
+  const [rejectedCodes, setRejectedCodes] = useState<string[]>([]);
 
   /** FR-46: người dùng đã đụng tới ô Loại hình -> khi Sửa mới gửi `propertyTypeCodes` (backend sẽ xóa `unmappedPropertyTypes`). */
   const [hasPropertyTypesChanged, setHasPropertyTypesChanged] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
+  /** Dialog đóng (Huỷ/ESC/click nền) giữa lúc đang lưu: ngừng vòng thử lại và không gọi `onClose`/toast nữa (tránh đóng nhầm dialog khác). */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Lựa chọn đã tắt chỉ hiện khi dự án ĐANG LƯU còn dùng nó (không tính nháp), khớp luật của backend.
   const propertyTypeOptions = useMemo(
@@ -65,7 +78,7 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
   /** Gõ tên dự án: khi Thêm và chưa chạm tay vào ô Mã thì mã tự cập nhật theo tên (tên trống -> mã trống). Form Sửa không đổi mã. */
   const handleNameChange = (name: string) => {
     const shouldAutofillCode = isNew && !isCodeTouched;
-    const code = shouldAutofillCode ? (name.trim() ? suggestProjectCode(name, catalogs.projects.map((item) => item.code)) : '') : draft.code;
+    const code = shouldAutofillCode ? (name.trim() ? suggestProjectCode(name, [...catalogs.projects.map((item) => item.code), ...rejectedCodes]) : '') : draft.code;
     setDraft({ ...draft, name, code });
   };
 
@@ -76,12 +89,34 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
     setDraft(next);
   };
 
-  /** Thêm = POST (không nhận `isActive`: dự án mới luôn hoạt động, tắt hoạt động khi tạo = tạo xong rồi PATCH); Sửa = PATCH. */
-  const saveProject = async (normalized: Project) => {
-    if (!isNew) return api.updateProject(normalized.id, toProjectBody(normalized, { shouldSendPropertyTypes: hasPropertyTypesChanged }));
-    const result = await api.createProject(toProjectBody(normalized, { isCreate: true }));
-    if (result.ok && !normalized.isActive) await api.updateProject(result.data.id, { isActive: false });
-    return result;
+  /** Sửa = PATCH. */
+  const updateExistingProject = (normalized: Project) =>
+    api.updateProject(normalized.id, toProjectBody(normalized, { shouldSendPropertyTypes: hasPropertyTypesChanged }));
+
+  /**
+   * Thêm = POST (không nhận `isActive`: dự án mới luôn hoạt động, tắt hoạt động khi tạo = tạo xong rồi PATCH).
+   * BE báo 409 `PROJECT_CODE_DUPLICATED` (mã trùng dự án đã xoá mềm mà danh sách không có): nếu mã còn là mã tự điền từ tên thì tự sinh
+   * mã kế tiếp (thêm mã vừa trùng vào tập đã dùng) rồi gửi lại, tối đa `MAX_CODE_RETRIES` lần; mã người dùng tự gõ thì KHÔNG tự đổi.
+   * Dialog bị đóng giữa chừng (unmount) thì dừng vòng lặp, không gửi thêm và trả `null` (không còn gì để cập nhật/đóng).
+   * Trả kết quả cuối, mã đã gửi lần cuối, các mã đã bị BE báo trùng và việc tắt hoạt động (nếu cần) có thành công không.
+   */
+  const createNewProject = async (normalized: Project) => {
+    const rejected = [...rejectedCodes];
+    const maxRetries = isCodeTouched ? 0 : MAX_CODE_RETRIES;
+    const takenCodes = () => [...catalogs.projects.map((item) => item.code), ...rejected];
+    let candidate = normalized;
+    for (let retry = 0; ; retry += 1) {
+      const result = await api.createProject(toProjectBody(candidate, { isCreate: true }));
+      if (!isMountedRef.current) return null;
+      const isCodeDuplicated = !result.ok && result.error.errorCode === 'PROJECT_CODE_DUPLICATED';
+      if (isCodeDuplicated && !rejected.includes(candidate.code)) rejected.push(candidate.code);
+      if (!isCodeDuplicated || retry >= maxRetries) {
+        const isDeactivated = result.ok && !candidate.isActive ? (await api.updateProject(result.data.id, { isActive: false })).ok : true;
+        if (!isMountedRef.current) return null;
+        return { result, code: candidate.code, rejected, isCodeDuplicated, isDeactivated, nextCode: suggestProjectCode(candidate.name, takenCodes()) };
+      }
+      candidate = { ...candidate, code: suggestProjectCode(candidate.name, takenCodes()) };
+    }
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -92,19 +127,39 @@ export const ProjectFormDialog = ({ project: editingProject, onClose }: ProjectF
     setErrors(nextErrors);
     if (getFirstProjectError(nextErrors)) return;
     setIsSaving(true);
-    const result = await saveProject(normalized);
-    setIsSaving(false);
-    if (!result.ok) {
-      if (result.error.errorCode === 'PROJECT_CODE_DUPLICATED') {
-        // Mã trùng dự án đã xoá mềm mà danh sách không có: báo ngay tại ô Mã, giữ nguyên form để người dùng tự đổi mã rồi lưu lại.
-        // Đánh dấu đã chạm tay để gõ tiếp tên không tự gợi ý lại đúng mã vừa bị trùng.
-        setErrors({ code: `Mã dự án "${normalized.code}" đã tồn tại.` });
-        setIsCodeTouched(true);
+    if (!isNew) {
+      const result = await updateExistingProject(normalized);
+      if (!isMountedRef.current) return;
+      setIsSaving(false);
+      if (!result.ok) {
+        showToast({ type: 'error', title: result.error.message });
+        return;
       }
+      showToast({ title: `Đã lưu dự án "${result.data.name}"` });
+      onClose();
+      return;
+    }
+    const outcome = await createNewProject(normalized);
+    if (!outcome) return;
+    const { result, code, rejected, isCodeDuplicated, isDeactivated, nextCode } = outcome;
+    setIsSaving(false);
+    setRejectedCodes(rejected);
+    if (!result.ok) {
+      if (isCodeDuplicated && !isCodeTouched) {
+        // Mã tự điền hết lượt thử vẫn trùng: báo ở ô Tên và đặt sẵn mã kế tiếp CHƯA thử (bấm Thêm lại là thử tiếp, không lặp mã đã trùng).
+        setDraft((current) => ({ ...current, code: nextCode }));
+        setErrors({ name: CODE_RETRY_EXHAUSTED_MESSAGE });
+        showToast({ type: 'error', title: CODE_RETRY_EXHAUSTED_MESSAGE });
+        return;
+      }
+      setDraft((current) => ({ ...current, code }));
+      // Mã người dùng tự gõ trùng dự án đã xoá mềm: báo tại ô Mã, giữ form để họ tự đổi mã rồi lưu lại.
+      if (isCodeDuplicated) setErrors({ code: `Mã dự án "${code}" đã tồn tại.` });
       showToast({ type: 'error', title: result.error.message });
       return;
     }
-    showToast({ title: isNew ? `Đã thêm dự án "${result.data.name}"` : `Đã lưu dự án "${result.data.name}"` });
+    if (isDeactivated) showToast({ title: `Đã thêm dự án "${result.data.name}"` });
+    else showToast({ type: 'warning', title: `Đã tạo dự án "${result.data.name}" nhưng chưa tắt được hoạt động`, message: 'Mở lại dự án để tắt "Đang hoạt động".' });
     onClose();
   };
 

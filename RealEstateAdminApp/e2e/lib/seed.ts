@@ -81,8 +81,8 @@ export async function seed(mongoUri: string): Promise<SeedState> {
     name,
     code,
   });
-  const active = await mkProject('Dự án E2E Hoạt động', 'E2E-ACTIVE');
-  const inactive = await mkProject('Dự án E2E Ngừng', 'E2E-OFF');
+  const active = await mkProject('Dự án E2E Hoạt động', 'E2EACTIVE');
+  const inactive = await mkProject('Dự án E2E Ngừng', 'E2EOFF');
   await api(adminToken, 'PATCH', `/crm/projects/${inactive.id}`, { isActive: false });
 
   const mkCustomers = async (token: string, rows: Array<[string, string]>) => {
