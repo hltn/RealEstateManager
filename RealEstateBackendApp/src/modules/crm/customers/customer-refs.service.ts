@@ -2,8 +2,11 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { CatalogRefDto, RefDto, UserRefDto } from '../../../common/dto/ref.dto';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { UserStatus } from '../../../common/enums/user-status.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
+import { highestRole, rolesOf } from '../../../common/utils/user-roles.util';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import { CatalogItemType } from '../catalogs/catalog.enums';
 import { Area, AreaDocument } from '../catalogs/schemas/area.schema';
@@ -52,6 +55,12 @@ export interface RefCodeMaps {
   contactResults: Map<string, string>;
 }
 
+/** Trạng thái tài khoản của một người dùng đã dịch: khóa hay chưa (FR-18) và role cao nhất (cho `careTeam[].user.role`). */
+export interface UserRefState {
+  isLocked: boolean;
+  role: UserRole | null;
+}
+
 export interface RefMaps {
   statuses: Map<string, StatusRefDto>;
   sources: Map<string, string>;
@@ -63,6 +72,11 @@ export interface RefMaps {
   /** Chỉ chứa thẻ CHƯA xóa mềm. */
   tags: Map<string, string>;
   users: Map<string, string>;
+  /**
+   * Trạng thái khóa + role theo id người dùng (cùng tập id với `users`). Tùy chọn để các bên dựng `RefMaps` thủ công
+   * (test, mapper khác) không bị ép khai báo; thiếu thì `toUserRef` không gắn `isLocked`.
+   */
+  userStates?: Map<string, UserRefState>;
 }
 
 /** Loại danh mục có mã tham chiếu `code` (FR-40). */
@@ -539,7 +553,7 @@ export class CustomerRefsService {
         userIds.length
           ? this.userModel
               .find({ _id: { $in: userIds } })
-              .select('displayName')
+              .select('displayName status role roles')
               .lean()
               .exec()
           : [],
@@ -586,6 +600,15 @@ export class CustomerRefsService {
         users.map(
           (item) => [item._id, item.displayName] as [Types.ObjectId, string],
         ),
+      ),
+      userStates: new Map<string, UserRefState>(
+        users.map((item): [string, UserRefState] => [
+          String(item._id),
+          {
+            isLocked: item.status === UserStatus.BLOCKED,
+            role: highestRole(rolesOf(item as Pick<User, 'role' | 'roles'>)),
+          },
+        ]),
       ),
       codes: {
         sources: toCodeMap(sources),
@@ -685,8 +708,19 @@ export const toCatalogRef = (
       }
     : null;
 
+/**
+ * `UserRef` từ id. Truyền `states` (từ `RefMaps.userStates`) thì gắn thêm `isLocked` cho người có trong map (FR-18);
+ * không truyền (mọi nơi chỉ cần id + tên) thì giữ nguyên hợp đồng cũ, không có `isLocked`.
+ */
 export const toUserRef = (
   id: Types.ObjectId | null | undefined,
   users: Map<string, string>,
-): UserRefDto | null =>
-  id ? { id: String(id), displayName: users.get(String(id)) ?? '' } : null;
+  states?: Map<string, UserRefState>,
+): UserRefDto | null => {
+  if (!id) return null;
+  const key = String(id);
+  const ref: UserRefDto = { id: key, displayName: users.get(key) ?? '' };
+  const state = states?.get(key);
+  if (state) ref.isLocked = state.isLocked;
+  return ref;
+};

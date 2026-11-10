@@ -14,6 +14,7 @@ import type { RefIds, RefMaps } from './customer-refs.service';
 import { toCatalogRef, toRef, toUserRef } from './customer-refs.service';
 import {
   CareTeamMemberDto,
+  CareTeamUserRefDto,
   CriteriaDoneDto,
   CriteriaResponseDto,
   CriterionResponseDto,
@@ -27,7 +28,7 @@ import { maskNationalId } from './utils/customer-rules.util';
 
 /** Field cần đọc để dựng list item (KHÔNG gồm nationalId, searchText). */
 const LIST_FIELDS =
-  'fullName phone statusId sourceId sourceCode interestedProjectIds areaId areaCode tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
+  'customerCode fullName phone statusId sourceId sourceCode interestedProjectIds areaId areaCode tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
 
 /**
  * Projection của danh sách khách. `persona` chứa trường nhạy cảm nên KHÔNG lấy cả mảng: `$elemMatch` chỉ đọc
@@ -108,6 +109,8 @@ export const toListItem = (
   refs: RefMaps,
 ): CustomerListItemDto => ({
   id: String(doc._id),
+  // Mã không phải PII và không đổi quyền xem: mọi vai trò thấy mã của khách họ được thấy. Chưa bù mã -> null.
+  customerCode: typeof doc.customerCode === 'string' ? doc.customerCode : null,
   fullName: doc.fullName,
   phoneMasked: toPhoneMasked(doc),
   purchasePurposes: toPurchasePurposes(doc),
@@ -130,7 +133,11 @@ export const toListItem = (
   }),
   progress: doc.progress ?? 0,
   criteriaDone: criteriaDone(doc),
-  primaryAssignee: toUserRef(doc.primaryAssigneeId, refs.users),
+  primaryAssignee: toUserRef(
+    doc.primaryAssigneeId,
+    refs.users,
+    refs.userStates,
+  ),
   careTeamSize: doc.careTeam?.length ?? 0,
   nextAppointmentAt: iso(doc.nextAppointmentAt),
   lastCareLogAt: iso(doc.lastCareLogAt),
@@ -190,6 +197,19 @@ export const toConsentResponse = (
   note: doc.dataConsent?.note ?? null,
 });
 
+/**
+ * `user` của thành viên nhóm: id + tên + `isLocked` (FR-18) + role cao nhất (FE tra vai trò thành viên). Dùng chung cho
+ * chi tiết khách và `care-team` để hai response thống nhất. Thiếu `userStates` hoặc thiếu id (user không còn trong DB)
+ * thì `role = null`, không `isLocked`, không ném lỗi.
+ */
+export const toMemberUser = (
+  userId: Types.ObjectId,
+  maps: Pick<RefMaps, 'users' | 'userStates'>,
+): CareTeamUserRefDto => ({
+  ...toUserRef(userId, maps.users, maps.userStates)!,
+  role: maps.userStates?.get(String(userId))?.role ?? null,
+});
+
 const isPrimary = (doc: CustomerLean, actor: CrmActor): boolean =>
   (doc.careTeam ?? []).some(
     (member) =>
@@ -205,7 +225,7 @@ export const toDetail = (
   const primary = isPrimary(doc, actor);
   const listItem = toListItem(doc, refs);
   const careTeam: CareTeamMemberDto[] = (doc.careTeam ?? []).map((member) => ({
-    user: toUserRef(member.userId, refs.users)!,
+    user: toMemberUser(member.userId, refs),
     role: member.role,
     addedAt: iso(member.addedAt)!,
     addedBy: toUserRef(member.addedBy, refs.users),

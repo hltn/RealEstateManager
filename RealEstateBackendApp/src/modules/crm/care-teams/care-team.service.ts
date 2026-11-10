@@ -94,7 +94,7 @@ export class CareTeamService {
     const maps = await this.refs.resolve({
       userIds: careTeamUserIds(customer.careTeam ?? []),
     });
-    return toCareTeamResponse(customer.careTeam ?? [], maps.users);
+    return toCareTeamResponse(customer.careTeam ?? [], maps);
   }
 
   addMembers(
@@ -231,7 +231,7 @@ export class CareTeamService {
       const maps = await this.refs.resolve({
         userIds: careTeamUserIds(currentTeam),
       });
-      return toCareTeamResponse(currentTeam, maps.users);
+      return toCareTeamResponse(currentTeam, maps);
     }
     assertCareTeamInvariant(change.careTeam);
 
@@ -302,7 +302,7 @@ export class CareTeamService {
       mutation.origin,
       session,
     );
-    return toCareTeamResponse(change.careTeam, maps.users);
+    return toCareTeamResponse(change.careTeam, maps);
   }
 
   /**

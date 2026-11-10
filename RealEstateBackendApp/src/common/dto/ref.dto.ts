@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** `Ref` dùng chung trong response (tài liệu 05 mục 1.6): tham chiếu danh mục/dự án/nhóm. */
 export class RefDto {
@@ -25,4 +25,11 @@ export class UserRefDto {
 
   @ApiProperty({ example: 'Hạnh' })
   displayName: string;
+
+  /**
+   * `true` khi tài khoản bị khóa (`BLOCKED`, FR-18). Cộng thêm, tùy chọn (tương thích ngược): chỉ có ở nơi cần hiện
+   * nhãn "đã khóa" (người chăm sóc chính, thành viên nhóm chăm sóc); các tham chiếu người dùng khác không kèm trường này.
+   */
+  @ApiPropertyOptional({ example: false })
+  isLocked?: boolean;
 }

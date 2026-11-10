@@ -277,7 +277,7 @@ export class CustomerListService {
     await this.rateLimit.consumeDeduped(
       jwt.sub,
       'CUSTOMER_SEARCH',
-      `${keyword.kind}:${keyword.kind === 'phone' ? keyword.digits : keyword.text}`,
+      `${keyword.kind}:${keyword.kind === 'name' || keyword.kind === 'email' ? keyword.text : keyword.digits}`,
     );
     if (keyword.kind === 'phone') {
       await this.abuse.trackPhoneSearch(jwt.sub, keyword.digits);
