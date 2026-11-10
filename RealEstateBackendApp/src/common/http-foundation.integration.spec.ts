@@ -45,10 +45,10 @@ class ProbeController {
   @Get('business')
   business() {
     throw new BusinessException(
-      ErrorCode.CUSTOMER_PHONE_DUPLICATED,
-      'Số điện thoại đã tồn tại',
+      ErrorCode.VERSION_CONFLICT,
+      'Hồ sơ đã bị người khác chỉnh sửa',
       HttpStatus.CONFLICT,
-      { existingCustomerId: 'c1' },
+      { currentVersion: 3 },
     );
   }
 
@@ -143,9 +143,9 @@ describe('HTTP nền tảng: Helmet + GlobalExceptionFilter (Fastify thật)', (
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({
       statusCode: 409,
-      message: 'Số điện thoại đã tồn tại',
-      errorCode: 'CUSTOMER_PHONE_DUPLICATED',
-      details: { existingCustomerId: 'c1' },
+      message: 'Hồ sơ đã bị người khác chỉnh sửa',
+      errorCode: 'VERSION_CONFLICT',
+      details: { currentVersion: 3 },
       timestamp: expect.any(String),
       path: '/api/v1/probe/business',
     });

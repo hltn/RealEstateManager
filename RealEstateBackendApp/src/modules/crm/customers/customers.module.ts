@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { RedisModule } from '../../../shared/redis/redis.module';
+import { CountersModule } from '../../../shared/counters/counters.module';
 import { StorageModule } from '../../../shared/storage/storage.module';
 import { User, UserSchema } from '../../users/schemas/user.schema';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
@@ -86,6 +87,8 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     // Hủy/dựng lại nhắc việc khi xóa mềm/khôi phục và ẩn danh hóa khách (M5).
     RemindersCoreModule,
     NotificationsModule,
+    // Cấp mã khách `KH-xxxxxx` trong transaction tạo khách (FR-07).
+    CountersModule,
   ],
   controllers: [
     CustomersController,

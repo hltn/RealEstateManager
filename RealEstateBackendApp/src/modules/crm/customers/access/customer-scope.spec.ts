@@ -55,6 +55,19 @@ describe('buildCustomerScope (phạm vi khách theo vai trò, tài liệu 04 m�
     ).toEqual({ 'careTeam.userId': me });
   });
 
+  it('FR-06: phạm vi không phụ thuộc teamIds của khách (khách teamIds=[] do Admin tạo vẫn thấy qua careTeam)', () => {
+    const me = new Types.ObjectId();
+    expect(
+      buildCustomerScope(actor({ role: UserRole.STAFF, userId: me })),
+    ).toEqual({ 'careTeam.userId': me });
+    // Manager chưa quản lý nhóm nào: nhánh teamIds khớp rỗng, nhánh careTeam vẫn hoạt động.
+    expect(
+      buildCustomerScope(
+        actor({ role: UserRole.MANAGER, userId: me, managedTeamIds: [] }),
+      ),
+    ).toEqual({ $or: [{ teamIds: { $in: [] } }, { 'careTeam.userId': me }] });
+  });
+
   it('vai trò ngoài CRM (EDITOR) không thấy khách nào', () => {
     expect(buildCustomerScope(actor({ role: UserRole.EDITOR }))).toEqual({
       _id: { $in: [] },

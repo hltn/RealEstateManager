@@ -61,4 +61,9 @@ describe('buildCustomerCreatedNotifications (T-34)', () => {
   it('người tạo là người duy nhất trong nhóm thì không có yêu cầu nào', () => {
     expect(build([{ userId: actor, role: CareRole.PRIMARY }])).toEqual([]);
   });
+
+  it('FR-10: người tạo là PRIMARY duy nhất (mọi vai trò, kể cả Admin teamIds=[]) hoặc careTeam rỗng => không thông báo', () => {
+    expect(build([{ userId: actor, role: CareRole.PRIMARY }])).toHaveLength(0);
+    expect(build([])).toEqual([]);
+  });
 });

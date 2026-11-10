@@ -18,7 +18,7 @@ export class CounterService {
   /**
    * Cấp `count` số thứ tự liên tiếp cho `key` bằng MỘT lần `$inc` nguyên tử.
    *
-   * Luồng: `findOneAndUpdate({_id:key},{$inc:{seq:count}},{upsert,new})` trả `seq` sau khi tăng,
+   * Luồng: `findOneAndUpdate({_id:key},{$inc:{seq:count}},{upsert,returnDocument:'after'})` trả `seq` sau khi tăng,
    * khoảng cấp = `[seq - count + 1, seq]`. Lô n mã chỉ tốn một lần ghi (không mỗi mã một lần).
    *
    * `session` BẮT BUỘC và phải là session của transaction tạo bản ghi: `$inc` rollback cùng bản ghi
@@ -41,7 +41,7 @@ export class CounterService {
       .findOneAndUpdate(
         { _id: key },
         { $inc: { seq: count } },
-        { upsert: true, new: true, session },
+        { upsert: true, returnDocument: 'after', session },
       )
       .lean()
       .exec();

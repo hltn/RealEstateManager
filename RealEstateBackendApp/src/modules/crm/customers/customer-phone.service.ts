@@ -1,10 +1,8 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
-import { BusinessException } from '../../../common/exceptions/business.exception';
-import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import {
@@ -91,7 +89,7 @@ export class CustomerPhoneService {
   }
 
   /**
-   * Mô tả khách đã có SĐT này theo góc nhìn của `ctx.actor` (dùng cho `phone-lookups` và lỗi trùng khi tạo/sửa).
+   * Mô tả khách đã có SĐT này theo góc nhìn của `ctx.actor` (dùng cho `phone-lookups`).
    * Khách ngoài phạm vi: trả `customerRef` + `caredByName` (tên hiển thị phụ trách chính) và ghi `PHONE_LOOKUP`.
    * Khách đã xóa mềm: chỉ Quản trị biết/thao tác được; người khác chỉ biết "đã tồn tại".
    */
@@ -145,31 +143,6 @@ export class CustomerPhoneService {
         ctx.actor.role === UserRole.STAFF,
       hasPendingRequest,
     };
-  }
-
-  /** Lỗi 409 chuẩn khi tạo/sửa trùng SĐT (tài liệu 05 mục 5). */
-  async buildDuplicateError(
-    ctx: AccessContext,
-    phone: string,
-    source: CrmAuditSource = 'WEB',
-  ): Promise<BusinessException> {
-    // Lỗi 409 trùng SĐT tiết lộ đúng thông tin của `phone-lookups` (tên người phụ trách + customerRef), nên dùng
-    // CHUNG hạn mức 30 lần/phút/người: không cho lách giới hạn dò số bằng cách gọi tạo/sửa khách liên tục.
-    // Vượt hạn mức => 429 thay cho 409; Redis lỗi => 503 (fail-closed).
-    await this.rateLimit.consume(String(ctx.actor.userId), 'PHONE_LOOKUP');
-    const existing = await this.repo.findByPhoneForDuplicateCheck(phone);
-    const details: Record<string, unknown> = existing
-      ? { ...(await this.describeExisting(ctx, existing, source)) }
-      : {};
-    const caredBy = details.caredByName as string | null | undefined;
-    return new BusinessException(
-      ErrorCode.CUSTOMER_PHONE_DUPLICATED,
-      caredBy
-        ? `Đã có khách này, do ${caredBy} chăm sóc`
-        : 'Đã có khách với số điện thoại này',
-      HttpStatus.CONFLICT,
-      details,
-    );
   }
 
   /**

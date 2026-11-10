@@ -33,7 +33,6 @@ import {
 import { MAX_TAGS_PER_CUSTOMER } from '../../tags/tag.constants';
 
 const MAX_PROJECTS_PER_CUSTOMER = 20;
-const MAX_CARE_MEMBERS_ON_CREATE = 20;
 const PHONE_INPUT_MAX_LENGTH = 30;
 
 /** Giá trị một tiêu chí khi gửi lên (cả hai field tùy chọn, không nhận `null`). */
@@ -78,23 +77,6 @@ export class CriteriaInputDto {
   timing?: CriterionInputDto;
 }
 
-export class CareTeamInputDto {
-  @ApiProperty({
-    type: [String],
-    description: 'Người chăm sóc (MANAGER/STAFF đang hoạt động)',
-  })
-  @IsArray()
-  @ArrayMaxSize(MAX_CARE_MEMBERS_ON_CREATE)
-  @IsMongoId({ each: true })
-  memberIds: string[];
-
-  @ApiProperty({
-    description: 'Phụ trách chính; tự được thêm nếu chưa có trong memberIds',
-  })
-  @IsMongoId()
-  primaryUserId: string;
-}
-
 export class DataConsentInputDto {
   @ApiProperty({ enum: ConsentStatus })
   @IsEnum(ConsentStatus)
@@ -113,7 +95,10 @@ export class DataConsentInputDto {
   note?: string;
 }
 
-/** Tạo khách (tài liệu 05 mục 2.3). `tagIds` thuộc M4 nên chưa nhận. */
+/**
+ * Tạo khách (tài liệu 05 mục 2.3). Không nhận `careTeam`: người tạo luôn là phụ trách chính (FR-10); `ValidationPipe`
+ * (`forbidNonWhitelisted`) trả 400 nếu client gửi trường này.
+ */
 export class CreateCustomerDto {
   @ApiProperty({ maxLength: CUSTOMER_NAME_MAX_LENGTH })
   @Trim()
@@ -122,15 +107,18 @@ export class CreateCustomerDto {
   @MaxLength(CUSTOMER_NAME_MAX_LENGTH)
   fullName: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '0912 345 678',
-    description: 'Chuẩn hóa về E.164 ở server',
+    nullable: true,
+    type: String,
+    description:
+      'Tùy chọn (FR-01): vắng mặt, `null` hoặc chuỗi rỗng = khách chưa có SĐT. Có giá trị thì chuẩn hóa về E.164 ở server; không kiểm trùng',
   })
+  @IsOptional()
   @Trim()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(PHONE_INPUT_MAX_LENGTH)
-  phone: string;
+  phone?: string | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   @IsOptional()
@@ -225,16 +213,6 @@ export class CreateCustomerDto {
   @Type(() => CriteriaInputDto)
   criteria?: CriteriaInputDto;
 
-  @ApiPropertyOptional({
-    type: CareTeamInputDto,
-    description:
-      'Quản trị/Quản lý chỉ định; Nhân viên tạo thì tự là phụ trách chính',
-  })
-  @OptionalNotNull()
-  @ValidateNested()
-  @Type(() => CareTeamInputDto)
-  careTeam?: CareTeamInputDto;
-
   @ApiPropertyOptional({ type: DataConsentInputDto })
   @OptionalNotNull()
   @ValidateNested()
@@ -260,13 +238,17 @@ export class UpdateCustomerDto {
   @MaxLength(CUSTOMER_NAME_MAX_LENGTH)
   fullName?: string;
 
-  @ApiPropertyOptional()
-  @OptionalNotNull()
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Vắng mặt = giữ nguyên; `null` hoặc chuỗi rỗng = xóa SĐT (FR-01); có giá trị = chuẩn hóa và thay. Không kiểm trùng',
+  })
+  @IsOptional()
   @Trim()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(PHONE_INPUT_MAX_LENGTH)
-  phone?: string;
+  phone?: string | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   @IsOptional()

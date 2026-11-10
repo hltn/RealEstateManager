@@ -2,16 +2,13 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { UserRole } from '../../../common/enums/user-role.enum';
-import { hasCrmTeamRole, rolesOf } from '../../../common/utils/user-roles.util';
-import { UserStatus } from '../../../common/enums/user-status.enum';
+import { canBePrimary } from '../../../common/utils/user-roles.util';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
-import { isDuplicateKeyError } from '../../../common/utils/mongo-error.util';
+import { CounterService } from '../../../shared/counters/counter.service';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import { teamObjectIdsOf } from '../../users/user-public-profile';
-import { sharesAnyTeam } from '../common/access/crm-actor';
 import {
   CrmAuditAction,
   CrmAuditChange,
@@ -26,15 +23,15 @@ import {
   CustomerAccessService,
 } from './access/customer-access.service';
 import { CareRole, ConsentStatus, CreatedVia } from './customer.constants';
+import { COUNTER_KEY, formatCustomerCode } from './customer-code.constants';
 import {
   assertValidNationalId,
   customerNotFound,
-  normalizePhoneOrThrow,
+  normalizeOptionalPhoneOrThrow,
   resolveClientSource,
   versionConflict,
 } from './customer.errors';
 import { collectRefIds, toDetail } from './customer.mapper';
-import { CustomerPhoneService } from './customer-phone.service';
 import { CustomerTagsService } from './customer-tags.service';
 import { CustomerRefsService, RefMaps } from './customer-refs.service';
 import { CustomerLean, CustomersRepository } from './customers.repository';
@@ -97,7 +94,8 @@ const profileOf = (doc: CustomerLean): ProfileSnapshot => ({
 
 /**
  * Tạo / sửa hồ sơ / xem chi tiết khách (tài liệu 05 mục 2.3). Mọi thao tác ghi nằm trong MỘT transaction cùng
- * bản ghi `crm_audit_logs`; SĐT duy nhất do unique index quyết định (E11000 => 409), không dựa vào kiểm tra trước.
+ * bản ghi `crm_audit_logs`. SĐT là tùy chọn và KHÔNG duy nhất (FR-01/FR-02): không kiểm trùng, không bắt E11000
+ * theo SĐT. Danh tính khách là `customerCode` (`KH-xxxxxx`) cấp trong chính transaction tạo (FR-07).
  */
 @Injectable()
 export class CustomersService {
@@ -107,11 +105,11 @@ export class CustomersService {
     private readonly repo: CustomersRepository,
     private readonly access: CustomerAccessService,
     private readonly refs: CustomerRefsService,
-    private readonly phoneService: CustomerPhoneService,
     private readonly audit: CrmAuditLogService,
     private readonly pii: PiiCryptoService,
     private readonly tags: CustomerTagsService,
     private readonly notifications: NotificationDispatcher,
+    private readonly counter: CounterService,
   ) {}
 
   async getById(jwt: JwtPayload, id: string): Promise<CustomerDetailDto> {
@@ -128,24 +126,13 @@ export class CustomersService {
   ): Promise<CustomerDetailDto> {
     const ctx = await this.access.resolve(jwt);
     const { createdVia, auditSource } = resolveClientSource(clientType);
-    const phone = normalizePhoneOrThrow(dto.phone);
+    const phone = normalizeOptionalPhoneOrThrow(dto.phone);
     if (dto.nationalId) assertValidNationalId(dto.nationalId);
 
-    try {
-      const created = await withTransaction(this.connection, (session) =>
-        this.insertCustomer(ctx, dto, phone, createdVia, auditSource, session),
-      );
-      return await this.toDetailDto(created, ctx);
-    } catch (error) {
-      if (isDuplicateKeyError(error)) {
-        throw await this.phoneService.buildDuplicateError(
-          ctx,
-          phone,
-          auditSource,
-        );
-      }
-      throw error;
-    }
+    const created = await withTransaction(this.connection, (session) =>
+      this.insertCustomer(ctx, dto, phone, createdVia, auditSource, session),
+    );
+    return this.toDetailDto(created, ctx);
   }
 
   async update(
@@ -156,24 +143,16 @@ export class CustomersService {
   ): Promise<CustomerDetailDto> {
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
+    // `undefined` = giữ nguyên; `null`/rỗng = xóa SĐT; có giá trị = chuẩn hóa (FR-01).
     const newPhone =
-      dto.phone === undefined ? undefined : normalizePhoneOrThrow(dto.phone);
+      dto.phone === undefined
+        ? undefined
+        : normalizeOptionalPhoneOrThrow(dto.phone);
 
-    try {
-      const updated = await withTransaction(this.connection, (session) =>
-        this.applyUpdate(ctx, id, dto, newPhone, auditSource, session),
-      );
-      return await this.toDetailDto(updated, ctx);
-    } catch (error) {
-      if (newPhone && isDuplicateKeyError(error)) {
-        throw await this.phoneService.buildDuplicateError(
-          ctx,
-          newPhone,
-          auditSource,
-        );
-      }
-      throw error;
-    }
+    const updated = await withTransaction(this.connection, (session) =>
+      this.applyUpdate(ctx, id, dto, newPhone, auditSource, session),
+    );
+    return this.toDetailDto(updated, ctx);
   }
 
   // --------------------------------------------------------------------------------------------
@@ -183,7 +162,7 @@ export class CustomersService {
   private async insertCustomer(
     ctx: AccessContext,
     dto: CreateCustomerDto,
-    phone: string,
+    phone: string | null,
     createdVia: CreatedVia,
     auditSource: CrmAuditSource,
     session: ClientSession,
@@ -233,7 +212,7 @@ export class CustomersService {
     const tagIds = uniqueIds((dto.tagIds ?? []).map(oid));
     await this.tags.applyDelta({ added: tagIds, removed: [] }, session);
 
-    const plan = await this.planCareTeam(ctx, dto, now, session);
+    const plan = await this.planCareTeam(ctx, now, session);
     const { next: criteria } = mergeCriteria(
       undefined,
       dto.criteria ?? {},
@@ -242,8 +221,14 @@ export class CustomersService {
     );
 
     const email = dto.email ? dto.email.toLowerCase() : null;
+    // FR-07: cấp mã SAU CÙNG (sau mọi đọc/kiểm tra) để khóa doc counter giữ ngắn nhất; rollback transaction kéo
+    // theo cả `$inc` nên không thủng số, không trùng mã.
+    const customerCode = formatCustomerCode(
+      (await this.counter.next(COUNTER_KEY, 1, session)).first,
+    );
     const doc = {
       _id,
+      customerCode,
       fullName: dto.fullName,
       phone,
       email,
@@ -306,6 +291,7 @@ export class CustomersService {
         refMaps,
         true,
       ),
+      { field: 'customerCode', from: null, to: customerCode },
       {
         field: 'status',
         from: null,
@@ -349,110 +335,44 @@ export class CustomersService {
   }
 
   /**
-   * Lập nhóm chăm sóc ban đầu (tài liệu 05 mục 2.3, ma trận 4.2):
-   * - Nhân viên tạo => tự là phụ trách chính (không được chỉ định người khác);
-   * - Quản trị/Quản lý chỉ định `careTeam` (bắt buộc `primaryUserId`); Quản lý chỉ phân được cho người trong
-   *   nhóm mình quản lý (hoặc chính mình) để khách luôn nằm trong phạm vi của họ;
-   * - không chỉ định: `teamIds` = nhóm của người tạo (Quản lý: nhóm mình quản lý + nhóm của mình).
+   * Lập nhóm chăm sóc ban đầu (FR-10): người tạo LUÔN là phụ trách chính (PRIMARY) ở mọi vai trò (Admin, Manager,
+   * Staff); không còn nhập `careTeam` lúc tạo. `teamIds` = nhóm của người tạo, có thể `[]` (Admin thuần).
    *
-   * "Chạm" document người dùng được phân (cập nhật `updatedAt`) để việc đổi nhóm của họ chạy đồng thời xung đột ghi
-   * và buộc một bên retry — tránh `teamIds` của khách lệch nhóm hiện tại của người chăm sóc (write-skew).
+   * "Chạm" document người tạo (cập nhật `updatedAt`) rồi ĐỌC LẠI nhóm của họ trong cùng session để việc đổi nhóm
+   * chạy đồng thời xung đột ghi và buộc một bên retry — tránh `teamIds` của khách lệch nhóm hiện tại của người
+   * chăm sóc (write-skew).
    */
   private async planCareTeam(
     ctx: AccessContext,
-    dto: CreateCustomerDto,
     now: Date,
     session: ClientSession,
   ): Promise<CareTeamPlan> {
     const { actor } = ctx;
-    const entry = (userId: Types.ObjectId, role: CareRole): CareTeamEntry => ({
-      userId,
-      role,
-      addedBy: actor.userId,
-      addedAt: now,
-    });
-
-    if (actor.role === UserRole.STAFF) {
-      if (dto.careTeam) {
-        throw new BusinessException(
-          ErrorCode.CARE_TEAM_ACTION_FORBIDDEN,
-          'Nhân viên không được chỉ định nhóm chăm sóc khi tạo khách',
-          HttpStatus.FORBIDDEN,
-        );
-      }
-      await this.touchUsers([actor.userId], session);
-      return {
-        careTeam: [entry(actor.userId, CareRole.PRIMARY)],
-        primaryAssigneeId: actor.userId,
-        teamIds: actor.teamIds,
-      };
-    }
-
-    if (!dto.careTeam) {
-      const teamIds = uniqueIds(
-        actor.role === UserRole.MANAGER
-          ? [...actor.managedTeamIds, ...actor.teamIds]
-          : [],
+    if (!canBePrimary(actor.roles)) {
+      throw new BusinessException(
+        ErrorCode.CARE_TEAM_ACTION_FORBIDDEN,
+        'Vai trò hiện tại không được tạo khách',
+        HttpStatus.FORBIDDEN,
       );
-      const managerSeesIt = teamIds.some((id) =>
-        actor.managedTeamIds.some((managed) => managed.equals(id)),
-      );
-      if (actor.role === UserRole.MANAGER && !managerSeesIt) {
-        throw new BusinessException(
-          ErrorCode.PRIMARY_REQUIRED,
-          'Quản lý chưa quản lý nhóm nào, hãy chỉ định nhóm chăm sóc cho khách',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      return { careTeam: [], primaryAssigneeId: null, teamIds };
     }
-
-    const primaryId = oid(dto.careTeam.primaryUserId);
-    const memberIds = uniqueIds([
-      ...dto.careTeam.memberIds.map(oid),
-      primaryId,
-    ]);
-    const users = await this.userModel
-      .find({ _id: { $in: memberIds }, deletedAt: null })
-      .select('role roles status teamId teamIds')
+    await this.touchUsers([actor.userId], session);
+    const creator = await this.userModel
+      .findOne({ _id: actor.userId, deletedAt: null })
+      .select('teamId teamIds')
       .session(session)
       .lean()
       .exec();
-    const byId = new Map(users.map((user) => [String(user._id), user]));
-    const invalid = memberIds.filter((id) => {
-      const user = byId.get(String(id));
-      if (
-        !user ||
-        user.status !== UserStatus.ACTIVE ||
-        !hasCrmTeamRole(rolesOf(user))
-      ) {
-        return true;
-      }
-      if (actor.role !== UserRole.MANAGER || id.equals(actor.userId)) {
-        return false;
-      }
-      return !sharesAnyTeam(actor.managedTeamIds, teamObjectIdsOf(user));
-    });
-    if (invalid.length > 0) {
-      throw new BusinessException(
-        ErrorCode.USER_NOT_ASSIGNABLE,
-        'Có người được phân không hợp lệ (không hoạt động, không phải Quản lý/Nhân viên hoặc ngoài nhóm bạn quản lý)',
-        HttpStatus.BAD_REQUEST,
-        { userIds: invalid.map(String) },
-      );
-    }
-    await this.touchUsers(memberIds, session);
     return {
-      careTeam: memberIds.map((id) =>
-        entry(id, id.equals(primaryId) ? CareRole.PRIMARY : CareRole.MEMBER),
-      ),
-      primaryAssigneeId: primaryId,
-      teamIds: uniqueIds(
-        memberIds.flatMap((id) => {
-          const member = byId.get(String(id));
-          return member ? teamObjectIdsOf(member) : [];
-        }),
-      ),
+      careTeam: [
+        {
+          userId: actor.userId,
+          role: CareRole.PRIMARY,
+          addedBy: actor.userId,
+          addedAt: now,
+        },
+      ],
+      primaryAssigneeId: actor.userId,
+      teamIds: uniqueIds(creator ? teamObjectIdsOf(creator) : actor.teamIds),
     };
   }
 
@@ -477,7 +397,7 @@ export class CustomersService {
     ctx: AccessContext,
     id: string,
     dto: UpdateCustomerDto,
-    newPhone: string | undefined,
+    newPhone: string | null | undefined,
     auditSource: CrmAuditSource,
     session: ClientSession,
   ): Promise<CustomerLean> {
@@ -528,7 +448,7 @@ export class CustomersService {
 
     const next: ProfileSnapshot = {
       fullName: dto.fullName ?? before.fullName,
-      phone: newPhone ?? before.phone,
+      phone: newPhone === undefined ? (before.phone ?? null) : newPhone,
       email:
         dto.email === undefined
           ? (before.email ?? null)
@@ -617,7 +537,7 @@ export class CustomersService {
       searchText: buildSearchText({
         fullName: next.fullName!,
         email: next.email,
-        phone: next.phone!,
+        phone: next.phone,
       }),
     };
     const matched = await this.repo.updateOne(

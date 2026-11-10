@@ -47,12 +47,17 @@ describe('CounterService.next (T-01, FR-07)', () => {
     });
   });
 
-  it('FR-07: truyền đúng session, key, upsert và new:true', async () => {
+  it("FR-07: truyền đúng session, key, upsert và returnDocument:'after' (không dùng new)", async () => {
     const { service, model } = build({ seq: 1 });
     await service.next('CUSTOMER_CODE', 1, session);
     const [filter, , options] = model.findOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: 'CUSTOMER_CODE' });
-    expect(options).toEqual({ upsert: true, new: true, session });
+    expect(options).toEqual({
+      upsert: true,
+      returnDocument: 'after',
+      session,
+    });
+    expect(options).not.toHaveProperty('new');
     expect(options.session).toBe(session);
   });
 

@@ -130,11 +130,10 @@ export class CustomersController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Tạo khách (Nhân viên tạo => tự là phụ trách chính). Hỗ trợ X-Idempotency-Key',
+      'Tạo khách (người tạo luôn là phụ trách chính ở mọi vai trò; SĐT tùy chọn, không kiểm trùng; cấp mã KH-xxxxxx). Hỗ trợ X-Idempotency-Key',
   })
   @ApiHeader({ name: 'X-Idempotency-Key', required: false })
   @ApiDataResponse(CustomerDetailDto, HttpStatus.CREATED)
-  @ApiResponse({ status: 409, description: 'CUSTOMER_PHONE_DUPLICATED' })
   create(
     @CurrentUser() user: JwtPayload,
     @Body() dto: CreateCustomerDto,
@@ -170,10 +169,7 @@ export class CustomersController {
       'Sửa hồ sơ cơ bản (khóa lạc quan theo version, lệch => 409 VERSION_CONFLICT)',
   })
   @ApiDataResponse(CustomerDetailDto)
-  @ApiResponse({
-    status: 409,
-    description: 'VERSION_CONFLICT | CUSTOMER_PHONE_DUPLICATED',
-  })
+  @ApiResponse({ status: 409, description: 'VERSION_CONFLICT' })
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

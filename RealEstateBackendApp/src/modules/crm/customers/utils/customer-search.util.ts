@@ -10,17 +10,17 @@ export const PHONE_SEARCH_SUBSTRING_MIN_DIGITS = 6;
 /**
  * Dựng `searchText` (không trả ra API). Ba phần ngăn cách bằng xuống dòng để một từ khóa không bao giờ khớp
  * vắt ngang hai phần (VD "a 0912" không khớp cuối tên + đầu số điện thoại):
- * `tên bỏ dấu \n email \n các dạng số`.
+ * `tên bỏ dấu \n email \n các dạng số`. Khách không có SĐT (FR-01, `phone = null`) vẫn đủ ba phần, phần số rỗng.
  */
 export const buildSearchText = (input: {
   fullName: string;
   email: string | null;
-  phone: string;
+  phone: string | null;
 }): string =>
   [
     normalizeVietnamese(input.fullName),
     (input.email ?? '').trim().toLowerCase(),
-    phoneSearchVariants(input.phone).join(' '),
+    input.phone ? phoneSearchVariants(input.phone).join(' ') : '',
   ].join('\n');
 
 export type ParsedKeyword =
