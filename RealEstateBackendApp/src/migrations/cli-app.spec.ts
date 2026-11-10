@@ -74,6 +74,40 @@ describe('runCli (cú pháp, không cần kết nối Mongo)', () => {
     );
   });
 
+  it('FR-21: --phase nhận pre-up|post-up|all ở up và reconcile (qua cú pháp, dừng ở thiếu MONGODB_URI)', async () => {
+    for (const command of ['up', 'reconcile']) {
+      for (const phase of ['pre-up', 'post-up', 'all']) {
+        const { code, err } = await run([command, '--phase', phase]);
+        expect(code).toBe(EXIT_CODE.FAILURE);
+        expect(err.join('')).toContain('MONGODB_URI');
+      }
+    }
+  });
+
+  it('FR-21: --phase sai giá trị hoặc thiếu giá trị => mã 2', async () => {
+    expect((await run(['up', '--phase', 'later'])).code).toBe(EXIT_CODE.USAGE);
+    expect((await run(['reconcile', '--phase', 'PRE-UP'])).code).toBe(
+      EXIT_CODE.USAGE,
+    );
+    expect((await run(['reconcile', '--phase'])).code).toBe(EXIT_CODE.USAGE);
+    expect((await run(['reconcile', '--phase', '--apply'])).code).toBe(
+      EXIT_CODE.USAGE,
+    );
+  });
+
+  it('FR-21: --phase ở lệnh không hỗ trợ (status, baseline, unlock) => mã 2', async () => {
+    for (const command of ['status', 'baseline', 'unlock']) {
+      const { code, err } = await run([command, '--phase', 'pre-up']);
+      expect(code).toBe(EXIT_CODE.USAGE);
+      expect(err.join('')).toContain('--phase chỉ dùng với up hoặc reconcile');
+    }
+  });
+
+  it('FR-21: CLI_USAGE mô tả --phase và các giá trị pre-up, post-up, all', () => {
+    expect(CLI_USAGE).toContain('--phase pre-up|post-up|all');
+    expect(CLI_USAGE).toContain('--phase post-up trước');
+  });
+
   it('mã thoát DOWNGRADE là 5 và cách dùng nêu reconcile + mã 5', () => {
     expect(EXIT_CODE.DOWNGRADE).toBe(5);
     expect(CLI_USAGE).toContain('reconcile');

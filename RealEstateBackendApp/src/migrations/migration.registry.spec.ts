@@ -5,6 +5,7 @@ import {
   parseMigrationNumber,
   validateMigrationRegistry,
 } from './migration.registry';
+import { getMigrationPhase } from './migration-phase';
 import type { Migration } from './migration.types';
 
 const make = (id: string): Migration => ({
@@ -33,6 +34,33 @@ describe('migration registry', () => {
             .sort()
         : [];
       expect(files).toEqual(MIGRATIONS.map((m) => m.id).sort());
+    });
+  });
+
+  describe('thuộc tính phase (FR-21)', () => {
+    it('FR-21: phase của migration thật chỉ là pre-up/post-up hoặc bỏ trống', () => {
+      for (const migration of MIGRATIONS) {
+        expect([undefined, 'pre-up', 'post-up']).toContain(migration.phase);
+      }
+    });
+
+    it('FR-21: 007..009 giữ mặc định pre-up (không đổi hành vi cũ)', () => {
+      const legacy = MIGRATIONS.filter((migration) =>
+        ['007', '008', '009'].includes(migration.id.slice(0, 3)),
+      );
+      expect(legacy).toHaveLength(3);
+      for (const migration of legacy) {
+        expect(getMigrationPhase(migration)).toBe('pre-up');
+      }
+    });
+
+    it('FR-21: validateMigrationRegistry không bị ảnh hưởng bởi phase', () => {
+      expect(
+        validateMigrationRegistry([
+          make('007_a'),
+          { ...make('008_b'), phase: 'post-up' },
+        ]),
+      ).toEqual([]);
     });
   });
 

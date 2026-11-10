@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/deploy-catalog-codes.test.sh — test shell KHÔNG cần Docker/Mongo thật cho bước 8c của deploy.sh (T-17, v1.0.4):
+# scripts/tests/deploy-catalog-codes.test.sh — test shell KHÔNG cần Docker/Mongo thật cho bước 8c (nay là scripts/post-migrate/10-catalog-codes.sh,
+# gọi qua run_post_migrate_steps của deploy.sh; T-03/FR-23, trước đó T-17 v1.0.4):
 #   - bước bù `node dist/migrations/crm-catalog-codes.cli.js --apply` chạy SAU `up` và SAU wait_backend_liveness (thứ tự gọi trong main)
 #   - lệnh bù thoát mã khác 0 => cảnh báo đỏ ở stderr, deploy exit khác 0 (không chạy tiếp `compose ps`/"Deploy xong")
 #   - lệnh bù thoát 0 => deploy xong, exit 0
 #   - log $LOGS_DIR/deploy-catalog-codes-<TS>.log được ghi (cả khi thành công lẫn thất bại)
 #   - downgrade có chủ ý => bỏ qua bước bù
-# Hàm (main, compose, run_catalog_codes_cli, apply_catalog_codes) được TRÍCH từ deploy.sh thật bằng sed, KHÔNG chép tay. Các bước khác
+# Hàm (main, compose, run_post_migrate_steps...) được TRÍCH từ deploy.sh thật bằng sed, KHÔNG chép tay; tệp bước 10-catalog-codes.sh chạy THẬT
+# (subprocess `bash`, `docker` giả được export -f). Các bước khác
 # của main (git, backup, build, migration...) và `docker` được thay bằng stub ghi thứ tự gọi vào file; không chạm Docker thật.
 # Chỉ kiểm lớp shell (thứ tự, mã thoát, log, cách gọi). Chạy bước bù với Mongo thật là việc của T-18 (bản sao dữ liệu).
+# Thêm (T-03): điểm gọi chung chạy các tệp [0-9][0-9]-*.sh theo thứ tự tên, bước lỗi dừng các bước sau, deploy.sh không còn logic bù mã.
 #
 # Chạy:  bash scripts/tests/deploy-catalog-codes.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -37,12 +40,12 @@ extract_fn() { sed -n "/^$1() {/,/^}/p" "$ROOT_DIR/deploy.sh"; }
 extract_oneliner() { grep -E "^$1\(\) \{.*\}$" "$ROOT_DIR/deploy.sh"; }
 eval "$(extract_fn migration_gate | sed '1s/^migration_gate()/real_migration_gate()/')"
 eval "$(extract_fn mongo_volume_exists)"
-for fn in apply_catalog_codes fresh_install_reconcile sync_system_version main; do
+for fn in run_post_migrate_steps fresh_install_reconcile sync_system_version main; do
   src="$(extract_fn "$fn")"
   [[ -n "$src" ]] || { echo "Không trích được $fn từ deploy.sh" >&2; exit 2; }
   eval "$src"
 done
-for fn in run_catalog_codes_cli run_migration_cli runner_cmd_hint compose; do
+for fn in run_migration_cli runner_cmd_hint compose; do
   src="$(extract_oneliner "$fn")"
   [[ -n "$src" ]] || { echo "Không trích được $fn từ deploy.sh" >&2; exit 2; }
   eval "$src"
@@ -66,6 +69,8 @@ docker() {
   fi
   return 0
 }
+# Bước hậu-migrate chạy bằng `bash` (subprocess): cần export hàm docker giả và ORDER_FILE.
+export -f docker
 for stub in check_prereqs acquire_lock git_update check_compose check_users_migrated ensure_runtime_dirs backup_mongo \
             tag_current_backend_image build_backend wait_mongo_healthy wait_backend_liveness; do
   eval "$stub() { printf '%s\n' '$stub' >> \"\$ORDER_FILE\"; return 0; }"
@@ -115,7 +120,7 @@ run_main() { # <FAKE_CC_RC> [DOWNGRADE_ACTIVE]  (đặt FAKE_FRESH / FAKE_RECONC
   ) > "$TMP/out" 2>&1 || rc=$?
   echo "$rc"
 }
-ORDER_FILE="$TMP/order"
+ORDER_FILE="$TMP/order"; export ORDER_FILE
 
 # ── Ca 1: lệnh bù thành công ─────────────────────────────────────────────────
 rc="$(run_main 0)"
@@ -220,6 +225,44 @@ expect_eq "--plan-only + cài mới: không reconcile" "0" "$(RECON_N)"
 rc="$(FAKE_REAL_GATE=1 FAKE_MONGO_HEALTHY=0 FAKE_CONTAINER=1 run_main 0)"
 expect_eq "container có mà chưa healthy: deploy dừng exit 1" "1" "$rc"
 expect_eq "container chưa healthy: không reconcile" "0" "$(RECON_N)"
+
+# ── Điểm gọi chung run_post_migrate_steps (T-03): thứ tự tên, bước lỗi dừng các bước sau, thiếu tệp thì dừng ─────────────
+# Gọi hàm THẬT (trích từ deploy.sh) với ROOT_DIR trỏ tới thư mục giả có các tệp bước giả; mỗi bước ghi tên + env nhận được vào $TMP/steps.
+FAKE_ROOT="$TMP/fakeroot"; mkdir -p "$FAKE_ROOT/scripts/post-migrate"
+mkstep() { printf '#!/usr/bin/env bash
+printf "%%s ENV=%%s LOGS=%%s TS=%%s DOC=%%s PFX=%%s\n" "$(basename "$0")" "$ENV_FILE" "$LOGS_DIR" "$TS" "$DOC" "$LOG_PREFIX" >> "$STEPS_FILE"
+exit %s
+' "$2" > "$FAKE_ROOT/scripts/post-migrate/$1"; }
+run_steps() { # [DOWNGRADE_ACTIVE]  -> in rc; stdout+stderr vào $TMP/steps_out
+  local rc=0
+  : > "$TMP/steps"
+  ( set -euo pipefail; ROOT_DIR="$FAKE_ROOT"; STEPS_FILE="$TMP/steps"; export STEPS_FILE
+    LOGS_DIR="logs-x"; DOWNGRADE_ACTIVE="${1:-0}"; run_post_migrate_steps ) > "$TMP/steps_out" 2>&1 || rc=$?
+  echo "$rc"
+}
+mkstep 90-z.sh 0; mkstep 10-a.sh 0; mkstep 20-b.sh 0; mkstep not-a-step.sh 0; mkstep 5-short.sh 0
+rc="$(run_steps)"
+expect_eq "điểm gọi chung: exit 0" "0" "$rc"
+expect_eq "điểm gọi chung: đúng thứ tự tên, bỏ tệp không khớp [0-9][0-9]-*.sh" "10-a.sh 20-b.sh 90-z.sh" "$(awk '{print $1}' "$TMP/steps" | paste -sd ' ' -)"
+expect_contains "điểm gọi chung: truyền ENV_FILE/LOGS_DIR/TS/DOC/LOG_PREFIX" "ENV=.env.docker LOGS=logs-x TS=20260101-000000 DOC=docs/01_Infrastructure/06_Production_Deploy.md PFX=test" "$(head -n 1 "$TMP/steps")"
+mkstep 20-b.sh 7
+rc="$(run_steps)"
+expect_eq "bước 20 lỗi: deploy exit 1" "1" "$rc"
+expect_eq "bước 20 lỗi: bước 90 KHÔNG chạy, 10 và 20 đã chạy" "10-a.sh 20-b.sh" "$(awk '{print $1}' "$TMP/steps" | paste -sd ' ' -)"
+expect_contains "bước 20 lỗi: die kèm tên bước và mã" "Bước hậu-migrate '20-b' thất bại (mã 7)" "$(cat "$TMP/steps_out")"
+rc="$(run_steps 1)"
+expect_eq "downgrade: điểm gọi chung exit 0" "0" "$rc"
+expect_eq "downgrade: không chạy bước nào" "0" "$(wc -l < "$TMP/steps" | tr -d ' ')"
+rm -f "$FAKE_ROOT"/scripts/post-migrate/*.sh
+rc="$(run_steps)"
+expect_eq "không có tệp bước: dừng exit 1 (không bỏ qua im lặng)" "1" "$rc"
+
+# ── Tĩnh: deploy.sh không còn logic bù mã; tệp bước thật có mặt ──────────────────────────────────────────────────
+dsh="$(cat "$ROOT_DIR/deploy.sh")"
+expect_not_contains "deploy.sh không còn run_catalog_codes_cli" "run_catalog_codes_cli()" "$dsh"
+expect_not_contains "deploy.sh không còn apply_catalog_codes" "apply_catalog_codes()" "$dsh"
+expect_not_contains "deploy.sh không gọi crm-catalog-codes.cli.js trong code" "migrations/crm-catalog-codes.cli.js \"" "$dsh"
+[[ -f "$ROOT_DIR/scripts/post-migrate/10-catalog-codes.sh" ]] && ok || fail "thiếu scripts/post-migrate/10-catalog-codes.sh"
 
 # ── Tĩnh: deploy.sh nhắc ngoại lệ lùi image 007/008 ─────────────────────────
 expect_contains "print_recovery nhắc ngoại lệ 007/008" "NGOẠI LỆ migration 007/008" "$(cat "$ROOT_DIR/deploy.sh")"
