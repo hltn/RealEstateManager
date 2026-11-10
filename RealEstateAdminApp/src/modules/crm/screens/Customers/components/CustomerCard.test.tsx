@@ -31,6 +31,26 @@ const customer = (overrides: Partial<CustomerListItem> = {}): CustomerListItem =
   ...overrides,
 });
 
+describe('CustomerCard - phản hồi hover / chạm', () => {
+  const renderCard = () => render(<CustomerCard customer={customer()} />).container.querySelector('article') as HTMLElement;
+
+  it('chuột: hover đổi nền có chuyển màu, có bản dark mode', () => {
+    expect(renderCard()).toHaveClass('transition-colors', 'hover:bg-gray-50', 'dark:hover:bg-white/[0.06]');
+  });
+
+  it('chạm: nền đổi bằng active: (hover: không chạy trên cảm ứng), có bản dark mode', () => {
+    expect(renderCard()).toHaveClass('active:bg-gray-50', 'dark:active:bg-white/[0.06]');
+  });
+
+  it('chạm: nền có trễ chỉ ở trạng thái active để cuộn (trình duyệt hủy :active) không nháy nền', () => {
+    const card = renderCard();
+    expect(card).toHaveClass('active:delay-100');
+    // `delay-*` trần (không kèm active:) sẽ làm thả tay cũng bị trễ.
+    const bareDelayTokens = card.className.split(/\s+/).filter((token) => /(^|:)delay-/.test(token) && !token.startsWith('active:'));
+    expect(bareDelayTokens).toEqual([]);
+  });
+});
+
 describe('CustomerCard - mục đích mua dưới SĐT', () => {
   it('hiện nhãn theo cấu hình trường ngay sau dòng SĐT, cùng khối với tên khách', () => {
     render(<CustomerCard customer={customer({ purchasePurposes: ['LIVING'] })} purchasePurposeField={{ optionItems: [{ value: 'LIVING', label: 'Để ở', isActive: true }] }} />);

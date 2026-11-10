@@ -14,6 +14,21 @@ import { useCrmActions } from '@crm/store';
 import type { PersonaFieldDefinition } from '@crm/types/crm';
 import { PurchasePurposesLine } from './PurchasePurposesLine';
 
+/**
+ * Phản hồi nền của thẻ khách. Tailwind v4 (đã kiểm tra bản 4.3.x) sinh CSS khác nhau cho 2 loại đầu vào:
+ * - `hover:` được bọc trong `@media (hover: hover)` => chỉ chuột/bút mới đổi nền; màn cảm ứng bỏ qua hoàn toàn.
+ * - `active:` là `:active` thuần, chạy cả khi chạm => dùng làm phản hồi chạm cho mobile.
+ * Ràng buộc: cuộn danh sách bằng ngón tay không được nháy nền thẻ. Trình duyệt hủy `:active` ngay khi nhận ra cử chỉ cuộn,
+ * nên `active:delay-100` (transition-delay CHỈ gắn ở trạng thái active) giữ nền chưa kịp tô trong 100ms đầu:
+ * cuộn => `:active` bị hủy trước khi màu bắt đầu đổi; chạm thật (giữ quá 100ms) => nền mới hiện.
+ * Thả tay thì quay về trạng thái thường (không có delay): nền vẫn fade 150ms của `transition-colors`, nhưng không bị trễ thêm.
+ * Phản hồi nền này đúng nghĩa vì CẢ THẺ bấm được (mở chi tiết khách, giống hàng bảng desktop); vùng tương tác bên trong thẻ
+ * (cụm nút liên hệ) tự chặn nổi bọt nên không mở chi tiết thêm lần nữa.
+ * `dark:` là `@custom-variant dark (&:is(.dark *))` ở index.css => mỗi biến thể nền cần một bản `dark:` riêng.
+ */
+const CARD_FEEDBACK_CLASS =
+  'transition-colors hover:bg-gray-50 active:bg-gray-50 active:delay-100 dark:hover:bg-white/[0.06] dark:active:bg-white/[0.06]';
+
 const FIELD_LABEL_CLASS = 'shrink-0 text-theme-xs text-gray-400 dark:text-gray-500';
 
 interface CustomerCardProps {
@@ -27,10 +42,11 @@ export const CustomerCard = ({ customer, purchasePurposeField }: CustomerCardPro
   const projectSummary = formatProjectSummary(customer.projects);
 
   return (
-    <article className={`${CARD_CLASS} p-4`}>
+    <article onClick={() => selectCustomer(customer.id)} className={`${CARD_CLASS} cursor-pointer p-4 ${CARD_FEEDBACK_CLASS}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <button type="button" onClick={() => selectCustomer(customer.id)} className="flex min-w-0 items-baseline gap-1.5 text-left">
+          {/* Giữ <button> cho bàn phím / trình đọc màn hình; click (cả do Enter/Space sinh ra) nổi bọt lên <article> để mở chi tiết, không gọi riêng. */}
+          <button type="button" className="flex min-w-0 items-baseline gap-1.5 text-left">
             <span className="truncate text-base font-semibold text-gray-800 transition-colors hover:text-brand-500 dark:text-white/90 dark:hover:text-brand-400">
               {customer.fullName}
             </span>

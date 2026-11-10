@@ -37,6 +37,54 @@ const renderRow = (item: CustomerListItem, purchasePurposeField?: { optionItems:
     </table>,
   );
 
+describe('CustomerTableRow - nền khi hover / đã chọn', () => {
+  const renderWithSelection = (isSelected: boolean) =>
+    render(
+      <table>
+        <tbody>
+          <CustomerTableRow customer={customer()} isSelected={isSelected} onToggleSelect={vi.fn()} />
+        </tbody>
+      </table>,
+    ).container.querySelector('tr') as HTMLTableRowElement;
+
+  it('hàng thường: hover đổi nền xám, chưa có nền brand', () => {
+    const row = renderWithSelection(false);
+    expect(row).toHaveClass('hover:bg-gray-200', 'dark:hover:bg-white/[0.08]', 'transition-colors');
+    expect(row).not.toHaveClass('bg-brand-50');
+    expect(row).not.toHaveClass('hover:bg-brand-100');
+  });
+
+  it('hàng đã chọn: giữ nền brand, hover đậm hơn một nấc và không lẫn lớp hover của hàng thường', () => {
+    const row = renderWithSelection(true);
+    expect(row).toHaveClass('bg-brand-50', 'hover:bg-brand-100', 'dark:bg-brand-500/[0.10]', 'dark:hover:bg-brand-500/[0.20]');
+    expect(row).not.toHaveClass('hover:bg-gray-200');
+    expect(row).not.toHaveClass('dark:hover:bg-white/[0.08]');
+  });
+
+  it('đổi isSelected khi rerender: không sót lớp của trạng thái cũ (cả hai chiều)', () => {
+    const tree = (isSelected: boolean) => (
+      <table>
+        <tbody>
+          <CustomerTableRow customer={customer()} isSelected={isSelected} onToggleSelect={vi.fn()} />
+        </tbody>
+      </table>
+    );
+    const selectedClasses = ['bg-brand-50', 'hover:bg-brand-100', 'dark:bg-brand-500/[0.10]', 'dark:hover:bg-brand-500/[0.20]'];
+    const plainClasses = ['hover:bg-gray-200', 'dark:hover:bg-white/[0.08]'];
+    const { container, rerender } = render(tree(true));
+    const row = container.querySelector('tr') as HTMLTableRowElement;
+
+    rerender(tree(false));
+    expect(row).toHaveClass(...plainClasses);
+    // Từng lớp một: `not.toHaveClass(a, b)` chỉ cần thiếu 1 lớp là qua, không đủ chặt.
+    selectedClasses.forEach((cls) => expect(row).not.toHaveClass(cls));
+
+    rerender(tree(true));
+    expect(row).toHaveClass(...selectedClasses);
+    plainClasses.forEach((cls) => expect(row).not.toHaveClass(cls));
+  });
+});
+
 describe('CustomerTableRow - mục đích mua dưới SĐT', () => {
   it('hiện mục đích mua (nhãn, cách dấu phẩy) ngay sau dòng SĐT trong ô Khách hàng', () => {
     renderRow(customer({ purchasePurposes: ['LIVING', 'INVEST_RENT'] }));

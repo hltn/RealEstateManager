@@ -1,6 +1,6 @@
 # Design System của web admin STND Real Estate Manager (rút từ code)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.4
 
 > **Nguồn duy nhất:** mã nguồn `RealEstateAdminApp/` (đọc ngày 21/10/2026). Mọi quy tắc đều dẫn `file:dòng`, đường dẫn tính từ `RealEstateAdminApp/src/` nếu không ghi khác. Không suy từ ảnh chụp.
 >
@@ -151,6 +151,8 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 | Thẻ tiêu đề khối | thẻ ở trên với `flex items-center gap-2 p-4` + `h3.text-lg.font-semibold` + icon lucide `text-brand-500` 20px, kèm số bản ghi | `ExternalLogsScreen.tsx:296-301` |
 | Thanh lọc | thẻ `flex flex-col md:flex-row flex-wrap gap-4 p-4`, mỗi trường `flex flex-col gap-1.5` (nhãn trên) | `ExternalLogsScreen.tsx:202-293` |
 | **Bảng** | vỏ `overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]` (không nền) → `overflow-x-auto` → `table.min-w-full`; `thead tr.bg-gray-50.dark:bg-gray-900`; `th.px-5.py-3.text-theme-xs.font-medium.text-gray-500.uppercase.text-left`; `tbody.divide-y.divide-gray-100.dark:divide-white/[0.05]`; `tr.hover:bg-gray-50.dark:hover:bg-white/[0.02]`; `td.px-5.py-3|py-4.text-theme-sm`; đang tải lại giữ dữ liệu cũ `opacity-60` | `ExternalLogsScreen.tsx:304-332`, `ManageWpScreen.tsx:804-858` |
+| Bảng khách (ngoại lệ của mẫu Bảng) | `tr.cursor-pointer.transition-colors`; hàng thường `hover:bg-gray-200 dark:hover:bg-white/[0.08]` (đậm hơn mẫu chung để khác đường kẻ `divide-gray-100`); hàng đã chọn `bg-brand-50 dark:bg-brand-500/[0.10]`, hover đậm một nấc `hover:bg-brand-100 dark:hover:bg-brand-500/[0.20]`; 2 nhánh loại trừ nhau, không chồng `hover:bg-*` | `modules/crm/screens/Customers/components/CustomerTableRow.tsx` (hằng `ROW_BG_CLASS`, `ROW_SELECTED_BG_CLASS`; `<tr onClick>`) |
+| Thẻ khách mobile (ngoại lệ) | thẻ mục "Thẻ" + `cursor-pointer` (cả thẻ bấm được để mở chi tiết khách, như hàng bảng desktop; cụm nút liên hệ chặn nổi bọt) + `transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.06]` cho chuột. Tailwind v4 bọc `hover:` trong `@media (hover: hover)` nên màn cảm ứng không có hover; phản hồi chạm dùng `active:bg-gray-50 dark:active:bg-white/[0.06]` kèm `active:delay-100` (trễ chỉ ở trạng thái active, để cuộn bằng ngón tay — trình duyệt hủy `:active` — không nháy nền; rời `:active` thì nền vẫn fade 150ms của `transition-colors`, chỉ là không bị trễ thêm) | `modules/crm/screens/Customers/components/CustomerCard.tsx` (hằng `CARD_FEEDBACK_CLASS` + comment phía trên; `<article onClick>`) |
 | Bảng (biến thể) | vỏ có nền `bg-white dark:bg-gray-dark`, `th` `font-semibold` không nền, Pagination đặt **trong** vỏ dưới `border-t` | `UserManagementScreen.tsx:226-356` |
 | Ảnh nhỏ trong bảng | `w-[60px] h-[40px] object-cover rounded`; không ảnh: khối `bg-gray-100` + icon | `ManageWpScreen.tsx:874-886` |
 | **Chip trạng thái** | `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium` + chấm `h-1.5 w-1.5 rounded-full`; màu `bg-{success|error|warning}-50 text-…-600 dark:bg-…-500/10`; có thể thêm viền `border-…-200` và chấm `animate-ping` | `UserManagementScreen.tsx:298-311`, `ManageWpScreen.tsx:901-930` |

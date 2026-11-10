@@ -26,6 +26,14 @@ interface CustomerTableRowProps {
 
 const TEXT_MUTED = 'text-theme-xs text-gray-500 dark:text-gray-400';
 
+/**
+ * Nền hàng, 4 trạng thái phải phân biệt được bằng mắt (2 nhánh loại trừ nhau để không xung đột `hover:bg-*`):
+ * thường (trắng) < hover thường (xám gray-200, không xanh, khác đường kẻ `divide-gray-100` của tbody)
+ * < đã chọn (brand-50) < đã chọn + hover (brand-100).
+ */
+const ROW_BG_CLASS = 'hover:bg-gray-200 dark:hover:bg-white/[0.08]';
+const ROW_SELECTED_BG_CLASS = 'bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/[0.10] dark:hover:bg-brand-500/[0.20]';
+
 export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, purchasePurposeField }: CustomerTableRowProps) => {
   const { selectCustomer } = useCrmActions();
   const openDetail = () => selectCustomer(customer.id);
@@ -33,7 +41,7 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, purchas
   const projectSummary = formatProjectSummary(customer.projects);
 
   return (
-    <tr onClick={openDetail} className={`cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] ${isSelected ? 'bg-brand-25 dark:bg-brand-500/[0.06]' : ''}`}>
+    <tr onClick={openDetail} className={`cursor-pointer transition-colors ${isSelected ? ROW_SELECTED_BG_CLASS : ROW_BG_CLASS}`}>
       <td className="w-10 px-4 py-4" onClick={stop}>
         <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(customer.id)} aria-label={`Chọn ${customer.fullName}`} className={CHECKBOX_CLASS} />
       </td>

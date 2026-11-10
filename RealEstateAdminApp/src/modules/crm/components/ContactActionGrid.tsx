@@ -3,6 +3,7 @@
  * (Admin DailyTasksView: 4 cột; Mobile: lưới 2x2), màu theo token Admin:
  * Gọi = nút chính brand (1 nút brand / thẻ), Zalo = success, Ghi chú = nút xám, Xem = nút viền.
  * Hành vi gọi/Zalo phụ thuộc thiết bị → lấy từ `useContactActions` (web mở modal, app mở tel:/toast).
+ * Cả cụm chặn click nổi bọt: thẻ cha (VD thẻ khách bấm cả thẻ để mở chi tiết) không bị kích hoạt khi bấm nút/khe giữa các nút.
  */
 import { Eye, MessageCircle, NotebookPen, Phone } from 'lucide-react';
 import { useContactActions } from '@crm/hooks/useContactActions';
@@ -23,7 +24,7 @@ export const ContactActionGrid = ({ customerId, columns = 2, className = '' }: C
   const { selectCustomer } = useCrmActions();
 
   return (
-    <div className={`grid gap-2 ${columns === 4 ? 'grid-cols-4' : 'grid-cols-2'} ${className}`}>
+    <div onClick={(event) => event.stopPropagation()} className={`grid gap-2 ${columns === 4 ? 'grid-cols-4' : 'grid-cols-2'} ${className}`}>
       <button
         type="button"
         onClick={() => callCustomer(customerId)}
