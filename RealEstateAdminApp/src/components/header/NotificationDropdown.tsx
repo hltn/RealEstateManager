@@ -1,10 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
 import { useUnreadNotificationCount } from "@crm/api";
 import { useIsMobile } from "@crm/hooks/useIsMobile";
-import { useAuth } from "../../hooks/useAuth";
-import { hasCrmRole } from "../../utils/userRoles";
+import { useNotificationsEnabled } from "../../hooks/useNotificationsEnabled";
 import { computeHorizontalShift, computeMaxHeight } from "./notificationDropdownLayout";
 import { NotificationDropdownPanel } from "./NotificationDropdownPanel";
 import { useDismissibleLayer } from "./useDismissibleLayer";
@@ -15,8 +13,7 @@ import { useDismissibleLayer } from "./useDismissibleLayer";
  * có kẹp ngang để không tràn viewport); mobile (< md) bấm chuông sang màn `/notifications`. Esc/bấm ra ngoài thì đóng.
  */
 export default function NotificationDropdown() {
-  const { user } = useAuth();
-  const isEnabled = CRM_FEATURE_FLAGS.isPrototypeEnabled && hasCrmRole(user) /* EDITOR thuần không có quyền CRM: backend trả 403 */;
+  const isEnabled = useNotificationsEnabled();
   const [isOpen, setIsOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount(isEnabled);
   const navigate = useNavigate();

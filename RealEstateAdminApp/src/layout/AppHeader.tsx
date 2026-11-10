@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Link } from "react-router-dom";
+import { useUnreadNotificationCount } from "@crm/api";
+import { useNotificationsEnabled } from "../hooks/useNotificationsEnabled";
 import Logo from "../images/logo/logo.png";
 import { useSidebar } from "../context/SidebarContext";
 import { useAnalyzeJob } from "../context/AnalyzeJobContext";
@@ -138,6 +140,12 @@ const AppHeader: React.FC = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
   };
 
+  // Dưới lg chuông nằm trong menu thu gọn: báo chưa đọc bằng chấm đỏ trên nút ba chấm khi menu đang đóng
+  // (menu mở thì đã thấy chuông + badge số). Dùng chung điều kiện quyền và query (cùng queryKey, không bắn request đôi) với chuông.
+  const isNotificationsEnabled = useNotificationsEnabled();
+  const unreadCount = useUnreadNotificationCount(isNotificationsEnabled);
+  const isUnreadDotVisible = isNotificationsEnabled && unreadCount > 0 && !isApplicationMenuOpen;
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -214,8 +222,17 @@ const AppHeader: React.FC = () => {
 
           <button
             onClick={toggleApplicationMenu}
-            className="flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
+            aria-label={isUnreadDotVisible ? "Mở menu, có thông báo chưa đọc" : "Mở menu"}
+            aria-expanded={isApplicationMenuOpen}
+            className="relative flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
           >
+            {isUnreadDotVisible && (
+              <span
+                data-testid="header-menu-unread-dot"
+                aria-hidden="true"
+                className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-900"
+              />
+            )}
             <svg
               width="24"
               height="24"
