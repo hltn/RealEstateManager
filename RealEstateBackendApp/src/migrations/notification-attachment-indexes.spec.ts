@@ -170,7 +170,7 @@ describe('migration 009 notification_attachment_indexes', () => {
 
   describe('đăng ký vào runner', () => {
     it('có trong registry, sau 007 và 008, có up và down', () => {
-      expect(MIGRATIONS.map((m) => m.id)).toEqual([
+      expect(MIGRATIONS.map((m) => m.id).slice(0, 3)).toEqual([
         '007_crm_catalog_codes',
         '008_crm_project_property_type_codes',
         '009_notification_attachment_indexes',

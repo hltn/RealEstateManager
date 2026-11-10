@@ -7,6 +7,7 @@ import {
   CreatedVia,
 } from '../customer.constants';
 import { PersonaSource } from '../../persona/persona.constants';
+import { CUSTOMER_CODE_INDEX } from '../customer-code.constants';
 
 /** Một tiêu chí đánh giá (Nhu cầu / Động cơ / Tài chính / Thời gian). */
 @Schema({ _id: false })
@@ -155,11 +156,14 @@ const OccasionSchema = SchemaFactory.createForClass(CustomerOccasion);
  * Giữ NGUYÊN tên collection và field `statusId`, `sourceId`, `areaId`, `interestedProjectIds`:
  * `CrmUsageService` đọc chúng để chặn xóa danh mục/dự án đang được dùng.
  *
- * - `phone`: E.164, duy nhất toàn hệ thống kể cả khách đã xóa mềm. KHÔNG bao giờ trả ra API list/detail.
+ * - `customerCode`: mã khách tự sinh `KH-000001` (FR-07), bất biến, không tái sử dụng, không phải PII. Tùy chọn/null ở schema
+ *   vì bản ghi cũ chưa có đến khi bước bù mã chạy; duy nhất nhờ index partial `CUSTOMER_CODE_INDEX` (cuối tệp).
+ * - `phone`: E.164 hoặc `null` (FR-01: không bắt buộc), CÓ THỂ TRÙNG giữa các khách (FR-02: không còn unique). Index thường
+ *   `phone_1` do migration `011` sở hữu, không khai báo ở đây. KHÔNG bao giờ trả ra API list/detail (chỉ `phoneMasked`).
  * - `nationalId`: `select: false`; chỉ đọc bằng `.select('+nationalId')` ở service xem CCCD.
  * - `searchText`: `select: false`, không bao giờ trả ra API.
  * - `__v`: dùng làm `version` cho khóa lạc quan (PATCH gửi kèm `version`, lệch => 409 VERSION_CONFLICT).
- * - Không có mã khách hàng (quyết định #2).
+ * - Quyết định #2 (cũ: "không có mã khách hàng") được thay bằng FR-07: có `customerCode`, SĐT không còn là định danh duy nhất.
  * Các field `tagIds`, `lastCareLogAt`, `nextAppointmentAt`, `personaCompleteness` do M3–M5 ghi; M2 chỉ khai báo.
  */
 @Schema({ timestamps: true, collection: 'customers' })
@@ -167,8 +171,13 @@ export class Customer {
   @Prop({ required: true, trim: true, maxlength: 150 })
   fullName: string;
 
-  @Prop({ required: true })
-  phone: string;
+  /** Chuỗi rỗng từ client được service chuẩn hóa thành `null`; bản ghi cũ luôn có chuỗi nên tương thích ngược. */
+  @Prop({ type: String, default: null })
+  phone: string | null;
+
+  /** Mã khách `KH-000001` (FR-07): service tạo khách cấp từ counter, không nhận từ client; index khai báo cuối tệp. */
+  @Prop({ type: String, default: null })
+  customerCode?: string | null;
 
   @Prop({ type: String, default: null, lowercase: true, trim: true })
   email: string | null;
@@ -319,8 +328,20 @@ export type CustomerDocument = HydratedDocument<Customer>;
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);
 
-// SĐT duy nhất TOÀN HỆ THỐNG kể cả khách xóa mềm (không partial): chống race khi hai người tạo cùng lúc.
-CustomerSchema.index({ phone: 1 }, { unique: true });
+// FR-07: mã khách duy nhất. Dùng chung `CUSTOMER_CODE_INDEX` với migration 010 để khớp từng tùy chọn (tránh
+// `IndexOptionsConflict`). Partial `$type: 'string'`: khách chưa có mã (trước khi bù mã) không bị chặn.
+CustomerSchema.index(
+  { ...CUSTOMER_CODE_INDEX.key },
+  {
+    name: CUSTOMER_CODE_INDEX.options.name,
+    unique: CUSTOMER_CODE_INDEX.options.unique,
+    partialFilterExpression: {
+      ...CUSTOMER_CODE_INDEX.options.partialFilterExpression,
+    },
+  },
+);
+// FR-02: KHÔNG khai báo index theo `phone` ở schema (không còn unique). Index thường `phone_1` do migration 011 sở hữu
+// (tránh autoIndex của backend mới đụng `phone_1` unique còn tồn tại trước khi 011 chạy).
 // Danh sách mặc định (tab Tất cả) sắp theo ngày cập nhật — phạm vi Quản trị.
 CustomerSchema.index({ deletedAt: 1, lastUpdatedAt: -1 });
 // Danh sách theo tình trạng/nhóm danh sách.

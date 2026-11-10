@@ -3,6 +3,8 @@ import type { Migration } from './migration.types';
 import { migration007CrmCatalogCodes } from './versions/007_crm_catalog_codes';
 import { migration008CrmProjectPropertyTypeCodes } from './versions/008_crm_project_property_type_codes';
 import { migration009NotificationAttachmentIndexes } from './versions/009_notification_attachment_indexes';
+import { migration010CrmCustomerCodeIndex } from './versions/010_crm_customer_code_index';
+import { migration011CrmDropUniquePhone } from './versions/011_crm_drop_unique_phone';
 
 /**
  * Registry migration khai báo TƯỜNG MINH. CHỈ chứa từ 007 trở đi: 002..006 đã chạy tay trên production (có bước xóa),
@@ -13,6 +15,8 @@ export const MIGRATIONS: readonly Migration[] = [
   migration007CrmCatalogCodes,
   migration008CrmProjectPropertyTypeCodes,
   migration009NotificationAttachmentIndexes,
+  migration010CrmCustomerCodeIndex,
+  migration011CrmDropUniquePhone,
 ];
 
 const MIGRATION_ID_PATTERN = /^(\d{3})_[a-z0-9]+(?:_[a-z0-9]+)*$/;

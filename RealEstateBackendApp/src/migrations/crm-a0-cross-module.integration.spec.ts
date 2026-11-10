@@ -176,7 +176,7 @@ describe('A0 xuyên module: registry thật + lùi rồi tiến', () => {
     return out;
   };
 
-  it('reconcile thật trên dữ liệu cũ: ghi sổ 007/008/009, bất biến 3.1, không đổi updatedAt/version, đổi nhãn không đổi code', async () => {
+  it('reconcile thật trên dữ liệu cũ: ghi sổ 007..011, bất biến 3.1, không đổi updatedAt/version, đổi nhãn không đổi code', async () => {
     const name = `a0x_${(n += 1)}`;
     const db = client.db(name);
     const seeded = await seedLegacy(db);
@@ -187,12 +187,14 @@ describe('A0 xuyên module: registry thật + lùi rồi tiến', () => {
 
     const ledger = (await db.collection('system').find().toArray())
       .map((d) => String(d._id))
-      .filter((x) => x.startsWith('migration:00'))
+      .filter((x) => x.startsWith('migration:0'))
       .sort();
     expect(ledger).toEqual([
       'migration:007_crm_catalog_codes',
       'migration:008_crm_project_property_type_codes',
       'migration:009_notification_attachment_indexes',
+      'migration:010_crm_customer_code_index',
+      'migration:011_crm_drop_unique_phone',
     ]);
 
     const customer = await db

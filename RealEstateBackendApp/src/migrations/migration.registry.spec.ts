@@ -20,6 +20,16 @@ describe('migration registry', () => {
       expect(validateMigrationRegistry(MIGRATIONS)).toEqual([]);
     });
 
+    it('FR-21: liền số 007..011, đúng thứ tự id', () => {
+      expect(MIGRATIONS.map((m) => m.id)).toEqual([
+        '007_crm_catalog_codes',
+        '008_crm_project_property_type_codes',
+        '009_notification_attachment_indexes',
+        '010_crm_customer_code_index',
+        '011_crm_drop_unique_phone',
+      ]);
+    });
+
     it('không chứa migration cũ 002..006 (đã chạy tay, chỉ ghi sổ bằng baseline)', () => {
       const numbers = MIGRATIONS.map((m) => parseMigrationNumber(m.id));
       expect(numbers.every((n) => n !== null && n >= 7)).toBe(true);
@@ -52,6 +62,14 @@ describe('migration registry', () => {
       for (const migration of legacy) {
         expect(getMigrationPhase(migration)).toBe('pre-up');
       }
+    });
+
+    it('FR-21: 011 là post-up; 010 không khai báo phase (mặc định pre-up)', () => {
+      const byId = (prefix: string) =>
+        MIGRATIONS.find((migration) => migration.id.startsWith(prefix));
+      expect(getMigrationPhase(byId('010')!)).toBe('pre-up');
+      expect(byId('011')?.phase).toBe('post-up');
+      expect(byId('011')?.description).toContain('MỘT CHIỀU');
     });
 
     it('FR-21: validateMigrationRegistry không bị ảnh hưởng bởi phase', () => {
