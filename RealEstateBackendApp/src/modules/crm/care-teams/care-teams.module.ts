@@ -7,20 +7,13 @@ import { NotificationsModule } from '../../notifications/notifications.module';
 import { Team, TeamSchema } from '../../teams/schemas/team.schema';
 import { CustomersModule } from '../customers/customers.module';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
-import { CareTeamRequestsController } from './care-team-requests.controller';
-import { CareTeamRequestsService } from './care-team-requests.service';
 import { CareTeamController } from './care-team.controller';
 import { CareTeamService } from './care-team.service';
-import {
-  CareTeamRequest,
-  CareTeamRequestSchema,
-} from './schemas/care-team-request.schema';
 
-/** Nhóm chăm sóc của khách và đề nghị tham gia (M3, tài liệu 04 mục 2.3 `crm/care-teams`). */
+/** Nhóm chăm sóc của khách (M3, tài liệu 04 mục 2.3 `crm/care-teams`); luồng đề nghị tham gia đã bỏ ở v1.0.5 (T-13). */
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: CareTeamRequest.name, schema: CareTeamRequestSchema },
       { name: User.name, schema: UserSchema },
       { name: Team.name, schema: TeamSchema },
     ]),
@@ -29,12 +22,8 @@ import {
     CrmAuditLogModule,
     CrmSecurityModule,
   ],
-  controllers: [CareTeamController, CareTeamRequestsController],
-  providers: [
-    CareTeamAssigneesService,
-    CareTeamService,
-    CareTeamRequestsService,
-  ],
+  controllers: [CareTeamController],
+  providers: [CareTeamAssigneesService, CareTeamService],
   // Dùng lại cho thao tác hàng loạt `ASSIGN`.
   exports: [CareTeamService],
 })

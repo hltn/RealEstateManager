@@ -82,6 +82,7 @@ export class RemindersWriterService {
                 type: ReminderType.APPOINTMENT,
                 customerId: appointment.customerId,
                 refId: appointment._id,
+                // Chỉ là metadata/gợi ý: dispatch tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
                 recipientIds: [appointment.assigneeId],
                 priorityRecipientId: null,
                 fireAt: reminder.fireAt,
@@ -161,6 +162,7 @@ export class RemindersWriterService {
           type: ReminderType.FOLLOW_UP,
           customerId: careLog.customerId,
           refId: careLog._id,
+          // Chỉ là metadata/gợi ý: dispatch tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
           recipientIds: [careLog.authorId],
           priorityRecipientId: null,
           fireAt: careLog.dueAt,

@@ -52,7 +52,7 @@ export type CareTeamRequestDocument = HydratedDocument<CareTeamRequest>;
 export const CareTeamRequestSchema =
   SchemaFactory.createForClass(CareTeamRequest);
 
-// Mỗi người chỉ có 1 đề nghị PENDING cho 1 khách: chống gửi trùng/race (E11000 => 409 JOIN_REQUEST_EXISTS).
+// Mỗi người chỉ có 1 đề nghị PENDING cho 1 khách: chống gửi trùng/race (luồng gửi đề nghị đã bỏ ở v1.0.5; giữ index để đọc/dọn dữ liệu cũ).
 CareTeamRequestSchema.index(
   { customerId: 1, requesterId: 1 },
   {

@@ -20,13 +20,14 @@ const build = (statusCodes: string[]) => {
       .fn()
       .mockResolvedValue({ occasionLeadDays: [0], staleCustomerDays: 14 }),
   };
+  const bulkWrite = jest.fn().mockResolvedValue({ upsertedCount: 0 });
   const service = new ReminderScannerService(
-    { bulkWrite: jest.fn() } as never,
+    { bulkWrite } as never,
     statusModel as never,
     customers as never,
     settings as never,
   );
-  return { service, statusModel, customers, rows };
+  return { service, statusModel, customers, rows, bulkWrite };
 };
 
 describe('ReminderScannerService: lọc tình trạng theo statusCode (FR-40)', () => {
@@ -67,5 +68,50 @@ describe('ReminderScannerService: lọc tình trạng theo statusCode (FR-40)', 
       { statusCode: { $in: ['DROPPED'] } },
       { statusCode: null, statusId: { $in: rows.map((row) => row._id) } },
     ]);
+  });
+
+  it('FR-19: scanStale không lọc theo primaryAssigneeId (PRIMARY null vẫn quét), chỉ yêu cầu careTeam không rỗng', async () => {
+    const { service, customers } = build(['NET']);
+
+    await service.scanStale(NOW);
+
+    const [filter, options] = customers.findForSystemJobBatch.mock.calls[0] as [
+      Record<string, unknown>,
+      { projection: string },
+    ];
+    expect(filter['careTeam.0']).toEqual({ $exists: true });
+    expect(filter).not.toHaveProperty('primaryAssigneeId');
+    expect(options.projection).toContain('careTeam.userId');
+  });
+
+  it('FR-19: khách có careTeam nhưng PRIMARY null được tạo nhắc STALE với recipientIds là careTeam và priorityRecipientId null', async () => {
+    const { service, customers, bulkWrite } = build(['NET']);
+    const memberId = new Types.ObjectId();
+    customers.findForSystemJobBatch.mockResolvedValueOnce([
+      {
+        _id: new Types.ObjectId(),
+        primaryAssigneeId: null,
+        careTeam: [{ userId: memberId }],
+        lastCareLogAt: new Date('2026-09-01T00:00:00.000Z'),
+        createdAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    ]);
+
+    await service.scanStale(NOW);
+
+    const ops = bulkWrite.mock.calls[0][0] as Array<{
+      updateOne: {
+        update: {
+          $setOnInsert: {
+            recipientIds: Types.ObjectId[];
+            priorityRecipientId: Types.ObjectId | null;
+          };
+        };
+      };
+    }>;
+    expect(ops).toHaveLength(1);
+    const inserted = ops[0].updateOne.update.$setOnInsert;
+    expect(inserted.recipientIds).toEqual([memberId]);
+    expect(inserted.priorityRecipientId).toBeNull();
   });
 });

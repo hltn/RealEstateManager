@@ -291,7 +291,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
       // (crm-m3.integration.spec.ts), chân dung/thẻ thuộc M4 (crm-m4.integration.spec.ts), lịch hẹn/việc hôm nay thuộc M5
       // (crm-m5.integration.spec.ts): không tính vào bộ đếm M1.
       const isM2Route = (op: string) =>
-        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|customer-bulk-operations|care-team-requests|audit-logs|persona-fields|tags|appointments|daily-tasks)/.test(
+        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|customer-bulk-operations|audit-logs|persona-fields|tags|appointments|daily-tasks)/.test(
           op,
         );
       const crmOps = ops.filter(

@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { QueueRuntimeModule } from '../../../shared/queue/queue-runtime.module';
 import { RedisModule } from '../../../shared/redis/redis.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { User, UserSchema } from '../../users/schemas/user.schema';
 import { CareLogsModule } from '../care-logs/care-logs.module';
 import { CatalogsModule } from '../catalogs/catalogs.module';
 import { CrmSettingsModule } from '../crm-settings/crm-settings.module';
@@ -24,6 +25,7 @@ import { RemindersCoreModule } from './reminders-core.module';
   imports: [
     MongooseModule.forFeature([
       { name: PersonaField.name, schema: PersonaFieldSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     RemindersCoreModule,
     CustomersModule,

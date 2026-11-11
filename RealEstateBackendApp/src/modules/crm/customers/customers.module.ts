@@ -63,7 +63,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
       { name: CrmAuditLog.name, schema: CrmAuditLogSchema },
-      // Đề nghị tham gia nhóm (`hasPendingRequest`) và dữ liệu chăm sóc cần ẩn danh hóa cùng khách (M3).
+      // Dữ liệu đề nghị tham gia nhóm cần ẩn danh hóa cùng khách, và dữ liệu chăm sóc (M3).
       { name: CareTeamRequest.name, schema: CareTeamRequestSchema },
       { name: CareLog.name, schema: CareLogSchema },
       { name: CrmAttachment.name, schema: CrmAttachmentSchema },

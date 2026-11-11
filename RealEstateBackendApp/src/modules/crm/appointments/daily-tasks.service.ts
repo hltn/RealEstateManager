@@ -127,7 +127,7 @@ interface ProjectRefs {
 type CustomerLeanForTask = {
   _id: Types.ObjectId;
   fullName: string;
-  phone?: string;
+  phone?: string | null;
   anonymizedAt?: Date | null;
   statusId: Types.ObjectId;
   interestedProjectIds?: Types.ObjectId[];
@@ -263,7 +263,7 @@ export class DailyTasksService {
     ]);
   }
 
-  /** Lịch hẹn SCHEDULED trong khoảng; `mine` = mình là người thực hiện hoặc phụ trách chính của khách. */
+  /** Lịch hẹn SCHEDULED trong khoảng; `mine` = mình là người thực hiện hoặc nằm trong nhóm chăm sóc của khách (FR-19). */
   private async appointmentSource(params: SourceQuery): Promise<SourceResult> {
     const { ctx, mine, window, limit } = params;
     const pipeline: PipelineStage[] = [
@@ -274,14 +274,14 @@ export class DailyTasksService {
           startAt: windowToQuery(window),
         },
       },
-      ...customerScopeStages(this.repo, ctx, { primaryAssigneeId: 1 }),
+      ...customerScopeStages(this.repo, ctx, { 'careTeam.userId': 1 }),
       ...(mine
         ? [
             {
               $match: {
                 $or: [
                   { assigneeId: ctx.actor.userId },
-                  { 'customer.0.primaryAssigneeId': ctx.actor.userId },
+                  { 'customer.0.careTeam.userId': ctx.actor.userId },
                 ],
               },
             },
@@ -332,7 +332,7 @@ export class DailyTasksService {
 
   /**
    * Bước tiếp theo của nhật ký MỚI NHẤT của khách (`occurredAt` = `lastCareLogAt` của khách: có nhật ký mới hơn là
-   * đã chăm sóc xong việc này), chưa có lịch hẹn đi kèm. `mine` = mình là người ghi nhật ký hoặc phụ trách chính.
+   * đã chăm sóc xong việc này), chưa có lịch hẹn đi kèm. `mine` = mình là người ghi nhật ký hoặc nằm trong nhóm chăm sóc của khách (FR-19).
    */
   private async followUpSource(params: SourceQuery): Promise<SourceResult> {
     const { ctx, mine, window, limit } = params;
@@ -345,7 +345,7 @@ export class DailyTasksService {
         },
       },
       ...customerScopeStages(this.repo, ctx, {
-        primaryAssigneeId: 1,
+        'careTeam.userId': 1,
         lastCareLogAt: 1,
       }),
       {
@@ -364,7 +364,7 @@ export class DailyTasksService {
               $match: {
                 $or: [
                   { authorId: ctx.actor.userId },
-                  { 'customer.0.primaryAssigneeId': ctx.actor.userId },
+                  { 'customer.0.careTeam.userId': ctx.actor.userId },
                 ],
               },
             },
@@ -493,7 +493,7 @@ export class DailyTasksService {
 
   /**
    * Khách Chưa tiếp cận/Có quan tâm quá `staleCustomerDays` ngày chưa có nhật ký (tính từ nhật ký mới nhất, hoặc từ
-   * lúc tạo khách nếu chưa có nhật ký). Luôn thuộc nhóm "Hôm nay" (việc tồn đọng, không có hạn). `mine` = phụ trách chính.
+   * lúc tạo khách nếu chưa có nhật ký). Luôn thuộc nhóm "Hôm nay" (việc tồn đọng, không có hạn). `mine` = mình nằm trong nhóm chăm sóc (FR-19; khách nhóm rỗng chỉ hiện ở chế độ `team`).
    */
   private async staleSource(
     params: SourceQuery,
@@ -519,7 +519,7 @@ export class DailyTasksService {
         },
       ],
       'careTeam.0': { $exists: true },
-      ...(mine && { primaryAssigneeId: ctx.actor.userId }),
+      ...(mine && { 'careTeam.userId': ctx.actor.userId }),
     };
     const [total, customers] = await Promise.all([
       this.repo.count(ctx.scope, filter),

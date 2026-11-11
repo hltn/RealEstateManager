@@ -89,6 +89,7 @@ export class ReminderScannerService {
               type: ReminderType.OCCASION,
               customerId: customer._id,
               refId: null,
+              // Chỉ là metadata/gợi ý: dispatch tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
               recipientIds: (customer.careTeam ?? []).map(
                 (member) => member.userId,
               ),
@@ -122,7 +123,7 @@ export class ReminderScannerService {
 
   /**
    * Tạo nhắc cho khách Chưa tiếp cận/Có quan tâm quá `staleCustomerDays` ngày chưa có nhật ký. Một nhắc cho mỗi "đợt"
-   * (xem `staleDedupeKey`), gửi cho phụ trách chính. Trả số nhắc MỚI tạo.
+   * (xem `staleDedupeKey`), gửi mọi thành viên careTeam ACTIVE (kể cả khi PRIMARY null; nhóm rỗng thì không quét). Trả số nhắc MỚI tạo.
    */
   async scanStale(now = new Date()): Promise<number> {
     const { staleCustomerDays } = await this.settings.get();
@@ -146,17 +147,17 @@ export class ReminderScannerService {
         ],
         'careTeam.0': { $exists: true },
         anonymizedAt: null,
-        primaryAssigneeId: { $ne: null },
       },
-      'primaryAssigneeId lastCareLogAt createdAt',
+      'primaryAssigneeId careTeam.userId lastCareLogAt createdAt',
       (customer) => {
         reminders.push({
           type: ReminderType.STALE_CUSTOMER,
           customerId: customer._id,
           refId: null,
-          recipientIds: customer.primaryAssigneeId
-            ? [customer.primaryAssigneeId]
-            : [],
+          // Chỉ là metadata/gợi ý: `ReminderDispatchService` tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
+          recipientIds: (customer.careTeam ?? []).map(
+            (member) => member.userId,
+          ),
           priorityRecipientId: customer.primaryAssigneeId ?? null,
           fireAt: now,
           dueAt: now,

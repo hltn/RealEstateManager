@@ -76,7 +76,16 @@ const buildService = () => {
     refs as never,
     settings as never,
   );
-  return { service, statusModel, appointmentModel, repo, refs, statuses };
+  return {
+    service,
+    statusModel,
+    appointmentModel,
+    careLogModel,
+    access,
+    repo,
+    refs,
+    statuses,
+  };
 };
 
 describe('DailyTasksService: lọc tình trạng theo statusCode (FR-40)', () => {
@@ -233,5 +242,204 @@ describe('DailyTasksService: dự án của việc trả CatalogRefDto (FR-40)',
 
     expect(task.project).toBeNull();
     expect(task.customer.projects).toEqual([]);
+  });
+});
+
+describe('DailyTasksService: "của tôi" theo mọi thành viên careTeam (FR-19)', () => {
+  type Stage = Record<string, unknown>;
+  const pipelineOf = (mock: jest.Mock): Stage[] =>
+    mock.mock.calls[0][0] as Stage[];
+  /** Mệnh đề `mine` = stage `$match` có `$or` sau `$lookup` khách. */
+  const mineMatchOf = (pipeline: Stage[]) =>
+    pipeline.find((stage) => {
+      const match = stage.$match as { $or?: unknown } | undefined;
+      return !!match?.$or;
+    })?.$match as { $or: Array<Record<string, unknown>> } | undefined;
+  const lookupProjectOf = (pipeline: Stage[]) => {
+    const lookup = pipeline.find((stage) => stage.$lookup)?.$lookup as {
+      pipeline: Array<{ $project?: Record<string, number> }>;
+    };
+    return lookup.pipeline.find((stage) => stage.$project)?.$project;
+  };
+  const emptyFacet = () => ({
+    exec: () => Promise.resolve([{ rows: [], total: [] }]),
+  });
+  const actAs = (
+    built: ReturnType<typeof buildService>,
+    role: UserRole,
+  ): void => {
+    built.access.resolve.mockResolvedValue({
+      scope: {},
+      actor: { userId, role, roles: [role] },
+    });
+  };
+
+  it('lịch hẹn mine: assigneeId = tôi HOẶC tôi nằm trong careTeam; không còn so primaryAssigneeId; chỉ chiếu careTeam.userId', async () => {
+    const { service, appointmentModel } = buildService();
+    appointmentModel.aggregate.mockReturnValue(emptyFacet());
+
+    await service.list(jwt, {
+      kinds: [DailyTaskKind.APPOINTMENT],
+      scope: 'mine',
+    } as never);
+
+    const pipeline = pipelineOf(appointmentModel.aggregate);
+    expect(mineMatchOf(pipeline)?.$or).toEqual([
+      { assigneeId: userId },
+      { 'customer.0.careTeam.userId': userId },
+    ]);
+    expect(lookupProjectOf(pipeline)).toEqual({ 'careTeam.userId': 1 });
+    expect(JSON.stringify(pipeline)).not.toContain('primaryAssigneeId');
+  });
+
+  it('lịch hẹn scope=team (Manager): không có điều kiện "của tôi" và không đòi careTeam, nên thấy cả khách nhóm rỗng', async () => {
+    const built = buildService();
+    actAs(built, UserRole.MANAGER);
+    built.appointmentModel.aggregate.mockReturnValue(emptyFacet());
+
+    await built.service.list(jwt, {
+      kinds: [DailyTaskKind.APPOINTMENT],
+      scope: 'team',
+    } as never);
+
+    const pipeline = pipelineOf(built.appointmentModel.aggregate);
+    expect(mineMatchOf(pipeline)).toBeUndefined();
+    expect(JSON.stringify(pipeline)).not.toContain('careTeam.0');
+  });
+
+  it('scope=team với Nhân viên: bị từ chối (không mở rộng quyền)', async () => {
+    const built = buildService();
+    await expect(
+      built.service.list(jwt, { scope: 'team' } as never),
+    ).rejects.toBeDefined();
+    expect(built.appointmentModel.aggregate).not.toHaveBeenCalled();
+  });
+
+  it('việc kế tiếp mine: authorId = tôi HOẶC tôi nằm trong careTeam; chiếu careTeam.userId + lastCareLogAt', async () => {
+    const built = buildService();
+    built.careLogModel.aggregate.mockReturnValue(emptyFacet() as never);
+
+    await built.service.list(jwt, {
+      kinds: [DailyTaskKind.FOLLOW_UP],
+      scope: 'mine',
+    } as never);
+
+    const pipeline = pipelineOf(built.careLogModel.aggregate);
+    expect(mineMatchOf(pipeline)?.$or).toEqual([
+      { authorId: userId },
+      { 'customer.0.careTeam.userId': userId },
+    ]);
+    expect(lookupProjectOf(pipeline)).toEqual({
+      'careTeam.userId': 1,
+      lastCareLogAt: 1,
+    });
+    expect(JSON.stringify(pipeline)).not.toContain('primaryAssigneeId');
+  });
+
+  it('khách lâu chưa chăm mine: lọc careTeam.userId = tôi (không còn primaryAssigneeId) cho cả count lẫn find, vẫn đòi careTeam không rỗng', async () => {
+    const { service, repo } = buildService();
+
+    await service.list(jwt, { kinds: [DailyTaskKind.STALE_CUSTOMER] });
+
+    const [, countFilter] = repo.count.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    const [, findFilter] = repo.find.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    for (const filter of [countFilter, findFilter]) {
+      expect(filter['careTeam.userId']).toEqual(userId);
+      expect(filter['careTeam.0']).toEqual({ $exists: true });
+      expect(filter).not.toHaveProperty('primaryAssigneeId');
+    }
+  });
+
+  it('khách lâu chưa chăm scope=team: không lọc theo người, vẫn loại khách careTeam rỗng (không có ai để giao)', async () => {
+    const built = buildService();
+    actAs(built, UserRole.ADMIN);
+
+    await built.service.list(jwt, {
+      kinds: [DailyTaskKind.STALE_CUSTOMER],
+      scope: 'team',
+    } as never);
+
+    const [, filter] = built.repo.count.mock.calls[0] as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(filter).not.toHaveProperty('careTeam.userId');
+    expect(filter).not.toHaveProperty('primaryAssigneeId');
+    expect(filter['careTeam.0']).toEqual({ $exists: true });
+  });
+
+  describe('response: isPrimary tính từ primaryAssigneeId, phone null chịu được', () => {
+    const customerId = oid();
+    const setup = (customerExtra: Record<string, unknown>) => {
+      const built = buildService();
+      built.appointmentModel.aggregate.mockReturnValue({
+        exec: () =>
+          Promise.resolve([
+            {
+              rows: [
+                {
+                  _id: oid(),
+                  customerId,
+                  type: AppointmentType.SITE_VISIT,
+                  title: 'Xem nhà',
+                  note: '',
+                  startAt: new Date(),
+                  assigneeId: userId,
+                },
+              ],
+              total: [{ count: 1 }],
+            },
+          ]),
+      });
+      built.repo.find.mockResolvedValue([
+        {
+          _id: customerId,
+          fullName: 'Khách A',
+          statusId: oid(),
+          ...customerExtra,
+        },
+      ]);
+      return built;
+    };
+    const first = async (built: ReturnType<typeof buildService>) =>
+      (
+        await built.service.list(jwt, {
+          kinds: [DailyTaskKind.APPOINTMENT],
+          scope: 'mine',
+        } as never)
+      ).data[0];
+
+    it('MEMBER thấy việc của khách có PRIMARY là người khác: isPrimary=false', async () => {
+      const task = await first(setup({ primaryAssigneeId: oid() }));
+      expect(task.isPrimary).toBe(false);
+    });
+
+    it('khách PRIMARY null (careTeam còn MEMBER): vẫn hiện, isPrimary=false, không lỗi', async () => {
+      const task = await first(setup({ primaryAssigneeId: null }));
+      expect(task).toBeDefined();
+      expect(task.isPrimary).toBe(false);
+    });
+
+    it('tôi chính là PRIMARY: isPrimary=true', async () => {
+      const task = await first(setup({ primaryAssigneeId: userId }));
+      expect(task.isPrimary).toBe(true);
+    });
+
+    it('FR-04: khách không SĐT (null hoặc thiếu) hoặc đã ẩn danh: phoneMasked null, không ném lỗi; có SĐT thì che', async () => {
+      const masked = async (extra: Record<string, unknown>) =>
+        (await first(setup(extra))).customer.phoneMasked;
+      expect(await masked({ phone: null })).toBeNull();
+      expect(await masked({})).toBeNull();
+      expect(
+        await masked({ phone: '+84912345678', anonymizedAt: new Date() }),
+      ).toBeNull();
+      expect(await masked({ phone: '+84912345678' })).toBe('0912 ••• 678');
+    });
   });
 });

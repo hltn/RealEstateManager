@@ -667,133 +667,6 @@ describe('CRM M3 — QA đối kháng', () => {
     });
   });
 
-  describe('Đề nghị tham gia', () => {
-    it('trạng thái PENDING/lạ khi PATCH => 400; EDITOR 403; id đề nghị sai 400; người lạ hủy/duyệt 404', async () => {
-      const c = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffC },
-      });
-      const created = await call('POST', '/crm/care-team-requests', 'staffA', {
-        customerRef: c.id,
-        message: 'Xin tham gia',
-      });
-      expect(created.status).toBe(201);
-      const reqId = created.body.data.id;
-      for (const status2 of ['PENDING', 'XYZ']) {
-        expect(
-          (
-            await call('PATCH', `/crm/care-team-requests/${reqId}`, 'staffC', {
-              status: status2,
-            })
-          ).status,
-        ).toBe(400);
-      }
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'editor', {
-            customerRef: c.id,
-          })
-        ).status,
-      ).toBe(403);
-      expect(
-        (
-          await call('PATCH', '/crm/care-team-requests/zzz', 'staffC', {
-            status: 'APPROVED',
-          })
-        ).status,
-      ).toBe(400);
-      for (const who of ['staffB', 'manager1']) {
-        expect(
-          (
-            await call('PATCH', `/crm/care-team-requests/${reqId}`, who, {
-              status: 'CANCELED',
-            })
-          ).status,
-        ).toBe(404);
-      }
-      // người gửi (ngoài phạm vi) duyệt đề nghị của chính mình => 404 (không thấy khách)
-      expect(
-        (
-          await call('PATCH', `/crm/care-team-requests/${reqId}`, 'staffA', {
-            status: 'APPROVED',
-          })
-        ).status,
-      ).toBe(404);
-      // Quản lý trong phạm vi (quản lý nhóm A) nhưng chưa trong careTeam: gửi đề nghị rồi tự duyệt => 403
-      const inA = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffB },
-      });
-      const mine = await call('POST', '/crm/care-team-requests', 'manager1', {
-        customerRef: inA.id,
-      });
-      expect(mine.status).toBe(201);
-      expect(
-        (
-          await call(
-            'PATCH',
-            `/crm/care-team-requests/${mine.body.data.id}`,
-            'manager1',
-            { status: 'APPROVED' },
-          )
-        ).status,
-      ).toBe(403);
-      expect(
-        (
-          await call(
-            'PATCH',
-            `/crm/care-team-requests/${mine.body.data.id}`,
-            'staffB',
-            { status: 'APPROVED' },
-          )
-        ).status,
-      ).toBe(200);
-    });
-
-    it('duyệt khi người gửi đã bị khóa => 400, đề nghị vẫn PENDING và nhóm không đổi (transaction nguyên tử)', async () => {
-      await createUser('qaReq', UserRole.STAFF);
-      const c = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffC },
-      });
-      const created = await call('POST', '/crm/care-team-requests', 'qaReq', {
-        customerRef: c.id,
-      });
-      await userModel.updateOne(
-        { _id: ids.qaReq },
-        { $set: { status: UserStatus.BLOCKED } },
-      );
-      const res = await call(
-        'PATCH',
-        `/crm/care-team-requests/${created.body.data.id}`,
-        'staffC',
-        { status: 'APPROVED' },
-      );
-      expect(res.status).toBe(400);
-      expect(
-        (await connection.collection('care_team_requests').findOne({
-          _id: new Types.ObjectId(created.body.data.id as string),
-        }))!.status,
-      ).toBe('PENDING');
-      expect((await customerDoc(c.id))!.careTeam).toHaveLength(1);
-    });
-
-    it('đề nghị cho khách đã xóa mềm / ẩn danh / id không phải khách => 404 như nhau (không phân biệt)', async () => {
-      const c = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffC },
-      });
-      await call('DELETE', `/crm/customers/${c.id}?reason=t`, 'admin');
-      const deleted = await call('POST', '/crm/care-team-requests', 'staffA', {
-        customerRef: c.id,
-      });
-      const unknown = await call('POST', '/crm/care-team-requests', 'staffA', {
-        customerRef: new Types.ObjectId().toHexString(),
-      });
-      expect([deleted.status, deleted.body.errorCode]).toEqual([
-        unknown.status,
-        unknown.body.errorCode,
-      ]);
-      expect(deleted.status).toBe(404);
-    });
-  });
-
   describe('Ẩn danh hóa phủ hết dữ liệu chăm sóc', () => {
     it('không còn chuỗi PII nào trong customers/care_logs/crm_attachments/care_team_requests/crm_audit_logs; file ảnh bị dọn khỏi kho', async () => {
       const SECRET = 'Nguyễn Bí Mật 0933000111';
@@ -832,20 +705,18 @@ describe('CRM M3 — QA đối kháng', () => {
         version: detail.body.data.version,
         reason: `Lý do ${SECRET}`,
       });
-      const req = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: c.id,
+      // Luồng gửi đề nghị đã bỏ (v1.0.5, T-13): chèn thẳng bản ghi cũ để vẫn kiểm việc ẩn danh dọn `care_team_requests`.
+      await connection.collection('care_team_requests').insertOne({
+        customerId: new Types.ObjectId(c.id),
+        requesterId: new Types.ObjectId(ids.staffC),
+        status: 'REJECTED',
         message: `Tôi xin ${SECRET}`,
+        resolvedBy: new Types.ObjectId(ids.staffA),
+        resolvedAt: new Date(),
+        resolutionNote: `Từ chối ${SECRET}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
-      expect(req.status).toBe(201);
-      await call(
-        'PATCH',
-        `/crm/care-team-requests/${req.body.data.id}`,
-        'staffA',
-        {
-          status: 'REJECTED',
-          resolutionNote: `Từ chối ${SECRET}`,
-        },
-      );
       const objectsBefore = [...storage.objects.keys()].filter((key) =>
         key.includes(c.id),
       );

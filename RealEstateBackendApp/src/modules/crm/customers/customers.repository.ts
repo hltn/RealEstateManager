@@ -31,8 +31,6 @@ export interface ListOptions extends FindOptions {
 /**
  * Tầng truy vấn `customers` (tài liệu 04 mục 4.3): MỌI hàm đọc/ghi nhận `scope: CustomerScope` và gộp vào bộ
  * lọc — thiếu phạm vi là lỗi biên dịch vì `CustomerScope` chỉ `buildCustomerScope` tạo được.
- * Ngoại lệ không có scope chỉ gồm `findByIdForJoinRequest` (đề nghị tham gia nhóm của người chưa thấy khách);
- * chỉ trả field tối thiểu.
  */
 @Injectable()
 export class CustomersRepository {
@@ -185,24 +183,5 @@ export class CustomersRepository {
       .session(session ?? null)
       .lean()
       .exec();
-  }
-
-  /**
-   * NGOẠI LỆ không phạm vi: tra khách theo `_id` để gửi đề nghị tham gia nhóm chăm sóc. Người gửi đề nghị
-   * theo định nghĩa chưa thấy khách (ngoài phạm vi) nhưng đã có `customerRef` từ luồng tra SĐT cũ. Chỉ trả field
-   * tối thiểu (không có tên, SĐT, email); khách đã xóa mềm/ẩn danh do service xử lý như không tồn tại.
-   */
-  findByIdForJoinRequest(
-    id: string | Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<Pick<
-    CustomerLean,
-    '_id' | 'careTeam' | 'teamIds' | 'deletedAt' | 'anonymizedAt'
-  > | null> {
-    const query = this.model
-      .findOne({ _id: new Types.ObjectId(String(id)) })
-      .select('careTeam teamIds deletedAt anonymizedAt');
-    if (session) query.session(session);
-    return query.lean().exec();
   }
 }

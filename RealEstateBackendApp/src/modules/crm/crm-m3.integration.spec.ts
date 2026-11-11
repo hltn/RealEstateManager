@@ -655,9 +655,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
     });
 
     it('đồng thời: nhiều người cùng thêm thành viên không mất cập nhật; thêm trùng một người chỉ thành công một lần', async () => {
-      const { id } = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffA },
-      });
+      const { id } = await createCustomer('staffA');
       const adds = await Promise.all(
         ['staffB', 'staffC', 'staffD'].map((who) =>
           call('POST', `/crm/customers/${id}/care-team/members`, 'admin', {
@@ -671,9 +669,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       await expectCareTeamInvariant(id);
       await expectTeamIdsMatchMembers(id);
 
-      const { id: other } = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffA },
-      });
+      const { id: other } = await createCustomer('staffA');
       const same = await Promise.all(
         [1, 2, 3, 4].map(() =>
           call('POST', `/crm/customers/${other}/care-team/members`, 'admin', {
@@ -693,9 +689,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
 
     it('đồng thời với đổi nhóm của người dùng: teamIds của khách luôn khớp nhóm HIỆN TẠI của thành viên (không write-skew)', async () => {
       for (let round = 0; round < 6; round += 1) {
-        const { id } = await createCustomer('admin', {
-          careTeam: { memberIds: [], primaryUserId: ids.staffA },
-        });
+        const { id } = await createCustomer('staffA');
         const [add, move] = await Promise.all([
           call('POST', `/crm/customers/${id}/care-team/members`, 'admin', {
             userIds: [ids.staffD],
@@ -707,270 +701,6 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         expect([add.status, move.status]).toEqual([201, 200]);
         await expectTeamIdsMatchMembers(id);
       }
-    });
-  });
-
-  // ---------------------------------------------------------------------------------------------
-  describe('Đề nghị tham gia nhóm chăm sóc', () => {
-    let cr: string;
-    let crPhone: string;
-    let requestId: string;
-
-    it('gửi đề nghị: customerRef từ phone-lookups; hasPendingRequest phản ánh đề nghị đang chờ; trùng/đã trong nhóm/không tồn tại bị từ chối', async () => {
-      ({ id: cr, phone: crPhone } = await createCustomer('staffA', {
-        fullName: 'Khách Cần Xin Vào',
-      }));
-      await call('POST', `/crm/customers/${cr}/care-team/members`, 'staffA', {
-        userIds: [ids.staffB],
-      });
-
-      const before = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffD',
-        {
-          phone: crPhone,
-        },
-      );
-      expect(before.body.data).toMatchObject({
-        exists: true,
-        isAccessible: false,
-        canRequestJoin: true,
-        hasPendingRequest: false,
-        customerRef: cr,
-      });
-
-      const created = await call('POST', '/crm/care-team-requests', 'staffD', {
-        customerRef: cr,
-        message: 'Em quen khách này, xin tham gia',
-      });
-      expect(created.status).toBe(201);
-      expect(created.body.data).toMatchObject({ status: 'PENDING' });
-      requestId = created.body.data.id;
-
-      const after = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffD',
-        {
-          phone: crPhone,
-        },
-      );
-      expect(after.body.data.hasPendingRequest).toBe(true);
-      // Người khác chưa gửi nên vẫn false.
-      expect(
-        (
-          await call('POST', '/crm/customers/phone-lookups', 'staffC', {
-            phone: crPhone,
-          })
-        ).body.data.hasPendingRequest,
-      ).toBe(false);
-
-      const duplicate = await call(
-        'POST',
-        '/crm/care-team-requests',
-        'staffD',
-        {
-          customerRef: cr,
-        },
-      );
-      expect(duplicate.status).toBe(409);
-      expect(duplicate.body.errorCode).toBe('JOIN_REQUEST_EXISTS');
-
-      const alreadyIn = await call(
-        'POST',
-        '/crm/care-team-requests',
-        'staffA',
-        {
-          customerRef: cr,
-        },
-      );
-      expect(alreadyIn.status).toBe(409);
-      expect(alreadyIn.body.errorCode).toBe('ALREADY_IN_CARE_TEAM');
-
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'staffC', {
-            customerRef: new Types.ObjectId().toHexString(),
-          })
-        ).status,
-      ).toBe(404);
-      // Quản trị không cần đề nghị (đã thấy mọi khách); EDITOR không có quyền CRM.
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'admin', {
-            customerRef: cr,
-          })
-        ).status,
-      ).toBe(403);
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'editor', {
-            customerRef: cr,
-          })
-        ).status,
-      ).toBe(403);
-    });
-
-    it('hộp "mình gửi" không lộ tên khách; hộp "cần duyệt" chỉ có người duyệt hợp lệ (Quản trị, Quản lý trong phạm vi, phụ trách chính)', async () => {
-      const mine = await call(
-        'GET',
-        '/crm/care-team-requests?box=mine',
-        'staffD',
-      );
-      expect(mine.status).toBe(200);
-      expect(mine.body.meta.total).toBe(1);
-      expect(mine.body.data[0]).toMatchObject({
-        id: requestId,
-        status: 'PENDING',
-        requester: { id: ids.staffD },
-        customer: { id: cr },
-      });
-      expect(mine.body.data[0].customer.fullName).toBeUndefined();
-
-      const toReview = (who: string, query = '') =>
-        call('GET', `/crm/care-team-requests?box=to-review${query}`, who);
-      const reviewers: Array<[string, number]> = [
-        ['staffA', 1], // phụ trách chính
-        ['admin', 1],
-        ['manager1', 1], // Quản lý nhóm A
-        ['staffB', 0], // thành viên thường
-        ['staffC', 0], // ngoài nhóm
-        ['manager2', 0], // Quản lý nhóm khác
-        ['staffD', 0], // chính người gửi
-      ];
-      for (const [who, expected] of reviewers) {
-        const res = await toReview(who);
-        expect([who, res.status, res.body.meta.total]).toEqual([
-          who,
-          200,
-          expected,
-        ]);
-      }
-      const seen = await toReview('staffA');
-      expect(seen.body.data[0].customer).toMatchObject({
-        id: cr,
-        fullName: 'Khách Cần Xin Vào',
-      });
-      expect(
-        (await toReview('staffA', '&status=APPROVED')).body.meta.total,
-      ).toBe(0);
-      expect(
-        (await call('GET', '/crm/care-team-requests', 'staffA')).status,
-      ).toBe(400);
-    });
-
-    it('duyệt: thành viên thường 403, người gửi tự duyệt/người lạ hủy 404; phụ trách chính duyệt => thêm MEMBER; duyệt lại 409', async () => {
-      const member = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestId}`,
-        'staffB',
-        { status: 'APPROVED' },
-      );
-      expect(member.status).toBe(403);
-      expect(member.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
-      expect(
-        (
-          await call(
-            'PATCH',
-            `/crm/care-team-requests/${requestId}`,
-            'staffD',
-            { status: 'APPROVED' },
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await call(
-            'PATCH',
-            `/crm/care-team-requests/${requestId}`,
-            'staffC',
-            { status: 'CANCELED' },
-          )
-        ).status,
-      ).toBe(404);
-
-      const approved = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestId}`,
-        'staffA',
-        { status: 'APPROVED', resolutionNote: 'OK' },
-      );
-      expect(approved.status).toBe(200);
-      expect(approved.body.data).toMatchObject({
-        status: 'APPROVED',
-        resolvedBy: { id: ids.staffA },
-      });
-      const doc = await customerDoc(cr);
-      expect(
-        doc!.careTeam.find((m: any) => String(m.userId) === ids.staffD),
-      ).toMatchObject({ role: 'MEMBER' });
-      await expectCareTeamInvariant(cr);
-      await expectTeamIdsMatchMembers(cr);
-      expect((await call('GET', `/crm/customers/${cr}`, 'staffD')).status).toBe(
-        200,
-      );
-      expect(await auditOf(cr, 'JOIN_REQUEST_RESOLVED')).toHaveLength(1);
-
-      const again = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestId}`,
-        'staffA',
-        { status: 'REJECTED' },
-      );
-      expect(again.status).toBe(409);
-      expect(again.body.errorCode).toBe('JOIN_REQUEST_RESOLVED');
-    });
-
-    it('người gửi hủy được và gửi lại được; duyệt và hủy đồng thời chỉ một bên thắng, trạng thái và nhóm luôn nhất quán', async () => {
-      const { id } = await createCustomer('staffA');
-      const first = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: id,
-      });
-      expect(first.status).toBe(201);
-      const canceled = await call(
-        'PATCH',
-        `/crm/care-team-requests/${first.body.data.id}`,
-        'staffC',
-        { status: 'CANCELED' },
-      );
-      expect(canceled.status).toBe(200);
-      expect(canceled.body.data.status).toBe('CANCELED');
-
-      const second = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: id,
-      });
-      expect(second.status).toBe(201);
-      const [approve, cancel] = await Promise.all([
-        call(
-          'PATCH',
-          `/crm/care-team-requests/${second.body.data.id}`,
-          'admin',
-          { status: 'APPROVED' },
-        ),
-        call(
-          'PATCH',
-          `/crm/care-team-requests/${second.body.data.id}`,
-          'staffC',
-          { status: 'CANCELED' },
-        ),
-      ]);
-      expect([approve.status, cancel.status].sort()).toEqual([200, 409]);
-      const stored = await connection
-        .collection('care_team_requests')
-        .findOne({ _id: new Types.ObjectId(second.body.data.id) });
-      const inTeam = (await customerDoc(id))!.careTeam.some(
-        (m: any) => String(m.userId) === ids.staffC,
-      );
-      expect(inTeam).toBe(stored!.status === 'APPROVED');
-      expect(['APPROVED', 'CANCELED']).toContain(stored!.status);
-
-      const mine = await call(
-        'GET',
-        '/crm/care-team-requests?box=mine&limit=100',
-        'staffC',
-      );
-      expect(mine.body.meta.total).toBe(2);
     });
   });
 
@@ -1924,11 +1654,20 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
           content: 'Chị Bí Mật ở số 12 Lê Lợi, muốn căn 3PN',
         },
       );
-      const request = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: id,
+      // Luồng gửi đề nghị đã bỏ (v1.0.5, T-13): chèn thẳng bản ghi PENDING cũ để kiểm việc ẩn danh vẫn dọn collection.
+      const requestId = new Types.ObjectId();
+      await connection.collection('care_team_requests').insertOne({
+        _id: requestId,
+        customerId: new Types.ObjectId(id),
+        requesterId: new Types.ObjectId(ids.staffC),
+        status: 'PENDING',
         message: 'Tôi quen chị Bí Mật',
+        resolvedBy: null,
+        resolvedAt: null,
+        resolutionNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
-      expect(request.status).toBe(201);
       expect(storage.objects.has(imageKey)).toBe(true);
 
       const anonymized = await call(
@@ -1990,7 +1729,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
 
       const storedRequest = await connection
         .collection('care_team_requests')
-        .findOne({ _id: new Types.ObjectId(request.body.data.id) });
+        .findOne({ _id: requestId });
       expect(storedRequest).toMatchObject({
         message: null,
         status: 'CANCELED',

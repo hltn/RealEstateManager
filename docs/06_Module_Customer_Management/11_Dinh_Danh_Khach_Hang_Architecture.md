@@ -83,7 +83,7 @@ PRIMARY / Manager / Admin -> GET /crm/care-team-invitees?customerId&q&page   (t�
 | `care-team-requests.controller/service`, `schemas/care-team-request.schema.ts`, rate-limit `JOIN_REQUEST`, thông báo `CARE_TEAM_JOIN_REQUESTED`, mã lỗi `JOIN_REQUEST_*` | ⚠️ GAP | Bỏ code (controller/service/DTO/đăng ký module); giữ file schema + dọn dẹp ở purge/ẩn danh (11.1b #1) | FR-12 |
 | `assignable-users` (module, controller, service, DTO; `purpose=assign|filter`) và các nơi FE dùng: `useCatalogs().assignable/users`, `useAssignableUsers`, `useAssigneeFilterOptions` (`fetchAssigneeFilterUsers`), `BulkActionBar`, `CreateCustomerFormBody`, `CareTeamCard`, `CustomerToolbar`, `AdvancedFilterModal`, `DailyTasks` | ⚠️ GAP | **Xóa hẳn** module BE; thay: mời/gán → `care-team-invitees`, ô lọc người chăm sóc → `customer-assignees` mới (5.5a) | FR-09, 14, 20 |
 | `daily-tasks.service.ts`: lọc "của tôi" theo `primaryAssigneeId` ở 3 nguồn (lịch hẹn dòng 284, việc kế tiếp dòng 367, khách lâu chưa chăm dòng 522); nguồn dịp đặc biệt đã theo `careTeam.userId` | ⚠️ GAP | Đổi theo mọi thành viên `careTeam` | FR-19 |
-| `reminder-dispatch.service.ts` (nhắc theo `careTeam`) | ✅ ĐÃ CÓ | Chỉ cần bảo đảm bỏ người BLOCKED | FR-18, 19 |
+| `reminder-dispatch.service.ts` (nhắc theo `careTeam`) | ⚠️ CẦN ĐỔI (T-14) | Đổi người nhận của ba loại nhắc (lịch hẹn, việc kế tiếp, khách lâu chưa chăm) từ người thực hiện/người ghi nhật ký/PRIMARY sang MỌI thành viên `careTeam` ACTIVE (PRIMARY `HIGH`, MEMBER `NORMAL`); nhắc dịp đặc biệt đã đúng; bỏ người BLOCKED; không còn ai thì hủy nhắc | FR-18, 19 |
 | Rate-limit `CrmRateLimitService` (`PHONE_LOOKUP`, `JOIN_REQUEST`), `CrmAbuseMonitorService` | ⚠️ GAP | Bỏ hai khóa cũ, thêm `CARE_TEAM_INVITE`, `INVITEE_SEARCH` | FR-12, 17 |
 | `ErrorCode`: `CUSTOMER_PHONE_DUPLICATED`, `JOIN_REQUEST_EXISTS/RESOLVED`, `ALREADY_IN_CARE_TEAM`, `PRIMARY_REPLACEMENT_REQUIRED` | ⚠️ GAP | `ALREADY_IN_CARE_TEAM` còn dùng (`planAddMembers`) nên giữ (FR-12 cho phép) | FR-01, 12 |
 | Counter nguyên tử cho mã | 🆕 MỚI | Chưa có hạ tầng counter (`grep` chỉ thấy rate-limit); tạo `counters` + `CounterService` | FR-07 |
@@ -226,7 +226,7 @@ Service `CustomerAssigneesService` (module `customers`, controller `customer-ass
 - việc kế tiếp (care log `nextAction`): `$or: [authorId = tôi, customer.careTeam.userId = tôi]`;
 - khách lâu chưa chăm: `careTeam.userId = tôi` thay `primaryAssigneeId = tôi`;
 - dịp đặc biệt: đã theo `careTeam.userId`, giữ.
-Người gọi luôn ACTIVE (guard) nên "mọi thành viên ACTIVE" thỏa. Cờ `isPrimary` trong phản hồi vẫn tính từ `primaryAssigneeId`. Khách `careTeam` rỗng (PRIMARY null) không ai "của tôi", chỉ hiện ở chế độ toàn bộ của Admin/Manager (đúng phạm vi của họ). `reminder-dispatch.service.ts`: nhắc cho mọi thành viên `careTeam` **trừ BLOCKED** (kiểm lại bằng test).
+Người gọi luôn ACTIVE (guard) nên "mọi thành viên ACTIVE" thỏa. Cờ `isPrimary` trong phản hồi vẫn tính từ `primaryAssigneeId`. Khách `careTeam` rỗng (PRIMARY null) không ai "của tôi", chỉ hiện ở chế độ toàn bộ của Admin/Manager (đúng phạm vi của họ). `reminder-dispatch.service.ts`: nhắc cho mọi thành viên `careTeam` ACTIVE (PRIMARY `HIGH`, MEMBER `NORMAL`; bỏ người BLOCKED; `careTeam` rỗng thì hủy nhắc).
 
 ### 5.7 Runner migration: thuộc tính `phase` (FR-21)
 

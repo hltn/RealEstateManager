@@ -1587,7 +1587,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       ).toHaveLength(0);
     });
 
-    it('khách lâu chưa chăm sóc: một nhắc cho mỗi đợt (neo theo nhật ký mới nhất), chỉ gửi phụ trách chính; có nhật ký mới thì đợt mới', async () => {
+    it('khách lâu chưa chăm sóc: một nhắc cho mỗi đợt (neo theo nhật ký mới nhất), gửi mọi thành viên nhóm (phụ trách chính HIGH, thành viên NORMAL); có nhật ký mới thì đợt mới', async () => {
       await resetPendingReminders();
       const cx = await createCustomer('staffA');
       await addMember(cx, 'staffB');
@@ -1618,12 +1618,12 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       });
       expect(toA).toHaveLength(1);
       expect(toA[0].priority).toBe('HIGH');
-      expect(
-        await notificationsOf('staffB', {
-          type: 'STALE_CUSTOMER',
-          'data.customerId': oid(cx),
-        }),
-      ).toHaveLength(0);
+      const toB = await notificationsOf('staffB', {
+        type: 'STALE_CUSTOMER',
+        'data.customerId': oid(cx),
+      });
+      expect(toB).toHaveLength(1);
+      expect(toB[0].priority).toBe('NORMAL');
 
       // Ngày hôm sau vẫn cùng đợt: không nhắc lại; sau khi có nhật ký rồi lại lâu: đợt mới (neo mới).
       expect(await scanner.scanStale(new Date(now.getTime() + DAY_MS))).toBe(0);
@@ -1930,13 +1930,13 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         '/crm/daily-tasks?kinds=APPOINTMENT&limit=100',
         'staffB',
       );
-      // staffB là người thực hiện 2 lịch (Hôm nay, Sắp tới); lịch "Quá hạn" thuộc staffA (phụ trách chính) nên không phải việc của staffB.
+      // T-14 (FR-19): staffB là MEMBER của c1 nên thấy mọi lịch của khách c1 (cả "Quá hạn" của staffA), nhưng không phải PRIMARY (isPrimary=false).
       expect(
         mineB.body.data
           .filter((task: any) => task.customer.id === c1)
           .map((task: any) => task.title)
           .sort(),
-      ).toEqual(['Hôm nay', 'Sắp tới']);
+      ).toEqual(['Hôm nay', 'Quá hạn', 'Sắp tới']);
       expect(
         mineB.body.data
           .filter((task: any) => task.customer.id === c1)
@@ -2043,7 +2043,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         lastCareLog: { excerpt: 'Hẹn gọi lại hôm qua' },
       });
       expect(tasks[0].careLogId).toEqual(expect.any(String));
-      // Không phải việc của staffB (không phải người ghi, không phải phụ trách chính).
+      // T-14 (FR-19): staffB là MEMBER của cx nên cũng thấy việc kế tiếp của khách này.
       expect(
         (
           await call(
@@ -2052,7 +2052,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
             'staffB',
           )
         ).body.data.filter((t: any) => t.customer.id === cx),
-      ).toHaveLength(0);
+      ).toHaveLength(1);
 
       await call('POST', `/crm/customers/${cx}/care-logs`, 'staffB', {
         content: 'Đã gọi xong',
@@ -2158,7 +2158,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
 
   // ---------------------------------------------------------------------------------------------
   describe('Hộp thông báo và cài đặt thông báo', () => {
-    it('sự kiện sinh thông báo: được phân khách (không báo cho chính người làm), ghi chú mới (gộp theo khoảng debounce), đề nghị tham gia gửi người duyệt và kết quả gửi người đề nghị', async () => {
+    it('sự kiện sinh thông báo: được phân khách (không báo cho chính người làm), ghi chú mới (gộp theo khoảng debounce); không còn thông báo đề nghị tham gia (đã bỏ ở v1.0.5)', async () => {
       // Cửa sổ gộp rộng (2 giờ) để hai ghi chú liên tiếp chắc chắn cùng một khung.
       await call('PATCH', '/crm/settings', 'admin', {
         careLogNotifyDebounceMinutes: 120,
@@ -2182,16 +2182,21 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         await notificationsOf('admin', { type: 'CUSTOMER_ASSIGNED' }),
       ).toHaveLength(0);
 
-      // Quản trị tạo khách và phân cho staffA làm phụ trách chính => HIGH.
-      const created = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffA },
-      });
-      const high = await notificationsOf('staffA', {
+      // T-07: người tạo luôn là PRIMARY (không tự nhận thông báo); thêm staffA làm MEMBER => NORMAL, Quản trị (người làm) không nhận.
+      const created = await createCustomer('admin');
+      await addMember(created, 'staffA');
+      const added = await notificationsOf('staffA', {
         type: 'CUSTOMER_ASSIGNED',
         'data.customerId': oid(created),
       });
-      expect(high).toHaveLength(1);
-      expect(high[0].priority).toBe('HIGH');
+      expect(added).toHaveLength(1);
+      expect(added[0].priority).toBe('NORMAL');
+      expect(
+        await notificationsOf('admin', {
+          type: 'CUSTOMER_ASSIGNED',
+          'data.customerId': oid(created),
+        }),
+      ).toHaveLength(0);
 
       // Hai ghi chú liên tiếp của staffA: staffB chỉ nhận MỘT thông báo (debounce), staffA không tự nhận.
       await call('POST', `/crm/customers/${c}/care-logs`, 'staffA', {
@@ -2218,38 +2223,19 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         }),
       ).toHaveLength(0);
 
-      // Đề nghị tham gia: staffD (ngoài phạm vi) gửi => phụ trách chính staffA + Quản lý nhóm A nhận, người gửi thì không.
+      // Luồng đề nghị tham gia đã bỏ (v1.0.5, T-13): route 404 và không còn thông báo CARE_TEAM_JOIN_REQUESTED mới.
       const requestRes = await call(
         'POST',
         '/crm/care-team-requests',
         'staffD',
         { customerRef: c, message: 'Em quen khách này' },
       );
-      expect(requestRes.status).toBe(201);
-      const toPrimary = await notificationsOf('staffA', {
-        type: 'CARE_TEAM_JOIN_REQUESTED',
-      });
-      const toManager = await notificationsOf('manager1', {
-        type: 'CARE_TEAM_JOIN_REQUESTED',
-      });
-      expect([toPrimary.length, toManager.length]).toEqual([1, 1]);
-      expect(toPrimary[0].body).not.toContain('Khách ');
-      expect(
-        await notificationsOf('staffD', { type: 'CARE_TEAM_JOIN_REQUESTED' }),
-      ).toHaveLength(0);
-
-      const approve = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestRes.body.data.id}`,
-        'staffA',
-        { status: 'APPROVED' },
-      );
-      expect(approve.status).toBe(200);
-      const resolved = await notificationsOf('staffD', {
-        type: 'CARE_TEAM_JOIN_RESOLVED',
-      });
-      expect(resolved).toHaveLength(1);
-      expect(resolved[0].title).toBe('Đề nghị tham gia được duyệt');
+      expect(requestRes.status).toBe(404);
+      for (const who of ['staffA', 'manager1', 'staffD']) {
+        expect(
+          await notificationsOf(who, { type: 'CARE_TEAM_JOIN_REQUESTED' }),
+        ).toHaveLength(0);
+      }
     });
 
     it('hai người cùng ghi nhật ký ĐỒNG THỜI cho một khách: cả hai thành công (không 500 do khóa chống trùng thông báo), người thứ ba chỉ nhận một thông báo gộp', async () => {

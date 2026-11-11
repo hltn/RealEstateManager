@@ -17,8 +17,6 @@ export const RATE_LIMITS = {
   ATTACHMENT_UPLOAD: { limit: 30, windowMs: 60_000 },
   /** Thao tác hàng loạt (mỗi lần tới 200 khách): 10 lần/phút/người. */
   BULK_OPERATION: { limit: 10, windowMs: 60_000 },
-  /** Đề nghị tham gia nhóm chăm sóc: 20 lần/phút/người (chống spam người duyệt). */
-  JOIN_REQUEST: { limit: 20, windowMs: 60_000 },
   /** Mời thành viên phụ (`POST care-team/members`): 30 lần/phút/người (FR-17, chống lạm dụng mở rộng phạm vi xem khách). */
   CARE_TEAM_INVITE: { limit: 30, windowMs: 60_000 },
   /** Tạo thẻ mới: 30 lần/phút/người (mọi vai trò được tạo thẻ, chống làm rác danh sách thẻ). */

@@ -38,6 +38,7 @@ const build = (appointment: unknown = null) => {
     {} as never,
     {} as never,
     { dispatch: jest.fn() } as never,
+    {} as never,
   );
   return service;
 };
@@ -71,7 +72,7 @@ describe('ReminderDispatchService dựng yêu cầu thông báo cho Dispatcher (
       {},
     );
     expect(decision.action).toBe('SEND');
-    // Người nhận: người thực hiện hẹn (MEMBER) và phụ trách chính (PRIMARY), mỗi người một yêu cầu.
+    // Người nhận: mọi thành viên careTeam (PRIMARY và MEMBER), mỗi người một yêu cầu.
     expect(decision.notifications).toHaveLength(2);
     const byUser = new Map(
       decision.notifications.map((n: any) => [String(n.recipientIds[0]), n]),
@@ -153,12 +154,11 @@ describe('ReminderDispatchService dựng yêu cầu thông báo cho Dispatcher (
       const decision =
         reminderType === ReminderType.STALE_CUSTOMER
           ? (service as any).evaluateStale(reminder(reminderType), customer)
-          : (service as any).buildDecision(
-              reminder(reminderType),
-              customer,
-              [MEMBER],
-              { type: notificationType, title: 't', body: 'b' },
-            );
+          : (service as any).buildDecision(reminder(reminderType), customer, {
+              type: notificationType,
+              title: 't',
+              body: 'b',
+            });
       expect(decision.action).toBe('SEND');
       for (const request of decision.notifications) {
         expect(request.type).toBe(notificationType);
@@ -175,7 +175,6 @@ describe('ReminderDispatchService dựng yêu cầu thông báo cho Dispatcher (
       (service as any).buildDecision(
         reminder(ReminderType.FOLLOW_UP),
         { ...customer, careTeam: [], primaryAssigneeId: null },
-        [MEMBER],
         { type: NotificationType.FOLLOW_UP_DUE, title: 't', body: 'b' },
       ),
     ).toEqual({ action: 'CANCEL' });
