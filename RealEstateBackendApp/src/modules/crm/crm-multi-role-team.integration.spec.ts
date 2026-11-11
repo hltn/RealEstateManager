@@ -5,7 +5,8 @@
  * - RolesGuard hợp quyền các role + token cũ chỉ có `role`;
  * - `customers.teamIds` = hợp nhóm của mọi thành viên chăm sóc, đồng bộ khi đổi nhóm/đổi role;
  * - `PATCH /users/:id/roles|teams` (lỗi 400/404, gỡ managerIds, xóa nhóm khi mất role MANAGER/STAFF, audit);
- * - người nhiều nhóm/nhiều role xuất hiện đúng trong `assignable-users`.
+ * (phần kiểm danh sách người phân chăm sóc đã bỏ cùng route cũ ở v1.0.5 T-16; danh sách người phụ trách kiểm ở
+ *   crm-customer-assignees.integration.spec.ts).
  *
  * Các `it` trong cùng file dùng chung dữ liệu và chạy THEO THỨ TỰ. Chạy bằng `npm run test:integration`.
  */
@@ -444,62 +445,6 @@ describe('Nhiều role + nhiều nhóm — HTTP + MongoDB Replica Set', () => {
       );
       expect(await listIds('mgrStaff')).toContain(cMulti);
     });
-
-    it('assignable-users: lọc theo bất kỳ nhóm nào của người nhiều nhóm; chỉ người có role MANAGER/STAFF; trả roles/teamIds, role giữ hợp đồng MANAGER/STAFF', async () => {
-      const teamB = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.teamB}&limit=100`,
-        'admin',
-      );
-      expect(teamB.body.data.map((u: any) => u.id).sort()).toEqual(
-        sorted([ids.staffB, ids.multiTeam, ids.multi]),
-      );
-      const teamA = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.teamA}&limit=100`,
-        'admin',
-      );
-      const byId = new Map(teamA.body.data.map((u: any) => [u.id, u]));
-      expect([...byId.keys()].sort()).toEqual(
-        sorted([
-          ids.mgrStaff,
-          ids.staffEditor,
-          ids.staffA,
-          ids.multiTeam,
-          ids.multi,
-          ids.legacyShape,
-        ]),
-      );
-      expect(byId.get(ids.mgrStaff)).toMatchObject({
-        role: 'MANAGER',
-        roles: ['MANAGER', 'STAFF'],
-        teamIds: [ids.teamA],
-      });
-      expect(byId.get(ids.staffEditor)).toMatchObject({
-        role: 'STAFF',
-        roles: ['STAFF', 'EDITOR'],
-      });
-      expect(byId.get(ids.multiTeam)).toMatchObject({
-        teamIds: [ids.teamA, ids.teamB],
-      });
-
-      // ADMIN+STAFF thuộc nhóm thì xuất hiện với role STAFF; ADMIN-only/EDITOR-only không bao giờ có mặt.
-      await call('PATCH', `/users/${ids.adminStaff}/teams`, 'admin', {
-        teamIds: [ids.teamA],
-      });
-      const again = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.teamA}&limit=100`,
-        'admin',
-      );
-      expect(
-        again.body.data.find((u: any) => u.id === ids.adminStaff),
-      ).toMatchObject({ role: 'STAFF' });
-      expect(again.body.data.map((u: any) => u.id)).not.toContain(ids.admin);
-      expect(again.body.data.map((u: any) => u.id)).not.toContain(
-        ids.editorOnly,
-      );
-    });
   });
 
   describe('PATCH /users/:id/teams (+ /team cũ)', () => {
@@ -661,89 +606,6 @@ describe('Nhiều role + nhiều nhóm — HTTP + MongoDB Replica Set', () => {
       await call('PATCH', `/users/${ids.staffB}/team`, 'admin', {
         teamId: ids.teamB,
       });
-    });
-  });
-
-  describe('assignable-users khớp đúng luật phân chăm sóc (không liệt kê người mà thao tác phân sẽ bị từ chối)', () => {
-    beforeAll(async () => {
-      await createUser('mgrX', [UserRole.MANAGER]);
-      await createUser('staffC', [UserRole.STAFF]);
-      const teamC = await call('POST', '/teams', 'admin', {
-        name: 'Nhóm X',
-        code: 'MXC',
-        managerIds: [ids.mgrX],
-      });
-      expect(teamC.status).toBe(201);
-      ids.teamC = teamC.body.data.id;
-      expect(
-        (
-          await call('PATCH', `/users/${ids.staffC}/teams`, 'admin', {
-            teamIds: [ids.teamC],
-          })
-        ).status,
-      ).toBe(200);
-      // mgrX QUẢN LÝ nhóm C nhưng chỉ là THÀNH VIÊN nhóm B.
-      expect(
-        (
-          await call('PATCH', `/users/${ids.mgrX}/teams`, 'admin', {
-            teamIds: [ids.teamB],
-          })
-        ).status,
-      ).toBe(200);
-    });
-
-    const assignableIds = async (as: string, query = '') => {
-      const res = await call(
-        'GET',
-        `/crm/assignable-users?limit=100${query}`,
-        as,
-      );
-      expect(res.status).toBe(200);
-      return res.body.data.map((u: any) => u.id).sort();
-    };
-
-    it('Quản lý chỉ thấy người thuộc nhóm mình QUẢN LÝ; thành viên nhóm B (chỉ là thành viên) không có trong danh sách', async () => {
-      expect(await assignableIds('mgrX')).toEqual([ids.staffC]);
-      // Lọc theo nhóm B (ngoài phạm vi phân) → rỗng, không dùng để dò người.
-      expect(await assignableIds('mgrX', `&teamId=${ids.teamB}`)).toEqual([]);
-    });
-
-    it('danh sách khớp thao tác: phân người trong danh sách → 201; phân người ngoài danh sách → 400 USER_NOT_ASSIGNABLE', async () => {
-      const outside = await call('POST', '/crm/customers', 'mgrX', {
-        fullName: 'Khách ngoài phạm vi phân',
-        phone: '0913555001',
-        careTeam: { primaryUserId: ids.staffB, memberIds: [] },
-      });
-      expect([outside.status, outside.body.errorCode]).toEqual([
-        400,
-        'USER_NOT_ASSIGNABLE',
-      ]);
-
-      const inside = await call('POST', '/crm/customers', 'mgrX', {
-        fullName: 'Khách trong phạm vi phân',
-        phone: '0913555002',
-        careTeam: { primaryUserId: ids.staffC, memberIds: [ids.mgrX] },
-      });
-      expect(inside.status).toBe(201);
-    });
-
-    it('Nhân viên thấy người cùng nhóm (kể cả Quản lý là thành viên nhóm đó) và không thấy nhóm khác', async () => {
-      const staffBView = await assignableIds('staffB');
-      expect(staffBView).toEqual(
-        expect.arrayContaining([ids.staffB, ids.multi, ids.mgrX]),
-      );
-      expect(staffBView).not.toContain(ids.staffC);
-      expect(await assignableIds('staffC')).toEqual([ids.staffC]);
-    });
-
-    it('Quản trị vẫn thấy tất cả; EDITOR-only vẫn bị chặn 403', async () => {
-      const all = await assignableIds('admin');
-      expect(all).toEqual(
-        expect.arrayContaining([ids.mgrX, ids.staffC, ids.staffB]),
-      );
-      expect(
-        (await call('GET', '/crm/assignable-users', 'editorOnly')).status,
-      ).toBe(403);
     });
   });
 

@@ -20,6 +20,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Model, Types } from 'mongoose';
@@ -322,15 +323,37 @@ describe('care-team-invitees — HTTP + MongoDB Replica Set', () => {
         'staffNoTeam',
         `?customerId=${customerId}`,
       );
-      expect([403, 404]).toContain(outsider.status);
+      expect(outsider.status).toBe(404);
+      expect(outsider.body.errorCode).toBe('CUSTOMER_NOT_FOUND');
 
       const noCustomer = await invitees('staffP');
       expect(noCustomer.status).toBe(403);
       expect(noCustomer.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
     });
 
+    it('Manager ngoài phạm vi (không quản lý nhóm của khách, không trong careTeam) ⇒ 404 CUSTOMER_NOT_FOUND', async () => {
+      // Khách của staffR (nhóm B); mgr2 không quản lý nhóm nào và không nằm trong careTeam.
+      const customerId = await createCustomer('staffR');
+
+      const res = await invitees('mgr2', `?customerId=${customerId}`);
+      expect(res.status).toBe(404);
+      expect(res.body.errorCode).toBe('CUSTOMER_NOT_FOUND');
+    });
+
     it('Editor (không thuộc CRM_ROLES) ⇒ 403', async () => {
       expect((await invitees('editor')).status).toBe(403);
+    });
+  });
+
+  describe('Swagger', () => {
+    it('có route GET /api/v1/crm/care-team-invitees', () => {
+      const doc = SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder().setTitle('qa').addBearerAuth().build(),
+      );
+      const route = doc.paths['/api/v1/crm/care-team-invitees'];
+      expect(route).toBeDefined();
+      expect(Object.keys(route)).toEqual(['get']);
     });
   });
 

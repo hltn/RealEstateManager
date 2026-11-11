@@ -262,7 +262,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
         '/crm/customer-statuses',
         '/crm/lead-sources',
         '/crm/contact-results',
-        '/crm/assignable-users',
+        '/crm/customer-assignees',
         '/crm/settings',
         '/teams',
         '/users',
@@ -277,7 +277,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
 
   // ---------------------------------------------------------------------------
   describe('Swagger', () => {
-    it('dựng được tài liệu OpenAPI và có đủ 34 route CRM/teams của M1 + thành viên nhóm', () => {
+    it('dựng được tài liệu OpenAPI và có đủ 33 route CRM/teams của M1 + thành viên nhóm', () => {
       const doc = SwaggerModule.createDocument(
         app,
         new DocumentBuilder().setTitle('qa').addBearerAuth().build(),
@@ -291,7 +291,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
       // (crm-m3.integration.spec.ts), chân dung/thẻ thuộc M4 (crm-m4.integration.spec.ts), lịch hẹn/việc hôm nay thuộc M5
       // (crm-m5.integration.spec.ts): không tính vào bộ đếm M1.
       const isM2Route = (op: string) =>
-        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|customer-bulk-operations|audit-logs|persona-fields|tags|appointments|daily-tasks)/.test(
+        /\/crm\/(customers|deleted-customers|customer-restorations|customer-anonymizations|customer-bulk-operations|care-team-invitees|customer-assignees|audit-logs|persona-fields|tags|appointments|daily-tasks)/.test(
           op,
         );
       const crmOps = ops.filter(
@@ -301,8 +301,8 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
             op.includes('/users/{id}/team')) &&
           !isM2Route(op),
       );
-      // teams 4 + members 3 (v1.0.2 mục C) + users/:id/team 1 + users/:id/teams 1 + assignable-users 1 + settings 2 + danh mục 16 + projects 6 = 34
-      expect(crmOps).toHaveLength(34);
+      // teams 4 + members 3 (v1.0.2 mục C) + users/:id/team 1 + users/:id/teams 1 + settings 2 + danh mục 16 + projects 6 = 33 (v1.0.5: `assignable-users` đã xóa; `care-team-invitees` và `customer-assignees` thuộc nhóm khách/nhóm chăm sóc, không tính vào M1)
+      expect(crmOps).toHaveLength(33);
       for (const op of [
         'POST /api/v1/crm/project-restorations',
         'PATCH /api/v1/users/{id}/team',
@@ -337,7 +337,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
           `/crm/lead-sources?q=${encodeURIComponent(q)}`,
           `/users?q=${encodeURIComponent(q)}`,
           `/teams?q=${encodeURIComponent(q)}`,
-          `/crm/assignable-users?q=${encodeURIComponent(q)}`,
+          `/crm/customer-assignees?q=${encodeURIComponent(q)}`,
         ]) {
           const other = await call('GET', url, 'admin');
           expect([url, other.status, other.body.data.length]).toEqual([
@@ -371,7 +371,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
         ['GET', '/crm/areas?parentId=zzz'],
         ['GET', '/crm/projects?areaId=zzz'],
         ['GET', '/users?teamId=zzz'],
-        ['GET', '/crm/assignable-users?teamId=zzz'],
+        ['GET', '/crm/customer-assignees?teamId=zzz'],
         ['GET', '/crm/projects/zzz'],
         ['PATCH', '/teams/zzz', {}],
         ['DELETE', '/crm/areas/zzz'],
@@ -526,14 +526,14 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
       expect([401, 403]).toContain(res.status);
     });
 
-    it('MANAGER bị khóa: các route CRM đọc theo CrmActor (assignable-users, teams) => 401 ngay (đọc DB, không tin JWT)', async () => {
+    it('MANAGER bị khóa: các route CRM đọc theo CrmActor (customer-assignees, teams) => 401 ngay (đọc DB, không tin JWT)', async () => {
       await createUser('doomedManager', UserRole.MANAGER);
       await userModel.updateOne(
         { _id: ids.doomedManager },
         { $set: { status: UserStatus.BLOCKED } },
       );
       expect(
-        (await call('GET', '/crm/assignable-users', 'doomedManager')).status,
+        (await call('GET', '/crm/customer-assignees', 'doomedManager')).status,
       ).toBe(401);
       expect((await call('GET', '/teams', 'doomedManager')).status).toBe(401);
     });

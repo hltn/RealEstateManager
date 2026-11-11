@@ -186,7 +186,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       ['GET', 'GET', '/crm/lead-sources', READ_ALL],
       ['GET', 'GET', '/crm/contact-results', READ_ALL],
       ['GET', 'GET', '/crm/areas', READ_ALL],
-      ['GET', 'GET', '/crm/assignable-users', READ_ALL],
+      ['GET', 'GET', '/crm/customer-assignees', READ_ALL],
       ['GET', 'GET', '/teams', ['admin', 'manager1']],
       ['GET', 'GET', '/crm/settings', ['admin', 'manager1']],
       ['POST', 'POST', '/crm/projects', ['admin']],
@@ -353,7 +353,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
   });
 
   // -------------------------------------------------------------------------
-  describe('Nhóm (teams) + assignable-users', () => {
+  describe('Nhóm (teams)', () => {
     it('tạo nhóm: mã lưu HOA, trả quản lý + memberCount; trùng mã (khác hoa thường) 409; quản lý phải là MANAGER', async () => {
       const kd1 = await call('POST', '/teams', 'admin', {
         name: 'Nhóm Kinh doanh 1',
@@ -443,47 +443,6 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
 
       const manager = await call('GET', '/teams', 'manager1');
       expect(manager.body.data.map((t: any) => t.code)).toEqual(['KD1']);
-    });
-
-    it('assignable-users: phạm vi theo vai trò, loại người bị khóa/ADMIN/EDITOR, ép teamId trong phạm vi', async () => {
-      const names = (res: Res) =>
-        res.body.data.map((u: any) => u.displayName).sort();
-
-      const admin = await call('GET', '/crm/assignable-users', 'admin');
-      expect(names(admin)).toEqual(
-        ['manager1', 'manager2', 'staffA', 'staffB', 'staffC'].sort(),
-      );
-      expect(admin.body.meta.limit).toBe(100);
-
-      const manager = await call('GET', '/crm/assignable-users', 'manager1');
-      expect(names(manager)).toEqual(['staffA', 'staffB']);
-      expect(manager.body.data[0].team).toEqual({
-        id: ids.kd1,
-        label: 'Nhóm Kinh doanh 1',
-      });
-
-      const staff = await call('GET', '/crm/assignable-users', 'staffC');
-      expect(names(staff)).toEqual(['staffC']);
-
-      // Lọc teamId ngoài phạm vi (dò nhóm khác) => rỗng, không lộ.
-      const outside = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.kd2}`,
-        'manager1',
-      );
-      expect(outside.body.data).toEqual([]);
-      const adminFiltered = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.kd2}`,
-        'admin',
-      );
-      expect(names(adminFiltered)).toEqual(['staffC']);
-
-      // Nhân viên chưa thuộc nhóm nào không thấy ai.
-      await createUser('loner', UserRole.STAFF);
-      expect(
-        (await call('GET', '/crm/assignable-users', 'loner')).body.data,
-      ).toEqual([]);
     });
 
     it('hạ vai trò Quản lý: bị gỡ khỏi managerIds (cùng transaction); chuyển sang ADMIN còn xóa teamId; Quản lý mất quyền xem nhóm cũ', async () => {

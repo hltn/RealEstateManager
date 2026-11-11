@@ -28,7 +28,7 @@ const VIETNAMESE_COLLATION = { locale: 'vi' } as const;
 
 /**
  * Danh sách người có thể được mời vào nhóm chăm sóc (`GET /crm/care-team-invitees`, Architecture mục 4, FR-13/FR-14);
- * thay phần "mời/gán" của `assignable-users` đã bị xóa. Toàn hệ thống, KHÔNG giới hạn theo nhóm của người gọi.
+ * thay phần "mời/gán" của module danh sách người phân chăm sóc cũ (đã xóa hẳn ở v1.0.5). Toàn hệ thống, KHÔNG giới hạn theo nhóm của người gọi.
  *
  * Quyền: Quản trị/Quản lý, hoặc phụ trách chính (PRIMARY) của khách `customerId`. Không có `customerId` (thao tác hàng
  * loạt) chỉ Quản trị/Quản lý. Chỉ trả `id`, `displayName`, `teamNames` — không email/SĐT/CCCD/vai trò/id nhóm.
@@ -108,7 +108,7 @@ export class CareTeamInviteesService {
     };
   }
 
-  /** Dựng response cho cả trang bằng một truy vấn `teams` duy nhất (nhóm không còn tồn tại bị bỏ qua). */
+  /** Dựng response cho cả trang bằng một truy vấn `teams` duy nhất (nhóm không còn tồn tại hoặc đã xóa mềm bị bỏ qua). */
   private async toResponses(
     users: Array<
       Pick<User, 'displayName' | 'teamId' | 'teamIds'> & {
@@ -122,7 +122,7 @@ export class CareTeamInviteesService {
     ];
     const teams = uniqueTeamIds.length
       ? await this.teamModel
-          .find({ _id: { $in: uniqueTeamIds } })
+          .find({ _id: { $in: uniqueTeamIds }, deletedAt: null })
           .select('name')
           .lean()
           .exec()

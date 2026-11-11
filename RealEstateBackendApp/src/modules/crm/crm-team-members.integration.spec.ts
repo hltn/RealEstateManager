@@ -1,11 +1,11 @@
 /**
  * INTEGRATION — thành viên nhóm (`/teams/:id/members`) và nguồn lọc "Người phụ trách" của Quản lý
- * (`GET /crm/assignable-users?purpose=filter`), tài liệu 09 mục 6 và 6.10. HTTP thật (Fastify + guard toàn cục + MongoDB
+ * (`GET /crm/customer-assignees`, thay route lọc cũ từ v1.0.5), tài liệu 09 mục 6 và 6.10. HTTP thật (Fastify + guard toàn cục + MongoDB
  * Replica Set in-memory). Kiểm điều unit test mock không chứng minh được:
  * - quyền (ADMIN ghi; Quản lý chỉ xem nhóm mình quản lý; STAFF/EDITOR 403);
  * - thêm/gỡ đồng bộ `teamIds`/`teamId`, `customers.teamIds` (và phạm vi khách của Quản lý), audit, không đụng `managerIds`;
  * - role không thuộc nhóm bị từ chối;
- * - nguồn lọc của Quản lý = người trong careTeam của khách Quản lý được thấy, ô gán vẫn chặt.
+ * - nguồn lọc của Quản lý = người trong careTeam của khách Quản lý được thấy.
  *
  * Các `it` dùng chung dữ liệu và chạy THEO THỨ TỰ. Chạy bằng `npm run test:integration`.
  */
@@ -138,12 +138,8 @@ describe('Thành viên nhóm + nguồn lọc người phụ trách — HTTP + Mo
       .map((m: { displayName: string }) => m.displayName)
       .sort();
   };
-  const assigneeNames = async (as: string, purpose?: string) => {
-    const res = await call(
-      'GET',
-      `/crm/assignable-users?limit=100${purpose ? `&purpose=${purpose}` : ''}`,
-      as,
-    );
+  const assigneeNames = async (as: string) => {
+    const res = await call('GET', '/crm/customer-assignees?limit=100', as);
     expect(res.status).toBe(200);
     return res.body.data
       .map((u: { displayName: string }) => u.displayName)
@@ -504,8 +500,8 @@ describe('Thành viên nhóm + nguồn lọc người phụ trách — HTTP + Mo
     });
   });
 
-  describe('Nguồn lọc "Người phụ trách" của Quản lý (purpose=filter)', () => {
-    it('Quản lý thấy người trong careTeam của khách mình được thấy (kể cả người ở nhóm mình không quản lý), không thấy người ngoài tập đó; ô gán vẫn chặt', async () => {
+  describe('Nguồn lọc "Người phụ trách" của Quản lý (customer-assignees)', () => {
+    it('Quản lý thấy người trong careTeam của khách mình được thấy (kể cả người ở nhóm mình không quản lý), không thấy người ngoài tập đó', async () => {
       // c1: staffA (nhóm A) + staffB (nhóm B) => teamIds {A, B}: Quản lý A và Quản lý B cùng thấy.
       // c2: chỉ staffC (nhóm B) => Quản lý A KHÔNG thấy.
       const c1 = await createCustomer('staffA', ['staffB']);
@@ -514,26 +510,16 @@ describe('Thành viên nhóm + nguồn lọc người phụ trách — HTTP + Mo
       expect(visibleToA).toContain(c1);
       expect(visibleToA).not.toContain(c2);
 
-      expect(await assigneeNames('mgrA', 'filter')).toEqual([
-        'staffA',
-        'staffB',
-      ]);
-      // Ô gán: chỉ người thuộc nhóm mình QUẢN LÝ (staffB ở nhóm B không được gán).
-      expect(await assigneeNames('mgrA')).toEqual(['staffA']);
-      expect(await assigneeNames('mgrA', 'assign')).toEqual(['staffA']);
-      expect(await assigneeNames('mgrB', 'filter')).toEqual([
+      expect(await assigneeNames('mgrA')).toEqual(['staffA', 'staffB']);
+      expect(await assigneeNames('mgrB')).toEqual([
         'staffA',
         'staffB',
         'staffC',
       ]);
     });
 
-    it('trả shape phân trang chuẩn, không lộ email; q thu hẹp trong tập; purpose lạ 400', async () => {
-      const res = await call(
-        'GET',
-        '/crm/assignable-users?purpose=filter&q=staffb',
-        'mgrA',
-      );
+    it('trả shape phân trang chuẩn, không lộ email; q thu hẹp trong tập; tham số purpose cũ bị từ chối 400', async () => {
+      const res = await call('GET', '/crm/customer-assignees?q=staffb', 'mgrA');
       expect(res.status).toBe(200);
       expect(res.body.meta).toEqual({
         total: 1,
@@ -545,26 +531,25 @@ describe('Thành viên nhóm + nguồn lọc người phụ trách — HTTP + Mo
       expect(res.body.data[0]).toMatchObject({
         displayName: 'staffB',
         role: 'STAFF',
+        isLocked: false,
       });
       expect(JSON.stringify(res.body)).not.toContain('@test.vn');
 
       expect(
-        (await call('GET', '/crm/assignable-users?purpose=other', 'mgrA'))
+        (await call('GET', '/crm/customer-assignees?purpose=filter', 'mgrA'))
           .status,
       ).toBe(400);
     });
 
-    it('ADMIN và STAFF giữ hành vi gán hiện tại khi gửi purpose=filter', async () => {
-      expect(await assigneeNames('admin', 'filter')).toEqual(
-        await assigneeNames('admin'),
+    it('ADMIN thấy mọi người trong careTeam; STAFF thấy người cùng khách với mình; EDITOR 403', async () => {
+      const adminView = await assigneeNames('admin');
+      expect(adminView).toEqual(
+        expect.arrayContaining(['staffA', 'staffB', 'staffC']),
       );
-      expect(await assigneeNames('staffA', 'filter')).toEqual(
-        await assigneeNames('staffA'),
-      );
-      expect(await assigneeNames('staffA', 'filter')).toEqual(['staffA']);
+      const staffView = await assigneeNames('staffA');
+      expect(staffView).toEqual(expect.arrayContaining(['staffA', 'staffB']));
       expect(
-        (await call('GET', '/crm/assignable-users?purpose=filter', 'editor'))
-          .status,
+        (await call('GET', '/crm/customer-assignees', 'editor')).status,
       ).toBe(403);
     });
   });

@@ -187,6 +187,26 @@ describe('CareTeamInviteesService: loại trừ', () => {
     expect(CRM_TEAM_ROLES).toEqual([UserRole.MANAGER, UserRole.STAFF]);
   });
 
+  it('user nhiều role (ADMIN + STAFF) vẫn có trong danh sách: lọc theo mảng roles, không theo role đơn', async () => {
+    const multiRole = oid();
+    const ctx = build({
+      users: [
+        {
+          _id: multiRole,
+          displayName: 'Vừa Admin vừa Staff',
+          roles: [UserRole.ADMIN, UserRole.STAFF],
+          teamIds: [],
+        },
+      ],
+    });
+    const result = await ctx.service.list(ctx.jwt, query());
+
+    expect(result.data.map((item) => item.id)).toEqual([String(multiRole)]);
+    const filter = ctx.userFilter();
+    expect(filter.roles).toEqual({ $in: CRM_TEAM_ROLES });
+    expect(filter).not.toHaveProperty('role');
+  });
+
   it('loại chính người gọi (không customerId)', async () => {
     const ctx = build();
     await ctx.service.list(ctx.jwt, query());
@@ -349,6 +369,8 @@ describe('CareTeamInviteesService: response (FR-14)', () => {
     expect(teamFilter._id.$in.map(String).sort()).toEqual(
       [String(shared), String(other)].sort(),
     );
+    // Nhóm xóa mềm không được lộ tên.
+    expect(teamFilter).toMatchObject({ deletedAt: null });
     expect(result.data.map((item) => item.teamNames)).toEqual([
       ['Chung'],
       ['Chung', 'Khác'],
