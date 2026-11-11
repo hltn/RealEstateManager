@@ -19,6 +19,8 @@ export const RATE_LIMITS = {
   BULK_OPERATION: { limit: 10, windowMs: 60_000 },
   /** Mời thành viên phụ (`POST care-team/members`): 30 lần/phút/người (FR-17, chống lạm dụng mở rộng phạm vi xem khách). */
   CARE_TEAM_INVITE: { limit: 30, windowMs: 60_000 },
+  /** Tìm người được mời (`GET care-team-invitees`): 60 lần/phút/người (FR-14, chống dò danh sách người dùng). */
+  INVITEE_SEARCH: { limit: 60, windowMs: 60_000 },
   /** Tạo thẻ mới: 30 lần/phút/người (mọi vai trò được tạo thẻ, chống làm rác danh sách thẻ). */
   TAG_CREATE: { limit: 30, windowMs: 60_000 },
 } as const;

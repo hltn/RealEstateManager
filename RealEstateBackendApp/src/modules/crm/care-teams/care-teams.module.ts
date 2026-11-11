@@ -2,11 +2,14 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from '../../users/schemas/user.schema';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
+import { CrmCommonModule } from '../common/crm-common.module';
 import { CrmSecurityModule } from '../common/security/crm-security.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { Team, TeamSchema } from '../../teams/schemas/team.schema';
 import { CustomersModule } from '../customers/customers.module';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
+import { CareTeamInviteesController } from './care-team-invitees.controller';
+import { CareTeamInviteesService } from './care-team-invitees.service';
 import { CareTeamController } from './care-team.controller';
 import { CareTeamService } from './care-team.service';
 
@@ -21,9 +24,14 @@ import { CareTeamService } from './care-team.service';
     NotificationsModule,
     CrmAuditLogModule,
     CrmSecurityModule,
+    CrmCommonModule,
   ],
-  controllers: [CareTeamController],
-  providers: [CareTeamAssigneesService, CareTeamService],
+  controllers: [CareTeamController, CareTeamInviteesController],
+  providers: [
+    CareTeamAssigneesService,
+    CareTeamInviteesService,
+    CareTeamService,
+  ],
   // Dùng lại cho thao tác hàng loạt `ASSIGN`.
   exports: [CareTeamService],
 })
