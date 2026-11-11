@@ -24,14 +24,13 @@ const CUSTOMER_PATH = /^\/crm\/customers\/([A-Za-z0-9]+)\/?$/;
 /**
  * `deepLink` của backend -> đường dẫn Web Admin (hoặc null nếu không có màn tương ứng):
  * - `/crm/customers/:id` -> giữ nguyên; `/crm/appointments...` -> màn lịch hẹn.
- * - `/crm/care-team-requests` -> hồ sơ khách (nếu biết `customerId`) hoặc danh sách khách (đề nghị duyệt ở hồ sơ khách).
+ * - v1.0.5: backend đã bỏ luồng xin tham gia nhóm; thông báo cũ trỏ tới màn đã xóa chỉ mở hồ sơ khách nếu biết `customerId`, không thì không điều hướng.
  * - `/crm/audit-logs...` (cảnh báo bảo mật) -> chưa có màn ở Web Admin: không điều hướng.
  */
 export const resolveNotificationPath = (notification: { deepLink: string; customerId?: string; appointmentId?: string }): string | null => {
   const link = notification.deepLink.split('?')[0];
   if (CUSTOMER_PATH.test(link)) return link;
   if (link.startsWith('/crm/appointments')) return '/crm/appointments';
-  if (link === '/crm/care-team-requests') return notification.customerId ? `/crm/customers/${notification.customerId}` : '/crm/customers';
   if (notification.customerId && link.startsWith('/crm/')) return `/crm/customers/${notification.customerId}`;
   if (notification.appointmentId) return '/crm/appointments';
   return null;

@@ -18,7 +18,7 @@ vi.mock('@crm/api', async () => {
     useCrmApi: () => ({ bulkOperation }),
     useCrmActor: () => ({ userId: 'admin', role: 'ADMIN', teamId: null, managedTeamIds: [] }),
     useCatalogs: () => ({ catalogs: { statuses: [], tags: [] }, users: [] }),
-    useAssignableUsers: () => ({ data: [] }),
+    useCareTeamInvitees: () => ({ data: { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } }),
     usePersonaFieldMap: () => new Map(),
   };
 });

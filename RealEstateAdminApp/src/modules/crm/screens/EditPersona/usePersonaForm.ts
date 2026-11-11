@@ -5,8 +5,8 @@
  * Xung đột phiên bản (409): báo rõ và tải lại dữ liệu, KHÔNG ghi đè thay đổi của người khác.
  */
 import { useMemo, useState, type FormEvent } from 'react';
-import { describeWriteError, useCatalogs, useCrmApi, usePhoneLookup, type CustomerDetail, type CustomerPersonaView, type PersonaValueInput, type PhoneLookupResult } from '@crm/api';
-import { formatPhoneDisplay, normalizePhone } from '@crm/lib/phone';
+import { describeWriteError, useCatalogs, useCrmApi, type CustomerDetail, type CustomerPersonaView, type PersonaValueInput } from '@crm/api';
+import { formatPhoneDisplay } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import type { PersonaGroupCode, PersonaSource, TagCategory } from '@crm/types/crm';
 import { useRevealedValue } from '../CustomerDetail/useRevealedValue';
@@ -52,15 +52,11 @@ export const usePersonaForm = (customer: CustomerDetail, persona: CustomerPerson
   /** Số đầy đủ chỉ có sau khi bấm "Sửa số" (createPhoneView ghi log); trước đó ô SĐT khoá và không gửi SĐT khi lưu. */
   const [revealedPhone, setRevealedPhone] = useRevealedValue(customer.id);
   const isPhoneLocked = revealedPhone === null;
-  const isPhoneChanged = hasBasicInfo && !isPhoneLocked && normalizePhone(basic.phone) !== revealedPhone;
-  const lookup = usePhoneLookup(isPhoneLocked ? '' : basic.phone, customer.id);
-  const phoneLookup: PhoneLookupResult | null = isPhoneChanged ? lookup : null;
 
   const submit = async (event?: FormEvent): Promise<boolean> => {
     event?.preventDefault();
     if (isSaving) return false;
     const nextBasicErrors = hasBasicInfo ? validateBasicInfo(basic, isPhoneLocked) : {};
-    if (phoneLookup?.exists) nextBasicErrors.phone = 'Số điện thoại đã có trong hệ thống.';
     const nextPersonaErrors = validatePersonaDraft(draft, fields);
     setBasicErrors(nextBasicErrors);
     setPersonaErrors(nextPersonaErrors);
@@ -98,10 +94,10 @@ export const usePersonaForm = (customer: CustomerDetail, persona: CustomerPerson
     draft,
     personaErrors,
     source,
-    phoneLookup,
     isPhoneLocked,
     isSaving,
-    phoneMasked: customer.phoneMasked,
+    // TODO(T-26): khách chưa có SĐT -> ô thêm SĐT (không còn "Sửa số" qua createPhoneView).
+    phoneMasked: customer.phoneMasked ?? '',
     /** Bấm "Sửa số": lấy số đầy đủ qua `createPhoneView` (kiểm phạm vi + ghi 1 log) rồi mở khoá ô SĐT. Gọi trong handler. */
     revealPhone: async () => {
       const result = await api.createPhoneView(customer.id, 'VIEW');
@@ -136,11 +132,6 @@ export const usePersonaForm = (customer: CustomerDetail, persona: CustomerPerson
       const result = await api.deleteNationalId(customer.id);
       showToast(result.ok ? { title: 'Đã xoá CCCD của khách' } : { type: 'error', title: result.error.message });
       return result.ok;
-    },
-    requestJoin: async () => {
-      if (!phoneLookup?.customerRef) return;
-      const result = await api.createCareTeamRequest({ customerRef: phoneLookup.customerRef });
-      showToast(result.ok ? { title: 'Đã gửi đề nghị tham gia nhóm chăm sóc' } : { type: 'error', title: result.error.message });
     },
     submit,
     cancel: goBack,

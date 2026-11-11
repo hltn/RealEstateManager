@@ -6,7 +6,6 @@ import type { CustomerFilters } from '@crm/types/app';
 import type {
   AppointmentStatus,
   AppointmentType,
-  CareTeamRequestStatus,
   CareTeamRole,
   ContactChannel,
   CreatedVia,
@@ -23,7 +22,6 @@ import type {
   Ref,
   StatusRef,
   UserRef,
-  UserRole,
 } from '@crm/types/crm';
 import type { PaginationMeta } from '../../../types/pagination';
 
@@ -71,8 +69,10 @@ export interface CustomerListQuery extends Partial<CustomerFilters> {
 export interface CustomerListItem {
   id: string;
   fullName: string;
-  /** SĐT đã che ("0912 345 •••"). Số đầy đủ CHỈ lấy qua `createPhoneView` (kiểm phạm vi + ghi log PHONE_VIEWED). */
-  phoneMasked: string;
+  /** SĐT đã che ("0912 345 •••"); null = khách chưa có SĐT. Số đầy đủ CHỈ lấy qua `createPhoneView` (kiểm phạm vi + ghi log PHONE_VIEWED). */
+  phoneMasked: string | null;
+  /** Mã khách "KH-000123" cho mọi vai trò; null = chưa được cấp (khoảng trống ngắn sau deploy). */
+  customerCode: string | null;
   /** MÃ lựa chọn trường chân dung "Mục đích mua" (`purchase_purposes`, vd `LIVING`); rỗng khi chưa có. UI dịch mã sang nhãn. */
   purchasePurposes: string[];
   status: StatusRef;
@@ -82,6 +82,7 @@ export interface CustomerListItem {
   tags: Ref[];
   progress: number;
   criteriaDone: Record<CriterionKey, boolean>;
+  /** `isLocked` = tài khoản người chăm sóc chính bị khóa (hiện nhãn "đã khóa" cho Quản trị/Quản lý). */
   primaryAssignee: UserRef | null;
   careTeamSize: number;
   nextAppointmentAt: string | null;
@@ -110,13 +111,11 @@ export interface CustomerPermissions {
   canEdit: boolean;
   /** Thêm/bớt thành viên (không phải phụ trách chính): Quản trị, Quản lý, phụ trách chính. */
   canManageCareTeam: boolean;
-  /** Đổi/gỡ phụ trách chính: chỉ Quản trị, Quản lý. */
-  canChangePrimary: boolean;
+  /** Đặt người chăm sóc chính MỘT LẦN cho khách `careTeam` rỗng: Quản trị/Quản lý (v1.0.5, PRIMARY sau đó bị khóa, không đổi/gỡ được). */
+  canSetInitialPrimary: boolean;
   canDelete: boolean;
   /** Xem CCCD đầy đủ (giả định D2: Quản trị, Quản lý, phụ trách chính). */
   canRevealNationalId: boolean;
-  /** Duyệt đề nghị tham gia nhóm chăm sóc: Quản trị, Quản lý, phụ trách chính. */
-  canReviewJoinRequests: boolean;
 }
 
 export interface CustomerDetail extends CustomerListItem {
@@ -145,23 +144,13 @@ export interface ListCounts {
   byStatus: { statusId: string; count: number }[];
 }
 
-export interface PhoneLookupResult {
-  normalizedPhone: string;
-  exists: boolean;
-  isAccessible: boolean;
-  /** Chỉ có khi người dùng truy cập được khách. */
-  customerId?: string;
-  /** Mã tham chiếu để đề nghị tham gia (không lộ thông tin khách). */
-  customerRef?: string;
-  /** Tên hiển thị phụ trách chính; null nếu khách chưa được phân. */
-  caredByName: string | null;
-  canRequestJoin: boolean;
-  hasPendingRequest: boolean;
-}
-
+/**
+ * Tạo khách (v1.0.5): chỉ `fullName` bắt buộc; `phone` null/vắng = chưa có SĐT. KHÔNG có `careTeam`: backend tự đặt người tạo làm
+ * PRIMARY (mọi vai trò, kể cả Quản trị) và từ chối trường lạ bằng 400.
+ */
 export interface CreateCustomerInput {
   fullName: string;
-  phone: string;
+  phone?: string | null;
   email?: string;
   statusId?: string;
   sourceId?: string | null;
@@ -169,14 +158,14 @@ export interface CreateCustomerInput {
   areaId?: string | null;
   tagIds?: string[];
   nationalId?: string;
-  careTeam?: { memberIds: string[]; primaryUserId: string };
   criteria?: CriteriaPatch;
 }
 
 export interface UpdateCustomerInput {
   version: number;
   fullName?: string;
-  phone?: string;
+  /** `null` (hoặc rỗng) = xóa SĐT; bỏ trống = không đổi. */
+  phone?: string | null;
   email?: string;
   sourceId?: string | null;
   interestedProjectIds?: string[];
@@ -199,12 +188,12 @@ export interface UpdateCriteriaResult {
   autoStatusChange?: { from: StatusRef | null; to: StatusRef };
 }
 
-/** Thao tác hàng loạt (`POST /crm/customer-bulk-operations`, 05 §2.3). `primaryUserId` bắt buộc với khách chưa có phụ trách chính. */
+/** Thao tác hàng loạt (`POST /crm/customer-bulk-operations`, 05 §2.3). ASSIGN chỉ thêm MEMBER (backend 400 nếu gửi `primaryUserId`). */
 export type BulkOperation =
   | { type: 'CHANGE_STATUS'; customerIds: string[]; statusId: string }
   | { type: 'ADD_TAGS'; customerIds: string[]; tagIds: string[] }
   | { type: 'REMOVE_TAGS'; customerIds: string[]; tagIds: string[] }
-  | { type: 'ASSIGN'; customerIds: string[]; memberIds: string[]; primaryUserId?: string }
+  | { type: 'ASSIGN'; customerIds: string[]; memberIds: string[] }
   /** Xóa mềm khách thuộc nhóm "Bỏ"; một lý do chung (bắt buộc, ≤ 500 ký tự), tối đa 200 khách. */
   | { type: 'DELETE'; customerIds: string[]; reason: string };
 
@@ -305,8 +294,8 @@ export interface CreateCareLogInput {
 
 export interface AppointmentView {
   id: string;
-  /** `phoneMasked` ("0912 ••• 678") do backend trả; "" = khách dữ liệu cũ thiếu SĐT (ẩn dòng SĐT). `projects` không có trong response lịch hẹn. */
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects?: Ref[] };
+  /** `phoneMasked` ("0912 ••• 678") do backend trả; null = khách chưa có SĐT (ẩn dòng SĐT). `projects` không có trong response lịch hẹn. */
+  customer: { id: string; fullName: string; phoneMasked: string | null; status: StatusRef; projects?: Ref[] };
   type: AppointmentType;
   title: string;
   startAt: string;
@@ -360,7 +349,7 @@ export interface DailyTask {
   dueAt: string;
   group: DailyTaskGroup;
   /** `projects` = dự án khách quan tâm (mọi loại việc). */
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRef; projects: Ref[] };
+  customer: { id: string; fullName: string; phoneMasked: string | null; status: StatusRef; projects: Ref[] };
   /** Dự án của lịch hẹn: chỉ có khi việc là APPOINTMENT và lịch có dự án; ngược lại null. */
   project: Ref | null;
   title: string;
@@ -403,20 +392,17 @@ export interface NationalIdViewEntry {
   purpose: string | null;
 }
 
-export interface CareTeamRequestView {
+/** Người có thể được mời vào nhóm chăm sóc (`GET /crm/care-team-invitees`): chỉ tên + tên nhóm, không email/SĐT/vai trò/id nhóm (FR-14). */
+export interface CareTeamInvitee {
   id: string;
-  customer: { id: string; fullName: string } | null;
-  requester: UserRef;
-  message: string;
-  status: CareTeamRequestStatus;
-  createdAt: string;
-  resolvedBy: UserRef | null;
-  resolvedAt: string | null;
-  resolutionNote: string | null;
+  displayName: string;
+  teamNames: string[];
 }
 
-export interface AssignableUser extends UserRef {
-  fullName: string;
-  role: UserRole;
-  team: Ref | null;
+/** Tham số `GET /crm/care-team-invitees`: có `customerId` = mời vào khách đó; bỏ trống = thao tác hàng loạt (chỉ Quản trị/Quản lý). */
+export interface CareTeamInviteeQuery {
+  customerId?: string;
+  q?: string;
+  page?: number;
+  limit?: number;
 }

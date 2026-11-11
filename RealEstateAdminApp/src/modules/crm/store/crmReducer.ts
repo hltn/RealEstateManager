@@ -16,6 +16,7 @@ import {
   isCareTeamValid,
 } from '@crm/lib/customerRules';
 import { pruneStaleTagFilters, replaceTagInFilter } from '@crm/lib/customerFilters';
+import { getNextCustomerCode } from '@crm/lib/customerCode';
 import { normalizePhone } from '@crm/lib/phone';
 import type { ActiveModal, CustomerFilters } from '@crm/types/app';
 import type {
@@ -180,13 +181,6 @@ const createChangeLog = (
   };
 };
 
-const isPhoneTaken = (customers: readonly Customer[], phone: string, excludeCustomerId?: string): boolean => {
-  const normalized = normalizePhone(phone);
-  return customers.some(
-    (customer) => customer.id !== excludeCustomerId && (normalizePhone(customer.phone) ?? customer.phone) === (normalized ?? phone),
-  );
-};
-
 /** Lịch hẹn sắp tới gần nhất (SCHEDULED, chưa qua) của khách — `nextAppointmentAt` (04 §3.2; hiện ở thẻ khách trên điện thoại). */
 const getNextAppointmentAt = (appointments: readonly Appointment[], customerId: string, now: string): string | null =>
   appointments
@@ -237,7 +231,6 @@ const applyCustomerUpdate = (
 ): CrmState => {
   const before = state.customers.find((customer) => customer.id === customerId);
   if (!before) return state;
-  if (patch.phone !== undefined && isPhoneTaken(state.customers, patch.phone, customerId)) return state;
   if (patch.careTeam !== undefined) {
     if (!isCareTeamValid(patch.careTeam)) return state;
     // Chỉ kiểm người MỚI vào nhóm (người cũ đã khoá vẫn được giữ cho tới khi bị gỡ).
@@ -317,11 +310,11 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
 
     case 'customers/create': {
       const { customer, meta } = action;
-      // QT4: SĐT duy nhất toàn hệ thống; QT3: phải có tên + SĐT; QT7: nhóm chăm sóc hợp lệ.
-      if (!customer.fullName.trim() || !normalizePhone(customer.phone)) return state;
-      if (isPhoneTaken(state.customers, customer.phone) || state.customers.some((item) => item.id === customer.id)) return state;
+      // v1.0.5: chỉ bắt buộc họ tên; SĐT tùy chọn (null = chưa có) và được TRÙNG (FR-02, FR-03). Có SĐT thì phải hợp lệ. QT7: nhóm chăm sóc hợp lệ.
+      if (!customer.fullName.trim() || (customer.phone !== null && !normalizePhone(customer.phone))) return state;
+      if (state.customers.some((item) => item.id === customer.id)) return state;
       if (!isCareTeamValid(customer.careTeam) || findNonAssignableUserIds(state.users, customer.careTeam.map((member) => member.userId)).length > 0) return state;
-      const created = withDerivedFields({ ...customer, lastUpdatedAt: meta.now, lastUpdatedBy: meta.actorId, version: 1 });
+      const created = withDerivedFields({ ...customer, customerCode: customer.customerCode ?? getNextCustomerCode(state.customers), lastUpdatedAt: meta.now, lastUpdatedBy: meta.actorId, version: 1 });
       return {
         ...state,
         customers: [created, ...state.customers],

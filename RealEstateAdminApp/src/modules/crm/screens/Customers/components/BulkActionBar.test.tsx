@@ -29,7 +29,7 @@ vi.mock('@crm/api', async () => {
     ...actual,
     useCrmApi: () => ({ bulkOperation }),
     useCatalogs: () => ({ catalogs, users }),
-    useAssignableUsers: () => ({ data: users.map((user) => ({ ...user, team: null })) }),
+    useCareTeamInvitees: () => ({ data: { data: users.map((user) => ({ id: user.id, displayName: user.displayName, teamNames: [] })), meta: { total: users.length, page: 1, limit: 20, totalPages: 1 } } }),
     useCrmActor: () => actorRef.current,
   };
 });
@@ -90,17 +90,17 @@ describe('BulkActionBar gọi API hàng loạt', () => {
     await waitFor(() => expect(bulkOperation).toHaveBeenCalledTimes(1));
   });
 
-  it('có khách lỗi (ngoài phạm vi/chưa có phụ trách chính): giữ lựa chọn để người dùng xử lý, không tự bỏ chọn', async () => {
+  it('có khách lỗi (ngoài phạm vi/chưa có người phụ trách chính): giữ lựa chọn để người dùng xử lý, không tự bỏ chọn', async () => {
     bulkOperation.mockResolvedValue({ ok: true, data: { succeeded: ['c-1'], failed: [{ customerId: 'c-2', errorCode: 'PRIMARY_REQUIRED' }] } });
     const { onClear } = setup();
     fireEvent.change(screen.getByLabelText('Hành động hàng loạt'), { target: { value: 'ASSIGN' } });
     fireEvent.change(screen.getByLabelText('Giá trị áp dụng'), { target: { value: 'u-1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
-    await waitFor(() => expect(bulkOperation).toHaveBeenCalledWith({ type: 'ASSIGN', customerIds: ['c-1', 'c-2'], memberIds: ['u-1'], primaryUserId: undefined }));
+    await waitFor(() => expect(bulkOperation).toHaveBeenCalledWith({ type: 'ASSIGN', customerIds: ['c-1', 'c-2'], memberIds: ['u-1'] }));
     expect(onClear).not.toHaveBeenCalled();
   });
 
-  it('Quản trị chỉ thấy các người được phép gán (từ assignable-users), không có thao tác xuất khi tắt cờ mock', () => {
+  it('Quản trị chỉ thấy các người được phép gán (từ care-team-invitees), không có thao tác xuất khi tắt cờ mock', () => {
     setup();
     fireEvent.change(screen.getByLabelText('Hành động hàng loạt'), { target: { value: 'ASSIGN' } });
     const options = Array.from(screen.getByLabelText('Giá trị áp dụng').querySelectorAll('option')).map((option) => option.textContent);

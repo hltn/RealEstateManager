@@ -57,7 +57,7 @@ describe('định dạng số liệu', () => {
     expect(segments.reduce((sum, segment) => sum + segment.count, 0)).toBe(getDashboardSummary(state, actor).totalCustomers);
     expect(segments.reduce((sum, segment) => sum + segment.percent, 0)).toBeGreaterThan(99);
     expect(segments.reduce((sum, segment) => sum + segment.percent, 0)).toBeLessThanOrEqual(100.2);
-    expect(toBreakdownRows(getDashboardBreakdown(state, actor, 'source')).reduce((sum, row) => sum + row.count, 0)).toBe(11);
+    expect(toBreakdownRows(getDashboardBreakdown(state, actor, 'source')).reduce((sum, row) => sum + row.count, 0)).toBe(getDashboardSummary(state, actor).totalCustomers);
   });
 
   it('báo cáo 7 ngày: ranh giới múi giờ VN — 16:59:59.999Z vẫn là ngày hôm trước, 17:00:00Z là ngày kế', () => {

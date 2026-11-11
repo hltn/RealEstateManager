@@ -35,7 +35,7 @@ const FORM_ID = 'crm-quick-note-form';
 const TITLE_ID = 'crm-quick-note-title';
 
 interface QuickNoteModalProps {
-  customer: { id: string; fullName: string; phoneMasked: string };
+  customer: { id: string; fullName: string; phoneMasked: string | null };
   /** 'dialog' = modal giữa màn (web), 'sheet' = trượt từ đáy (app). */
   variant: QuickNoteVariant;
   onClose: () => void;

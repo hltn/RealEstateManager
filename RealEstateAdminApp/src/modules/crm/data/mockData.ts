@@ -5,6 +5,7 @@
  * (4 giá trị đúng tên), phân công theo userId với đúng 1 phụ trách chính, SĐT E.164, mọi thời điểm là ISO có năm.
  * Thời điểm được dựng TƯƠNG ĐỐI theo ngày tạo dữ liệu (`now`) để màn "Việc hôm nay" luôn có việc quá hạn / hôm nay / sắp tới.
  */
+import { formatCustomerCode } from '@crm/lib/customerCode';
 import { addDaysToDateKey, getVnTodayKey, vnDateTimeToIso } from '@crm/lib/dateTime';
 import {
   buildCareTeam,
@@ -23,7 +24,8 @@ type PersonaSeed = Record<string, string | string[] | boolean | [number, number]
 interface CustomerSeed {
   id: string;
   fullName: string;
-  phone: string;
+  /** `null` = khách chưa có SĐT (FR-02). */
+  phone: string | null;
   email?: string;
   statusId: string;
   sourceId?: string;
@@ -63,7 +65,7 @@ const toPersonaValues = (seed: PersonaSeed, updatedBy: string, updatedAt: string
     }
   });
 
-const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
+const buildCustomer = (seed: CustomerSeed, at: AtFn, customerCode: string): Customer => {
   const createdAt = at(-seed.createdDaysAgo, '09:00');
   const careTeam = buildCareTeam(seed.primaryId, seed.memberIds ?? [], seed.primaryId, createdAt);
   const criteria = createEmptyCriteria();
@@ -76,6 +78,7 @@ const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
   const persona = toPersonaValues(seed.persona ?? {}, seed.primaryId, createdAt);
   return {
     id: seed.id,
+    customerCode,
    
     fullName: seed.fullName,
     phone: seed.phone,
@@ -236,9 +239,18 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
       statusId: 'NOT_CONTACTED', sourceId: 'WEBSITE', projectIds: ['ECOPARK'], areaId: 'HA_NOI',
       primaryId: 'hanh', createdDaysAgo: 2,
     },
+    // v1.0.5: khách chưa có SĐT (FR-02) và khách TRÙNG SĐT với CUST-001 (FR-03 cho phép trùng).
+    {
+      id: 'CUST-012', fullName: 'Ngô Thu Hà', phone: null,
+      statusId: 'NOT_CONTACTED', sourceId: 'WEBSITE', primaryId: 'hanh', createdDaysAgo: 1,
+    },
+    {
+      id: 'CUST-013', fullName: 'Nguyễn Văn An (Hà Nội)', phone: '+84912345678',
+      statusId: 'NOT_CONTACTED', sourceId: 'FACEBOOK_ADS', areaId: 'HA_NOI', primaryId: 'thao', createdDaysAgo: 1,
+    },
   ];
 
-  const customers = seeds.map((seed) => buildCustomer(seed, at));
+  const customers = seeds.map((seed, index) => buildCustomer(seed, at, formatCustomerCode(index + 1)));
   const nationalIds = Object.fromEntries(seeds.filter((seed) => seed.nationalId).map((seed) => [seed.id, seed.nationalId as string]));
 
   const log = (

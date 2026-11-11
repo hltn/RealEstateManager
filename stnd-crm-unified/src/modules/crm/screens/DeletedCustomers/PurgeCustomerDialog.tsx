@@ -21,7 +21,7 @@ const LOST_DATA = ['Nhật ký chăm sóc', 'Ảnh và tệp đính kèm (xóa c
 
 interface PurgeCustomerDialogProps {
   /** Khách đang xóa vĩnh viễn; `null` = đóng. */
-  customer: { id: string; fullName: string; phoneMasked: string } | null;
+  customer: { id: string; fullName: string; phoneMasked: string | null } | null;
   isSubmitting: boolean;
   error: string | null;
   onConfirm: () => void;

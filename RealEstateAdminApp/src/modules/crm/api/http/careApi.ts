@@ -1,13 +1,15 @@
 /**
- * Gọi API chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật ký + ảnh đính kèm, thao tác hàng loạt (05 §2.3, §2.5, §2.6).
+ * Gọi API chăm sóc: nhóm chăm sóc, người được mời, nhật ký + ảnh đính kèm, thao tác hàng loạt (05 §2.3, §2.5, §2.6).
  */
-import type { BulkOperation, CareLogView, CareTeamRequestView, CreateCareLogInput, Paginated } from '../types';
-import type { CareLogDto, CareTeamDto, CareTeamRequestDto } from './dto';
+import type { BulkOperation, CareLogView, CareTeamInvitee, CareTeamInviteeQuery, CreateCareLogInput, Paginated } from '../types';
+import type { CareLogDto, CareTeamDto, CareTeamInviteeDto } from './dto';
 import apiAxios from '../../../../api/axios';
 import { refParam, requireServerCatalogId } from './catalogIds';
 import { crmHttp } from './crmHttp';
 import { CrmApiException, normalizeApiError } from './crmErrors';
-import { toCareLog, toCareTeamRequest } from './customerMappers';
+import { toCareLog } from './customerMappers';
+
+const INVITEE_PAGE_LIMIT = 20;
 
 const customerPath = (customerId: string): string => `/crm/customers/${encodeURIComponent(customerId)}`;
 
@@ -16,23 +18,23 @@ const customerPath = (customerId: string): string => `/crm/customers/${encodeURI
 export const postCareTeamMembers = (customerId: string, body: { userIds: string[]; primaryUserId?: string }): Promise<CareTeamDto> =>
   crmHttp.post<CareTeamDto>(`${customerPath(customerId)}/care-team/members`, body);
 
-export const deleteCareTeamMember = (customerId: string, userId: string, newPrimaryUserId?: string): Promise<CareTeamDto> =>
-  crmHttp.raw<{ data: CareTeamDto }>('delete', `${customerPath(customerId)}/care-team/members/${encodeURIComponent(userId)}`, undefined, { params: { newPrimaryUserId } }).then((response) => response.data);
+/** Chỉ gỡ MEMBER; gỡ PRIMARY -> 409 `PRIMARY_LOCKED` (v1.0.5 bỏ `newPrimaryUserId`). */
+export const deleteCareTeamMember = (customerId: string, userId: string): Promise<CareTeamDto> =>
+  crmHttp.raw<{ data: CareTeamDto }>('delete', `${customerPath(customerId)}/care-team/members/${encodeURIComponent(userId)}`).then((response) => response.data);
 
-export const putPrimary = (customerId: string, userId: string): Promise<CareTeamDto> => crmHttp.put<CareTeamDto>(`${customerPath(customerId)}/care-team/primary`, { userId });
+// --- Người được mời -----------------------------------------------------------------------------------------------------
 
-// --- Đề nghị tham gia ---------------------------------------------------------------------------------------------------
-
-export const postCareTeamRequest = (body: { customerRef: string; message?: string }): Promise<{ id: string; status: 'PENDING'; createdAt: string }> =>
-  crmHttp.post('/crm/care-team-requests', body);
-
-export const fetchCareTeamRequests = async (box: 'mine' | 'to-review', signal?: AbortSignal): Promise<{ items: CareTeamRequestView[]; customerIds: Map<string, string> }> => {
-  const result = await crmHttp.list<CareTeamRequestDto>('/crm/care-team-requests', { params: { box, status: 'PENDING', limit: 100 }, signal });
-  return { items: result.data.map(toCareTeamRequest), customerIds: new Map(result.data.map((item) => [item.id, item.customer.id])) };
+/**
+ * `GET /crm/care-team-invitees` (FR-14): có `customerId` = mời vào khách đó (loại người đã trong nhóm); không có = thao tác hàng loạt.
+ * Trả tên + tên nhóm, phân trang; không email/SĐT/vai trò.
+ */
+export const fetchCareTeamInvitees = async (query: CareTeamInviteeQuery, signal?: AbortSignal): Promise<Paginated<CareTeamInvitee>> => {
+  const result = await crmHttp.list<CareTeamInviteeDto>('/crm/care-team-invitees', {
+    params: { customerId: query.customerId, q: query.q?.trim() || undefined, page: query.page ?? 1, limit: query.limit ?? INVITEE_PAGE_LIMIT },
+    signal,
+  });
+  return { data: result.data.map((item) => ({ id: item.id, displayName: item.displayName, teamNames: item.teamNames ?? [] })), meta: result.meta };
 };
-
-export const patchCareTeamRequest = (requestId: string, body: { status: 'APPROVED' | 'REJECTED' | 'CANCELED'; resolutionNote?: string }): Promise<{ id: string; status: string }> =>
-  crmHttp.patch(`/crm/care-team-requests/${encodeURIComponent(requestId)}`, body);
 
 // --- Nhật ký ------------------------------------------------------------------------------------------------------------
 
@@ -117,7 +119,7 @@ export const postBulkOperation = (operation: BulkOperation): Promise<BulkResult>
     operation.type === 'CHANGE_STATUS'
       ? refParam('statusCode', 'statusId', operation.statusId)
       : operation.type === 'ASSIGN'
-        ? { memberIds: operation.memberIds, ...(operation.primaryUserId ? { primaryUserId: operation.primaryUserId } : {}) }
+        ? { memberIds: operation.memberIds }
         : operation.type === 'DELETE'
           ? { reason: operation.reason }
           : { tagIds: operation.tagIds };

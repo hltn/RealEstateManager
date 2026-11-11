@@ -9,6 +9,7 @@ import { CustomerTableRow } from './CustomerTableRow';
 
 const customer = (overrides: Partial<CustomerListItem> = {}): CustomerListItem => ({
   id: 'c1',
+  customerCode: 'KH-000001',
   fullName: 'Nguyễn Văn An',
   phoneMasked: '0912 ••• 678',
   purchasePurposes: [],

@@ -23,7 +23,7 @@ import type {
 } from '@crm/types/crm';
 import { rolesOf } from '../../../../utils/userRoles';
 import { rememberCatalogId, toUiCatalogId, type CatalogKind } from './catalogIds';
-import type { AreaDto, AssignableUserDto, CatalogRefDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, StatusRefDto, TagDto, TeamDto, TeamMemberDto, UserDto } from './dto';
+import type { AreaDto, CustomerAssigneeDto, CatalogRefDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, StatusRefDto, TagDto, TeamDto, TeamMemberDto, UserDto } from './dto';
 
 const STATUS_TONES: readonly StatusTone[] = ['gray', 'success', 'warning', 'error', 'brand'];
 
@@ -149,8 +149,8 @@ export const toPersonaField = (dto: PersonaFieldDto): PersonaFieldDefinition => 
 /** Role CRM của UI: chỉ ADMIN/MANAGER/STAFF; EDITOR (ngang STAFF, không có quyền CRM) và giá trị lạ -> STAFF. */
 export const toCrmRole = (role: string | undefined): UserRole => (role === 'ADMIN' || role === 'MANAGER' ? role : 'STAFF');
 
-/** Người có thể phân chăm sóc / người trong bộ lọc phụ trách (assignable-users) -> `CrmUser`. */
-export const assignableToUser = (dto: AssignableUserDto): CrmUser => ({
+/** Người trong bộ lọc phụ trách (`customer-assignees`) -> `CrmUser`. */
+export const assigneeToUser = (dto: CustomerAssigneeDto): CrmUser => ({
   id: dto.id,
   fullName: dto.displayName,
   displayName: dto.displayName,
@@ -159,6 +159,7 @@ export const assignableToUser = (dto: AssignableUserDto): CrmUser => ({
   teamId: dto.team?.id ?? null,
   teamName: dto.team?.label,
   isActive: true,
+  isLocked: dto.isLocked ?? false,
 });
 
 /** Tài khoản từ `/users` (chỉ Quản trị) -> `AdminUser` (EDITOR ngang STAFF nên `role` EDITOR đổi thành STAFF; `roles` giữ nguyên EDITOR). */

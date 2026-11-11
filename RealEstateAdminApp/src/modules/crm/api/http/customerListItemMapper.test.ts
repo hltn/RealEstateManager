@@ -7,6 +7,7 @@ import { toCustomerListItem, toDeletedCustomer } from './customerMappers';
 
 const listDto = (overrides: Partial<CustomerListItemDto> = {}): CustomerListItemDto => ({
   id: 'c1',
+  customerCode: 'KH-000001',
   fullName: 'Nguyễn Văn An',
   phoneMasked: '0912 ••• 678',
   status: { id: 's1', code: 'NOT_CONTACTED', label: 'Chưa tiếp cận', listGroup: 'NOT_CONTACTED', color: 'gray' },

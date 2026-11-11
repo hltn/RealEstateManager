@@ -42,20 +42,20 @@ describe('importCustomers', () => {
     const results = validateImportRows(rows, mapping, {
       catalogs: SEED_CATALOGS,
       users: SEED_USERS,
-      isPhoneTaken: (phone) => phone === '+84912345678',
       preset: DSKH,
     });
     expect(results[0]).toMatchObject({ rowNumber: 2, errors: [], data: { phone: '+84900111001', sourceId: 'WEBSITE', interestedProjectIds: ['QTERRA', 'PRIVIA'], areaId: 'TP_HO_CHI_MINH', primaryUserId: 'hanh', statusId: 'NOT_CONTACTED' } });
     expect(results[1].errors).toContain('Thiếu họ tên');
     expect(results[2].errors[0]).toMatch(/SĐT không hợp lệ/);
-    expect(results[3].errors).toContain('SĐT đã có trong hệ thống (trùng)');
-    expect(results[4].errors).toContain('SĐT trùng với dòng 2 trong file');
+    // v1.0.5: trùng SĐT (hệ thống hoặc trong file) cho phép nhập.
+    expect(results[3].errors).toEqual([]);
+    expect(results[4].errors).toEqual([]);
     expect(results[5].errors).toEqual([
       'Nguồn khách chưa có trong danh mục: "TikTok"',
       'Dự án chưa có trong danh mục: "The Rivus"',
       'Nhân viên chưa có trong hệ thống: "Người Lạ"',
     ]);
-    expect(results.filter((result) => result.data).length).toBe(1);
+    expect(results.filter((result) => result.data).length).toBe(3);
   });
 
   it('khu vực khớp 1 trong 34 tỉnh không phân biệt dấu/hoa thường; quận/huyện (không phải tỉnh) -> để trống khu vực, vẫn hợp lệ', () => {
@@ -64,7 +64,7 @@ describe('importCustomers', () => {
       ['1', 'An', '0900 111 001', '', '', 'ha NOI', '', ''],
       ['2', 'Bình', '0900 111 002', '', '', 'Quận 7, TP.HCM', '', ''],
     ];
-    const [byProvince, byDistrict] = validateImportRows(rows, mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
+    const [byProvince, byDistrict] = validateImportRows(rows, mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, preset: DSKH });
     expect(byProvince.data?.areaId).toBe('HA_NOI');
     expect(byDistrict.errors).toEqual([]);
     expect(byDistrict.data?.areaId).toBeNull();
@@ -81,14 +81,14 @@ describe('importCustomers', () => {
     ['dac lac', 'DAK_LAK'],
   ])('khu vực "%s" khớp đúng tỉnh trong danh mục', (text, expectedId) => {
     const mapping = autoMapColumns(headers, DSKH);
-    const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', text, '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
+    const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', text, '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, preset: DSKH });
     expect(result.errors).toEqual([]);
     expect(result.data?.areaId).toBe(expectedId);
   });
 
   it('khu vực không có trong 34 tỉnh (vd Bình Dương đã sáp nhập) vẫn nhập khách, để trống khu vực + cảnh báo', () => {
     const mapping = autoMapColumns(headers, DSKH);
-    const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', 'Bình Dương', '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH });
+    const [result] = validateImportRows([['1', 'An', '0900 111 001', '', '', 'Bình Dương', '', '']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, preset: DSKH });
     expect(result.errors).toEqual([]);
     expect(result.data).toMatchObject({ fullName: 'An', areaId: null });
     expect(result.warnings).toEqual(['Khu vực không khớp 34 tỉnh: "Bình Dương" — để trống']);
@@ -96,7 +96,7 @@ describe('importCustomers', () => {
 
   it('preset DSKH_DROP gán tình trạng mặc định "Bỏ" khi file không có cột tình trạng', () => {
     const mapping = autoMapColumns(['Họ tên', 'SĐT'], DROP);
-    const [result] = validateImportRows([['An', '0900111222']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DROP });
+    const [result] = validateImportRows([['An', '0900111222']], mapping, { catalogs: SEED_CATALOGS, users: SEED_USERS, preset: DROP });
     expect(result.data?.statusId).toBe('DROPPED');
   });
 });
@@ -104,7 +104,7 @@ describe('importCustomers', () => {
 describe('C4 / N3 import: giới hạn, mục đã ẩn, nhân viên không hợp lệ', () => {
   const headers = ['Họ tên', 'SĐT', 'Nguồn', 'Dự án', 'Khu vực', 'Tình trạng', 'NV chăm sóc'];
   const mapping = autoMapColumns(headers, DSKH);
-  const base = { catalogs: SEED_CATALOGS, users: SEED_USERS, isPhoneTaken: () => false, preset: DSKH };
+  const base = { catalogs: SEED_CATALOGS, users: SEED_USERS, preset: DSKH };
   const run = (row: string[], overrides: Partial<typeof base> = {}) => validateImportRows([row], mapping, { ...base, ...overrides })[0];
 
   it('checkImportLimits: quá 5 MB hoặc quá 5.000 dòng bị từ chối', () => {

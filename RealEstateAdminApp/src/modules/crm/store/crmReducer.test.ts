@@ -72,10 +72,24 @@ describe('crmReducer — tạo khách (QT3, QT4)', () => {
     expect(next.changeLogs[0].action).toBe('CUSTOMER_CREATED');
   });
 
-  it('chặn SĐT trùng (so sánh sau chuẩn hoá) và thiếu tên', () => {
+  it('v1.0.5: cho phép SĐT TRÙNG khách khác (FR-03) và khách chưa có SĐT (phone null, FR-02); chặn thiếu tên và SĐT sai định dạng', () => {
     const state = createTestState();
-    expect(crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-2', phone: '0912 345 678' }), meta: meta() })).toBe(state);
+    const existingPhone = state.customers.find((customer) => customer.phone)?.phone ?? '';
+    const duplicated = crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-2', phone: existingPhone }), meta: meta() });
+    expect(duplicated.customers[0]).toMatchObject({ id: 'NEW-2', phone: existingPhone });
+    const noPhone = crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-4', phone: null }), meta: meta() });
+    expect(noPhone.customers[0]).toMatchObject({ id: 'NEW-4', phone: null });
     expect(crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-3', fullName: '  ' }), meta: meta() })).toBe(state);
+    expect(crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-5', phone: 'abc' }), meta: meta() })).toBe(state);
+  });
+
+  it('mã khách: khách mới chưa có mã được cấp mã kế tiếp (lớn nhất + 1); đã có mã thì giữ nguyên', () => {
+    const state = createTestState();
+    const maxSequence = Math.max(...state.customers.map((customer) => Number(customer.customerCode?.slice(3) ?? 0)));
+    const next = crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-6' }), meta: meta() });
+    expect(next.customers[0].customerCode).toBe(`KH-${String(maxSequence + 1).padStart(6, '0')}`);
+    const keep = crmReducer(state, { type: 'customers/create', customer: newCustomer({ id: 'NEW-7', customerCode: 'KH-900000' }), meta: meta() });
+    expect(keep.customers[0].customerCode).toBe('KH-900000');
   });
 });
 

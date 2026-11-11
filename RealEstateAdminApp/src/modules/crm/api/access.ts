@@ -65,12 +65,12 @@ export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer,
   return {
     canEdit: true,
     canManageCareTeam: isAdminOrManager || isPrimary,
-    canChangePrimary: isAdminOrManager,
+    // v1.0.5: PRIMARY bị khóa; chỉ Quản trị/Quản lý được đặt PRIMARY một lần cho khách cũ chưa có nhóm chăm sóc.
+    canSetInitialPrimary: isAdminOrManager && customer.careTeam.length === 0,
     // Khớp backend: Quản trị mọi khách; Nhân viên khi là phụ trách chính (và khách "Bỏ"); Quản lý chỉ khách thuộc NHÓM MÌNH QUẢN LÝ —
     // dữ liệu này không có ở đây nên màn thật dùng `permissions.canDelete` backend trả ở chi tiết khách (tài khoản MANAGER+STAFF tính như Quản lý).
     canDelete: actor.role === 'ADMIN' || (actor.role === 'STAFF' && isPrimary),
     canRevealNationalId: isAdminOrManager || isPrimary,
-    canReviewJoinRequests: isAdminOrManager || isPrimary,
   };
 };
 

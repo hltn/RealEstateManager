@@ -256,8 +256,13 @@ export const computeOccasions = (
 // ---------------------------------------------------------------------------
 
 /** `searchText` (04 §3.2): họ tên bỏ dấu + các biến thể SĐT + email. */
-export const buildSearchText = (input: { fullName: string; phone: string; email?: string }): string =>
-  [normalizeVietnamese(input.fullName), ...getPhoneSearchVariants(input.phone), input.email?.toLowerCase() ?? '']
+export const buildSearchText = (input: { fullName: string; phone: string | null; email?: string; customerCode?: string | null }): string =>
+  [
+    normalizeVietnamese(input.fullName),
+    ...getPhoneSearchVariants(input.phone),
+    input.email?.toLowerCase() ?? '',
+    input.customerCode?.toLowerCase() ?? '',
+  ]
     .filter(Boolean)
     .join(' ');
 

@@ -1,6 +1,6 @@
 # STND CRM Unified — prototype thiết kế trên nền Admin App
 
-Prototype **chỉ để thiết kế** (không backend, không test) cho module **Quản lý khách hàng (CRM)**, dựng **trên nền code thật** của `../RealEstateAdminApp/` (chỉ sao chép, không sửa bản gốc).
+Prototype **chỉ để thiết kế** (không backend; chỉ có unit test vitest cho lớp API/hook/lib, chạy `npm test`) cho module **Quản lý khách hàng (CRM)**, dựng **trên nền code thật** của `../RealEstateAdminApp/` (chỉ sao chép, không sửa bản gốc).
 
 - Khung (sidebar, header, theme, toast, modal, bảng, phân trang…), **toàn bộ module CRM (giao diện + hành vi người dùng)** và các màn Admin là bản sao của Admin App ở commit `6eed7bf` (2026-10-31).
 - **Khác app chính ở đúng một chỗ: dữ liệu.** App chính gọi API thật (`modules/crm/api/http/*` + React Query); prototype giữ nguyên bề mặt `@crm/api` (tên hook/hàm, tham số, kiểu trả về, mã lỗi + thông điệp tiếng Việt) nhưng chạy trên **store mock** trong trình duyệt. Nhờ đó màn chép từ app chính chạy **nguyên văn**.
@@ -18,7 +18,7 @@ npm run lint     # tsc -b (TypeScript, noUnusedLocals/Parameters, erasableSyntax
 npm run build    # tsc -b && vite build -> dist/
 ```
 
-Stack (giống Admin App): Vite 8, React 19, TypeScript 6, Tailwind CSS v4, react-router-dom 7, @tanstack/react-query 5, zustand 5, axios, lucide-react, react-hot-toast, react-helmet-async, flatpickr, react-hook-form + zod. **Không có** vitest/testing-library — prototype không viết test.
+Stack (giống Admin App): Vite 8, React 19, TypeScript 6, Tailwind CSS v4, react-router-dom 7, @tanstack/react-query 5, zustand 5, axios, lucide-react, react-hot-toast, react-helmet-async, flatpickr, react-hook-form + zod. Có vitest + testing-library (jsdom) cho unit test lớp API/hook/lib/storage (`npm test`).
 
 **Giao diện mặc định SÁNG** (`ThemeContext` đọc theme đã lưu ngay trong initializer + script inline ở `index.html` để không nháy); chuyển tối bằng nút mặt trăng ở header (lưu `localStorage["theme"]`).
 

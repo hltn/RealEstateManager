@@ -16,7 +16,8 @@ import type { CustomerListQuery } from './types';
  * SĐT cho cột CSV: số VN dạng hiển thị "0912 345 678"; số nước ngoài dạng "0044…" (tiền tố 00 thay "+") —
  * không bắt đầu bằng ký tự công thức nên không cần tiền tố nháy, Excel hiển thị đúng và nhập lại được (`normalizePhone` nhận 00).
  */
-export const formatPhoneForExport = (phone: string): string => {
+export const formatPhoneForExport = (phone: string | null | undefined): string => {
+  if (!phone) return '';
   const normalized = normalizePhone(phone);
   if (!normalized) return phone.trim();
   return normalized.startsWith('+84') ? formatPhoneDisplay(normalized) : `00${normalized.slice(1)}`;

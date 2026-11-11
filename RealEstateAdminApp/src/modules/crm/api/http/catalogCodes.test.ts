@@ -150,7 +150,7 @@ describe('catalogMappers đọc code (FR-40)', () => {
 
   it('FR-40: khách: nguồn, dự án, khu vực trong danh sách đọc code', () => {
     const dto = {
-      id: 'c1', fullName: 'An', phoneMasked: '', status: { id: OBJECT_ID, code: 'NET', label: 'Net', listGroup: 'NET', color: null },
+      id: 'c1', customerCode: 'KH-000001', fullName: 'An', phoneMasked: '', status: { id: OBJECT_ID, code: 'NET', label: 'Net', listGroup: 'NET', color: null },
       source: { id: OBJECT_ID, code: 'WEBSITE', label: 'Website' },
       projects: [{ id: OBJECT_ID, code: 'QTERRA', label: "Q'Terra" }, { id: OBJECT_ID_2, label: 'Cũ' }],
       area: { id: OBJECT_ID, code: 'HA_NOI', label: 'Hà Nội' },
@@ -194,7 +194,7 @@ describe('request gửi …Code (FR-40)', () => {
 
   it('FR-40: tạo khách gửi statusCode, sourceCode, areaCode, projectCodes (không gửi …Id)', async () => {
     request.mockResolvedValue({ data: { data: { id: 'c1' } } });
-    await postCustomer({ fullName: 'An', phone: '0900000000', statusId: 'INTERESTED', sourceId: 'WEBSITE', areaId: 'HA_NOI', interestedProjectIds: ['QTERRA'] }, { actor: { userId: 'u', role: 'ADMIN' } }).catch(() => undefined);
+    await postCustomer({ fullName: 'An', phone: '0900000000', statusId: 'INTERESTED', sourceId: 'WEBSITE', areaId: 'HA_NOI', interestedProjectIds: ['QTERRA'] }).catch(() => undefined);
     expect(sent().url).toBe('/crm/customers');
     expect(sent().data).toMatchObject({ statusCode: 'INTERESTED', sourceCode: 'WEBSITE', areaCode: 'HA_NOI', projectCodes: ['QTERRA'] });
     for (const key of ['statusId', 'sourceId', 'areaId', 'interestedProjectIds']) expect(sent().data).not.toHaveProperty(key);
@@ -202,14 +202,14 @@ describe('request gửi …Code (FR-40)', () => {
 
   it('FR-40: tạo khách với ObjectId cũ vẫn gửi trường id tương ứng (tương thích ngược)', async () => {
     request.mockResolvedValue({ data: { data: { id: 'c1' } } });
-    await postCustomer({ fullName: 'An', phone: '0900000000', statusId: OBJECT_ID, sourceId: OBJECT_ID, areaId: OBJECT_ID_2, interestedProjectIds: [OBJECT_ID] }, { actor: { userId: 'u', role: 'ADMIN' } }).catch(() => undefined);
+    await postCustomer({ fullName: 'An', phone: '0900000000', statusId: OBJECT_ID, sourceId: OBJECT_ID, areaId: OBJECT_ID_2, interestedProjectIds: [OBJECT_ID] }).catch(() => undefined);
     expect(sent().data).toMatchObject({ statusId: OBJECT_ID, sourceId: OBJECT_ID, areaId: OBJECT_ID_2, interestedProjectIds: [OBJECT_ID] });
     expect(sent().data).not.toHaveProperty('statusCode');
   });
 
   it('FR-40: sửa khách: bỏ nguồn/khu vực gửi null theo khóa Code, bỏ hết dự án gửi projectCodes rỗng', async () => {
     request.mockResolvedValue({ data: { data: { id: 'c1' } } });
-    await patchCustomer('c1', { version: 3, sourceId: null, areaId: null, interestedProjectIds: [] }, { actor: { userId: 'u', role: 'ADMIN' } }).catch(() => undefined);
+    await patchCustomer('c1', { version: 3, sourceId: null, areaId: null, interestedProjectIds: [] }).catch(() => undefined);
     expect(sent().data).toMatchObject({ version: 3, sourceCode: null, areaCode: null, projectCodes: [] });
   });
 
@@ -246,6 +246,26 @@ describe('request gửi …Code (FR-40)', () => {
     request.mockResolvedValue({ data: { data: { succeeded: [], failed: [] } } });
     await postBulkOperation({ type: 'CHANGE_STATUS', customerIds: ['c1'], statusId: 'DROPPED' });
     expect(sent().data).toEqual({ type: 'CHANGE_STATUS', customerIds: ['c1'], payload: { statusCode: 'DROPPED' } });
+  });
+
+  it('v1.0.5: thao tác hàng loạt ASSIGN chỉ gửi memberIds, không có primaryUserId', async () => {
+    request.mockResolvedValue({ data: { data: { succeeded: [], failed: [] } } });
+    await postBulkOperation({ type: 'ASSIGN', customerIds: ['c1'], memberIds: ['u1'] });
+    expect(sent().data).toEqual({ type: 'ASSIGN', customerIds: ['c1'], payload: { memberIds: ['u1'] } });
+  });
+
+  it('v1.0.5: tạo khách không gửi careTeam; SĐT để trống gửi null (khách chưa có SĐT)', async () => {
+    request.mockResolvedValue({ data: { data: { id: 'c1' } } });
+    await postCustomer({ fullName: 'An', phone: '   ', statusId: 'INTERESTED' }).catch(() => undefined);
+    expect(sent().data).toMatchObject({ fullName: 'An', phone: null });
+    expect(sent().data).not.toHaveProperty('careTeam');
+  });
+
+  it('v1.0.5: tạo khách có SĐT giữ nguyên SĐT, vẫn không gửi careTeam', async () => {
+    request.mockResolvedValue({ data: { data: { id: 'c1' } } });
+    await postCustomer({ fullName: 'An', phone: '0900000000', statusId: 'INTERESTED' }).catch(() => undefined);
+    expect(sent().data).toMatchObject({ phone: '0900000000' });
+    expect(sent().data).not.toHaveProperty('careTeam');
   });
 
   it('FR-40: lịch hẹn: tạo gửi projectCode; lọc theo dự án gửi id thật qua bảng tra', async () => {

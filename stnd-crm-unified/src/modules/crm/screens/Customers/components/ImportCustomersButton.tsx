@@ -7,7 +7,7 @@ import { useMemo, useState, type ChangeEvent } from 'react';
 import { CircleAlert, FileUp, Upload } from 'lucide-react';
 import { Modal } from '../../../../../components/ui/modal';
 import { canImportCustomers } from '@crm/api';
-import { useMockActor, useMockCatalogs, useMockCrmApi, useMockPhoneExists } from '@crm/api/mockHooks';
+import { useMockActor, useMockCatalogs, useMockCrmApi } from '@crm/api/mockHooks';
 import { parseCsv } from '@crm/lib/csv';
 import { autoMapColumns, checkImportLimits, IMPORT_PRESETS, IMPORT_TARGET_LABELS, IMPORT_TARGETS, validateImportRows, type ImportMapping, type ImportTarget } from '@crm/lib/importCustomers';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, FORM_LABEL_CLASS, SOLID_INPUT_CLASS } from '@crm/lib/uiClasses';
@@ -24,7 +24,6 @@ interface ParsedFile {
 const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
   const api = useMockCrmApi();
   const { catalogs, users } = useMockCatalogs();
-  const isPhoneTaken = useMockPhoneExists();
   const { showToast } = useCrmActions();
   const [presetCode, setPresetCode] = useState(IMPORT_PRESETS[0].code);
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
@@ -34,8 +33,8 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
 
   const results = useMemo(() => {
     if (!parsed || !mapping) return [];
-    return validateImportRows(parsed.rows, mapping, { catalogs, users, isPhoneTaken, preset });
-  }, [parsed, mapping, isPhoneTaken, catalogs, users, preset]);
+    return validateImportRows(parsed.rows, mapping, { catalogs, users, preset });
+  }, [parsed, mapping, catalogs, users, preset]);
   const validCount = results.filter((result) => result.data).length;
   const areaWarningCount = results.filter((result) => result.data && result.warnings.length > 0).length;
 

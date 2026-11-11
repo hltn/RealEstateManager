@@ -155,7 +155,7 @@ export const DeletedCustomersView = ({ variant }: DeletedCustomersViewProps) => 
               <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="[overflow-wrap:anywhere] text-sm font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</p>
-                  <span className="text-theme-sm text-gray-500 dark:text-gray-400">{customer.phoneMasked}</span>
+                  <span className="text-theme-sm text-gray-500 dark:text-gray-400">{customer.phoneMasked ?? 'Chưa có SĐT'}</span>
                   {customer.anonymizedAt && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>Đã ẩn danh hóa</span>}
                   {customer.purgeInProgress && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.warning}`}>Đang xóa dở — bấm Xóa vĩnh viễn để hoàn tất</span>}
                 </div>

@@ -1,10 +1,10 @@
 /**
  * Thân form "Thêm khách hàng mới" dùng chung 2 biến thể (desktop/tablet + mobile) — C1.
- * Chỉ Họ tên + SĐT bắt buộc; danh mục (khu vực, nguồn, dự án, tình trạng, người dùng) đọc từ store (X7).
+ * v1.0.5: chỉ Họ tên bắt buộc (SĐT tuỳ chọn, được trùng); danh mục đọc từ store (X7). Không chọn nhóm chăm sóc: người tạo tự là phụ trách chính (T-23 làm lại form).
  * Bố cục: desktop >= 1280px chia 8/4 cột; hẹp hơn xếp 1 cột.
  */
-import { Building2, CircleCheck, IdCard, Lock, Mail, MapPin, Megaphone, Phone, RefreshCw, Target, TriangleAlert, User, UserCheck, UserRound, Users } from 'lucide-react';
-import { useAssignableUsers, useCatalogs } from '@crm/api';
+import { Building2, IdCard, Lock, Mail, MapPin, Megaphone, Phone, Target, User, UserRound, Users } from 'lucide-react';
+import { useCatalogs } from '@crm/api';
 import { ChipMultiSelect, ChoiceGroup, type ChoiceOption } from '@crm/components/form/ChoiceGroup';
 import { getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
@@ -15,37 +15,10 @@ import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
 import { getAreaSearchTerms } from '@crm/lib/areaMatch';
-import { isValidPhone } from '@crm/lib/phone';
 import { CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
-import { DuplicatePhoneBanner } from './components/DuplicatePhoneBanner';
 import type { CreateCustomerFormApi } from './useCreateCustomerForm';
 
-const REQUIRED_CHIP = <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Bắt buộc: họ tên, SĐT</span>;
-
-const PhoneStatusChip = ({ isDuplicate, isReady }: { isDuplicate: boolean; isReady: boolean }) => {
-  if (isDuplicate) {
-    return (
-      <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.error}`}>
-        <TriangleAlert size={12} aria-hidden="true" />
-        Đã có trên hệ thống
-      </span>
-    );
-  }
-  if (isReady) {
-    return (
-      <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.success}`}>
-        <CircleCheck size={12} aria-hidden="true" />
-        Chưa có, tạo được
-      </span>
-    );
-  }
-  return (
-    <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>
-      <RefreshCw size={12} aria-hidden="true" />
-      Nhập để kiểm tra trùng…
-    </span>
-  );
-};
+const REQUIRED_CHIP = <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Bắt buộc: họ tên</span>;
 
 interface CreateCustomerFormBodyProps {
   form: CreateCustomerFormApi;
@@ -53,20 +26,15 @@ interface CreateCustomerFormBodyProps {
 }
 
 export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBodyProps) => {
-  const { values, errors, phoneLookup, isPrimaryLocked, setField, toggleProject, toggleMember, requestJoin } = form;
-  const { catalogs, users } = useCatalogs();
-  const { data: assignableUsers } = useAssignableUsers();
+  const { values, errors, setField, toggleProject } = form;
+  const { catalogs } = useCatalogs();
   const isDesktop = variant === 'desktop';
-  const isDuplicate = Boolean(phoneLookup?.exists);
   const fieldId = (name: string) => `cc-${variant}-${name}`;
 
   const statusChoices: ChoiceOption<string>[] = catalogs.statuses
     .filter((status) => status.isActive)
     .sort((a, b) => a.order - b.order)
     .map((status) => ({ value: status.id, label: status.label, dotClass: STATUS_TONE_STYLES[status.tone].dotClass }));
-  const primaryOptions = isPrimaryLocked
-    ? users.filter((user) => user.id === values.primaryUserId).map((user) => ({ value: user.id, label: user.fullName }))
-    : assignableUsers.map((user) => ({ value: user.id, label: `${user.fullName}${user.team ? ` — ${user.team.label}` : ''}` }));
 
   const basicInfoSection = (
     <SectionCard icon={UserRound} title="Thông tin cơ bản" description="Định danh và liên lạc" aside={REQUIRED_CHIP}>
@@ -87,10 +55,8 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
       <FormField
         inputId={fieldId('phone')}
         label="Số điện thoại"
-        isRequired
         error={errors.phone}
-        hint="Di động 10 số, máy bàn 02x, hoặc số nước ngoài dạng +..."
-        labelAddon={<PhoneStatusChip isDuplicate={isDuplicate} isReady={!isDuplicate && isValidPhone(values.phone)} />}
+        hint="Không bắt buộc. Di động 10 số, máy bàn 02x, hoặc số nước ngoài dạng +... (được trùng với khách khác)"
       >
         <TextInput
           id={fieldId('phone')}
@@ -101,7 +67,7 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
           value={values.phone}
           onChange={(event) => setField('phone', event.target.value)}
           placeholder="0912 345 678"
-          hasError={Boolean(errors.phone) || isDuplicate}
+          hasError={Boolean(errors.phone)}
           className="font-mono"
           {...getFieldA11yProps(getErrorId(fieldId('phone')), errors.phone)}
         />
@@ -182,39 +148,16 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
   );
 
   const staffSection = (
-    <SectionCard icon={Users} title="Nhóm chăm sóc" description="Người phụ trách chính và người cùng chăm sóc">
-      <FormField
-        inputId={fieldId('primary')}
-        label="Người phụ trách chính"
-        error={errors.primaryUserId}
-        hint={isPrimaryLocked ? 'Nhân viên tạo khách thì tự là người phụ trách chính.' : 'Để "Chưa phân" nếu chưa giao cho ai.'}
-      >
-        <SelectInput
-          id={fieldId('primary')}
-          icon={UserCheck}
-          disabled={isPrimaryLocked}
-          emptyLabel={isPrimaryLocked ? undefined : 'Chưa phân'}
-          options={primaryOptions}
-          value={values.primaryUserId}
-          onChange={(event) => setField('primaryUserId', event.target.value)}
-          hasError={Boolean(errors.primaryUserId)}
-        />
-      </FormField>
-      <ChipMultiSelect
-        legend="Người cùng chăm sóc (tuỳ chọn)"
-        options={assignableUsers.filter((user) => user.id !== values.primaryUserId).map((user) => ({ value: user.id, label: user.displayName }))}
-        selected={values.memberIds}
-        onToggle={toggleMember}
-      />
+    <SectionCard icon={Users} title="Nhóm chăm sóc" description="Người tạo là phụ trách chính">
+      <p className="text-theme-sm text-gray-600 dark:text-gray-300">
+        Bạn sẽ là người phụ trách chính của khách này. Thêm người cùng chăm sóc sau khi tạo, ở hồ sơ khách.
+      </p>
     </SectionCard>
   );
-
-  const banner = <DuplicatePhoneBanner lookup={phoneLookup} onRequestJoin={requestJoin} variant={variant} />;
 
   if (!isDesktop) {
     return (
       <div className="space-y-4">
-        {banner}
         {basicInfoSection}
         {demandSection}
         {staffSection}
@@ -225,7 +168,6 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="min-w-0 space-y-6 xl:col-span-8">
-        {banner}
         {basicInfoSection}
         {demandSection}
       </div>

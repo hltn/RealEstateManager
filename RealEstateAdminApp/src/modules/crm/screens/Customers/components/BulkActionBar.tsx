@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { CheckSquare, X } from 'lucide-react';
-import { canBulkAssign, canExportCustomers, useAssignableUsers, useCatalogs, useCrmActor, useCrmApi, type BulkResult, type CustomerListItem } from '@crm/api';
+import { canBulkAssign, canExportCustomers, useCareTeamInvitees, useCatalogs, useCrmActor, useCrmApi, type BulkResult, type CustomerListItem } from '@crm/api';
 import { useCustomerExport } from '@crm/api/mockHooks';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { DeleteReasonDialog } from '@crm/components/DeleteReasonDialog';
@@ -47,11 +47,9 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const actor = useCrmActor();
   const exportCustomers = useCustomerExport();
   const { catalogs } = useCatalogs();
-  const { data: assignableUsers } = useAssignableUsers();
   const { showToast } = useCrmActions();
   const [selectedKind, setSelectedKind] = useState<BulkKind>('');
   const [value, setValue] = useState('');
-  const [primaryUserId, setPrimaryUserId] = useState('');
   const [isConfirmingDrop, setIsConfirmingDrop] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -59,6 +57,9 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const canDelete = canOfferBulkDelete(actor, selectedIds.map(getCustomer));
   // Đổi lựa chọn khách làm mất quyền xóa thì hành động Xóa tự về "chưa chọn" (không để select trỏ vào option đã biến mất).
   const kind: BulkKind = selectedKind === 'DELETE' && !canDelete ? '' : selectedKind;
+  // Chỉ tải danh sách người mời khi chọn hành động "Thêm người chăm sóc" (không có customerId = hàng loạt, Quản trị/Quản lý).
+  // TODO(T-24): thêm ô tìm + phân trang cho danh sách người mời.
+  const { data: invitees } = useCareTeamInvitees(undefined, '', 1, kind === 'ASSIGN');
   // Option Xóa biến mất thì xóa luôn lựa chọn đã lưu: không để "Xóa" tự bật lại im lặng khi tập khách chọn đủ điều kiện trở lại.
   useEffect(() => {
     if (selectedKind === 'DELETE' && !canDelete) setSelectedKind('');
@@ -71,7 +72,7 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
     kind === 'CHANGE_STATUS'
       ? catalogs.statuses.filter((status) => status.isActive).map((status) => ({ value: status.id, label: status.label }))
       : kind === 'ASSIGN'
-        ? assignableUsers.map((user) => ({ value: user.id, label: user.fullName }))
+        ? invitees.data.map((user) => ({ value: user.id, label: user.displayName }))
         : [];
   // Gắn thẻ: gom theo nhóm (Sở thích, Nghề nghiệp, Khác) bằng `<optgroup>` (FR-48).
   const tagGroups = kind === 'ADD_TAGS' ? groupTagsByCategory(catalogs.tags.filter((tag) => tag.isActive)) : [];
@@ -79,7 +80,6 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const finish = () => {
     setSelectedKind('');
     setValue('');
-    setPrimaryUserId('');
     onClear();
   };
 
@@ -104,7 +104,7 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
         ? await api.bulkOperation({ type: 'CHANGE_STATUS', customerIds: selectedIds, statusId: value })
         : kind === 'ADD_TAGS'
           ? await api.bulkOperation({ type: 'ADD_TAGS', customerIds: selectedIds, tagIds: [value] })
-          : await api.bulkOperation({ type: 'ASSIGN', customerIds: selectedIds, memberIds: [value], primaryUserId: primaryUserId || undefined });
+          : await api.bulkOperation({ type: 'ASSIGN', customerIds: selectedIds, memberIds: [value] });
     setIsRunning(false);
     if (!result.ok) {
       showToast({ type: 'error', title: result.error.message });
@@ -219,16 +219,6 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
                 </option>
               ))}
             </optgroup>
-          ))}
-        </select>
-      )}
-      {kind === 'ASSIGN' && (
-        <select value={primaryUserId} onChange={(event) => setPrimaryUserId(event.target.value)} aria-label="Phụ trách chính cho khách chưa có ai" className={`${FILTER_INPUT_CLASS} dark:[color-scheme:dark]`}>
-          <option value="">Phụ trách chính (nếu khách chưa có)</option>
-          {assignableUsers.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.fullName}
-            </option>
           ))}
         </select>
       )}

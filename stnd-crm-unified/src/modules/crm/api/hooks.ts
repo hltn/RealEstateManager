@@ -5,11 +5,10 @@
  * (xem `crmWriteApi.ts`) và các hook quản trị trả lỗi 403 khi người dùng không đủ quyền (hiện ở nhánh lỗi của màn như app chính).
  */
 import type { QueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PERSONA_FIELDS } from '@crm/data/personaFields';
 import { addDaysToDateKey, getVnTodayKey } from '@crm/lib/dateTime';
 import { buildAssigneeFilterOptions, type AssigneeFilterOption } from '@crm/lib/assigneeFilter';
-import { isValidPhone } from '@crm/lib/phone';
 import { listProjectFilterOptions, type ProjectFilterOption } from '@crm/lib/projectRules';
 import { useCrmRawState, useCrmStore } from '@crm/store/hooks';
 import type { CrmState } from '@crm/store/crmReducer';
@@ -28,24 +27,22 @@ import {
   getCustomerPersona,
   getListCounts,
   listAppointments,
-  listAssignableUsers,
   listCareLogs,
-  listCareTeamRequests,
+  listCareTeamInvitees,
+  listCustomerAssignees,
   listCustomers,
   listDeletedCustomers,
   listHistories,
   listNationalIdViews,
   listTeamMembers,
-  lookupPhone,
 } from './queries';
 import type {
   ApiError,
   ApiResult,
   AppointmentListQuery,
   AppointmentView,
-  AssignableUser,
   CareLogView,
-  CareTeamRequestView,
+  CareTeamInvitee,
   CustomerDetail,
   CustomerListItem,
   CustomerListQuery,
@@ -58,7 +55,6 @@ import type {
   ListCounts,
   NationalIdViewEntry,
   Paginated,
-  PhoneLookupResult,
 } from './types';
 
 export interface QueryState<T> {
@@ -113,18 +109,6 @@ export const useCrmActor = (): CrmActor => {
 
 const EMPTY_CATALOGS: CrmCatalogs = { statuses: [], leadSources: [], areas: [], projects: [], tags: [], contactResults: [] };
 
-/** Người phân chăm sóc được -> `CrmUser` (như `assignableToUser` của app chính: backend không trả họ tên đầy đủ/chức danh ở danh sách này). */
-const assignableToUser = (user: AssignableUser): CrmUser => ({
-  id: user.id,
-  fullName: user.displayName,
-  displayName: user.displayName,
-  role: user.role,
-  jobTitle: '',
-  teamId: user.team?.id ?? null,
-  teamName: user.team?.label,
-  isActive: true,
-});
-
 const toSelfUser = (authUser: NonNullable<SessionUser>): CrmUser => ({
   id: authUser._id,
   fullName: authUser.displayName,
@@ -141,24 +125,19 @@ const listVisibleTeams = (state: CrmState, actor: CrmActor): (Team & { memberCou
     .filter((team) => actor.role === 'ADMIN' || (actor.role === 'MANAGER' && (actor.managedTeamIds.includes(team.id) || actor.teamIds.includes(team.id))))
     .map((team) => ({ ...team, memberCount: countTeamMembers(state.users, team.id) }));
 
-/** Danh mục + người dùng + nhóm + cấu hình chân dung. */
+/**
+ * Danh mục + nhóm + cấu hình chân dung. v1.0.5: KHÔNG còn `users`/`assignable` (backend đã xóa endpoint danh sách người phân công cũ); vai trò thành viên nhóm lấy từ
+ * `careTeam[].user.role` của chi tiết khách, người để mời lấy từ `useCareTeamInvitees`, người cho ô lọc từ `useAssigneeFilterOptions`.
+ */
 export const useCatalogs = () => {
   const state = useCrmRawState();
   const actor = useCrmActor();
-  const authUser = useAuthStore((current) => current.user);
   const canSeeTeams = actor.role === 'ADMIN' || actor.role === 'MANAGER';
 
-  /** Người phân chăm sóc được + bản thân (để tên mình luôn tra được). */
-  const users = useMemo<CrmUser[]>(() => {
-    const base = listAssignableUsers(state, actor).map(assignableToUser);
-    if (!authUser || base.some((user) => user.id === authUser._id)) return base;
-    return [...base, toSelfUser(authUser)];
-  }, [state, actor, authUser]);
   const teams = useMemo(() => (canSeeTeams ? listVisibleTeams(state, actor) : []), [canSeeTeams, state, actor]);
 
   return {
     catalogs: state.catalogs ?? EMPTY_CATALOGS,
-    users,
     teams,
     settings: (canSeeTeams ? state.settings : null) as CrmSettings | null,
     personaFields: PERSONA_FIELDS,
@@ -169,13 +148,13 @@ export const useCatalogs = () => {
   };
 };
 
-/** Ô LỌC "Người phụ trách" (`purpose=filter`): lọc ≠ gán. */
+/** Ô LỌC "Người phụ trách": nguồn `GET /crm/customer-assignees` (v1.0.5), áp cho mọi vai trò, gồm cả tài khoản đã khóa. */
 export const useAssigneeFilterOptions = (): AssigneeFilterOption[] => {
   const state = useCrmRawState();
   const actor = useCrmActor();
   const authUser = useAuthStore((current) => current.user);
   return useMemo(
-    () => buildAssigneeFilterOptions(listAssignableUsers(state, actor, 'filter').map(assignableToUser), authUser ? toSelfUser(authUser) : null),
+    () => buildAssigneeFilterOptions(listCustomerAssignees(state, actor).data, authUser ? toSelfUser(authUser) : null),
     [state, actor, authUser],
   );
 };
@@ -197,13 +176,38 @@ export const useProjectFilterOptions = (): ProjectFilterOption[] => {
   return useMemo(() => listProjectFilterOptions(catalogs.projects, referenced), [catalogs.projects, referenced]);
 };
 
-/** `GET /crm/assignable-users` */
-export const useAssignableUsers = (): QueryState<AssignableUser[]> => {
-  const { users } = useCatalogs();
-  const data = useMemo(
-    () => users.filter((user) => user.role !== 'ADMIN').map((user) => ({ id: user.id, displayName: user.displayName, fullName: user.fullName, role: user.role, team: user.teamId ? { id: user.teamId, label: user.teamName ?? '' } : null })),
-    [users],
+/**
+ * Khóa query của `GET /crm/care-team-invitees` (khớp app chính: `['crm','care-team-invitees', customerId, q, page]`).
+ * [Prototype] Không dùng React Query cho dữ liệu CRM; khóa này để test/tài liệu đối chiếu và để đổi sang React Query khi có backend.
+ */
+export const careTeamInviteesKey = (customerId: string | null | undefined, q: string, page: number) =>
+  ['crm', 'care-team-invitees', customerId ?? null, q, page] as const;
+
+/**
+ * `GET /crm/care-team-invitees` (v1.0.5): người có thể mời vào nhóm chăm sóc (chỉ id, tên hiển thị, tên nhóm). Có `customerId`: Quản trị/
+ * Quản lý/PRIMARY của khách. Không `customerId`: chỉ Quản trị/Quản lý (thao tác hàng loạt).
+ *
+ * [Prototype] `keepPreviousData` của app chính: ở đây dữ liệu tính đồng bộ nên đổi `q`/`page` không bao giờ có khoảng trống; khi `isEnabled`
+ * tắt (hộp thoại đóng) hook GIỮ kết quả cuối để danh sách không nháy rỗng khi mở lại.
+ */
+export const useCareTeamInvitees = (
+  customerId: string | null | undefined,
+  q: string,
+  page: number,
+  isEnabled = true,
+): QueryState<Paginated<CareTeamInvitee>> => {
+  const state = useCrmRawState();
+  const actor = useCrmActor();
+  const previous = useRef<Paginated<CareTeamInvitee> | null>(null);
+  const key = careTeamInviteesKey(customerId, q, page).join('|');
+  const fresh = useMemo(
+    () => (isEnabled ? listCareTeamInvitees(state, actor, { customerId: customerId ?? undefined, q, page }) : null),
+    [state, actor, key, isEnabled],
   );
+  const data = fresh ?? previous.current ?? EMPTY_PAGE<CareTeamInvitee>(20);
+  useEffect(() => {
+    if (fresh) previous.current = fresh;
+  }, [fresh]);
   return done(data);
 };
 
@@ -274,34 +278,9 @@ export const useNationalIdViews = (customerId: string | null | undefined, isEnab
   return useMemo(() => done(isEnabled ? listNationalIdViews(state, actor, customerId) : []), [state, actor, customerId, isEnabled]);
 };
 
-/**
- * `POST /crm/customers/phone-lookups` (X2): kiểm trùng SĐT. Dạng truy vấn phản ứng theo state (tự cập nhật khi đề nghị tham gia đổi).
- * Tra ra chính khách đang sửa (SĐT không đổi) không phải là trùng.
- */
-export const usePhoneLookup = (phone: string, excludeCustomerId?: string): PhoneLookupResult | null => {
-  const state = useCrmRawState();
-  const actor = useCrmActor();
-  return useMemo(() => (isValidPhone(phone) ? lookupPhone(state, actor, phone, excludeCustomerId) : null), [state, actor, phone, excludeCustomerId]);
-};
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Nhóm chăm sóc, lịch hẹn, việc hôm nay
 // ---------------------------------------------------------------------------------------------------------------------
-
-/** `GET /crm/care-team-requests` (đang chờ duyệt). Trả thêm `customerId` để lọc theo khách. */
-export const useCareTeamRequests = (box: 'mine' | 'to-review', isEnabled = true): QueryState<(CareTeamRequestView & { customerId: string })[]> => {
-  const state = useCrmRawState();
-  const actor = useCrmActor();
-  return useMemo(() => {
-    if (!isEnabled) return done<(CareTeamRequestView & { customerId: string })[]>([]);
-    const customerIdOf = new Map(state.careTeamRequests.map((request) => [request.id, request.customerId]));
-    return done(
-      listCareTeamRequests(state, actor, box)
-        .filter((item) => item.status === 'PENDING')
-        .map((item) => ({ ...item, customerId: customerIdOf.get(item.id) ?? item.customer?.id ?? '' })),
-    );
-  }, [state, actor, box, isEnabled]);
-};
 
 /** Cửa sổ mặc định khi màn không chỉ định: 14 ngày trước tới 45 ngày sau (≤ 62 ngày theo 05 §2.9). */
 export const getDefaultAppointmentWindow = (now: Date = new Date()): { from: string; to: string } => {

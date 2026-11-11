@@ -97,9 +97,6 @@ export interface ImportRowResult {
 interface ValidationContext {
   catalogs: CrmCatalogs;
   users: readonly CrmUser[];
-  /** SĐT (E.164) đã có trong hệ thống. */
-  /** SĐT (đã chuẩn hoá E.164) đã có trong hệ thống? Do lớp dữ liệu trả lời (không đưa danh sách SĐT khách ra UI). */
-  isPhoneTaken: (normalizedPhone: string) => boolean;
   preset: ImportPreset;
 }
 
@@ -127,13 +124,12 @@ const lookupActive = <T extends { isActive: boolean }>(
 };
 
 /**
- * Kiểm từng dòng: thiếu tên/SĐT, SĐT sai, SĐT trùng hệ thống, trùng trong file, giá trị danh mục chưa có
- * (tình trạng, nguồn, dự án, nhân viên). Dòng có lỗi -> `data = null` (không nhập).
+ * Kiểm từng dòng: thiếu tên/SĐT, SĐT sai, giá trị danh mục chưa có
+ * (tình trạng, nguồn, dự án, nhân viên). Dòng có lỗi -> `data = null` (không nhập). v1.0.5: SĐT trùng (hệ thống hoặc trong file) KHÔNG còn là lỗi (FR-03).
  * Khu vực không khớp 34 tỉnh (sau bí danh) KHÔNG phải lỗi: để trống + cảnh báo `warnings`.
  */
 export const validateImportRows = (rows: readonly (readonly string[])[], mapping: ImportMapping, context: ValidationContext): ImportRowResult[] => {
-  const { catalogs, users, isPhoneTaken, preset } = context;
-  const seenPhones = new Map<string, number>();
+  const { catalogs, users, preset } = context;
   const defaultStatus = catalogs.statuses.find((status) => status.code === preset.defaultStatusCode && status.isActive);
   const cell = (row: readonly string[], target: ImportTarget): string => (mapping[target] >= 0 ? (row[mapping[target]] ?? '').trim() : '');
 
@@ -149,13 +145,7 @@ export const validateImportRows = (rows: readonly (readonly string[])[], mapping
     else {
       const normalized = normalizePhone(rawPhone);
       if (!normalized) errors.push(`SĐT không hợp lệ: "${rawPhone}"`);
-      else {
-        phone = normalized;
-        if (isPhoneTaken(normalized)) errors.push('SĐT đã có trong hệ thống (trùng)');
-        const firstRow = seenPhones.get(normalized);
-        if (firstRow) errors.push(`SĐT trùng với dòng ${firstRow} trong file`);
-        else seenPhones.set(normalized, rowNumber);
-      }
+      else phone = normalized;
     }
 
     const statusText = cell(row, 'status');

@@ -89,3 +89,19 @@ describe('Th2 ký tự lạ bị từ chối; trunk 0 của số nước ngoài'
     expect(normalizePhone(input)).toBe(expected);
   });
 });
+
+describe('khách chưa có SĐT (v1.0.5): null/undefined không ném lỗi', () => {
+  it.each([[null], [undefined]])('%j: mọi hàm trả giá trị rỗng/không hợp lệ', (input) => {
+    expect(normalizePhone(input)).toBeNull();
+    expect(isValidPhone(input)).toBe(false);
+    expect(formatPhoneDisplay(input)).toBe('');
+    expect(toLocalDigits(input)).toBe('');
+    expect(getPhoneSearchVariants(input)).toEqual([]);
+    expect(maskPhoneDisplay(input)).toBe('');
+  });
+
+  it('chuỗi rỗng vẫn không hợp lệ, số hợp lệ không bị ảnh hưởng', () => {
+    expect(normalizePhone('')).toBeNull();
+    expect(normalizePhone('0912 345 678')).toBe('+84912345678');
+  });
+});

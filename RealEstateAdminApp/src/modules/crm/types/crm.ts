@@ -22,9 +22,11 @@ export interface CrmUser {
   /** Chức danh hiển thị (không dùng để phân quyền). */
   jobTitle: string;
   teamId: string | null;
-  /** Tên nhóm (có khi lấy từ `assignable-users`). */
+  /** Tên nhóm (có khi lấy từ `customer-assignees`). */
   teamName?: string;
   isActive: boolean;
+  /** Tài khoản bị khóa (từ `customer-assignees`): vẫn có thể là người chăm sóc cũ của khách, UI hiện nhãn "đã khóa". */
+  isLocked?: boolean;
   avatarUrl?: string;
 }
 
@@ -61,6 +63,8 @@ export interface Team {
 export interface UserRef {
   id: string;
   displayName: string;
+  /** Tài khoản bị khóa (`BLOCKED`, FR-18): chỉ có ở người chăm sóc chính/thành viên nhóm chăm sóc để hiện nhãn "đã khóa". */
+  isLocked?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,8 +311,10 @@ export type CreatedVia = 'WEB' | 'MOBILE' | 'IMPORT';
 export interface Customer {
   id: string;
   fullName: string;
-  /** E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). Duy nhất toàn hệ thống. */
-  phone: string;
+  /** E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). Tùy chọn (null = chưa có SĐT) và KHÔNG còn duy nhất (v1.0.5: nhiều khách có thể trùng SĐT). */
+  phone: string | null;
+  /** Mã định danh "KH-000123" (v1.0.5). Bất biến, không tái sử dụng; null = chưa được cấp (dữ liệu cũ). */
+  customerCode: string | null;
   /** Không bắt buộc; nếu có nhập thì phải đúng định dạng email. */
   email: string;
   statusId: string;

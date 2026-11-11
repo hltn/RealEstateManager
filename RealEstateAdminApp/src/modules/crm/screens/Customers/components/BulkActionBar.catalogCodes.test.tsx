@@ -32,7 +32,7 @@ vi.mock('@crm/api', async () => {
     ...actual,
     useCrmApi: () => ({ bulkOperation: vi.fn() }),
     useCatalogs: () => ({ catalogs, users: [] }),
-    useAssignableUsers: () => ({ data: [] }),
+    useCareTeamInvitees: () => ({ data: { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } }),
     useCrmActor: () => ({ userId: 'admin', role: 'ADMIN', teamId: null, managedTeamIds: [] }),
   };
 });

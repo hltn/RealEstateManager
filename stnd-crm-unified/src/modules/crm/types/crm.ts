@@ -25,11 +25,11 @@ export interface CrmUser {
   /** Chức danh hiển thị (không dùng để phân quyền). */
   jobTitle: string;
   teamId: string | null;
-  /** Tên nhóm (có khi lấy từ `assignable-users`). */
+  /** Tên nhóm (có khi lấy từ `careTeam[].user`). */
   teamName?: string;
   isActive: boolean;
   avatarUrl?: string;
-  /** [Prototype] Email tài khoản (mock `/users` + đăng nhập giả); backend trả ở `GET /users`, không có trong `assignable-users`. */
+  /** [Prototype] Email tài khoản (mock `/users` + đăng nhập giả); backend trả ở `GET /users`, không có trong `care-team-invitees`/`customer-assignees`. */
   email?: string;
 }
 
@@ -279,8 +279,13 @@ export type CreatedVia = 'WEB' | 'MOBILE' | 'IMPORT';
 export interface Customer {
   id: string;
   fullName: string;
-  /** E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). Duy nhất toàn hệ thống. */
-  phone: string;
+  /** Mã hiển thị `KH-000123` (v1.0.5, FR-02). Khách tạo trước v1.0.5 có thể chưa có mã -> null. */
+  customerCode: string | null;
+  /**
+   * E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). v1.0.5: có thể null (khách chưa có SĐT) và KHÔNG còn duy nhất
+   * toàn hệ thống (cho phép trùng SĐT; định danh bằng `customerCode`).
+   */
+  phone: string | null;
   /** Không bắt buộc; nếu có nhập thì phải đúng định dạng email. */
   email: string;
   statusId: string;

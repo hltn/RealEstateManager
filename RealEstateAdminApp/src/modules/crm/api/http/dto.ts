@@ -2,7 +2,7 @@
  * Kiểu response THÔ của backend CRM (đối chiếu DTO ở `RealEstateBackendApp/src/modules/crm/**` và tài liệu 05 §1.6).
  * Chỉ dùng trong lớp `api/http`; UI làm việc với view-type ở `../types.ts` (qua mapper).
  */
-import type { AppointmentStatus, AppointmentType, CareTeamRequestStatus, ContactChannel, DailyTaskGroup, DailyTaskKind, ListGroup, PersonaFieldType, TagCategory } from '@crm/types/crm';
+import type { AppointmentStatus, AppointmentType, ContactChannel, DailyTaskGroup, DailyTaskKind, ListGroup, PersonaFieldType, TagCategory } from '@crm/types/crm';
 
 export interface RefDto {
   id: string;
@@ -17,6 +17,8 @@ export interface CatalogRefDto extends RefDto {
 export interface UserRefDto {
   id: string;
   displayName: string;
+  /** Chỉ có ở người chăm sóc chính/thành viên nhóm chăm sóc (v1.0.5). */
+  isLocked?: boolean;
 }
 
 export interface StatusRefDto {
@@ -123,15 +125,22 @@ export interface PersonaFieldDto {
 // --- Người dùng, nhóm -------------------------------------------------------------------------------------------------
 
 /**
- * `GET /crm/assignable-users`. Với `purpose=assign` (mặc định) `role` chỉ là MANAGER/STAFF; với `purpose=filter` (nguồn bộ lọc
- * "Người phụ trách") có thể là ADMIN/EDITOR vì mọi người trong careTeam của tập khách đều có mặt. `roles`/`teamIds`/`teams` là bản đủ.
+ * `GET /crm/customer-assignees` (nguồn ô LỌC "Người phụ trách"): người xuất hiện trong careTeam của tập khách người xem thấy, kể cả
+ * tài khoản đã khóa (`isLocked`) và ADMIN/EDITOR. `roles`/`teamIds`/`teams` là bản đủ.
  */
-export interface AssignableUserDto extends UserRefDto {
+export interface CustomerAssigneeDto extends UserRefDto {
   role: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF';
   roles?: ('ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF')[];
   team: RefDto | null;
   teamIds?: string[];
   teams?: RefDto[];
+}
+
+/** Phần tử `GET /crm/care-team-invitees`: chỉ tên + tên nhóm (FR-14), không email/SĐT/vai trò/id nhóm. */
+export interface CareTeamInviteeDto {
+  id: string;
+  displayName: string;
+  teamNames: string[];
 }
 
 export interface UserDto {
@@ -187,7 +196,10 @@ export interface CriteriaDoneDto {
 export interface CustomerListItemDto {
   id: string;
   fullName: string;
-  phoneMasked: string;
+  /** `null` = khách chưa có SĐT (FR-02). */
+  phoneMasked: string | null;
+  /** Mã khách `KH-######`; `null` = bản ghi chưa cấp mã (mọi vai trò đều thấy mã khi có). */
+  customerCode: string | null;
   /** Mã lựa chọn "Mục đích mua"; backend cũ chưa trả field này nên để optional (mapper mặc định `[]`). */
   purchasePurposes?: string[];
   status: StatusRefDto;
@@ -222,7 +234,8 @@ export interface CriterionDto {
 }
 
 export interface CareTeamMemberDto {
-  user: UserRefDto;
+  /** `role` (vai trò tài khoản) tùy chọn: chỉ để suy ra chức danh hiển thị; vắng thì chức danh rỗng. */
+  user: UserRefDto & { role?: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF' | null };
   role: 'PRIMARY' | 'MEMBER';
   addedAt: string;
   addedBy: UserRefDto | null;
@@ -242,25 +255,13 @@ export interface CustomerDetailDto extends CustomerListItemDto {
   createdBy: UserRefDto | null;
   createdVia: 'WEB' | 'MOBILE' | 'IMPORT';
   nextActionSuggestions: string[];
-  permissions: { canEdit: boolean; canManageCareTeam: boolean; canChangePrimary: boolean; canDelete: boolean };
+  permissions: { canEdit: boolean; canManageCareTeam: boolean; canSetInitialPrimary: boolean; canDelete: boolean };
   version: number;
 }
 
 export interface CareTeamDto {
   members: CareTeamMemberDto[];
   primary: UserRefDto | null;
-}
-
-export interface CareTeamRequestDto {
-  id: string;
-  customer: { id: string; fullName?: string };
-  requester: UserRefDto;
-  message: string | null;
-  status: CareTeamRequestStatus;
-  createdAt: string;
-  resolvedBy: UserRefDto | null;
-  resolvedAt: string | null;
-  resolutionNote: string | null;
 }
 
 export interface HistoryEntryDto {
@@ -301,8 +302,8 @@ export interface CareLogDto {
 
 export interface AppointmentDto {
   id: string;
-  /** `phoneMasked`: "0912 ••• 678"; "" = khách dữ liệu cũ thiếu SĐT; "••••" = khách ẩn danh. */
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRefDto };
+  /** `phoneMasked`: "0912 ••• 678"; null = khách chưa có SĐT; "••••" = khách ẩn danh. */
+  customer: { id: string; fullName: string; phoneMasked: string | null; status: StatusRefDto };
   type: AppointmentType;
   title: string;
   startAt: string;
@@ -327,7 +328,7 @@ export interface DailyTaskDto {
   kind: DailyTaskKind;
   dueAt: string;
   group: DailyTaskGroup;
-  customer: { id: string; fullName: string; phoneMasked: string; status: StatusRefDto; projects: CatalogRefDto[] };
+  customer: { id: string; fullName: string; phoneMasked: string | null; status: StatusRefDto; projects: CatalogRefDto[] };
   /** Dự án của lịch hẹn (task APPOINTMENT có dự án); thiếu hoặc null = không có. */
   project?: CatalogRefDto | null;
   title: string;

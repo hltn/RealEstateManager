@@ -15,7 +15,7 @@ import { fetchAdminTags } from './http/adminApi';
 import { createHttpCrmApi } from './httpCrmApi';
 
 const invalidate = vi.fn();
-const setup = () => createHttpCrmApi({ invalidate, getContext: () => ({ actor: { userId: 'u1', role: 'ADMIN' as const } }), getPersonaFields: () => new Map() });
+const setup = () => createHttpCrmApi({ invalidate, getPersonaFields: () => new Map() });
 const tagDto = { id: 't1', label: 'Golf', category: 'INTEREST', usageCount: 4, color: 'brand' };
 
 beforeEach(() => {

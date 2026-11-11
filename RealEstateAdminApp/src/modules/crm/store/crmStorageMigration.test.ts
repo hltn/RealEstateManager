@@ -1,7 +1,10 @@
-/** Schema localStorage v6 (FR-40, T-16): bỏ dữ liệu v3-v5 lưu theo id cũ (không lỗi, giữ backup) + vá khách hỏng + sao lưu. */
+/**
+ * Schema localStorage v7 (T-20): bỏ dữ liệu v3-v5 lưu theo id cũ (không lỗi, giữ backup), di trú v6 -> v7 (cấp `customerCode`, cho `phone: null`),
+ * vá khách hỏng + sao lưu.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetNationalIdVaultForTest, revealNationalId, seedNationalIds } from '@crm/lib/nationalIdVault';
-import { CRM_BACKUP_KEY_PREFIX, CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData, saveCrmData } from './crmStorage';
+import { CRM_BACKUP_KEY_PREFIX, CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData, migrateV6ToV7, saveCrmData } from './crmStorage';
 import { createSeedDataState } from './crmStore';
 
 afterEach(() => {
@@ -25,9 +28,9 @@ const store = (payload: unknown) => {
   return raw;
 };
 
-describe('phiên bản 6: bỏ dữ liệu lưu theo id danh mục cũ (FR-40, T-16)', () => {
-  it('phiên bản hiện tại là 6', () => {
-    expect(CRM_SCHEMA_VERSION).toBe(6);
+describe('phiên bản 7: bỏ dữ liệu v3-v5 lưu theo id danh mục cũ (FR-40, T-16)', () => {
+  it('phiên bản hiện tại là 7', () => {
+    expect(CRM_SCHEMA_VERSION).toBe(7);
   });
 
   it.each([3, 4, 5] as const)('payload v%i (id cũ st-*): trả null để nạp seed, không ném lỗi, giữ nguyên văn bản dưới khoá backup', (version) => {
@@ -83,7 +86,7 @@ describe('phiên bản 6: bỏ dữ liệu lưu theo id danh mục cũ (FR-40, T
     expect(loadCrmData()).toBeNull();
   });
 
-  it('dữ liệu v6 hiện tại đọc lại nguyên vẹn, không tạo backup', () => {
+  it('dữ liệu v7 hiện tại đọc lại nguyên vẹn, không tạo backup', () => {
     const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
     saveCrmData(data);
     expect(loadCrmData()).toEqual(data);
@@ -91,7 +94,7 @@ describe('phiên bản 6: bỏ dữ liệu lưu theo id danh mục cũ (FR-40, T
   });
 });
 
-describe('1 khách hỏng không làm cả CSDL về seed (v6)', () => {
+describe('1 khách hỏng không làm cả CSDL về seed (v7)', () => {
   /** 50 khách (clone seed, id/SĐT khác nhau) + nhật ký/lịch hẹn/lịch sử trỏ tới khách, khách ở vị trí `brokenIndex` bị hỏng criteria. */
   const buildFifty = (brokenIndex: number) => {
     const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
@@ -104,7 +107,7 @@ describe('1 khách hỏng không làm cả CSDL về seed (v6)', () => {
     return { ...data, customers: broken, careLogs, changeLogs, appointments: [], nationalIdViews: [], careTeamRequests: [] };
   };
 
-  it('v6: giữ 49 khách lành, loại khách hỏng cùng dữ liệu con, lưu bản _corrupt_ và ghi lại bản đã vá', () => {
+  it('v7: giữ 49 khách lành, loại khách hỏng cùng dữ liệu con, lưu bản _corrupt_ và ghi lại bản đã vá', () => {
     const raw = store({ schemaVersion: CRM_SCHEMA_VERSION, data: buildFifty(7) });
     const loaded = loadCrmData();
     expect(loaded?.customers).toHaveLength(49);
@@ -177,5 +180,81 @@ describe('vá khách hỏng dọn kho CCCD mô phỏng', () => {
     expect(revealNationalId('BULK-7')).toBeNull();
     expect(revealNationalId('BULK-8')).toBe('098765432109');
     resetNationalIdVaultForTest();
+  });
+});
+
+/** Payload đúng như bản v6 từng lưu: khách chưa có `customerCode`, `phone` luôn là chuỗi. */
+const buildV6Payload = () => {
+  const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
+  const customers = data.customers
+    .filter((customer) => customer.phone !== null)
+    .map((customer) => {
+      const { customerCode: _customerCode, ...rest } = customer;
+      return rest;
+    });
+  return { schemaVersion: 6, data: { ...data, customers } };
+};
+
+describe('di trú v6 -> v7 (T-20): thêm customerCode, cho phép phone null', () => {
+  it('payload v6: không ném lỗi, cấp mã KH-###### cho mọi khách, giữ nguyên văn bản v6 dưới khoá backup, ghi lại thành v7', () => {
+    const payload = buildV6Payload();
+    const raw = store(payload);
+    const loaded = loadCrmData();
+    expect(loaded).not.toBeNull();
+    expect(loaded?.customers).toHaveLength(payload.data.customers.length);
+    const codes = loaded?.customers.map((customer) => customer.customerCode) ?? [];
+    expect(codes.every((code) => /^KH-\d{6}$/.test(code ?? ''))).toBe(true);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(window.localStorage.getItem(`${CRM_BACKUP_KEY_PREFIX}6`)).toBe(raw);
+    expect(corruptBackupKeys()).toHaveLength(0);
+    expect(JSON.parse(window.localStorage.getItem(CRM_STORAGE_KEY) ?? '{}').schemaVersion).toBe(7);
+    // Lần đọc kế tiếp là v7: không backup thêm, mã không đổi.
+    expect(loadCrmData()?.customers.map((customer) => customer.customerCode)).toEqual(codes);
+  });
+
+  it('mã cấp theo thứ tự createdAt tăng dần (khách cũ nhất = KH-000001)', () => {
+    const payload = buildV6Payload();
+    store(payload);
+    const loaded = loadCrmData();
+    const byCode = [...(loaded?.customers ?? [])].sort((left, right) => (left.customerCode ?? '').localeCompare(right.customerCode ?? ''));
+    const createdAts = byCode.map((customer) => customer.createdAt);
+    expect(createdAts).toEqual([...createdAts].sort());
+    expect(byCode[0].customerCode).toBe('KH-000001');
+  });
+
+  it('migrateV6ToV7: khách đã có mã giữ nguyên, khách chưa có mã nối tiếp từ mã lớn nhất', () => {
+    const migrated = migrateV6ToV7({
+      customers: [
+        { id: 'a', createdAt: '2026-01-02T00:00:00.000Z' },
+        { id: 'b', createdAt: '2026-01-01T00:00:00.000Z', customerCode: 'KH-000009' },
+        { id: 'c', createdAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    }) as { customers: { id: string; customerCode: string }[] };
+    expect(migrated.customers.map((customer) => [customer.id, customer.customerCode])).toEqual([
+      ['a', 'KH-000011'],
+      ['b', 'KH-000009'],
+      ['c', 'KH-000010'],
+    ]);
+  });
+
+  it('migrateV6ToV7: dữ liệu sai hình dạng được trả nguyên, không ném lỗi; phần tử khách sai kiểu giữ nguyên', () => {
+    expect(migrateV6ToV7(null)).toBeNull();
+    expect(migrateV6ToV7('x')).toBe('x');
+    const noCustomers = { users: [] };
+    expect(migrateV6ToV7(noCustomers)).toBe(noCustomers);
+    const migrated = migrateV6ToV7({ customers: [null, 5, { id: 'x' }] }) as { customers: unknown[] };
+    expect(migrated.customers.slice(0, 2)).toEqual([null, 5]);
+  });
+
+  it('v7 chấp nhận khách phone null (chưa có SĐT) và khách trùng SĐT: ghi rồi đọc lại đúng, không bị loại', () => {
+    const data = createSeedDataState(new Date('2026-10-22T03:00:00.000Z'));
+    expect(data.customers.some((customer) => customer.phone === null)).toBe(true);
+    const phones = data.customers.map((customer) => customer.phone).filter(Boolean);
+    expect(new Set(phones).size).toBeLessThan(phones.length);
+    saveCrmData(data);
+    const loaded = loadCrmData();
+    expect(loaded?.customers).toHaveLength(data.customers.length);
+    expect(loaded?.customers.filter((customer) => customer.phone === null)).toHaveLength(data.customers.filter((customer) => customer.phone === null).length);
+    expect(corruptBackupKeys()).toHaveLength(0);
   });
 });

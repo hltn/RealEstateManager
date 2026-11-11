@@ -1,7 +1,9 @@
 /**
  * Lưu/đọc dữ liệu CRM prototype trong localStorage, CÓ version schema + migration an toàn.
  *
- * - Schema hiện tại: v6 (FR-40, T-16).
+ * - Schema hiện tại: v7 (v1.0.5, T-20).
+ *   - v7: thêm `customerCode` (mã khách `KH-######`, null được) và cho `phone: null` (khách chưa có SĐT, FR-02). Dữ liệu v6 được DI TRÚ (không
+ *     bỏ): giữ bản sao nguyên văn dưới khoá backup v6, gán mã theo thứ tự `createdAt`, ghi lại thành v7.
  *   - v6: "id" của tình trạng/nguồn/khu vực/dự án/kết quả liên hệ = `code` bất biến của backend. Dữ liệu v3-v5 lưu theo id cũ (st-*, src-*,
  *     area-*, proj-*, ObjectId) không đổi được sang code một cách tin cậy (nguồn/khu vực cũ không có `code`) nên BỊ BỎ, không migrate:
  *     giữ 1 bản sao nguyên văn dưới khoá backup rồi nạp lại dữ liệu mẫu (bộ lọc/ưu tiên theo id cũ biến mất cùng dữ liệu đó, không lỗi).
@@ -12,9 +14,12 @@
 import { pruneNationalIds } from '@crm/lib/nationalIdVault';
 import type { CrmDataState, CrmSession } from './crmReducer';
 
-export const CRM_SCHEMA_VERSION = 6;
+export const CRM_SCHEMA_VERSION = 7;
 /** Phiên bản cũ nhất còn nhận ra để sao lưu rồi bỏ (v3-v5, lưu theo id danh mục cũ). Nhỏ hơn: coi là hỏng/không tương thích. */
 const OLDEST_DROPPABLE_SCHEMA_VERSION = 3;
+/** Phiên bản cuối cùng bị bỏ; v6 (id theo code) được di trú lên v7 thay vì bỏ. */
+const NEWEST_DROPPABLE_SCHEMA_VERSION = 5;
+const MIGRATABLE_SCHEMA_VERSION = 6;
 export const CRM_STORAGE_KEY = 'stnd_crm_data';
 export const CRM_SESSION_STORAGE_KEY = 'stnd_crm_session_v1';
 /** Tiền tố khoá bản sao dữ liệu cũ trước khi migration ghi đè (`<prefix><version>`). */
@@ -70,7 +75,8 @@ const isCustomerV3 = (value: unknown): boolean =>
   isRecord(value) &&
   isString(value.id) &&
   isString(value.fullName) &&
-  isString(value.phone) &&
+  isNullableString(value.phone) &&
+  isNullableString(value.customerCode) &&
   isString(value.statusId) &&
   isString(value.createdAt) &&
   isString(value.searchText) &&
@@ -166,6 +172,9 @@ const normalizeCustomer = (value: unknown): unknown =>
         version: withDefault(value.version, (item) => typeof item === 'number', 1),
         notes: withDefault(value.notes, isString, ''),
         email: withDefault(value.email, isString, ''),
+        // v7: bản ghi thiếu trường -> chưa có SĐT / chưa có mã (không bỏ cả khách).
+        phone: withDefault(value.phone, isNullableString, null),
+        customerCode: withDefault(value.customerCode, isNullableString, null),
         searchText: withDefault(value.searchText, isString, ''),
       }
     : value;
@@ -203,6 +212,36 @@ const normalizeCrmData = (value: unknown): unknown => {
     changeLogs: normalizeChangeLogs(value.changeLogs),
     auditLogs: Array.isArray(value.auditLogs) ? value.auditLogs : [],
   };
+};
+
+// ---------------------------------------------------------------------------
+// Di trú v6 -> v7: cấp mã khách
+// ---------------------------------------------------------------------------
+
+const CUSTOMER_CODE_PATTERN = /^KH-(\d{6,})$/;
+
+/**
+ * Cấp `customerCode` cho khách v6 chưa có mã: theo thứ tự `createdAt` tăng dần (cùng giờ giữ thứ tự mảng), nối tiếp mã lớn nhất đã có.
+ * Hàm thuần; khách sai kiểu giữ nguyên để bước kiểm tra sau đó loại riêng. `phone` không cần đổi (v6 luôn là chuỗi, v7 cho thêm null).
+ */
+export const migrateV6ToV7 = (data: unknown): unknown => {
+  if (!isRecord(data) || !Array.isArray(data.customers)) return data;
+  const customers = data.customers as unknown[];
+  const existingSequences = customers.map((customer) => (isRecord(customer) && isString(customer.customerCode) ? CUSTOMER_CODE_PATTERN.exec(customer.customerCode) : null)).map((match) => (match ? Number(match[1]) : 0));
+  let nextSequence = Math.max(0, ...existingSequences) + 1;
+  const createdAtOf = (customer: unknown): string => (isRecord(customer) && isString(customer.createdAt) ? customer.createdAt : '');
+  const orderedIndexes = customers
+    .map((customer, index) => ({ index, createdAt: createdAtOf(customer) }))
+    .sort((left, right) => (left.createdAt < right.createdAt ? -1 : left.createdAt > right.createdAt ? 1 : left.index - right.index))
+    .map((item) => item.index);
+  const codes = new Map<number, string>();
+  orderedIndexes.forEach((index) => {
+    const customer = customers[index];
+    if (!isRecord(customer) || isString(customer.customerCode)) return;
+    codes.set(index, `KH-${String(nextSequence).padStart(6, '0')}`);
+    nextSequence += 1;
+  });
+  return { ...data, customers: customers.map((customer, index) => (codes.has(index) && isRecord(customer) ? { ...customer, customerCode: codes.get(index) } : customer)) };
 };
 
 // ---------------------------------------------------------------------------
@@ -325,7 +364,7 @@ const salvageCrmData = (data: unknown): { data: CrmDataState; droppedCount: numb
 
 /**
  * Đọc dữ liệu đã lưu. Trả null (để nạp seed) nếu: chưa có, JSON hỏng, version không hỗ trợ, hỏng nặng.
- * Luôn dọn khoá schema cũ. Payload v3-v5 (id danh mục cũ) bị bỏ sau khi giữ 1 bản sao dưới khoá backup; vá bản ghi hỏng của v6 (bản gốc
+ * Luôn dọn khoá schema cũ. Payload v3-v5 (id danh mục cũ) bị bỏ sau khi giữ 1 bản sao dưới khoá backup; v6 được di trú lên v7; vá bản ghi hỏng (bản gốc
  * ở khoá _corrupt_); khách bị loại cũng được dọn khỏi kho CCCD mô phỏng.
  */
 export const loadCrmData = (): CrmDataState | null => {
@@ -340,19 +379,24 @@ export const loadCrmData = (): CrmDataState | null => {
     if (isRecord(parsed)) {
       const version = parsed.schemaVersion;
       // v3-v5 lưu theo id danh mục cũ: giữ bản sao nguyên văn rồi bỏ (trả null để nạp dữ liệu mẫu theo code), không migrate.
-      if (typeof version === 'number' && version >= OLDEST_DROPPABLE_SCHEMA_VERSION && version < CRM_SCHEMA_VERSION) {
+      if (typeof version === 'number' && version >= OLDEST_DROPPABLE_SCHEMA_VERSION && version <= NEWEST_DROPPABLE_SCHEMA_VERSION) {
         backupBeforeOverwrite(storage, raw, version);
         storage.removeItem(CRM_STORAGE_KEY);
         // Toàn bộ khách cũ bị bỏ: dọn luôn CCCD mô phỏng của họ (tập khách còn sống = rỗng).
         pruneNationalIds(new Set());
         return null;
       }
-      if (version ===CRM_SCHEMA_VERSION) {
-        const result = salvageCrmData(normalizeCrmData(parsed.data));
+      if (version === CRM_SCHEMA_VERSION || version === MIGRATABLE_SCHEMA_VERSION) {
+        const isMigrating = version === MIGRATABLE_SCHEMA_VERSION;
+        // v6: giữ bản sao nguyên văn trước khi ghi đè bằng v7 (chỉ 1 bản backup).
+        if (isMigrating) backupBeforeOverwrite(storage, raw, version);
+        const result = salvageCrmData(normalizeCrmData(isMigrating ? migrateV6ToV7(parsed.data) : parsed.data));
         if (result) {
           if (result.droppedCount > 0) {
             backupCorruptPayload(storage, raw);
             pruneNationalIds(new Set(result.data.customers.map((customer) => customer.id)));
+          }
+          if (result.droppedCount > 0 || isMigrating) {
             setItemWithQuotaRetry(storage, CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: CRM_SCHEMA_VERSION, data: result.data }));
           }
           return result.data;

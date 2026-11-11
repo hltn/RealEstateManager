@@ -18,7 +18,6 @@ import type {
   NationalIdViewEntry,
   Paginated,
   PersonaValueInput,
-  PhoneLookupResult,
   PurgeResult,
   UpdateCriteriaResult,
   UpdateCustomerInput,
@@ -29,7 +28,7 @@ import { crmHttp, type QueryParams } from './crmHttp';
 import { refListParam, refParam, toUiCatalogId } from './catalogIds';
 import { toStatusRef } from './catalogMappers';
 import { buildCustomerFilterParams, buildCustomerListParams } from './customerQuery';
-import { toCareLog, toCustomerDetail, toCustomerListItem, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toNationalIdView, toPersonaValueBody, type DetailMappingContext } from './customerMappers';
+import { toCareLog, toCustomerDetail, toCustomerListItem, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toNationalIdView, toPersonaValueBody } from './customerMappers';
 
 const BASE = '/crm/customers';
 
@@ -52,8 +51,8 @@ export const toListCounts = (dto: ListCountsDto): ListCounts => ({
 export const fetchListCounts = async (query: CustomerListQuery, signal?: AbortSignal): Promise<ListCounts> =>
   toListCounts(await crmHttp.get<ListCountsDto>(`${BASE}/list-counts`, { params: buildCustomerFilterParams(query), signal }));
 
-export const fetchCustomerDetail = async (customerId: string, context: DetailMappingContext, signal?: AbortSignal): Promise<CustomerDetail> =>
-  toCustomerDetail(await crmHttp.get<CustomerDetailDto>(`${BASE}/${encodeURIComponent(customerId)}`, { signal }), context);
+export const fetchCustomerDetail = async (customerId: string, signal?: AbortSignal): Promise<CustomerDetail> =>
+  toCustomerDetail(await crmHttp.get<CustomerDetailDto>(`${BASE}/${encodeURIComponent(customerId)}`, { signal }));
 
 export const fetchCustomerPersona = async (customerId: string, fields: ReadonlyMap<string, PersonaFieldDefinition>, signal?: AbortSignal): Promise<CustomerPersonaView> =>
   toCustomerPersona(await crmHttp.get<CustomerPersonaDto>(`${BASE}/${encodeURIComponent(customerId)}/persona`, { signal }), fields);
@@ -85,19 +84,19 @@ export const fetchNationalIdViews = async (customerId: string, signal?: AbortSig
   return { data: result.data.map(toNationalIdView), meta: result.meta };
 };
 
-/** `POST phone-lookups`: SĐT nằm trong body (không lên URL/log). */
-export const postPhoneLookup = (phone: string, signal?: AbortSignal): Promise<PhoneLookupResult> => crmHttp.post<PhoneLookupResult>(`${BASE}/phone-lookups`, { phone }, { signal });
-
 // --- Ghi ---------------------------------------------------------------------------------------------------------------
 
 /** Chỉ gửi trường có giá trị; email rỗng -> không gửi (backend nhận `null`/vắng mặt). */
 const stripEmpty = <T extends Record<string, unknown>>(input: T): Partial<T> =>
   Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<T>;
 
-export const postCustomer = async (input: CreateCustomerInput, context: DetailMappingContext): Promise<CustomerDetail> => {
+/** SĐT gửi lên: vắng = không đổi/không gửi; rỗng hoặc chỉ khoảng trắng = `null` (khách chưa có SĐT, FR-02); có số = giữ nguyên (backend chuẩn hóa). */
+const toPhoneBody = (phone: string | null | undefined): string | null | undefined => (phone === undefined ? undefined : phone?.trim() ? phone : null);
+
+export const postCustomer = async (input: CreateCustomerInput): Promise<CustomerDetail> => {
   const body = stripEmpty({
     fullName: input.fullName,
-    phone: input.phone,
+    phone: toPhoneBody(input.phone),
     email: input.email?.trim() ? input.email.trim() : undefined,
     // FR-40: gửi `…Code` (id của UI = code); ObjectId cũ gửi trường id tương ứng.
     ...refParam('statusCode', 'statusId', input.statusId),
@@ -107,16 +106,15 @@ export const postCustomer = async (input: CreateCustomerInput, context: DetailMa
     tagIds: input.tagIds,
     nationalId: input.nationalId?.trim() ? input.nationalId.trim() : undefined,
     criteria: input.criteria,
-    careTeam: input.careTeam,
   });
-  return toCustomerDetail(await crmHttp.post<CustomerDetailDto>(BASE, body, { isIdempotent: true }), context);
+  return toCustomerDetail(await crmHttp.post<CustomerDetailDto>(BASE, body, { isIdempotent: true }));
 };
 
-export const patchCustomer = async (customerId: string, input: UpdateCustomerInput, context: DetailMappingContext): Promise<CustomerDetail> => {
+export const patchCustomer = async (customerId: string, input: UpdateCustomerInput): Promise<CustomerDetail> => {
   const body = stripEmpty({
     version: input.version,
     fullName: input.fullName,
-    phone: input.phone,
+    phone: toPhoneBody(input.phone),
     // `email: null` = xóa email (backend nhận null cho field không bắt buộc).
     email: input.email === undefined ? undefined : input.email.trim() === '' ? null : input.email.trim(),
     ...refParam('sourceCode', 'sourceId', input.sourceId),
@@ -124,7 +122,7 @@ export const patchCustomer = async (customerId: string, input: UpdateCustomerInp
     ...refParam('areaCode', 'areaId', input.areaId),
     tagIds: input.tagIds,
   });
-  return toCustomerDetail(await crmHttp.patch<CustomerDetailDto>(`${BASE}/${encodeURIComponent(customerId)}`, body), context);
+  return toCustomerDetail(await crmHttp.patch<CustomerDetailDto>(`${BASE}/${encodeURIComponent(customerId)}`, body));
 };
 
 interface StatusResultDto {
