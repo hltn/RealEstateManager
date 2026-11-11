@@ -99,18 +99,28 @@ describe('Thành viên nhóm + nguồn lọc người phụ trách — HTTP + Mo
   };
 
   let phoneSeq = 0;
+  /**
+   * v1.0.5 (FR-10/FR-11): người tạo luôn là PRIMARY và `POST customers` không còn nhận `careTeam` (400), nên khách do
+   * chính `primary` tạo, rồi mời `members` (MEMBER) qua `POST .../care-team/members`.
+   */
   const createCustomer = async (primary: string, members: string[] = []) => {
     const phone = `091${String(3_000_000 + ++phoneSeq)}`;
-    const res = await call('POST', '/crm/customers', 'admin', {
+    const res = await call('POST', '/crm/customers', primary, {
       fullName: `Khách ${phone}`,
       phone,
-      careTeam: {
-        primaryUserId: ids[primary],
-        memberIds: members.map((key) => ids[key]),
-      },
     });
     expect(res.status).toBe(201);
-    return res.body.data.id as string;
+    const id = res.body.data.id as string;
+    if (members.length > 0) {
+      const invited = await call(
+        'POST',
+        `/crm/customers/${id}/care-team/members`,
+        primary,
+        { userIds: members.map((key) => ids[key]) },
+      );
+      expect(invited.status).toBe(201);
+    }
+    return id;
   };
 
   const customerTeamIds = async (customerId: string) =>
@@ -524,7 +534,7 @@ describe('Thành viên nhóm + nguồn lọc người phụ trách — HTTP + Mo
       expect(res.body.meta).toEqual({
         total: 1,
         page: 1,
-        limit: 100,
+        limit: 20,
         totalPages: 1,
       });
       expect(res.body.data).toHaveLength(1);

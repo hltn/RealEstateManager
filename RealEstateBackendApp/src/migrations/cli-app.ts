@@ -10,7 +10,8 @@ export const CLI_USAGE = `Cách dùng: node dist/migrations/cli.js <lệnh> [tù
   status [--json]                      Chỉ đọc: version, đã áp dụng, đang chờ (kèm pha và số chờ post-up), khóa, lỗi gần nhất.
   up [--apply] [--by deploy|cli] [--phase pre-up|post-up|all]
                                        Mặc định dry-run. --apply mới chạy migration chờ (cần replica set).
-                                       --phase chọn pha migration (mặc định all = mọi migration chờ).
+                                       --phase chọn pha migration (mặc định all = mọi migration chờ). Chạy một pha mà
+                                       còn migration pha kia chờ có số nhỏ hơn thì bị từ chối (mã 1).
   unlock                               Gỡ khóa còn sót (chỉ khi chắc chắn không có runner nào đang chạy).
   baseline [--apply] --version x.y.z [--commit sha]
                                        Chạy MỘT lần: ghi sổ 002..006 đã áp dụng + version. Mặc định dry-run.
@@ -18,8 +19,9 @@ export const CLI_USAGE = `Cách dùng: node dist/migrations/cli.js <lệnh> [tù
                                        Tự đối chiếu DB với phiên bản app: probe chỉ-đọc 002..006 rồi baseline (nếu cần),
                                        chạy migration chờ, ghi version. Mặc định dry-run; --skip-version không ghi version;
                                        --json in đúng MỘT dòng JSON ra stdout (log khác ra stderr).
-                                       --phase chọn pha migration (mặc định all). Chạy pre-up mà còn post-up chờ có số
-                                       nhỏ hơn thì bị từ chối (mã 1): chạy --phase post-up trước.
+                                       --phase chọn pha migration (mặc định all). Từ chối (mã 1) theo CẢ HAI chiều: chạy
+                                       pre-up mà còn post-up chờ số nhỏ hơn (chạy --phase post-up trước), hoặc chạy post-up
+                                       mà còn pre-up chờ số nhỏ hơn (chạy --phase pre-up trước).
 
 Biến môi trường: MONGODB_URI (bắt buộc).
 Mã thoát: 0 ok | 1 lỗi/từ chối | 2 sai cú pháp | 3 đang có khóa | 4 cần baseline/probe không đạt | 5 downgrade (app cũ hơn DB).`;

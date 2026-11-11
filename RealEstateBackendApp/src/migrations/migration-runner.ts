@@ -236,8 +236,8 @@ export class MigrationRunner {
   }
 
   /**
-   * Quy tắc an toàn sổ theo pha (FR-21): chạy `pre-up` mà còn `post-up` chờ số nhỏ hơn thì từ chối (mã 1). Trả `null`
-   * nếu hợp lệ. Áp dụng cả dry-run để báo trước đúng mã thoát của `--apply`.
+   * Quy tắc an toàn sổ theo pha HAI CHIỀU (FR-21): chạy một pha mà còn migration pha KIA chờ số nhỏ hơn thì từ chối
+   * (mã 1; pre-up trước post-up nhỏ hơn, hoặc post-up trước pre-up nhỏ hơn). Trả `null` nếu hợp lệ. Áp dụng cả dry-run để báo trước đúng mã thoát của `--apply`.
    */
   private phaseRefusal(
     state: MigrationState,

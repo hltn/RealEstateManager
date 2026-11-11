@@ -105,18 +105,28 @@ describe('Nhiều role + nhiều nhóm — HTTP + MongoDB Replica Set', () => {
   };
 
   let phoneSeq = 0;
+  /**
+   * v1.0.5 (FR-10/FR-11): người tạo luôn là PRIMARY và `POST customers` không còn nhận `careTeam` (400), nên khách do
+   * chính `primary` tạo, rồi mời `members` (MEMBER) qua `POST .../care-team/members`.
+   */
   const createCustomer = async (primary: string, members: string[] = []) => {
     const phone = `091${String(2_000_000 + ++phoneSeq)}`;
-    const res = await call('POST', '/crm/customers', 'admin', {
+    const res = await call('POST', '/crm/customers', primary, {
       fullName: `Khách ${phone}`,
       phone,
-      careTeam: {
-        primaryUserId: ids[primary],
-        memberIds: members.map((key) => ids[key]),
-      },
     });
     expect(res.status).toBe(201);
-    return res.body.data.id as string;
+    const id = res.body.data.id as string;
+    if (members.length > 0) {
+      const invited = await call(
+        'POST',
+        `/crm/customers/${id}/care-team/members`,
+        primary,
+        { userIds: members.map((key) => ids[key]) },
+      );
+      expect(invited.status).toBe(201);
+    }
+    return id;
   };
 
   const customerTeamIds = async (customerId: string) =>
@@ -679,12 +689,15 @@ describe('Nhiều role + nhiều nhóm — HTTP + MongoDB Replica Set', () => {
       // Người bị mất nhóm không còn đóng góp teamIds của khách (staffB vẫn ở nhóm B).
       expect(await customerTeamIds(customer)).toEqual([ids.teamB]);
 
-      // EDITOR-only không còn được phân chăm sóc.
-      const assign = await call('POST', '/crm/customers', 'admin', {
-        fullName: 'Khách không phân được',
-        phone: '0913999888',
-        careTeam: { primaryUserId: ids.staffEditor, memberIds: [] },
-      });
+      // EDITOR-only không còn được mời vào nhóm chăm sóc (v1.0.5: người tạo luôn là PRIMARY nên kiểm qua lời mời).
+      // Dùng khách MỚI (staffEditor đã nằm trong nhóm của `customer` => sẽ báo trùng 409 thay vì kiểm vai trò).
+      const fresh = await createCustomer('staffB');
+      const assign = await call(
+        'POST',
+        `/crm/customers/${fresh}/care-team/members`,
+        'admin',
+        { userIds: [ids.staffEditor] },
+      );
       expect([assign.status, assign.body.errorCode]).toEqual([
         400,
         'USER_NOT_ASSIGNABLE',

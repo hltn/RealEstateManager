@@ -435,7 +435,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       ).toBe(403);
     });
 
-    it('phụ trách chính thêm người cùng nhóm; thành viên thường 403; người khác nhóm/bị khóa/EDITOR 400 USER_NOT_ASSIGNABLE', async () => {
+    it('phụ trách chính thêm người; thành viên thường 403; người bị khóa/EDITOR/chỉ-Quản-trị 400 USER_NOT_ASSIGNABLE (không còn lý do "khác nhóm")', async () => {
       const added = await call(
         'POST',
         `/crm/customers/${c1}/care-team/members`,
@@ -457,10 +457,10 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       expect(memberAdds.status).toBe(403);
       expect(memberAdds.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
 
-      // Phụ trách chính (Nhân viên) chỉ phân cho người cùng nhóm; Quản lý chỉ cho nhóm mình quản lý.
+      // FR-13: người được mời chỉ cần ACTIVE và có role Manager/Staff; KHÔNG còn giới hạn theo nhóm người mời.
       for (const [who, target] of [
-        ['staffA', 'staffC'],
-        ['manager1', 'staffC'],
+        ['staffA', 'blockedStaff'],
+        ['manager1', 'editor'],
         ['admin', 'blockedStaff'],
         ['admin', 'editor'],
         ['admin', 'admin'],
@@ -480,7 +480,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       }
     });
 
-    it('thêm trùng => 409; gửi primaryUserId khi nhóm đã có người => 400; Quản trị thêm người nhóm khác => teamIds mở rộng và Quản lý nhóm đó thấy khách', async () => {
+    it('thêm trùng => 409; gửi primaryUserId khi nhóm đã có người => 400; Nhân viên PRIMARY mời Nhân viên NHÓM KHÁC => 201, teamIds mở rộng và Quản lý nhóm của người được mời thấy khách', async () => {
       const duplicate = await call(
         'POST',
         `/crm/customers/${c1}/care-team/members`,
@@ -512,13 +512,15 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         ).body.data.map((item: any) => item.id),
       ).not.toContain(c1);
 
+      // FR-13: Nhân viên (PRIMARY, nhóm A) mời staffC (nhóm B) — trước v1.0.5 bị 400 USER_NOT_ASSIGNABLE.
       const crossTeam = await call(
         'POST',
         `/crm/customers/${c1}/care-team/members`,
-        'admin',
+        'staffA',
         { userIds: [ids.staffC] },
       );
       expect(crossTeam.status).toBe(201);
+      expect(crossTeam.body.data.primary.id).toBe(ids.staffA);
       expect(new Set((await customerDoc(c1))!.teamIds.map(String))).toEqual(
         new Set([ids.teamA, ids.teamB]),
       );
@@ -610,11 +612,6 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
           'POST',
           `/crm/customers/${c1}/care-team/members`,
           { userIds: [ids.staffD] },
-        ],
-        [
-          'PUT',
-          `/crm/customers/${c1}/care-team/primary`,
-          { userId: ids.staffB },
         ],
         ['GET', `/crm/customers/${c1}/care-logs`, undefined],
         [
@@ -1752,7 +1749,12 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       b1 = (await createCustomer('staffA')).id;
       b2 = (await createCustomer('staffA')).id;
       b3 = (await createCustomer('staffC')).id;
+      // Khách cũ (trước v1.0.5) chưa có nhóm chăm sóc: người tạo mới luôn là PRIMARY nên dựng bằng DB.
       bNoTeam = (await createCustomer('admin')).id;
+      await customers().updateOne(
+        { _id: new Types.ObjectId(bNoTeam) },
+        { $set: { careTeam: [], primaryAssigneeId: null, teamIds: [] } },
+      );
     });
 
     const bulk = (

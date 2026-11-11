@@ -528,20 +528,48 @@ describe('planReconcile', () => {
       });
     });
 
-    it('FR-21: quy tắc từ chối không áp cho phase=post-up hoặc all (chạy post-up trước là lối thoát)', () => {
-      const base = {
+    it('FR-21: từ chối (REFUSED) khi post-up mà pre-up chờ nhỏ hơn post-up chờ, nêu "--phase pre-up", không ghi gì', () => {
+      const plan = planReconcile({
         state: state({ version: withVersion('1.0.3') }),
         appVersion: '1.0.3',
         registryIds: ['007_one', '008_post', '009_pre'],
         postUpIds: ['008_post'],
-      };
-      const postUp = planReconcile({ ...base, phase: 'post-up' });
-      const all = planReconcile({ ...base, phase: 'all' });
-      expect(postUp).toMatchObject({
+        phase: 'post-up',
+      });
+      expect(plan.outcome).toBe('REFUSED');
+      expect(plan.reason).toContain('007_one');
+      expect(plan.reason).toContain('008_post');
+      expect(plan.reason).toContain('--phase pre-up');
+      expect(plan.pendingIds).toEqual([]);
+    });
+
+    it('FR-21: post-up hợp lệ khi pre-up chờ chỉ có số LỚN hơn post-up chờ (post-up chạy trước là lối thoát của chiều pre-up)', () => {
+      const plan = planReconcile({
+        state: state({
+          version: withVersion('1.0.3'),
+          applied: applied('007_one'),
+        }),
+        appVersion: '1.0.3',
+        registryIds: ['007_one', '008_post', '009_pre'],
+        postUpIds: ['008_post'],
+        phase: 'post-up',
+      });
+      expect(plan).toMatchObject({
         outcome: 'READY',
         pendingIds: ['008_post'],
       });
-      expect(all.pendingIds).toEqual(['007_one', '008_post', '009_pre']);
+    });
+
+    it('FR-21: phase=all không bị từ chối và chạy đủ theo thứ tự số', () => {
+      const plan = planReconcile({
+        state: state({ version: withVersion('1.0.3') }),
+        appVersion: '1.0.3',
+        registryIds: ['007_one', '008_post', '009_pre'],
+        postUpIds: ['008_post'],
+        phase: 'all',
+      });
+      expect(plan.outcome).toBe('READY');
+      expect(plan.pendingIds).toEqual(['007_one', '008_post', '009_pre']);
     });
 
     it('FR-21: pre-up chờ đã hết (chỉ còn post-up) thì phase=pre-up là noop, không từ chối', () => {

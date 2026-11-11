@@ -62,7 +62,8 @@ require_pre_up_done() {
   fi
   pending="$(sed -E 's/.*"pending":\[(.*)\],"locked":.*/\1/' <<<"$json")"
   if grep -q '"phase":"pre-up"' <<<"$pending"; then
-    ids="$(grep -oE '"id":"[^"]+"' <<<"$pending" | cut -d'"' -f4 | paste -sd ' ' - || true)"
+    # Chỉ liệt các id có phase pre-up (011 post-up KHÔNG nằm trong danh sách "pre-up chờ"). Thứ tự khóa id, description, phase như migration-runner.
+    ids="$(grep -oE '"id":"[^"]+","description":"([^"\\]|\\.)*","phase":"pre-up"' <<<"$pending" | sed -E 's/^"id":"([^"]+)".*/\1/' | paste -sd ' ' - || true)"
     fail_step "bước 90 TỪ CHỐI chạy 011 (MỘT CHIỀU): còn migration pre-up chờ (${ids:-?}), tức 010 và/hoặc migration trước nó CHƯA áp dụng; bước 20 có thể đã thoát 0 mà không bù mã. Chưa ghi gì." \
       "Bước 90 từ chối: còn migration pre-up chờ (${ids:-?}) nên 011 chưa được phép chạy. Chưa ghi gì. Chạy: $CLI_HINT reconcile --apply --by cli --phase pre-up ; bù mã (bước 20) ; rồi $CLI_HINT reconcile --apply --by cli --skip-version --phase post-up. Xem $DOC mục 11."
   fi

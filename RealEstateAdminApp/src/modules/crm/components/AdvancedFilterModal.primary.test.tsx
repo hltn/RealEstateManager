@@ -22,10 +22,10 @@ const setup = (isShowingPrimaryFilter?: boolean) => {
 };
 
 describe('AdvancedFilterModal: bộ lọc "Phụ trách chính"', () => {
-  it('mặc định (Nhân viên): không có nhóm "Phụ trách chính"; vẫn có nhóm "Người chăm sóc"', () => {
+  it('mặc định (Nhân viên): không có nhóm "Phụ trách chính"; vẫn có nhóm "Người phụ trách"', () => {
     setup();
     expect(screen.queryByRole('group', { name: 'Phụ trách chính' })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: /Người chăm sóc/ })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Người phụ trách/ })).toBeInTheDocument();
   });
 
   it('Quản trị/Quản lý: có nhóm "Phụ trách chính" với danh sách từ customer-assignees; chọn rồi Áp dụng gửi primaryAssigneeIds', () => {

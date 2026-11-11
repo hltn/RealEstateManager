@@ -77,7 +77,7 @@ Mong đợi (so `truoc` với `sau`):
 ### Bước 6. Thời gian, log, nhánh phụ
 
 - Ghi thời gian từng bước (backup, build, migrate, up, bước 10/20/90). Kiểm `.staging/logs/deploy-*.log` và `deploy-customer-codes-*.log`: không có cảnh báo đỏ ngoài dự kiến.
-- `--no-migrate`: dựng lại tình huống sổ chưa có 010 (restore lại dump rồi `bash scripts/staging.sh deploy --no-migrate`): bước 20 thoát 0 "chưa áp dụng, bỏ qua", bước 90 từ chối chạy 011 khi còn pre-up chờ.
+- `--no-migrate` (hành vi thật): `bash scripts/staging.sh deploy --no-migrate` khi còn migration chờ **dừng TRƯỚC `up`, thoát 1** ("DỪNG TRƯỚC KHI CẬP NHẬT: còn migration chờ"); stack giữ nguyên, backup đã tạo, bước 10/20/90 không chạy. Vì vậy bước 20/90 được kiểm bằng cách chạy **trực tiếp** tệp bước trên DB staging có sổ dừng ở 006 (chưa có 010): bước 20 thoát 0 "chưa áp dụng, bỏ qua"; bước 90 từ chối chạy 011 (thoát 1, sổ không đổi), thông báo chỉ liệt các migration **pre-up** còn chờ.
 - Downgrade có chủ ý (`DEPLOY_ALLOW_DOWNGRADE=1`, deploy bản cũ hơn DB): bỏ qua **toàn bộ** điểm gọi hậu-migrate.
 - Xác nhận `deploy.sh` không chứa logic bù mã (`grep -n customerCode deploy.sh` không có kết quả nghiệp vụ).
 
@@ -85,19 +85,19 @@ Mong đợi (so `truoc` với `sau`):
 
 | # | Kiểm tra | Mong đợi | Thực tế | Đạt? |
 |---|---|---|---|---|
-| 1 | `careTeamWithoutPrimary` trước | 0 | | |
-| 2 | Kế hoạch `--plan-only` | các migration chờ tính từ sổ của dump: pre-up đến 010, rồi 011 (post-up) | | |
-| 3a | `step3`: chèn khách không mã | 2 thành công | | |
-| 3b | `step3`: trùng SĐT | E11000 | | |
-| 4a | `withoutCode` / `duplicateCodeGroups` sau | 0 / 0 | | |
-| 4b | `phoneAnonymized` sau | 0 | | |
-| 4c | `phone_1` / index mã sau | thường / unique partial | | |
-| 4d | Hai khách cùng SĐT qua API | thành công | | |
-| 5a | Deploy lần hai | ảnh không đổi, bước 20 báo 0 việc | | |
-| 5b | `up` lỗi rồi deploy lại | bước 20 bù đủ; 011 chỉ chạy sau cùng | | |
-| 6a | Thời gian từng bước | ghi nhận | | |
-| 6b | `--no-migrate` | bước 20 thoát 0; 011 bị từ chối | | |
-| 6c | Downgrade có chủ ý | bỏ qua hậu-migrate | | |
-| 6d | `deploy.sh` không chứa logic bù mã | đúng | | |
+| 1 | `careTeamWithoutPrimary` trước | 0 | 0 (8 khách, sổ ở 006) | Đạt |
+| 2 | Kế hoạch `--plan-only` | các migration chờ tính từ sổ của dump: pre-up đến 010, rồi 011 (post-up) | `--plan-only` liệt 007..011, 011 post-up; không ghi gì (lần chạy 1, 2026-11-11) | Đạt |
+| 3a | `step3`: chèn khách không mã | 2 thành công | 2 thành công (insertedWithoutCode=2) | Đạt |
+| 3b | `step3`: trùng SĐT | E11000 | E11000 (`duplicatePhoneRejected=true`, `ok=true`) | Đạt |
+| 4a | `withoutCode` / `duplicateCodeGroups` sau | 0 / 0 | 0 / 0 (10/10 khách có mã) | Đạt |
+| 4b | `phoneAnonymized` sau | 0 | 0 | Đạt |
+| 4c | `phone_1` / index mã sau | thường / unique partial | `phone_1` thường; `customerCode_1` unique partial; counter seq=10 | Đạt |
+| 4d | Hai khách cùng SĐT qua API | thành công | 201 x3 (hai SĐT trùng + một không SĐT), mã KH-000011..13 | Đạt |
+| 5a | Deploy lần hai | ảnh không đổi, bước 20 báo 0 việc | chỉ doc `script:crm-customer-codes` đổi; bước 20 `assigned=0` | Đạt |
+| 5b | `up` lỗi rồi deploy lại | bước 20 bù đủ; 011 chỉ chạy sau cùng | `up` lỗi (khóa PII sai) mã 1; deploy lại: bước 20 `assigned=10`, 011 sau cùng | Đạt |
+| 6a | Thời gian từng bước | ghi nhận | cold build ~295 s (đổi package.json); tổng 355 s. Có cache: tổng 59 s (backup 8, build 8, up 18, liveness 7, bước 10/20/90: 3/2/6 s) | Đạt |
+| 6b | `--no-migrate` | deploy dừng trước `up` mã 1, stack nguyên; bước 20 trực tiếp thoát 0; bước 90 trực tiếp bị từ chối mã 1, sổ không đổi | deploy dừng trước `up` mã 1, container không đổi; bước 20 trực tiếp thoát 0; bước 90 trực tiếp từ chối mã 1, sổ không đổi | Đạt |
+| 6c | Downgrade có chủ ý | bỏ qua hậu-migrate | bỏ qua hậu-migrate (lần chạy 1) | Đạt |
+| 6d | `deploy.sh` không chứa logic bù mã | đúng | `customerCode` trong deploy.sh chỉ là chú thích | Đạt |
 
 So sánh hai ảnh: `diff .staging/snapshots/truoc-*.json .staging/snapshots/sau-*.json`.

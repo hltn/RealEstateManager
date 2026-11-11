@@ -139,9 +139,9 @@ describe('Bộ lọc nâng cao: "Phụ trách chính"', () => {
     expect(screen.getByRole('group', { name: 'Phụ trách chính' })).toBeInTheDocument();
   });
 
-  it.each([['sheet'], ['dialog']] as const)('Nhân viên không thấy nhóm "Phụ trách chính" nhưng vẫn có nhóm người chăm sóc (%s)', (variant) => {
+  it.each([['sheet'], ['dialog']] as const)('Nhân viên không thấy nhóm "Phụ trách chính" nhưng vẫn có nhóm "Người phụ trách" (%s)', (variant) => {
     renderModal('thao', variant);
     expect(screen.queryByRole('group', { name: 'Phụ trách chính' })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: /Người chăm sóc \(chính hoặc hỗ trợ\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Người phụ trách \(chính hoặc hỗ trợ\)/ })).toBeInTheDocument();
   });
 });

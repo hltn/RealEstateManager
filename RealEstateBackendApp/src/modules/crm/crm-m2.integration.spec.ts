@@ -20,6 +20,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
@@ -114,18 +115,44 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
   /** SĐT VN hợp lệ, duy nhất theo thứ tự gọi. */
   const nextPhone = () => `091${String(1_000_000 + ++phoneSeq)}`;
 
+  /**
+   * Tạo khách. Từ v1.0.5 `careTeam` KHÔNG còn là trường của `CreateCustomerDto` (gửi lên là 400) và người tạo luôn là
+   * PRIMARY. Để dựng nhóm chăm sóc có sẵn cho ca thử, helper tạo khách bằng CHÍNH người PRIMARY mong muốn rồi mời các
+   * `memberIds` qua `POST .../care-team/members` (đường thật, không ghi thẳng DB). Có mời thành viên thì mỗi lần mời tăng
+   * `version` nên `res` là phản hồi chi tiết MỚI NHẤT (GET); không mời thì là phản hồi lúc TẠO.
+   */
   const createCustomer = async (
     as: string,
     extra: Record<string, unknown> = {},
   ): Promise<{ id: string; phone: string; res: Res }> => {
+    const { careTeam, ...body } = extra as {
+      careTeam?: { memberIds: string[]; primaryUserId: string };
+    } & Record<string, unknown>;
+    const creator = careTeam
+      ? Object.keys(ids).find((key) => ids[key] === careTeam.primaryUserId)
+      : as;
+    if (!creator) throw new Error('primaryUserId của careTeam không có token');
     const phone = nextPhone();
-    const res = await call('POST', '/crm/customers', as, {
+    const res = await call('POST', '/crm/customers', creator, {
       fullName: `Khách ${phone}`,
       phone,
-      ...extra,
+      ...body,
     });
     expect(res.status).toBe(201);
-    return { id: res.body.data.id, phone, res };
+    const id = res.body.data.id as string;
+    if (careTeam && careTeam.memberIds.length > 0) {
+      const invited = await call(
+        'POST',
+        `/crm/customers/${id}/care-team/members`,
+        creator,
+        { userIds: careTeam.memberIds },
+      );
+      expect(invited.status).toBe(201);
+      const latest = await call('GET', `/crm/customers/${id}`, creator);
+      expect(latest.status).toBe(200);
+      return { id, phone, res: latest };
+    }
+    return { id, phone, res };
   };
 
   const listIds = async (as: string, query = ''): Promise<string[]> => {
@@ -295,59 +322,92 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         entityType: 'CUSTOMER',
       });
       expect(audit.requestId).toBeTruthy();
-      // SĐT trong audit lúc tạo bị che.
-      expect(JSON.stringify(audit.changes)).not.toContain(phone.slice(4));
+      // SĐT trong audit lúc tạo bị che (kiểm riêng dòng `phone`: 6 số cuối có thể trùng ngẫu nhiên với mã KH-00000x).
+      const phoneChange = audit.changes.find((c: any) => c.field === 'phone');
+      expect(phoneChange.to).toMatch(/^0911 ••• \d{3}$/);
+      expect(String(phoneChange.to)).not.toContain(phone.slice(4));
+      // FR-07: mã khách tự sinh, có trong response và trong audit.
+      expect(body.customerCode).toMatch(/^KH-\d{6,}$/);
+      expect(
+        audit.changes.find((c: any) => c.field === 'customerCode').to,
+      ).toBe(body.customerCode);
     });
 
-    it('Quản trị/Quản lý chỉ định careTeam; Nhân viên không được; người được phân phải hợp lệ và thuộc nhóm Quản lý quản lý', async () => {
-      const asAdmin = await createCustomer('admin', {
+    it('FR-10: Nhân viên/Quản lý/Quản trị tạo đều là PRIMARY (teamIds theo nhóm người tạo, Admin thuần []); body có `careTeam` => 400 và không tạo khách', async () => {
+      const asAdmin = await createCustomer('admin');
+      const adminBody = asAdmin.res.body.data;
+      expect(adminBody.primaryAssignee.id).toBe(ids.admin);
+      expect(adminBody.careTeam).toHaveLength(1);
+      expect(adminBody.careTeam[0]).toMatchObject({ role: 'PRIMARY' });
+      const adminStored = await customers().findOne({
+        _id: new Types.ObjectId(asAdmin.id),
+      });
+      expect(adminStored?.teamIds).toEqual([]);
+      expect(String(adminStored?.primaryAssigneeId)).toBe(ids.admin);
+      expect(await listIds('admin')).toContain(asAdmin.id);
+
+      const asManager = await createCustomer('manager1');
+      expect(asManager.res.body.data.primaryAssignee.id).toBe(ids.manager1);
+      expect(asManager.res.body.data.careTeam).toHaveLength(1);
+      expect(
+        (
+          await customers().findOne({ _id: new Types.ObjectId(asManager.id) })
+        )?.teamIds.map(String),
+      ).toEqual([ids.teamA]);
+
+      // `careTeam` không còn là trường của DTO: mọi vai trò gửi lên đều 400 (cả PWA cũ chưa tải lại), không tạo khách.
+      const before = await customers().countDocuments({});
+      for (const who of ['admin', 'manager1', 'staffA']) {
+        for (const careTeam of [
+          { memberIds: [], primaryUserId: ids.staffB },
+          { memberIds: [ids.staffB] },
+        ]) {
+          const res = await call('POST', '/crm/customers', who, {
+            fullName: 'X',
+            phone: nextPhone(),
+            careTeam,
+          });
+          expect([who, res.status]).toEqual([who, 400]);
+        }
+      }
+      expect(await customers().countDocuments({})).toBe(before);
+
+      // Dựng dữ liệu cho các nhóm test sau qua đường thật (người PRIMARY tạo rồi mời thành viên).
+      const asStaffC = await createCustomer('admin', {
         careTeam: { memberIds: [], primaryUserId: ids.staffC },
       });
-      c2 = asAdmin.id;
-      expect(asAdmin.res.body.data.primaryAssignee.id).toBe(ids.staffC);
+      c2 = asStaffC.id;
+      expect(asStaffC.res.body.data.primaryAssignee.id).toBe(ids.staffC);
       expect(
         (
           await customers().findOne({ _id: new Types.ObjectId(c2) })
         )?.teamIds.map(String),
       ).toEqual([ids.teamB]);
 
-      const asManager = await createCustomer('manager1', {
+      const withMember = await createCustomer('manager1', {
         careTeam: { memberIds: [ids.staffA], primaryUserId: ids.staffB },
       });
-      c3 = asManager.id;
-      expect(asManager.res.body.data.careTeam).toHaveLength(2);
-
-      const staffAssigns = await call('POST', '/crm/customers', 'staffA', {
-        fullName: 'X',
-        phone: nextPhone(),
-        careTeam: { memberIds: [], primaryUserId: ids.staffB },
-      });
-      expect(staffAssigns.status).toBe(403);
-      expect(staffAssigns.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
-
-      // manager1 không được phân người của nhóm B; người bị khóa/EDITOR cũng không hợp lệ.
-      for (const user of ['staffC', 'blockedStaff', 'editor']) {
-        const res = await call('POST', '/crm/customers', 'manager1', {
-          fullName: 'X',
-          phone: nextPhone(),
-          careTeam: { memberIds: [], primaryUserId: ids[user] },
-        });
-        expect(res.status).toBe(400);
-        expect(res.body.errorCode).toBe('USER_NOT_ASSIGNABLE');
-      }
+      c3 = withMember.id;
+      expect(withMember.res.body.data.primaryAssignee.id).toBe(ids.staffB);
+      const team = await call('GET', `/crm/customers/${c3}/care-team`, 'staffB');
+      expect(team.status).toBe(200);
+      expect(team.body.data.members).toHaveLength(2);
+      expect(team.body.data.primary.id).toBe(ids.staffB);
     });
 
-    it('Quản lý tạo không chỉ định careTeam: khách thuộc nhóm mình quản lý và chính họ thấy được; Quản lý không quản lý nhóm nào => 400 PRIMARY_REQUIRED', async () => {
+    it('FR-10: Quản lý không quản lý nhóm nào vẫn tạo được khách (PRIMARY, teamIds []) và tự thấy khách của mình (trước đây 400 PRIMARY_REQUIRED)', async () => {
       const own = await createCustomer('manager2');
       expect(await listIds('manager2')).toContain(own.id);
 
       await createUser('lonelyManager', UserRole.MANAGER);
-      const res = await call('POST', '/crm/customers', 'lonelyManager', {
-        fullName: 'Y',
-        phone: nextPhone(),
-      });
-      expect(res.status).toBe(400);
-      expect(res.body.errorCode).toBe('PRIMARY_REQUIRED');
+      const lonely = await createCustomer('lonelyManager');
+      expect(lonely.res.body.data.primaryAssignee.id).toBe(ids.lonelyManager);
+      expect(
+        (
+          await customers().findOne({ _id: new Types.ObjectId(lonely.id) })
+        )?.teamIds,
+      ).toEqual([]);
+      expect(await listIds('lonelyManager')).toEqual([lonely.id]);
     });
 
     it('ma trận xem: Quản trị thấy tất cả; Quản lý theo nhóm quản lý; Nhân viên theo careTeam; EDITOR 403', async () => {
@@ -420,68 +480,156 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(ids404.status).toBe(400);
     });
 
-    it('trùng SĐT (mọi cách viết) => 409 CUSTOMER_PHONE_DUPLICATED; người ngoài phạm vi chỉ biết "do [tên] chăm sóc"; có audit PHONE_LOOKUP', async () => {
+    it('FR-01/FR-03: hai khách cùng SĐT (mọi cách viết) đều tạo được 201, mã khác nhau; người tạo thứ hai không biết khách kia; không còn audit PHONE_LOOKUP', async () => {
       const stored = (await customers().findOne({
         _id: new Types.ObjectId(c1),
       }))!;
       const national = `0${String(stored.phone).slice(3)}`;
       const spaced = `${national.slice(0, 4)} ${national.slice(4, 7)} ${national.slice(7)}`;
 
+      // staffC (ngoài phạm vi của c1) tạo trùng SĐT: không còn 409, response không rò thông tin của staffA/c1.
       const outsider = await call('POST', '/crm/customers', 'staffC', {
-        fullName: 'Trùng',
+        fullName: 'Trùng 1',
         phone: spaced,
       });
-      expect(outsider.status).toBe(409);
-      expect(outsider.body.errorCode).toBe('CUSTOMER_PHONE_DUPLICATED');
-      expect(outsider.body.details).toMatchObject({
-        caredByName: 'staffA',
-        customerRef: c1,
-        canRequestJoin: true,
-        isAccessible: false,
-      });
-      expect(outsider.body.message).toContain('staffA');
+      expect(outsider.status).toBe(201);
+      expect(outsider.body.data.id).not.toBe(c1);
+      expect(outsider.body.data.primaryAssignee.id).toBe(ids.staffC);
+      expect(outsider.body.errorCode).toBeUndefined();
+      expect(outsider.body.details).toBeUndefined();
+      expect(JSON.stringify(outsider.body)).not.toContain('staffA');
       expect(JSON.stringify(outsider.body)).not.toContain('Nguyễn Văn An');
 
+      // staffA (người chăm c1) tạo thêm cùng số ở dạng +84: vẫn 201.
       const insider = await call('POST', '/crm/customers', 'staffA', {
-        fullName: 'Trùng',
+        fullName: 'Trùng 2',
         phone: `+84${national.slice(1)}`,
       });
-      expect(insider.status).toBe(409);
-      expect(insider.body.details).toMatchObject({
-        isAccessible: true,
-        customerId: c1,
-      });
+      expect(insider.status).toBe(201);
+
+      const codes = [
+        stored.customerCode,
+        outsider.body.data.customerCode,
+        insider.body.data.customerCode,
+      ];
+      expect(new Set(codes).size).toBe(3);
       expect(
-        (await auditOf(c1, 'PHONE_LOOKUP')).map((row) => String(row.actorId)),
-      ).toEqual([ids.staffC]);
+        await customers().countDocuments({ phone: stored.phone, deletedAt: null }),
+      ).toBe(3);
+      // staffC chỉ thấy khách của mình, không thấy c1 (cùng SĐT không mở phạm vi xem).
+      expect(await listIds('staffC')).not.toContain(c1);
+      // Không còn luồng tra trùng nên không phát sinh audit PHONE_LOOKUP.
+      expect(
+        await connection
+          .collection('crm_audit_logs')
+          .countDocuments({ action: 'PHONE_LOOKUP' }),
+      ).toBe(0);
     });
 
-    it('race: 6 yêu cầu tạo cùng SĐT đồng thời => đúng 1 khách được tạo, còn lại 409 (unique index, không dựa kiểm tra trước)', async () => {
+    it('FR-01/FR-02: tạo khách KHÔNG SĐT (bỏ trống/null/""/toàn khoảng trắng) => 201, phone null, phoneMasked null, vẫn có mã; nhiều khách không SĐT không đụng nhau; SĐT sai vẫn 400', async () => {
+      const bodies: Array<Record<string, unknown>> = [
+        { fullName: 'Không SĐT 1' },
+        { fullName: 'Không SĐT 2', phone: null },
+        { fullName: 'Không SĐT 3', phone: '' },
+        { fullName: 'Không SĐT 4', phone: '   ' },
+      ];
+      const created: Res[] = [];
+      for (const body of bodies) {
+        const res = await call('POST', '/crm/customers', 'staffA', body);
+        expect([body.fullName, res.status]).toEqual([body.fullName, 201]);
+        created.push(res);
+      }
+      for (const res of created) {
+        expect(res.body.data.phoneMasked).toBeNull();
+        expect(res.body.data.customerCode).toMatch(/^KH-\d{6,}$/);
+        const stored = await customers().findOne({
+          _id: new Types.ObjectId(res.body.data.id),
+        });
+        expect(stored?.phone).toBeNull();
+        expect(stored?.customerCode).toBe(res.body.data.customerCode);
+        // Chi tiết và danh sách chịu được phone null.
+        const detail = await call(
+          'GET',
+          `/crm/customers/${res.body.data.id}`,
+          'staffA',
+        );
+        expect(detail.status).toBe(200);
+        expect(detail.body.data.phoneMasked).toBeNull();
+      }
+      expect(
+        new Set(created.map((res) => res.body.data.customerCode)).size,
+      ).toBe(4);
+      const list = await call('GET', '/crm/customers?limit=100', 'staffA');
+      const listed = list.body.data.find(
+        (item: { id: string }) => item.id === created[0].body.data.id,
+      );
+      expect(listed.phoneMasked).toBeNull();
+      // Audit tạo không có dòng `phone` chứa giá trị, không lỗi null.
+      const [audit] = await auditOf(created[0].body.data.id, 'CUSTOMER_CREATED');
+      const phoneChange = audit.changes.find((c: any) => c.field === 'phone');
+      expect(phoneChange?.to ?? null).toBeNull();
+      // SĐT có nhập nhưng sai vẫn bị từ chối.
+      const bad = await call('POST', '/crm/customers', 'staffA', {
+        fullName: 'Sai',
+        phone: '12',
+      });
+      expect(bad.status).toBe(400);
+      expect(bad.body.errorCode).toBe('INVALID_PHONE');
+    });
+
+    it('FR-07: 6 yêu cầu tạo cùng SĐT đồng thời => cả 6 đều 201 (không còn unique SĐT), 6 mã khác nhau; mỗi khách đúng 1 audit CUSTOMER_CREATED', async () => {
       const phone = nextPhone();
-      // Cùng MỘT người gọi: người thắng không phụ thuộc thứ tự đến trước, nên khách "Race" luôn thuộc staffA và không
-      // làm lệch các test sau (lọc theo người phụ trách, PHONE_LOOKUP của người ngoài phạm vi...).
       const results = await Promise.all(
         Array.from({ length: 6 }, () =>
           call('POST', '/crm/customers', 'staffA', { fullName: 'Race', phone }),
         ),
       );
-      const statuses = results.map((res) => res.status).sort();
-      expect(statuses).toEqual([201, 409, 409, 409, 409, 409]);
+      expect(results.map((res) => res.status)).toEqual([
+        201, 201, 201, 201, 201, 201,
+      ]);
+      const created = results.map((res) => res.body.data);
+      expect(new Set(created.map((c) => c.id)).size).toBe(6);
+      expect(new Set(created.map((c) => c.customerCode)).size).toBe(6);
       expect(
-        await customers().countDocuments({
-          phone: `+84${phone.slice(1)}`,
-        }),
-      ).toBe(1);
-      // Khách thua cuộc không để lại audit CUSTOMER_CREATED (transaction rollback).
-      const created = await customers().findOne({
-        phone: `+84${phone.slice(1)}`,
-      });
-      expect(
-        await auditOf(String(created!._id), 'CUSTOMER_CREATED'),
-      ).toHaveLength(1);
+        await customers().countDocuments({ phone: `+84${phone.slice(1)}` }),
+      ).toBe(6);
+      for (const c of created) {
+        expect(await auditOf(c.id, 'CUSTOMER_CREATED')).toHaveLength(1);
+      }
     });
 
-    it('validate: SĐT sai => 400 INVALID_PHONE; email sai/ID danh mục lạ/field thừa => 400; null cho field bắt buộc ở PATCH => 400', async () => {
+    it('FR-07: 20 khách tạo đồng thời (nhiều người, có/không SĐT) => 20 mã duy nhất, không thủng/không trùng; counter khớp số khách đã cấp mã', async () => {
+      const creators = ['staffA', 'staffB', 'staffC', 'manager1', 'admin'];
+      const results = await Promise.all(
+        Array.from({ length: 20 }, (_unused, index) =>
+          call('POST', '/crm/customers', creators[index % creators.length], {
+            fullName: `Đồng thời ${index}`,
+            ...(index % 2 === 0 ? { phone: nextPhone() } : {}),
+          }),
+        ),
+      );
+      expect(results.map((res) => res.status)).toEqual(Array(20).fill(201));
+      const codes = results.map((res) => res.body.data.customerCode as string);
+      expect(new Set(codes).size).toBe(20);
+      expect(codes.every((code) => /^KH-\d{6,}$/.test(code))).toBe(true);
+
+      // Mọi mã trong DB duy nhất và dải số liên tục (không thủng): giá trị lớn nhất = số khách có mã = seq của counter.
+      const all = await customers()
+        .find({ customerCode: { $type: 'string' } })
+        .project({ customerCode: 1 })
+        .toArray();
+      const seqs = all
+        .map((row) => Number(String(row.customerCode).slice(3)))
+        .sort((a, b) => a - b);
+      expect(new Set(seqs).size).toBe(seqs.length);
+      expect(seqs[seqs.length - 1] - seqs[0] + 1).toBe(seqs.length);
+      const counter = await connection
+        .collection('counters')
+        .findOne({ _id: 'CUSTOMER_CODE' as never });
+      expect(counter?.seq).toBe(seqs[seqs.length - 1]);
+    });
+
+    it('validate: SĐT sai => 400 INVALID_PHONE; email sai/ID danh mục lạ/field thừa (kể cả customerCode) => 400; null cho field bắt buộc ở PATCH => 400', async () => {
       const bad = await call('POST', '/crm/customers', 'admin', {
         fullName: 'A',
         phone: '123',
@@ -508,9 +656,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       const detail = await call('GET', `/crm/customers/${c1}`, 'staffA');
       for (const body of [
         { version: detail.body.data.version, fullName: null },
-        { version: detail.body.data.version, phone: null },
         { version: detail.body.data.version, interestedProjectIds: null },
         { fullName: 'thiếu version' },
+        // FR-07: mã khách do hệ thống cấp, không sửa được qua PATCH (trường lạ => 400).
+        { version: detail.body.data.version, customerCode: 'KH-999999' },
       ]) {
         expect(
           (await call('PATCH', `/crm/customers/${c1}`, 'staffA', body)).status,
@@ -590,119 +739,75 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
   });
 
   // ---------------------------------------------------------------------------------------------
-  describe('phone-lookups', () => {
-    it('chưa có / trong phạm vi / ngoài phạm vi; người tra thấy khác nhau theo vai trò; SĐT sai 400', async () => {
-      const fresh = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffA',
-        {
-          phone: '0987 000 111',
-        },
-      );
-      expect(fresh.status).toBe(200);
-      expect(fresh.body.data).toMatchObject({
-        normalizedPhone: '+84987000111',
-        exists: false,
-        isAccessible: false,
-        canRequestJoin: false,
-      });
-
-      const stored = (await customers().findOne({
-        _id: new Types.ObjectId(ids.c1),
-      }))!;
-      const mine = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffA',
-        {
-          phone: stored.phone,
-        },
-      );
-      expect(mine.body.data).toMatchObject({
-        exists: true,
-        isAccessible: true,
-        customerId: ids.c1,
-      });
-
-      const theirs = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffC',
-        {
-          phone: stored.phone,
-        },
-      );
-      expect(theirs.body.data).toMatchObject({
-        exists: true,
-        isAccessible: false,
-        customerRef: ids.c1,
-        caredByName: 'staffA',
-        canRequestJoin: true,
-        hasPendingRequest: false,
-      });
-      expect(theirs.body.data.customerId).toBeUndefined();
-
-      const asAdmin = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'admin',
-        {
-          phone: stored.phone,
-        },
-      );
-      expect(asAdmin.body.data).toMatchObject({
-        isAccessible: true,
-        canRequestJoin: false,
-        isDeleted: false,
-      });
-
-      const invalid = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffA',
-        {
-          phone: 'abc',
-        },
-      );
-      expect(invalid.status).toBe(400);
-      expect(invalid.body.errorCode).toBe('INVALID_PHONE');
-      expect(
-        (
-          await call('POST', '/crm/customers/phone-lookups', 'editor', {
-            phone: stored.phone,
-          })
-        ).status,
-      ).toBe(403);
-    });
-
-    it('rate limit 30 lần/phút/người => 429 RATE_LIMITED { retryAfterSeconds }, người khác không bị ảnh hưởng', async () => {
-      await createUser('prober', UserRole.STAFF);
-      let limited: Res | undefined;
-      for (let attempt = 1; attempt <= 31; attempt += 1) {
-        const res = await call(
-          'POST',
-          '/crm/customers/phone-lookups',
-          'prober',
-          {
-            phone: '0987000222',
-          },
-        );
-        if (res.status === 429) {
-          limited = res;
-          expect(attempt).toBe(31);
-          break;
+  describe('Route đã xóa ở v1.0.5 (FR-03, FR-11, FR-12, FR-20): 404 và không còn trong Swagger', () => {
+    it('phone-lookups, PUT care-team/primary, assignable-users (cả hai purpose), 3 route care-team-requests => 404 cho mọi vai trò (kể cả Admin)', async () => {
+      const removed: Array<[Parameters<typeof call>[0], string, unknown]> = [
+        ['POST', '/crm/customers/phone-lookups', { phone: '0987000111' }],
+        [
+          'PUT',
+          `/crm/customers/${ids.c3}/care-team/primary`,
+          { userId: ids.staffA },
+        ],
+        ['GET', '/crm/assignable-users', undefined],
+        ['GET', '/crm/assignable-users?purpose=assign', undefined],
+        ['GET', '/crm/assignable-users?purpose=filter', undefined],
+        ['POST', '/crm/care-team-requests', { customerId: ids.c1 }],
+        ['GET', '/crm/care-team-requests', undefined],
+        [
+          'PATCH',
+          `/crm/care-team-requests/${new Types.ObjectId().toHexString()}`,
+          { decision: 'APPROVE' },
+        ],
+      ];
+      for (const [method, url, body] of removed) {
+        for (const who of ['admin', 'manager1', 'staffA']) {
+          const res = await call(method, url, who, body);
+          expect([method, url, who, res.status]).toEqual([
+            method,
+            url,
+            who,
+            404,
+          ]);
         }
       }
-      expect(limited?.body.errorCode).toBe('RATE_LIMITED');
-      expect(limited?.body.details.retryAfterSeconds).toBeGreaterThan(0);
+      // Route còn lại cùng tiền tố vẫn sống (không xóa nhầm).
       expect(
         (
-          await call('POST', '/crm/customers/phone-lookups', 'staffD', {
-            phone: '0987000222',
-          })
+          await call('GET', `/crm/customers/${ids.c3}/care-team`, 'manager1')
         ).status,
       ).toBe(200);
+    });
+
+    it('Swagger không còn route đã xóa, vẫn có route mới (customer-assignees, care-team-invitees) và POST /crm/customers không còn trường careTeam', () => {
+      const doc = SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder().setTitle('qa').addBearerAuth().build(),
+      );
+      const paths = Object.keys(doc.paths);
+      for (const gone of [
+        'phone-lookups',
+        'assignable-users',
+        'care-team-requests',
+      ]) {
+        expect([gone, paths.filter((p) => p.includes(gone))]).toEqual([gone, []]);
+      }
+      expect(
+        doc.paths['/api/v1/crm/customers/{id}/care-team/primary'],
+      ).toBeUndefined();
+      for (const route of [
+        '/api/v1/crm/customer-assignees',
+        '/api/v1/crm/care-team-invitees',
+        '/api/v1/crm/customers/{id}/care-team/members',
+      ]) {
+        expect([route, doc.paths[route] !== undefined]).toEqual([route, true]);
+      }
+      const schemas = (doc.components?.schemas ?? {}) as Record<string, any>;
+      const createDto = schemas.CreateCustomerDto;
+      expect(createDto).toBeDefined();
+      expect(Object.keys(createDto.properties)).not.toContain('careTeam');
+      expect(Object.keys(createDto.properties)).not.toContain('customerCode');
+      // `phone` tùy chọn ở DTO tạo khách (FR-01).
+      expect(createDto.required ?? []).not.toContain('phone');
     });
   });
 
@@ -771,6 +876,53 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         },
       );
       expect(invalid.status).toBe(400);
+    });
+
+    it('FR-04: khách không SĐT => phone-views 409 CUSTOMER_PHONE_NOT_SET, KHÔNG ghi PHONE_VIEWED, không đốt lượt PHONE_VIEW (70 lần vẫn 409, không 429); người ngoài phạm vi vẫn 404 (kiểm phạm vi trước)', async () => {
+      const created = await call('POST', '/crm/customers', 'staffA', {
+        fullName: 'Không SĐT để xem',
+      });
+      expect(created.status).toBe(201);
+      const id = created.body.data.id as string;
+
+      const first = await call('POST', `/crm/customers/${id}/phone-views`, 'staffA', {
+        purpose: 'VIEW',
+      });
+      expect(first.status).toBe(409);
+      expect(first.body.errorCode).toBe('CUSTOMER_PHONE_NOT_SET');
+      expect(JSON.stringify(first.body)).not.toMatch(/\+84|09\d{8}/);
+      expect(await auditOf(id, 'PHONE_VIEWED')).toHaveLength(0);
+
+      // Giới hạn PHONE_VIEW là 60/phút/người: nếu 409 có đốt lượt thì lần > 60 sẽ thành 429.
+      const statuses = new Set<number>();
+      for (let attempt = 0; attempt < 70; attempt += 1) {
+        statuses.add(
+          (
+            await call('POST', `/crm/customers/${id}/phone-views`, 'staffA', {
+              purpose: 'CALL',
+            })
+          ).status,
+        );
+      }
+      expect([...statuses]).toEqual([409]);
+      expect(await auditOf(id, 'PHONE_VIEWED')).toHaveLength(0);
+
+      // Sau đó staffA vẫn xem được số của khách CÓ số (chưa bị khóa lượt).
+      const withPhone = await createCustomer('staffA');
+      const ok = await call(
+        'POST',
+        `/crm/customers/${withPhone.id}/phone-views`,
+        'staffA',
+        { purpose: 'VIEW' },
+      );
+      expect(ok.status).toBe(201);
+
+      // Ngoài phạm vi: 404 (không lộ khách có/không SĐT).
+      const outsider = await call('POST', `/crm/customers/${id}/phone-views`, 'staffD', {
+        purpose: 'VIEW',
+      });
+      expect(outsider.status).toBe(404);
+      expect(outsider.body.errorCode).toBe('CUSTOMER_NOT_FOUND');
     });
 
     it('người bị gỡ khỏi nhóm chăm sóc mất quyền ngay (404) ở mọi endpoint, không chờ token hết hạn', async () => {
@@ -896,7 +1048,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(detail.body.data.version).toBe(version);
     });
 
-    it('PATCH không đổi gì: không tăng version, không audit; đổi sang SĐT của khách khác => 409', async () => {
+    it('PATCH không đổi gì: không tăng version, không audit; đổi sang SĐT của khách khác => 200 (không còn kiểm trùng, hai khách chung số)', async () => {
       const detail = await call('GET', `/crm/customers/${id}`, 'staffA');
       const before = (await auditOf(id)).length;
       const same = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
@@ -910,12 +1062,65 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       const stored = (await customers().findOne({
         _id: new Types.ObjectId(ids.c1),
       }))!;
-      const clash = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
+      const shared = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
         version,
         phone: stored.phone,
       });
-      expect(clash.status).toBe(409);
-      expect(clash.body.errorCode).toBe('CUSTOMER_PHONE_DUPLICATED');
+      expect(shared.status).toBe(200);
+      expect(shared.body.errorCode).toBeUndefined();
+      version = shared.body.data.version;
+      expect(
+        await customers().countDocuments({ phone: stored.phone, deletedAt: null }),
+      ).toBeGreaterThanOrEqual(2);
+
+      // Trả lại số cũ để các test sau dùng `phone`.
+      const restore = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
+        version,
+        phone,
+      });
+      expect(restore.status).toBe(200);
+      version = restore.body.data.version;
+    });
+
+    it('FR-01: PATCH phone null hoặc "" xóa số (phoneMasked null, audit ghi giá trị cũ -> null, mã khách giữ nguyên); xóa lần nữa không đổi gì; nhập lại số được', async () => {
+      const codeBefore = (await customers().findOne({
+        _id: new Types.ObjectId(id),
+      }))!.customerCode;
+      const cleared = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
+        version,
+        phone: null,
+      });
+      expect(cleared.status).toBe(200);
+      version = cleared.body.data.version;
+      expect(cleared.body.data.phoneMasked).toBeNull();
+      expect(cleared.body.data.customerCode).toBe(codeBefore);
+      const stored = (await customers().findOne({
+        _id: new Types.ObjectId(id),
+      }))!;
+      expect(stored.phone).toBeNull();
+      expect(stored.searchText).not.toContain(phone);
+      const audits = await auditOf(id, 'CUSTOMER_UPDATED');
+      const last = audits[audits.length - 1];
+      const change = last.changes.find((c: any) => c.field === 'phone');
+      expect(change).toMatchObject({ from: `+84${phone.slice(1)}` });
+      expect(change.to ?? null).toBeNull();
+
+      // "" cũng là xóa: khách đã null nên không đổi, không tăng version.
+      const again = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
+        version,
+        phone: '',
+      });
+      expect(again.status).toBe(200);
+      expect(again.body.data.version).toBe(version);
+
+      // Nhập lại số: bình thường.
+      const restored = await call('PATCH', `/crm/customers/${id}`, 'staffA', {
+        version,
+        phone,
+      });
+      expect(restored.status).toBe(200);
+      version = restored.body.data.version;
+      expect(restored.body.data.phoneMasked).toMatch(/^0911 ••• \d{3}$/);
     });
 
     it('đổi tình trạng: khách chuyển tab; Hoàn tác; version lệch 409; tình trạng ngừng hoạt động/không tồn tại 400; audit STATUS_CHANGED có lý do', async () => {
@@ -1301,10 +1506,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         fullName: string,
         extra: Record<string, unknown> = {},
       ) => {
-        const res = await call('POST', '/crm/customers', 'admin', {
+        // v1.0.5: người tạo luôn là PRIMARY => để staffD tạo thẳng (không còn trường `careTeam`).
+        const res = await call('POST', '/crm/customers', 'staffD', {
           fullName,
           phone: nextPhone(),
-          careTeam: { memberIds: [], primaryUserId: ids.staffD },
           ...extra,
         });
         expect(res.status).toBe(201);
@@ -1434,6 +1639,25 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(everything).not.toContain('"phone"');
     });
 
+    it('FR-09: tìm theo MÃ KHÁCH — khớp đúng mã (hoa/thường, "kh123456" không gạch), tiền tố không khớp nhầm khách khác; khách không SĐT vẫn tìm được', async () => {
+      const noPhone = await call('POST', '/crm/customers', 'staffD', {
+        fullName: 'Khach Tim Theo Ma',
+      });
+      expect(noPhone.status).toBe(201);
+      const code: string = noPhone.body.data.customerCode;
+      expect(code).toMatch(/^KH-\d{6,}$/);
+      const find = async (q: string) =>
+        (
+          await call('GET', `/crm/customers?q=${encodeURIComponent(q)}`, 'staffD')
+        ).body.data.map((item: any) => item.id);
+
+      expect(await find(code)).toEqual([noPhone.body.data.id]);
+      expect(await find(code.toLowerCase())).toEqual([noPhone.body.data.id]);
+      expect(await find(code.replace('-', ''))).toEqual([noPhone.body.data.id]);
+      // Mã chưa tồn tại: không có kết quả (không rơi về khớp mờ khách khác).
+      expect(await find('KH-999998')).toEqual([]);
+    });
+
     it('chống dò SĐT qua tìm kiếm: <4 số không có kết quả; 4-5 số chỉ khớp ĐUÔI; từ 6 số khớp chuỗi con', async () => {
       const target = await createCustomer('admin', {
         careTeam: { memberIds: [], primaryUserId: ids.staffD },
@@ -1522,9 +1746,15 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         expect.arrayContaining([ids.sortA, ids.sortB]),
       );
       expect(byAssignee).not.toContain(ids.c1);
-      expect(
-        await listIds('admin', `&primaryAssigneeIds=${ids.staffC}`),
-      ).toEqual([ids.c2]);
+      // v1.0.5: người tạo luôn là PRIMARY nên staffC là PRIMARY của nhiều khách; chỉ kiểm lọc đúng người, không lẫn người khác.
+      const byPrimary = await listIds(
+        'admin',
+        `&primaryAssigneeIds=${ids.staffC}`,
+      );
+      expect(byPrimary).toContain(ids.c2);
+      expect(byPrimary).not.toContain(ids.c1);
+      expect(byPrimary).not.toContain(ids.sortA);
+      expect(byPrimary).not.toContain(ids.sortB);
       expect(await listIds('admin', `&teamIds=${ids.teamB}`)).toContain(ids.c2);
       expect(await listIds('admin', '&progress=100')).toContain(ids.edited);
       expect(
@@ -1589,7 +1819,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       });
     });
 
-    it('xóa mềm: Nhân viên chỉ khi khách "Bỏ" (khách này chưa "Bỏ" nên 409); Quản lý trong nhóm mình quản lý/Quản trị 204 bắt buộc reason; khách biến khỏi list/chi tiết; SĐT vẫn bị giữ (không tạo lại)', async () => {
+    it('xóa mềm: Nhân viên chỉ khi khách "Bỏ" (khách này chưa "Bỏ" nên 409); Quản lý trong nhóm mình quản lý/Quản trị 204 bắt buộc reason; khách biến khỏi list/chi tiết; tạo lại cùng SĐT được, mã mới', async () => {
       const staffDelete = await call(
         'DELETE',
         `/crm/customers/${id}?reason=x`,
@@ -1627,29 +1857,34 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         actorRole: 'MANAGER',
       });
 
+      // FR-01/FR-07: SĐT của khách đã xóa mềm không còn bị giữ — tạo lại cùng số được 201; mã KHÔNG dùng lại mã đã xóa.
+      const deletedCode = (await customers().findOne({
+        _id: new Types.ObjectId(id),
+      }))!.customerCode;
+      expect(deletedCode).toMatch(/^KH-\d{6,}$/);
       const recreate = await call('POST', '/crm/customers', 'staffA', {
         fullName: 'Lại',
         phone,
       });
-      expect(recreate.status).toBe(409);
-      // Người không phải Quản trị chỉ biết "đã tồn tại", không lộ người phụ trách của khách đã xóa.
-      expect(recreate.body.details).toMatchObject({
-        exists: true,
-        isAccessible: false,
-      });
-      expect(recreate.body.details.caredByName).toBeUndefined();
-      expect(recreate.body.details.customerRef).toBeUndefined();
-      const adminLookup = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'admin',
-        { phone },
+      expect(recreate.status).toBe(201);
+      expect(recreate.body.data.customerCode).not.toBe(deletedCode);
+      const maxSeq = (
+        await customers()
+          .find({ customerCode: { $type: 'string' } })
+          .project({ customerCode: 1 })
+          .toArray()
+      )
+        .map((row) => Number(String(row.customerCode).slice(3)))
+        .reduce((a, b) => Math.max(a, b), 0);
+      expect(Number(String(recreate.body.data.customerCode).slice(3))).toBe(
+        maxSeq,
       );
-      expect(adminLookup.body.data).toMatchObject({
-        isAccessible: true,
-        isDeleted: true,
-        customerId: id,
-      });
+      // Không còn tra trùng SĐT: route đã xóa (404) cả với Quản trị.
+      expect(
+        (
+          await call('POST', '/crm/customers/phone-lookups', 'admin', { phone })
+        ).status,
+      ).toBe(404);
     });
 
     it('GET /crm/deleted-customers: chỉ Quản trị; có deletedAt/deletedBy; lọc q', async () => {
@@ -1727,6 +1962,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         ).status,
       ).toBe(400);
 
+      const codeBeforeAnonymize = (await customers().findOne({
+        _id: new Types.ObjectId(id),
+      }))!.customerCode;
+      expect(codeBeforeAnonymize).toMatch(/^KH-\d{6,}$/);
       const res = await call('POST', '/crm/customer-anonymizations', 'admin', {
         ...body,
         confirm: true,
@@ -1745,6 +1984,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
           criteria: 1,
           deletedAt: 1,
           anonymizedAt: 1,
+          customerCode: 1,
           statusId: 1,
           careTeam: 1,
           progress: 1,
@@ -1759,7 +1999,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         searchText: '',
         progress: 25,
       });
-      expect(raw.phone).toBe(`anonymized:${id}`);
+      // FR-06: ẩn danh hóa đặt `phone: null` (không còn chuỗi `anonymized:<id>`), mã khách GIỮ NGUYÊN để truy vết.
+      expect(raw.phone).toBeNull();
+      expect(JSON.stringify(raw)).not.toContain('anonymized:');
+      expect(raw.customerCode).toBe(codeBeforeAnonymize);
       expect(raw.deletedAt).toBeInstanceOf(Date);
       expect(raw.anonymizedAt).toBeInstanceOf(Date);
       expect(raw.criteria.demand.description).toBe('');
@@ -1799,7 +2042,8 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(await listIds('admin')).not.toContain(id);
       const deleted = await call('GET', '/crm/deleted-customers', 'admin');
       const row = deleted.body.data.find((item: any) => item.id === id);
-      expect(row.phoneMasked).toBe('••••');
+      expect(row.phoneMasked).toBeNull();
+      expect(row.customerCode).toBe(codeBeforeAnonymize);
       expect(JSON.stringify(deleted.body)).not.toContain('Phạm Quốc');
 
       const reuse = await call('POST', '/crm/customers', 'staffA', {
@@ -1807,6 +2051,8 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         phone,
       });
       expect(reuse.status).toBe(201);
+      // FR-07: số cũ dùng lại được nhưng MÃ KHÁCH của khách đã ẩn danh không bao giờ được cấp lại.
+      expect(reuse.body.data.customerCode).not.toBe(codeBeforeAnonymize);
     });
   });
 
@@ -1980,14 +2226,13 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       for (let round = 0; round < 12; round += 1) {
         const team = round % 2 === 0 ? ids.teamA : ids.teamB;
         const [created] = await Promise.all([
-          call('POST', '/crm/customers', 'admin', {
+          call('POST', '/crm/customers', 'racer', {
             fullName: `Race ${round}`,
             phone: nextPhone(),
-            careTeam: { memberIds: [], primaryUserId: ids.racer },
           }),
           call('PATCH', `/users/${ids.racer}/team`, 'admin', { teamId: team }),
         ]);
-        // Tạo có thể bị USER_NOT_ASSIGNABLE khi Quản trị chưa có quản lý... Quản trị tạo được cho mọi người: phải 201.
+        // Người tạo (racer) là PRIMARY; đổi nhóm của chính họ đồng thời không được làm lệch `teamIds` (write-skew).
         expect(created.status).toBe(201);
       }
       const racerTeam = (await userModel.findById(ids.racer).lean())!.teamId;
@@ -2016,11 +2261,10 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
         expect(created.status).toBe(201);
         const statusId = created.body.data.id as string;
         const [customer, removal] = await Promise.all([
-          call('POST', '/crm/customers', 'admin', {
+          call('POST', '/crm/customers', 'staffD', {
             fullName: `Khóa ${round}`,
             phone: nextPhone(),
             statusId,
-            careTeam: { memberIds: [], primaryUserId: ids.staffD },
           }),
           call('DELETE', `/crm/customer-statuses/${statusId}`, 'admin'),
         ]);

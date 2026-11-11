@@ -44,15 +44,15 @@ describe('useCatalogs', () => {
 });
 
 describe('useAssigneeFilterOptions', () => {
-  it('gọi GET /crm/customer-assignees (không gọi assignable-users) và đưa người trả về vào lựa chọn', async () => {
+  it('gọi GET /crm/customer-assignees (không gọi assignable-users) và đưa người trả về vào lựa chọn, người bị khóa có nhãn "(đã khóa)" nhưng value vẫn là id', async () => {
     list.mockImplementation(async (url: string) =>
       url === '/crm/customer-assignees' ? { data: [{ id: 'u2', displayName: 'Minh', role: 'STAFF', team: null, teams: [], isLocked: true }], meta: { total: 1, page: 1, limit: 100, totalPages: 1 } } : emptyPage,
     );
     const { result } = renderHook(() => useAssigneeFilterOptions(), { wrapper });
-    // Người server trả (kể cả tài khoản đã khóa) + chính người đăng nhập (STAFF) được thêm sau; đúng {value,label}, không rò trường khác.
+    // Người server trả (tài khoản đã khóa vẫn có, nhãn kèm "(đã khóa)") + chính người đăng nhập (STAFF) được thêm sau; đúng {value,label}, không rò trường khác.
     await waitFor(() =>
       expect(result.current).toEqual([
-        { value: 'u2', label: 'Minh' },
+        { value: 'u2', label: 'Minh (đã khóa)' },
         { value: 'u1', label: 'Hạnh' },
       ]),
     );

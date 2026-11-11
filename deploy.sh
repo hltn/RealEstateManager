@@ -766,7 +766,7 @@ run_post_migrate_steps() {
     name="$(basename "$step" .sh)"
     log "Hậu-migrate: bước $name ..."
     rc=0
-    ENV_FILE="$ENV_FILE" LOGS_DIR="$LOGS_DIR" TS="$TS" DOC="$DOC" LOG_PREFIX="$LOG_PREFIX" bash "$step" || rc=$?
+    env ENV_FILE="$ENV_FILE" LOGS_DIR="$LOGS_DIR" TS="$TS" DOC="$DOC" LOG_PREFIX="$LOG_PREFIX" bash "$step" || rc=$?
     (( rc == 0 )) || die "Bước hậu-migrate '$name' thất bại (mã $rc): deploy báo LỖI, các bước sau không chạy. Xem log $LOGS_DIR/deploy-*-${TS}.log và $DOC mục 11."
   done
   log "Hậu-migrate xong (${#steps[@]} bước)."

@@ -119,7 +119,7 @@ Màn của app chính chỉ import dữ liệu từ `@crm/api` (đọc: hook; gh
 
 - **Chép nguyên văn** `RealEstateAdminApp/src/modules/crm/screens/<Màn>/**` (bỏ `*.test.*`, thư mục `test/`) vào `src/modules/crm/screens/` — không cần sửa import.
 - Hook đọc trả `{ data, isLoading, isFetching, isError, error, refetch }` như app chính; vì tính **đồng bộ** từ store nên `isLoading`/`isError` luôn `false` (nhánh Skeleton/lỗi của màn vẫn có trong code, chỉ không bật). Hook quản trị (`useAdminUsers`, `useTeamMembers`, `useDeletedCustomers`) trả **403 giả** khi người dùng không đủ quyền.
-- Hàm ghi (`useCrmApi()`) trả `Promise<ApiResult<T>>` sau 180ms; **kiểm quyền + phạm vi + khóa lạc quan `version` (409 `VERSION_CONFLICT`) + mã lỗi nghiệp vụ** giống backend (`CUSTOMER_PHONE_DUPLICATED`, `CUSTOMER_NOT_DROPPED`, `USER_OUT_OF_TEAM`, `TEAM_NOT_EMPTY`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_PURGE_IN_PROGRESS`, `LAST_ADMIN_REQUIRED`…).
+- Hàm ghi (`useCrmApi()`) trả `Promise<ApiResult<T>>` sau 180ms; **kiểm quyền + phạm vi + khóa lạc quan `version` (409 `VERSION_CONFLICT`) + mã lỗi nghiệp vụ** giống backend (`CUSTOMER_PHONE_NOT_SET`, `PRIMARY_LOCKED`, `CARE_TEAM_LIMIT_EXCEEDED`, `CUSTOMER_NOT_DROPPED`, `USER_OUT_OF_TEAM`, `TEAM_NOT_EMPTY`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_PURGE_IN_PROGRESS`, `LAST_ADMIN_REQUIRED`…).
 - Người thao tác = **tài khoản mẫu đang đăng nhập** (`auth.store`), đọc LÚC GỌI nên đổi tài khoản có hiệu lực ngay; hồ sơ vai trò/nhóm lấy từ store CRM (`api/actor.ts`).
 - **Chưa mô phỏng**: ảnh đính kèm nhật ký (cờ TẮT như app chính mặc định; upload trả 404), Zalo ZNS/gọi trong app, đồng bộ lịch (cờ TẮT), job nền (nhập file chạy đồng bộ ở `mockCrmApi.ts`).
 

@@ -290,6 +290,96 @@ describe('MigrationRunner theo pha (--phase) trên replica set (FR-21)', () => {
     });
   });
 
+  describe('quy tắc từ chối post-up khi còn pre-up nhỏ hơn (chiều ngược lại)', () => {
+    it('FR-21: reconcile --apply --phase post-up khi 007, 008 pre-up chưa chạy => mã 1, nêu "--phase pre-up", không chạy, không ghi sổ', async () => {
+      const { db, uri } = newDb();
+      const calls: string[] = [];
+
+      const result = await run(uri, buildMigrations(calls), [
+        'reconcile',
+        ...APPLY,
+        '--skip-version',
+        '--json',
+        '--phase',
+        'post-up',
+      ]);
+      const report = JSON.parse(result.out[0]) as ReconcileReport;
+
+      expect(result.code).toBe(EXIT_CODE.FAILURE);
+      expect(report).toMatchObject({ result: 'refused', exitCode: 1 });
+      expect(result.err).toContain('007_sample_pre');
+      expect(result.err).toContain('009_sample_post');
+      expect(result.err).toContain('--phase pre-up');
+      expect(calls).toEqual([]);
+      expect(await ledger(db)).toEqual([]);
+    });
+
+    it('FR-21: dry-run --phase post-up trả cùng mã 1 như --apply', async () => {
+      const { uri } = newDb();
+
+      const result = await run(uri, buildMigrations([]), [
+        'reconcile',
+        '--skip-version',
+        '--phase',
+        'post-up',
+      ]);
+
+      expect(result.code).toBe(EXIT_CODE.FAILURE);
+      expect(result.err).toContain('--phase pre-up');
+    });
+
+    it('FR-21: lệnh up --apply --phase post-up cũng bị từ chối (mã 1), không ghi sổ', async () => {
+      const { db, uri } = newDb();
+      const calls: string[] = [];
+
+      const result = await run(uri, buildMigrations(calls), [
+        'up',
+        '--apply',
+        '--by',
+        'deploy',
+        '--phase',
+        'post-up',
+      ]);
+
+      expect(result.code).toBe(EXIT_CODE.FAILURE);
+      expect(result.err).toContain('--phase pre-up');
+      expect(calls).toEqual([]);
+      expect(await ledger(db)).toEqual([]);
+    });
+
+    it('FR-21: lối thoát - chạy --phase pre-up trước rồi --phase post-up thì thành công (thứ tự deploy 6b -> 90)', async () => {
+      const { db, uri } = newDb();
+      const calls: string[] = [];
+      const base = ['reconcile', ...APPLY, '--skip-version'];
+
+      const refused = await run(uri, buildMigrations(calls), [
+        ...base,
+        '--phase',
+        'post-up',
+      ]);
+      const pre = await run(uri, buildMigrations(calls), [
+        ...base,
+        '--phase',
+        'pre-up',
+      ]);
+      const post = await run(uri, buildMigrations(calls), [
+        ...base,
+        '--phase',
+        'post-up',
+      ]);
+
+      expect(refused.code).toBe(EXIT_CODE.FAILURE);
+      expect(pre.code).toBe(EXIT_CODE.OK);
+      expect(post.code).toBe(EXIT_CODE.OK);
+      expect(calls).toEqual([
+        '007_sample_pre',
+        '008_sample_pre',
+        '009_sample_post',
+      ]);
+      expect(await ledger(db)).toHaveLength(3);
+    });
+  });
+
   it('FR-21: status in cột pha và số migration chờ post-up; --json có trường phase', async () => {
     const { uri } = newDb();
     const text = await run(uri, buildMigrations([]), ['status']);

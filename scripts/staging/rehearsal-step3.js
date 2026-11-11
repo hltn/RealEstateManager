@@ -14,7 +14,7 @@ for (let i = 1; i <= 2; i++) {
   catch (e) { res.insertWithoutCodeError = String(e.code || '') + ' ' + String(e.message).slice(0, 120); }
 }
 // Trùng SĐT với một khách thật có sẵn (chuỗi, không phải ẩn danh/rehearsal). Đọc SĐT chỉ để so, KHÔNG in ra.
-const donor = c.findOne({ phone: { $type: 'string', $not: /^(anonymized:|REH-)/ }, rehearsalMarker: { $exists: false } }, { projection: { phone: 1 } });
+const donor = c.findOne({ phone: { $type: 'string', $not: /^(anonymized:|REH-)/ }, rehearsalMarker: { $exists: false } }, { phone: 1 });
 if (!donor) { res.duplicatePhoneError = 'không có khách mẫu có SĐT để thử trùng'; }
 else {
   try {

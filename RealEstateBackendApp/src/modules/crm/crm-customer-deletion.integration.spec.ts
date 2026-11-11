@@ -185,7 +185,12 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       { _id: oid(id) },
       { $set: { statusId: dropped ? status.DROPPED : status.INTERESTED } },
     );
-    return { id, phone, fullName };
+    return {
+      id,
+      phone,
+      fullName,
+      customerCode: res.body.data.customerCode as string,
+    };
   };
 
   const del = (as: string, id: string, reason: string | null = 'Khách bỏ') =>
@@ -706,7 +711,12 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
   // ---------------------------------------------------------------------------------------------
   describe('Xóa vĩnh viễn DELETE /crm/deleted-customers/:id', () => {
     let tagId: string;
-    let target: { id: string; phone: string; fullName: string };
+    let target: {
+      id: string;
+      phone: string;
+      fullName: string;
+      customerCode: string;
+    };
     let bystander: { id: string };
     let bystanderAuditCount: number;
     const fileKeys = ['purge/a.jpg', 'purge/b.jpg', 'purge/c.jpg'];
@@ -1081,6 +1091,18 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
         phone: target.phone,
       });
       expect([reuse.status, reuse.body.message]).toEqual([201, undefined]);
+      // FR-07: xóa vĩnh viễn xóa cả dòng khách nhưng KHÔNG hoàn lại bộ đếm: mã đã cấp không bao giờ được dùng lại.
+      expect(target.customerCode).toMatch(/^KH-\d{6,}$/);
+      expect(reuse.body.data.customerCode).not.toBe(target.customerCode);
+      expect(
+        await col('customers').countDocuments({
+          customerCode: target.customerCode,
+        }),
+      ).toBe(0);
+      const codeSeq = (code: string) => Number(code.slice('KH-'.length));
+      expect(codeSeq(reuse.body.data.customerCode)).toBeGreaterThan(
+        codeSeq(target.customerCode),
+      );
     });
   });
 

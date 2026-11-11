@@ -138,6 +138,8 @@ expect_eq "90, 010 chưa áp dụng: exit 1" "1" "$rc"
 o="$(cat "$TMP/out")"
 expect_contains "90, 010 chưa áp dụng: nêu TỪ CHỐI" "TỪ CHỐI" "$o"
 expect_contains "90, 010 chưa áp dụng: nêu mã 010 còn chờ" "010_crm_customer_code_index" "$o"
+expect_contains "90, 010 chưa áp dụng: danh sách pre-up chờ chỉ có 010" "pre-up chờ (010_crm_customer_code_index)" "$o"
+expect_not_contains "90, 010 chưa áp dụng: 011 (post-up) KHÔNG bị liệt vào pre-up chờ" "010_crm_customer_code_index 011" "$o"
 expect_contains "90, 010 chưa áp dụng: có mã màu đỏ" $'\033[1;31m' "$o"
 expect_eq "90, 010 chưa áp dụng: KHÔNG gọi reconcile" "0" "$(calls 'migrations/cli.js reconcile')"
 expect_eq "90, 010 chưa áp dụng: chỉ gọi status" "1" "$(wc -l < "$ORDER_FILE" | tr -d ' ')"
@@ -205,6 +207,19 @@ rc="$(run_steps 1)"
 expect_eq "downgrade có chủ ý: exit 0" "0" "$rc"
 expect_eq "downgrade có chủ ý: không chạy bước nào (không gọi docker)" "0" "$(wc -l < "$ORDER_FILE" | tr -d ' ')"
 expect_contains "downgrade có chủ ý: cảnh báo bỏ qua" "bỏ qua toàn bộ bước hậu-migrate" "$(cat "$TMP/out")"
+
+# Hồi quy: deploy.sh THẬT khai báo ENV_FILE/LOGS_DIR/DOC là `readonly`; gán tiền tố lên biến readonly (`ENV_FILE=... bash`) lỗi
+# "readonly variable" ở bước 10 trên deploy thật (T-36). Ca này khai báo readonly giống hệt để bắt lại lỗi đó.
+run_steps_readonly() { # -> in rc; stdout+stderr vào $TMP/out
+  local rc=0
+  : > "$ORDER_FILE"; rm -rf "$TMP/logs"
+  ( set -euo pipefail; readonly ENV_FILE=".env.docker" LOGS_DIR="$TMP/logs" DOC="$DOC"; DOWNGRADE_ACTIVE=0; run_post_migrate_steps ) > "$TMP/out" 2>&1 || rc=$?
+  echo "$rc"
+}
+rc="$(run_steps_readonly)"
+expect_eq "ENV_FILE/LOGS_DIR/DOC readonly như deploy.sh thật: exit 0" "0" "$rc"
+expect_not_contains "readonly: không lỗi readonly variable" "readonly variable" "$(cat "$TMP/out")"
+expect_eq "readonly: thứ tự 10 -> 20 -> 90 vẫn đủ" "10 20 90s 90r" "$(kind)"
 
 # ── 6b, 8a, 8b truyền --phase pre-up (hàm THẬT trích từ deploy.sh) ───────────────────────────────────────────────
 # 6b: auto_reconcile = dry-run rồi --apply, đều --skip-version --phase pre-up. BACKUP_FILE khác rỗng để chạy --apply.

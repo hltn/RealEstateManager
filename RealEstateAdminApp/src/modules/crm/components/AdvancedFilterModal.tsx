@@ -1,5 +1,5 @@
 /**
- * Bộ lọc nâng cao danh sách khách (X3): tình trạng, nguồn, dự án (tìm không dấu), khu vực, người chăm sóc
+ * Bộ lọc nâng cao danh sách khách (X3): tình trạng, nguồn, dự án (tìm không dấu), khu vực, người phụ trách
  * (bất kỳ ai trong nhóm) / phụ trách chính, tiến độ, ngày cập nhật, nghề nghiệp, thẻ, trường chân dung lọc được (FR-49).
  * - Web: vỏ `components/ui/modal` của Admin; App: `BottomSheet`.
  * Bản nháp giữ cục bộ; chỉ ghi vào store khi bấm "Áp dụng" hoặc "Thiết lập lại".
@@ -31,7 +31,7 @@ const CHIP_BASE_CLASS =
 interface AdvancedFilterModalProps {
   filters: CustomerFilters;
   variant: AdvancedFilterVariant;
-  /** Hiện nhóm "Phụ trách chính" (FR-17: chỉ Quản trị/Quản lý; mặc định ẩn). Nhân viên vẫn lọc được "Người chăm sóc". */
+  /** Hiện nhóm "Phụ trách chính" (FR-17: chỉ Quản trị/Quản lý; mặc định ẩn). Nhân viên vẫn lọc được "Người phụ trách". */
   isShowingPrimaryFilter?: boolean;
   onApply: (filters: CustomerFilters) => void;
   onReset: () => void;
@@ -155,7 +155,7 @@ export const AdvancedFilterModal = ({ filters, variant, isShowingPrimaryFilter =
         selected={draft.areaIds}
         onToggle={(value) => toggle('areaIds', value)}
       />
-      <ChipGroup title="Người chăm sóc (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
+      <ChipGroup title="Người phụ trách (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
       {isShowingPrimaryFilter && (
         <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />
       )}

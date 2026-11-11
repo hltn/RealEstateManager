@@ -112,10 +112,10 @@ describe('CRM bulk ASSIGN -> pushGroupKey BULK:{requestId} và giới hạn 3 pu
 
   const createCustomer = async (): Promise<string> => {
     const phone = `093${String(1_000_000 + ++phoneSeq)}`;
-    const res = await call('POST', '/crm/customers', 'admin', {
+    // v1.0.5: người tạo luôn là PRIMARY (POST customers không còn nhận `careTeam`).
+    const res = await call('POST', '/crm/customers', 'staffA', {
       fullName: 'Khách hàng thử',
       phone,
-      careTeam: { memberIds: [], primaryUserId: ids.staffA },
     });
     expect(res.status).toBe(201);
     return res.body.data.id;

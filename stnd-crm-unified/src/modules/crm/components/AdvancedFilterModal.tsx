@@ -1,5 +1,5 @@
 /**
- * Bộ lọc nâng cao danh sách khách (X3): tình trạng, nguồn, dự án (tìm không dấu), khu vực, người chăm sóc
+ * Bộ lọc nâng cao danh sách khách (X3): tình trạng, nguồn, dự án (tìm không dấu), khu vực, người phụ trách
  * (bất kỳ ai trong nhóm) / phụ trách chính, tiến độ, ngày cập nhật, nghề nghiệp, thẻ.
  * - Web: vỏ `components/ui/modal` của Admin; App: `BottomSheet`.
  * Bản nháp giữ cục bộ; chỉ ghi vào store khi bấm "Áp dụng" hoặc "Thiết lập lại".
@@ -142,7 +142,7 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
         selected={draft.areaIds}
         onToggle={(value) => toggle('areaIds', value)}
       />
-      <ChipGroup title="Người chăm sóc (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
+      <ChipGroup title="Người phụ trách (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
       {canFilterPrimary && <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />}
       <ChipGroup
         title="Tiến độ"

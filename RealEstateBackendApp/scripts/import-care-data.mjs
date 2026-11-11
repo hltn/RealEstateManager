@@ -12,6 +12,21 @@
  *
  * Ghi thật: bỏ `--dry-run`. Chạy lại an toàn: tiến độ lưu ở `<file>.import-state.json`, khách/nhật ký đã nhập được bỏ qua.
  *
+ * Chống tạo trùng khi chạy lại (từ v1.0.5): API KHÔNG còn kiểm trùng SĐT (không còn 409 trùng SĐT, hai khách được phép cùng
+ * SĐT, SĐT có thể để trống) nên script không dò theo SĐT. Tính idempotent nằm trong chính script: mỗi khách khóa theo
+ * `sheetRow` trong file tiến độ (ghi ngay sau khi tạo thành công) + header `X-Idempotency-Key` cố định theo `sheetRow`
+ * (chặn trùng khi tiến trình chết giữa lúc API đã tạo khách và lúc ghi file tiến độ, trong cửa sổ TTL của khóa, mặc định 5 phút).
+ * Khóa idempotency phía API chỉ gắn theo tài khoản + route, KHÔNG gắn file nguồn; nên khóa script gửi lên có thêm mã băm
+ * 8 ký tự của NỘI DUNG file nguồn: `care-import-<hash8>-customer-<sheetRow>`. Nhờ vậy chạy file/sheet B bằng cùng tài khoản
+ * ngay sau file A (trùng `sheetRow`) không bị API trả lại response đã lưu của khách A (mất dữ liệu im lặng). Hệ quả: sửa nội
+ * dung file giữa hai lần chạy thì khóa đổi, mất lớp chặn trùng 5 phút nói trên (file tiến độ vẫn là lớp chặn chính).
+ * Giới hạn: API không báo "response lặp" (không có header/flag replay) nên script không phân biệt được khách vừa tạo với khách
+ * lấy lại từ khóa; script chỉ đối chiếu tên khách trong response với tên trong file để bắt trường hợp lấy nhầm khách khác.
+ * Mỗi request có timeout (mặc định 30 giây, đổi bằng `--timeout-ms`); lỗi mạng/timeout của một dòng được ghi vào mục LỖI và
+ * script chạy tiếp các dòng sau (dòng lỗi mạng khi tạo khách: chạy lại trong 5 phút để khóa idempotency chặn trùng).
+ * ĐỪNG xóa file tiến độ rồi chạy lại trên dữ liệu đã nhập: sẽ tạo khách trùng. Muốn nhập lại một dòng: dùng `--only-rows`
+ * sau khi chủ động xóa mục của dòng đó khỏi file tiến độ.
+ *
  * Quy tắc phân quyền của API quyết định cách nhập:
  * - Tác giả nhật ký = tài khoản đang gọi API (API không nhận authorId) => khách của ai thì phải đăng nhập bằng tài khoản
  *   người đó. Tài khoản phụ truyền qua IMPORT_ACCOUNTS='{"email":"mật khẩu"}'. Khách của người chưa có tài khoản bị BỎ QUA
@@ -20,6 +35,7 @@
  *   và Quản lý chỉ phân được cho chính mình (hoặc người trong nhóm mình quản lý).
  * - Khách chưa có Sale trong sheet: mặc định BỎ QUA; `--unassigned=me` gán cho tài khoản chính (Quản trị thì để trống).
  */
+import { createHash } from 'node:crypto';
 import { readFile, writeFile, access } from 'node:fs/promises';
 
 const args = parseArgs(process.argv.slice(2));
@@ -35,9 +51,11 @@ const ONLY_ROWS = args['only-rows']
   ? new Set(String(args['only-rows']).split(',').map((n) => Number(n.trim())))
   : null;
 const MAX_RETRY_429 = 3;
+const TIMEOUT_MS = Number(args['timeout-ms'] || 30_000);
 
 if (!args.file) fail('Thiếu --file <đường dẫn crm-care-import.json>');
 if (!['skip', 'me'].includes(UNASSIGNED)) fail('--unassigned chỉ nhận skip | me');
+if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS < 1) fail('--timeout-ms phải là số dương (mili giây)');
 const STATE_PATH = args.state || `${args.file}.import-state.json`;
 
 const PRIMARY_EMAIL = (process.env.IMPORT_EMAIL || '').trim().toLowerCase();
@@ -53,21 +71,33 @@ const EXTRA_ACCOUNTS = parseJsonEnv('IMPORT_ACCOUNTS');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Gọi API; trả `{status, body}` (không ném lỗi theo HTTP status). 401 => đăng nhập lại 1 lần; 429 => chờ rồi thử lại. */
+/**
+ * Gọi API; trả `{status, body}` (không ném lỗi theo HTTP status). 401 => đăng nhập lại 1 lần; 429 => chờ rồi thử lại.
+ * Lỗi mạng/timeout KHÔNG ném: trả `{status: 0, networkError}` để dòng đang xử lý được ghi vào mục LỖI mà script vẫn chạy tiếp.
+ */
 async function call(session, method, path, { body, headers = {}, query } = {}) {
   const url = new URL(`${BASE_URL}${path}`);
   for (const [k, v] of Object.entries(query || {})) url.searchParams.set(k, String(v));
   for (let attempt = 0, relogged = false; ; attempt++) {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
-        ...headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
+    let res;
+    let text;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+          ...headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      text = await res.text();
+    } catch (e) {
+      const timedOut = e?.name === 'TimeoutError' || e?.name === 'AbortError';
+      const reason = timedOut ? `quá ${TIMEOUT_MS} ms không phản hồi` : e?.cause?.code || e?.message || String(e);
+      return { status: 0, body: null, networkError: `${method} ${path}: ${reason}` };
+    }
     let parsed = null;
     try {
       parsed = text ? JSON.parse(text) : null;
@@ -76,7 +106,11 @@ async function call(session, method, path, { body, headers = {}, query } = {}) {
     }
     if (res.status === 401 && session && !relogged && session.email) {
       relogged = true;
-      await login(session);
+      try {
+        await login(session);
+      } catch (e) {
+        return { status: 401, body: { message: e.message } };
+      }
       continue;
     }
     if (res.status === 429 && attempt < MAX_RETRY_429) {
@@ -93,7 +127,7 @@ async function login(session) {
     body: { email: session.email, password: session.password },
   });
   if (res.status !== 200 && res.status !== 201) {
-    throw new Error(`Đăng nhập ${session.email} thất bại (HTTP ${res.status})`);
+    throw new Error(`Đăng nhập ${session.email} thất bại (${errText(res)})`);
   }
   session.token = res.body.accessToken;
   session.user = res.body.user;
@@ -101,9 +135,11 @@ async function login(session) {
 }
 
 const errText = (res) =>
-  `HTTP ${res.status} ${res.body?.error?.code || res.body?.code || ''} ${
-    res.body?.error?.message || res.body?.message || ''
-  }`.trim();
+  res.networkError
+    ? `lỗi mạng (${res.networkError})`
+    : `HTTP ${res.status} ${res.body?.error?.code || res.body?.code || ''} ${
+        res.body?.error?.message || res.body?.message || ''
+      }`.trim();
 
 // ---------------------------------------------------------------------------
 // Danh mục để đổi "$loại:khóa" thành ObjectId
@@ -166,8 +202,12 @@ const saveState = (state) =>
 // Main
 // ---------------------------------------------------------------------------
 
-const data = JSON.parse(await readFile(args.file, 'utf8'));
+const rawSource = await readFile(args.file, 'utf8');
+const data = JSON.parse(rawSource);
+// Mã băm nội dung file nguồn gắn vào mọi khóa idempotency (API chỉ gắn khóa theo tài khoản + route, không theo file).
+const SOURCE_TAG = createHash('sha256').update(rawSource).digest('hex').slice(0, 8);
 const state = await loadState();
+console.log(`Tiến độ: ${STATE_PATH} (${Object.keys(state.customers).length} khách đã ghi nhận)`);
 
 const sessions = new Map(); // email -> session
 const primary = await login({ email: PRIMARY_EMAIL, password: PRIMARY_PASSWORD });
@@ -187,7 +227,7 @@ console.log(
 );
 
 const catalogs = await loadCatalogs(primary);
-const summary = { created: 0, existing: 0, logs: 0, skipped: [], failed: [], warnings: [] };
+const summary = { created: 0, logs: 0, skipped: [], failed: [], warnings: [] };
 
 for (const item of data.customers) {
   if (ONLY_ROWS && !ONLY_ROWS.has(item.sheetRow)) continue;
@@ -251,32 +291,30 @@ for (const item of data.customers) {
     continue;
   }
 
-  // Tạo khách (hoặc dùng lại khách đã tạo ở lần chạy trước)
+  // Tạo khách (hoặc dùng lại khách đã tạo ở lần chạy trước). Không dò trùng theo SĐT: API cho phép trùng/không có SĐT;
+  // HTTP 409 ở đây chỉ có thể là xung đột khóa idempotency (yêu cầu cùng khóa đang chạy) => tính là lỗi, chạy lại sau.
   let customerId = done?.customerId;
   if (!customerId) {
     const res = await call(session, 'POST', '/crm/customers', {
       body,
-      headers: { 'X-Idempotency-Key': `care-import-customer-${item.sheetRow}` },
+      headers: { 'X-Idempotency-Key': `care-import-${SOURCE_TAG}-customer-${item.sheetRow}` },
     });
     if (res.status === 201 || res.status === 200) {
-      customerId = res.body.data.id;
+      const returned = res.body?.data;
+      // Phòng thủ: response (có thể là bản lưu theo khóa idempotency) phải đúng là khách của dòng này, không thì KHÔNG ghi done.
+      if (!returned?.id || (returned.fullName !== undefined && !sameName(returned.fullName, body.fullName))) {
+        summary.failed.push(
+          `${label}: response tạo khách không khớp dòng này (nhận "${returned?.fullName ?? '?'}"), không ghi tiến độ`,
+        );
+        continue;
+      }
+      customerId = returned.id;
       summary.created++;
-    } else if (res.status === 409) {
-      // Trùng SĐT: khách đã có sẵn trong hệ thống => không đụng vào, không ghi thêm nhật ký (tránh nhân đôi)
-      const lookup = await call(session, 'POST', '/crm/customers/phone-lookups', {
-        body: { phone: body.phone },
-      });
-      state.customers[item.sheetRow] = {
-        status: 'done',
-        existing: true,
-        customerId: lookup.body?.data?.customerId || null,
-      };
-      summary.existing++;
-      summary.skipped.push(`${label}: SĐT ${body.phone} đã có trong hệ thống, không ghi nhật ký`);
-      await saveState(state);
-      continue;
     } else {
-      summary.failed.push(`${label}: tạo khách ${errText(res)}`);
+      summary.failed.push(
+        `${label}: tạo khách ${errText(res)}` +
+          (res.networkError ? ' — chưa rõ API đã tạo khách chưa: chạy lại trong 5 phút (khóa idempotency chặn trùng), quá 5 phút thì kiểm tra tay' : ''),
+      );
       continue;
     }
     state.customers[item.sheetRow] = { status: 'partial', customerId, logsDone: 0 };
@@ -288,7 +326,7 @@ for (const item of data.customers) {
   for (let i = state.customers[item.sheetRow].logsDone || 0; i < logs.length; i++) {
     const res = await call(session, 'POST', `/crm/customers/${customerId}/care-logs`, {
       body: logs[i],
-      headers: { 'X-Idempotency-Key': `care-import-log-${item.sheetRow}-${i}` },
+      headers: { 'X-Idempotency-Key': `care-import-${SOURCE_TAG}-log-${item.sheetRow}-${i}` },
     });
     if (res.status !== 201 && res.status !== 200) {
       summary.failed.push(`${label}: nhật ký ${i + 1}/${logs.length} ${errText(res)}`);
@@ -307,7 +345,10 @@ for (const item of data.customers) {
 }
 
 console.log('\n===== TỔNG KẾT =====');
-console.log(`Khách tạo mới: ${summary.created} | đã có sẵn: ${summary.existing} | nhật ký đã ghi: ${summary.logs}`);
+console.log(`Khách tạo mới: ${summary.created} | nhật ký đã ghi: ${summary.logs}`);
+console.log(
+  '(Lưu ý: API không báo "response lặp" nên con số khách tạo mới có thể gồm khách lấy lại từ khóa idempotency khi chạy lại trong 5 phút.)',
+);
 for (const [title, list] of [
   ['Bỏ qua', summary.skipped],
   ['Cảnh báo', summary.warnings],
@@ -332,6 +373,12 @@ function parseArgs(argv) {
     else out[a.slice(2)] = true;
   }
   return out;
+}
+
+/** So tên khách bỏ khác biệt khoảng trắng đầu/cuối/lặp (API có thể chuẩn hóa khoảng trắng). */
+function sameName(a, b) {
+  const norm = (v) => String(v ?? '').trim().replace(/\s+/g, ' ');
+  return norm(a) === norm(b);
 }
 
 function parseJsonEnv(name) {

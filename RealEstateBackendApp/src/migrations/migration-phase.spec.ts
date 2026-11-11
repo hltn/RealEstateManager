@@ -52,14 +52,61 @@ describe('migration-phase (FR-21)', () => {
       ).toContain('010_a');
     });
 
-    it('FR-21: chỉ áp cho pha pre-up (post-up và all không bị từ chối)', () => {
-      const pending = [post('011_x'), pre('012_y')];
-      expect(findPhaseOrderViolation(pending, 'post-up')).toBeNull();
-      expect(findPhaseOrderViolation(pending, 'all')).toBeNull();
+    it('FR-21: pha all không bao giờ bị từ chối (chạy theo thứ tự số), kể cả khi cả hai chiều đều lệch', () => {
+      expect(
+        findPhaseOrderViolation([post('011_x'), pre('012_y')], 'all'),
+      ).toBeNull();
+      expect(
+        findPhaseOrderViolation([pre('010_x'), post('011_y')], 'all'),
+      ).toBeNull();
+      expect(
+        findPhaseOrderViolation(
+          [pre('010_a'), post('011_b'), pre('012_c')],
+          'all',
+        ),
+      ).toBeNull();
     });
 
-    it('FR-21: danh sách rỗng hợp lệ', () => {
+    it('FR-21: chiều post-up - từ chối khi còn pre-up chờ nhỏ hơn post-up chờ (010 chưa chạy mà chạy 011), nêu "--phase pre-up"', () => {
+      const message = findPhaseOrderViolation(
+        [pre('010_a'), post('011_b')],
+        'post-up',
+      );
+      expect(message).toContain('010_a');
+      expect(message).toContain('011_b');
+      expect(message).toContain('--phase pre-up');
+      expect(message).toContain('lỗ hổng sổ');
+    });
+
+    it('FR-21: chiều post-up - hợp lệ khi mọi pre-up chờ LỚN hơn post-up chờ (post-up chạy trước)', () => {
+      expect(
+        findPhaseOrderViolation([post('011_b'), pre('012_c')], 'post-up'),
+      ).toBeNull();
+    });
+
+    it('FR-21: chiều post-up - hợp lệ khi không còn pre-up nào chờ (deploy: 010 đã ghi sổ rồi mới chạy 011)', () => {
+      expect(findPhaseOrderViolation([post('011_b')], 'post-up')).toBeNull();
+    });
+
+    it('FR-21: chiều post-up - pre-up nhỏ nhất bị nêu tên dù có nhiều pre-up chờ, và lệnh khuyên chạy trước là pre-up', () => {
+      const message = findPhaseOrderViolation(
+        [pre('009_z'), pre('007_a'), post('011_b')],
+        'post-up',
+      );
+      expect(message).toContain('007_a');
+      expect(message).not.toContain('009_z');
+      expect(message).toContain('chạy `--phase pre-up` trước');
+    });
+
+    it('FR-21: pha pre-up hết việc (chỉ còn post-up) hoặc post-up hết việc (chỉ còn pre-up) thì không từ chối', () => {
+      expect(findPhaseOrderViolation([post('009_a')], 'pre-up')).toBeNull();
+      expect(findPhaseOrderViolation([pre('012_a')], 'post-up')).toBeNull();
+    });
+
+    it('FR-21: không có migration chờ thì hợp lệ ở cả ba pha', () => {
       expect(findPhaseOrderViolation([], 'pre-up')).toBeNull();
+      expect(findPhaseOrderViolation([], 'post-up')).toBeNull();
+      expect(findPhaseOrderViolation([], 'all')).toBeNull();
     });
   });
 });

@@ -324,10 +324,10 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
   const createCustomers = async (count: number): Promise<string[]> => {
     const created: string[] = [];
     for (let index = 0; index < count; index += 1) {
-      const res = await call('POST', '/crm/customers', 'admin', {
+      // v1.0.5: DTO tạo khách không còn `careTeam`; người tạo luôn là PRIMARY -> staffA tạo để là chủ khách.
+      const res = await call('POST', '/crm/customers', 'staffA', {
         fullName: 'Khách hàng thử',
         phone: `093${String(2_000_000 + ++phoneSeq)}`,
-        careTeam: { memberIds: [], primaryUserId: ids.staffA },
       });
       expect(res.status).toBe(201);
       created.push(res.body.data.id);

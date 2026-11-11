@@ -72,6 +72,19 @@ export class Api {
     return { id: String(c.id ?? c._id), fullName, phone };
   }
 
+  /** Khách KHÔNG có SĐT (v1.0.5, FR-02) do `role` tạo (mặc định staff1): body chỉ có họ tên. Trả thêm `customerCode` (KH-######). */
+  async createCustomerNoPhone(opts: { role?: RoleKey; label?: string } = {}): Promise<{ id: string; fullName: string; customerCode: string }> {
+    const fullName = `${opts.label ?? 'Khách-KhôngSĐT'}-${uid()}`;
+    const c = await this.ok(opts.role ?? 'staff1', 'POST', '/crm/customers', { fullName });
+    return { id: String(c.id ?? c._id), fullName, customerCode: String(c.customerCode) };
+  }
+
+  /** Mã khách `KH-######` của một khách (đọc qua API chi tiết bằng `role` có quyền xem). */
+  async customerCodeOf(customerId: string, role: RoleKey = 'admin'): Promise<string> {
+    const c = await this.ok(role, 'GET', `/crm/customers/${customerId}`);
+    return String(c.customerCode);
+  }
+
   /** Lịch hẹn tạo bằng API: truyền `slot` (xem `todaySlot`/`tomorrowSlot`) hoặc `startAtIso`; KHÔNG gắn cứng ngày giờ. */
   async createAppointment(opts: ({ slot: VnSlot } | { startAtIso: string }) & { role?: RoleKey; customerId: string; remindBeforeMinutes?: number[]; type?: string; location?: string; projectId?: string | null; title?: string }): Promise<Json> {
     return this.ok(opts.role ?? 'staff1', 'POST', '/crm/appointments', {

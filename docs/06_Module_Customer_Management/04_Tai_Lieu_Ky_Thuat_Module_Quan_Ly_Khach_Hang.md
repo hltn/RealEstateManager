@@ -1,9 +1,10 @@
 # Tài liệu kỹ thuật: Module Quản lý & chăm sóc khách hàng (CRM)
 
-> **Phiên bản tài liệu:** v1.0.4
+> **Phiên bản tài liệu:** v1.0.5
 
 > **Phạm vi:** giai đoạn 1 của [`01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md`](01_Project_Plan_WebApp_Quan_Ly_Khach_Hang.md) (C1–C14, X1–X11, quy tắc mục 4, yêu cầu chung mục 5). **Nhập dữ liệu 3 sheet cũ (DSKH, DSKH_DROP, DSKH_NET) hoãn sang giai đoạn sau** (D7). Zalo (3.3) và ghi âm (3.4) chỉ phác thảo ở [mục 8](#8-giai-đoạn-sau-zalo-ghi-âm--phác-thảo).
 > **Danh sách API đầy đủ:** [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md).
+> **Cập nhật v1.0.5 ("Định danh khách hàng", FR-01 đến FR-23):** SĐT khách thành tùy chọn và không duy nhất; có mã khách `KH-000123`; người tạo luôn là phụ trách chính và không đổi được; bỏ luồng xin tham gia nhóm, chia sẻ khách bằng **mời** thành viên phụ (tối đa 10); tìm theo mã phải gõ tiền tố `KH`. Thiết kế ở [`10_Dinh_Danh_Khach_Hang_Plan.md`](10_Dinh_Danh_Khach_Hang_Plan.md), [`11_Dinh_Danh_Khach_Hang_Architecture.md`](11_Dinh_Danh_Khach_Hang_Architecture.md), [`12_Dinh_Danh_Khach_Hang_Tasks.md`](12_Dinh_Danh_Khach_Hang_Tasks.md); tổng hợp thay đổi ở [`09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](09_Bo_Sung_Sua_Doi_Tinh_Nang.md) mục v1.0.5. **Quy ước:** quy tắc cũ được giữ nguyên để truy vết, đánh dấu ~~gạch ngang~~ hoặc ghi "thay thế quy tắc X của vA.B.C" ngay tại chỗ.
 > **Chuẩn áp dụng:** skill `nodejs-react-mongo-coding-guidelines` (naming, `/api/v1`, Swagger, phân trang `{ data, meta }`, lỗi `{ statusCode, message, timestamp, path }`, soft delete, transaction, audit trail, queue, Correlation ID).
 > Các điểm **[Giả định]** gom ở [mục 9](#9-giả-định--câu-hỏi-mở): **đã xác nhận ngày 2026-10-22** (D5 chốt dùng Redis + BullMQ; D7 hoãn; push chưa làm ở giai đoạn 1; **v1.0.4: M7 làm bằng Web Push VAPID cho PWA, không dùng FCM/Firebase cho web**, xem mục 3.6, 6.3, 10). Nhật ký quyết định đầy đủ ở [mục 11](#11-nhật-ký-quyết-định-2026-10-22).
 
@@ -115,7 +116,7 @@ src/
 │       │   ├── utils/         # phone-normalizer.util, vietnamese-text.util, sort-parser.util
 │       │   └── ref-resolver.service.ts  # batch $in resolve catalog/user refs (chống N+1)
 │       ├── customers/         # hồ sơ (có email), tình trạng, tiêu chí, CCCD, xem/gọi SĐT (phone-views), consent, bulk, soft delete/restore/anonymize
-│       ├── care-teams/        # thành viên, phụ trách chính, care-team-requests (X2)
+│       ├── care-teams/        # thành viên, phụ trách chính, ~~care-team-requests (X2)~~ (bỏ ở v1.0.5, giữ schema `care_team_requests` cho dữ liệu cũ), care-team-invitees (mời, FR-14)
 │       ├── care-logs/         # nhật ký chăm sóc (C2) + ảnh đính kèm (upload, job xử lý ảnh, signed URL)
 │       ├── persona/           # persona-fields (X10) + persona khách + completeness (C10, C12)
 │       ├── tags/              # thẻ sở thích/nghề nghiệp (C11)
@@ -136,7 +137,7 @@ src/
 | `teams` | `/teams` | `TeamsService` | `teams` | users |
 | `notifications` | `/notifications`, `/push-subscriptions`, `/notification-preferences` (và `POST /auth/logout` gỡ thiết bị push) | `NotificationsService` (hộp thông báo), **`NotificationDispatcherService`** (cổng phát thông báo dùng chung: bỏ trùng người nhận, `dedupeKey` bắt buộc, quyết `pushStatus`, xếp job `push.send` sau commit), `PushSubscriptionsService` + `PushSubscriptionManagementService`, `PushDeliveryProcessor` + `PushQueueWorker` (job `push.send`/`push.sweep`/`push.cleanup`), `WebPushProvider` / `NoopPushProvider` (`PUSH_PROVIDER`), danh mục `PUSH_CATALOG` (mục 3.6.2) | `notifications`, `push_subscriptions`, `push_deliveries`, `notification_preferences` | queue `push`, Redis |
 | `crm/customers` | `/crm/customers`, `/crm/deleted-customers`, `/crm/customer-*` | `CustomersService`, `CustomerStatusService`, `CriteriaService`, `NationalIdService`, `CustomerPhoneAccessService` (xem/gọi SĐT + PHONE_VIEWED), `CustomerBulkService` | `customers` | access, audit-logs, catalogs, persona, notifications |
-| `crm/care-teams` | `/crm/customers/:id/care-team`, `/crm/care-team-requests` | `CareTeamService`, `CareTeamRequestsService` | `customers` (careTeam), `care_team_requests` | access, notifications, audit-logs |
+| `crm/care-teams` | `/crm/customers/:id/care-team`, `/crm/care-team-invitees` (v1.0.5; ~~`/crm/care-team-requests`~~ đã xóa) | `CareTeamService`, `CareTeamInviteesService` (~~`CareTeamRequestsService`~~ đã xóa) | `customers` (careTeam), `care_team_requests` (chỉ còn schema + dọn dẹp khi xóa vĩnh viễn/ẩn danh) | access, notifications, audit-logs |
 | `crm/care-logs` | `/crm/customers/:id/care-logs`, `/crm/customers/:id/care-log-attachments` | `CareLogsService`, `CareLogAttachmentsService`, `AttachmentThumbnailQueueService` + `AttachmentThumbnailProcessor` (thumbnail ảnh, queue `crm-image`, FR-26), `AttachmentCleanupService` (dọn ảnh + bù thumbnail) | `care_logs`, `crm_attachments` | access, appointments, notifications, storage, queue |
 | `crm/persona` | `/crm/persona-fields`, `/crm/customers/:id/persona` | `PersonaFieldsService`, `CustomerPersonaService`, `PersonaCompletenessCalculator` | `persona_fields`, `customers.persona` | access, queue (recompute) |
 | `crm/tags` | `/crm/tags` | `TagsService` | `tags` | — |
@@ -190,7 +191,8 @@ erDiagram
 | Field | Kiểu | Bắt buộc | Mô tả / quy tắc | ID |
 |---|---|---|---|---|
 | `fullName` | string (trim, 1–150) | Có | Họ tên | C1, QT3 |
-| `phone` | string E.164 (`+84912345678`) | Có | **Đã chuẩn hóa trước khi lưu** (xem 3.2.1). Unique toàn hệ thống. API list/detail chỉ trả `phoneMasked`; số đầy đủ lấy qua `POST /crm/customers/:id/phone-views` (mọi thành viên nhóm, ghi `PHONE_VIEWED`) | C1, C14, X2, QT3, QT4 |
+| `customerCode` | string \| null (`KH-000123`) | Hệ thống sinh, không nhập | **Mới ở v1.0.5, thay thế quyết định #2 "bỏ mã khách hàng" của v1.0.4 (mục 11).** Mã ngắn để phân biệt khách trùng tên/trùng SĐT/không SĐT: `KH-` + số thứ tự toàn hệ thống từ counter (`counters`, khóa `CUSTOMER_CODE`), cấp **nguyên tử trong transaction tạo khách**, không bao giờ tái sử dụng (kể cả khách đã xóa mềm/vĩnh viễn) và **bất biến** (PATCH không nhận). Unique partial `customerCode_1` (chỉ tính khi là chuỗi). Khách cũ nhận mã nhờ script bù mã (`scripts/post-migrate/`, bước 20); khách tạo trong khoảng giữa migration `up` và script có thể `null` vài giây, và thứ tự mã **không đúng tuyệt đối theo `createdAt`** (xem 09 mục v1.0.5). Tìm theo mã phải gõ tiền tố `KH` (`KH-000123`, `kh123`); từ khóa toàn số vẫn là SĐT để giữ quy tắc chặn dò số #37 | FR-07, FR-08, FR-09 |
+| `phone` | string E.164 (`+84912345678`) \| null | **Không** (từ v1.0.5) | **Thay thế quy tắc "bắt buộc, unique toàn hệ thống" của v1.0.4 (QT4).** Tùy chọn và **không unique**: nhiều khách có thể trùng SĐT hoặc không có SĐT (khách không SĐT lưu `null`, không lưu chuỗi rỗng; chỉ họ tên là bắt buộc). Có giá trị thì **đã chuẩn hóa trước khi lưu** (xem 3.2.1). API list/detail chỉ trả `phoneMasked` (`null` khi không có SĐT); số đầy đủ lấy qua `POST /crm/customers/:id/phone-views` (mọi thành viên nhóm, ghi `PHONE_VIEWED`, quyết định #10 giữ nguyên); khách không có SĐT ⇒ 409 `CUSTOMER_PHONE_NOT_SET` (không ghi audit) | C1, C14, QT3, FR-01, FR-03, FR-04 |
 | `email` | string \| null (trim, lowercase, ≤ 254, định dạng email) | Không | Email khách (**không unique**, không bắt buộc). Là dữ liệu cá nhân: không ghi vào log ứng dụng, không đưa vào payload push | C1 |
 | `statusId` | ObjectId → `customer_statuses` | Có | Mặc định trạng thái `isDefault` ("Chưa tiếp cận") | C1, C6 |
 | `statusChangedAt` | Date | Có | Lần đổi tình trạng gần nhất | C6 |
@@ -203,9 +205,9 @@ erDiagram
 | `hasNationalId` | boolean | Có | Cho UI biết có CCCD | C9 |
 | `criteria` | `{ demand, motivation, finance, timing }` mỗi cái `{ isDone: boolean, description: string ≤1000, updatedBy, updatedAt }` | Có (mặc định `isDone=false`) | 4 tiêu chí Nhu cầu / Động cơ / Tài chính / Thời gian | C4 |
 | `progress` | number ∈ {0,25,50,75,100} | Có | **Server tính** = số `isDone` × 25, ghi cùng lệnh update tiêu chí; không nhận từ client. **Từ v1.0.3** khi `progress` đổi, server có thể tự đổi tình trạng khách theo tiến độ (mục 6.2a) | C5, QT1, PT-023 |
-| `careTeam` | `[{ userId, role: 'PRIMARY'\|'MEMBER', addedBy, addedAt }]` | Không | Nhóm chăm sóc. **Bất biến:** nếu không rỗng thì đúng 1 `PRIMARY`, `userId` không trùng | C8, QT7 |
+| `careTeam` | `[{ userId, role: 'PRIMARY'\|'MEMBER', addedBy, addedAt }]` | Không | Nhóm chăm sóc. **Bất biến:** nếu không rỗng thì đúng 1 `PRIMARY`, `userId` không trùng; tối đa **10 MEMBER** (v1.0.5, FR-17: thêm vượt ⇒ 409 `CARE_TEAM_LIMIT_EXCEEDED`; khách cũ đã quá 10 vẫn gỡ được, chỉ chặn thêm). **v1.0.5 (thay thế quy tắc đổi/gỡ phụ trách chính của v1.0.2):** người tạo luôn là `PRIMARY` (mọi vai trò kể cả Quản trị) và **khóa vĩnh viễn**; chỉ khách cũ có `careTeam` rỗng mới được Quản trị/Quản lý đặt PRIMARY **một lần** qua `POST care-team/members` kèm `primaryUserId` | C8, QT7, FR-10, FR-11, FR-17 |
 | `primaryAssigneeId` | ObjectId \| null | Không | Phi chuẩn hóa từ `careTeam` để lọc/sort/thống kê nhanh | C8, X3, X6 |
-| `teamIds` | ObjectId[] | Không | Hợp các `teamId` của thành viên `careTeam`; nếu `careTeam` rỗng thì = nhóm của người tạo. Dùng cho phạm vi Quản lý | QT6 |
+| `teamIds` | ObjectId[] | Không | Hợp các `teamId` của thành viên `careTeam` (thay thế quy tắc "nếu `careTeam` rỗng thì = nhóm của người tạo" của v1.0.4: từ v1.0.5 người tạo luôn nằm trong `careTeam`). **Có thể là `[]`** khi mọi thành viên không thuộc nhóm nào (ví dụ chỉ có Quản trị): khi đó chỉ Quản trị và người trong `careTeam` thấy khách, Quản lý chưa thấy cho tới khi có thành viên thuộc nhóm của họ. Dùng cho phạm vi Quản lý: **Quản lý của nhóm người được mời cũng thấy khách** (xem 7.3) | QT6, FR-10, FR-15 |
 | `persona` | `PersonaValue[]` (3.2.2) | Không | Chân dung động, attribute pattern | C10, X10, QT9 |
 | `personaFilterKeys` | string[] | Không | Token lọc phi chuẩn hóa, ví dụ `occupation=ke_toan`, `purpose=dau_tu` (chỉ trường `isFilterable`) | X3 |
 | `occasions` | `[{ fieldKey, month, day, year? }]` | Không | Sinh ra từ trường chân dung `isOccasion` (sinh nhật, kỷ niệm) để scheduler quét theo ngày | C13 |
@@ -222,7 +224,7 @@ erDiagram
 | `purgingAt` | Date | Không (không index; bản ghi cũ không có thì coi như null) | v1.0.2 mục D: khách đang **xóa vĩnh viễn** (đặt nguyên tử trước khi xóa file; khôi phục/ẩn danh hóa bị chặn 409 `CUSTOMER_PURGE_IN_PROGRESS`; không hết hạn, chỉ mất khi bản ghi bị xóa) | tài liệu 09 §7 |
 | `__v` | number | — | Bật `optimisticConcurrency` — client gửi `version` khi PATCH, lệch thì 409 `VERSION_CONFLICT` (nhiều người cùng sửa) | QT7 |
 
-> **Không có mã khách hàng** (quyết định #2): không field `customerCode`, không unique/index, không cột trong import/export, không filter. Khách nhận diện bằng `_id` (nội bộ), họ tên và SĐT (duy nhất).
+> ~~**Không có mã khách hàng** (quyết định #2): không field `customerCode`, không unique/index, không cột trong import/export, không filter. Khách nhận diện bằng `_id` (nội bộ), họ tên và SĐT (duy nhất).~~ **Thay thế quy tắc này của v1.0.4 (quyết định #2 và QT4):** từ v1.0.5 có `customerCode` (xem bảng 3.2) và SĐT **không còn duy nhất**; khách nhận diện bằng mã `KH-xxxxxx`, họ tên và (nếu có) SĐT. Xem mục 11, quyết định #39 đến #47.
 
 #### 3.2.1 Chuẩn hóa SĐT (X2, QT4)
 
@@ -268,7 +270,7 @@ Khi lưu chân dung, service tính lại trong cùng một lệnh `updateOne`: `
 
 | Index | Mục đích |
 |---|---|
-| `{ phone: 1 }` **unique** (không partial) | SĐT duy nhất **toàn hệ thống**, kể cả khách đã xóa mềm (QT4). Chống race khi 2 người tạo cùng lúc |
+| ~~`{ phone: 1 }` **unique** (không partial)~~ → `{ customerCode: 1 }` **unique partial** (`partialFilterExpression: { customerCode: { $type: 'string' } }`, tên `customerCode_1`); `{ phone: 1 }` chỉ còn là index **thường** | **Thay thế quy tắc "SĐT duy nhất toàn hệ thống" của v1.0.4 (QT4).** Mã khách duy nhất, chống race cấp mã; partial để khách chưa có mã (đợi script bù mã) không vi phạm. Index `phone_1` do migration `010`/`011` quản (011 là bước hậu-migrate một chiều, `phase: 'post-up'`: gỡ unique, tạo lại `phone_1` thường, đổi `anonymized:<id>` về `null`); schema **không** khai báo index `phone` để mongoose autoIndex không đụng `phone_1` unique còn tồn tại trước 011 (rủi ro R1 của tài liệu 11) |
 | `{ deletedAt: 1, statusId: 1, lastUpdatedAt: -1 }` | Danh sách theo tình trạng, sort ngày cập nhật (mặc định) — phạm vi Quản trị |
 | `{ deletedAt: 1, lastUpdatedAt: -1 }` (thêm ở M2) | Tab "Tất cả" (không lọc tình trạng) sort ngày cập nhật |
 | `{ 'careTeam.userId': 1, deletedAt: 1, lastUpdatedAt: -1 }` | Phạm vi Nhân viên |
@@ -282,7 +284,7 @@ Khi lưu chân dung, service tính lại trong cùng một lệnh `updateOne`: `
 
 > **Rủi ro dò số qua tìm kiếm (QA vòng 2):** vì `searchText` chứa các biến thể số điện thoại, tìm theo ≥ 3 chữ số cho phép người xem dò ra số đầy đủ của khách trong phạm vi mình xem được (thử dần, đọc kết quả) mà **không để lại `PHONE_VIEWED`**. Giới hạn: chỉ khách trong phạm vi (`CustomerScope`). Backend phải: (1) **độ dài tối thiểu 6 chữ số** khi từ khóa toàn chữ số, hoặc chỉ khớp **đuôi số** (4–6 số cuối); (2) rate-limit riêng cho tìm kiếm (đề xuất 30 lần/phút/người); (3) cảnh báo bất thường (nhiều truy vấn số khác nhau trong thời gian ngắn, ghi audit `PHONE_SEARCH_ANOMALY` và báo Quản trị); (4) không trả khớp số một phần trong kết quả gợi ý (autocomplete). Ghi vào Quality Gates (10.2).
 
-**Triển khai ở M2 (dò số):** từ khóa toàn số < 4 chữ số không có kết quả; 4-5 số chỉ khớp đuôi số; từ 6 số khớp chuỗi con. Tìm kiếm có từ khóa bị giới hạn 30 lần/phút/người, nhưng cùng một từ khóa trong 5 giây (danh sách + `list-counts`, đổi trang) chỉ tốn 1 lượt. Cảnh báo `PHONE_SEARCH_ANOMALY` chỉ đếm từ khóa số có >= 6 chữ số và đếm số "lá" của tập từ khóa trong 1 giờ (từ khóa là tiền tố của một từ khóa khác đã tìm không còn là lá): gõ dần một số chỉ là 1 lá nên không báo giả, còn dò `gốc+0, gốc+1, ...` (kể cả xen kẽ với `gốc`) sinh nhiều lá nên vẫn bị bắt; ngưỡng 20 lá/giờ. Lỗi 409 trùng SĐT khi tạo/sửa khách dùng chung hạn mức 30 lần/phút của `phone-lookups` vì lộ cùng thông tin. **Ngoại lệ ràng buộc unique `phone`:** khách đã ẩn danh hóa đổi `phone` thành `anonymized:<id>`, nên số cũ được GIẢI PHÓNG và có thể dùng lại cho khách mới (khác với khách chỉ xóa mềm, vẫn giữ số).
+**Triển khai ở M2 (dò số):** từ khóa toàn số < 4 chữ số không có kết quả; 4-5 số chỉ khớp đuôi số; từ 6 số khớp chuỗi con. Tìm kiếm có từ khóa bị giới hạn 30 lần/phút/người, nhưng cùng một từ khóa trong 5 giây (danh sách + `list-counts`, đổi trang) chỉ tốn 1 lượt. Cảnh báo `PHONE_SEARCH_ANOMALY` chỉ đếm từ khóa số có >= 6 chữ số và đếm số "lá" của tập từ khóa trong 1 giờ (từ khóa là tiền tố của một từ khóa khác đã tìm không còn là lá): gõ dần một số chỉ là 1 lá nên không báo giả, còn dò `gốc+0, gốc+1, ...` (kể cả xen kẽ với `gốc`) sinh nhiều lá nên vẫn bị bắt; ngưỡng 20 lá/giờ. ~~Lỗi 409 trùng SĐT khi tạo/sửa khách dùng chung hạn mức 30 lần/phút của `phone-lookups` vì lộ cùng thông tin.~~ (thay thế quy tắc của v1.0.4: không còn `phone-lookups` và không còn 409 trùng SĐT; hai khách được phép cùng SĐT nên không còn kênh dò tồn tại SĐT qua lỗi trùng) ~~**Ngoại lệ ràng buộc unique `phone`:** khách đã ẩn danh hóa đổi `phone` thành `anonymized:<id>`, nên số cũ được GIẢI PHÓNG và có thể dùng lại cho khách mới (khác với khách chỉ xóa mềm, vẫn giữ số).~~ (thay thế quy tắc của v1.0.4: không còn unique `phone` nên không còn khái niệm "giải phóng số"; từ v1.0.5 ẩn danh hóa đặt `phone = null`, migration `011` cũng đổi `anonymized:<id>` cũ về `null`)
 
 **Tìm kiếm tiếng Việt không dấu:** giai đoạn 1 dùng regex đã escape trên `searchText` (chuỗi bỏ dấu, `đ→d`), kết hợp với bộ lọc phạm vi + các bộ lọc khác. Với quy mô vài nghìn – vài chục nghìn khách, quét `searchText` trong tập đã thu hẹp đáp ứng < 100 ms. Nếu quá 50k khách: thêm text index `{ searchText: 'text' }` (`default_language: 'none'`) hoặc Atlas Search. Từ khóa toàn chữ số → so khớp chuỗi số trong `searchText` (tìm theo SĐT, kể cả 4 số cuối); từ khóa có `@` → so khớp email.
 
@@ -336,7 +338,7 @@ Index: `{ key: 1 }` unique; `{ isActive: 1, groupCode: 1, order: 1 }`.
 | `care_logs` | `customerId`, `authorId`, `authorName` (snapshot), `occurredAt` (mặc định now), `content` (1–5000), `contactChannel: 'CALL'\|'ZALO'\|'SMS'\|'MEETING'\|'SITE_VISIT'\|'OTHER'`, `contactResultId?`, `nextAction?: { suggestion, dueAt, appointmentId }`, `attachments?: [{ attachmentId, fileKey, thumbKey, mimeType, size, width, height }]` (tối đa 5 ảnh), `source: 'MANUAL'\|'IMPORT'\|'SYSTEM'`, `editedAt?`, `deletedAt`, `deletedBy` | `{ customerId: 1, occurredAt: -1 }` partial `deletedAt:null`; `{ authorId: 1, occurredAt: -1 }` | C2, C3 |
 | `appointments` | `customerId`, `type: 'SITE_VISIT'\|'MEETING'\|'DEPOSIT_CONTRACT'\|'CALLBACK'\|'OTHER'` (`DEPOSIT_CONTRACT` = nhãn "Ký cọc / HĐMB", quyết định #6), `title`, `startAt`, `endAt?`, `location?`, `note?`, `assigneeId` (người thực hiện), `remindBeforeMinutes: number[]` (mặc định theo cài đặt), `status: 'SCHEDULED'\|'DONE'\|'CANCELED'`, `completedAt?`, `completedBy?`, `outcome?`, `sourceCareLogId?` (nhật ký đã sinh ra lịch qua `nextAction.appointment`), `projectId?` (G7: dự án của buổi hẹn, ObjectId tham chiếu `projects`, mặc định `null`, mọi loại lịch đều được gắn, không bắt buộc; chỉ gắn MỚI được dự án còn hoạt động và chưa xóa mềm, lịch đã gắn vẫn đọc được tên khi dự án sau đó ngừng/ẩn; bản ghi cũ không có field = chưa gắn, không cần migration), `createdBy`, `updatedBy?`, `deletedAt`, `deletedBy`, `__v` (= `version`, khóa lạc quan: PATCH có thể gửi `version`, lệch ⇒ 409 `VERSION_CONFLICT`) | `{ assigneeId: 1, startAt: 1 }`; `{ customerId: 1, startAt: 1 }`; `{ status: 1, startAt: 1 }`; `{ projectId: 1, startAt: 1 }` (G7, lọc theo dự án) | C3, X5 |
 | `crm_attachments` (ảnh đính kèm nhật ký) | `customerId`, `careLogId?`, `uploaderId`, `kind: 'CARE_LOG_IMAGE'`, `fileKey` (UUID, không dùng tên gốc), `thumbKey?` (khóa UUID của thumbnail WebP, do job `attachment.thumbnail` điền), `thumbStatus: 'NONE'\|'READY'\|'FAILED'` (mặc định `NONE`, thiếu field ở ảnh cũ tính như `NONE`), `thumbAttempts` (số lần job lỗi), `originalName` (chỉ hiển thị), `mimeType` ∈ {`image/jpeg`,`image/png`,`image/webp`}, `size` (≤ 5 MB), `width?`, `height?`, `status: 'PENDING'\|'PROCESSING'\|'READY'\|'ATTACHED'\|'REJECTED'\|'REMOVED'`, `removedAt?`, `removedBy?`, `createdAt` | `{ customerId: 1, createdAt: -1 }`; `{ careLogId: 1 }` sparse; `{ status: 1, createdAt: 1 }` (dọn ảnh mồ côi READY chưa gắn > 24 giờ); `{ thumbStatus: 1, createdAt: 1 }` partial `thumbStatus ∈ {NONE, FAILED}` (bù thumbnail; **tạo bằng migration `009`, không khai báo trong schema**) | C2 |
-| `care_team_requests` | `customerId`, `requesterId`, `message?`, `status: 'PENDING'\|'APPROVED'\|'REJECTED'\|'CANCELED'`, `resolvedBy?`, `resolvedAt?`, `resolutionNote?` | `{ customerId: 1, requesterId: 1 }` unique partial `status:'PENDING'`; `{ status: 1, customerId: 1 }` | X2 |
+| `care_team_requests` | `customerId`, `requesterId`, `message?`, `status: 'PENDING'\|'APPROVED'\|'REJECTED'\|'CANCELED'`, `resolvedBy?`, `resolvedAt?`, `resolutionNote?` | `{ customerId: 1, requesterId: 1 }` unique partial `status:'PENDING'`; `{ status: 1, customerId: 1 }` | X2 (**v1.0.5, FR-12: chỉ giữ schema và dữ liệu cũ; không còn endpoint, không ghi mới; chỉ `customer-purge.service` và `customer-care-anonymizer.service` còn dùng để dọn khi xóa vĩnh viễn/ẩn danh**) |
 | `reminders` (kỹ thuật) | `type: 'APPOINTMENT'\|'FOLLOW_UP'\|'OCCASION'\|'STALE_CUSTOMER'`, `customerId`, `refId?` (lịch hẹn hoặc nhật ký), `recipientIds[]` (ảnh chụp tham khảo; người nhận thật được tính lại lúc gửi), `priorityRecipientId?`, `fireAt`, `dueAt` (mốc nghiệp vụ nhắc nói tới: giờ hẹn/hạn bước tiếp theo/ngày dịp), `status: 'PENDING'\|'PROCESSING'\|'SENT'\|'CANCELED'\|'FAILED'`, `dedupeKey` (unique), `attempts`, `lockedAt?` (dấu lần nhận), `sentAt?`, `finishedAt?` (SENT/CANCELED/FAILED), `payload?` (`fieldKey`, `occurrenceDate`, `leadDays` của nhắc dịp) | `{ status: 1, fireAt: 1 }`; `{ status: 1, lockedAt: 1 }`; `{ type: 1, refId: 1, status: 1 }`; `{ customerId: 1, status: 1 }`; `{ dedupeKey: 1 }` unique; TTL 90 ngày theo `finishedAt` | C3, C13, X5 |
 
 `dedupeKey` (M5, đã triển khai): `APPOINTMENT:{appointmentId}:{offsetMinutes}:{startAtMs}` (CÓ giờ hẹn trong khóa: dời giờ sinh nhắc mới, dời về đúng giờ cũ thì mở lại bản đã hủy, bản đã gửi không gửi lại), `FOLLOW_UP:{careLogId}:{dueAtMs}`, `OCCASION:{customerId}:{fieldKey}:{YYYY-MM-DD ngày dịp}:{leadDays}`, `STALE:{customerId}:{YYYY-MM-DD của nhật ký mới nhất hoặc ngày tạo khách}` (MỘT nhắc cho mỗi "đợt" lâu chưa chăm sóc, không nhắc lại mỗi ngày — lệch có chủ đích so với ví dụ cũ `STALE:{customerId}:{ngày quét}` để tránh dội hàng trăm thông báo/ngày; danh sách "Việc hôm nay" vẫn hiện khách đó đến khi được chăm sóc) → scheduler chạy lại không gửi trùng. `reminders`, `notifications`, `import_job_rows` là dữ liệu kỹ thuật/tạm nên dùng TTL (như `RefreshToken` hiện có), không phải dữ liệu nghiệp vụ.
@@ -361,7 +363,7 @@ Index: `{ key: 1 }` unique; `{ isActive: 1, groupCode: 1, order: 1 }`.
 | `CUSTOMER_STATUS_AUTO_CHANGED` (thêm ở v1.0.3, PT-023) | Tình trạng khách bị **tự** đổi theo tiến độ 3/4 tiêu chí (lên `NET` hoặc về `INTERESTED`; chỉ khi có đổi thật). Mức ưu tiên `NORMAL`; chống trùng theo (khách, version sau cùng) | Thành viên `careTeam` của khách, **trừ người tick tiêu chí** | PT-023 |
 | `STALE_CUSTOMER` | Khách có tình trạng thuộc nhóm Chưa tiếp cận hoặc Có quan tâm (cả hai) quá N ngày chưa có nhật ký | Phụ trách chính (`HIGH`); thành viên chỉ nhận nếu tự bật. **Chưa làm (v1.0.4, FR-29):** tùy chọn "thành viên tự bật" là FR-37 (PT-060), `Hoãn` sang v1.0.5 cùng loại push `STALE_CUSTOMER`; hiện chỉ phụ trách chính nhận (`ReminderDispatchService.evaluateStale` truyền danh sách thành viên rỗng) | X5, QT7 |
 | `CUSTOMER_OCCASION` | Sinh nhật / kỷ niệm (hôm nay hoặc trước N ngày) | Cả nhóm chăm sóc, phụ trách chính `HIGH` | C13 |
-| `CARE_TEAM_JOIN_REQUESTED` / `CARE_TEAM_JOIN_RESOLVED` | Có đề nghị tham gia / đề nghị được duyệt hoặc từ chối | Phụ trách chính + Quản lý nhóm / người đề nghị | X2 |
+| `CARE_TEAM_JOIN_REQUESTED` / `CARE_TEAM_JOIN_RESOLVED` | Có đề nghị tham gia / đề nghị được duyệt hoặc từ chối | Phụ trách chính + Quản lý nhóm / người đề nghị | X2 (**v1.0.5: không còn phát sinh; giữ giá trị enum cho dữ liệu cũ, hộp thông báo hiển thị không hành động**) |
 | `IMPORT_COMPLETED`, `EXPORT_READY` | Job nền xong (M8) | Người tạo job | X8 |
 | `SECURITY_ALERT` (thêm ở M5) | Cảnh báo bất thường `PHONE_SEARCH_ANOMALY`/`PHONE_VIEW_ALERT`/`NATIONAL_ID_VIEW_ALERT` (cùng điều kiện, tối đa 1/người/giờ) | Mọi Quản trị đang hoạt động (`priority=HIGH`, nội dung không có SĐT) | M2, X5 |
 
@@ -373,7 +375,7 @@ Chỉ **4 loại** thông báo có push (danh sách đóng `PUSH_CATALOG` ở `m
 
 | `type` | Khi nào có push | Khẩn | TTL |
 |---|---|---|---|
-| `CUSTOMER_ASSIGNED` | Chỉ người được thêm làm **người cùng phụ trách** (thêm vào nhóm, duyệt đề nghị, thêm hàng loạt); không push khi làm phụ trách chính hoặc khi khách mới tạo | `normal` | 24 giờ |
+| `CUSTOMER_ASSIGNED` | Chỉ người được thêm làm **người cùng phụ trách** (thêm vào nhóm, ~~duyệt đề nghị~~ (bỏ ở v1.0.5), mời thành viên, thêm hàng loạt); không push khi làm phụ trách chính hoặc khi khách mới tạo | `normal` | 24 giờ |
 | `CARE_LOG_ADDED` | Người cùng chăm sóc ghi nhật ký mới cho khách của mình | `normal` | 24 giờ |
 | `APPOINTMENT_DUE` | Sắp đến giờ hẹn | `high` | 1 giờ |
 | `CUSTOMER_STATUS_AUTO_CHANGED` | Tình trạng khách tự đổi theo tiến độ tiêu chí | `normal` | 24 giờ |
@@ -434,16 +436,16 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Hành động | Quản trị | Quản lý | NV – phụ trách chính | NV – thành viên | ID |
 |---|---|---|---|---|---|
 | Xem danh sách, chi tiết, nhật ký, chân dung, lịch sử khách | ✓ | P | P | P | C8, QT6, QT9 |
-| Kiểm tra trùng SĐT (chỉ biết "do [tên] chăm sóc") | ✓ | ✓ | ✓ | ✓ | X2 |
-| Tạo khách (NV tạo ⇒ tự là phụ trách chính) | ✓ | ✓ | ✓ | ✓ | C1, QT7 |
+| ~~Kiểm tra trùng SĐT (chỉ biết "do [tên] chăm sóc")~~ **bỏ ở v1.0.5** (thay thế quy tắc X2 của v1.0.4: không còn `phone-lookups`, hai khách được trùng SĐT) | — | — | — | — | ~~X2~~ |
+| Tạo khách (**v1.0.5, thay thế quy tắc "Admin/Manager chỉ định người chăm sóc khi tạo" của v1.0.2:** mọi vai trò tạo thì **chính mình là phụ trách chính**, không chỉ định hộ; chỉ họ tên bắt buộc) | ✓ | ✓ | ✓ | ✓ | C1, QT7, FR-10 |
 | Sửa hồ sơ, tiêu chí, chân dung, thẻ; ghi nhật ký; đổi tình trạng | ✓ | P | ✓ | ✓ | QT7 |
 | Sửa / xóa nhật ký | ✓ | P | TG | TG | C2 |
 | Đính kèm ảnh vào nhật ký (tối đa 5/ghi chú); gỡ ảnh | ✓ | P | ✓; gỡ: TG | ✓; gỡ: TG | C2 |
-| Thêm thành viên chăm sóc | ✓ | P | ✓ **[Giả định]** | — | C8 |
-| Gỡ thành viên (không phải phụ trách chính) | ✓ | P | ✓ **[Giả định]** | — | C8 |
-| Đổi phụ trách chính; gỡ phụ trách chính (bắt buộc chọn người thay) | ✓ | P | — | — | QT7 |
-| Đề nghị tham gia nhóm chăm sóc | — | ✓ | ✓ | ✓ | X2 |
-| Duyệt / từ chối đề nghị tham gia | ✓ | P | ✓ | — | X2 |
+| **Mời** thành viên phụ (v1.0.5, thay thế "Thêm thành viên chăm sóc" và giả định "phụ trách chính chỉ mời người cùng nhóm" của v1.0.4): người được mời ACTIVE, vai trò Quản lý/Nhân viên, **không giới hạn theo nhóm**; tối đa 10 thành viên phụ; 30 lượt/phút/người | ✓ | P | ✓ | — | C8, FR-13, FR-17 |
+| Gỡ thành viên phụ (v1.0.5: gỡ PRIMARY ⇒ 409 `PRIMARY_LOCKED` với mọi vai trò; thành viên phụ không tự rời) | ✓ | P | ✓ | — | C8, FR-11 |
+| ~~Đổi phụ trách chính; gỡ phụ trách chính (bắt buộc chọn người thay)~~ **bỏ ở v1.0.5** (thay thế quy tắc QT7/G5 của v1.0.2: phụ trách chính khóa vĩnh viễn). Còn lại duy nhất: **đặt phụ trách chính lần đầu cho khách cũ chưa có** (`POST members` kèm `primaryUserId`, một lần) | ✓ | P | — | — | ~~QT7~~, FR-11 |
+| ~~Đề nghị tham gia nhóm chăm sóc~~ **bỏ ở v1.0.5** (thay thế quy tắc X2 của v1.0.4) | — | — | — | — | ~~X2~~ |
+| ~~Duyệt / từ chối đề nghị tham gia~~ **bỏ ở v1.0.5** (thay thế quy tắc X2 của v1.0.4) | — | — | — | — | ~~X2~~ |
 | Nhập / sửa / xóa CCCD | ✓ | P | ✓ | ✓ | C9 |
 | Xem CCCD đầy đủ (có ghi log) | ✓ | P | ✓ **[Giả định]** | — | C9 |
 | Xem nhật ký xem CCCD | ✓ | P | — | — | C9 |
@@ -454,7 +456,7 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Khôi phục khách đã xóa; ẩn danh hóa theo yêu cầu khách | ✓ | — | — | — | §5 |
 | Xóa vĩnh viễn khách đã xóa mềm (không hoàn tác; dọn dữ liệu con + file ảnh, giữ một dòng audit `CUSTOMER_PURGED` không PII) | ✓ | — | — | — | tài liệu 09 §7 |
 | Thao tác hàng loạt: đổi tình trạng, gắn thẻ | ✓ | P | P | P | tài liệu 02 §4.2 |
-| Thao tác hàng loạt: phân người chăm sóc | ✓ | P | — | — | C8 |
+| Thao tác hàng loạt: **mời thành viên phụ** (`ASSIGN`; v1.0.5 không còn `primaryUserId`; khách chưa có nhóm báo `PRIMARY_REQUIRED`, khách đủ 10 thành viên phụ báo `CARE_TEAM_LIMIT_EXCEEDED`, riêng từng khách) | ✓ | P | — | — | C8, FR-11, FR-17 |
 | Lịch hẹn: tạo/sửa/hoàn thành | ✓ | P | ✓ | ✓ | C3 |
 | Lịch hẹn: xóa mềm | ✓ | P | TG | TG | C3 |
 | Đọc danh mục, dự án, trường chân dung, thẻ | ✓ | ✓ | ✓ | ✓ | X7 |
@@ -468,6 +470,8 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Nhật ký audit toàn hệ thống | ✓ | — | — | — | X4 |
 | Thông báo, thiết bị, cài đặt thông báo của chính mình | ✓ | ✓ | ✓ | ✓ | X5 |
 
+> **v1.0.5 (FR-15):** `customers.teamIds` là hợp nhóm của mọi thành viên `careTeam`, nên **người ngoài nhóm được mời** thấy toàn bộ hồ sơ và **Quản lý của nhóm người được mời cũng thấy khách**; ghi chú quyền riêng tư ở 7.3.
+
 ### 4.3 Cách enforce row-level (không chỉ guard)
 
 | Lớp | Cơ chế |
@@ -475,7 +479,7 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 | Guard (thô) | `JwtAuthGuard` + `RolesGuard` có sẵn: chặn `EDITOR` và route chỉ dành cho Quản trị |
 | `CrmActor` | Mỗi request tạo `CrmActor { userId, role, teamId, managedTeamIds }` — đọc `users` + `teams` từ DB (1 truy vấn có index, nhớ trong phạm vi request). **Không** nhét team vào JWT để khi đổi nhóm có hiệu lực ngay |
 | `CustomerAccessService.buildScope(actor)` | Trả `CustomerScope` (kiểu "branded", chỉ service này tạo được): ADMIN → `{}`; MANAGER → `{ $or: [{ teamIds: { $in: managedTeamIds } }, { 'careTeam.userId': me }] }`; STAFF → `{ 'careTeam.userId': me }` |
-| Repository | **Mọi** hàm đọc/ghi `customers` bắt buộc nhận tham số `scope: CustomerScope` và merge vào filter (`{ ...filter, ...scope, deletedAt: null }`). Thiếu scope ⇒ lỗi biên dịch TypeScript. Hàm không-scope chỉ dành cho worker, đặt tên rõ `findForSystemJob*`. Thực tế M2: ngoại lệ duy nhất là `findByPhoneForDuplicateCheck` (tra trùng SĐT toàn hệ thống, chỉ trả field tối thiểu); đồng bộ `teamIds` (`CustomerTeamSyncService`) là hàm theo người dùng (`careTeam.userId`) chạy trong transaction đổi nhóm/vai trò, cũng không qua scope |
+| Repository | **Mọi** hàm đọc/ghi `customers` bắt buộc nhận tham số `scope: CustomerScope` và merge vào filter (`{ ...filter, ...scope, deletedAt: null }`). Thiếu scope ⇒ lỗi biên dịch TypeScript. Hàm không-scope chỉ dành cho worker, đặt tên rõ `findForSystemJob*`. Thực tế M2: ~~ngoại lệ duy nhất là `findByPhoneForDuplicateCheck` (tra trùng SĐT toàn hệ thống, chỉ trả field tối thiểu)~~ (v1.0.5: hàm đã xóa cùng `phone-lookups`, không còn ngoại lệ tra toàn hệ thống); đồng bộ `teamIds` (`CustomerTeamSyncService`) là hàm theo người dùng (`careTeam.userId`) chạy trong transaction đổi nhóm/vai trò, cũng không qua scope |
 | Tài nguyên con (nhật ký, lịch hẹn, chân dung, CCCD, care team) | `assertCanAccess(actor, customerId, action)` = `findOne({ _id, ...scope })` lấy kèm `careTeam` để kiểm quyền theo vai (PR/TG) |
 | Không lộ tồn tại | Khách ngoài phạm vi trả **404 `CUSTOMER_NOT_FOUND`**, không 403 |
 | Danh sách chéo khách (lịch hẹn, việc hôm nay) | Nhân viên: `customerId ∈ accessibleCustomerIds(actor)` (truy vấn covered index `careTeam.userId`); Quản lý: tương tự theo `teamIds`; Quản trị: không lọc |
@@ -489,7 +493,7 @@ Ký hiệu: ✓ = được; **P** = chỉ trong phạm vi khách của mình (4.
 
 ## 5. Danh sách API
 
-Xem file riêng: **[`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md)** — quy ước chung (format response/lỗi, phân trang, sort, filter, header), 15 nhóm, **116 endpoint** (10 dùng lại, 106 mới), DTO dùng chung và mã lỗi.
+Xem file riêng: **[`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md)** — quy ước chung (format response/lỗi, phân trang, sort, filter, header), 15 nhóm, **115 endpoint** (10 dùng lại, 105 mới; v1.0.5 xóa 6 endpoint cũ, thêm 2 endpoint mới, đối chiếu với controller/Swagger ở 05 mục 3), DTO dùng chung và mã lỗi.
 
 | Nhóm | Số endpoint |
 |---|---|
@@ -497,24 +501,58 @@ Xem file riêng: **[`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sac
 | 2. Người dùng & nhóm | 10 |
 | 3. Khách hàng | 14 |
 | 4. CCCD và SĐT (xem có nhật ký) | 5 |
-| 5. Nhóm chăm sóc & đề nghị tham gia | 7 |
+| 5. Nhóm chăm sóc & mời thành viên (v1.0.5; trước là "đề nghị tham gia", 7) | 4 |
 | 6. Nhật ký chăm sóc (kèm ảnh đính kèm) | 6 |
 | 7. Chân dung & thẻ | 11 |
 | 8. Danh mục & dự án | 22 |
 | 9. Lịch hẹn & việc hôm nay | 8 |
-| 10. Thông báo & thiết bị | 8 |
+| 10. Thông báo & thiết bị (v1.0.4: thêm 4 `/push-subscriptions`, bỏ 2 `/device-tokens`) | 10 |
 | 11. Lịch sử & audit | 2 |
 | 12. Import / Export | 12 |
 | 13. Dashboard | 3 |
 | 14. Cài đặt CRM | 2 |
 | 15. Health (dùng lại) | 2 |
-| **Tổng** | **116** |
+| **Tổng** | **115** |
+
+> **v1.0.5:** xóa `POST /crm/customers/phone-lookups`, 3 endpoint `/crm/care-team-requests`, `PUT /crm/customers/:id/care-team/primary`, `GET /crm/assignable-users` (6 endpoint cũ); thêm `GET /crm/care-team-invitees` (mời người vào nhóm) và `GET /crm/customer-assignees` (ô lọc người phụ trách, thay `assignable-users?purpose=filter`). Hai nhóm 2 (Người dùng & nhóm) và 3 (Khách hàng) giữ số endpoint theo 05 (`assignable-users` được thay bằng `customer-assignees` ở nhóm 2, bỏ `phone-lookups` khỏi nhóm 3). Bảng này từng lệch 05 (116 so với 118/119 dòng thật, nhóm 10 ghi 8 thay vì 10); đã căn lại theo 05. **Máy còn PWA cũ phải tải lại trang sau deploy v1.0.5** vì gọi các route đã xóa sẽ nhận 404 (xem 09 mục v1.0.5).
 
 ---
 
 ## 6. Luồng xử lý chính
 
-### 6.1 Tạo khách có kiểm tra trùng SĐT (C1, X2, QT3, QT4, C7)
+### 6.1 Tạo khách (C1, QT3, C7; v1.0.5: bỏ kiểm tra trùng SĐT, cấp mã khách)
+
+> **v1.0.5 thay thế quy tắc "kiểm tra trùng SĐT trước khi tạo + banner Đề nghị tham gia" của v1.0.4 (X2, QT4):** không còn `phone-lookups`, không còn 409 `CUSTOMER_PHONE_DUPLICATED`; SĐT tùy chọn, hai khách được trùng SĐT; chỉ họ tên bắt buộc. Mọi vai trò tạo khách đều là **phụ trách chính** (khóa vĩnh viễn); DTO tạo khách **không còn trường `careTeam`** (gửi lên ⇒ 400 do `forbidNonWhitelisted`). Mã `customerCode` cấp bằng counter nguyên tử trong chính transaction tạo khách. Sơ đồ cũ giữ ở cuối mục để truy vết.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Người dùng (mọi vai trò)
+  participant FE as Web/App
+  participant API as CustomersController
+  participant S as CustomersService
+  participant DB as MongoDB
+  participant Q as BullMQ
+
+  U->>FE: Nhập họ tên (bắt buộc), SĐT/email/nguồn... (tùy chọn)
+  Note over FE: Không còn gọi phone-lookups khi rời ô SĐT
+  U->>FE: Bấm Lưu
+  FE->>API: POST /crm/customers (X-Idempotency-Key)
+  API->>S: create(actor, dto)
+  S->>S: Kiểm idempotency (Redis), chuẩn hóa SĐT nếu có (rỗng ⇒ null), tính searchText, progress=0
+  S->>DB: startSession + transaction
+  S->>DB: đọc/kiểm tra trước (khóa doc người tạo)
+  S->>DB: $inc counters CUSTOMER_CODE (cuối transaction, rollback cùng khách)
+  S->>DB: insert customers (careTeam=[actor PRIMARY] mọi vai trò, primaryAssigneeId=actor, teamIds=nhóm của actor hoặc [], customerCode=KH-xxxxxx)
+  S->>DB: insert crm_audit_logs CUSTOMER_CREATED
+  S->>DB: commit
+  S->>Q: enqueue push.send (sau commit, nếu có thông báo)
+  S-->>FE: 201 { data: CustomerDetail } (có customerCode)
+```
+
+<details>
+<summary>Sơ đồ cũ v1.0.4 (đã bị thay thế, giữ để truy vết)</summary>
+
 
 ```mermaid
 sequenceDiagram
@@ -557,6 +595,8 @@ sequenceDiagram
     S-->>FE: 201 { data: CustomerDetail }
   end
 ```
+
+</details>
 
 ### 6.2 Đổi tình trạng (C6, QT2, X4)
 
@@ -651,10 +691,10 @@ sequenceDiagram
     P-->>N: Push "Bạn được mời cùng phụ trách một khách"
     W->>DB: pushStatus=SENT (có ít nhất một thiết bị nhận), toàn thiết bị GONE (404/410) hoặc không có thiết bị ⇒ SKIPPED, còn lại (lỗi cố định hoặc hết retry mà không ai nhận) ⇒ FAILED
   end
-  Note over S,DB: Gỡ thành viên: nếu gỡ PRIMARY mà thiếu newPrimaryUserId ⇒ 400 PRIMARY_REPLACEMENT_REQUIRED, người bị gỡ mất quyền ngay (404)
+  Note over S,DB: v1.0.5 gỡ PRIMARY ⇒ 409 PRIMARY_LOCKED (kể cả Quản trị/Quản lý, thay quy tắc cũ PRIMARY_REPLACEMENT_REQUIRED), thêm quá 10 thành viên phụ ⇒ 409 CARE_TEAM_LIMIT_EXCEEDED, người bị gỡ mất quyền ngay (404)
 ```
 
-Chỉ người được thêm làm **người cùng phụ trách** mới có push `CUSTOMER_ASSIGNED` (xem 3.6.2); nội dung mẫu nêu tên người thêm và tên khách. Lỗi cố định của một thiết bị (400/401/403/413...) không retry. Thông báo lệch trạng thái (Redis lỗi lúc commit, instance chết giữa chừng) được job `push.sweep` xếp lại.
+Chỉ người được thêm làm **người cùng phụ trách** mới có push `CUSTOMER_ASSIGNED` (xem 3.6.2); nội dung mẫu nêu tên người thêm và tên khách. Lỗi cố định của một thiết bị (400/401/403/413...) không retry. **v1.0.5 (FR-11, FR-13 đến FR-19):** thêm thành viên nay là **mời** (người được mời không giới hạn theo nhóm, ACTIVE, vai trò Quản lý/Nhân viên); `PUT care-team/primary` và `newPrimaryUserId` đã xóa (thay thế quy tắc đổi/gỡ phụ trách chính của v1.0.2); việc hằng ngày và nhắc lịch gửi cho **mọi** thành viên `careTeam` ACTIVE (không chỉ phụ trách chính; quyết định #14 về ưu tiên thông báo giữ nguyên); tài khoản BLOCKED không nhận thông báo/push. Thông báo lệch trạng thái (Redis lỗi lúc commit, instance chết giữa chừng) được job `push.sweep` xếp lại.
 
 ### 6.4 Nhắc lịch hẹn / sinh nhật / khách lâu chưa chăm sóc (C3, C13, X5)
 
@@ -805,6 +845,8 @@ sequenceDiagram
   Note over S: Throttle 60 lần/phút/người; vượt phoneViewAlertPerHour ⇒ cảnh báo Quản trị
 ```
 
+> **v1.0.5 (FR-04):** khách không có SĐT (`phone` null) ⇒ 409 `CUSTOMER_PHONE_NOT_SET` ngay sau bước kiểm phạm vi, **không** tính vào throttle 60 lần/phút và **không** ghi `PHONE_VIEWED` (không có số nào bị lộ). Quyết định #10 giữ nguyên.
+
 ---
 
 ## 7. Yêu cầu phi chức năng
@@ -844,7 +886,10 @@ sequenceDiagram
 | Nhật ký xử lý | `crm_audit_logs`: mọi lần xem CCCD, export, import, đổi người chăm sóc, sửa chân dung; lưu ≥ 2 năm **[Giả định]** |
 | Quyền sửa, xóa của khách | **Luồng ẩn danh hóa phải được mở rộng khi có dữ liệu mới:** M3 (nhật ký chăm sóc, ảnh đính kèm) và M4 (chân dung) bắt buộc thêm bước xóa/ghi đè dữ liệu của khách đó vào `CustomerLifecycleService.anonymize`; audit của khách được ghi đè theo trường cố định (`fullName`, `phone`, `email`, `nationalId`) và theo MẪU regex (hiện có `^criteria\..+\.description$`; module sau thêm mẫu vào `PII_AUDIT_FIELD_PATTERNS`). Sửa: API thường. Xóa: `POST /crm/customer-anonymizations` (Quản trị) ghi đè PII bằng giá trị ẩn danh, xóa nhật ký/chân dung, giữ khung thống kê — không xóa cứng document (tương thích quy tắc soft delete) |
 | Chuyển dữ liệu ra ngoài | Payload Web Push đi qua dịch vụ push của trình duyệt (FCM/Mozilla/Apple/WNS, máy chủ nước ngoài) **không chứa SĐT, CCCD, nội dung nhật ký** — chỉ tên khách (cắt ≤ 30 ký tự), tên người thực hiện và loại việc, quét PII trước khi gửi; `endpoint`/khóa của thiết bị không ghi log thô và `auth` chỉ lưu bản mã; không gửi CCCD/nhạy cảm sang dịch vụ phân tích bên ngoài (QT10) |
-| Chống dò số | `phone-lookups` giới hạn 30 lần/phút/người, chỉ trả tên hiển thị người phụ trách, audit khi tra khách ngoài phạm vi |
+| Chống dò số | ~~`phone-lookups` giới hạn 30 lần/phút/người, chỉ trả tên hiển thị người phụ trách, audit khi tra khách ngoài phạm vi~~ (thay thế quy tắc của v1.0.4: `phone-lookups` đã xóa và không còn 409 trùng SĐT nên không còn kênh dò "SĐT này có trong hệ thống không"). Giữ quy tắc chặn dò qua tìm kiếm (#37): từ khóa toàn số tối thiểu 6 chữ số hoặc khớp đuôi số, rate-limit, cảnh báo `PHONE_SEARCH_ANOMALY`; tìm theo mã khách phải có tiền tố `KH` |
+| Mời người ngoài nhóm (v1.0.5, FR-13, FR-14, FR-15) | Phụ trách chính (kể cả Nhân viên) mời được **người không cùng nhóm** (thay thế giả định "chỉ mời người cùng nhóm" của v1.0.4). **Hệ quả quyền riêng tư cần biết:** (1) người được mời thấy **toàn bộ hồ sơ** khách, gồm lịch sử thay đổi (SĐT cũ → mới đầy đủ, #34), nhật ký chăm sóc, chân dung; xem/gọi SĐT như mọi thành viên (#10) với audit `PHONE_VIEWED` và cảnh báo xem bất thường; (2) vì `teamIds` là hợp nhóm của mọi thành viên, **Quản lý của nhóm người được mời cũng thấy khách** dù khách không thuộc nhóm họ ban đầu; (3) Quản trị luôn thấy. Giảm thiểu: tối đa 10 thành viên phụ, rate-limit mời 30 lượt/phút/người, audit `CARE_TEAM_MEMBER_ADDED` (người mời, người được mời, khách), thông báo cho người được mời; gỡ người khỏi nhóm thì mất quyền ngay (404) |
+| Danh sách người được mời (`care-team-invitees`, v1.0.5) | Chỉ trả `id`, `displayName`, `teamNames` (không email/SĐT/CCCD/vai trò/id nhóm); chỉ Quản trị/Quản lý hoặc phụ trách chính của khách chỉ định gọi được; rate-limit `INVITEE_SEARCH` 60 lần/phút/người; phân trang ≤ 20; `q` được escape regex; chỉ liệt kê người ACTIVE, vai trò Quản lý/Nhân viên, chưa nằm trong nhóm |
+| Khách không có SĐT (v1.0.5, FR-04) | `phone` null: list/detail trả `phoneMasked: null`; `phone-views` trả 409 `CUSTOMER_PHONE_NOT_SET`, không tính throttle, không ghi `PHONE_VIEWED` (không có số nào bị lộ). `customerCode` không phải dữ liệu cá nhân và **không dùng làm khóa truy cập**: mọi truy vấn vẫn qua `CustomerScope`, API theo `:id` |
 | Xem/gọi SĐT của thành viên nhóm (quyết định #10) | Không che SĐT theo vai trò trong nhóm: A, M (phạm vi), PR và MEMBER đều xem/gọi được. Danh sách/chi tiết chỉ trả `phoneMasked`; số đầy đủ qua `phone-views` (giới hạn 60 lần/phút/người, `no-store`, audit `PHONE_VIEWED` không lưu số); người bị gỡ khỏi nhóm mất quyền ngay (404) |
 | Export (D10 cập nhật 2026-10-22) | Export **không chứa CCCD đầy đủ** (chỉ `••••1234`) nhưng **chứa SĐT đầy đủ**. Chỉ Quản trị và Quản lý (trong phạm vi) tạo được; áp `CustomerScope`; throttle 5/giờ; file có hạn 7 ngày, signed URL 15 phút; chặn CSV formula injection; **mỗi lần export ghi audit `CUSTOMER_EXPORTED`** (người export, bộ lọc, cột, số dòng, `requestId`, `ip`) **không lưu danh sách số điện thoại vào audit** |
 | Lịch sử thay đổi chứa SĐT | `crm_audit_logs.changes` của `CUSTOMER_UPDATED` lưu **giá trị trường** gồm SĐT, email, họ tên cũ → mới đầy đủ (Oniichan đã chấp nhận, #34). Ai xem được: mọi người xem được khách qua `GET /crm/customers/:id/histories` (A, Quản lý trong phạm vi, PR, MEMBER) và A qua `/crm/audit-logs`; mục `NATIONAL_ID_VIEWED`/`PHONE_VIEWED` chỉ A/M. Ảnh hưởng quyền riêng tư: số cũ vẫn đọc được trong lịch sử, giữ ≥ 2 năm (D11); khi ẩn danh hóa khách phải xóa/ghi đè `changes` của khách đó; CCCD không bao giờ nằm trong `changes`. Không phân biệt với việc xem SĐT hiện tại: người xem lịch sử vốn đã được xem/gọi SĐT (#10) |
@@ -915,10 +960,10 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | # | Vị trí trong 01 | Nội dung giả định | Phương án thiết kế đang chọn | Trạng thái |
 |---|---|---|---|---|
 | G1 | §2 Người dùng | 3 vai trò Quản trị / Quản lý / Nhân viên | Map `ADMIN` / `MANAGER` (mới) / `STAFF` (mới); `EDITOR` hiện có không vào CRM. Dùng chung hệ thống tài khoản hiện có | **ĐÃ XÁC NHẬN** |
-| G2 | X2 | Báo "do [tên] chăm sóc" + đề nghị tham gia | `phone-lookups` trả `caredByName` (tên hiển thị phụ trách chính) + `customerRef`; đề nghị gửi tới phụ trách chính và Quản lý nhóm; ai trong họ duyệt trước thì có hiệu lực; người đề nghị nhận thông báo kết quả | **ĐÃ XÁC NHẬN** |
+| G2 | X2 | Báo "do [tên] chăm sóc" + đề nghị tham gia | `phone-lookups` trả `caredByName` (tên hiển thị phụ trách chính) + `customerRef`; đề nghị gửi tới phụ trách chính và Quản lý nhóm; ai trong họ duyệt trước thì có hiệu lực; người đề nghị nhận thông báo kết quả | **ĐÃ XÁC NHẬN** (v1.0.4); **v1.0.5 thay thế quy tắc này:** bỏ hẳn luồng đề nghị tham gia, xem mục 11 #41 |
 | G3 | QT6 | Quản trị xem tất cả, Quản lý xem nhóm, Nhân viên xem khách được phân | "Khách của nhóm" = khách có ít nhất 1 người chăm sóc thuộc nhóm (`teamIds`); khách chưa phân thuộc nhóm của người tạo | **ĐÃ XÁC NHẬN** |
 | G4 | QT7 | Phụ trách chính nhận thông báo ưu tiên và có thống kê riêng | Ưu tiên = `priority=HIGH` + luôn nhận `STALE_CUSTOMER`, `APPOINTMENT_DUE`, `CUSTOMER_OCCASION`; dashboard có cột "phụ trách chính" tách với "cùng chăm sóc" | **ĐÃ XÁC NHẬN** |
-| G5 | QT7 | Quản lý/Quản trị đổi phụ trách chính; gỡ phụ trách chính phải chọn người thay | Đúng như vậy; thiếu người thay ⇒ 400 `PRIMARY_REPLACEMENT_REQUIRED`. Thêm: phụ trách chính được thêm/gỡ **thành viên** (không đổi được phụ trách chính) | **ĐÃ XÁC NHẬN** |
+| G5 | QT7 | Quản lý/Quản trị đổi phụ trách chính; gỡ phụ trách chính phải chọn người thay | Đúng như vậy; thiếu người thay ⇒ 400 `PRIMARY_REPLACEMENT_REQUIRED`. Thêm: phụ trách chính được thêm/gỡ **thành viên** (không đổi được phụ trách chính) | **ĐÃ XÁC NHẬN** (v1.0.4); **v1.0.5 thay thế quy tắc "đổi/gỡ phụ trách chính" này:** PRIMARY khóa vĩnh viễn, xem mục 11 #43 |
 | G6 | C10 [Đề xuất] | Danh sách trường chân dung gợi ý | Seed toàn bộ bảng gợi ý thành trường hệ thống, đều tùy chọn; Quản trị tắt/sửa/thêm qua X10. **Giữ đủ nhóm trường REAL_ESTATE của prototype** (loại hình, cơ cấu phòng, mục đích, ngân sách, vốn tự có, cần vay, thời điểm, tiêu chí ưu tiên, khu vực muốn mua, vị trí cụ thể) | **ĐÃ XÁC NHẬN** |
 
 ### 9.2 Câu hỏi mục 7 của tài liệu 01 — phương án mặc định để không chặn thiết kế
@@ -927,7 +972,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 |---|---|---|
 | D1. Số người dùng, vai trò khác | ≤ 100 người dùng, 3 vai trò (ADMIN / MANAGER / STAFF) | **ĐÃ XÁC NHẬN** |
 | D2. Tình trạng khác | Danh mục động có `listGroup`; seed 4 giá trị. **Không còn nhóm gộp CARING** — mỗi tình trạng một `listGroup` riêng (`NOT_CONTACTED`, `INTERESTED`, `NET`, `DROPPED`); tab `ALL` là tab ảo | **ĐÃ XÁC NHẬN** |
-| D3. Phụ trách chính khác gì thành viên | Xem G5 + xem CCCD đầy đủ + duyệt đề nghị tham gia. **Mọi thành viên** (PRIMARY và MEMBER) đều được xem/gọi SĐT | **ĐÃ XÁC NHẬN** |
+| D3. Phụ trách chính khác gì thành viên | Xem G5 + xem CCCD đầy đủ + duyệt đề nghị tham gia. **Mọi thành viên** (PRIMARY và MEMBER) đều được xem/gọi SĐT | **ĐÃ XÁC NHẬN**; v1.0.5: phần "duyệt đề nghị tham gia" đã bị thay thế (mục 11 #41), phần xem/gọi SĐT giữ nguyên |
 | D4. "Khách lâu chưa chăm sóc" | 14 ngày (cấu hình được), áp cho cả hai tình trạng **Chưa tiếp cận (`NOT_CONTACTED`) và Có quan tâm (`INTERESTED`)** | **ĐÃ XÁC NHẬN** |
 | D5. Hạ tầng mới | **Đã chốt:** MongoDB Replica Set + **Redis + BullMQ** + S3/MinIO. Push **chưa làm ở giai đoạn 1**; từ v1.0.4 làm bằng Web Push VAPID (không Firebase). Phương án không Redis bị loại | **ĐÃ XÁC NHẬN (2026-10-22, cập nhật)** |
 | D6. Refresh token cho app di động | App gửi `X-Client-Type: mobile` ⇒ refresh token trong body, lưu `expo-secure-store` | **ĐÃ XÁC NHẬN** |
@@ -1012,7 +1057,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | # | Nhóm | Quyết định | Hệ quả kỹ thuật |
 |---|---|---|---|
 | 1 | A (giao diện) | **GIỮ Email khách** (tùy chọn) | Thêm field `email` vào `customers` schema; chuẩn hóa lowercase, lưu `searchText` có email; không unique; không bắt buộc; không ghi vào log ứng dụng |
-| 2 | A | **BỎ mã khách hàng** | Không có field `customerCode`/`mã KH` ở schema, DTO, API filter, import/export, seed, chỉ mục. Khách nhận diện bằng `_id` + họ tên + SĐT |
+| 2 | A | **BỎ mã khách hàng** | Không có field `customerCode`/`mã KH` ở schema, DTO, API filter, import/export, seed, chỉ mục. Khách nhận diện bằng `_id` + họ tên + SĐT | **Thay thế bởi #39 (v1.0.5).**
 | 3 | A | **GIỮ tab "Tất cả"** | Tab ảo `ALL` trong `list-counts`; `GET /crm/customers` không truyền `listGroup` = trả tất cả; không lưu trong DB |
 | 4 | A | **GIỮ Kanban** cho Việc hôm nay | Frontend giữ `TaskKanbanColumn` + nút chuyển Kanban/danh sách; 1 lần gọi `GET /crm/daily-tasks`, phân nhóm ở FE |
 | 5 | A | **GIỮ ảnh đính kèm** (gắn vào ghi chú chăm sóc) | Collection `crm_attachments`; upload (bỏ EXIF/GPS ngay lúc tải lên, vào `READY`) → job nền `attachment.thumbnail` tạo thumbnail (v1.0.4, FR-26; không còn tên `ImageProcessor`) → ATTACHED khi lưu ghi chú; signed URL 15 phút; feature flag `FEATURE_CRM_ATTACHMENTS`; tối đa 5 ảnh/ghi chú |
@@ -1022,10 +1067,10 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | 9 | A | **BỎ nhóm gộp "Đang chăm sóc"**, tách thành **"Chưa tiếp cận"** và **"Có quan tâm"** | `listGroup` không còn giá trị `CARING`; seed 4 giá trị mỗi cái một `listGroup` riêng; `list-counts` trả 4 nhóm + `ALL`; bộ lọc `listGroup` có 4 giá trị + `ALL`; ngưỡng "lâu chưa chăm sóc" (D4) áp cho cả `NOT_CONTACTED` và `INTERESTED` |
 | 10 | A | **Thành viên nhóm (cả PRIMARY lẫn MEMBER) được xem và gọi SĐT**; ghi nhật ký `PHONE_VIEWED` | Endpoint mới `POST /crm/customers/:id/phone-views`; danh sách/chi tiết chỉ trả `phoneMasked`; audit không lưu số thật; throttle 60 lần/phút/người; ngưỡng cảnh báo `phoneViewAlertPerHour` (200/giờ); cập nhật ma trận quyền (hàng mới) |
 | 11 | B | **G1 ĐÃ XÁC NHẬN** — 3 vai trò | Giữ nguyên thiết kế |
-| 12 | B | **G2 ĐÃ XÁC NHẬN** — đề nghị tham gia | Giữ nguyên thiết kế |
+| 12 | B | **G2 ĐÃ XÁC NHẬN** — đề nghị tham gia | ~~Giữ nguyên thiết kế~~ **Thay thế bởi #41 (v1.0.5): bỏ hẳn luồng** |
 | 13 | B | **G3 ĐÃ XÁC NHẬN** — phạm vi Quản lý theo `teamIds` | Giữ nguyên thiết kế |
 | 14 | B | **G4 ĐÃ XÁC NHẬN** — phụ trách chính nhận thông báo ưu tiên | Giữ nguyên thiết kế |
-| 15 | B | **G5 ĐÃ XÁC NHẬN** — gỡ phụ trách chính phải chọn người thay | Giữ nguyên thiết kế |
+| 15 | B | **G5 ĐÃ XÁC NHẬN** — gỡ phụ trách chính phải chọn người thay | ~~Giữ nguyên thiết kế~~ **Thay thế bởi #43 (v1.0.5): PRIMARY khóa vĩnh viễn** |
 | 16 | B | **G6 ĐÃ XÁC NHẬN** — seed bảng gợi ý + giữ nhóm REAL_ESTATE đầy đủ | Xem quyết định #7 |
 | 17 | C | **D1 ĐÃ XÁC NHẬN** — ≤ 100 người dùng, 3 vai trò | — |
 | 18 | C | **D2 ĐÃ XÁC NHẬN** — tách 4 `listGroup` riêng | Xem quyết định #9 |
@@ -1049,6 +1094,15 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | 36 | Chiều 22/10 | **Giữ cả 10 trường đầu tư** của prototype; **Kanban chỉ ở Việc hôm nay** | Seed REAL_ESTATE đủ 10 trường (#7); Kanban theo tình trạng ở danh sách khách chưa làm, ghi vào ý tưởng giai đoạn sau (11.2) |
 | 37 | QA vòng 2 | **Dò số qua tìm kiếm phải bị chặn**: từ khóa số tối thiểu 6 chữ số hoặc khớp đuôi số; rate-limit; cảnh báo bất thường | Xem 3.2.3, mục 12 điểm 3, Quality Gates 10.2 |
 | 38 | QA vòng 2 | **Quy ước migration dự án**: trạng thái cũ → enum ("Sắp bàn giao", "Đang vận hành" → `SOLD_OUT`); mã unique không phân biệt hoa thường; `propertyTypes` là mảng; xóa còn khách → 409 `PROJECT_IN_USE`, ngừng hoạt động qua PATCH | Xem 3.3 mục "Quy ước migration và ràng buộc dự án" |
+| 39 | v1.0.5 | **CÓ mã khách `KH-000123`** (thay thế quyết định #2 "BỎ mã khách hàng" của v1.0.4) | Field `customerCode` + counter nguyên tử + unique partial `customerCode_1`; script bù mã cho khách cũ; tìm theo mã cần tiền tố `KH`; thứ tự mã không đúng tuyệt đối theo `createdAt` với khách tạo trong khoảng trống triển khai (xem 3.2, 09) |
+| 40 | v1.0.5 | **SĐT tùy chọn, không duy nhất** (thay thế quy tắc "bắt buộc + unique toàn hệ thống kể cả khách xóa mềm" của v1.0.4, QT4) | Migration 011 (post-up, một chiều) gỡ unique `phone_1`, tạo lại index thường, đổi `anonymized:<id>` về `null`; mã lỗi `CUSTOMER_PHONE_DUPLICATED` bị xóa; `phone-views` trả 409 `CUSTOMER_PHONE_NOT_SET` khi không có SĐT |
+| 41 | v1.0.5 | **BỎ tra trùng SĐT và xin tham gia nhóm X2** (thay thế #12 "G2 ĐÃ XÁC NHẬN") | Xóa `POST phone-lookups`, 3 endpoint `care-team-requests`, mã lỗi `JOIN_REQUEST_EXISTS`/`JOIN_REQUEST_RESOLVED`; giữ schema/collection `care_team_requests` và enum thông báo/audit cũ cho dữ liệu cũ (chỉ dọn khi xóa vĩnh viễn/ẩn danh) |
+| 42 | v1.0.5 | **Mời được cả người ngoài nhóm** (thay thế giả định "phụ trách chính chỉ mời người cùng nhóm" của ma trận 4.2 v1.0.4) | `GET /crm/care-team-invitees`; `teamIds` là hợp nhóm các thành viên nên Quản lý nhóm người được mời cũng thấy khách; ghi chú quyền riêng tư ở 7.3 |
+| 43 | v1.0.5 | **Người tạo = phụ trách chính, bất biến** (thay thế #15 "G5 ĐÃ XÁC NHẬN" và QT7 "đổi phụ trách chính") | Xóa `PUT care-team/primary` và `newPrimaryUserId`; gỡ PRIMARY ⇒ 409 `PRIMARY_LOCKED`; mã lỗi `PRIMARY_REPLACEMENT_REQUIRED` bị xóa; khách cũ chưa có PRIMARY được đặt một lần bởi Quản trị/Quản lý |
+| 44 | v1.0.5 | **Bỏ tạo hộ**: mọi vai trò (kể cả Quản trị, Quản lý) tạo khách thì chính mình là PRIMARY (thay thế quy tắc "Admin/Manager chỉ định `careTeam` khi tạo") | DTO tạo khách không còn `careTeam`; `teamIds` có thể `[]` với Quản trị thuần |
+| 45 | v1.0.5 | **`GET /crm/assignable-users` được thay** bằng `care-team-invitees` (mời/gán) và `customer-assignees` (ô lọc người phụ trách) | Neptune quyết ở bước kiến trúc, ngoài Plan, để FE không mất ô lọc; `UserRefDto.isLocked?` cộng thêm (tương thích) |
+| 46 | v1.0.5 | **Bỏ hết endpoint cũ ngay, không bản chuyển tiếp**: máy còn PWA cũ phải tải lại sau deploy | Route đã xóa trả 404, tạo khách có `careTeam` trả 400; ghi vào hướng dẫn deploy và 09 mục v1.0.5 |
+| 47 | v1.0.5 | **Giới hạn và thông báo**: tối đa 10 thành viên phụ mỗi khách (409 `CARE_TEAM_LIMIT_EXCEEDED`), mời 30 lượt/phút/người; việc hằng ngày và nhắc lịch gửi cho mọi thành viên `careTeam` ACTIVE; tài khoản BLOCKED không nhận thông báo/push | Không đổi các quyết định #10, #14, #34, #37 |
 
 ### 11.1 Câu hỏi mở còn lại
 
@@ -1069,5 +1123,7 @@ Chuẩn bị ngay ở giai đoạn 1 (không tốn thêm): enum `care_logs.sourc
 | 3 | Dò số qua tìm kiếm | Tìm theo ≥ 3 chữ số cho phép dò ra số đầy đủ trong phạm vi xem được mà không có `PHONE_VIEWED` | Độ dài tối thiểu 6 chữ số hoặc khớp đuôi số, rate-limit tìm kiếm, cảnh báo bất thường (xem 3.2.3, Quality Gates) |
 | 4 | Dữ liệu dự án cũ | Trạng thái tự do, mã chưa chuẩn/không phân biệt hoa thường, `propertyTypes` có thể là chuỗi | Migration theo quy ước ở 3.3 |
 | 2 | Quyền riêng tư của lịch sử SĐT | `changes` giữ SĐT cũ ≥ 2 năm và hiển thị cho mọi thành viên nhóm | Đã chấp nhận (#34); nhớ ghi đè `changes` khi ẩn danh hóa |
+| 5 | Mã khách không đúng tuyệt đối theo `createdAt` (v1.0.5) | Khách tạo trong khoảng giữa migration `up` và script bù mã nhận mã sau, nên số mã có thể không theo đúng thứ tự `createdAt` (Oniichan đã đồng ý, không chặn) | Ghi ở 09 mục v1.0.5 |
+| 6 | Quyền riêng tư khi mời người ngoài nhóm (v1.0.5) | Người được mời và Quản lý nhóm của họ thấy toàn bộ hồ sơ khách, gồm lịch sử SĐT cũ → mới (#34) | Đã chấp nhận; giảm thiểu bằng giới hạn 10 thành viên phụ, rate-limit, audit và thông báo (7.3) |
 
 > Các điểm đã giải quyết ngày 22/10: tài liệu 02 đã cập nhật; "5 trường đầu tư" giữ cả 10 (#36); SĐT trong export là đầy đủ (#33); Kanban chỉ ở Việc hôm nay (#36).
