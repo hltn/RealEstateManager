@@ -34,7 +34,7 @@ export const fetchPersonaFields = async (signal?: AbortSignal): Promise<PersonaF
 
 /**
  * Nguồn cho ô LỌC "Người phụ trách" (`GET /crm/customer-assignees`, v1.0.5): người trong careTeam của tập khách người xem thấy
- * (kể cả tài khoản đã khóa). Thay `assignable-users` (đã xóa); không còn nguồn "gán" riêng vì mời người dùng `care-team-invitees`.
+ * (kể cả tài khoản đã khóa). Không còn nguồn "gán" riêng: người để mời vào nhóm chăm sóc lấy từ `care-team-invitees` (xem `useCareTeamInvitees`).
  */
 export const fetchAssigneeFilterUsers = async (signal?: AbortSignal): Promise<CrmUser[]> =>
   (await fetchAllPages<CustomerAssigneeDto>('/crm/customer-assignees', {}, signal)).map(assigneeToUser);

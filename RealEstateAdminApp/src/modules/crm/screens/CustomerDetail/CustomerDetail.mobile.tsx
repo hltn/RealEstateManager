@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useCareLogs, useCustomerDetail } from '@crm/api';
 import { CustomerLoadState } from '@crm/components/CustomerLoadState';
 import { TAB_ACTIVE_CLASS, TAB_BASE_CLASS, TAB_INACTIVE_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { useCrmState } from '@crm/store';
 import { CareLogComposer } from './components/CareLogComposer';
 import { CareTeamCard } from './components/CareTeamCard';
@@ -52,7 +53,7 @@ export const CustomerDetailMobile = () => {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 pb-[calc(6rem+env(safe-area-inset-bottom))]" data-testid="customer-detail-mobile">
-      <MobileDetailHeader />
+      <MobileDetailHeader customerCode={customer.customerCode} />
       <CustomerHeader
         customer={customer}
         variant="mobile"
@@ -107,7 +108,7 @@ export const CustomerDetailMobile = () => {
         </>
       )}
 
-      <MobileContactFooter customerId={customer.id} onAddNote={handleAddNote} />
+      <MobileContactFooter customerId={customer.id} hasPhone={hasPhone(customer.phoneMasked)} onAddNote={handleAddNote} />
     </div>
   );
 };

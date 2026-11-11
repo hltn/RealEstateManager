@@ -31,6 +31,8 @@ const CHIP_BASE_CLASS =
 interface AdvancedFilterModalProps {
   filters: CustomerFilters;
   variant: AdvancedFilterVariant;
+  /** Hiện nhóm "Phụ trách chính" (FR-17: chỉ Quản trị/Quản lý; mặc định ẩn). Nhân viên vẫn lọc được "Người chăm sóc". */
+  isShowingPrimaryFilter?: boolean;
   onApply: (filters: CustomerFilters) => void;
   onReset: () => void;
   onClose: () => void;
@@ -77,7 +79,7 @@ const ChipGroup = <T extends string | number>({ title, options, selected, onTogg
   </section>
 );
 
-export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClose }: AdvancedFilterModalProps) => {
+export const AdvancedFilterModal = ({ filters, variant, isShowingPrimaryFilter = false, onApply, onReset, onClose }: AdvancedFilterModalProps) => {
   const { catalogs, personaFields } = useCatalogs();
   const tagGroups = useMemo(() => groupTagsByCategory(catalogs.tags.filter((tag) => tag.isActive)), [catalogs.tags]);
   const staffOptions = useAssigneeFilterOptions();
@@ -154,7 +156,9 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
         onToggle={(value) => toggle('areaIds', value)}
       />
       <ChipGroup title="Người chăm sóc (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
-      <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />
+      {isShowingPrimaryFilter && (
+        <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />
+      )}
       <ChipGroup
         title="Tiến độ"
         options={PROGRESS_FILTER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}

@@ -172,9 +172,10 @@ const normalizeCustomer = (value: unknown): unknown =>
         version: withDefault(value.version, (item) => typeof item === 'number', 1),
         notes: withDefault(value.notes, isString, ''),
         email: withDefault(value.email, isString, ''),
-        // v7: bản ghi thiếu trường -> chưa có SĐT / chưa có mã (không bỏ cả khách).
-        phone: withDefault(value.phone, isNullableString, null),
-        customerCode: withDefault(value.customerCode, isNullableString, null),
+        // v7: bản ghi THIẾU trường (undefined) -> chưa có SĐT / chưa có mã. Sai kiểu (vd số) KHÔNG đổi im lặng thành null: giữ nguyên để
+        // `isCustomerV3` loại riêng khách đó và lưu bản gốc vào khoá `_corrupt_` (không làm mất SĐT thật mà không báo).
+        phone: value.phone === undefined ? null : value.phone,
+        customerCode: value.customerCode === undefined ? null : value.customerCode,
         searchText: withDefault(value.searchText, isString, ''),
       }
     : value;

@@ -2,14 +2,17 @@
 // Nằm TRONG nội dung (không sticky/fixed): header + drawer phía trên là `AppHeader`/`AppSidebar` của Admin,
 // nên không vẽ thêm top app bar thứ hai như bản Stitch.
 import { ArrowLeft, Pencil } from 'lucide-react';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { useCrmActions } from '@crm/store';
 import { BUTTON_LINK_CLASS } from '@crm/lib/uiClasses';
 
 interface MobileDetailHeaderProps {
   customerName: string;
+  /** Mã khách `KH-…` hiện ở mọi vai trò; `null` = khách cũ chưa có mã (không vẽ gì). */
+  customerCode: string | null;
 }
 
-export const MobileDetailHeader = ({ customerName }: MobileDetailHeaderProps) => {
+export const MobileDetailHeader = ({ customerName, customerCode }: MobileDetailHeaderProps) => {
   const { goBack, navigate } = useCrmActions();
 
   return (
@@ -25,7 +28,10 @@ export const MobileDetailHeader = ({ customerName }: MobileDetailHeaderProps) =>
           <ArrowLeft size={18} aria-hidden="true" />
         </button>
         <div className="min-w-0">
-          <p className="text-theme-xs text-gray-500 dark:text-gray-400">Quản lý khách hàng</p>
+          <p className="flex items-center gap-2 text-theme-xs text-gray-500 dark:text-gray-400">
+            Quản lý khách hàng
+            <CustomerCodeBadge code={customerCode} />
+          </p>
           <h1 className="truncate text-lg font-semibold text-gray-800 dark:text-white/90">{customerName}</h1>
         </div>
       </div>

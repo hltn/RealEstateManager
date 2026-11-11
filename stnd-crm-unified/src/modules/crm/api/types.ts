@@ -110,17 +110,11 @@ export interface CustomerPermissions {
   canEdit: boolean;
   /** Thêm/bớt thành viên (không phải phụ trách chính): Quản trị, Quản lý, phụ trách chính. */
   canManageCareTeam: boolean;
-  /**
-   * @deprecated v1.0.5: backend đã bỏ `PUT care-team/primary` và `canChangePrimary`. Giữ tạm để `CareTeamCard` cũ còn build; T-29 gỡ cùng UI đổi chính.
-   */
-  canChangePrimary: boolean;
   /** Đặt người chăm sóc chính MỘT LẦN khi `careTeam` rỗng: Quản trị, Quản lý (v1.0.5, FR-11). */
   canSetInitialPrimary: boolean;
   canDelete: boolean;
   /** Xem CCCD đầy đủ (giả định D2: Quản trị, Quản lý, phụ trách chính). */
   canRevealNationalId: boolean;
-  /** Duyệt đề nghị tham gia nhóm chăm sóc: Quản trị, Quản lý, phụ trách chính. */
-  canReviewJoinRequests: boolean;
 }
 
 export interface CustomerDetail extends CustomerListItem {

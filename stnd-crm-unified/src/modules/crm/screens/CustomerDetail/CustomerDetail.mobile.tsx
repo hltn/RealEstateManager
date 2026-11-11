@@ -38,7 +38,7 @@ export const CustomerDetailMobile = () => {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 pb-24" data-testid="customer-detail-mobile">
-      <MobileDetailHeader customerName={customer.fullName} />
+      <MobileDetailHeader customerName={customer.fullName} customerCode={customer.customerCode} />
       <CustomerHeader customer={customer} variant="mobile" />
 
       <div role="tablist" aria-label="Thông tin khách hàng" className="flex border-b border-gray-200 dark:border-white/[0.05]">
@@ -84,7 +84,7 @@ export const CustomerDetailMobile = () => {
         </>
       )}
 
-      <MobileContactFooter customerId={customer.id} />
+      <MobileContactFooter customerId={customer.id} hasPhone={customer.phoneMasked !== null} />
     </div>
   );
 };

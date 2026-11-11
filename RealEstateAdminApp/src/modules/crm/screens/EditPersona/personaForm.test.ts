@@ -7,10 +7,15 @@ const PERSONAL = fieldsOfGroups(PERSONA_FIELDS, ['PERSONAL', 'OCCUPATION']);
 
 const base = { fullName: 'An', phone: '0912345678', email: '', nationalId: '', areaId: '', sourceId: '', interestedProjectIds: [], tagIds: [] };
 
-describe('validateBasicInfo (QT3/QT9)', () => {
-  it('chỉ họ tên + SĐT bắt buộc; ngày sinh, nghề nghiệp, kênh liên hệ không bắt buộc', () => {
+describe('validateBasicInfo (FR-02, QT9)', () => {
+  it('chỉ họ tên bắt buộc; SĐT trống hợp lệ; ngày sinh, nghề nghiệp, kênh liên hệ không bắt buộc', () => {
     expect(validateBasicInfo(base)).toEqual({});
-    expect(Object.keys(validateBasicInfo({ ...base, fullName: '', phone: '' })).sort()).toEqual(['fullName', 'phone']);
+    expect(Object.keys(validateBasicInfo({ ...base, fullName: '', phone: '' }))).toEqual(['fullName']);
+    expect(validateBasicInfo({ ...base, phone: '  ' })).toEqual({});
+  });
+  it('SĐT có nhập nhưng sai định dạng vẫn bị chặn; đang khóa (chưa bấm "Sửa số") thì không kiểm', () => {
+    expect(validateBasicInfo({ ...base, phone: '123' }).phone).toMatch(/không hợp lệ/);
+    expect(validateBasicInfo({ ...base, phone: '123' }, true).phone).toBeUndefined();
   });
   it('CCCD và email chỉ kiểm định dạng khi có nhập', () => {
     expect(validateBasicInfo({ ...base, nationalId: '123' }).nationalId).toBeDefined();
@@ -51,6 +56,18 @@ describe('chỉ gửi phần thật sự đổi (tránh xóa nhầm/ghi đè d�
     // Mở khóa nhưng giữ nguyên số -> không gửi SĐT (tránh ghi PHONE_UPDATED/đụng hạn mức 409).
     expect(getChangedBasicInput({ ...base, phone: '' }, { ...base, phone: '0912 345 678' }, false, '+84912345678')).toBeUndefined();
     expect(getChangedBasicInput({ ...base, phone: '' }, { ...base, phone: '0988111222' }, false, '+84912345678')).toEqual({ phone: '0988111222' });
+  });
+
+  it('hồ sơ: mở khóa rồi XÓA TRỐNG ô SĐT -> gửi phone: null (xóa SĐT, FR-02); toàn khoảng trắng cũng là null', () => {
+    expect(getChangedBasicInput({ ...base, phone: '' }, { ...base, phone: '' }, false, '+84912345678')).toEqual({ phone: null });
+    expect(getChangedBasicInput({ ...base, phone: '' }, { ...base, phone: '   ' }, false, '+84912345678')).toEqual({ phone: null });
+  });
+
+  it('hồ sơ: khách vốn chưa có SĐT (revealedPhone null, ô mở sẵn): bỏ trống -> không đổi; nhập số -> gửi số', () => {
+    const noPhone = { ...base, phone: '' };
+    expect(getChangedBasicInput(noPhone, { ...noPhone }, false, null)).toBeUndefined();
+    expect(getChangedBasicInput(noPhone, { ...noPhone, phone: '  ' }, false, null)).toBeUndefined();
+    expect(getChangedBasicInput(noPhone, { ...noPhone, phone: '0988 111 222' }, false, null)).toEqual({ phone: '0988 111 222' });
   });
 
   it('hồ sơ: xóa email/khu vực -> gửi chuỗi rỗng/null để backend xóa; thứ tự dự án/thẻ không tính là đổi', () => {

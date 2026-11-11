@@ -49,7 +49,13 @@ describe('useAssigneeFilterOptions', () => {
       url === '/crm/customer-assignees' ? { data: [{ id: 'u2', displayName: 'Minh', role: 'STAFF', team: null, teams: [], isLocked: true }], meta: { total: 1, page: 1, limit: 100, totalPages: 1 } } : emptyPage,
     );
     const { result } = renderHook(() => useAssigneeFilterOptions(), { wrapper });
-    await waitFor(() => expect(JSON.stringify(result.current)).toContain('u2'));
+    // Người server trả (kể cả tài khoản đã khóa) + chính người đăng nhập (STAFF) được thêm sau; đúng {value,label}, không rò trường khác.
+    await waitFor(() =>
+      expect(result.current).toEqual([
+        { value: 'u2', label: 'Minh' },
+        { value: 'u1', label: 'Hạnh' },
+      ]),
+    );
     const urls = list.mock.calls.map((call) => call[0]);
     expect(urls).toContain('/crm/customer-assignees');
     expect(urls).not.toContain('/crm/assignable-users');

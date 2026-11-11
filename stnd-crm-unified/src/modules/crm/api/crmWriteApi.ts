@@ -11,6 +11,7 @@ import {
   applyPersonaUpdates,
   buildCareTeam,
   buildSearchText,
+  countCareTeamMembers,
   CRITERIA_KEYS,
   createEmptyCriteria,
   getDefaultStatus,
@@ -19,6 +20,7 @@ import {
   getProgressPercent,
   isInCareTeam,
   isValidNationalId,
+  MAX_CARE_TEAM_MEMBERS,
   maskNationalId,
 } from '@crm/lib/customerRules';
 import { DELETE_REASON_MAX_LENGTH, hasVisibleChar } from '@crm/lib/customerDeletion';
@@ -142,12 +144,10 @@ const NOT_FOUND = 'Không tìm thấy khách hàng hoặc bạn không có quy�
 const MAX_NAME_LENGTH = 150;
 const MAX_CONTENT_LENGTH = 5000;
 const MAX_BULK_SIZE = 200;
-/** Tối đa 10 MEMBER mỗi khách (không tính PRIMARY) — khớp backend `CARE_TEAM_LIMIT_EXCEEDED`. */
-const MAX_CARE_TEAM_MEMBERS = 10;
 const PHONE_NOT_SET_MESSAGE = 'Khách chưa có số điện thoại';
 
 /** Số MEMBER (không tính PRIMARY) của nhóm chăm sóc. */
-const countMembers = (careTeam: readonly CareTeamMember[]): number => careTeam.filter((member) => member.role === 'MEMBER').length;
+const countMembers = countCareTeamMembers;
 
 /**
  * SĐT nhập vào -> giá trị lưu. `null`/rỗng = chưa có số (hợp lệ, lưu `null`); có giá trị thì phải chuẩn hóa được, sai -> `undefined`.
@@ -973,7 +973,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     );
 
   /**
-   * `POST /crm/customers/:id/care-team-members` (v1.0.5). Quản trị/Quản lý/PRIMARY được mời, KHÔNG giới hạn theo nhóm của người gọi.
+   * `POST /crm/customers/:id/care-team/members` (v1.0.5). Quản trị/Quản lý/PRIMARY được mời, KHÔNG giới hạn theo nhóm của người gọi.
    * - Nhóm RỖNG: bắt buộc `primaryUserId` (400 `PRIMARY_REQUIRED`) và chỉ Quản trị/Quản lý được chọn (403 `CARE_TEAM_ACTION_FORBIDDEN`).
    * - Nhóm CÓ người: chỉ thêm MEMBER; gửi `primaryUserId` -> 400 `VALIDATION_FAILED`.
    * - Đã trong nhóm -> 409 `ALREADY_IN_CARE_TEAM`; vượt 10 MEMBER -> 409 `CARE_TEAM_LIMIT_EXCEEDED`.
@@ -1015,7 +1015,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     return updateCareTeam(customer, [...customer.careTeam, ...newMembers], 'CARE_TEAM_MEMBER_ADDED');
   };
 
-  /** `DELETE /crm/customers/:id/care-team-members/:userId` (v1.0.5): gỡ PRIMARY luôn bị từ chối 409 `PRIMARY_LOCKED`. */
+  /** `DELETE /crm/customers/:id/care-team/members/:userId` (v1.0.5): gỡ PRIMARY luôn bị từ chối 409 `PRIMARY_LOCKED`. */
   const removeCareTeamMember = (customerId: string, userId: string): ApiResult<{ primaryUserId: string | null }> => {
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
@@ -1031,7 +1031,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
 
   /**
    * Chọn PRIMARY ban đầu khi nhóm RỖNG (khách cũ chưa ai phụ trách). Chỉ Quản trị/Quản lý (403 nếu khác); nhóm đã có người ->
-   * 409 `PRIMARY_LOCKED` (đã khóa, không đổi được nữa). Thay `changePrimary` (backend đã gỡ `PUT care-team/primary`).
+   * 409 `PRIMARY_LOCKED` (đã khóa, không đổi được nữa). Thay cho thao tác đổi PRIMARY cũ (`changePrimary`, đã gỡ cùng endpoint `PUT care-team/primary` ở backend).
    */
   const setInitialPrimary = (customerId: string, userId: string): ApiResult<{ primaryUserId: string | null }> => {
     const loaded = loadForUpdate(customerId);

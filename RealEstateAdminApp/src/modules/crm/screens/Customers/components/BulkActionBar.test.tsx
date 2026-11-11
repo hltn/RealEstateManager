@@ -94,17 +94,19 @@ describe('BulkActionBar gọi API hàng loạt', () => {
     bulkOperation.mockResolvedValue({ ok: true, data: { succeeded: ['c-1'], failed: [{ customerId: 'c-2', errorCode: 'PRIMARY_REQUIRED' }] } });
     const { onClear } = setup();
     fireEvent.change(screen.getByLabelText('Hành động hàng loạt'), { target: { value: 'ASSIGN' } });
-    fireEvent.change(screen.getByLabelText('Giá trị áp dụng'), { target: { value: 'u-1' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Hạnh/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
     await waitFor(() => expect(bulkOperation).toHaveBeenCalledWith({ type: 'ASSIGN', customerIds: ['c-1', 'c-2'], memberIds: ['u-1'] }));
     expect(onClear).not.toHaveBeenCalled();
   });
 
-  it('Quản trị chỉ thấy các người được phép gán (từ care-team-invitees), không có thao tác xuất khi tắt cờ mock', () => {
+  it('"Thêm thành viên": người để chọn lấy từ care-team-invitees (không gồm email/SĐT); chưa chọn ai thì chưa Áp dụng được', () => {
     setup();
     fireEvent.change(screen.getByLabelText('Hành động hàng loạt'), { target: { value: 'ASSIGN' } });
-    const options = Array.from(screen.getByLabelText('Giá trị áp dụng').querySelectorAll('option')).map((option) => option.textContent);
-    expect(options.join('|')).toContain('Hạnh');
+    expect(screen.getByRole('checkbox', { name: /Hạnh/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Áp dụng' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Hạnh/ }));
+    expect(screen.getByRole('button', { name: 'Áp dụng' })).toBeEnabled();
   });
 });
 

@@ -57,19 +57,19 @@ describe('CustomerCard - mục đích mua dưới SĐT', () => {
     render(<CustomerCard customer={customer({ purchasePurposes: ['LIVING'] })} purchasePurposeField={{ optionItems: [{ value: 'LIVING', label: 'Để ở', isActive: true }] }} />);
     const phone = screen.getByText('0912 ••• 678');
     const purposes = screen.getByText('Để ở');
-    expect(phone.nextElementSibling).toBe(purposes.closest('p'));
-    expect(phone.parentElement).toContainElement(screen.getByText('Nguyễn Văn An'));
+    expect(phone.closest('p')?.nextElementSibling).toBe(purposes.closest('p'));
+    expect(phone.closest('p')?.parentElement).toContainElement(screen.getByText('Nguyễn Văn An'));
   });
 
   it('thiếu cấu hình trường -> dùng nhãn mặc định, vẫn nằm ngay sau SĐT', () => {
     render(<CustomerCard customer={customer({ purchasePurposes: ['LIVING', 'INVEST_RENT'] })} />);
     const purposes = screen.getByText('Ở thực, Đầu tư cho thuê');
-    expect(screen.getByText('0912 ••• 678').nextElementSibling).toBe(purposes.closest('p'));
+    expect(screen.getByText('0912 ••• 678').closest('p')?.nextElementSibling).toBe(purposes.closest('p'));
   });
 
   it('không có mục đích -> không render dòng mục đích (không phần tử nào sau SĐT)', () => {
     render(<CustomerCard customer={customer()} purchasePurposeField={{ optionItems: [{ value: 'LIVING', label: 'Để ở', isActive: true }] }} />);
-    expect(screen.getByText('0912 ••• 678').nextElementSibling).toBeNull();
+    expect(screen.getByText('0912 ••• 678').closest('p')?.nextElementSibling).toBeNull();
     expect(screen.queryByTitle(/Mục đích mua/)).not.toBeInTheDocument();
     expect(screen.queryByText('Để ở')).not.toBeInTheDocument();
   });

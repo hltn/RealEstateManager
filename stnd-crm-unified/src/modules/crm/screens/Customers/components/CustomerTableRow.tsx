@@ -1,11 +1,12 @@
 /**
- * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + SĐT che + mã), tình trạng, dự án, nguồn,
- * khu vực, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú).
+ * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + SĐT che + mã KH cạnh SĐT, mọi vai trò), tình trạng, dự án, nguồn, khu vực, tiến độ 4 chấm,
+ * người chăm sóc chính (chỉ Quản trị/Quản lý), hẹn tiếp theo, ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú; ẩn Gọi/Zalo khi khách chưa có SĐT).
  * Cột phụ ẩn dần ở màn hẹp (khớp `CUSTOMER_TABLE_COLUMNS` ở màn), còn chật thì cuộn ngang trong vỏ bảng.
  */
 import type { MouseEvent } from 'react';
 import { Star } from 'lucide-react';
 import type { CustomerListItem } from '@crm/api';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { ProgressDots } from '@crm/components/ProgressDots';
 import { TableContactActions } from '@crm/components/TableContactActions';
@@ -18,11 +19,13 @@ interface CustomerTableRowProps {
   customer: CustomerListItem;
   isSelected: boolean;
   onToggleSelect: (customerId: string) => void;
+  /** Cột "Người chăm sóc chính": chỉ Quản trị/Quản lý (FR-09); Nhân viên không có cột. */
+  showPrimaryColumn: boolean;
 }
 
 const TEXT_MUTED = 'text-theme-xs text-gray-500 dark:text-gray-400';
 
-export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: CustomerTableRowProps) => {
+export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, showPrimaryColumn }: CustomerTableRowProps) => {
   const { selectCustomer } = useCrmActions();
   const openDetail = () => selectCustomer(customer.id);
   const stop = (event: MouseEvent) => event.stopPropagation();
@@ -44,8 +47,9 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
         >
           {customer.fullName}
         </button>
-        <p className={TEXT_MUTED}>
-          <span className="tabular-nums">{customer.phoneMasked}</span>
+        <p className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${TEXT_MUTED}`}>
+          {customer.phoneMasked ? <span className="tabular-nums">{customer.phoneMasked}</span> : !customer.customerCode && <span>Chưa có SĐT</span>}
+          <CustomerCodeBadge code={customer.customerCode} />
         </p>
         <div className="pt-1.5 2xl:hidden">{projectSummary && <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span>}</div>
       </td>
@@ -58,17 +62,20 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
       <td className="px-4 py-4">
         <ProgressDots progress={customer.progress} criteriaDone={customer.criteriaDone} />
       </td>
-      <td className="hidden px-4 py-4 lg:table-cell">
-        {customer.primaryAssignee ? (
-          <span className="flex items-center gap-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">
-            <Star size={12} className="fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
-            {customer.primaryAssignee.displayName}
-            {customer.careTeamSize > 1 && <span className={TEXT_MUTED}>+{customer.careTeamSize - 1}</span>}
-          </span>
-        ) : (
-          <span className={TEXT_MUTED}>Chưa phân</span>
-        )}
-      </td>
+      {showPrimaryColumn && (
+        <td className="hidden px-4 py-4 lg:table-cell">
+          {customer.primaryAssignee ? (
+            <span className="flex flex-wrap items-center gap-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">
+              <Star size={12} className="fill-warning-400 text-warning-400" aria-label="Người chăm sóc chính" />
+              {customer.primaryAssignee.displayName}
+              {customer.primaryAssignee.isLocked && <span className={TEXT_MUTED}>(đã khóa)</span>}
+              {customer.careTeamSize > 1 && <span className={TEXT_MUTED}>+{customer.careTeamSize - 1}</span>}
+            </span>
+          ) : (
+            <span className={TEXT_MUTED}>Chưa phân</span>
+          )}
+        </td>
+      )}
       <td className="hidden whitespace-nowrap px-4 py-4 xl:table-cell" title={formatVnDateTime(customer.nextAppointmentAt)}>
         <span className="text-theme-xs font-medium text-gray-800 dark:text-white/90">{customer.nextAppointmentAt ? formatVnRelative(customer.nextAppointmentAt) : '—'}</span>
       </td>
@@ -76,7 +83,7 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
         {formatVnDate(customer.lastUpdatedAt)}
       </td>
       <td className="px-4 py-4">
-        <TableContactActions customerId={customer.id} customerName={customer.fullName} />
+        <TableContactActions customerId={customer.id} customerName={customer.fullName} hasPhone={customer.phoneMasked !== null} />
       </td>
     </tr>
   );

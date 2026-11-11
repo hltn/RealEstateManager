@@ -7,7 +7,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Check, ListFilter, RotateCcw, Search } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
-import { useAssigneeFilterOptions, useCatalogs, useProjectFilterOptions } from '@crm/api';
+import { canViewPrimaryAssignee, useAssigneeFilterOptions, useCatalogs, useCrmActor, useProjectFilterOptions } from '@crm/api';
 import { PROGRESS_FILTER_OPTIONS, toggleValue } from '@crm/lib/customerFilters';
 import { includesVietnamese } from '@crm/lib/text';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CAPTION_CLASS, MODAL_INPUT_CLASS, PILL_ACTIVE_CLASS, PILL_IDLE_CLASS } from '@crm/lib/uiClasses';
@@ -72,6 +72,8 @@ const ChipGroup = <T extends string | number>({ title, options, selected, onTogg
 export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClose }: AdvancedFilterModalProps) => {
   const { catalogs } = useCatalogs();
   const staffOptions = useAssigneeFilterOptions();
+  /** "Phụ trách chính": chỉ Quản trị/Quản lý (FR-09). */
+  const canFilterPrimary = canViewPrimaryAssignee(useCrmActor().role);
   const [draft, setDraft] = useState<CustomerFilters>(filters);
   const [projectKeyword, setProjectKeyword] = useState('');
   const isSheet = variant === 'sheet';
@@ -141,7 +143,7 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
         onToggle={(value) => toggle('areaIds', value)}
       />
       <ChipGroup title="Người chăm sóc (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
-      <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />
+      {canFilterPrimary && <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />}
       <ChipGroup
         title="Tiến độ"
         options={PROGRESS_FILTER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}

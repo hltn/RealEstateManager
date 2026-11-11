@@ -34,7 +34,7 @@ export const createDefaultFormValues = (defaults: { statusId: string }): CreateC
   sourceId: '',
 });
 
-/** Kiểm tra form (hiện vẫn bắt buộc họ tên + SĐT; T-22 sẽ cho SĐT tùy chọn). SĐT trùng được phép (v1.0.5). */
+/** Kiểm tra form: chỉ họ tên bắt buộc; SĐT tùy chọn (có nhập thì kiểm định dạng). SĐT trùng được phép (v1.0.5). */
 export const validateCreateCustomer = (values: CreateCustomerFormValues): FormErrors<CreateCustomerField> => {
   const errors: FormErrors<CreateCustomerField> = {};
   const fullNameError = getFullNameError(values.fullName);
@@ -46,10 +46,10 @@ export const validateCreateCustomer = (values: CreateCustomerFormValues): FormEr
   return errors;
 };
 
-/** Form hợp lệ -> body `POST /crm/customers`. KHÔNG gửi `careTeam` (server tự đặt người tạo làm PRIMARY; gửi sẽ bị 400). */
+/** Form hợp lệ -> body `POST /crm/customers`. SĐT rỗng -> `null` (khách chưa có SĐT). KHÔNG gửi `careTeam` (server tự đặt người tạo làm PRIMARY; gửi sẽ bị 400). */
 export const toCreateCustomerInput = (values: CreateCustomerFormValues): CreateCustomerInput => ({
   fullName: values.fullName.trim(),
-  phone: values.phone,
+  phone: values.phone.trim() ? values.phone : null,
   email: values.email.trim(),
   nationalId: values.nationalId.trim() || undefined,
   areaId: values.areaId || null,

@@ -1,7 +1,7 @@
 /**
  * Thân form sửa hồ sơ + chân dung, dùng chung desktop/tablet + mobile và 2 màn:
  * "Chân dung khách hàng" (có phần thông tin cơ bản + thẻ) và "Nhu cầu BĐS" (chỉ nhóm Nhu cầu BĐS).
- * Mọi trường chân dung không bắt buộc; ghi kèm nguồn thông tin (khách tự chia sẻ / nhân viên quan sát) — QT9.
+ * Chỉ họ tên bắt buộc (SĐT tùy chọn, bỏ trống = xóa SĐT). Mọi trường chân dung không bắt buộc; ghi kèm nguồn thông tin (khách tự chia sẻ / nhân viên quan sát) — QT9.
  */
 import { useState } from 'react';
 import { Briefcase, Building2, Hash, IdCard, Mail, MapPin, Megaphone, Phone, Plus, Sparkles, StickyNote, User, UserRound } from 'lucide-react';
@@ -88,13 +88,15 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
   const fieldId = (name: string) => `${idPrefix}-${name}`;
   const groupCodes = [...new Set(fields.map((field) => field.groupCode))];
 
+  // Khách chưa có SĐT: ô mở sẵn (thêm số, không có "Sửa số"); đã mở khóa: bỏ trống ô = xóa SĐT của khách.
+  const phoneHint = form.isPhoneLocked ? undefined : form.hasPhone ? 'Để trống ô này nếu muốn xóa số điện thoại của khách.' : 'Khách chưa có số điện thoại. Không bắt buộc.';
   const basicSection = hasBasicInfo && (
-    <SectionCard icon={IdCard} title="Thông tin cơ bản" description="Chỉ họ tên và SĐT là bắt buộc">
+    <SectionCard icon={IdCard} title="Thông tin cơ bản" description="Chỉ họ tên là bắt buộc">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <FormField inputId={fieldId('name')} label="Họ và tên" isRequired error={basicErrors.fullName}>
           <TextInput id={fieldId('name')} icon={User} maxLength={150} value={basic.fullName} onChange={(event) => form.setBasicField('fullName', event.target.value)} hasError={Boolean(basicErrors.fullName)} {...getFieldA11yProps(getErrorId(fieldId('name')), basicErrors.fullName)} />
         </FormField>
-        <FormField inputId={fieldId('phone')} label="Số điện thoại" isRequired error={basicErrors.phone}>
+        <FormField inputId={fieldId('phone')} label="Số điện thoại" error={basicErrors.phone} hint={phoneHint}>
           {form.isPhoneLocked ? (
             <div className="flex items-center gap-2">
               <TextInput id={fieldId('phone')} type="tel" icon={Phone} value={form.phoneMasked} readOnly className="font-mono" wrapperClassName="flex-1" />

@@ -126,8 +126,9 @@ const listVisibleTeams = (state: CrmState, actor: CrmActor): (Team & { memberCou
     .map((team) => ({ ...team, memberCount: countTeamMembers(state.users, team.id) }));
 
 /**
- * Danh mục + nhóm + cấu hình chân dung. v1.0.5: KHÔNG còn `users`/`assignable` (backend đã xóa endpoint danh sách người phân công cũ); vai trò thành viên nhóm lấy từ
- * `careTeam[].user.role` của chi tiết khách, người để mời lấy từ `useCareTeamInvitees`, người cho ô lọc từ `useAssigneeFilterOptions`.
+ * Danh mục + nhóm + cấu hình chân dung. v1.0.5: kết quả chỉ gồm danh mục/nhóm/chân dung, KHÔNG kèm danh sách người dùng (trước đây có `users`/`assignable`
+ * lấy từ endpoint cũ đã gỡ). Nguồn thay thế: vai trò thành viên nhóm từ `careTeam[].user.role` của chi tiết khách, người để mời từ `useCareTeamInvitees`,
+ * người cho ô lọc từ `useAssigneeFilterOptions`.
  */
 export const useCatalogs = () => {
   const state = useCrmRawState();

@@ -35,7 +35,7 @@ const makeForm = () =>
     basicErrors: {},
     fields: [],
     personaErrors: {},
-    phoneLookup: null,
+    hasPhone: true,
     isPhoneLocked: false,
     phoneMasked: '',
     hasNationalId: false,

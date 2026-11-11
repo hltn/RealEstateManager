@@ -57,7 +57,8 @@ const PurgeSteps = ({ customer, step, typed, warningId, isSubmitting, error, onS
       </p>
       <div className="space-y-2 text-theme-sm text-gray-600 dark:text-gray-400">
         <p>
-          Khách: <strong className="text-gray-800 dark:text-white/90">{customer.fullName}</strong> ({customer.phoneMasked})
+          Khách: <strong className="text-gray-800 dark:text-white/90">{customer.fullName}</strong>
+          {customer.phoneMasked ? ` (${customer.phoneMasked})` : ''}
         </p>
         <p>Các dữ liệu sau sẽ bị xóa hẳn:</p>
         <ul className="list-disc space-y-0.5 pl-5">

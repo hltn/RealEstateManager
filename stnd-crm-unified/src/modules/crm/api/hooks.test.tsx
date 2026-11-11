@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CrmStoreContext } from '@crm/store/crmContext';
 import { useAuthStore } from '../../../stores/auth.store';
-import { createHarness } from '../../../test/crmHarness';
+import { createHarness, withExtraStaff } from '../../../test/crmHarness';
 import { careTeamInviteesKey, useAssigneeFilterOptions, useCareTeamInvitees, useCatalogs } from './hooks';
 
 const renderWithCrm = <T,>(callback: (props: { enabled: boolean; q: string; page: number }) => T, userId = 'hanh', role: 'ADMIN' | 'MANAGER' | 'STAFF' = 'MANAGER') => {
@@ -52,6 +52,28 @@ describe('useCareTeamInvitees', () => {
     expect(result.current.data.data).toHaveLength(1);
     rerender({ enabled: false, q: 'tuan', page: 1 });
     expect(result.current.data.data.map((item) => item.id)).toEqual(['tuan']);
+  });
+
+  it('đổi q hoặc page không bao giờ nháy rỗng giữa các lần render', () => {
+    const harness = createHarness({ actAs: 'hanh', mutate: withExtraStaff(25) });
+    useAuthStore.setState({ user: { _id: 'hanh', email: 'hanh@stnd.vn', displayName: 'hanh', role: 'MANAGER' }, accessToken: 't' });
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(CrmStoreContext.Provider, { value: harness.store }, children);
+    const snapshots: { total: number; length: number; page: number }[] = [];
+    const { rerender } = renderHook(
+      ({ q, page }: { q: string; page: number }) => {
+        const { data } = useCareTeamInvitees('CUST-001', q, page, true);
+        snapshots.push({ total: data.meta.total, length: data.data.length, page: data.meta.page });
+        return data;
+      },
+      { wrapper, initialProps: { q: '', page: 1 } },
+    );
+    rerender({ q: '', page: 2 });
+    rerender({ q: 'Thử 0', page: 1 });
+    rerender({ q: '', page: 1 });
+    expect(snapshots.length).toBeGreaterThanOrEqual(4);
+    expect(snapshots.every((snapshot) => snapshot.length > 0)).toBe(true);
+    expect(snapshots.some((snapshot) => snapshot.page === 2)).toBe(true);
+    expect(snapshots[0].total).toBeGreaterThan(20);
   });
 
   it('chưa bật lần nào: trang rỗng hợp lệ (có meta)', () => {

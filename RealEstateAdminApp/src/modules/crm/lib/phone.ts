@@ -74,6 +74,12 @@ export const normalizePhone = (input: string | null | undefined): string | null 
   return E164_PATTERN.test(e164) ? e164 : null;
 };
 
+/**
+ * Khách có SĐT hiển thị/gọi được không: chuỗi không rỗng sau khi cắt khoảng trắng. null / undefined / '' / '   ' = KHÔNG có SĐT.
+ * Dùng chung cho mọi nơi quyết định ẩn/hiện hàng SĐT và nút Gọi/Zalo (không rải `!== null` hay kiểm truthy).
+ */
+export const hasPhone = (value: string | null | undefined): boolean => typeof value === 'string' && value.trim() !== '';
+
 export const isValidPhone = (input: string | null | undefined): boolean => normalizePhone(input) !== null;
 
 /** "+84912345678" -> "0912 345 678"; máy bàn 11 số -> "0283 822 1234"; số nước ngoài giữ E.164. Khách không có SĐT (null) -> "". */

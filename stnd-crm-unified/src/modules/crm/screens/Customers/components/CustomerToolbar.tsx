@@ -70,7 +70,7 @@ export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
             type="search"
             value={filters.q}
             onChange={(event) => set({ q: event.target.value })}
-            placeholder="Tên (có/không dấu), SĐT, email..."
+            placeholder="Tìm tên, SĐT, mã KH-…"
             className={`${FILTER_INPUT_CLASS} w-full pl-10`}
           />
         </div>

@@ -6,6 +6,7 @@
 import { useId, useState } from 'react';
 import { RotateCcw, Search, Trash2 } from 'lucide-react';
 import { useCrmApi, useDeletedCustomers, type DeletedCustomerItem, type PurgeResult } from '@crm/api';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { DialogFrame } from '@crm/components/DialogFrame';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
 import { TextInput } from '@crm/components/form/TextInput';
@@ -13,6 +14,7 @@ import { useDebouncedValue } from '@crm/hooks/useDebouncedValue';
 import { describePurgeError, describeRestoreError, getPageAfterRemoval, isPurgeAlreadyDone } from '@crm/lib/customerDeletion';
 import { formatVnDateTime } from '@crm/lib/dateTime';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, BUTTON_SOFT_SM_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, DANGER_SOFT_SM_BUTTON_CLASS, MUTED_TEXT_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS, PAGE_TITLE_MOBILE_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import { Pagination } from '../../../../components/common/Pagination';
 import { PurgeCustomerDialog } from './PurgeCustomerDialog';
@@ -155,7 +157,8 @@ export const DeletedCustomersView = ({ variant }: DeletedCustomersViewProps) => 
               <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="[overflow-wrap:anywhere] text-sm font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</p>
-                  <span className="text-theme-sm text-gray-500 dark:text-gray-400">{customer.phoneMasked ?? 'Chưa có SĐT'}</span>
+                  <CustomerCodeBadge code={customer.customerCode} className="text-theme-sm text-gray-500 dark:text-gray-400" />
+                  <span className="text-theme-sm text-gray-500 dark:text-gray-400">{hasPhone(customer.phoneMasked) ? customer.phoneMasked : 'Chưa có SĐT'}</span>
                   {customer.anonymizedAt && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>Đã ẩn danh hóa</span>}
                   {customer.purgeInProgress && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.warning}`}>Đang xóa dở — bấm Xóa vĩnh viễn để hoàn tất</span>}
                 </div>

@@ -5,7 +5,7 @@
  *   hoặc useContactActions().callCustomer(id) / messageZalo(id).
  * CallModal / ZaloModal chỉ render khi bật cờ tương ứng trong `config/featureFlags.ts` (mặc định tắt).
  */
-import { useCrmApi, useCustomerDetail, useCustomerPersona } from '@crm/api';
+import { canViewPrimaryAssignee, useCrmApi, useCustomerDetail, useCustomerPersona } from '@crm/api';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { useIsMobile } from '@crm/hooks/useIsMobile';
 import { getPersonaText } from '@crm/lib/customerRules';
@@ -87,6 +87,7 @@ export const GlobalModals = () => {
         <AdvancedFilterModal
           filters={filters}
           variant={isMobile ? 'sheet' : 'dialog'}
+          isShowingPrimaryFilter={canViewPrimaryAssignee(currentUser.role)}
           onClose={actions.closeModal}
           onApply={(nextFilters) => {
             actions.setFilters(nextFilters);

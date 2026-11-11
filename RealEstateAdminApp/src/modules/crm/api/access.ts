@@ -88,3 +88,5 @@ export const canExportCustomers = (role: UserRole): boolean => role === 'ADMIN' 
 export const canImportCustomers = (role: UserRole): boolean => role === 'ADMIN';
 /** Phân người chăm sóc hàng loạt: Quản trị, Quản lý. */
 export const canBulkAssign = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';
+/** Cột/bộ lọc "Người chăm sóc chính" ở danh sách khách (FR-17): chỉ Quản trị, Quản lý; Nhân viên không thấy. */
+export const canViewPrimaryAssignee = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';

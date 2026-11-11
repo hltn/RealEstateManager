@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Building, PhoneOff, Save } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
 import { useCatalogs } from '@crm/api';
+import { hasPhone } from '@crm/lib/phone';
 import {
   BUTTON_OUTLINE_CLASS,
   BUTTON_PRIMARY_CLASS,
@@ -28,7 +29,8 @@ export const formatCallDuration = (totalSeconds: number): string => {
 /** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
 export interface ContactTarget {
   name: string;
-  phone: string;
+  /** SĐT đầy đủ; null/rỗng = khách chưa có SĐT (FR-02) → không hiện dòng SĐT. */
+  phone: string | null;
   preferredSalutation: string;
   interestedProjects: string[];
   staffName?: string;
@@ -85,7 +87,7 @@ export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {
           <h3 id={TITLE_ID} className="text-xl font-semibold">
             {customer.name}
           </h3>
-          <p className="mt-0.5 text-sm text-brand-100">{customer.phone}</p>
+          {hasPhone(customer.phone) && <p className="mt-0.5 text-sm text-brand-100">{customer.phone}</p>}
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-medium">
             <Building size={12} aria-hidden="true" />
             <span>Dự án: {projectName}</span>

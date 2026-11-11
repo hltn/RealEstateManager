@@ -121,12 +121,10 @@ export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer,
   return {
     canEdit: true,
     canManageCareTeam: isAdminOrManager || isPrimary,
-    canChangePrimary: isAdminOrManager,
     // v1.0.5 (FR-11): đặt PRIMARY một lần khi nhóm chăm sóc rỗng (khách cũ không còn người phụ trách).
     canSetInitialPrimary: isAdminOrManager && customer.careTeam.length === 0,
     canDelete: getDeleteDenial(actor, { careTeam: customer.careTeam, createdBy: customer.createdBy ?? '' }, context.users ?? [], { isDropped: context.isDropped ?? false, requireDropped: false }) === null,
     canRevealNationalId: isAdminOrManager || isPrimary,
-    canReviewJoinRequests: isAdminOrManager || isPrimary,
   };
 };
 
@@ -144,3 +142,5 @@ export const canExportCustomers = (role: UserRole): boolean => role === 'ADMIN' 
 export const canImportCustomers = (role: UserRole): boolean => role === 'ADMIN';
 /** Phân người chăm sóc hàng loạt: Quản trị, Quản lý. */
 export const canBulkAssign = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';
+/** Cột + bộ lọc "Người chăm sóc chính" của danh sách khách (FR-09): chỉ Quản trị, Quản lý; Nhân viên không thấy. */
+export const canViewPrimaryAssignee = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';

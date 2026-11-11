@@ -1,6 +1,6 @@
 /**
  * Thân form "Thêm khách hàng mới" dùng chung 2 biến thể (desktop/tablet + mobile) — C1.
- * v1.0.5: chỉ Họ tên bắt buộc (SĐT tuỳ chọn, được trùng); danh mục đọc từ store (X7). Không chọn nhóm chăm sóc: người tạo tự là phụ trách chính (T-23 làm lại form).
+ * v1.0.5: chỉ Họ tên bắt buộc (SĐT tuỳ chọn, được trùng); danh mục đọc từ store (X7). Không chọn nhóm chăm sóc: người tạo tự là phụ trách chính ở mọi vai trò kể cả Quản trị (FR-10), hiện dòng chỉ đọc.
  * Bố cục: desktop >= 1280px chia 8/4 cột; hẹp hơn xếp 1 cột.
  */
 import { Building2, IdCard, Lock, Mail, MapPin, Megaphone, Phone, Target, User, UserRound, Users } from 'lucide-react';
@@ -149,9 +149,11 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
 
   const staffSection = (
     <SectionCard icon={Users} title="Nhóm chăm sóc" description="Người tạo là phụ trách chính">
-      <p className="text-theme-sm text-gray-600 dark:text-gray-300">
-        Bạn sẽ là người phụ trách chính của khách này. Thêm người cùng chăm sóc sau khi tạo, ở hồ sơ khách.
+      {/* FR-10: dòng chỉ đọc, không có bộ chọn người; áp cho mọi vai trò kể cả Quản trị. */}
+      <p data-testid="auto-primary-row" className="text-theme-sm font-medium text-gray-800 dark:text-white/90">
+        Người chăm sóc chính: bạn (tự động)
       </p>
+      <p className="text-theme-sm text-gray-600 dark:text-gray-300">Thêm người cùng chăm sóc sau khi tạo, ở hồ sơ khách.</p>
     </SectionCard>
   );
 

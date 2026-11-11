@@ -106,9 +106,9 @@ describe('CustomerTableRow - mục đích mua dưới SĐT', () => {
     expect(screen.getByText('0912 ••• 678').closest('p')?.nextElementSibling?.tagName).toBe('DIV');
   });
 
-  it('không còn ô "Hẹn": hàng chỉ có ô chọn + 9 cột còn lại, không hiện thời điểm hẹn', () => {
+  it('không còn ô "Hẹn": hàng (mặc định, không cột chăm sóc chính) chỉ có ô chọn + 8 cột còn lại, không hiện thời điểm hẹn', () => {
     const { container } = renderRow(customer());
-    expect(container.querySelectorAll('td')).toHaveLength(10);
+    expect(container.querySelectorAll('td')).toHaveLength(9);
     expect(screen.queryByText(/ngày nữa|giờ nữa|2099/i)).not.toBeInTheDocument();
   });
 });

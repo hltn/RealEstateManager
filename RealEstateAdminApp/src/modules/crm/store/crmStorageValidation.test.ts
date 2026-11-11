@@ -22,6 +22,36 @@ describe('N4 payload v3 sai cấu trúc chi tiết -> fallback seed, không cras
     expect(queryCustomers(state, buildActor(state.users[0], state.teams), { listGroup: 'ALL' })).toHaveLength(data.customers.length - 1);
   });
 
+  it('phone SAI KIỂU (số) không bị đổi im lặng thành null: khách đó bị loại riêng và bản gốc được lưu vào khoá _corrupt_', () => {
+    const data = seed();
+    stored({ ...data, customers: data.customers.map((customer, index) => (index === 0 ? { ...customer, phone: 912345678 } : customer)) });
+    const loaded = loadCrmData();
+    expect(loaded?.customers).toHaveLength(data.customers.length - 1);
+    expect(loaded?.customers.some((customer) => customer.id === data.customers[0].id)).toBe(false);
+    expect(Object.keys(window.localStorage).some((key) => key.startsWith(`${CRM_STORAGE_KEY}_corrupt_`))).toBe(true);
+  });
+
+  it('customerCode SAI KIỂU cũng bị loại riêng (không thành null im lặng)', () => {
+    const data = seed();
+    stored({ ...data, customers: data.customers.map((customer, index) => (index === 0 ? { ...customer, customerCode: 123 } : customer)) });
+    expect(loadCrmData()?.customers).toHaveLength(data.customers.length - 1);
+  });
+
+  it('phone THIẾU hẳn (undefined) hoặc null -> khách chưa có SĐT, vẫn giữ khách', () => {
+    const data = seed();
+    stored({
+      ...data,
+      customers: data.customers.map((customer, index) => {
+        if (index !== 0) return customer;
+        const { phone: _phone, ...withoutPhone } = customer;
+        return withoutPhone;
+      }),
+    });
+    const loaded = loadCrmData();
+    expect(loaded?.customers).toHaveLength(data.customers.length);
+    expect(loaded?.customers[0].phone).toBeNull();
+  });
+
   it('mọi khách đều hỏng -> không còn gì để giữ, rơi về seed', () => {
     const data = seed();
     stored({ ...data, customers: data.customers.map((customer) => ({ ...customer, criteria: {} })) });

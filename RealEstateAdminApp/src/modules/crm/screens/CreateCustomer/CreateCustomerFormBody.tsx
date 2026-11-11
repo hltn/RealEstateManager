@@ -1,9 +1,9 @@
 /**
  * Thân form "Thêm khách hàng mới" dùng chung 2 biến thể (desktop/tablet + mobile) — C1.
- * Chỉ Họ tên + SĐT bắt buộc; danh mục (khu vực, nguồn, dự án, tình trạng, người dùng) đọc từ store (X7).
- * Bố cục: desktop >= 1280px chia 8/4 cột; hẹp hơn xếp 1 cột.
+ * Chỉ Họ tên bắt buộc (SĐT tùy chọn, FR-02); danh mục (khu vực, nguồn, dự án, tình trạng) đọc từ catalog (X7).
+ * Bố cục: desktop >= 1280px chia 8/4 cột (cột phải: dòng chỉ đọc "Người chăm sóc chính: bạn (tự động)", FR-10); hẹp hơn xếp 1 cột.
  */
-import { Building2, IdCard, Lock, Mail, MapPin, Megaphone, Phone, Target, User, UserRound } from 'lucide-react';
+import { Building2, IdCard, Lock, Mail, MapPin, Megaphone, Phone, Target, User, UserCheck, UserRound, Users } from 'lucide-react';
 import { useCatalogs } from '@crm/api';
 import { ChoiceGroup, type ChoiceOption } from '@crm/components/form/ChoiceGroup';
 import { getFieldA11yProps } from '@crm/components/form/FieldError';
@@ -16,10 +16,10 @@ import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
 import { getAreaSearchTerms } from '@crm/lib/areaMatch';
-import { CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
+import { CHIP_SMALL_CLASS, CHIP_TONE_CLASS, FORM_HINT_CLASS } from '@crm/lib/uiClasses';
 import type { CreateCustomerFormApi } from './useCreateCustomerForm';
 
-const REQUIRED_CHIP = <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Bắt buộc: họ tên, SĐT</span>;
+const REQUIRED_CHIP = <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Bắt buộc: họ tên</span>;
 
 interface CreateCustomerFormBodyProps {
   form: CreateCustomerFormApi;
@@ -55,9 +55,8 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
       <FormField
         inputId={fieldId('phone')}
         label="Số điện thoại"
-        isRequired
         error={errors.phone}
-        hint="Di động 10 số, máy bàn 02x, hoặc số nước ngoài dạng +..."
+        hint="Không bắt buộc. Di động 10 số, máy bàn 02x, hoặc số nước ngoài dạng +..."
       >
         <TextInput
           id={fieldId('phone')}
@@ -151,19 +150,34 @@ export const CreateCustomerFormBody = ({ form, variant }: CreateCustomerFormBody
     </SectionCard>
   );
 
+  // FR-10: không còn bộ chọn người phụ trách — người tạo (mọi vai trò, kể cả Quản trị) tự là PRIMARY; chỉ hiển thị, không nhập.
+  const primarySection = (
+    <SectionCard icon={Users} title="Nhóm chăm sóc" description="Người phụ trách khách này">
+      <div data-testid="auto-primary-line" className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-white/[0.03]">
+        <UserCheck size={18} className="shrink-0 text-brand-500 dark:text-brand-400" aria-hidden="true" />
+        <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">Người chăm sóc chính: bạn (tự động)</p>
+      </div>
+      <p className={FORM_HINT_CLASS}>Người tạo khách luôn là người chăm sóc chính và không đổi được sau khi lưu. Có thể mời thêm thành viên ở hồ sơ khách.</p>
+    </SectionCard>
+  );
+
   if (!isDesktop) {
     return (
       <div className="space-y-4">
         {basicInfoSection}
         {demandSection}
+        {primarySection}
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 space-y-6">
-      {basicInfoSection}
-      {demandSection}
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="min-w-0 space-y-6 xl:col-span-8">
+        {basicInfoSection}
+        {demandSection}
+      </div>
+      <div className="min-w-0 space-y-6 xl:col-span-4">{primarySection}</div>
     </div>
   );
 };

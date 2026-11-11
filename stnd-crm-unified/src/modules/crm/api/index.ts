@@ -14,6 +14,7 @@ export {
   canImportCustomers,
   canManageProjects,
   canViewDeletedCustomers,
+  canViewPrimaryAssignee,
   canViewProjectCatalog,
   canViewReports,
   canViewSettings,

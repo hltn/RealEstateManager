@@ -25,7 +25,7 @@ export interface PersonaScreenConfig {
 const PERSONA_SCREEN: PersonaScreenConfig = {
   title: 'Cập nhật Chân dung khách hàng',
   breadcrumbLabel: 'Cập nhật chân dung',
-  description: 'Thông tin giúp hiểu khách để chăm sóc đúng người, đúng cách, đúng thời điểm. Chỉ họ tên và SĐT là bắt buộc.',
+  description: 'Thông tin giúp hiểu khách để chăm sóc đúng người, đúng cách, đúng thời điểm. Chỉ họ tên là bắt buộc.',
   groupCodes: ['PERSONAL', 'OCCUPATION', 'LIFESTYLE', 'FAMILY', 'CONTACT', 'OCCASION'],
   hasBasicInfo: true,
   submitLabel: 'Lưu chân dung',

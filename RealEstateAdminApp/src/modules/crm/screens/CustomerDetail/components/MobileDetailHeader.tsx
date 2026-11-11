@@ -4,9 +4,15 @@
 // PT-017: KHÔNG hiện tên khách ở đây (tên dài chiếm chỗ trên màn hẹp, và đã có ở thẻ tóm tắt hồ sơ `CustomerHeader` ngay bên dưới).
 // PT-029: KHÔNG có nút "Chỉnh sửa" ở góc phải (đứng lửng lơ ngoài thẻ); lối vào `edit_persona` còn ở nút "Sửa" của thẻ "Thông tin" và "Chân dung khách hàng".
 import { ArrowLeft } from 'lucide-react';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { useCrmActions } from '@crm/store';
 
-export const MobileDetailHeader = () => {
+interface MobileDetailHeaderProps {
+  /** Mã khách `KH-######` hiện ở góc phải hàng đầu (FR-04); null/không truyền thì không hiện. */
+  customerCode?: string | null;
+}
+
+export const MobileDetailHeader = ({ customerCode = null }: MobileDetailHeaderProps) => {
   const { goBack } = useCrmActions();
 
   return (
@@ -23,6 +29,7 @@ export const MobileDetailHeader = () => {
         </button>
         <p className="truncate text-base font-semibold text-gray-800 dark:text-white/90">Quản lý khách hàng</p>
       </div>
+      <CustomerCodeBadge code={customerCode} className="ml-auto shrink-0 pl-3 text-theme-sm font-medium text-gray-600 dark:text-gray-300" />
     </div>
   );
 };

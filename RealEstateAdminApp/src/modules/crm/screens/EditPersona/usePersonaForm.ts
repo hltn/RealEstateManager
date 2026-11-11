@@ -2,11 +2,13 @@
  * Hook form sửa hồ sơ + chân dung (dùng chung màn "Chân dung khách hàng" và "Nhu cầu BĐS", desktop + mobile).
  * Luồng lưu: kiểm form -> `saveCustomerProfile` (hồ sơ -> chân dung -> CCCD mới; CHỈ gửi phần thật sự đổi) -> quay lại chi tiết.
  * "Xoá CCCD" là hành động riêng có xác nhận. Số điện thoại đầy đủ chỉ lấy khi bấm "Sửa số" (server ghi `PHONE_VIEWED`).
+ * SĐT tùy chọn (FR-02): khách chưa có SĐT (`phoneMasked` null) thì ô SĐT luôn mở để thêm số (không có "Sửa số", không gọi `createPhoneView`);
+ * xóa trống ô = xóa SĐT của khách (gửi `phone: null`).
  * Xung đột phiên bản (409): báo rõ và tải lại dữ liệu, KHÔNG ghi đè thay đổi của người khác.
  */
 import { useMemo, useState, type FormEvent } from 'react';
 import { describeWriteError, useCatalogs, useCrmApi, type CustomerDetail, type CustomerPersonaView, type PersonaValueInput } from '@crm/api';
-import { formatPhoneDisplay } from '@crm/lib/phone';
+import { formatPhoneDisplay, hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import type { PersonaGroupCode, PersonaSource, TagCategory } from '@crm/types/crm';
 import { useRevealedValue } from '../CustomerDetail/useRevealedValue';
@@ -49,9 +51,11 @@ export const usePersonaForm = (customer: CustomerDetail, persona: CustomerPerson
   const [personaErrors, setPersonaErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
 
+  /** Khách đã có SĐT (server trả `phoneMasked` khác null); chưa có thì ô SĐT mở sẵn để thêm số. */
+  const hasExistingPhone = hasPhone(customer.phoneMasked);
   /** Số đầy đủ chỉ có sau khi bấm "Sửa số" (createPhoneView ghi log); trước đó ô SĐT khoá và không gửi SĐT khi lưu. */
   const [revealedPhone, setRevealedPhone] = useRevealedValue(customer.id);
-  const isPhoneLocked = revealedPhone === null;
+  const isPhoneLocked = hasExistingPhone && revealedPhone === null;
 
   const submit = async (event?: FormEvent): Promise<boolean> => {
     event?.preventDefault();
@@ -96,7 +100,7 @@ export const usePersonaForm = (customer: CustomerDetail, persona: CustomerPerson
     source,
     isPhoneLocked,
     isSaving,
-    // TODO(T-26): khách chưa có SĐT -> ô thêm SĐT (không còn "Sửa số" qua createPhoneView).
+    hasPhone: hasExistingPhone,
     phoneMasked: customer.phoneMasked ?? '',
     /** Bấm "Sửa số": lấy số đầy đủ qua `createPhoneView` (kiểm phạm vi + ghi 1 log) rồi mở khoá ô SĐT. Gọi trong handler. */
     revealPhone: async () => {

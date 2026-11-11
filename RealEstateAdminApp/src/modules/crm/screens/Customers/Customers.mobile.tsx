@@ -2,7 +2,7 @@
 // Tab danh sách + ô tìm (không dấu) + sắp xếp + Bộ lọc nâng cao (bottom sheet), thẻ khách, phân trang Admin.
 import { ArrowUpDown, CircleX, Plus, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import { Pagination } from '../../../../components/common/Pagination';
-import { usePersonaFieldMap } from '@crm/api';
+import { canViewPrimaryAssignee, useCrmActor, usePersonaFieldMap } from '@crm/api';
 import { PURCHASE_PURPOSES_FIELD_KEY } from '@crm/data/personaFields';
 import { countActiveAdvancedFilters, hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import {
@@ -28,6 +28,7 @@ export const CustomersMobile = () => {
   const screen = useCustomerListScreen(MOBILE_PAGE_SIZE);
   const { list, counts, filters, sort, setSort, updateFilters, setPage, isLoading, error, refetch } = screen;
   const { navigate, openAdvancedFilter, resetFilters } = useCrmActions();
+  const isShowingPrimaryAssignee = canViewPrimaryAssignee(useCrmActor().role);
   const purchasePurposeField = usePersonaFieldMap().get(PURCHASE_PURPOSES_FIELD_KEY);
   const hasActiveFilters = hasActiveCustomerFilters(filters);
   const advancedCount = countActiveAdvancedFilters(filters);
@@ -58,7 +59,7 @@ export const CustomersMobile = () => {
             aria-label="Tìm khách hàng"
             value={filters.q}
             onChange={(event) => updateFilters({ q: event.target.value })}
-            placeholder="Tên (có/không dấu), SĐT, email..."
+            placeholder="Tìm tên, SĐT, mã KH-…"
             className={`${FILTER_INPUT_CLASS} w-full pl-10 pr-10`}
           />
           {filters.q && (
@@ -103,7 +104,7 @@ export const CustomersMobile = () => {
 
       <div className="flex flex-col gap-3">
         {list.data.map((customer) => (
-          <CustomerCard key={customer.id} customer={customer} purchasePurposeField={purchasePurposeField} />
+          <CustomerCard key={customer.id} customer={customer} isShowingPrimaryAssignee={isShowingPrimaryAssignee} purchasePurposeField={purchasePurposeField} />
         ))}
         {isLoading &&
           Array.from({ length: 4 }).map((_, index) => <div key={index} aria-hidden="true" className="h-28 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />)}

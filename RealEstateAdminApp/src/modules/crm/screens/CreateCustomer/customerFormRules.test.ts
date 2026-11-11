@@ -8,15 +8,16 @@ import {
   toggleItem,
 } from './customerFormRules';
 
-describe('trường bắt buộc (QT3): chỉ họ tên + SĐT', () => {
+describe('trường bắt buộc (FR-02): chỉ họ tên', () => {
   it('họ tên trống hoặc quá 150 ký tự -> lỗi', () => {
     expect(getFullNameError('  ')).toMatch(/Vui lòng nhập/);
     expect(getFullNameError('a'.repeat(151))).toMatch(/tối đa 150/);
     expect(getFullNameError('Nguyễn Văn An')).toBeUndefined();
   });
 
-  it('SĐT trống / sai định dạng -> lỗi; số VN hoặc quốc tế có + -> hợp lệ', () => {
-    expect(getPhoneFormatError('')).toMatch(/Vui lòng nhập/);
+  it('SĐT tuỳ chọn: trống/toàn khoảng trắng -> hợp lệ; sai định dạng -> lỗi; số VN hoặc quốc tế có + -> hợp lệ', () => {
+    expect(getPhoneFormatError('')).toBeUndefined();
+    expect(getPhoneFormatError('   ')).toBeUndefined();
     expect(getPhoneFormatError('123')).toMatch(/không hợp lệ/);
     expect(getPhoneFormatError('0912 345 678')).toBeUndefined();
     expect(getPhoneFormatError('+1 415 555 2671')).toBeUndefined();

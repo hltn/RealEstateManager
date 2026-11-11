@@ -1,6 +1,6 @@
 /**
  * Mô hình form sửa hồ sơ + chân dung khách (C1, C10, C11, QT9) — hàm thuần, dùng chung desktop/mobile.
- * - Thông tin cơ bản: chỉ Họ tên + SĐT bắt buộc.
+ * - Thông tin cơ bản: chỉ Họ tên bắt buộc; SĐT tùy chọn (FR-02) — ô SĐT để trống = xóa SĐT (gửi `null`).
  * - Chân dung: form động theo cấu hình `PERSONA_FIELDS` (X10); bản nháp theo `fieldKey`, mọi trường không bắt buộc.
  * - Ngân sách nhập theo TỶ trên form, lưu VNĐ (04 §3.2.2).
  */
@@ -42,7 +42,7 @@ export const toBasicInfoValues = (customer: CustomerDetail): BasicInfoValues => 
   tagIds: customer.tags.map((tag) => tag.id),
 });
 
-/** `isPhoneLocked`: chưa lấy số đầy đủ (chưa bấm "Sửa số") -> không kiểm/không gửi SĐT. */
+/** `isPhoneLocked`: chưa lấy số đầy đủ (chưa bấm "Sửa số") -> không kiểm/không gửi SĐT. SĐT tùy chọn: rỗng hợp lệ. */
 export const validateBasicInfo = (values: BasicInfoValues, isPhoneLocked = false): FormErrors<BasicInfoField> => {
   const errors: FormErrors<BasicInfoField> = {};
   const fullNameError = getFullNameError(values.fullName);
@@ -58,7 +58,8 @@ const sameSet = (left: readonly string[], right: readonly string[]): boolean => 
 
 /**
  * Body `PATCH /crm/customers/:id` CHỈ gồm trường thật sự đổi (khu vực = nơi ở, sửa được sau khi tạo — C1); `undefined` = không đổi gì.
- * SĐT chỉ gửi khi đã mở khóa ("Sửa số") VÀ khác số đầy đủ đã lấy (so sau khi chuẩn hóa).
+ * SĐT chỉ gửi khi đã mở khóa ("Sửa số", hoặc khách chưa có SĐT nên ô luôn mở) VÀ khác số đầy đủ đã lấy (so sau khi chuẩn hóa);
+ * ô rỗng -> gửi `null` (xóa SĐT, FR-02). `revealedPhone` = null khi khách vốn chưa có SĐT: nhập số hợp lệ thì gửi, bỏ trống thì không đổi.
  */
 export const getChangedBasicInput = (
   initial: BasicInfoValues,
@@ -68,7 +69,7 @@ export const getChangedBasicInput = (
 ): Omit<UpdateCustomerInput, 'version'> | undefined => {
   const input: Omit<UpdateCustomerInput, 'version'> = {};
   if (current.fullName.trim() !== initial.fullName.trim()) input.fullName = current.fullName.trim();
-  if (!isPhoneLocked && normalizePhone(current.phone) !== revealedPhone) input.phone = current.phone;
+  if (!isPhoneLocked && normalizePhone(current.phone) !== revealedPhone) input.phone = current.phone.trim() ? current.phone : null;
   if (current.email.trim() !== initial.email.trim()) input.email = current.email.trim();
   if (current.areaId !== initial.areaId) input.areaId = current.areaId || null;
   if (current.sourceId !== initial.sourceId) input.sourceId = current.sourceId || null;

@@ -160,7 +160,7 @@ export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalPro
       <BottomSheet
         titleId={TITLE_ID}
         title="Ghi chú & Nhắc việc"
-        subtitle={`${customer.fullName} · ${customer.phoneMasked}`}
+        subtitle={customer.phoneMasked ? `${customer.fullName} · ${customer.phoneMasked}` : customer.fullName}
         onClose={onClose}
         footer={actionButtons}
       >
@@ -181,7 +181,7 @@ export const QuickNoteModal = ({ customer, variant, onClose }: QuickNoteModalPro
             <h3 id={TITLE_ID} className="text-lg font-semibold text-gray-800 dark:text-white/90">
               Ghi chú nhanh — {customer.fullName}
             </h3>
-            <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {customer.phoneMasked}</p>
+            {customer.phoneMasked && <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {customer.phoneMasked}</p>}
           </div>
         </div>
         {form}

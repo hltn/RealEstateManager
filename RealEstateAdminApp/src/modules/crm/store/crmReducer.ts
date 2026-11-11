@@ -101,8 +101,6 @@ export type CrmAction =
   | { type: 'appointments/setStatus'; appointmentId: string; status: AppointmentStatus; meta: MutationMeta }
   | { type: 'nationalIds/viewed'; view: NationalIdView; meta: MutationMeta }
   | { type: 'phones/viewed'; customerId: string; meta: MutationMeta }
-  | { type: 'careTeamRequests/add'; request: CareTeamRequest; meta: MutationMeta }
-  | { type: 'careTeamRequests/resolve'; requestId: string; status: CareTeamRequest['status']; meta: MutationMeta }
   | { type: 'catalogs/upsert'; kind: CatalogKind; item: CatalogItemOf<CatalogKind> }
   | { type: 'auditLogs/add'; log: AuditLog }
   | { type: 'users/upsert'; user: CrmUser }
@@ -397,34 +395,6 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
         nationalIdViews: [action.view, ...state.nationalIdViews],
         changeLogs: [createChangeLog(state, action.view.customerId, 'NATIONAL_ID_VIEWED', [], action.meta), ...state.changeLogs],
       };
-
-    case 'careTeamRequests/add': {
-      const isDuplicatePending = state.careTeamRequests.some(
-        (request) =>
-          request.customerId === action.request.customerId && request.requesterId === action.request.requesterId && request.status === 'PENDING',
-      );
-      if (isDuplicatePending) return state;
-      return {
-        ...state,
-        careTeamRequests: [action.request, ...state.careTeamRequests],
-        changeLogs: [createChangeLog(state, action.request.customerId, 'JOIN_REQUEST_CREATED', [], action.meta), ...state.changeLogs],
-      };
-    }
-
-    case 'careTeamRequests/resolve': {
-      const request = state.careTeamRequests.find((item) => item.id === action.requestId);
-      if (!request || request.status !== 'PENDING') return state;
-      return {
-        ...state,
-        careTeamRequests: state.careTeamRequests.map((item) =>
-          item.id === action.requestId ? { ...item, status: action.status, resolvedBy: action.meta.actorId, resolvedAt: action.meta.now } : item,
-        ),
-        changeLogs: [
-          createChangeLog(state, request.customerId, 'JOIN_REQUEST_RESOLVED', [{ field: 'Đề nghị tham gia', from: 'PENDING', to: action.status }], action.meta),
-          ...state.changeLogs,
-        ],
-      };
-    }
 
     case 'catalogs/upsert':
       return { ...state, catalogs: upsertCatalog(state.catalogs, action.kind, action.item) };

@@ -1,16 +1,18 @@
 /**
  * "Hành động hàng loạt" của bảng khách (02 §4.2, `POST /crm/customer-bulk-operations`):
- * đổi tình trạng, gắn thẻ, thêm người chăm sóc (Quản lý/Quản trị), XÓA khách "Bỏ" (Sửa đổi D: chỉ hiện khi mọi khách chọn thuộc "Bỏ" và có thể xóa),
+ * đổi tình trạng, gắn thẻ, thêm thành viên phụ vào nhóm chăm sóc (Quản lý/Quản trị; không còn đặt PRIMARY hàng loạt), XÓA khách "Bỏ" (Sửa đổi D: chỉ hiện khi mọi khách chọn thuộc "Bỏ" và có thể xóa),
  * xuất CSV các dòng đã chọn (chỉ khi bật mock xuất file, M8).
  * Backend xử lý đồng bộ, mỗi khách một transaction: khách lỗi không kéo khách khác (trả `succeeded` + `failed`).
  */
 import { useEffect, useState } from 'react';
 import { CheckSquare, X } from 'lucide-react';
-import { canBulkAssign, canExportCustomers, useCareTeamInvitees, useCatalogs, useCrmActor, useCrmApi, type BulkResult, type CustomerListItem } from '@crm/api';
+import { canBulkAssign, canExportCustomers, useCatalogs, useCrmActor, useCrmApi, type BulkResult, type CareTeamInvitee, type CustomerListItem } from '@crm/api';
 import { useCustomerExport } from '@crm/api/mockHooks';
+import { CareTeamInvitePicker } from '@crm/components/CareTeamInvitePicker';
 import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { DeleteReasonDialog } from '@crm/components/DeleteReasonDialog';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
+import { describeBulkAssignError, MAX_CARE_TEAM_MEMBERS } from '@crm/lib/careTeamRules';
 import { BULK_DELETE_LIMIT, canOfferBulkDelete, describeDeleteBatchError } from '@crm/lib/customerDeletion';
 import { isDroppedStatus } from '@crm/lib/customerRules';
 import { groupTagsByCategory } from '@crm/lib/tagCategories';
@@ -34,10 +36,9 @@ interface BulkActionBarProps {
   getCustomer: (customerId: string) => CustomerListItem | undefined;
 }
 
+/** Lý do khách không áp dụng được cho đổi tình trạng / gắn thẻ (thêm thành viên dùng `describeBulkAssignError`). */
 const ERROR_NOTES: Record<string, string> = {
-  PRIMARY_REQUIRED: 'chưa có phụ trách chính — hãy chọn người phụ trách chính',
   CUSTOMER_NOT_FOUND: 'không còn trong phạm vi của bạn',
-  USER_NOT_ASSIGNABLE: 'người được chọn không thể phân chăm sóc',
   CARE_TEAM_ACTION_FORBIDDEN: 'bạn không có quyền với khách này',
   VALIDATION_FAILED: 'dữ liệu không hợp lệ (vd vượt 30 thẻ/khách)',
 };
@@ -50,6 +51,13 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const { showToast } = useCrmActions();
   const [selectedKind, setSelectedKind] = useState<BulkKind>('');
   const [value, setValue] = useState('');
+  /** Người được chọn để thêm vào nhóm chăm sóc (hành động "Thêm thành viên"). */
+  const [assignees, setAssignees] = useState<CareTeamInvitee[]>([]);
+  /** Kết quả thêm thành viên THEO TỪNG KHÁCH khi có khách lỗi (hết hạn mức 10, chưa có PRIMARY...). */
+  const [assignFailures, setAssignFailures] = useState<BulkResult['failed']>([]);
+  // Kết quả lỗi chỉ còn hiệu lực với khách VẪN đang chọn (bỏ chọn khách lỗi thì dòng báo của khách đó biến mất); riêng `CUSTOMER_NOT_FOUND`
+  // đã tự bị bỏ chọn từ lúc báo nên vẫn giữ trong kết quả cho tới khi đổi hành động / người được chọn.
+  const visibleAssignFailures = assignFailures.filter((item) => item.errorCode === 'CUSTOMER_NOT_FOUND' || selectedIds.includes(item.customerId));
   const [isConfirmingDrop, setIsConfirmingDrop] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -57,29 +65,32 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const canDelete = canOfferBulkDelete(actor, selectedIds.map(getCustomer));
   // Đổi lựa chọn khách làm mất quyền xóa thì hành động Xóa tự về "chưa chọn" (không để select trỏ vào option đã biến mất).
   const kind: BulkKind = selectedKind === 'DELETE' && !canDelete ? '' : selectedKind;
-  // Chỉ tải danh sách người mời khi chọn hành động "Thêm người chăm sóc" (không có customerId = hàng loạt, Quản trị/Quản lý).
-  // TODO(T-24): thêm ô tìm + phân trang cho danh sách người mời.
-  const { data: invitees } = useCareTeamInvitees(undefined, '', 1, kind === 'ASSIGN');
   // Option Xóa biến mất thì xóa luôn lựa chọn đã lưu: không để "Xóa" tự bật lại im lặng khi tập khách chọn đủ điều kiện trở lại.
   useEffect(() => {
     if (selectedKind === 'DELETE' && !canDelete) setSelectedKind('');
   }, [selectedKind, canDelete]);
   const isOverDeleteLimit = kind === 'DELETE' && selectedIds.length > BULK_DELETE_LIMIT;
-  const needsValue = kind === 'CHANGE_STATUS' || kind === 'ADD_TAGS' || kind === 'ASSIGN';
+  const needsValue = kind === 'CHANGE_STATUS' || kind === 'ADD_TAGS';
+  const isMissingValue = kind === 'ASSIGN' ? assignees.length === 0 : needsValue && !value;
+  /** Đổi người được chọn = bắt đầu lượt thêm mới, kết quả lỗi của lượt trước hết giá trị. */
+  const changeAssignees = (next: CareTeamInvitee[]) => {
+    setAssignees(next);
+    setAssignFailures([]);
+  };
   const canExport = canExportCustomers(actor.role) && CRM_FEATURE_FLAGS.isMockImportExportEnabled;
 
   const valueOptions =
     kind === 'CHANGE_STATUS'
       ? catalogs.statuses.filter((status) => status.isActive).map((status) => ({ value: status.id, label: status.label }))
-      : kind === 'ASSIGN'
-        ? invitees.data.map((user) => ({ value: user.id, label: user.displayName }))
-        : [];
+      : [];
   // Gắn thẻ: gom theo nhóm (Sở thích, Nghề nghiệp, Khác) bằng `<optgroup>` (FR-48).
   const tagGroups = kind === 'ADD_TAGS' ? groupTagsByCategory(catalogs.tags.filter((tag) => tag.isActive)) : [];
 
   const finish = () => {
     setSelectedKind('');
     setValue('');
+    setAssignees([]);
+    setAssignFailures([]);
     onClear();
   };
 
@@ -104,14 +115,14 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
         ? await api.bulkOperation({ type: 'CHANGE_STATUS', customerIds: selectedIds, statusId: value })
         : kind === 'ADD_TAGS'
           ? await api.bulkOperation({ type: 'ADD_TAGS', customerIds: selectedIds, tagIds: [value] })
-          : await api.bulkOperation({ type: 'ASSIGN', customerIds: selectedIds, memberIds: [value] });
+          : await api.bulkOperation({ type: 'ASSIGN', customerIds: selectedIds, memberIds: assignees.map((invitee) => invitee.id) });
     setIsRunning(false);
     if (!result.ok) {
       showToast({ type: 'error', title: result.error.message });
       return;
     }
     const { succeeded, failed } = result.data;
-    const failedReasons = [...new Set(failed.map((item) => ERROR_NOTES[item.errorCode]).filter(Boolean))];
+    const failedReasons = [...new Set(failed.map((item) => (kind === 'ASSIGN' ? describeBulkAssignError(item.errorCode) : ERROR_NOTES[item.errorCode])).filter(Boolean))];
     const notes = failed.length > 0 ? [`${failed.length} khách không áp dụng được${failedReasons.length > 0 ? ` (${failedReasons.join('; ')})` : ''}`] : [];
     const undoable = Object.fromEntries(Object.entries(previousStatusIds).filter(([id]) => succeeded.includes(id)));
     showToast({
@@ -121,11 +132,19 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
       action: kind === 'CHANGE_STATUS' && Object.keys(undoable).length > 0 ? { label: 'Hoàn tác', onClick: () => void undoStatusChange(undoable) } : undefined,
       durationMs: kind === 'CHANGE_STATUS' ? 8000 : undefined,
     });
-    if (failed.length === 0) finish();
+    if (failed.length === 0) {
+      finish();
+      return;
+    }
+    if (kind === 'ASSIGN') {
+      // Kết quả theo từng khách; khách đã thêm xong hoặc không còn trong phạm vi được bỏ chọn, khách lỗi giữ chọn để xử lý tiếp.
+      setAssignFailures(failed);
+      onDeselect([...succeeded, ...failed.filter((item) => item.errorCode === 'CUSTOMER_NOT_FOUND').map((item) => item.customerId)]);
+    }
   };
 
   const apply = () => {
-    if (!kind || (needsValue && !value) || isRunning || isOverDeleteLimit) return;
+    if (!kind || isMissingValue || isRunning || isOverDeleteLimit) return;
     if (kind === 'DELETE') {
       setDeleteError(null);
       setIsDeleteOpen(true);
@@ -193,13 +212,15 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
         onChange={(event) => {
           setSelectedKind(event.target.value as BulkKind);
           setValue('');
+          setAssignees([]);
+          setAssignFailures([]);
         }}
         className={`${FILTER_INPUT_CLASS} dark:[color-scheme:dark]`}
       >
         <option value="">Hành động hàng loạt…</option>
         <option value="CHANGE_STATUS">Đổi tình trạng</option>
         <option value="ADD_TAGS">Gắn thẻ</option>
-        {canBulkAssign(actor.role) && <option value="ASSIGN">Thêm người chăm sóc</option>}
+        {canBulkAssign(actor.role) && <option value="ASSIGN">Thêm thành viên</option>}
         {canDelete && <option value="DELETE">Xóa</option>}
         {canExport && <option value="EXPORT">Xuất CSV các dòng đã chọn</option>}
       </select>
@@ -222,12 +243,30 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
           ))}
         </select>
       )}
+      {kind === 'ASSIGN' && (
+        <div className="w-full space-y-2 sm:basis-full">
+          <p className="text-theme-xs text-gray-600 dark:text-gray-400">Chọn người để thêm vào nhóm chăm sóc của {selectedIds.length} khách (chỉ thêm thành viên phụ, không đổi người chăm sóc chính).</p>
+          <CareTeamInvitePicker selected={assignees} onChange={changeAssignees} maxSelectable={MAX_CARE_TEAM_MEMBERS} isDisabled={isRunning} />
+        </div>
+      )}
+      {visibleAssignFailures.length > 0 && (
+        <section aria-label="Khách không thêm được thành viên" className="w-full space-y-1 sm:basis-full">
+          <p className="text-theme-xs font-medium text-error-600 dark:text-error-400">{visibleAssignFailures.length} khách không thêm được thành viên:</p>
+          <ul className="space-y-1 text-theme-xs text-gray-700 dark:text-gray-300">
+            {visibleAssignFailures.map((item) => (
+              <li key={item.customerId}>
+                <strong className="font-medium">{getCustomer(item.customerId)?.fullName ?? 'Khách không rõ'}</strong>: {describeBulkAssignError(item.errorCode)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {isOverDeleteLimit && (
         <p role="alert" className="text-theme-xs font-medium text-error-600 dark:text-error-400">
           Mỗi lần chỉ xóa tối đa {BULK_DELETE_LIMIT} khách; bạn đang chọn {selectedIds.length}. Hãy bỏ bớt khách đã chọn.
         </p>
       )}
-      <button type="button" onClick={apply} disabled={!kind || (needsValue && !value) || isRunning || isOverDeleteLimit} className={`${kind === 'DELETE' ? DANGER_BUTTON_CLASS : BUTTON_PRIMARY_CLASS} h-10`}>
+      <button type="button" onClick={apply} disabled={!kind || isMissingValue || isRunning || isOverDeleteLimit} className={`${kind === 'DELETE' ? DANGER_BUTTON_CLASS : BUTTON_PRIMARY_CLASS} h-10`}>
         {kind === 'DELETE' ? 'Xóa' : isRunning ? 'Đang áp dụng…' : 'Áp dụng'}
       </button>
       <button type="button" onClick={onClear} className="inline-flex items-center gap-1 text-theme-xs font-medium text-gray-600 hover:text-gray-800 sm:ml-auto dark:text-gray-400">

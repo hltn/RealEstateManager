@@ -7,10 +7,13 @@ import { BUTTON_PRIMARY_LG_CLASS, BUTTON_SUCCESS_LG_CLASS } from '@crm/lib/uiCla
 
 interface MobileContactFooterProps {
   customerId: string;
+  /** Khách chưa có SĐT: không có gì để gọi/nhắn -> ẩn cả thanh. */
+  hasPhone: boolean;
 }
 
-export const MobileContactFooter = ({ customerId }: MobileContactFooterProps) => {
+export const MobileContactFooter = ({ customerId, hasPhone }: MobileContactFooterProps) => {
   const { callCustomer, messageZalo } = useContactActions();
+  if (!hasPhone) return null;
 
   return (
     <footer className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-gray-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-theme-lg dark:border-gray-800 dark:bg-gray-900">

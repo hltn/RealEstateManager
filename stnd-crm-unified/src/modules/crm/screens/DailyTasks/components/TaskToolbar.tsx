@@ -83,7 +83,7 @@ export const TaskToolbar = ({ filters, onFiltersChange, onReset, projects, assig
     {scope === 'team' && (
       <div className="flex flex-col gap-1.5">
         <label htmlFor="task-assignee" className={CAPTION_CLASS}>
-          Người thực hiện
+          Người phụ trách
         </label>
         <select id="task-assignee" value={filters.assigneeId} onChange={(event) => onFiltersChange({ assigneeId: event.target.value })} className={SELECT_CLASS}>
           <option value="all">Tất cả</option>

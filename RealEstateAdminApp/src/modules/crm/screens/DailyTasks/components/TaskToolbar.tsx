@@ -1,5 +1,5 @@
 /**
- * Thanh lọc Việc hôm nay (web) — mẫu "thanh lọc" Admin: tìm kiếm (không dấu), dự án, người thực hiện, loại việc,
+ * Thanh lọc Việc hôm nay (web) — mẫu "thanh lọc" Admin: tìm kiếm (không dấu), dự án, người phụ trách, loại việc,
  * phạm vi "Việc của tôi / Cả nhóm" (chỉ Quản lý/Quản trị), làm mới, chuyển dạng Kanban / Danh sách.
  */
 import { Kanban, List, RotateCcw, Search } from 'lucide-react';
@@ -83,7 +83,7 @@ export const TaskToolbar = ({ filters, onFiltersChange, onReset, projects, assig
     {scope === 'team' && (
       <div className="flex flex-col gap-1.5">
         <label htmlFor="task-assignee" className={CAPTION_CLASS}>
-          Người thực hiện
+          Người phụ trách
         </label>
         <select id="task-assignee" value={filters.assigneeId} onChange={(event) => onFiltersChange({ assigneeId: event.target.value })} className={SELECT_CLASS}>
           <option value="all">Tất cả</option>
