@@ -236,5 +236,19 @@ expect_eq "backup_mongo EMPTY không đi tiếp"             "0" "$([[ "$(run_ba
 expect_eq "backup_mongo EMPTY_SYSTEM_ONLY không đi tiếp" "0" "$([[ "$(run_backup EMPTY_SYSTEM_ONLY 0)" == *PASSED_CASE* ]] && echo 1 || echo 0)"
 expect_eq "backup_mongo AMBIGUOUS không đi tiếp"         "0" "$([[ "$(run_backup AMBIGUOUS:x 0)" == *PASSED_CASE* ]] && echo 1 || echo 0)"
 
+# ── valid_branch_name (dùng chung deploy.sh backup_code và restore.sh): chỉ nhận tên an toàn ─────────────────────────
+vb() { if valid_branch_name "$1"; then echo yes; else echo no; fi; }
+for good in production main release-x feature/ok-1.2_x hotfix-9 a.b; do expect_eq "valid_branch_name nhận '$good'" "yes" "$(vb "$good")"; done
+for bad in '' 'x;rm -rf y' '-evil' 'a..b' 'a//b' 'x.lock' '/abs' 'end/' 'sp ace' 'a$b' 'a`b' 'a|b' "it's"; do
+  expect_eq "valid_branch_name từ chối '$bad'" "no" "$(vb "$bad")"
+done
+
+# ── in_git_repo: dùng `git rev-parse --git-dir` (đúng cả worktree, nơi .git là FILE) ──────────────────────────────────
+IGR="$TMP/igr"; mkdir -p "$IGR/plain" "$IGR/repo"
+( cd "$IGR/repo" && git init -q && git -c user.name=t -c user.email=t@t.test -c commit.gpgsign=false commit -q --allow-empty -m c1 && git worktree add -q -b wtb "$IGR/wt" ) >/dev/null 2>&1
+expect_eq "in_git_repo: thư mục thường" "no" "$(cd "$IGR/plain" && if in_git_repo; then echo yes; else echo no; fi)"
+expect_eq "in_git_repo: repo" "yes" "$(cd "$IGR/repo" && if in_git_repo; then echo yes; else echo no; fi)"
+expect_eq "in_git_repo: worktree (.git là file)" "yes" "$(cd "$IGR/wt" && if in_git_repo; then echo yes; else echo no; fi)"
+
 printf '\nKết quả: %d đạt, %d hỏng.\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

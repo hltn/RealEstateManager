@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/lib/ops-common.sh — hàm dùng chung cho deploy.sh, scripts/run-migration.sh và scripts/check-disk.sh (DRY).
+# scripts/lib/ops-common.sh — hàm dùng chung cho deploy.sh, scripts/backup.sh, scripts/restore.sh, scripts/run-migration.sh,
+# scripts/check-disk.sh và scripts/staging.sh (DRY).
 # File này chỉ được `source`, không chạy trực tiếp. Caller đặt LOG_PREFIX (vd "deploy") TRƯỚC khi source và
 # bật `set -euo pipefail`. Không chứa bí mật, không in giá trị biến trong .env.docker.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,4 +187,149 @@ JSEOF
   line="$(grep -E '^NONEMPTY_COLLS=' <<<"$out" | tail -n 1)" || return 1
   [[ -n "$line" ]] || return 1
   printf '%s' "${line#NONEMPTY_COLLS=}"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phần dùng chung cho deploy.sh, scripts/backup.sh và scripts/restore.sh (tách từ deploy.sh, hành vi giữ nguyên). Caller định nghĩa trước khi gọi:
+# ENV_FILE, RUNTIME_ENV_FILE, LOGS_DIR, BACKUP_DIR, NINE_ROUTER_CONTAINER (check_staging_vars); MONGO_CONTAINER, MONGO_TIMEOUT
+# (wait_mongo_healthy); BACKEND_CONTAINER, HEALTH_URL, HEALTH_TIMEOUT (wait_backend_liveness).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Đường dẫn app (host) chứa `version` của code đang checkout. Dùng ghi/đối chiếu phiên bản trong manifest backup code.
+OPS_APP_PKG="${OPS_APP_PKG:-RealEstateBackendApp/package.json}"
+
+# Kiểm các biến chỉ dành cho staging NGAY khi nạp script (trước mọi lệnh): đường dẫn phải là đường dẫn TƯƠNG ĐỐI trong repo (một dòng
+# DEPLOY_LOGS_DIR=/ sẽ thành `chown -R 1000:1000 /`); và bất kỳ biến nào khác mặc định chỉ hợp lệ khi chạy qua scripts/staging.sh
+# (project compose = realestate-staging VÀ COMPOSE_FILE có docker-compose.staging.yml), chiều ngược lại cũng chặn. Không đặt biến nào
+# (production) thì mọi giá trị là mặc định cũ và hàm này không làm gì.
+valid_rel_path() {
+  [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || return 1
+  [[ "/$1/" != *"/./"* && "/$1/" != *"/../"* ]]
+}
+check_staging_vars() {
+  local pair name val staged=""
+  for pair in "DEPLOY_ENV_FILE=$ENV_FILE" "DEPLOY_RUNTIME_ENV_FILE=$RUNTIME_ENV_FILE" "DEPLOY_LOGS_DIR=$LOGS_DIR" "DEPLOY_BACKUP_DIR=$BACKUP_DIR"; do
+    name="${pair%%=*}"; val="${pair#*=}"
+    valid_rel_path "$val" || die "$name='$val' không hợp lệ: phải là đường dẫn TƯƠNG ĐỐI trong repo (chỉ A-Z a-z 0-9 . _ - và dấu /, không bắt đầu bằng /, không chứa '..' hoặc '.', không rỗng)."
+  done
+  [[ "$ENV_FILE" == ".env.docker" ]] || staged+=" DEPLOY_ENV_FILE"
+  [[ "$RUNTIME_ENV_FILE" == ".env" ]] || staged+=" DEPLOY_RUNTIME_ENV_FILE"
+  [[ "$LOGS_DIR" == "logs" ]] || staged+=" DEPLOY_LOGS_DIR"
+  [[ "$BACKUP_DIR" == "backups" ]] || staged+=" DEPLOY_BACKUP_DIR"
+  [[ "$NINE_ROUTER_CONTAINER" == "realestate_9router" ]] || staged+=" NINE_ROUTER_CONTAINER"
+  local has_stg_file=0
+  [[ "${COMPOSE_FILE:-}" != *docker-compose.staging.yml* ]] || has_stg_file=1
+  if [[ -n "$staged" ]] && { [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]] || (( has_stg_file == 0 )); }; then
+    die "Biến staging đặt ngoài wrapper:${staged}. Chúng chỉ hợp lệ khi chạy qua scripts/staging.sh (COMPOSE_PROJECT_NAME=realestate-staging và COMPOSE_FILE có docker-compose.staging.yml). Bỏ các biến này để deploy production."
+  fi
+  if (( has_stg_file == 1 )) && [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]]; then
+    die "COMPOSE_FILE có docker-compose.staging.yml nhưng COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-}' khác realestate-staging: dễ chạm nhầm stack khác. Chạy qua scripts/staging.sh hoặc bỏ COMPOSE_FILE."
+  fi
+}
+
+# Khóa chống hai lần deploy/restore chạy chồng nhau (CÙNG một khóa cho cả deploy.sh và scripts/restore.sh). Đặt trong .git (không hiện ở
+# git status, không phải file repo). Giữ bằng fd 9 đến hết tiến trình.
+acquire_lock() {
+  in_git_repo || return 0
+  command -v flock >/dev/null 2>&1 || { warn "Không có 'flock': bỏ qua khóa chống chạy chồng."; return 0; }
+  # `git rev-parse --git-dir` (không cố định `.git/`): đúng cả với git worktree, nơi `.git` là FILE trỏ tới thư mục git thật.
+  local gd; gd="$(git rev-parse --git-dir)"
+  exec 9>"$gd/realestate-deploy.lock"
+  flock -n 9 || die "Một lần deploy/restore khác đang chạy (khóa $gd/realestate-deploy.lock)."
+}
+
+# Thư mục hiện tại có nằm trong git repo không (đúng cả worktree/submodule, nơi `.git` là FILE chứ không phải thư mục).
+in_git_repo() {
+  command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1
+}
+
+# Tên nhánh hợp lệ để ghi vào manifest/dùng trong `git switch`. DÙNG CHUNG cho deploy.sh (khi ghi) và scripts/restore.sh (khi đọc),
+# để deploy.sh không tạo manifest mà restore.sh sẽ từ chối. Chặn: rỗng, ký tự lạ, bắt đầu bằng '-' hoặc '/', kết thúc '/', '..', '//', '.lock'.
+valid_branch_name() {
+  local b="${1:-}"
+  [[ -n "$b" && "$b" =~ ^[A-Za-z0-9._/-]+$ && "$b" != -* && "$b" != /* && "$b" != */ && "$b" != *..* && "$b" != *.lock && "$b" != *//* ]]
+}
+
+mongo_is_healthy() {
+  [[ "$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')" == "healthy" ]]
+}
+
+# ── Chờ healthy ──────────────────────────────────────────────────────────────
+wait_mongo_healthy() {
+  log "Chờ $MONGO_CONTAINER healthy (tối đa ${MONGO_TIMEOUT}s)..."
+  local status
+  SECONDS=0
+  while (( SECONDS < MONGO_TIMEOUT )); do
+    status="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
+    if [[ "$status" == "healthy" ]]; then log "Mongo healthy."; return 0; fi
+    sleep 3
+  done
+  die "Mongo chưa healthy sau ${MONGO_TIMEOUT}s (trạng thái cuối: ${status:-?})."
+}
+
+wait_backend_liveness() {
+  log "Chờ backend liveness $HEALTH_URL (tối đa ${HEALTH_TIMEOUT}s)..."
+  local state
+  SECONDS=0
+  while (( SECONDS < HEALTH_TIMEOUT )); do
+    if curl -fsS -o /dev/null --max-time 5 "$HEALTH_URL" 2>/dev/null; then
+      log "Backend liveness OK sau ~${SECONDS}s."
+      return 0
+    fi
+    state="$(inspect_field "$BACKEND_CONTAINER" '{{.State.Status}}')"
+    if [[ "$state" == "exited" || "$state" == "dead" || "$state" == "missing" ]]; then
+      die "Container backend ở trạng thái '$state' (không chạy)."
+    fi
+    sleep 3
+  done
+  die "Backend không trả liveness 200 sau ${HEALTH_TIMEOUT}s."
+}
+
+# ── Phiên bản ────────────────────────────────────────────────────────────────
+# In giá trị "version" (cấp cao nhất, dòng đầu tiên) của package.json đọc từ stdin; không thấy thì in rỗng. Dùng `q` để sed tự thoát
+# (không pipe sang head: tránh SIGPIPE làm pipefail báo lỗi).
+pkg_version_from_stdin() {
+  sed -nE '/^[[:space:]]*"version"[[:space:]]*:/{s/^[^:]*:[[:space:]]*"([^"]*)".*$/\1/p;q}'
+}
+# Version của file package.json trên đĩa ($1, mặc định $OPS_APP_PKG); trả 1 nếu không có file.
+read_pkg_version() {
+  local f="${1:-$OPS_APP_PKG}"
+  [[ -f "$f" ]] || return 1
+  pkg_version_from_stdin < "$f"
+}
+
+# In `version` trong collection `system` của DB `realestate` (CHỈ ĐỌC; rỗng nếu chưa có). Trả 1 (không in gì) nếu không hỏi được
+# Mongo hoặc kết quả không giống số phiên bản. Mật khẩu root xác thực TRONG script mongosh, không lên dòng lệnh.
+read_system_version() {
+  local mongo="$1" out js line val
+  read -r -d '' js <<'JSEOF' || true
+db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const v = db.getSiblingDB('realestate').getCollection('system').findOne({ _id: 'version' }, { value: 1 });
+print('SYSTEM_VERSION=' + (v && typeof v.value === 'string' ? v.value : ''));
+JSEOF
+  out="$(timeout "$OPS_EXEC_TIMEOUT" docker exec -i "$mongo" mongosh --quiet --norc --file /dev/stdin <<<"$js" 2>&1)" || return 1
+  line="$(grep -E '^SYSTEM_VERSION=' <<<"$out" | tail -n 1)" || return 1
+  val="${line#SYSTEM_VERSION=}"
+  val="${val%$'\r'}"
+  [[ "$val" =~ ^[0-9A-Za-z.+-]*$ ]] || return 1
+  printf '%s' "$val"
+}
+
+# ── Manifest backup (dạng KEY=VALUE, mỗi dòng một khóa, KHÔNG chứa bí mật) ──────────────────────────────────────────
+# Ghi MỚI (đè) manifest $1 từ các tham số KEY=VALUE còn lại, qua tệp tạm + mv, quyền 600. Dòng bắt đầu bằng # là chú thích.
+manifest_write() {
+  local f="$1" tmp="${1}.tmp"
+  shift
+  ( umask 077; { printf '%s\n' "# Manifest backup trước deploy/restore (KEY=VALUE, KHÔNG chứa bí mật). Đọc bằng: bash scripts/restore.sh --list"; printf '%s\n' "$@"; } > "$tmp" ) \
+    || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$f"
+}
+# Đặt (thay hoặc thêm) một khóa trong manifest $1: manifest_put <file> <KEY> <value>. Giá trị bị bỏ xuống dòng. Quyền 600 giữ nguyên.
+manifest_put() {
+  local f="$1" tmp="${1}.tmp" v="${3//$'\n'/ }"
+  [[ -f "$f" ]] || return 1
+  ( umask 077; K="$2" V="$v" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"]; d = 0 }
+      { i = index($0, "="); if (i > 0 && substr($0, 1, i - 1) == k) { if (!d) print k "=" v; d = 1; next } print }
+      END { if (!d) print k "=" v }' "$f" > "$tmp" ) || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$f"
 }

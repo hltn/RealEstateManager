@@ -83,6 +83,7 @@ for stub in check_prereqs acquire_lock git_update check_compose check_users_migr
             tag_current_backend_image build_backend wait_mongo_healthy wait_backend_liveness; do
   eval "$stub() { printf '%s\n' '$stub' >> \"\$ORDER_FILE\"; return 0; }"
 done
+manifest_record_deploy_state() { :; }   # ghi manifest backup code (T backup code): ngoài phạm vi test này, nên giả im lặng
 # migration_gate giả (mặc định) hoặc THẬT (FAKE_REAL_GATE=1, trích từ deploy.sh, đổi tên real_migration_gate). Gate thật gọi
 # mongo_is_healthy / docker inspect / docker volume ls giả điều khiển bằng FAKE_MONGO_HEALTHY, FAKE_CONTAINER, FAKE_VOLUME.
 migration_gate() {

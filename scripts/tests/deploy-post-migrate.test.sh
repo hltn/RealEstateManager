@@ -34,7 +34,7 @@ source "$ROOT_DIR/scripts/lib/ops-common.sh"
 
 extract_fn() { sed -n "/^$1() {/,/^}/p" "$ROOT_DIR/deploy.sh"; }
 extract_oneliner() { grep -E "^$1\(\) \{.*\}$" "$ROOT_DIR/deploy.sh"; }
-for fn in run_post_migrate_steps reconcile_dry_run auto_reconcile fresh_install_reconcile sync_system_version print_recovery usage; do
+for fn in manifest_set run_post_migrate_steps reconcile_dry_run auto_reconcile fresh_install_reconcile sync_system_version print_recovery usage; do  # manifest_set THẬT: không làm gì khi chưa có manifest
   src="$(extract_fn "$fn")"
   [[ -n "$src" ]] || { echo "Không trích được $fn từ deploy.sh" >&2; exit 2; }
   eval "$src"

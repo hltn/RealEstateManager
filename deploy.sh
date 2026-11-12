@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# deploy.sh — cập nhật stack production ĐANG CHẠY ổn định lên commit mới nhất của nhánh `production`.
+# deploy.sh — cập nhật stack production ĐANG CHẠY ổn định lên commit mới nhất của NHÁNH ĐANG CHECKOUT (theo upstream của nhánh đó).
 #
 # Chạy ở máy chủ (Ubuntu 24.04), trong thư mục repo:
 #   bash deploy.sh [--no-pull] [--no-migrate | --migrate] [--plan-only] [--help]
@@ -10,6 +10,9 @@
 #
 # KHÔNG phải công cụ nâng cấp standalone lần đầu (Mongo cũ không xác thực -> replica set + auth):
 # lần đó làm theo mục 5 của tài liệu, từng bước bằng tay. Script này từ chối chạy nếu thấy Mongo cũ.
+#
+# Git: `git pull --ff-only` chạy trên NHÁNH ĐANG CHECKOUT, dùng upstream của nhánh đó (KHÔNG hardcode tên nhánh/remote, không phụ thuộc tên nhánh).
+# Từ chối pull (gợi ý --no-pull, KHÔNG đoán nhánh) khi HEAD detached hoặc nhánh chưa có upstream; vẫn chặn file đã theo dõi bị sửa và không ff.
 #
 # Các bước: tiền điều kiện (+ dung lượng đĩa) -> git pull (ff-only) -> `compose config -q` -> kiểm tra migration 005
 # -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung; bỏ qua nếu DB chưa có dữ liệu: không `users`, không document nào) -> gắn thẻ image backend hiện tại làm bản dự phòng
@@ -33,9 +36,18 @@
 # Mã 1/3/4/5 ở dry-run: deploy DỪNG trước `up` (stack chưa đổi). Downgrade CỐ Ý cần DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua
 # migrate, KHÔNG ghi và KHÔNG hạ `version` trong DB.
 #
+# BACKUP CODE + MANIFEST (bước 2b, trong git_update, SAU các cổng chặn (nhánh có upstream, working tree sạch) và TRƯỚC `git pull`; --plan-only KHÔNG tạo; --no-pull và downgrade VẪN tạo):
+# ghi lại nhánh + commit đang checkout trên máy chủ (không giả định tên nhánh): git bundle backups/deploy-code-pre-<TS>.bundle (đã `git bundle verify`, quyền 600),
+# tag CỤC BỘ pre-deploy-<TS> tại commit cũ (không push), và manifest backups/deploy-pre-<TS>.manifest (KEY=VALUE, không bí mật: nhánh, commit cũ/mới,
+# version app cũ/mới, version DB trước deploy, đường dẫn backup Mongo + bundle, image dự phòng, project compose, trạng thái deploy). Không tạo được bundle = `die`.
+# KHÔI PHỤC DB + code về bản trước: `bash scripts/restore.sh --list` rồi `bash scripts/restore.sh --manifest backups/deploy-pre-<TS>.manifest` (mặc định chỉ dry-run;
+# chạy thật cần `--apply --yes`). Chi tiết: tài liệu mục 6 và 11.
+# deploy.sh VẪN tự backup mỗi lần deploy (như trên). Muốn backup THỦ CÔNG ngoài lần deploy (vd trước khi sửa tay): `bash scripts/backup.sh` (bản chạy tay
+# độc lập, cùng định dạng archive/bundle/tag/manifest, restore.sh đọc được; KHÔNG được deploy.sh gọi). Xem tài liệu mục 6.2.
+#
 # KHÔNG rollback bằng `git checkout`: khi dữ liệu Mongo đã được nâng cấp (replica set/auth, migration),
 # compose và code cũ không đọc được volume mới, nên quay code về commit cũ có thể làm hỏng thêm.
-# Khi lỗi, script chỉ IN hướng dẫn (log, image dự phòng, mục 5.8 khi dữ liệu đã đổi) rồi thoát mã khác 0.
+# Khi lỗi, script chỉ IN hướng dẫn (log, image dự phòng, scripts/restore.sh, mục 5.8 khi dữ liệu đã đổi) rồi thoát mã khác 0.
 # NGOẠI LỆ v1.0.4: migration 007 (mã danh mục) và 008 (loại hình) CHỈ THÊM trường mới, vẫn ghi id cũ, nên SAU hai migration này
 # vẫn được lùi IMAGE về bản `pre-<thời-gian>` (L1, an toàn). Khi tiến lại thì bước hậu-migrate 10-catalog-codes (8c cũ) chạy lại và sửa bản ghi image cũ vừa ghi
 # thiếu `code`. Chỉ khi cần dọn trường mới mới `$unset` (L2, SAU khi đã lùi image); mongorestore từ deploy-pre-* là L3, cuối cùng.
@@ -71,7 +83,6 @@ ROOT_DIR="$(cd "$(dirname "$_self")" && pwd)"
 # shellcheck source=scripts/lib/ops-common.sh
 source "$ROOT_DIR/scripts/lib/ops-common.sh"
 
-readonly PROD_BRANCH="production"
 # Các biến DEPLOY_* / NINE_ROUTER_CONTAINER dưới đây CHỈ để chạy staging local (scripts/staging.sh đặt chúng); production không đặt
 # gì nên giữ đúng mặc định cũ (.env.docker, ./.env, ./logs, ./backups, realestate_9router).
 readonly ENV_FILE="${DEPLOY_ENV_FILE:-.env.docker}"
@@ -84,34 +95,7 @@ readonly BACKEND_CONTAINER="${BACKEND_CONTAINER:-realestate_backend}"
 readonly DEFAULT_PROJECT="realestatemanager"   # tên project compose = tên thư mục repo (không đổi, xem docker-compose.yml)
 readonly DOC="docs/01_Infrastructure/06_Production_Deploy.md"
 
-# Kiểm các biến chỉ dành cho staging NGAY khi nạp script (trước mọi lệnh): đường dẫn phải là đường dẫn TƯƠNG ĐỐI trong repo (một dòng
-# DEPLOY_LOGS_DIR=/ sẽ thành `chown -R 1000:1000 /`); và bất kỳ biến nào khác mặc định chỉ hợp lệ khi chạy qua scripts/staging.sh
-# (project compose = realestate-staging VÀ COMPOSE_FILE có docker-compose.staging.yml), chiều ngược lại cũng chặn. Không đặt biến nào
-# (production) thì mọi giá trị là mặc định cũ và hàm này không làm gì.
-valid_rel_path() {
-  [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || return 1
-  [[ "/$1/" != *"/./"* && "/$1/" != *"/../"* ]]
-}
-check_staging_vars() {
-  local pair name val staged=""
-  for pair in "DEPLOY_ENV_FILE=$ENV_FILE" "DEPLOY_RUNTIME_ENV_FILE=$RUNTIME_ENV_FILE" "DEPLOY_LOGS_DIR=$LOGS_DIR" "DEPLOY_BACKUP_DIR=$BACKUP_DIR"; do
-    name="${pair%%=*}"; val="${pair#*=}"
-    valid_rel_path "$val" || die "$name='$val' không hợp lệ: phải là đường dẫn TƯƠNG ĐỐI trong repo (chỉ A-Z a-z 0-9 . _ - và dấu /, không bắt đầu bằng /, không chứa '..' hoặc '.', không rỗng)."
-  done
-  [[ "$ENV_FILE" == ".env.docker" ]] || staged+=" DEPLOY_ENV_FILE"
-  [[ "$RUNTIME_ENV_FILE" == ".env" ]] || staged+=" DEPLOY_RUNTIME_ENV_FILE"
-  [[ "$LOGS_DIR" == "logs" ]] || staged+=" DEPLOY_LOGS_DIR"
-  [[ "$BACKUP_DIR" == "backups" ]] || staged+=" DEPLOY_BACKUP_DIR"
-  [[ "$NINE_ROUTER_CONTAINER" == "realestate_9router" ]] || staged+=" NINE_ROUTER_CONTAINER"
-  local has_stg_file=0
-  [[ "${COMPOSE_FILE:-}" != *docker-compose.staging.yml* ]] || has_stg_file=1
-  if [[ -n "$staged" ]] && { [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]] || (( has_stg_file == 0 )); }; then
-    die "Biến staging đặt ngoài wrapper:${staged}. Chúng chỉ hợp lệ khi chạy qua scripts/staging.sh (COMPOSE_PROJECT_NAME=realestate-staging và COMPOSE_FILE có docker-compose.staging.yml). Bỏ các biến này để deploy production."
-  fi
-  if (( has_stg_file == 1 )) && [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]]; then
-    die "COMPOSE_FILE có docker-compose.staging.yml nhưng COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-}' khác realestate-staging: dễ chạm nhầm stack khác. Chạy qua scripts/staging.sh hoặc bỏ COMPOSE_FILE."
-  fi
-}
+# Kiểm các biến chỉ dành cho staging NGAY khi nạp script (valid_rel_path/check_staging_vars nằm ở scripts/lib/ops-common.sh, dùng chung với scripts/restore.sh).
 check_staging_vars
 
 MONGO_TIMEOUT="${MONGO_TIMEOUT:-120}"
@@ -140,9 +124,10 @@ usage() {
   cat <<'EOF'
 Cách dùng: bash deploy.sh [--no-pull] [--no-migrate | --migrate] [--plan-only] [--help]
 
-Cập nhật stack production đang chạy lên bản mới nhất của nhánh `production`.
+Cập nhật stack production đang chạy lên bản mới nhất của nhánh ĐANG CHECKOUT (git pull --ff-only theo upstream của nhánh đó).
 
-  --no-pull     Không git pull; build và deploy đúng commit đang checkout.
+  --no-pull     Không git pull; build và deploy đúng commit đang checkout. Dùng khi HEAD detached hoặc nhánh chưa có upstream
+                (script từ chối pull trong hai trường hợp đó và KHÔNG đoán nhánh).
   --no-migrate  TẮT tự migrate (mặc định là BẬT, hoặc DEPLOY_AUTO_MIGRATE=0). Giữ hành vi cũ: runner `status`; còn migration
                 chờ hoặc cần baseline thì script DỪNG trước `up` (stack không đổi) và in lệnh để chạy tay. Cờ này chỉ chặn migrate
                 TRƯỚC `up` (6b); bước 8b sau khi backend sống vẫn chạy `reconcile --apply` và vẫn ghi phiên bản khi DB sạch.
@@ -165,11 +150,17 @@ unique SĐT; TỪ CHỐI chạy nếu còn migration pre-up chờ/gồm 010 chư
 Dừng TRƯỚC `up` (stack chưa đổi) khi runner trả: 3 có khóa | 4 probe không đạt | 5 downgrade | 1 lỗi hoặc từ chối.
 Downgrade CỐ Ý (khôi phục image cũ): DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh ... : bỏ qua migrate, KHÔNG ghi/hạ `version`.
 
+Backup trước deploy (khi không --plan-only): ngoài mongodump còn backup CODE của nhánh đang checkout (bất kể tên nhánh): git bundle
+backups/deploy-code-pre-<thời-gian>.bundle + tag cục bộ pre-deploy-<thời-gian> + manifest backups/deploy-pre-<thời-gian>.manifest (nhánh, commit, version
+app/DB trước deploy, đường dẫn backup, image dự phòng). Quay DB + code về bản trước: bash scripts/restore.sh --list ; bash scripts/restore.sh --latest
+(mặc định dry-run; chạy thật cần --apply --yes). Xem bash scripts/restore.sh --help.
+Backup thủ công ngoài lần deploy (không đụng stack): bash scripts/backup.sh [--db-only | --code-only] (xem bash scripts/backup.sh --help); deploy.sh vẫn tự backup như trên.
+
 Điều kiện: chạy trong thư mục repo; có .env.docker với quyền không rộng hơn 600 (chmod 600 .env.docker) và đã điền
 hết giá trị mẫu <...>; đủ dung lượng đĩa (DEPLOY_MIN_FREE_GB, mặc định 5 GB); working tree sạch (với git pull);
-đang ở nhánh production; chạy trong tmux/nohup.
+đang ở một nhánh có upstream (không detached; tên nhánh tùy ý) khi có git pull, hoặc dùng --no-pull; chạy trong tmux/nohup.
 
-Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không còn user chưa migrate 005
+Script làm: git pull --ff-only theo upstream của nhánh hiện tại (trước đó: bundle + tag + manifest backup code) -> docker compose config -q -> kiểm tra không còn user chưa migrate 005
 -> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) -> gắn thẻ image backend hiện tại thành
 <project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `reconcile` (bước 6b, xem trên;
 với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần baseline) -> up -d --build -> chờ mongo healthy và
@@ -194,6 +185,16 @@ print_recovery() {
     echo "════════════ DEPLOY THẤT BẠI — script KHÔNG tự rollback ════════════"
     echo "Commit trước deploy: ${OLD_COMMIT:-?}  |  commit đang checkout: ${NEW_COMMIT:-?}"
     [[ -n "$BACKUP_FILE" ]] && echo "Backup Mongo trước deploy: $BACKUP_FILE"
+    if [[ -n "${MANIFEST_FILE:-}" ]]; then
+      echo "Backup code + manifest: ${MANIFEST_FILE} (bundle + tag cục bộ pre-deploy-${TS}; nhánh/commit cũ ghi trong manifest)"
+      echo "Khôi phục DB + code về bản trước deploy bằng script riêng (mặc định chỉ dry-run, chạy thật cần --apply --yes):"
+      echo "     bash scripts/restore.sh --manifest ${MANIFEST_FILE}              # xem kế hoạch + kiểm trước, chưa đổi gì"
+      echo "     bash scripts/restore.sh --manifest ${MANIFEST_FILE} --apply --yes"
+      if (( ${POST_UP_REACHED:-0} == 1 )); then
+        echo "   LƯU Ý: deploy này đã tới điểm hậu-migrate; nếu bước 90 (migration 011 MỘT CHIỀU) đã chạy thì restore.sh --apply là đường quay lại DUY NHẤT"
+        echo "   và MẤT dữ liệu phát sinh sau thời điểm backup Mongo (restore.sh cảnh báo đỏ và vẫn đòi --yes)."
+      fi
+    fi
     echo
     echo "1) Xem nguyên nhân:"
     echo "     docker compose --env-file $ENV_FILE ps -a"
@@ -236,6 +237,9 @@ print_recovery() {
 on_exit() {
   local code=$?
   trap - EXIT
+  set +e   # handler phải chạy hết dù set -e đang bật và stderr đã chết (SSH rớt): các lệnh in không được làm thoát sớm
+  trap '' PIPE
+  manifest_finish "$code" || true   # chốt manifest backup code (succeeded/failed + commit mới); không đổi mã thoát
   if (( code != 0 )); then
     if (( STACK_TOUCHED == 1 )); then
       print_recovery
@@ -246,6 +250,11 @@ on_exit() {
   exit "$code"
 }
 trap on_exit EXIT
+# Bị ngắt (kill/Ctrl-C/rớt SSH) phải thoát với mã KHÁC 0 để on_exit biết là THẤT BẠI (manifest ghi `failed`, không ghi nhầm `succeeded`; in hướng dẫn
+# khi đã đụng stack). `exit N` trong trap tín hiệu bảo đảm on_exit luôn nhận mã N (128 + số tín hiệu), không phụ thuộc lệnh con đang chạy.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
 # ── 1) Tiền điều kiện ────────────────────────────────────────────────────────
 check_prereqs() {
@@ -268,26 +277,160 @@ check_prereqs() {
   [[ -e "$RUNTIME_ENV_FILE" ]] || { touch "$RUNTIME_ENV_FILE"; log "Đã tạo ./$RUNTIME_ENV_FILE rỗng (backend bind-mount file này)."; }
 }
 
-# Khóa chống hai lần deploy chạy chồng nhau. Đặt trong .git (không hiện ở git status, không phải file repo).
-acquire_lock() {
-  [[ -d .git ]] || return 0
-  command -v flock >/dev/null 2>&1 || { warn "Không có 'flock': bỏ qua khóa chống chạy chồng."; return 0; }
-  exec 9>".git/realestate-deploy.lock"
-  flock -n 9 || die "Một lần deploy khác đang chạy (khóa .git/realestate-deploy.lock)."
+# ── 1b) Backup CODE (nhánh + commit đang chạy trên máy chủ, KHÔNG giả định tên nhánh) ──────────────────────────────
+# Chạy trong git_update, SAU các cổng chặn và TRƯỚC `git pull` (HEAD chưa đổi). Tạo: (a) git bundle chứa nhánh/HEAD hiện tại (toàn bộ
+# lịch sử tới commit đó, xác minh bằng `git bundle verify`), (b) tag CỤC BỘ pre-deploy-<TS> tại commit cũ (KHÔNG push), (c) manifest
+# deploy-pre-<TS>.manifest (KEY=VALUE, không bí mật) mà scripts/restore.sh đọc. Lỗi tạo bundle/manifest = `die` (không im lặng).
+# --plan-only KHÔNG gọi (chỉ đọc). --no-pull và downgrade có chủ ý VẪN backup. Không có .git (chỉ khi --no-pull) thì cảnh báo và bỏ qua.
+# Thay đổi chưa commit của file đã theo dõi (chỉ có thể xảy ra với --no-pull) KHÔNG nằm trong bundle (cố ý không sao ra patch: patch có thể
+# chứa mật khẩu sửa tay); chỉ ghi TRACKED_DIRTY=1 và cảnh báo.
+MANIFEST_FILE=""      # đường dẫn manifest sau khi backup_code tạo; rỗng = chưa/không có (plan-only, không .git)
+OLD_COMMIT_FULL=""
+POST_UP_REACHED=0     # =1 ngay trước điểm gọi hậu-migrate: từ đây bước 90 (011 MỘT CHIỀU) có thể đã chạy, quay lại chỉ còn mongorestore
+
+# Cập nhật một khóa của manifest; KHÔNG bao giờ làm deploy chết (phần "sau" chỉ là thông tin phục hồi). Không có manifest thì bỏ qua.
+manifest_set() {
+  [[ -n "${MANIFEST_FILE:-}" && -f "$MANIFEST_FILE" ]] || return 0
+  manifest_put "$MANIFEST_FILE" "$1" "$2" || warn "Không cập nhật được khóa $1 trong $MANIFEST_FILE (bỏ qua)."
+  return 0
+}
+
+backup_code() {
+  (( PLAN_ONLY == 0 )) || return 0
+  # `git rev-parse --git-dir` (không phải `[[ -d .git ]]`): đúng cả với git worktree/submodule, nơi `.git` là FILE.
+  if ! in_git_repo; then
+    warn "Không phải git repo: không backup được code (chỉ có thể xảy ra với --no-pull). Manifest/bundle KHÔNG được tạo; restore.sh --code-only sẽ không dùng được cho lần deploy này."
+    return 0
+  fi
+
+  local commit branch="" detached=0 dirty=0 ref bundle part tag host
+  commit="$(git rev-parse HEAD)" || die "Không đọc được commit hiện tại (git rev-parse HEAD)."
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "Commit hiện tại không phải SHA-1 40 ký tự ('$commit'); backup code chưa hỗ trợ."
+  if branch="$(git symbolic-ref --short -q HEAD)" && [[ -n "$branch" ]]; then
+    ref="refs/heads/$branch"
+  else
+    branch=""; detached=1; ref="HEAD"
+    warn "HEAD đang detached tại ${commit:0:12}: bundle/tag vẫn tạo theo commit này, manifest ghi DETACHED=1."
+  fi
+  # Cùng quy tắc tên nhánh với scripts/restore.sh (valid_branch_name): không tạo manifest mà restore.sh sẽ từ chối. Chặn luôn `..` trong ref.
+  if (( detached == 0 )) && ! valid_branch_name "$branch"; then
+    die "Tên nhánh '$branch' có ký tự/dạng mà scripts/restore.sh không chấp nhận (chỉ A-Z a-z 0-9 . _ - /, không bắt đầu bằng - hoặc /, không chứa '..', '//', không kết thúc bằng '.lock' hay '/'). Backup sẽ không khôi phục được: đổi tên nhánh (git branch -m) rồi chạy lại. Chưa đổi gì."
+  fi
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+    dirty=1
+    warn "Working tree có thay đổi chưa commit ở file đã theo dõi: bundle/tag chỉ chứa commit ${commit:0:12}, KHÔNG chứa các thay đổi đó."
+  fi
+
+  install -d -m 700 "$BACKUP_DIR"
+  bundle="${BACKUP_DIR}/deploy-code-pre-${TS}.bundle"
+  part="${bundle}.partial"
+  tag="pre-deploy-${TS}"
+  [[ ! -e "$bundle" ]] || die "Đã có $bundle (chạy chồng cùng giây?). Không ghi đè backup: chạy lại sau."
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then die "Đã có tag $tag. Không ghi đè: chạy lại sau."; fi
+
+  log "Backup code: nhánh '${branch:-(detached)}' commit ${commit:0:12} -> $bundle ..."
+  if ! ( umask 077; git bundle create "$part" "$ref" ) >/dev/null 2>&1; then
+    rm -f "$part"
+    die "git bundle create thất bại (repo shallow? hết đĩa?). Không deploy khi không backup được code. Thử tay: git bundle create /tmp/x.bundle HEAD"
+  fi
+  if ! git bundle verify "$part" >/dev/null 2>&1; then
+    rm -f "$part"
+    die "Bundle vừa tạo không qua 'git bundle verify'. Không deploy."
+  fi
+  chmod 600 "$part"
+  mv "$part" "$bundle"
+  git tag "$tag" "$commit" || die "Không tạo được tag cục bộ $tag."
+  log "Đã tạo bundle (đã verify) và tag cục bộ $tag (KHÔNG push tag này)."
+
+  OLD_COMMIT_FULL="$commit"
+  MANIFEST_FILE="${BACKUP_DIR}/deploy-pre-${TS}.manifest"
+  host="$(hostname 2>/dev/null || true)"
+  manifest_write "$MANIFEST_FILE" \
+    "MANIFEST_VERSION=1" \
+    "TS=${TS}" \
+    "CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "HOST=${host:-unknown}" \
+    "COMPOSE_PROJECT=${COMPOSE_PROJECT_NAME:-}" \
+    "BRANCH=${branch}" \
+    "DETACHED=${detached}" \
+    "OLD_COMMIT=${commit}" \
+    "OLD_COMMIT_SHORT=${commit:0:7}" \
+    "NEW_COMMIT=" \
+    "APP_VERSION_OLD=$(read_pkg_version || true)" \
+    "APP_VERSION_NEW=" \
+    "DB_VERSION_BEFORE=" \
+    "DB_VERSION_READ=0" \
+    "MONGO_BACKUP_FILE=" \
+    "MONGO_CONTAINER=${MONGO_CONTAINER}" \
+    "BACKEND_CONTAINER=${BACKEND_CONTAINER}" \
+    "CODE_BUNDLE=${bundle}" \
+    "CODE_BUNDLE_REF=${ref}" \
+    "CODE_TAG=${tag}" \
+    "PREV_IMAGE_REPO=" \
+    "PREV_IMAGE_TAG=" \
+    "TRACKED_DIRTY=${dirty}" \
+    "NO_PULL=${NO_PULL}" \
+    "STACK_TOUCHED=0" \
+    "POST_UP_REACHED=0" \
+    "DEPLOY_STATUS=started" \
+    "FINISHED_AT=" \
+    || die "Không ghi được manifest $MANIFEST_FILE."
+  log "Manifest: $MANIFEST_FILE (khôi phục: bash scripts/restore.sh --manifest $MANIFEST_FILE)"
+}
+
+# Sau backup Mongo + gắn thẻ image, TRƯỚC build/migration: ghi nốt phần "trước deploy" còn lại vào manifest: file backup Mongo, phiên bản DB
+# (`system.version`, chỉ đọc; không đọc được thì DB_VERSION_READ=0), image dự phòng. Không có manifest (plan-only/không .git) thì bỏ qua.
+manifest_record_deploy_state() {
+  [[ -n "${MANIFEST_FILE:-}" && -f "$MANIFEST_FILE" ]] || return 0
+  local proj dbv="" got=0
+  proj="${PREV_IMAGE_REPO%-backend}"
+  [[ -n "$proj" ]] || proj="${COMPOSE_PROJECT_NAME:-$DEFAULT_PROJECT}"
+  manifest_set COMPOSE_PROJECT "$proj"
+  manifest_set MONGO_BACKUP_FILE "${BACKUP_FILE:-}"
+  manifest_set PREV_IMAGE_REPO "${PREV_IMAGE_REPO:-}"
+  manifest_set PREV_IMAGE_TAG "${PREV_IMAGE_TAG:-}"
+  if [[ "$(inspect_field "$MONGO_CONTAINER" '{{.State.Status}}')" == "running" ]] && dbv="$(read_system_version "$MONGO_CONTAINER")"; then
+    got=1
+  else
+    dbv=""
+  fi
+  manifest_set DB_VERSION_BEFORE "$dbv"
+  manifest_set DB_VERSION_READ "$got"
+  log "Manifest: DB version trước deploy = ${dbv:-(không có/không đọc được)}; backup Mongo = ${BACKUP_FILE:-(không có)}; image dự phòng = ${PREV_IMAGE_TAG:-(không có)}."
+}
+
+# Gọi từ on_exit (mọi lối thoát): chốt phần "sau" của manifest. Không bao giờ đổi mã thoát.
+manifest_finish() {
+  local code="$1" st
+  [[ -n "${MANIFEST_FILE:-}" && -f "$MANIFEST_FILE" ]] || return 0
+  if (( code == 0 )); then st="succeeded"; else st="failed"; fi
+  [[ -z "${BACKUP_FILE:-}" ]] || manifest_set MONGO_BACKUP_FILE "$BACKUP_FILE"
+  if in_git_repo; then manifest_set NEW_COMMIT "$(git rev-parse HEAD 2>/dev/null || true)"; fi
+  manifest_set APP_VERSION_NEW "$(read_pkg_version || true)"
+  manifest_set STACK_TOUCHED "$STACK_TOUCHED"
+  manifest_set POST_UP_REACHED "$POST_UP_REACHED"
+  manifest_set DEPLOY_STATUS "$st"
+  manifest_set FINISHED_AT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  return 0
 }
 
 # ── 2) Git ───────────────────────────────────────────────────────────────────
 git_update() {
   if (( NO_PULL == 1 )); then
-    if [[ -d .git ]]; then OLD_COMMIT="$(git rev-parse --short HEAD)"; NEW_COMMIT="$OLD_COMMIT"; fi
+    if in_git_repo; then OLD_COMMIT="$(git rev-parse --short HEAD)"; NEW_COMMIT="$OLD_COMMIT"; fi
     log "--no-pull: bỏ qua git pull${NEW_COMMIT:+, deploy commit hiện tại $NEW_COMMIT}."
+    backup_code   # --no-pull VẪN backup code (nhánh/commit đang checkout)
     return 0
   fi
-  [[ -d .git ]] || die "Không phải git repo (dùng --no-pull nếu cố ý)."
+  in_git_repo || die "Không phải git repo (dùng --no-pull nếu cố ý)."
 
-  local branch
-  branch="$(git rev-parse --abbrev-ref HEAD)"
-  [[ "$branch" == "$PROD_BRANCH" ]] || die "Đang ở '$branch' (HEAD detached nếu in 'HEAD'), cần nhánh '$PROD_BRANCH'. Script không tự đổi nhánh: xử lý theo $DOC mục 5.0a (git fetch origin && git checkout $PROD_BRANCH)."
+  # Pull trên NHÁNH ĐANG CHECKOUT theo upstream của nhánh đó (không ép tên nhánh, không hardcode remote). Không đoán nhánh:
+  # HEAD detached hoặc nhánh chưa có upstream thì từ chối rõ ràng và gợi ý --no-pull.
+  local branch upstream
+  branch="$(git symbolic-ref --short -q HEAD || true)"
+  [[ -n "$branch" ]] || die "HEAD đang detached: không biết pull nhánh nào (script KHÔNG đoán nhánh). Checkout nhánh cần deploy (git switch <nhánh>) hoặc chạy lại với --no-pull để deploy đúng commit đang checkout."
+  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  [[ -n "$upstream" ]] || die "Nhánh '$branch' chưa có upstream nên không biết pull từ đâu. Đặt upstream (git branch --set-upstream-to=origin/$branch $branch) hoặc chạy lại với --no-pull để deploy đúng commit đang checkout."
 
   # File chưa theo dõi (logs/, backups/...) không tính; chỉ chặn khi file đã theo dõi bị sửa.
   if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
@@ -296,9 +439,11 @@ git_update() {
   fi
 
   OLD_COMMIT="$(git rev-parse --short HEAD)"
-  log "Commit hiện tại: $OLD_COMMIT. Đang git pull --ff-only origin $PROD_BRANCH ..."
-  git pull --ff-only origin "$PROD_BRANCH"
+  backup_code   # bundle + tag + manifest của code hiện tại, TRƯỚC khi pull làm đổi HEAD (die nếu không backup được)
+  log "Commit hiện tại: $OLD_COMMIT (nhánh $branch, upstream $upstream). Đang git pull --ff-only ..."
+  git pull --ff-only
   NEW_COMMIT="$(git rev-parse --short HEAD)"
+  manifest_set NEW_COMMIT "$(git rev-parse HEAD)"
   if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
     log "Không có commit mới (vẫn $NEW_COMMIT); tiếp tục build/up (idempotent)."
   else
@@ -497,10 +642,6 @@ mongo_volume_exists() {
   [[ -n "$(docker volume ls -q --filter "name=^${project}_mongo_data\$" 2>/dev/null || true)" ]]
 }
 
-mongo_is_healthy() {
-  [[ "$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')" == "healthy" ]]
-}
-
 # Build image backend MỚI (gắn GIT_COMMIT). Chưa đụng stack đang chạy: container cũ giữ image cũ theo ID; thẻ :latest
 # bị ghi đè nhưng bản cũ đã gắn thẻ pre-<thời-gian> ở bước 6.
 build_backend() {
@@ -597,14 +738,14 @@ auto_reconcile() {
     log "DB realestate chưa có dữ liệu nghiệp vụ ($db_class; đã kiểm lại ngay trước khi ghi): ghi baseline/version không cần backup."
   fi
   # Từ đây dữ liệu/sổ có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
-  STACK_TOUCHED=1
+  STACK_TOUCHED=1; manifest_set STACK_TOUCHED 1   # ghi NGAY (không chờ manifest_finish): bị SIGKILL/mất điện giữa chừng manifest vẫn đúng
   log "reconcile --apply --skip-version --phase pre-up (baseline nếu cần + migration pre-up chờ; backup: ${BACKUP_FILE:-không có, DB trống}) ..."
   run_migration_cli reconcile --apply --by deploy --skip-version --phase pre-up || rc=$?
   case "$rc" in
     0) ;;
     5)
       # Hiếm: dry-run vừa rồi không báo downgrade nhưng --apply thì có (DB đổi giữa hai lệnh). Runner không ghi gì.
-      STACK_TOUCHED=0
+      STACK_TOUCHED=0; manifest_set STACK_TOUCHED 0
       if (( ALLOW_DOWNGRADE == 1 )); then
         warn "Downgrade CỐ Ý (DEPLOY_ALLOW_DOWNGRADE=1): bỏ qua migrate, KHÔNG ghi và KHÔNG hạ version."
         DOWNGRADE_ACTIVE=1
@@ -612,7 +753,7 @@ auto_reconcile() {
       fi
       reconcile_stop 5
       ;;
-    3|4) STACK_TOUCHED=0; reconcile_stop "$rc" ;;
+    3|4) STACK_TOUCHED=0; manifest_set STACK_TOUCHED 0; reconcile_stop "$rc" ;;
     *)
       die "reconcile --apply thất bại (mã $rc): runner đã dừng (không chạy migration sau, không ghi sổ cho migration lỗi, không tự rollback). Nếu migration chạy dở thì dữ liệu có thể đã đổi MỘT PHẦN; nếu runner từ chối trước khi ghi (không phải replica set, sổ không liền mạch) thì dữ liệu chưa đổi. Xem: $cli status . Sửa nguyên nhân rồi chạy lại; KHÔNG quay về code cũ."
       ;;
@@ -772,36 +913,7 @@ run_post_migrate_steps() {
   log "Hậu-migrate xong (${#steps[@]} bước)."
 }
 
-# ── 7) Chờ healthy ───────────────────────────────────────────────────────────
-wait_mongo_healthy() {
-  log "Chờ $MONGO_CONTAINER healthy (tối đa ${MONGO_TIMEOUT}s)..."
-  local status
-  SECONDS=0
-  while (( SECONDS < MONGO_TIMEOUT )); do
-    status="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
-    if [[ "$status" == "healthy" ]]; then log "Mongo healthy."; return 0; fi
-    sleep 3
-  done
-  die "Mongo chưa healthy sau ${MONGO_TIMEOUT}s (trạng thái cuối: ${status:-?})."
-}
-
-wait_backend_liveness() {
-  log "Chờ backend liveness $HEALTH_URL (tối đa ${HEALTH_TIMEOUT}s)..."
-  local state
-  SECONDS=0
-  while (( SECONDS < HEALTH_TIMEOUT )); do
-    if curl -fsS -o /dev/null --max-time 5 "$HEALTH_URL" 2>/dev/null; then
-      log "Backend liveness OK sau ~${SECONDS}s."
-      return 0
-    fi
-    state="$(inspect_field "$BACKEND_CONTAINER" '{{.State.Status}}')"
-    if [[ "$state" == "exited" || "$state" == "dead" || "$state" == "missing" ]]; then
-      die "Container backend ở trạng thái '$state' (không chạy)."
-    fi
-    sleep 3
-  done
-  die "Backend không trả liveness 200 sau ${HEALTH_TIMEOUT}s."
-}
+# ── 7) Chờ healthy: wait_mongo_healthy / wait_backend_liveness nằm ở scripts/lib/ops-common.sh ──
 
 # ── Chạy ─────────────────────────────────────────────────────────────────────
 main() {
@@ -853,6 +965,7 @@ main() {
     backup_mongo
   fi
   tag_current_backend_image
+  manifest_record_deploy_state   # ghi nốt phần "trước deploy" vào manifest backup (file Mongo, DB version, image dự phòng)
   build_backend
   migration_gate
 
@@ -862,7 +975,7 @@ main() {
     return 0
   fi
 
-  STACK_TOUCHED=1
+  STACK_TOUCHED=1; manifest_set STACK_TOUCHED 1   # ghi NGAY vào manifest (xem chú thích ở reconcile --apply)
   log "docker compose up -d --build ..."
   compose up -d --build
 
@@ -870,6 +983,7 @@ main() {
   wait_backend_liveness
   fresh_install_reconcile
   sync_system_version
+  POST_UP_REACHED=1; manifest_set POST_UP_REACHED 1   # ghi NGAY vào manifest; từ đây bước 90 (migration 011 MỘT CHIỀU) có thể chạy: manifest ghi lại để restore.sh cảnh báo
   run_post_migrate_steps
 
   echo
