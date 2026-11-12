@@ -7,6 +7,7 @@ import {
   assertOccurredAtNotFuture,
   canModifyCareLog,
   diffAttachmentIds,
+  readContactResultIntent,
 } from './care-log.rules';
 
 const NOW = new Date('2026-10-23T12:00:00Z');
@@ -85,5 +86,66 @@ describe('care-log.rules', () => {
 
     expect(toAttach.map(String)).toEqual([String(c)]);
     expect(toDetach.map(String)).toEqual([String(a)]);
+  });
+
+  describe('readContactResultIntent (FR-40)', () => {
+    const id = new Types.ObjectId().toHexString();
+
+    it('FR-40: không gửi id lẫn code thì không đụng tới kết quả liên hệ', () => {
+      expect(readContactResultIntent(undefined, undefined)).toEqual({
+        kind: 'unchanged',
+      });
+    });
+
+    it('FR-40: chỉ gửi code thì gán theo code, lỗi báo ở field contactResultCode', () => {
+      expect(readContactResultIntent(undefined, 'QUAN_TAM')).toEqual({
+        kind: 'assign',
+        id: null,
+        code: 'QUAN_TAM',
+        field: 'contactResultCode',
+      });
+    });
+
+    it('FR-40: chỉ gửi id (cũ) thì gán theo id, lỗi báo ở field contactResultId', () => {
+      expect(readContactResultIntent(id, undefined)).toEqual({
+        kind: 'assign',
+        id,
+        code: null,
+        field: 'contactResultId',
+      });
+    });
+
+    it('FR-40: gửi cả hai thì giữ cả hai để CustomerRefsService kiểm cùng một bản ghi', () => {
+      expect(readContactResultIntent(id, 'QUAN_TAM')).toMatchObject({
+        kind: 'assign',
+        id,
+        code: 'QUAN_TAM',
+      });
+    });
+
+    it('FR-40: null ở id, code hoặc cả hai thì bỏ chọn', () => {
+      for (const [i, c] of [
+        [null, undefined],
+        [undefined, null],
+        [null, null],
+      ] as const) {
+        expect(readContactResultIntent(i, c)).toEqual({ kind: 'clear' });
+      }
+    });
+
+    it('FR-40: một bên bỏ chọn, bên kia chọn giá trị thì 400 VALIDATION_FAILED', () => {
+      expect(() => readContactResultIntent(null, 'QUAN_TAM')).toThrow(
+        expect.objectContaining({
+          errorCode: 'VALIDATION_FAILED',
+          details: { field: 'contactResultId' },
+        }),
+      );
+      expect(() => readContactResultIntent(id, null)).toThrow(
+        expect.objectContaining({
+          errorCode: 'VALIDATION_FAILED',
+          details: { field: 'contactResultCode' },
+        }),
+      );
+    });
   });
 });

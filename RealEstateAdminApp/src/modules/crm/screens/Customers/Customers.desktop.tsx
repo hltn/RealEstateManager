@@ -1,15 +1,16 @@
 // Danh sách khách (web) theo mẫu trang "Manage WP" của Admin (02 §4.2): đầu trang + tab module, tab danh sách có số đếm,
 // thanh lọc, hành động hàng loạt, bảng `rounded-2xl`, `Pagination` của Admin.
 // Dữ liệu: `GET /crm/customers` qua `useCustomerListScreen` (lọc + sắp xếp + phân trang ở lớp dữ liệu).
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Download, Plus, SearchX } from 'lucide-react';
 import { TableSkeletonRows } from '../../../../components/common/TableSkeletonRows';
 import { Pagination } from '../../../../components/common/Pagination';
 import { DEFAULT_PAGE_SIZE } from '../../../../types/pagination';
-import { canExportCustomers, canImportCustomers, useCrmActor, type BulkResult, type CustomerListItem } from '@crm/api';
+import { canExportCustomers, canImportCustomers, canViewPrimaryAssignee, useCrmActor, usePersonaFieldMap, type BulkResult, type CustomerListItem } from '@crm/api';
 import { useCustomerExport } from '@crm/api/mockHooks';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CrmModuleTabs } from '@crm/components/CrmModuleTabs';
+import { PURCHASE_PURPOSES_FIELD_KEY } from '@crm/data/personaFields';
 import { downloadCsv } from '@crm/lib/csv';
 import { hasActiveCustomerFilters } from '@crm/lib/customerFilters';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CHECKBOX_CLASS, PAGE_DESCRIPTION_CLASS, PAGE_TITLE_CLASS } from '@crm/lib/uiClasses';
@@ -23,16 +24,21 @@ import { CustomerToolbar } from './components/CustomerToolbar';
 import { ImportCustomersButton } from './components/ImportCustomersButton';
 import { useCustomerListScreen } from './useCustomerListScreen';
 
+type CustomerTableColumn = { label: string; className?: string; isRightAligned?: boolean };
+
+/** Cột "Người chăm sóc chính" (FR-17): chỉ Quản trị/Quản lý thấy; khớp `isShowingPrimaryAssignee` của `CustomerTableRow`. */
+const PRIMARY_ASSIGNEE_COLUMN: CustomerTableColumn = { label: 'Người chăm sóc chính', className: 'hidden lg:table-cell' };
+
 /** Cột bảng — `className` ẩn cột phụ ở màn hẹp (khớp `CustomerTableRow`). */
-const CUSTOMER_TABLE_COLUMNS: { label: string; className?: string; isRightAligned?: boolean }[] = [
+const BASE_COLUMNS_BEFORE_ASSIGNEE: CustomerTableColumn[] = [
   { label: 'Khách hàng', className: 'min-w-[170px]' },
   { label: 'Tình trạng' },
   { label: 'Dự án', className: 'hidden 2xl:table-cell' },
   { label: 'Nguồn', className: 'hidden xl:table-cell' },
   { label: 'Khu vực', className: 'hidden xl:table-cell' },
   { label: 'Tiến độ', className: 'min-w-[110px]' },
-  { label: 'Phụ trách', className: 'hidden lg:table-cell' },
-  { label: 'Hẹn', className: 'hidden xl:table-cell' },
+];
+const BASE_COLUMNS_AFTER_ASSIGNEE: CustomerTableColumn[] = [
   { label: 'Cập nhật', className: 'hidden 2xl:table-cell' },
   { label: 'Thao tác', isRightAligned: true },
 ];
@@ -43,7 +49,14 @@ export const CustomersDesktop = () => {
   const { navigate, showToast, resetFilters } = useCrmActions();
   const hasActiveFilters = hasActiveCustomerFilters(filters);
   const actor = useCrmActor();
+  const isShowingPrimaryAssignee = canViewPrimaryAssignee(actor.role);
+  const tableColumns = useMemo(
+    () => [...BASE_COLUMNS_BEFORE_ASSIGNEE, ...(isShowingPrimaryAssignee ? [PRIMARY_ASSIGNEE_COLUMN] : []), ...BASE_COLUMNS_AFTER_ASSIGNEE],
+    [isShowingPrimaryAssignee],
+  );
   const exportCustomers = useCustomerExport();
+  /** Cấu hình trường "Mục đích mua" (đã cache theo danh mục): dịch mã -> nhãn một lần cho cả bảng. */
+  const purchasePurposeField = usePersonaFieldMap().get(PURCHASE_PURPOSES_FIELD_KEY);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** Kết quả xóa hàng loạt có khách lỗi: giữ ở đây (không trong thanh chọn) vì thanh biến mất khi không còn khách nào được chọn. */
   const [deleteResult, setDeleteResult] = useState<BulkResult | null>(null);
@@ -118,7 +131,7 @@ export const CustomersDesktop = () => {
                   <th scope="col" className="w-10 px-4 py-3">
                     <input type="checkbox" checked={isPageSelected} onChange={togglePage} aria-label="Chọn tất cả khách trong trang" className={CHECKBOX_CLASS} />
                   </th>
-                  {CUSTOMER_TABLE_COLUMNS.map((column) => (
+                  {tableColumns.map((column) => (
                     <th
                       key={column.label}
                       scope="col"
@@ -132,10 +145,10 @@ export const CustomersDesktop = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                {isLoading && <TableSkeletonRows columnCount={CUSTOMER_TABLE_COLUMNS.length + 1} />}
+                {isLoading && <TableSkeletonRows columnCount={tableColumns.length + 1} />}
                 {!isLoading && error && (
                   <tr>
-                    <td colSpan={CUSTOMER_TABLE_COLUMNS.length + 1} className="px-5 py-12 text-center" role="alert">
+                    <td colSpan={tableColumns.length + 1} className="px-5 py-12 text-center" role="alert">
                       <p className="text-base font-medium text-gray-700 dark:text-gray-300">{error.message}</p>
                       <button type="button" onClick={refetch} className={`${BUTTON_OUTLINE_CLASS} mt-4`}>
                         Thử lại
@@ -144,11 +157,18 @@ export const CustomersDesktop = () => {
                   </tr>
                 )}
                 {list.data.map((customer) => (
-                  <CustomerTableRow key={customer.id} customer={customer} isSelected={selectedIds.includes(customer.id)} onToggleSelect={toggleSelect} />
+                  <CustomerTableRow
+                    key={customer.id}
+                    customer={customer}
+                    isSelected={selectedIds.includes(customer.id)}
+                    onToggleSelect={toggleSelect}
+                    isShowingPrimaryAssignee={isShowingPrimaryAssignee}
+                    purchasePurposeField={purchasePurposeField}
+                  />
                 ))}
                 {!isLoading && !error && list.data.length === 0 && (
                   <tr>
-                    <td colSpan={CUSTOMER_TABLE_COLUMNS.length + 1} className="px-5 py-16 text-center">
+                    <td colSpan={tableColumns.length + 1} className="px-5 py-16 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <span className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
                           <SearchX size={32} aria-hidden="true" />

@@ -24,6 +24,7 @@ import {
 import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
 import { ExternalLogModule } from '../external-log/external-log.module';
 import { SharedModule } from '../../shared/shared.module';
+import { CrmCommonModule } from '../crm/common/crm-common.module';
 
 
 @Module({
@@ -38,6 +39,8 @@ import { SharedModule } from '../../shared/shared.module';
     // ExternalLogModule: log tập trung outgoing request (crawl + AI) — §9.5 spec.
     ExternalLogModule,
     SharedModule,
+    // CrmActorService cho ActiveAdminGuard của @AdminOnly() (FR-21).
+    CrmCommonModule,
   ],
   controllers: [NewsFireCrawlManagerController, NewsSourceController],
   providers: [

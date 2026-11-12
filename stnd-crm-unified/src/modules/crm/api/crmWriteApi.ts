@@ -11,6 +11,7 @@ import {
   applyPersonaUpdates,
   buildCareTeam,
   buildSearchText,
+  countCareTeamMembers,
   CRITERIA_KEYS,
   createEmptyCriteria,
   getDefaultStatus,
@@ -19,6 +20,7 @@ import {
   getProgressPercent,
   isInCareTeam,
   isValidNationalId,
+  MAX_CARE_TEAM_MEMBERS,
   maskNationalId,
 } from '@crm/lib/customerRules';
 import { DELETE_REASON_MAX_LENGTH, hasVisibleChar } from '@crm/lib/customerDeletion';
@@ -27,6 +29,7 @@ import { INVALID_EMAIL_MESSAGE, isValidEmail } from '@crm/lib/email';
 import { createId } from '@crm/lib/id';
 import { getNationalIdLast4, revealNationalId, storeNationalId } from '@crm/lib/nationalIdVault';
 import { normalizePhone } from '@crm/lib/phone';
+import { nextCustomerCode } from '@crm/lib/customerCode';
 import { createEmptyProject, diffProject, getFirstProjectError, getProjectErrors, isProjectCodeTaken, isValidProjectCode, normalizeProject } from '@crm/lib/projectRules';
 import { hasTeamRole, normalizeRoles, highestRole } from '../../../utils/userRoles';
 import { normalizeVietnamese } from '@crm/lib/text';
@@ -41,7 +44,6 @@ import type {
   AuditLog,
   CareLog,
   CareTeamMember,
-  CareTeamRequest,
   CatalogItem,
   ChangeAction,
   ContactResult,
@@ -58,17 +60,13 @@ import type {
   TeamMember,
 } from '@crm/types/crm';
 import { assertAssignableUsers } from './assignable';
-import { buildActor, canAccessCustomer, canBulkAssign, canManageProjects, getCustomerPermissions, getDeleteDenial, teamIdsOfUser, type CrmActor } from './access';
+import { buildActor, canBulkAssign, canManageProjects, getCustomerPermissions, getDeleteDenial, teamIdsOfUser, type CrmActor } from './access';
 import { countCatalogUsage, validateCatalogItem, validateSettings } from './catalogAdmin';
 import {
   countTeamMembers,
   findAccessibleCustomer,
   getCustomer,
-  listAssignableUsers,
   listCareLogs,
-  lookupPhone,
-  resolveAssignableTeamIds,
-  resolveJoinRef,
   toAppointmentView,
   toStatusRef,
 } from './queries';
@@ -84,7 +82,6 @@ import type {
   CriteriaPatch,
   CustomerDetail,
   PersonaValueInput,
-  PhoneLookupResult,
   PurgeResult,
   UpdateCustomerInput,
   UpdateStatusResult,
@@ -147,6 +144,19 @@ const NOT_FOUND = 'Không tìm thấy khách hàng hoặc bạn không có quy�
 const MAX_NAME_LENGTH = 150;
 const MAX_CONTENT_LENGTH = 5000;
 const MAX_BULK_SIZE = 200;
+const PHONE_NOT_SET_MESSAGE = 'Khách chưa có số điện thoại';
+
+/** Số MEMBER (không tính PRIMARY) của nhóm chăm sóc. */
+const countMembers = countCareTeamMembers;
+
+/**
+ * SĐT nhập vào -> giá trị lưu. `null`/rỗng = chưa có số (hợp lệ, lưu `null`); có giá trị thì phải chuẩn hóa được, sai -> `undefined`.
+ * Phân biệt 3 trạng thái: `null` (xóa/không có), chuỗi (hợp lệ), `undefined` (không hợp lệ).
+ */
+const parseOptionalPhone = (input: string | null | undefined): string | null | undefined => {
+  if (input === null || input === undefined || input.trim() === '') return null;
+  return normalizePhone(input) || undefined;
+};
 
 /** Lỗi `assertAssignableUsers` -> ApiResult thất bại. */
 const rejectAssignment = <T>(error: NonNullable<ReturnType<typeof assertAssignableUsers>>): ApiResult<T> => fail(error.statusCode, error.errorCode, error.message, error.details);
@@ -211,26 +221,6 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
   const findRaw = (customerId: string): Customer | undefined => stateOf().customers.find((item) => item.id === customerId);
 
   const detailOf = (customerId: string): CustomerDetail => getCustomer(stateOf(), getActor(), customerId) as CustomerDetail;
-
-  const duplicateError = <T>(lookup: PhoneLookupResult): ApiResult<T> =>
-    fail(409, 'CUSTOMER_PHONE_DUPLICATED', lookup.caredByName ? `Đã có khách hàng với số điện thoại này, do ${lookup.caredByName} chăm sóc.` : 'Đã có khách hàng với số điện thoại này.', { ...lookup });
-
-  /**
-   * Người được phân chăm sóc phải nằm trong phạm vi phân của người gọi (`resolveAssignableTeamIds`): Quản trị mọi nhóm; Quản lý chỉ nhóm
-   * mình quản lý; Nhân viên cùng nhóm. Chính người gọi luôn được phân cho mình.
-   */
-  const rejectOutOfTeam = <T>(userIds: readonly (string | null | undefined)[]): ApiResult<T> | null => {
-    const actor = getActor();
-    const scope = resolveAssignableTeamIds(actor);
-    if (scope === null) return null;
-    const users = stateOf().users;
-    const outOfTeam = [...new Set(userIds.filter((id): id is string => Boolean(id) && id !== actor.userId))].filter((id) => {
-      const user = users.find((item) => item.id === id);
-      return !user || !teamIdsOfUser(user).some((teamId) => scope.includes(teamId));
-    });
-    if (outOfTeam.length === 0) return null;
-    return fail(403, 'USER_OUT_OF_TEAM', actor.role === 'MANAGER' ? 'Chỉ được phân người thuộc nhóm bạn quản lý.' : 'Chỉ được phân người cùng nhóm với bạn.', { userIds: outOfTeam });
-  };
 
   const updateCareTeam = (customer: Customer, careTeam: CareTeamMember[], action: ChangeAction): ApiResult<{ primaryUserId: string | null }> => {
     update(customer.id, { careTeam }, action);
@@ -673,22 +663,12 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     const actor = getActor();
     const fullName = input.fullName.trim();
     if (!fullName || fullName.length > MAX_NAME_LENGTH) return fail(400, 'VALIDATION_FAILED', 'Vui lòng nhập họ tên (tối đa 150 ký tự).');
-    const phone = normalizePhone(input.phone);
-    if (!phone) return fail(400, 'INVALID_PHONE', 'Số điện thoại không hợp lệ.', { input: input.phone });
-    const lookup = lookupPhone(state, actor, phone);
-    if (lookup?.exists) return duplicateError(lookup);
+    // v1.0.5: SĐT tùy chọn; có thì phải hợp lệ; cho phép trùng SĐT với khách khác (không còn tra cứu/chặn trùng).
+    const phone = parseOptionalPhone(input.phone);
+    if (phone === undefined) return fail(400, 'INVALID_PHONE', 'Số điện thoại không hợp lệ.', { input: input.phone });
     if (input.nationalId && !isValidNationalId(input.nationalId)) return fail(400, 'VALIDATION_FAILED', 'Số CCCD gồm 12 chữ số (hoặc CMND 9 chữ số).');
     if (input.email !== undefined && !isValidEmail(input.email)) return fail(400, 'VALIDATION_FAILED', INVALID_EMAIL_MESSAGE);
 
-    const memberIds = input.careTeam?.memberIds ?? [];
-    const requestedPrimary = input.careTeam?.primaryUserId || null;
-    // Nhân viên tạo -> luôn là phụ trách chính (04 §6.1). Quản lý/Quản trị có thể chỉ định hoặc để chưa phân.
-    const primaryUserId = actor.role === 'STAFF' ? actor.userId : requestedPrimary;
-    if (!primaryUserId && memberIds.length > 0) return fail(400, 'PRIMARY_REQUIRED', 'Vui lòng chọn người phụ trách chính khi phân người chăm sóc.');
-    const notAssignable = assertAssignableUsers(state, [primaryUserId, ...memberIds]);
-    if (notAssignable) return rejectAssignment(notAssignable);
-    const outOfTeam = rejectOutOfTeam<CustomerDetail>([primaryUserId, ...memberIds]);
-    if (outOfTeam) return outOfTeam;
     const invalidRef = findInvalidCatalogRef(state.catalogs, { sourceId: input.sourceId, areaId: input.areaId, projectIds: input.interestedProjectIds, tagIds: input.tagIds });
     if (invalidRef) return fail(400, 'INVALID_CATALOG_REF', invalidRef);
 
@@ -696,7 +676,9 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     const id = generateId('CUST');
     const last4 = input.nationalId ? getNationalIdLast4(input.nationalId) : null;
     const status = (input.statusId && state.catalogs.statuses.find((item) => item.id === input.statusId && item.isActive)) || getDefaultStatus(state.catalogs.statuses);
-    const careTeam = buildCareTeam(primaryUserId, memberIds, actor.userId, mutationMeta.now);
+    // v1.0.5: người tạo LUÔN là PRIMARY (mọi vai trò, kể cả Quản trị); không nhận `careTeam` từ client.
+    const careTeam = buildCareTeam(actor.userId, [], actor.userId, mutationMeta.now);
+    const customerCode = nextCustomerCode(state.customers.map((item) => item.customerCode));
     const criteria = createEmptyCriteria();
     CRITERIA_KEYS.forEach((key) => {
       const change = input.criteria?.[key];
@@ -707,6 +689,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     });
     const customer: Customer = {
       id,
+      customerCode,
       fullName,
       phone,
       email: input.email?.trim() ?? '',
@@ -728,7 +711,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
       notes: '',
       lastCareLogAt: null,
       nextAppointmentAt: null,
-      searchText: buildSearchText({ fullName, phone, email: input.email }),
+      searchText: buildSearchText({ fullName, phone, email: input.email, customerCode }),
       createdAt: mutationMeta.now,
       createdBy: actor.userId,
       createdVia: 'WEB',
@@ -740,10 +723,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     if (!stateOf().customers.some((item) => item.id === id)) return fail(409, 'CUSTOMER_NOT_CREATED', 'Không thể tạo khách hàng (dữ liệu không hợp lệ).');
     // Kho CCCD đầy đủ chỉ ghi SAU khi reducer đã chấp nhận (tránh rác nếu bị từ chối).
     if (input.nationalId && last4) storeNationalId(id, input.nationalId);
-    careTeam.forEach((member) =>
-      notify(member.userId, { type: 'CUSTOMER_ASSIGNED', title: 'Bạn được phân khách mới', body: `${fullName} đã được thêm vào nhóm chăm sóc của bạn.`, customerId: id, deepLink: `/crm/customers/${id}` }),
-    );
-    // Người tạo vừa nhập dữ liệu nên luôn nhận lại hồ sơ, kể cả khi đã phân cho người ngoài phạm vi xem của mình.
+    // Người tạo vừa nhập dữ liệu và là PRIMARY nên luôn nhận lại hồ sơ.
     return ok((getCustomer(stateOf(), actor, id) ?? getCustomer(stateOf(), { ...actor, role: 'ADMIN' }, id)) as CustomerDetail);
   };
 
@@ -759,10 +739,9 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
       patch.fullName = fullName;
     }
     if (input.phone !== undefined) {
-      const phone = normalizePhone(input.phone);
-      if (!phone) return fail(400, 'INVALID_PHONE', 'Số điện thoại không hợp lệ.', { input: input.phone });
-      const lookup = lookupPhone(stateOf(), getActor(), phone, customerId);
-      if (lookup?.exists) return duplicateError(lookup);
+      // null hoặc "" = xóa số; cho phép trùng SĐT (v1.0.5).
+      const phone = parseOptionalPhone(input.phone);
+      if (phone === undefined) return fail(400, 'INVALID_PHONE', 'Số điện thoại không hợp lệ.', { input: input.phone });
       patch.phone = phone;
     }
     if (input.email !== undefined) {
@@ -847,10 +826,8 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
       patch.fullName = fullName;
     }
     if (profile.phone !== undefined) {
-      const phone = normalizePhone(profile.phone);
-      if (!phone) return fail(400, 'INVALID_PHONE', 'Số điện thoại không hợp lệ.', { input: profile.phone });
-      const lookup = lookupPhone(stateOf(), getActor(), phone, customerId);
-      if (lookup?.exists) return duplicateError(lookup);
+      const phone = parseOptionalPhone(profile.phone);
+      if (phone === undefined) return fail(400, 'INVALID_PHONE', 'Số điện thoại không hợp lệ.', { input: profile.phone });
       patch.phone = phone;
     }
     if (profile.email !== undefined) {
@@ -888,10 +865,12 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     return ok({ version: findRaw(customerId)?.version ?? loaded.data.version });
   };
 
-  /** "Hiện số"/gọi/Zalo: MỖI lần gọi ghi 1 log PHONE_VIEWED rồi trả số đầy đủ. Khách ngoài phạm vi -> 404. */
+  /** "Hiện số"/gọi/Zalo: MỖI lần gọi ghi 1 log PHONE_VIEWED rồi trả số đầy đủ. Khách ngoài phạm vi -> 404; chưa có SĐT -> 409 `CUSTOMER_PHONE_NOT_SET`. */
   const createPhoneView = (customerId: string, _purpose: 'VIEW' | 'CALL' | 'COPY' = 'VIEW'): ApiResult<{ phone: string; viewedAt: string }> => {
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
+    // v1.0.5: khách chưa có SĐT -> 409, KHÔNG ghi log PHONE_VIEWED.
+    if (!loaded.data.phone) return fail(409, 'CUSTOMER_PHONE_NOT_SET', PHONE_NOT_SET_MESSAGE);
     const mutationMeta = meta();
     dispatch({ type: 'phones/viewed', customerId, meta: mutationMeta });
     return ok({ phone: loaded.data.phone, viewedAt: mutationMeta.now });
@@ -982,132 +961,90 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
 
   // ------------------------------------------------------------------ Nhóm chăm sóc (05 §2.5)
 
+  const notifyAssigned = (userIds: readonly string[], customer: Customer) =>
+    userIds.forEach((userId) =>
+      notify(userId, {
+        type: 'CUSTOMER_ASSIGNED',
+        title: 'Bạn được phân khách mới',
+        body: `${customer.fullName} đã được thêm vào nhóm chăm sóc của bạn.`,
+        customerId: customer.id,
+        deepLink: `/crm/customers/${customer.id}`,
+      }),
+    );
+
+  /**
+   * `POST /crm/customers/:id/care-team/members` (v1.0.5). Quản trị/Quản lý/PRIMARY được mời, KHÔNG giới hạn theo nhóm của người gọi.
+   * - Nhóm RỖNG: bắt buộc `primaryUserId` (400 `PRIMARY_REQUIRED`) và chỉ Quản trị/Quản lý được chọn (403 `CARE_TEAM_ACTION_FORBIDDEN`).
+   * - Nhóm CÓ người: chỉ thêm MEMBER; gửi `primaryUserId` -> 400 `VALIDATION_FAILED`.
+   * - Đã trong nhóm -> 409 `ALREADY_IN_CARE_TEAM`; vượt 10 MEMBER -> 409 `CARE_TEAM_LIMIT_EXCEEDED`.
+   */
   const addCareTeamMembers = (customerId: string, body: { userIds: string[]; primaryUserId?: string }): ApiResult<{ primaryUserId: string | null }> => {
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
     const customer = loaded.data;
     const actor = getActor();
-    if (!getCustomerPermissions(actor, customer).canManageCareTeam) {
+    const permissions = getCustomerPermissions(actor, customer);
+    if (!permissions.canManageCareTeam) {
       return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý, Quản trị hoặc phụ trách chính được thêm người chăm sóc.');
+    }
+    const currentPrimary = getPrimaryUserId(customer.careTeam);
+    if (!currentPrimary) {
+      if (!body.primaryUserId) return fail(400, 'PRIMARY_REQUIRED', 'Khách chưa có phụ trách chính: vui lòng chọn người phụ trách chính.');
+      if (!permissions.canSetInitialPrimary) return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý/Quản trị được chọn người phụ trách chính ban đầu.');
+    } else if (body.primaryUserId) {
+      return fail(400, 'VALIDATION_FAILED', 'Khách đã có phụ trách chính: chỉ được thêm người chăm sóc (MEMBER).');
     }
     const notAssignable = assertAssignableUsers(stateOf(), [...body.userIds, body.primaryUserId]);
     if (notAssignable) return rejectAssignment(notAssignable);
-    const outOfTeam = rejectOutOfTeam<{ primaryUserId: string | null }>([...body.userIds, body.primaryUserId]);
-    if (outOfTeam) return outOfTeam;
-    const currentPrimary = getPrimaryUserId(customer.careTeam);
-    if (!currentPrimary && !body.primaryUserId) return fail(400, 'PRIMARY_REQUIRED', 'Khách chưa có phụ trách chính: vui lòng chọn người phụ trách chính.');
+    const alreadyIn = body.userIds.filter((userId) => isInCareTeam(customer.careTeam, userId));
+    if (alreadyIn.length > 0) return fail(409, 'ALREADY_IN_CARE_TEAM', 'Người này đã có trong nhóm chăm sóc.', { userIds: alreadyIn });
     const stamp = now().toISOString();
-    const notifyAdded = (userIds: readonly string[]) =>
-      userIds.forEach((userId) => notify(userId, { type: 'CUSTOMER_ASSIGNED', title: 'Bạn được phân khách mới', body: `${customer.fullName} đã được thêm vào nhóm chăm sóc của bạn.`, customerId, deepLink: `/crm/customers/${customerId}` }));
     if (!currentPrimary) {
       const team = buildCareTeam(body.primaryUserId ?? null, body.userIds, actor.userId, stamp);
-      notifyAdded(team.map((member) => member.userId));
+      if (countMembers(team) > MAX_CARE_TEAM_MEMBERS) return fail(409, 'CARE_TEAM_LIMIT_EXCEEDED', `Mỗi khách tối đa ${MAX_CARE_TEAM_MEMBERS} người chăm sóc (không tính phụ trách chính).`);
+      notifyAssigned(team.map((member) => member.userId), customer);
       return updateCareTeam(customer, team, 'CARE_TEAM_MEMBER_ADDED');
     }
-    const newMembers = body.userIds.filter((userId) => !isInCareTeam(customer.careTeam, userId)).map((userId) => ({ userId, role: 'MEMBER' as const, addedBy: actor.userId, addedAt: stamp }));
-    if (newMembers.length === 0) return ok({ primaryUserId: currentPrimary });
-    notifyAdded(newMembers.map((member) => member.userId));
+    const newIds = [...new Set(body.userIds)];
+    if (newIds.length === 0) return ok({ primaryUserId: currentPrimary });
+    if (countMembers(customer.careTeam) + newIds.length > MAX_CARE_TEAM_MEMBERS) {
+      return fail(409, 'CARE_TEAM_LIMIT_EXCEEDED', `Mỗi khách tối đa ${MAX_CARE_TEAM_MEMBERS} người chăm sóc (không tính phụ trách chính).`);
+    }
+    const newMembers = newIds.map((userId) => ({ userId, role: 'MEMBER' as const, addedBy: actor.userId, addedAt: stamp }));
+    notifyAssigned(newIds, customer);
     return updateCareTeam(customer, [...customer.careTeam, ...newMembers], 'CARE_TEAM_MEMBER_ADDED');
   };
 
-  const removeCareTeamMember = (customerId: string, userId: string, newPrimaryUserId?: string): ApiResult<{ primaryUserId: string | null }> => {
+  /** `DELETE /crm/customers/:id/care-team/members/:userId` (v1.0.5): gỡ PRIMARY luôn bị từ chối 409 `PRIMARY_LOCKED`. */
+  const removeCareTeamMember = (customerId: string, userId: string): ApiResult<{ primaryUserId: string | null }> => {
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
     const customer = loaded.data;
-    const permissions = getCustomerPermissions(getActor(), customer);
-    const isRemovingPrimary = getPrimaryUserId(customer.careTeam) === userId;
-    if (isRemovingPrimary) {
-      if (!permissions.canChangePrimary) return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý/Quản trị được gỡ người phụ trách chính.');
-      if (!newPrimaryUserId || newPrimaryUserId === userId) return fail(400, 'PRIMARY_REPLACEMENT_REQUIRED', 'Gỡ người phụ trách chính thì phải chọn người thay thế.');
-      const notAssignable = assertAssignableUsers(stateOf(), [newPrimaryUserId]);
-      if (notAssignable) return rejectAssignment(notAssignable);
-      const outOfTeam = rejectOutOfTeam<{ primaryUserId: string | null }>([newPrimaryUserId]);
-      if (outOfTeam) return outOfTeam;
-    } else if (!permissions.canManageCareTeam) {
+    if (!getCustomerPermissions(getActor(), customer).canManageCareTeam) {
       return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Bạn không có quyền gỡ người chăm sóc.');
     }
-    const actorId = getActor().userId;
-    const stamp = now().toISOString();
-    const remaining = customer.careTeam.filter((member) => member.userId !== userId);
-    if (!isRemovingPrimary) return updateCareTeam(customer, remaining, 'CARE_TEAM_MEMBER_REMOVED');
-    const withReplacement = isInCareTeam(remaining, newPrimaryUserId as string)
-      ? remaining.map((member) => ({ ...member, role: member.userId === newPrimaryUserId ? ('PRIMARY' as const) : ('MEMBER' as const) }))
-      : [{ userId: newPrimaryUserId as string, role: 'PRIMARY' as const, addedBy: actorId, addedAt: stamp }, ...remaining.map((member) => ({ ...member, role: 'MEMBER' as const }))];
-    return updateCareTeam(customer, withReplacement, 'PRIMARY_CHANGED');
+    if (getPrimaryUserId(customer.careTeam) === userId) {
+      return fail(409, 'PRIMARY_LOCKED', 'Không thể gỡ hay đổi người phụ trách chính.');
+    }
+    return updateCareTeam(customer, customer.careTeam.filter((member) => member.userId !== userId), 'CARE_TEAM_MEMBER_REMOVED');
   };
 
-  const changePrimary = (customerId: string, userId: string): ApiResult<{ primaryUserId: string | null }> => {
+  /**
+   * Chọn PRIMARY ban đầu khi nhóm RỖNG (khách cũ chưa ai phụ trách). Chỉ Quản trị/Quản lý (403 nếu khác); nhóm đã có người ->
+   * 409 `PRIMARY_LOCKED` (đã khóa, không đổi được nữa). Thay cho thao tác đổi PRIMARY cũ (`changePrimary`, đã gỡ cùng endpoint `PUT care-team/primary` ở backend).
+   */
+  const setInitialPrimary = (customerId: string, userId: string): ApiResult<{ primaryUserId: string | null }> => {
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
     const customer = loaded.data;
-    if (!getCustomerPermissions(getActor(), customer).canChangePrimary) return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý/Quản trị được đổi người phụ trách chính.');
+    if (customer.careTeam.length > 0) return fail(409, 'PRIMARY_LOCKED', 'Không thể gỡ hay đổi người phụ trách chính.');
+    if (!getCustomerPermissions(getActor(), customer).canSetInitialPrimary) {
+      return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý/Quản trị được chọn người phụ trách chính ban đầu.');
+    }
     const notAssignable = assertAssignableUsers(stateOf(), [userId]);
     if (notAssignable) return rejectAssignment(notAssignable);
-    const outOfTeam = rejectOutOfTeam<{ primaryUserId: string | null }>([userId]);
-    if (outOfTeam) return outOfTeam;
-    if (getPrimaryUserId(customer.careTeam) === userId) return ok({ primaryUserId: userId });
-    const stamp = now().toISOString();
-    const demoted = customer.careTeam.map((member) => ({ ...member, role: member.userId === userId ? ('PRIMARY' as const) : ('MEMBER' as const) }));
-    const careTeam = isInCareTeam(customer.careTeam, userId) ? demoted : [{ userId, role: 'PRIMARY' as const, addedBy: getActor().userId, addedAt: stamp }, ...demoted];
-    notify(userId, { type: 'CUSTOMER_ASSIGNED', title: 'Bạn là phụ trách chính của khách', body: `${customer.fullName} được giao cho bạn phụ trách chính.`, customerId, deepLink: `/crm/customers/${customerId}` });
-    return updateCareTeam(customer, careTeam, 'PRIMARY_CHANGED');
-  };
-
-  /** `POST /crm/care-team-requests` (X2) — người gửi không biết tên khách, chỉ có `customerRef`. */
-  const createCareTeamRequest = (body: { customerRef: string; message?: string }): ApiResult<{ id: string; status: 'PENDING'; createdAt: string }> => {
-    const state = stateOf();
-    const actor = getActor();
-    const customer = resolveJoinRef(state, actor.userId, body.customerRef);
-    // Không tồn tại / đã xem được khách / Quản trị / khách đã xóa -> CÙNG một lỗi 404 (không lộ khác biệt).
-    if (!customer || customer.deletedAt || actor.role === 'ADMIN' || canAccessCustomer(actor, customer, state.users)) return fail(404, 'RESOURCE_NOT_FOUND', 'Không thể gửi đề nghị cho khách này.');
-    if (state.careTeamRequests.some((request) => request.customerId === customer.id && request.requesterId === actor.userId && request.status === 'PENDING')) {
-      return fail(409, 'JOIN_REQUEST_EXISTS', 'Bạn đã gửi đề nghị và đang chờ duyệt.');
-    }
-    const mutationMeta = meta();
-    const request: CareTeamRequest = { id: generateId('CTR'), customerId: customer.id, requesterId: actor.userId, message: body.message?.trim() ?? '', status: 'PENDING', createdAt: mutationMeta.now, resolvedBy: null, resolvedAt: null };
-    dispatch({ type: 'careTeamRequests/add', request, meta: mutationMeta });
-    // Báo cho người duyệt: phụ trách chính của khách.
-    const primary = getPrimaryUserId(customer.careTeam);
-    if (primary) notify(primary, { type: 'CARE_TEAM_JOIN_REQUESTED', title: 'Có đề nghị tham gia nhóm chăm sóc', body: `${nameOf(actor.userId)} đề nghị tham gia chăm sóc khách ${customer.fullName}.`, customerId: customer.id, deepLink: '/crm/care-team-requests' });
-    return ok({ id: request.id, status: 'PENDING', createdAt: request.createdAt });
-  };
-
-  const resolveCareTeamRequest = (requestId: string, status: 'APPROVED' | 'REJECTED' | 'CANCELED'): ApiResult<{ id: string; status: string }> => {
-    const state = stateOf();
-    const actor = getActor();
-    const request = state.careTeamRequests.find((item) => item.id === requestId);
-    if (!request) return fail(404, 'RESOURCE_NOT_FOUND', 'Không tìm thấy đề nghị.');
-    if (request.status !== 'PENDING') return fail(409, 'JOIN_REQUEST_RESOLVED', 'Đề nghị đã được xử lý.');
-    const customer = state.customers.find((item) => item.id === request.customerId && !item.deletedAt);
-    if (!customer) return fail(404, 'CUSTOMER_NOT_FOUND', NOT_FOUND);
-    if (status === 'CANCELED') {
-      if (request.requesterId !== actor.userId) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ người gửi được huỷ đề nghị.');
-    } else if (!canAccessCustomer(actor, customer, state.users) || !getCustomerPermissions(actor, customer).canReviewJoinRequests) {
-      return fail(403, 'INSUFFICIENT_ROLE', 'Bạn không có quyền duyệt đề nghị này.');
-    }
-    if (status === 'APPROVED') {
-      const notAssignable = assertAssignableUsers(state, [request.requesterId]);
-      if (notAssignable) return rejectAssignment(notAssignable);
-    }
-    dispatch({ type: 'careTeamRequests/resolve', requestId, status, meta: meta() });
-    if (status !== 'CANCELED') {
-      notify(request.requesterId, {
-        type: 'CARE_TEAM_JOIN_RESOLVED',
-        title: status === 'APPROVED' ? 'Đề nghị tham gia được duyệt' : 'Đề nghị tham gia bị từ chối',
-        body: status === 'APPROVED' ? 'Bạn đã được thêm vào nhóm chăm sóc khách.' : 'Đề nghị tham gia nhóm chăm sóc khách của bạn không được duyệt.',
-        customerId: status === 'APPROVED' ? customer.id : undefined,
-        deepLink: status === 'APPROVED' ? `/crm/customers/${customer.id}` : '/crm/care-team-requests',
-      });
-    }
-    if (status === 'APPROVED' && !isInCareTeam(customer.careTeam, request.requesterId)) {
-      const stamp = now().toISOString();
-      const careTeam: CareTeamMember[] =
-        customer.careTeam.length === 0
-          ? [{ userId: request.requesterId, role: 'PRIMARY', addedBy: actor.userId, addedAt: stamp }]
-          : [...customer.careTeam, { userId: request.requesterId, role: 'MEMBER', addedBy: actor.userId, addedAt: stamp }];
-      update(customer.id, { careTeam }, 'CARE_TEAM_MEMBER_ADDED');
-    }
-    return ok({ id: requestId, status });
+    notifyAssigned([userId], customer);
+    return updateCareTeam(customer, buildCareTeam(userId, [], getActor().userId, now().toISOString()), 'CARE_TEAM_MEMBER_ADDED');
   };
 
   // ------------------------------------------------------------------ Nhật ký chăm sóc (05 §2.6)
@@ -1329,18 +1266,15 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
 
   // ------------------------------------------------------------------ Hàng loạt (05 §2.3)
 
-  /** `POST /crm/customer-bulk-operations` (≤ 200 khách/lần). Nhân viên không được `ASSIGN`. */
+  /** `POST /crm/customer-bulk-operations` (≤ 200 khách/lần). Nhân viên không được `ASSIGN`; `ASSIGN` chỉ thêm MEMBER (v1.0.5). */
   const bulkOperation = (operation: BulkOperation): ApiResult<BulkResult> => {
     if (operation.customerIds.length > MAX_BULK_SIZE) return fail(400, 'VALIDATION_FAILED', `Tối đa ${MAX_BULK_SIZE} khách mỗi lần.`);
     const actor = getActor();
     if (operation.type === 'ASSIGN') {
       if (!canBulkAssign(actor.role)) return fail(403, 'INSUFFICIENT_ROLE', 'Chỉ Quản lý/Quản trị được phân người chăm sóc hàng loạt.');
-      const notAssignable = assertAssignableUsers(stateOf(), [...operation.memberIds, operation.primaryUserId]);
+      const notAssignable = assertAssignableUsers(stateOf(), operation.memberIds);
       if (notAssignable) return rejectAssignment(notAssignable);
-      // Quản lý chỉ phân người thuộc nhóm mình quản lý (không gán chéo nhóm).
-      const allowed = new Set(listAssignableUsers(stateOf(), actor).map((user) => user.id));
-      const outOfTeam = [...operation.memberIds, operation.primaryUserId].filter((id): id is string => Boolean(id) && !allowed.has(id as string));
-      if (outOfTeam.length > 0) return fail(403, 'USER_OUT_OF_TEAM', 'Chỉ được phân người thuộc nhóm bạn quản lý.', { userIds: outOfTeam });
+      // v1.0.5: mời KHÔNG giới hạn theo nhóm của người gọi (khác trước) nên không còn kiểm USER_OUT_OF_TEAM.
     }
     if (operation.type === 'ADD_TAGS') {
       const refError = findInvalidCatalogRef(stateOf().catalogs, { tagIds: operation.tagIds });
@@ -1394,20 +1328,20 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
       if (operation.type === 'ASSIGN') {
         const stamp = now().toISOString();
         if (customer.careTeam.length === 0) {
-          // Khách chưa có ai: bắt buộc chọn rõ PRIMARY, không tự lấy người đầu tiên.
-          if (!operation.primaryUserId) {
-            failed.push({ customerId, errorCode: 'PRIMARY_REQUIRED' });
-            return;
-          }
-          update(customerId, { careTeam: buildCareTeam(operation.primaryUserId, operation.memberIds, actor.userId, stamp) }, 'CARE_TEAM_MEMBER_ADDED');
-        } else {
-          const additions = operation.memberIds.filter((userId) => !isInCareTeam(customer.careTeam, userId));
-          if (additions.length === 0) {
-            succeeded.push(customerId);
-            return;
-          }
-          update(customerId, { careTeam: [...customer.careTeam, ...additions.map((userId) => ({ userId, role: 'MEMBER' as const, addedBy: actor.userId, addedAt: stamp }))] }, 'CARE_TEAM_MEMBER_ADDED');
+          // Khách chưa có PRIMARY: bulk chỉ thêm MEMBER nên không tự chọn PRIMARY được.
+          failed.push({ customerId, errorCode: 'PRIMARY_REQUIRED' });
+          return;
         }
+        const additions = [...new Set(operation.memberIds)].filter((userId) => !isInCareTeam(customer.careTeam, userId));
+        if (additions.length === 0) {
+          succeeded.push(customerId);
+          return;
+        }
+        if (countMembers(customer.careTeam) + additions.length > MAX_CARE_TEAM_MEMBERS) {
+          failed.push({ customerId, errorCode: 'CARE_TEAM_LIMIT_EXCEEDED' });
+          return;
+        }
+        update(customerId, { careTeam: [...customer.careTeam, ...additions.map((userId) => ({ userId, role: 'MEMBER' as const, addedBy: actor.userId, addedAt: stamp }))] }, 'CARE_TEAM_MEMBER_ADDED');
       }
       // Chỉ tính thành công khi reducer THẬT SỰ đổi hồ sơ (version tăng); bị từ chối âm thầm thì báo lỗi.
       if (findRaw(customerId)?.version === versionBefore) failed.push({ customerId, errorCode: 'NOT_APPLIED' });
@@ -1433,9 +1367,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     // Nhóm chăm sóc
     addCareTeamMembers,
     removeCareTeamMember,
-    changePrimary,
-    createCareTeamRequest,
-    resolveCareTeamRequest,
+    setInitialPrimary,
     // Nhật ký
     createCareLog,
     updateCareLog,

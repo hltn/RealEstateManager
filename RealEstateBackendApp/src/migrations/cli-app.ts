@@ -2,19 +2,26 @@ import { MongoClient } from 'mongodb';
 import { sanitizeErrorMessage } from './migration-error.util';
 import { EXIT_CODE, MigrationRunner } from './migration-runner';
 import type { ExitCode } from './migration-runner';
-import type { Migration, MigrationActor } from './migration.types';
+import { PHASE_FILTERS } from './migration.types';
+import type { Migration, MigrationActor, PhaseFilter } from './migration.types';
 
 export const CLI_USAGE = `Cách dùng: node dist/migrations/cli.js <lệnh> [tùy chọn]
 
-  status [--json]                      Chỉ đọc: version, đã áp dụng, đang chờ, khóa, lỗi gần nhất.
-  up [--apply] [--by deploy|cli]       Mặc định dry-run. --apply mới chạy migration chờ (cần replica set).
+  status [--json]                      Chỉ đọc: version, đã áp dụng, đang chờ (kèm pha và số chờ post-up), khóa, lỗi gần nhất.
+  up [--apply] [--by deploy|cli] [--phase pre-up|post-up|all]
+                                       Mặc định dry-run. --apply mới chạy migration chờ (cần replica set).
+                                       --phase chọn pha migration (mặc định all = mọi migration chờ). Chạy một pha mà
+                                       còn migration pha kia chờ có số nhỏ hơn thì bị từ chối (mã 1).
   unlock                               Gỡ khóa còn sót (chỉ khi chắc chắn không có runner nào đang chạy).
   baseline [--apply] --version x.y.z [--commit sha]
                                        Chạy MỘT lần: ghi sổ 002..006 đã áp dụng + version. Mặc định dry-run.
-  reconcile [--apply] [--by deploy|cli] [--skip-version] [--json]
+  reconcile [--apply] [--by deploy|cli] [--skip-version] [--json] [--phase pre-up|post-up|all]
                                        Tự đối chiếu DB với phiên bản app: probe chỉ-đọc 002..006 rồi baseline (nếu cần),
                                        chạy migration chờ, ghi version. Mặc định dry-run; --skip-version không ghi version;
                                        --json in đúng MỘT dòng JSON ra stdout (log khác ra stderr).
+                                       --phase chọn pha migration (mặc định all). Từ chối (mã 1) theo CẢ HAI chiều: chạy
+                                       pre-up mà còn post-up chờ số nhỏ hơn (chạy --phase post-up trước), hoặc chạy post-up
+                                       mà còn pre-up chờ số nhỏ hơn (chạy --phase pre-up trước).
 
 Biến môi trường: MONGODB_URI (bắt buộc).
 Mã thoát: 0 ok | 1 lỗi/từ chối | 2 sai cú pháp | 3 đang có khóa | 4 cần baseline/probe không đạt | 5 downgrade (app cũ hơn DB).`;
@@ -36,11 +43,14 @@ interface ParsedArgs {
   json: boolean;
   skipVersion: boolean;
   by: MigrationActor;
+  phase: PhaseFilter;
+  /** `true` nếu người dùng truyền `--phase` (để từ chối ở lệnh không hỗ trợ). */
+  hasPhaseFlag: boolean;
   version: string | undefined;
   commit: string | undefined;
 }
 
-const VALUE_FLAGS = ['--by', '--version', '--commit'] as const;
+const VALUE_FLAGS = ['--by', '--version', '--commit', '--phase'] as const;
 const BOOLEAN_FLAGS = [
   '--apply',
   '--json',
@@ -56,6 +66,8 @@ const parseArgs = (argv: readonly string[]): ParsedArgs | string => {
     json: false,
     skipVersion: false,
     by: 'cli',
+    phase: 'all',
+    hasPhaseFlag: false,
     version: undefined,
     commit: undefined,
   };
@@ -77,6 +89,13 @@ const parseArgs = (argv: readonly string[]): ParsedArgs | string => {
       index += 1;
       if (token === '--version') parsed.version = value;
       if (token === '--commit') parsed.commit = value;
+      if (token === '--phase') {
+        if (!(PHASE_FILTERS as readonly string[]).includes(value)) {
+          return '--phase chỉ nhận pre-up, post-up hoặc all';
+        }
+        parsed.phase = value as PhaseFilter;
+        parsed.hasPhaseFlag = true;
+      }
       if (token === '--by') {
         if (value !== 'deploy' && value !== 'cli') {
           return '--by chỉ nhận deploy hoặc cli';
@@ -133,6 +152,15 @@ export const runCli = async (
     deps.err(`Lệnh không hợp lệ hoặc thiếu.\n${CLI_USAGE}`);
     return EXIT_CODE.USAGE;
   }
+  if (
+    parsed.hasPhaseFlag &&
+    parsed.command !== 'up' &&
+    parsed.command !== 'reconcile'
+  ) {
+    deps.err(`--phase chỉ dùng với up hoặc reconcile.
+${CLI_USAGE}`);
+    return EXIT_CODE.USAGE;
+  }
   if (!deps.mongoUri) {
     deps.err('Thiếu biến môi trường MONGODB_URI.');
     return EXIT_CODE.FAILURE;
@@ -156,7 +184,7 @@ export const runCli = async (
       case 'status':
         return await runner.status(parsed.json);
       case 'up':
-        return await runner.up(parsed.apply, parsed.by);
+        return await runner.up(parsed.apply, parsed.by, parsed.phase);
       case 'unlock':
         return await runner.unlock();
       case 'reconcile':
@@ -165,6 +193,7 @@ export const runCli = async (
           by: parsed.by,
           skipVersion: parsed.skipVersion,
           json: parsed.json,
+          phase: parsed.phase,
         });
       default:
         return await runner.baseline(

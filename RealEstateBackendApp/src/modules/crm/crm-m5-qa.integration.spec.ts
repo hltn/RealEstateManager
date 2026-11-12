@@ -397,7 +397,7 @@ describe('CRM M5 — QA đối kháng', () => {
       ).toHaveLength(1);
     });
 
-    it('đổi người thực hiện trước giờ nhắc: nhắc chỉ tới người MỚI (và phụ trách chính), không tới người cũ', async () => {
+    it('đổi người thực hiện trước giờ nhắc: nhắc tới MỌI thành viên nhóm ACTIVE (phụ trách chính HIGH, còn lại NORMAL), không phụ thuộc người thực hiện', async () => {
       await resetPendingReminders();
       const c = await createCustomer('staffA');
       await addMember(c, 'staffB');
@@ -420,9 +420,16 @@ describe('CRM M5 — QA đối kháng', () => {
         type: 'APPOINTMENT_DUE',
         'data.appointmentId': oid(appt.id),
       };
-      expect(await notificationsOf('staffB', forAppt)).toHaveLength(0);
-      expect(await notificationsOf('manager1', forAppt)).toHaveLength(1);
-      expect(await notificationsOf('staffA', forAppt)).toHaveLength(1);
+      // FR-19: người nhận tính lại từ careTeam ACTIVE lúc gửi; staffB vẫn là thành viên nhóm nên vẫn nhận (NORMAL).
+      const toA = await notificationsOf('staffA', forAppt);
+      const toB = await notificationsOf('staffB', forAppt);
+      const toManager = await notificationsOf('manager1', forAppt);
+      expect(toA).toHaveLength(1);
+      expect(toA[0].priority).toBe('HIGH');
+      expect(toB).toHaveLength(1);
+      expect(toB[0].priority).toBe('NORMAL');
+      expect(toManager).toHaveLength(1);
+      expect(toManager[0].priority).toBe('NORMAL');
     });
 
     it('đầu vào xấu trả 400, không bao giờ 500 và không để lại lịch/nhắc', async () => {

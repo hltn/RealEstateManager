@@ -20,6 +20,7 @@ import {
   BulkIdsDto,
   AnalyzeRawArticlesDto,
   SaveArticlesDto,
+  BackfillEmbeddingsDto,
   TriggerManualCrawlDto,
   AiPromptDto,
   TriggerManualAnalyzeDto,
@@ -48,6 +49,7 @@ import { AuditLogService } from './services/audit-log.service';
 import { AnalyzeJobService } from './services/analyze-job.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { AdminOnly } from '../crm/common/access/admin-only.decorator';
 import {
   WorkflowJobState,
   WorkflowStepState,
@@ -98,14 +100,14 @@ export class NewsFireCrawlManagerController {
     return { success: true, message: 'Prompts updated successfully' };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @ApiOperation({ summary: 'Get cron config', description: 'Get cron config' })
   @Get('cron')
   getCronConfig() {
     return this.cronjobService.getConfig();
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @ApiOperation({
     summary: 'Update cron config',
     description: 'Update cron config',
@@ -1560,9 +1562,9 @@ export class NewsFireCrawlManagerController {
       'rate limit 100ms giua moi request API.',
   })
   @Post('articles/backfill-embeddings')
-  async backfillEmbeddings(@Body() body: { batchSize?: number }) {
+  async backfillEmbeddings(@Body() body: BackfillEmbeddingsDto) {
     const result = await this.newsArticleService.backfillEmbeddings(
-      body.batchSize || 50,
+      body.batchSize ?? 50,
     );
     return {
       message: 'Backfill embeddings completed',

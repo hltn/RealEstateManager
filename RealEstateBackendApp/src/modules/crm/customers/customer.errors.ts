@@ -67,6 +67,19 @@ export const normalizePhoneOrThrow = (input: string): string => {
   return phone;
 };
 
+/**
+ * Chuẩn hóa SĐT TÙY CHỌN (FR-01): `null`/`undefined`/chuỗi rỗng (hoặc chỉ khoảng trắng) => `null` (không có SĐT);
+ * có giá trị mà sai định dạng => 400 `INVALID_PHONE`. Không bao giờ gọi `normalizePhone` với giá trị rỗng.
+ */
+export const normalizeOptionalPhoneOrThrow = (
+  input: string | null | undefined,
+): string | null => {
+  if (input === null || input === undefined || input.trim() === '') {
+    return null;
+  }
+  return normalizePhoneOrThrow(input);
+};
+
 /** CCCD 9 hoặc 12 chữ số, sai => 400 `VALIDATION_FAILED`. */
 export const assertValidNationalId = (nationalId: string): void => {
   if (!NATIONAL_ID_PATTERN.test(nationalId)) {

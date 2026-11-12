@@ -14,7 +14,7 @@ export const CreateCustomerDesktop = () => {
       <FormPageHeader
         variant="desktop"
         title="Thêm khách hàng mới"
-        description="Nhập thông tin liên hệ, nhu cầu ban đầu và phân công chuyên viên chăm sóc."
+        description="Chỉ họ tên là bắt buộc. Nhập thông tin liên hệ và nhu cầu ban đầu; bạn sẽ là người chăm sóc chính của khách."
         breadcrumbs={[{ label: 'Quản lý khách hàng', to: buildCrmPath('customers') }, { label: 'Thêm khách hàng mới' }]}
         onBack={form.cancel}
       />

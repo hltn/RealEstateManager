@@ -37,7 +37,12 @@ import {
   MAX_UNATTACHED_PER_UPLOADER,
 } from './care-log.constants';
 import { assertCanModifyCareLog } from './care-log.rules';
-import type { AttachmentUrls, CareLogLean } from './care-log.mapper';
+import { AttachmentThumbnailQueueService } from './attachment-thumbnail-queue.service';
+import type {
+  AttachmentUrl,
+  AttachmentUrls,
+  CareLogLean,
+} from './care-log.mapper';
 import { AttachmentUploadResponseDto } from './dtos/care-log.dto';
 import { CareLog, CareLogDocument } from './schemas/care-log.schema';
 import type { CareLogAttachment } from './schemas/care-log.schema';
@@ -45,6 +50,7 @@ import {
   CrmAttachment,
   CrmAttachmentDocument,
 } from './schemas/crm-attachment.schema';
+import { storedKeysOf } from './utils/stored-keys.util';
 import {
   InvalidImageError,
   stripImageMetadata,
@@ -95,6 +101,7 @@ export class CareLogAttachmentsService {
     private readonly access: CustomerAccessService,
     private readonly rateLimit: CrmRateLimitService,
     private readonly audit: CrmAuditLogService,
+    private readonly thumbnailQueue: AttachmentThumbnailQueueService,
   ) {}
 
   /**
@@ -169,8 +176,9 @@ export class CareLogAttachmentsService {
       prefix: attachmentPrefix(customerId),
     });
 
+    let response: AttachmentUploadResponseDto;
     try {
-      return await withTransaction(this.connection, async (session) => {
+      response = await withTransaction(this.connection, async (session) => {
         const [created] = await this.attachmentModel.create(
           [
             {
@@ -211,6 +219,10 @@ export class CareLogAttachmentsService {
       await this.purgeFiles([stored.key]);
       throw error;
     }
+    // Thumbnail (FR-26) xử lý bất đồng bộ: xếp job SAU khi transaction đã commit, upload vẫn trả ngay `READY`.
+    // Lỗi xếp hàng chỉ ghi log (bước bù thumbnail xếp lại sau), không làm hỏng upload.
+    await this.thumbnailQueue.enqueue(response.id);
+    return response;
   }
 
   /**
@@ -227,7 +239,7 @@ export class CareLogAttachmentsService {
     const { auditSource } = resolveClientSource(clientType);
     const customerObjectId = new Types.ObjectId(customerId);
 
-    const fileKey = await withTransaction(this.connection, async (session) => {
+    const keys = await withTransaction(this.connection, async (session) => {
       const customer = await this.repo.findOne(ctx.scope, customerId, {
         session,
         projection: { _id: 1 },
@@ -298,9 +310,9 @@ export class CareLogAttachmentsService {
         },
         session,
       );
-      return attachment.fileKey;
+      return storedKeysOf(attachment);
     });
-    await this.purgeFiles([fileKey]);
+    await this.purgeFiles(keys);
   }
 
   /**
@@ -358,7 +370,7 @@ export class CareLogAttachmentsService {
     });
   }
 
-  /** Đánh dấu ảnh đã gắn là REMOVED (gỡ khỏi nhật ký); trả `fileKey` để xóa file SAU khi commit. */
+  /** Đánh dấu ảnh đã gắn là REMOVED (gỡ khỏi nhật ký); trả khóa file gốc và thumbnail để xóa SAU khi commit. */
   async detachFromCareLog(
     careLogId: Types.ObjectId,
     ids: Types.ObjectId[] | 'ALL',
@@ -373,7 +385,7 @@ export class CareLogAttachmentsService {
     };
     const rows = await this.attachmentModel
       .find(filter)
-      .select('fileKey')
+      .select('fileKey thumbKey')
       .session(session)
       .lean()
       .exec();
@@ -391,27 +403,36 @@ export class CareLogAttachmentsService {
         { session },
       )
       .exec();
-    return rows.map((row) => row.fileKey);
+    return rows.flatMap((row) => storedKeysOf(row));
   }
 
-  /** Ký URL tải (15 phút) cho mọi ảnh của các nhật ký, trả theo `attachmentId`. */
+  /**
+   * Ký URL tải (15 phút) cho ảnh gốc và (nếu đã có `thumbKey`) thumbnail của mọi ảnh trong các nhật ký, trả theo
+   * `attachmentId`. Ảnh chưa có thumbnail thì `thumbUrl = null` để mapper rơi về `url`.
+   */
   async signUrls(logs: CareLogLean[]): Promise<AttachmentUrls> {
     const attachments = logs.flatMap((log) => log.attachments ?? []);
+    const sign = (key: string): Promise<string> =>
+      this.storage.getPresignedDownloadUrl(StorageBucket.ATTACHMENTS, key);
     const entries = await Promise.all(
       attachments.map(async (attachment) => {
-        const url = await this.storage.getPresignedDownloadUrl(
-          StorageBucket.ATTACHMENTS,
-          attachment.fileKey,
-        );
-        return [String(attachment.attachmentId), url] as [string, string];
+        const [url, thumbUrl] = await Promise.all([
+          sign(attachment.fileKey),
+          attachment.thumbKey ? sign(attachment.thumbKey) : null,
+        ]);
+        return [String(attachment.attachmentId), { url, thumbUrl }] as [
+          string,
+          AttachmentUrl,
+        ];
       }),
     );
     return new Map(entries);
   }
 
   /**
-   * Xóa file khỏi kho rồi ghi `purgedAt`. "Best-effort": lỗi mạng chỉ ghi cảnh báo, `AttachmentCleanupService` sẽ
-   * thử lại lần sau nên không làm hỏng thao tác của người dùng.
+   * Xóa file (gốc + thumbnail) khỏi kho rồi ghi `purgedAt`. "Best-effort": lỗi mạng chỉ ghi cảnh báo,
+   * `AttachmentCleanupService` sẽ thử lại lần sau nên không làm hỏng thao tác của người dùng. Chỉ đánh dấu `purgedAt`
+   * khi MỌI file của ảnh (gốc và thumbnail nếu có) đã xóa, để thumbnail lỗi xóa vẫn được dọn lại.
    */
   async purgeFiles(keys: string[]): Promise<void> {
     const purged: string[] = [];
@@ -428,7 +449,10 @@ export class CareLogAttachmentsService {
     if (purged.length === 0) return;
     await this.attachmentModel
       .updateMany(
-        { fileKey: { $in: purged } },
+        {
+          fileKey: { $in: purged },
+          $or: [{ thumbKey: null }, { thumbKey: { $in: purged } }],
+        },
         { $set: { purgedAt: new Date() } },
       )
       .exec();

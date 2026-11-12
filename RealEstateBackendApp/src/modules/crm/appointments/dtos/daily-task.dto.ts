@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 import { CsvList } from '../../../../common/decorators/csv-list.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination-query.dto';
-import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
+import { CatalogRefDto, UserRefDto } from '../../../../common/dto/ref.dto';
 import { StatusRefDto } from '../../customers/dtos/customer-response.dto';
 import {
   DailyTaskGroup,
@@ -93,12 +93,14 @@ export class DailyTaskCustomerDto {
   @ApiProperty() fullName: string;
   @ApiProperty({
     example: '0912 ••• 678',
+    nullable: true,
+    type: String,
     description:
-      'SĐT khách đã che (cùng quy ước `phoneMasked` ở danh sách khách); không bao giờ trả số đầy đủ',
+      'SĐT khách đã che (cùng quy ước `phoneMasked` ở danh sách khách); null khi khách không có SĐT; không bao giờ trả số đầy đủ',
   })
-  phoneMasked: string;
+  phoneMasked: string | null;
   @ApiProperty({ type: StatusRefDto }) status: StatusRefDto;
-  @ApiProperty({ type: [RefDto] }) projects: RefDto[];
+  @ApiProperty({ type: [CatalogRefDto] }) projects: CatalogRefDto[];
 }
 
 export class DailyTaskLastCareLogDto {
@@ -115,12 +117,12 @@ export class DailyTaskResponseDto {
   @ApiProperty({ type: DailyTaskCustomerDto }) customer: DailyTaskCustomerDto;
   @ApiProperty() title: string;
   @ApiProperty({
-    type: RefDto,
+    type: CatalogRefDto,
     nullable: true,
     description:
       'Dự án của buổi hẹn: chỉ việc kiểu APPOINTMENT có lịch gắn dự án (vẫn trả tên khi dự án đã ngừng/ẩn); các việc khác và lịch chưa gắn dự án = null. Không ảnh hưởng `customer.projects` (luôn là dự án khách quan tâm)',
   })
-  project: RefDto | null;
+  project: CatalogRefDto | null;
   @ApiProperty({ nullable: true, type: DailyTaskLastCareLogDto })
   lastCareLog: DailyTaskLastCareLogDto | null;
   @ApiProperty() suggestion: string;

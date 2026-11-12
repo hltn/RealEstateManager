@@ -43,6 +43,36 @@ export const isInAppEnabled = (
   type: NotificationType,
 ): boolean => stored?.[type]?.inApp !== false;
 
+/** Người này có bật push cho loại đó không (mặc định bật; chỉ `push === false` mới tắt). */
+export const isPushEnabled = (
+  stored: Record<string, Partial<TypePreference>> | null | undefined,
+  type: NotificationType,
+): boolean => stored?.[type]?.push !== false;
+
+/**
+ * Giờ `nowVnHHmm` (định dạng `HH:mm`, ĐÃ quy về múi `Asia/Ho_Chi_Minh` bởi nơi gọi) có nằm trong giờ yên lặng không.
+ * `start` BAO GỒM, `end` KHÔNG bao gồm; `start > end` là khung qua nửa đêm (22:00 đến 06:00). Hàm thuần.
+ * `quietHours` rỗng (mặc định tắt), sai định dạng hoặc `start = end` thì luôn `false` (không bao giờ chặn nhầm push).
+ */
+export const isInQuietHours = (
+  nowVnHHmm: string,
+  quietHours: QuietHoursValue | null | undefined,
+): boolean => {
+  if (!quietHours || !TIME_OF_DAY_PATTERN.test(nowVnHHmm)) return false;
+  if (!isValidQuietHours(quietHours)) return false;
+  const { start, end } = quietHours;
+  // `HH:mm` cùng độ dài nên so sánh chuỗi tương đương so sánh giờ.
+  return start < end
+    ? nowVnHHmm >= start && nowVnHHmm < end
+    : nowVnHHmm >= start || nowVnHHmm < end;
+};
+
+/** `HH:mm` theo giờ Việt Nam (`Asia/Ho_Chi_Minh`, UTC+7 không DST) của một thời điểm; đầu vào cho `isInQuietHours`. */
+export const toVnHHmm = (date: Date): string => {
+  const vn = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return vn.toISOString().slice(11, 16);
+};
+
 /** `start` và `end` phải khác nhau (khoảng rỗng vô nghĩa); qua nửa đêm (22:00 -> 06:00) là hợp lệ. */
 export const isValidQuietHours = (value: QuietHoursValue): boolean =>
   TIME_OF_DAY_PATTERN.test(value.start) &&

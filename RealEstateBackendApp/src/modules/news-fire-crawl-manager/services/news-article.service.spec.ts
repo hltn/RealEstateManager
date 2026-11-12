@@ -57,7 +57,9 @@ describe('NewsArticleService', () => {
       createEmbedding: jest.fn(),
       createEmbeddingBatch: jest.fn(),
       prepareEmbeddingInput: jest.fn().mockReturnValue('test input'),
-      getEmbeddingModelName: jest.fn().mockReturnValue('openai/text-embedding-3-small'),
+      getEmbeddingModelName: jest
+        .fn()
+        .mockReturnValue('openai/text-embedding-3-small'),
       getEmbeddingDimensions: jest.fn().mockReturnValue(512),
     };
 
@@ -458,9 +460,7 @@ describe('NewsArticleService', () => {
         expectedEnd,
       );
 
-      const boundaryArticlePublishedAt = new Date(
-        '2026-08-04T23:54:02.000Z',
-      );
+      const boundaryArticlePublishedAt = new Date('2026-08-04T23:54:02.000Z');
       expect(boundaryArticlePublishedAt.getTime()).toBeGreaterThanOrEqual(
         new Date(expectedStart).getTime(),
       );
@@ -554,7 +554,11 @@ describe('NewsArticleService', () => {
       const sharedEmbedding = [0.5, 0.5, 0.5];
       mockNewsArticleModel.find.mockReturnValue(
         chainableFind([
-          { _id: 'abc123', contentEmbedding: sharedEmbedding, title: 'Original' },
+          {
+            _id: 'abc123',
+            contentEmbedding: sharedEmbedding,
+            title: 'Original',
+          },
         ]),
       );
 
@@ -573,13 +577,17 @@ describe('NewsArticleService', () => {
 
       const validObjectId = '507f1f77bcf86cd799439011';
       const batchBuffer = [
-        { embedding: [0.5, 0.5, 0.5], id: validObjectId, title: 'Batch Article' },
+        {
+          embedding: [0.5, 0.5, 0.5],
+          id: validObjectId,
+          title: 'Batch Article',
+        },
       ];
 
       const result = await service.checkDuplicate(
         [0.5, 0.5, 0.5],
         '2026-08-14T00:00:00.000Z',
-        0.90,
+        0.9,
         batchBuffer,
       );
 
@@ -661,10 +669,10 @@ describe('NewsArticleService', () => {
         ]),
       );
 
-      (service as any).newsArticleModel = Object.assign(
-        jest.fn(),
-        { findOne: mockFindOne, find: mockFind },
-      );
+      (service as any).newsArticleModel = Object.assign(jest.fn(), {
+        findOne: mockFindOne,
+        find: mockFind,
+      });
 
       (service as any).rawArticleModel = {
         updateOne: jest.fn().mockResolvedValue({}),
@@ -788,6 +796,42 @@ describe('NewsArticleService', () => {
   });
 
   // ── M2: Batch dedup integration test ──
+
+  describe('deleteArticlesByUrlHashes (FR-14)', () => {
+    it('FR-14: loại phần tử object, chỉ truyền chuỗi vào $in; toàn object thì không xóa', async () => {
+      const exec = jest.fn();
+      const deleteMany = jest.fn().mockReturnValue({ exec });
+      (service as any).newsArticleModel = { deleteMany };
+      await service.deleteArticlesByUrlHashes([
+        'h1',
+        { $ne: null },
+      ] as unknown as string[]);
+      expect(deleteMany).toHaveBeenCalledWith({ urlHash: { $in: ['h1'] } });
+      deleteMany.mockClear();
+      await service.deleteArticlesByUrlHashes([
+        { $ne: null },
+      ] as unknown as string[]);
+      expect(deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('saveArticles — FR-14 urlHash ép kiểu', () => {
+    it('FR-14: urlHash là object `$ne` → bỏ qua, findOne nhận chuỗi tính từ url', async () => {
+      const findOne = jest.fn().mockResolvedValue({ _id: 'exists' });
+      (service as any).newsArticleModel = Object.assign(jest.fn(), {
+        findOne,
+        find: jest.fn().mockReturnValue(chainableFind([])),
+      });
+
+      const result = await service.saveArticles([
+        { urlHash: { $ne: null }, url: 'https://example.com/a' },
+      ]);
+
+      const arg = findOne.mock.calls[0][0] as { urlHash: unknown };
+      expect(typeof arg.urlHash).toBe('string');
+      expect(result.duplicates).toBe(1);
+    });
+  });
 
   describe('saveArticles — batch dedup (M2)', () => {
     it('should detect second article as duplicate via batchEmbeddings buffer when both have identical embeddings in one call', async () => {

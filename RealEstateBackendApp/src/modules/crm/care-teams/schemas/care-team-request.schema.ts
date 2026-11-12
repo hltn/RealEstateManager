@@ -8,8 +8,7 @@ import {
 
 /**
  * Đề nghị tham gia nhóm chăm sóc một khách đã có (`care_team_requests`, tài liệu 04 mục 3.5).
- * Giữ NGUYÊN tên collection và field `customerId`, `requesterId`, `status`: `CustomerPhoneService` đọc chúng
- * để trả `hasPendingRequest` cho `phone-lookups`.
+ * Giữ NGUYÊN tên collection và field `customerId`, `requesterId`, `status` (dữ liệu cũ không xóa, v1.0.5 11.1b #1).
  *
  * `message`/`resolutionNote` là văn bản tự do có thể nhắc tên khách => bị xóa khi ẩn danh hóa khách.
  */
@@ -53,7 +52,7 @@ export type CareTeamRequestDocument = HydratedDocument<CareTeamRequest>;
 export const CareTeamRequestSchema =
   SchemaFactory.createForClass(CareTeamRequest);
 
-// Mỗi người chỉ có 1 đề nghị PENDING cho 1 khách: chống gửi trùng/race (E11000 => 409 JOIN_REQUEST_EXISTS).
+// Mỗi người chỉ có 1 đề nghị PENDING cho 1 khách: chống gửi trùng/race (luồng gửi đề nghị đã bỏ ở v1.0.5; giữ index để đọc/dọn dữ liệu cũ).
 CareTeamRequestSchema.index(
   { customerId: 1, requesterId: 1 },
   {

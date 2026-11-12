@@ -8,11 +8,6 @@ import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import { hasCrmTeamRole, rolesOf } from '../../../common/utils/user-roles.util';
 import { teamObjectIdsOf } from '../../users/user-public-profile';
-import {
-  CrmActor,
-  resolveAssignableTeamIds,
-  sharesAnyTeam,
-} from '../common/access/crm-actor';
 
 /** Thông tin tối thiểu của người dùng cần để kiểm tra phân công và tính `teamIds`. */
 export interface AssigneeInfo {
@@ -60,35 +55,26 @@ export class CareTeamAssigneesService {
   }
 
   /**
-   * Người được phân phải ACTIVE và có role MANAGER/STAFF. Khi `restrictToActorScope`:
-   * Quản lý chỉ phân cho người thuộc BẤT KỲ nhóm nào mình quản lý (hoặc chính mình), Nhân viên (phụ trách chính) chỉ phân
-   * cho người chung ít nhất một nhóm — khớp danh sách `assignable-users` mà giao diện cho chọn. Quản trị không bị giới hạn.
-   * Sai ⇒ 400 `USER_NOT_ASSIGNABLE` kèm danh sách `userIds` không hợp lệ.
+   * Người được phân phải tồn tại và chưa xóa mềm (`load` đã loại tài khoản xóa mềm nên vắng mặt trong `users`),
+   * ACTIVE và có role MANAGER/STAFF. KHÔNG còn giới hạn theo nhóm của người mời (FR-13): Nhân viên PRIMARY, Quản lý
+   * và Quản trị đều mời được người ở nhóm khác. Sai ⇒ 400 `USER_NOT_ASSIGNABLE` kèm danh sách `userIds` không hợp lệ.
    */
   assertAssignable(
-    actor: CrmActor,
     userIds: Types.ObjectId[],
     users: Map<string, AssigneeInfo>,
-    restrictToActorScope: boolean,
   ): void {
     const invalid = userIds.filter((id) => {
       const user = users.get(String(id));
-      if (
+      return (
         !user ||
         user.status !== UserStatus.ACTIVE ||
         !hasCrmTeamRole(user.roles)
-      ) {
-        return true;
-      }
-      const scope = resolveAssignableTeamIds(actor);
-      if (!restrictToActorScope || scope === null) return false;
-      if (id.equals(actor.userId)) return false;
-      return !sharesAnyTeam(scope, user.teamIds);
+      );
     });
     if (invalid.length > 0) {
       throw new BusinessException(
         ErrorCode.USER_NOT_ASSIGNABLE,
-        'Có người được phân không hợp lệ (không hoạt động, không phải Quản lý/Nhân viên hoặc ngoài phạm vi bạn được phân)',
+        'Có người được phân không hợp lệ (không tồn tại, không hoạt động hoặc không phải Quản lý/Nhân viên)',
         HttpStatus.BAD_REQUEST,
         { userIds: invalid.map(String) },
       );

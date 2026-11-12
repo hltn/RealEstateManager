@@ -1,6 +1,6 @@
 # Bổ sung & sửa đổi tính năng: Module Quản lý & chăm sóc khách hàng (CRM)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.5
 
 > **Mục đích file:** gom **mọi bổ sung/sửa đổi tính năng phát sinh sau khi các tài liệu 01–06 đã chốt** vào một chỗ, theo từng phiên bản. Mỗi phiên bản là một mục độc lập: có ngày, danh sách thay đổi, trạng thái từng thay đổi, thiết kế, API, dữ liệu, giao diện, kiểm thử, rủi ro. Các tài liệu cũ **không bị viết lại**; chỉ có một dòng trỏ về file này ở nơi liên quan.
 > **Tài liệu liên quan:** [`04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md`](04_Tai_Lieu_Ky_Thuat_Module_Quan_Ly_Khach_Hang.md) (data model §3.8, phân quyền §4), [`05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md`](05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md) (API), [`02_Auth_Module_Architecture.md`](../02_Module_Auth/02_Auth_Module_Architecture.md) (Auth).
@@ -10,7 +10,7 @@
 
 ## Quy ước phiên bản
 
-1. **Số phiên bản dạng ba phần** `vX.Y.Z` (hiện tại `v1.0.2`; phiên bản kế tiếp `v1.0.3` đang ở trạng thái Kế hoạch, xem ghi chú đánh số lại bên dưới; sau này `v1.0.4` hoặc cao hơn). Mỗi phiên bản là **một mục độc lập** ở cấp `##`, có ngày, danh sách thay đổi và trạng thái từng thay đổi.
+1. **Số phiên bản dạng ba phần** `vX.Y.Z` (hiện tại `v1.0.5`, mục v1.0.5 ở cuối file; `v1.0.3` và `v1.0.4` đã có tài liệu riêng ở thư mục `08_Quan_Ly_Phien_Ban`; phiên bản tiếp theo sẽ mang số cao hơn `v1.0.5`). Mỗi phiên bản là **một mục độc lập** ở cấp `##`, có ngày, danh sách thay đổi và trạng thái từng thay đổi.
 2. **Không sửa phiên bản cũ, chỉ thêm mới ở cuối file.** Riêng cột trạng thái trong bảng tổng quan của chính phiên bản đó và mục lục phiên bản được cập nhật khi tiến độ thay đổi (Kế hoạch → Đang làm → Xong).
 3. Nếu một quy tắc bị thay đổi ở phiên bản sau thì ghi rõ **"thay thế quy tắc X của vA.B.C"** ngay đầu thay đổi đó; phiên bản cũ giữ nguyên để còn truy vết.
 4. Mỗi thay đổi đều có các tiểu mục: Bối cảnh/vấn đề, Quyết định nghiệp vụ, Thiết kế/quy tắc, API thay đổi, Dữ liệu & migration, Giao diện, Ảnh hưởng tài liệu khác, Kiểm thử/nghiệm thu, Rủi ro/điều chưa kiểm chứng.
@@ -23,6 +23,7 @@
 |---|---|---|---|
 | [v1.0.2](#v102-2026-10-29) | 2026-10-29 | 4 sửa đổi: (A) nhiều role + nhiều nhóm cho một tài khoản; (B) khu vực theo 34 tỉnh thành; (C) thêm/gỡ/xem thành viên nhóm; (D) xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" | Đã triển khai production 2026-11-02 (commit `e6099c0`; code A–D, cả BE lẫn FE, đều nằm trong commit này; migration 005/006 đã chạy trên VPS). **Chưa đóng (Cổng 3)**: cần xác nhận kết quả QA cuối của FE C/D (ghi nhận gần nhất 2026-10-30 là "FE đang QA") và nghiệm thu thực tế trên production (chưa có ai test, xem `08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`) |
 | v1.0.3 (Kế hoạch) | chưa có | Các việc cần sửa sau khi chạy test trên production; không ghi trong file này mà ở [`../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md) | Kế hoạch |
+| [v1.0.5](#v105-2026-11-10) | 2026-11-10 | "Định danh khách hàng": SĐT khách tùy chọn và không duy nhất; mã khách `KH-000123`; người tạo = phụ trách chính bất biến; bỏ luồng xin tham gia, chia sẻ bằng mời (tối đa 10 thành viên phụ, được mời cả người ngoài nhóm); xóa 6 endpoint cũ, thêm 2 endpoint; migration 010/011; deploy gộp v1.0.3 → v1.0.5 | Đang làm (code BE/FE và tài liệu xong, còn test, diễn tập staging và nghiệm thu) |
 
 ---
 
@@ -427,3 +428,134 @@ Không có migration. Xóa vĩnh viễn là thao tác dữ liệu có transactio
 **Đã đóng 2026-10-30:** (1) xóa vĩnh viễn xóa sạch audit cũ, chỉ giữ một dòng `CUSTOMER_PURGED`; (2) tài khoản MANAGER+STAFF coi như Manager, không xóa khách nhóm khác dù là phụ trách chính (khóa bằng test đa role); (3) không khôi phục khi xóa vĩnh viễn đã bắt đầu (`purgingAt`, 409 `CUSTOMER_PURGE_IN_PROGRESS`, `purgeInProgress` ở danh sách khách đã xóa).
 
 **Đã đóng 2026-10-29:** điều kiện xóa của STAFF (người phụ trách chính, không cần là người nhập); Manager xóa khách chỉ có mặt trong `careTeam` (không được, chỉ nhóm mình quản lý).
+
+---
+
+## v1.0.5 (2026-11-10)
+
+> Thiết kế đầy đủ: [`10_Dinh_Danh_Khach_Hang_Plan.md`](10_Dinh_Danh_Khach_Hang_Plan.md) (FR-01 đến FR-23), [`11_Dinh_Danh_Khach_Hang_Architecture.md`](11_Dinh_Danh_Khach_Hang_Architecture.md), [`12_Dinh_Danh_Khach_Hang_Tasks.md`](12_Dinh_Danh_Khach_Hang_Tasks.md) (T-01 đến T-38). Mục này chỉ **tổng hợp và truy vết**: quy tắc nào bị thay, endpoint nào xóa/thêm, điều cần lưu ý khi deploy.
+
+### 1. Tổng quan
+
+| # | Thay đổi | Trạng thái |
+|---|---|---|
+| 1 | SĐT khách **tùy chọn** và **không duy nhất**; chỉ họ tên bắt buộc; khách không SĐT lưu `null`, API trả `phoneMasked: null` | Xong (code), chờ nghiệm thu |
+| 2 | **Mã khách** `KH-000123` hệ thống sinh (counter toàn hệ thống, không tái sử dụng, bất biến); tìm theo mã phải gõ tiền tố `KH` | Xong (code), chờ nghiệm thu |
+| 3 | **Người tạo = phụ trách chính (PRIMARY)** ở mọi vai trò kể cả Quản trị, **khóa vĩnh viễn** (không đổi, không gỡ). Khách cũ có `careTeam` rỗng: Quản trị/Quản lý đặt PRIMARY một lần | Xong (code), chờ nghiệm thu |
+| 4 | Bỏ hẳn luồng xin tham gia (X2); chia sẻ khách chỉ bằng **mời** thành viên phụ, tối đa 10, mời được cả người ngoài nhóm; thông báo `CUSTOMER_ASSIGNED` cho người được mời | Xong (code), chờ nghiệm thu |
+| 5 | Bỏ tra trùng SĐT khi nhập form (`phone-lookups`) | Xong (code), chờ nghiệm thu |
+| 6 | Việc hằng ngày và nhắc lịch gửi cho mọi thành viên `careTeam` ACTIVE; tài khoản bị khóa không nhận thông báo/push | Xong (code), chờ nghiệm thu |
+| 7 | Migration 010 (pre-up) và 011 (post-up, một chiều); CLI bù mã khách; thư mục `scripts/post-migrate/` (bước 10, 20, 90); `scripts/staging.sh restore-dump` | Xong (code); diễn tập staging (T-36) đã đạt 2026-11-11, chờ Oniichan xác nhận lên production |
+
+### 2. Quyết định (đã chốt, chi tiết ở 10 mục 8 và 11 mục 1.1)
+
+1. Chỉ họ tên bắt buộc; SĐT trùng/rỗng đều hợp lệ (FR-01, FR-02).
+2. Mã khách `KH-` + số từ counter (`counters`, khóa `CUSTOMER_CODE`), cấp nguyên tử trong transaction tạo khách; không tái sử dụng; unique partial `customerCode_1` (FR-07, FR-08).
+3. Người tạo luôn là PRIMARY và khóa vĩnh viễn; không có đường đổi/gỡ PRIMARY (FR-10, FR-11).
+4. Chia sẻ = mời MEMBER (tối đa 10; vượt ⇒ 409 `CARE_TEAM_LIMIT_EXCEEDED`; rate-limit `CARE_TEAM_INVITE` 30 lần/phút/người); người được mời ACTIVE, vai trò Manager/Nhân viên; được mời cả người nhóm khác (FR-12 đến FR-17).
+5. Nghỉ việc chỉ **khóa** tài khoản, không xóa; PRIMARY bị khóa giữ nguyên trên khách; tài khoản bị khóa không nhận thông báo (FR-18).
+6. **Không giữ bản chuyển tiếp nào cho PWA bản cũ** (Oniichan 2026-11-10, FR-20): xóa hẳn endpoint/trường cũ ngay trong v1.0.5.
+7. Giữ nguyên quyết định #10 (mọi thành viên xem/gọi SĐT, ghi `PHONE_VIEWED`), #14, #34, #37 (chặn dò số: từ khóa toàn số vẫn là SĐT).
+8. Deploy **gộp** v1.0.3 → v1.0.5 (v1.0.4 chưa lên production); bước 8c bù mã danh mục tách khỏi `deploy.sh` thành script riêng dùng chung điểm gọi hậu-migrate (FR-21, FR-23).
+
+### 3. Thiết kế / quy tắc thay thế (truy vết)
+
+Bảng dưới liệt kê quy tắc cũ **giữ nguyên nội dung ở phiên bản gốc** (không sửa) và quy tắc mới thay thế.
+
+| Quy tắc cũ (phiên bản, vị trí) | Thay thế bằng (v1.0.5) |
+|---|---|
+| **Thay thế quy tắc "SĐT bắt buộc, duy nhất toàn hệ thống" của v1.0.4** (04 QT4, C1; v1.0.2 mục 7 "xóa vĩnh viễn giải phóng SĐT") | SĐT tùy chọn, không duy nhất; không còn 409 `CUSTOMER_PHONE_DUPLICATED`; "giải phóng SĐT khi xóa vĩnh viễn" mất ý nghĩa (index `phone` chỉ còn dạng thường). Migration 011 gỡ unique và đổi `anonymized:<id>` về `null` |
+| **Thay thế giả định #2 của v1.0.2 mục 9** ("xóa mềm giữ chỗ SĐT, xóa vĩnh viễn giải phóng SĐT") | Không còn "chỗ SĐT"; xóa mềm/vĩnh viễn không ảnh hưởng việc nhập SĐT của khách khác |
+| **Thay thế quyết định #2 "bỏ mã khách hàng" của v1.0.4** (04 mục 11) | Có `customerCode` (mục 4 dưới); khách nhận diện bằng mã, họ tên và (nếu có) SĐT |
+| **Thay thế quy tắc đổi/gỡ phụ trách chính của v1.0.2** (mục 6 thành viên nhóm, 04 ma trận 4.2 hàng "Đổi người phụ trách chính", C8) | PRIMARY là người tạo và khóa vĩnh viễn; `PUT /crm/customers/:id/care-team/primary` bị xóa; gỡ PRIMARY ⇒ 409 `PRIMARY_LOCKED`; `newPrimaryUserId` ở DELETE member bị bỏ; `primaryUserId` ở bulk ASSIGN bị bỏ (400). Ngoại lệ duy nhất: khách cũ `careTeam` rỗng, Quản trị/Quản lý đặt PRIMARY một lần qua `POST care-team/members` kèm `primaryUserId` |
+| **Thay thế luồng xin tham gia X2 của v1.0.4** (04 mục 6.1, 05 nhóm 2.5: `POST/GET /crm/care-team-requests`, approve/reject) | Bỏ hẳn 3 endpoint `care-team-requests`; chia sẻ chỉ bằng mời. Mã lỗi `JOIN_REQUEST_EXISTS`, `JOIN_REQUEST_RESOLVED`, `PRIMARY_REPLACEMENT_REQUIRED` bị xóa khỏi `ErrorCode`. Collection `care_team_requests` và giá trị enum cũ **giữ lại** cho dữ liệu cũ (chỉ service xóa vĩnh viễn/ẩn danh còn dùng) |
+| **Thay thế giới hạn "phụ trách chính chỉ mời người cùng nhóm" của v1.0.2** (mục 2 mục 5 và mục 4.3 mục 11: `assignable-users` giới hạn theo nhóm; 04 ma trận 4.2 hàng "Thêm thành viên chăm sóc") | Mời được người ngoài nhóm (bỏ kiểm tra cùng nhóm ở `care-team.rules`); `GET /crm/assignable-users` bị xóa, thay bằng `GET /crm/care-team-invitees` (nguồn người được mời; không truyền `customerId` thì dùng cho giao hàng loạt, chỉ Quản trị/Quản lý) và `GET /crm/customer-assignees` (nguồn ô lọc "Người phụ trách") |
+| **Thay thế quy tắc `teamIds` của v1.0.4** ("`careTeam` rỗng thì `teamIds` = nhóm của người tạo") | `teamIds` = hợp nhóm của các thành viên `careTeam` (người tạo luôn nằm trong `careTeam`); có thể là `[]` khi chỉ có Quản trị. Quản lý của nhóm người được mời thấy khách (mục 4.3 dưới) |
+| **Thay thế quy tắc "Chống dò số" qua `phone-lookups` của v1.0.4** (04 mục 7.3, quyết định #34) | Không còn `phone-lookups` nên không còn kênh dò tồn tại SĐT; vẫn chặn dò số bằng quy tắc #37 (từ khóa toàn số là SĐT) và `phone-views` ghi audit |
+| **Thay thế quy tắc "việc hằng ngày/nhắc lịch theo phụ trách chính" của v1.0.4** | Gửi cho mọi thành viên `careTeam` ACTIVE; PRIMARY bị khóa hoặc `null` không làm việc rơi vào hư không (FR-19) |
+
+### 4. Thiết kế chi tiết
+
+#### 4.1 Mã khách (FR-07 đến FR-09)
+
+`KH-` + số 6 chữ số (`KH-000123`; vượt 999999 thì dài hơn, không cắt). Counter `counters` khóa `CUSTOMER_CODE`, `$inc` nguyên tử **trong transaction tạo khách** (transaction lỗi thì số không bị tiêu, nhưng số đã cấp cho khách bị xóa vĩnh viễn không tái sử dụng). Bất biến: PATCH không nhận `customerCode`. Index `customerCode_1` unique partial (chỉ tính khi là chuỗi) để khách chưa có mã không vi phạm.
+
+**Thứ tự mã không tuyệt đối theo `createdAt` (ghi nhận, Oniichan đã đồng ý, rủi ro #9 của 11 mục 11):** script bù mã cấp mã cho khách cũ theo `createdAt, _id`, nhưng mã của khách tạo trong hai khoảng trống dưới đây có thể **không đúng thứ tự thời gian tuyệt đối**:
+
+- giữa bước 6b (migrate trước `up`) và bước `up`, khi image **v1.0.3 còn phục vụ** và tạo khách chưa có mã (các khách này sẽ nhận mã ở bước 20 theo `createdAt` như khách cũ, nên không bị lệch);
+- giữa `up` (backend mới sống, khách mới lấy số ngay từ counter) và lúc script bù mã (bước 20) chạy, thường vài giây: khách mới đã lấy số **trước** khi khách cũ được bù, nên khách tạo sau có mã nhỏ hơn một số khách cũ tạo trước nó.
+
+Hệ quả: chỉ lệch thứ tự **hiển thị** mã, không trùng mã, không mất mã; không cần xử lý. Ai cần sắp theo thời gian dùng `createdAt`, không dùng mã.
+
+#### 4.2 Người tạo = PRIMARY và nhóm chăm sóc (FR-10 đến FR-17)
+
+Người tạo khách (mọi vai trò, kể cả Quản trị) là PRIMARY ngay khi tạo; form tạo không còn field `careTeam` (gửi lên ⇒ 400). Gỡ PRIMARY ⇒ 409 `PRIMARY_LOCKED`. Mời: `POST /crm/customers/:id/care-team/members` (201), đã trong nhóm ⇒ 409 `ALREADY_IN_CARE_TEAM`, vượt 10 MEMBER ⇒ 409 `CARE_TEAM_LIMIT_EXCEEDED`, quá hạn mức ⇒ 429. Khách cũ đã quá 10 vẫn gỡ được, chỉ chặn thêm. Người mời: PRIMARY (kể cả Nhân viên) hoặc Quản trị/Quản lý theo ma trận 04 mục 4.2.
+
+#### 4.3 Quyền riêng tư khi mời người ngoài nhóm (FR-15)
+
+`teamIds` là hợp nhóm của các thành viên, nên **Quản lý của nhóm người được mời sẽ thấy khách** (hành vi được chấp nhận). Người được mời thấy toàn bộ hồ sơ và được xem/gọi SĐT (ghi `PHONE_VIEWED`; quyết định #10 giữ nguyên). `GET /crm/care-team-invitees` chỉ trả tên hiển thị kèm tên nhóm (không email/SĐT/CCCD) và có rate-limit `INVITEE_SEARCH`.
+
+#### 4.4 Khóa tài khoản (FR-18, FR-19)
+
+Nghỉ việc chỉ khóa tài khoản (API chưa có DELETE user). PRIMARY bị khóa giữ nguyên; Quản trị/Quản lý mời người khác chăm sóc phụ. Thông báo/push/việc hằng ngày không gửi cho tài khoản khóa (`BLOCKED`); mở khóa lại thì như cũ.
+
+### 5. API thay đổi
+
+Tổng số endpoint: **115** (10 dùng lại từ module cũ, 105 mới; v1.0.4 ghi 118/116 do bảng lệch, xem 05 mục 3). Xóa **6**, thêm **2**.
+
+**Đã xóa (không còn bản chuyển tiếp):**
+
+| Endpoint / trường | Hiện tượng với client cũ |
+|---|---|
+| `POST /crm/customers/phone-lookups` | 404 |
+| `POST /crm/care-team-requests`, `GET /crm/care-team-requests`, `POST /crm/care-team-requests/:id/{approve,reject}` (3 endpoint) | 404 |
+| `PUT /crm/customers/:id/care-team/primary` | 404 |
+| `GET /crm/assignable-users` | 404 |
+| Trường `careTeam` ở body `POST /crm/customers` | 400 (field lạ bị từ chối) |
+| Tham số `newPrimaryUserId` ở `DELETE /crm/customers/:id/care-team/members/:userId` | 400 |
+| Tham số `primaryUserId` ở bulk ASSIGN (`POST /crm/customer-bulk-operations`, loại `ASSIGN`) | 400 |
+
+**Đã thêm:** `GET /crm/care-team-invitees` (nguồn người được mời, FR-14), `GET /crm/customer-assignees` (nguồn ô lọc "Người phụ trách": người xuất hiện trong nhóm chăm sóc của khách người gọi được thấy, gồm cả người bị khóa kèm `isLocked`; thay một phần vai trò của `assignable-users`).
+
+**Đổi hành vi:** `POST /crm/customers` (phone tùy chọn, không 409 trùng SĐT, trả `customerCode`), `PATCH /crm/customers/:id`, `GET /crm/customers` và chi tiết (thêm `customerCode`, `phoneMasked` có thể `null`, lọc/cột người chính, tìm theo mã), `POST .../phone-views` (409 `CUSTOMER_PHONE_NOT_SET` khi không có SĐT, không ghi `PHONE_VIEWED`), `POST .../care-team/members` (giới hạn 10, `primaryUserId` chỉ khi `careTeam` rỗng và người gọi là Quản trị/Quản lý).
+
+**Mã lỗi:** thêm `CUSTOMER_PHONE_NOT_SET` (409), `PRIMARY_LOCKED` (409), `CARE_TEAM_LIMIT_EXCEEDED` (409). Xóa `CUSTOMER_PHONE_DUPLICATED`, `JOIN_REQUEST_EXISTS`, `JOIN_REQUEST_RESOLVED`, `PRIMARY_REPLACEMENT_REQUIRED`. Giữ `ALREADY_IN_CARE_TEAM`.
+
+> **Lưu ý khi deploy (PWA bản cũ):** máy còn PWA/bản FE cũ **phải tải lại trang sau deploy v1.0.5** (làm mới cứng hoặc đóng/mở lại PWA). Không có bản chuyển tiếp, nên bản cũ gọi các endpoint đã xóa ở bảng trên sẽ lỗi (màn Thêm khách, giao hàng loạt, hộp thông báo xin tham gia) và có thể lỗi hiển thị khi gặp khách có `phone` `null` (`.replace` trên `null`). Thông báo người dùng tải lại trang ngay sau deploy; ghi cùng nội dung ở `docs/01_Infrastructure/06_Production_Deploy.md` (T-19).
+
+### 6. Dữ liệu & migration
+
+| Mục | Nội dung |
+|---|---|
+| `010_crm_customer_code_index` | **pre-up** (mặc định): tạo unique partial `customerCode_1`; upsert doc `counters` `CUSTOMER_CODE` (`$setOnInsert`). Chạy **trước** `up` để backend mới sống là cấp mã đúng ngay |
+| `011_crm_drop_unique_phone` | **post-up, một chiều**: gỡ unique `phone_1`, tạo lại `phone_1` thường, đổi `anonymized:<id>` thành `null`. Chạy ở bước 90, sau bù mã |
+| Runner migration | Thuộc tính `phase` (`pre-up` mặc định, `post-up`); `--phase pre-up\|post-up\|all`; từ chối chạy `pre-up` khi còn `post-up` chờ có số nhỏ hơn một `pre-up` chờ |
+| CLI bù mã khách | `crm-customer-codes.cli`: bù mã cho khách cũ (kể cả đã xóa mềm) theo `createdAt, _id`; idempotent, không đổi mã đã cấp; `--dry-run`; không làm gì khi migration 010 chưa áp dụng |
+| `scripts/post-migrate/` | `10-catalog-codes.sh` (bước 8c cũ tách ra), `20-customer-codes.sh`, `90-post-up-migrations.sh`; `deploy.sh` chỉ giữ một hàm `run_post_migrate_steps`; bước nào thoát khác 0 thì deploy thất bại, các bước sau không chạy |
+| `scripts/staging.sh restore-dump` | Nạp bản sao dump production **chỉ vào staging** (T-36); không động production |
+
+**Thứ tự deploy gộp:** `mongodump` → 007, 008, 009, 010 (pre-up) → `up` → bước 10 → bước 20 → bước 90 (011).
+
+> **Đường lùi:** trước bước 90 (011 chưa chạy) được lùi image v1.0.3 như thường lệ. **Sau bước 90 chỉ sửa tiến (fix forward), không lùi về image v1.0.3** (011 một chiều: `phone` có thể `null` hoặc trùng, mapper v1.0.3 giả định `phone` là chuỗi). Nếu bắt buộc quay lại phải khôi phục từ `mongodump` (mất dữ liệu sau thời điểm dump) và do Oniichan quyết. `print_recovery` của `deploy.sh` in rõ câu này kèm cách kiểm 011 đã chạy.
+
+### 7. Giao diện
+
+FE-A (`RealEstateAdminApp`) và FE-B (`stnd-crm-unified`) làm tương đương: form Thêm/Sửa khách (SĐT tùy chọn, bỏ dấu `*`, bỏ banner trùng SĐT); `CustomerCodeBadge` hiển thị mã ở danh sách/chi tiết, cột và bộ lọc người chính, tìm theo mã; khách không SĐT ở lịch hẹn/việc hằng ngày (ẩn nút Gọi/Zalo, không lỗi); thẻ nhóm chăm sóc (bỏ đổi/gỡ PRIMARY, bỏ UI xin tham gia, chọn người mời ngoài nhóm, hiển thị thành viên bị khóa); storage của prototype nâng lên v7.
+
+### 8. Ảnh hưởng tài liệu khác
+
+04 (mục 3.2, 4.2, 6.1, 7.3, 11), 05 (số endpoint, mã lỗi), 06 (theo dõi milestone), README, `docs/01_Infrastructure/06_Production_Deploy.md` (mục 11, hướng dẫn lùi và tải lại PWA). Các phiên bản cũ (v1.0.2 và `08_Quan_Ly_Phien_Ban`) **giữ nguyên**, chỉ đối chiếu qua bảng mục 3.
+
+### 9. Kiểm thử / nghiệm thu
+
+Theo 10 mục 9 và 12 (T-32 đến T-38): viết lại test integration BE M1 đến M5, deletion, qa theo quy tắc mới; test chuỗi migration 007 → 011 trên Mongo replica set thật (T-34); E2E Playwright (T-35); diễn tập staging bằng bản sao dump production v1.0.3 → v1.0.5 (T-36, đã chạy 2026-11-11) và nghiệm thu (T-37, đạt); audit coverage chuẩn Enterprise (T-38).
+
+### 10. Rủi ro / điều chưa kiểm chứng
+
+| # | Rủi ro | Giảm thiểu |
+|---|---|---|
+| 1 | Sau khi chạy 011 và có SĐT trùng thì **không dựng lại được** unique `phone` | Chạy 011 ở bước cuối sau QA, `mongodump` trước; chỉ sửa tiến |
+| 2 | PWA bản cũ gọi endpoint đã xóa hoặc nhận `phone` `null` | Thông báo tải lại sau deploy (mục 5); không có bản chuyển tiếp theo quyết định của Oniichan |
+| 3 | Mời người ngoài nhóm mở rộng phạm vi nhìn thấy khách (Quản lý nhóm người được mời thấy khách) | Chấp nhận, ghi ở mục 4.3 và 04 mục 7.3 |
+| 4 | Thứ tự mã không đúng tuyệt đối `createdAt` cho khách tạo trong khoảng trống deploy | Chấp nhận (mục 4.1) |
+| 5 | Dump production chỉ có 8 khách, không có SĐT trùng hay `anonymized:`: lượt diễn tập T-36 (2026-11-11) chưa kiểm chuyển `anonymized:` về `null` và thời gian chạy trên dữ liệu lớn (hai việc này chỉ được test integration phủ) | Chấp nhận; xem thời gian bước 20/90 thực tế ở lần deploy production |

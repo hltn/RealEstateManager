@@ -153,8 +153,8 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
 
   let seq = 0;
   /**
-   * Tạo khách bằng Admin (người nhập = admin, nên người phụ trách chính KHÔNG phải người nhập) rồi đặt tình trạng.
-   * `teamIds` của khách suy ra từ nhóm của các thành viên careTeam.
+   * Người phụ trách chính tự tạo khách (T-07: người tạo luôn là PRIMARY), sau đó Admin thêm các thành viên phụ qua
+   * `POST care-team/members`, rồi đặt tình trạng. `teamIds` của khách suy ra từ nhóm của các thành viên careTeam.
    */
   const createCustomer = async (
     primary: string,
@@ -164,23 +164,33 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
   ) => {
     const phone = `091${String(4_000_000 + ++seq)}`;
     const fullName = `Khách Xóa số ${seq}`;
-    const res = await call('POST', '/crm/customers', 'admin', {
+    const res = await call('POST', '/crm/customers', primary, {
       fullName,
       phone,
       email: `kh${seq}@example.com`,
-      careTeam: {
-        primaryUserId: ids[primary],
-        memberIds: members.map((key) => ids[key]),
-      },
       ...extra,
     });
     expect([res.status, res.body.message]).toEqual([201, undefined]);
     const id = res.body.data.id as string;
+    if (members.length > 0) {
+      const added = await call(
+        'POST',
+        `/crm/customers/${id}/care-team/members`,
+        'admin',
+        { userIds: members.map((key) => ids[key]) },
+      );
+      expect(added.status).toBe(201);
+    }
     await col('customers').updateOne(
       { _id: oid(id) },
       { $set: { statusId: dropped ? status.DROPPED : status.INTERESTED } },
     );
-    return { id, phone, fullName };
+    return {
+      id,
+      phone,
+      fullName,
+      customerCode: res.body.data.customerCode as string,
+    };
   };
 
   const del = (as: string, id: string, reason: string | null = 'Khách bỏ') =>
@@ -402,10 +412,16 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect((await del('mgrA', customer.id)).status).toBe(204);
     });
 
-    it('STAFF là phụ trách chính nhưng KHÔNG phải người nhập: xóa được khách "Bỏ" (204), có audit, SĐT vẫn bị giữ', async () => {
+    it('STAFF là phụ trách chính nhưng KHÔNG phải người nhập: xóa được khách "Bỏ" (204), có audit, SĐT không còn bị giữ chỗ', async () => {
       const customer = await createCustomer('staffA');
+      // T-07: qua API người tạo luôn là PRIMARY; dữ liệu cũ (người nhập khác phụ trách chính) dựng thẳng trong DB.
+      await col('customers').updateOne(
+        { _id: oid(customer.id) },
+        { $set: { createdBy: oid(ids.admin) } },
+      );
       const doc = await col('customers').findOne({ _id: oid(customer.id) });
       expect(String(doc!.createdBy)).toBe(ids.admin);
+      expect(String(doc!.primaryAssigneeId)).toBe(ids.staffA);
       expect((await del('staffA', customer.id, 'Khách từ chối')).status).toBe(
         204,
       );
@@ -416,15 +432,12 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
         actorId: oid(ids.staffA),
         actorRole: 'STAFF',
       });
-      // Xóa mềm vẫn giữ chỗ SĐT.
+      // v1.0.5 (FR-01): bỏ ràng buộc trùng SĐT, nên xóa mềm không còn "giữ chỗ" SĐT; tạo khách mới cùng SĐT vẫn được (201).
       const again = await call('POST', '/crm/customers', 'admin', {
         fullName: 'Trùng SĐT',
         phone: customer.phone,
       });
-      expect([again.status, again.body.errorCode]).toEqual([
-        409,
-        'CUSTOMER_PHONE_DUPLICATED',
-      ]);
+      expect(again.status).toBe(201);
     });
 
     it('STAFF chỉ là thành viên careTeam (không phải phụ trách chính): 403; không thuộc careTeam: 404', async () => {
@@ -450,7 +463,7 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect(await isSoftDeleted(customer.id)).toBe(false);
     });
 
-    it('đổi người phụ trách chính: người phụ trách CŨ mất quyền xóa, người MỚI có quyền (quyền theo phụ trách HIỆN TẠI)', async () => {
+    it('FR-11: PRIMARY bị khóa — Quản trị không đổi được phụ trách chính (PUT primary 404), người phụ trách CŨ vẫn có quyền xóa, thành viên phụ không', async () => {
       const customer = await createCustomer('staffA', ['staffA2']);
       const change = await call(
         'PUT',
@@ -458,9 +471,9 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
         'admin',
         { userId: ids.staffA2 },
       );
-      expect(change.status).toBe(200);
-      expect((await del('staffA', customer.id)).status).toBe(403);
-      expect((await del('staffA2', customer.id)).status).toBe(204);
+      expect(change.status).toBe(404);
+      expect((await del('staffA2', customer.id)).status).toBe(403);
+      expect((await del('staffA', customer.id)).status).toBe(204);
     });
   });
 
@@ -698,7 +711,12 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
   // ---------------------------------------------------------------------------------------------
   describe('Xóa vĩnh viễn DELETE /crm/deleted-customers/:id', () => {
     let tagId: string;
-    let target: { id: string; phone: string; fullName: string };
+    let target: {
+      id: string;
+      phone: string;
+      fullName: string;
+      customerCode: string;
+    };
     let bystander: { id: string };
     let bystanderAuditCount: number;
     const fileKeys = ['purge/a.jpg', 'purge/b.jpg', 'purge/c.jpg'];
@@ -1073,6 +1091,18 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
         phone: target.phone,
       });
       expect([reuse.status, reuse.body.message]).toEqual([201, undefined]);
+      // FR-07: xóa vĩnh viễn xóa cả dòng khách nhưng KHÔNG hoàn lại bộ đếm: mã đã cấp không bao giờ được dùng lại.
+      expect(target.customerCode).toMatch(/^KH-\d{6,}$/);
+      expect(reuse.body.data.customerCode).not.toBe(target.customerCode);
+      expect(
+        await col('customers').countDocuments({
+          customerCode: target.customerCode,
+        }),
+      ).toBe(0);
+      const codeSeq = (code: string) => Number(code.slice('KH-'.length));
+      expect(codeSeq(reuse.body.data.customerCode)).toBeGreaterThan(
+        codeSeq(target.customerCode),
+      );
     });
   });
 

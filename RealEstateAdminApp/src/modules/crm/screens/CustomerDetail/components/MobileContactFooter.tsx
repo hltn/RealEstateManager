@@ -9,6 +9,8 @@ import { BUTTON_OUTLINE_BASE_CLASS, BUTTON_PRIMARY_BASE_CLASS, BUTTON_SUCCESS_BA
 
 interface MobileContactFooterProps {
   customerId: string;
+  /** Khách chưa có SĐT (FR-02): ẨN (không disable) nút Gọi/Nhắn Zalo, chỉ còn "Ghi chú". */
+  hasPhone: boolean;
   /** Bấm "Ghi chú": màn cha chuyển sang tab Nhật ký và mở form ghi chú đầy đủ (cùng việc với nút "Ghi chú" ở thẻ đầu hồ sơ). */
   onAddNote: () => void;
 }
@@ -19,7 +21,7 @@ interface MobileContactFooterProps {
  */
 const FOOTER_BUTTON_CLASS = 'h-12 whitespace-nowrap px-3 text-sm max-[359px]:gap-0 max-[359px]:px-2 max-[359px]:[&>svg]:hidden';
 
-export const MobileContactFooter = ({ customerId, onAddNote }: MobileContactFooterProps) => {
+export const MobileContactFooter = ({ customerId, hasPhone, onAddNote }: MobileContactFooterProps) => {
   const { callCustomer, messageZalo } = useContactActions();
 
   return (
@@ -28,14 +30,18 @@ export const MobileContactFooter = ({ customerId, onAddNote }: MobileContactFoot
         <NotebookPen size={18} aria-hidden="true" />
         Ghi chú
       </button>
-      <button type="button" onClick={() => callCustomer(customerId)} className={`${BUTTON_PRIMARY_BASE_CLASS} ${FOOTER_BUTTON_CLASS} min-w-0 flex-1`}>
-        <Phone size={18} aria-hidden="true" />
-        Gọi điện
-      </button>
-      <button type="button" onClick={() => messageZalo(customerId)} className={`${BUTTON_SUCCESS_BASE_CLASS} ${FOOTER_BUTTON_CLASS} min-w-0 flex-1`}>
-        <MessageCircle size={18} aria-hidden="true" />
-        Nhắn Zalo
-      </button>
+      {hasPhone && (
+        <>
+          <button type="button" onClick={() => callCustomer(customerId)} className={`${BUTTON_PRIMARY_BASE_CLASS} ${FOOTER_BUTTON_CLASS} min-w-0 flex-1`}>
+            <Phone size={18} aria-hidden="true" />
+            Gọi điện
+          </button>
+          <button type="button" onClick={() => messageZalo(customerId)} className={`${BUTTON_SUCCESS_BASE_CLASS} ${FOOTER_BUTTON_CLASS} min-w-0 flex-1`}>
+            <MessageCircle size={18} aria-hidden="true" />
+            Nhắn Zalo
+          </button>
+        </>
+      )}
     </footer>
   );
 };

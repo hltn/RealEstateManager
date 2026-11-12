@@ -8,12 +8,14 @@ import {
   getProjectErrors,
   isValidProjectCode,
   listProjectFilterOptions,
+  listProjectPropertyTypeOptions,
   normalizeProject,
   parseLegacyPriceText,
   parseLegacyProjectStatus,
   PROJECT_STATUS_LABELS,
   suggestProjectCode,
   toProjectLabel,
+  toPropertyTypeLabels,
   UNKNOWN_PROJECT_LABEL,
 } from './projectRules';
 
@@ -247,7 +249,7 @@ describe('formatProjectPrice + diffProject', () => {
 
 describe('toProjectLabel / listProjectFilterOptions', () => {
   it('nhãn = tên ngắn; không có trong danh mục -> "Dự án đã ngừng"', () => {
-    expect(toProjectLabel(projects, 'proj-1')).toBe("Q'Terra");
+    expect(toProjectLabel(projects, 'QTERRA')).toBe("Q'Terra");
     expect(toProjectLabel(projects, 'proj-ghost')).toBe(UNKNOWN_PROJECT_LABEL);
   });
 
@@ -268,3 +270,36 @@ describe('toProjectLabel / listProjectFilterOptions', () => {
   });
 });
 
+
+describe('loại hình dự án theo danh mục property_type (FR-46)', () => {
+  const items = [
+    { value: 'APT', label: 'Căn hộ', isActive: true },
+    { value: 'OLD', label: 'Loại cũ', isActive: false },
+    { value: 'OLD2', label: 'Loại cũ 2', isActive: false },
+  ];
+
+  it('chỉ lựa chọn đang dùng; lựa chọn đã tắt chỉ hiện khi dự án đang dùng nó', () => {
+    expect(listProjectPropertyTypeOptions(items, []).map((option) => option.value)).toEqual(['APT']);
+    expect(listProjectPropertyTypeOptions(items, ['OLD']).map((option) => option.value)).toEqual(['APT', 'OLD']);
+  });
+
+  it('mã đang dùng không còn trong danh mục: hiện bằng chính mã, đánh dấu không hoạt động', () => {
+    expect(listProjectPropertyTypeOptions(items, ['GONE'])).toEqual([items[0], { value: 'GONE', label: 'GONE', isActive: false }]);
+  });
+
+  it('danh mục chưa tải (undefined): không có lựa chọn, vẫn giữ mã đang dùng', () => {
+    expect(listProjectPropertyTypeOptions(undefined, [])).toEqual([]);
+    expect(listProjectPropertyTypeOptions(undefined, ['APT'])).toEqual([{ value: 'APT', label: 'APT', isActive: false }]);
+  });
+
+  it('toPropertyTypeLabels: nhãn hiện tại theo mã (đổi tên lựa chọn thì nhãn đổi), mã lạ giữ nguyên mã', () => {
+    expect(toPropertyTypeLabels(['APT', 'OLD', 'X'], items)).toEqual(['Căn hộ', 'Loại cũ', 'X']);
+    expect(toPropertyTypeLabels(['APT'], [{ value: 'APT', label: 'Chung cư', isActive: true }])).toEqual(['Chung cư']);
+  });
+
+  it('getProjectErrors: quá 10 mã loại hình bị báo lỗi', () => {
+    const codes = Array.from({ length: 11 }, (_, index) => `T${index}`);
+    expect(getProjectErrors(projects, { ...valid, propertyTypeCodes: codes }).propertyTypes).toBe('Tối đa 10 loại hình.');
+    expect(getProjectErrors(projects, { ...valid, propertyTypeCodes: codes.slice(0, 10) }).propertyTypes).toBeUndefined();
+  });
+});

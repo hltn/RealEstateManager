@@ -10,10 +10,11 @@ const EPOCH = '2026-01-01T00:00:00.000Z';
 
 export const createCustomerRecord = (overrides: Partial<Customer> & Pick<Customer, 'id'>): Customer => {
   const base: Customer = {
+    customerCode: null,
     fullName: '',
     phone: '',
     email: '',
-    statusId: 'st-not-contacted',
+    statusId: 'NOT_CONTACTED',
     statusChangedAt: EPOCH,
     sourceId: null,
     interestedProjectIds: [],

@@ -3,6 +3,7 @@
 import { CalendarPlus, MessageCircle, NotebookPen, Phone, Star } from 'lucide-react';
 import type { CustomerDetail } from '@crm/api';
 import { CrmBreadcrumb } from '@crm/components/CrmBreadcrumb';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { formatVnRelative, formatVnDateTime } from '@crm/lib/dateTime';
 import { getInitials } from '@crm/lib/staff';
@@ -22,13 +23,17 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
   const { callCustomer, messageZalo, openQuickNote } = useContactActions();
   const isDesktop = variant === 'desktop';
   const updatedText = formatVnRelative(customer.lastUpdatedAt);
+  const hasPhone = customer.phoneMasked !== null;
 
   const meta = (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-theme-sm text-gray-500 dark:text-gray-400">
-      <span className="inline-flex items-center gap-1.5">
-        <Phone size={15} aria-hidden="true" className="text-gray-400" />
-        <PhoneDisplay customer={customer} />
-      </span>
+      <CustomerCodeBadge code={customer.customerCode} />
+      {hasPhone && (
+        <span className="inline-flex items-center gap-1.5">
+          <Phone size={15} aria-hidden="true" className="text-gray-400" />
+          <PhoneDisplay customer={customer} />
+        </span>
+      )}
       <span className="inline-flex items-center gap-1">
         <Star size={14} aria-hidden="true" className="fill-warning-400 text-warning-400" />
         Phụ trách chính:{' '}
@@ -82,14 +87,18 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
 
         {/* 1 nút brand duy nhất (Gọi) theo quy tắc màu Admin: Gọi xanh dương, Zalo xanh lá. */}
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <button type="button" onClick={() => callCustomer(customer.id)} className={BUTTON_PRIMARY_LG_CLASS}>
-            <Phone size={18} aria-hidden="true" />
-            Gọi
-          </button>
-          <button type="button" onClick={() => messageZalo(customer.id)} className={BUTTON_SUCCESS_LG_CLASS}>
-            <MessageCircle size={18} aria-hidden="true" />
-            Zalo
-          </button>
+          {hasPhone && (
+            <>
+              <button type="button" onClick={() => callCustomer(customer.id)} className={BUTTON_PRIMARY_LG_CLASS}>
+                <Phone size={18} aria-hidden="true" />
+                Gọi
+              </button>
+              <button type="button" onClick={() => messageZalo(customer.id)} className={BUTTON_SUCCESS_LG_CLASS}>
+                <MessageCircle size={18} aria-hidden="true" />
+                Zalo
+              </button>
+            </>
+          )}
           <button type="button" onClick={() => openQuickNote(customer.id)} aria-label="Ghi chú nhanh" title="Ghi chú nhanh" className={ICON_BUTTON_OUTLINE_CLASS}>
             <NotebookPen size={18} aria-hidden="true" />
           </button>

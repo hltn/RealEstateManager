@@ -14,7 +14,10 @@ export enum CareLogSource {
   SYSTEM = 'SYSTEM',
 }
 
-/** `crm_attachments.status`. M3 không có job xử lý ảnh nên ảnh upload xong vào thẳng `READY`. */
+/**
+ * `crm_attachments.status`. Ảnh upload xong vào thẳng `READY` (không chờ xử lý); từ v1.0.4 job `attachment.thumbnail`
+ * chạy bất đồng bộ sau đó để sinh thumbnail và chỉ cập nhật `thumbStatus`, không đổi `status`.
+ */
 export enum AttachmentStatus {
   PENDING = 'PENDING',
   PROCESSING = 'PROCESSING',
@@ -22,6 +25,16 @@ export enum AttachmentStatus {
   ATTACHED = 'ATTACHED',
   REJECTED = 'REJECTED',
   REMOVED = 'REMOVED',
+}
+
+/**
+ * `crm_attachments.thumbStatus` (FR-26). Thiếu field (ảnh cũ) coi như `NONE`; `FAILED` = job thumbnail hết lượt
+ * thử, ảnh vẫn dùng được (`thumbUrl` rơi về `url`) và không được bù lại.
+ */
+export enum ThumbStatus {
+  NONE = 'NONE',
+  READY = 'READY',
+  FAILED = 'FAILED',
 }
 
 export enum AttachmentKind {

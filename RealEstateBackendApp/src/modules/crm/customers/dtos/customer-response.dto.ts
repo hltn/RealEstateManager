@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RefDto, UserRefDto } from '../../../../common/dto/ref.dto';
+import {
+  CatalogRefDto,
+  RefDto,
+  UserRefDto,
+} from '../../../../common/dto/ref.dto';
+import { UserRole } from '../../../../common/enums/user-role.enum';
 import { ListGroup } from '../../catalogs/catalog.enums';
 import {
   CareRole,
@@ -38,8 +43,19 @@ export class CriteriaResponseDto {
   @ApiProperty({ type: CriterionResponseDto }) timing: CriterionResponseDto;
 }
 
+/** `UserRef` của thành viên nhóm chăm sóc: thêm role hệ thống để FE tra vai trò mà không gọi danh sách người dùng. */
+export class CareTeamUserRefDto extends UserRefDto {
+  @ApiPropertyOptional({
+    enum: UserRole,
+    nullable: true,
+    description:
+      'Role cao nhất của tài khoản (ADMIN > MANAGER > STAFF > EDITOR); null/thiếu khi không xác định được',
+  })
+  role?: UserRole | null;
+}
+
 export class CareTeamMemberDto {
-  @ApiProperty({ type: UserRefDto }) user: UserRefDto;
+  @ApiProperty({ type: CareTeamUserRefDto }) user: CareTeamUserRefDto;
   @ApiProperty({ enum: CareRole }) role: CareRole;
   @ApiProperty() addedAt: string;
   @ApiProperty({ nullable: true, type: UserRefDto }) addedBy: UserRefDto | null;
@@ -58,12 +74,35 @@ export class DataConsentResponseDto {
 /** `CustomerListItem` (tài liệu 05 mục 1.6). KHÔNG có `phone` đầy đủ, CCCD hay `searchText`. */
 export class CustomerListItemDto {
   @ApiProperty() id: string;
+  @ApiProperty({
+    example: 'KH-000123',
+    nullable: true,
+    type: String,
+    description:
+      'Mã khách tự sinh (FR-07), hiện cho mọi vai trò (không nhạy cảm); null khi khách chưa được bù mã (dữ liệu cũ)',
+  })
+  customerCode: string | null;
   @ApiProperty() fullName: string;
-  @ApiProperty({ example: '0912 ••• 678' }) phoneMasked: string;
+  @ApiProperty({
+    example: '0912 ••• 678',
+    nullable: true,
+    type: String,
+    description: 'null khi khách không có SĐT hoặc đã ẩn danh',
+  })
+  phoneMasked: string | null;
+  @ApiProperty({
+    type: [String],
+    example: ['LIVING', 'INVEST_RENT'],
+    description:
+      'Mã lựa chọn trường chân dung "Mục đích mua" (purchase_purposes); rỗng khi chưa có hoặc khách đã ẩn danh. FE dịch mã sang nhãn theo cấu hình trường',
+  })
+  purchasePurposes: string[];
   @ApiProperty({ type: StatusRefDto }) status: StatusRefDto;
-  @ApiProperty({ nullable: true, type: RefDto }) source: RefDto | null;
-  @ApiProperty({ type: [RefDto] }) projects: RefDto[];
-  @ApiProperty({ nullable: true, type: RefDto }) area: RefDto | null;
+  @ApiProperty({ nullable: true, type: CatalogRefDto })
+  source: CatalogRefDto | null;
+  @ApiProperty({ type: [CatalogRefDto] }) projects: CatalogRefDto[];
+  @ApiProperty({ nullable: true, type: CatalogRefDto })
+  area: CatalogRefDto | null;
   @ApiProperty({ type: [RefDto], description: 'Thẻ sở thích/nghề nghiệp' })
   tags: RefDto[];
   @ApiProperty({ enum: [0, 25, 50, 75, 100] }) progress: number;
@@ -82,7 +121,11 @@ export class CustomerListItemDto {
 export class CustomerPermissionsDto {
   @ApiProperty() canEdit: boolean;
   @ApiProperty() canManageCareTeam: boolean;
-  @ApiProperty() canChangePrimary: boolean;
+  @ApiProperty({
+    description:
+      'Admin/Manager và careTeam rỗng (khách cũ chưa có PRIMARY): được đặt PRIMARY đúng một lần',
+  })
+  canSetInitialPrimary: boolean;
   @ApiProperty() canDelete: boolean;
 }
 
@@ -141,7 +184,7 @@ export class CustomerListCountsDto {
   @ApiProperty() NET: number;
   @ApiProperty() DROPPED: number;
   @ApiProperty({ type: 'array', items: { type: 'object' } })
-  byStatus: Array<{ statusId: string; count: number }>;
+  byStatus: Array<{ statusId: string; statusCode: string; count: number }>;
 }
 
 export class ChangeStatusResponseDto {
@@ -175,21 +218,6 @@ export class CriteriaUpdateResponseDto {
       'Chỉ có khi tình trạng khách vừa được tự chuyển (đạt 3/4 tiêu chí -> Khách net; xuống dưới 3/4 -> Có quan tâm)',
   })
   autoStatusChange?: AutoStatusChangeDto;
-}
-
-export class PhoneLookupResponseDto {
-  @ApiProperty({ example: '+84912345678' }) normalizedPhone: string;
-  @ApiProperty() exists: boolean;
-  @ApiProperty() isAccessible: boolean;
-  @ApiPropertyOptional() customerId?: string;
-  @ApiPropertyOptional() customerRef?: string;
-  @ApiPropertyOptional({ nullable: true, type: String }) caredByName?:
-    | string
-    | null;
-  @ApiProperty() canRequestJoin: boolean;
-  @ApiProperty() hasPendingRequest: boolean;
-  @ApiPropertyOptional({ description: 'Chỉ Quản trị thấy' })
-  isDeleted?: boolean;
 }
 
 export class PhoneViewResponseDto {

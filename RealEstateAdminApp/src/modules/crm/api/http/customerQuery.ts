@@ -3,6 +3,7 @@
  * Backend dùng `forbidNonWhitelisted`: KHÔNG gửi tham số lạ; `q` phải 2–100 ký tự.
  */
 import type { CustomerListQuery } from '../types';
+import { refListParam } from './catalogIds';
 import type { QueryParams } from './crmHttp';
 
 export const SEARCH_MIN_LENGTH = 2;
@@ -17,10 +18,11 @@ export const normalizeSearchTerm = (raw: string | undefined): string | undefined
 /** Bộ lọc chung của danh sách và `list-counts`. */
 export const buildCustomerFilterParams = (query: CustomerListQuery): QueryParams => ({
   q: normalizeSearchTerm(query.q),
-  statusIds: query.statusIds,
-  sourceIds: query.sourceIds,
-  projectIds: query.projectIds,
-  areaIds: query.areaIds,
+  // FR-40: id của UI = `code` -> gửi `…Codes`; ObjectId cũ (bản ghi chưa migrate) vẫn gửi `…Ids`.
+  ...refListParam('statusCodes', 'statusIds', query.statusIds, 'statuses'),
+  ...refListParam('sourceCodes', 'sourceIds', query.sourceIds, 'leadSources'),
+  ...refListParam('projectCodes', 'projectIds', query.projectIds, 'projects'),
+  ...refListParam('areaCodes', 'areaIds', query.areaIds, 'areas'),
   assigneeIds: query.assigneeIds,
   primaryAssigneeIds: query.primaryAssigneeIds,
   progress: query.progress,
@@ -28,6 +30,8 @@ export const buildCustomerFilterParams = (query: CustomerListQuery): QueryParams
   updatedTo: query.updatedTo,
   occupation: query.occupation?.trim() || undefined,
   tagIds: query.tagIds,
+  // FR-49: `fieldKey:value` đã đúng định dạng backend; mảng rỗng bị `cleanParams` bỏ.
+  personaFilters: query.personaFilters,
 });
 
 /** `GET /crm/customers`: `listGroup` = ALL là mặc định nên không gửi. */

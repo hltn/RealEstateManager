@@ -52,3 +52,7 @@ RealEstateBackendApp/.e2e-dist/
 
 # Staging local (scripts/staging.sh): env giả sinh ngẫu nhiên, log, backup, dữ liệu tạm. Không bao giờ commit.
 /.staging/
+
+.archify/
+
+skills-lock.json

@@ -32,6 +32,8 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
   const TypeIcon = style.icon;
   const actionVariant = getAppointmentActionVariant(appointment.type);
   const isCompleted = appointment.status === 'DONE';
+  /** Khách chưa có SĐT (null hoặc "" của dữ liệu cũ): ẩn nút Gọi. */
+  const hasPhone = Boolean(appointment.customer.phoneMasked);
   const title = getAppointmentTitle(appointment);
 
   return (
@@ -116,10 +118,12 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
       <div className="flex items-center gap-2">
         {actionVariant === 'visit' && (
           <>
-            <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
-              <PhoneCall size={16} aria-hidden="true" />
-              Gọi nhanh
-            </button>
+            {hasPhone && (
+              <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
+                <PhoneCall size={16} aria-hidden="true" />
+                Gọi nhanh
+              </button>
+            )}
             <button type="button" onClick={() => selectCustomer(appointment.customer.id)} className={ACTION_GRAY_CLASS}>
               <UserRound size={16} aria-hidden="true" />
               Vào hồ sơ khách
@@ -147,10 +151,12 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
 
         {actionVariant === 'reminder' && (
           <>
-            <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_PRIMARY_CLASS}>
-              <PhoneCall size={16} aria-hidden="true" />
-              Gọi ngay cho khách
-            </button>
+            {hasPhone && (
+              <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_PRIMARY_CLASS}>
+                <PhoneCall size={16} aria-hidden="true" />
+                Gọi ngay cho khách
+              </button>
+            )}
           </>
         )}
       </div>

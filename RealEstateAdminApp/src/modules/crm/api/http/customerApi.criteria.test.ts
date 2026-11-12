@@ -17,10 +17,10 @@ describe('patchCriteria (PT-023)', () => {
     const result = await patchCriteria('c1', 7, { finance: { isDone: true } });
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: 'patch', url: '/crm/customers/c1/criteria', data: { version: 7, finance: { isDone: true } } }));
     expect(result.version).toBe(9);
-    expect(result.autoStatusChange?.to).toMatchObject({ id: 's-net', code: 'NET', label: 'Net', listGroup: 'INTERESTED' });
+    expect(result.autoStatusChange?.to).toMatchObject({ id: 'NET', code: 'NET', label: 'Net', listGroup: 'INTERESTED' });
     expect(result.autoStatusChange?.to).toHaveProperty('tone');
     expect(result.autoStatusChange?.to).not.toHaveProperty('color');
-    expect(result.autoStatusChange?.from).toMatchObject({ id: 's-int', code: 'INTERESTED', label: 'Quan tâm' });
+    expect(result.autoStatusChange?.from).toMatchObject({ id: 'INTERESTED', code: 'INTERESTED', label: 'Quan tâm' });
   });
 
   it('from = null (không có tình trạng trước) vẫn giữ null', async () => {

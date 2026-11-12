@@ -1,12 +1,14 @@
-// "Nhóm chăm sóc" (C8, QT7, X2): thành viên (★ = phụ trách chính), thêm/bớt người, đổi phụ trách chính,
-// duyệt đề nghị tham gia. Quyền theo ma trận 04 §4.2: thêm/gỡ thành viên = Quản trị, Quản lý, phụ trách chính;
-// đổi/gỡ phụ trách chính = Quản trị, Quản lý (gỡ phải chọn người thay). Luôn còn đúng 1 phụ trách chính.
-import { useState } from 'react';
-import { Check, Crown, Plus, Trash2, UsersRound, X } from 'lucide-react';
-import { useAssignableUsers, useCareTeamRequests, useCrmApi, type ApiResult, type CustomerDetail } from '@crm/api';
-import { ConfirmDialog } from '@crm/components/ConfirmDialog';
-import { formatVnDateTime } from '@crm/lib/dateTime';
-import { BUTTON_DASHED_CLASS, BUTTON_LINK_CLASS, BUTTON_PRIMARY_CLASS, CARD_CLASS, INSET_CLASS, MUTED_TEXT_CLASS, SOLID_INPUT_CLASS } from '@crm/lib/uiClasses';
+// "Nhóm chăm sóc" (C8, v1.0.5): người chăm sóc chính (PRIMARY) = chủ khách, cố định (không đổi/gỡ); chia sẻ chỉ bằng cách MỜI
+// tối đa 10 thành viên phụ. Không còn luồng xin tham gia. Người để mời lấy từ `CareTeamInvitePicker` (tìm + phân trang, chỉ tải khi mở khung mời).
+// Quản trị/Quản lý đặt người chăm sóc chính lần đầu có thêm lựa chọn "Chính tôi" (server không trả người gọi trong danh sách mời).
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Crown, Plus, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
+import { useAuthStore } from '../../../../../stores/auth.store';
+import { hasTeamRole, rolesOf } from '../../../../../utils/userRoles';
+import { useCrmActor, useCrmApi, type ApiResult, type CareTeamInvitee, type CareTeamMemberView, type CustomerDetail } from '@crm/api';
+import { CareTeamInvitePicker } from '@crm/components/CareTeamInvitePicker';
+import { countCareTeamMembers, describeCareTeamError, getRemainingMemberSlots, MAX_CARE_TEAM_MEMBERS } from '@crm/lib/careTeamRules';
+import { BUTTON_DASHED_CLASS, BUTTON_PRIMARY_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, INSET_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import { CardHeading, CareTeamAvatars } from './DetailParts';
 
@@ -14,41 +16,120 @@ interface CareTeamCardProps {
   customer: CustomerDetail;
 }
 
+/** Khung đang mở: mời thành viên phụ, hoặc đặt người chăm sóc chính lần đầu (khách chưa có nhóm). */
+type PanelMode = 'invite' | 'primary';
+/** Nơi trả focus sau khi đóng khung: nút đã mở khung, hoặc nút "Mời người" sau khi đặt PRIMARY thành công (nút đặt PRIMARY khi đó biến mất). */
+type FocusTarget = PanelMode | 'afterPrimarySet';
+
+const SELF_LABEL = 'Chính tôi';
+
+const MemberRow = ({ member, canRemove, onRemove }: { member: CareTeamMemberView; canRemove: boolean; onRemove: () => void }) => {
+  const isPrimary = member.role === 'PRIMARY';
+  return (
+    <li className={`${INSET_CLASS} flex items-center justify-between gap-2 p-2.5`}>
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 text-theme-sm font-medium text-gray-800 dark:text-white/90">
+          {isPrimary && <Crown size={14} aria-hidden="true" className="shrink-0 text-warning-500" />}
+          <span className="truncate">{member.user.fullName}</span>
+        </p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+          <span>{isPrimary ? 'Phụ trách chính' : 'Cùng chăm sóc'}</span>
+          {member.user.jobTitle && <span>· {member.user.jobTitle}</span>}
+          {isPrimary && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Chủ khách</span>}
+          {member.user.isLocked && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>đã khóa</span>}
+        </p>
+      </div>
+      {canRemove && (
+        <button
+          type="button"
+          aria-label={`Gỡ ${member.user.displayName} khỏi nhóm chăm sóc`}
+          title="Gỡ khỏi nhóm"
+          onClick={onRemove}
+          className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-error-50 hover:text-error-500 dark:hover:bg-error-500/10"
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      )}
+    </li>
+  );
+};
+
 export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
   const api = useCrmApi();
+  const actor = useCrmActor();
+  const authUser = useAuthStore((state) => state.user);
   const { showToast } = useCrmActions();
-  const { data: assignableUsers } = useAssignableUsers();
-  const [isAdding, setIsAdding] = useState(false);
-  const [newMemberId, setNewMemberId] = useState('');
-  const [removingPrimaryId, setRemovingPrimaryId] = useState<string | null>(null);
-  const [replacementId, setReplacementId] = useState('');
+  const [panel, setPanel] = useState<PanelMode | null>(null);
+  const inviteButtonRef = useRef<HTMLButtonElement>(null);
+  const primaryButtonRef = useRef<HTMLButtonElement>(null);
+  // Đóng khung thì trả focus về nút đã mở nó (nút chỉ có mặt khi khung đóng nên phải đợi render lại).
+  const focusReturnRef = useRef<FocusTarget | null>(null);
+  const [selected, setSelected] = useState<CareTeamInvitee[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { permissions, careTeam } = customer;
-  const { data: requests } = useCareTeamRequests('to-review', permissions.canReviewJoinRequests);
+
   const hasPrimary = careTeam.some((member) => member.role === 'PRIMARY');
-  const candidates = assignableUsers.filter((user) => !careTeam.some((member) => member.user.id === user.id));
-  const pendingRequests = requests.filter((request) => request.customerId === customer.id && request.status === 'PENDING');
+  const memberCount = countCareTeamMembers(careTeam);
+  const remainingSlots = getRemainingMemberSlots(careTeam);
+  // Chỉ mời khi đã có người chăm sóc chính; đặt người chăm sóc chính lần đầu chỉ khi nhóm còn trống.
+  const canInvite = permissions.canManageCareTeam && hasPrimary;
+  const canSetInitialPrimary = permissions.canSetInitialPrimary && careTeam.length === 0;
+  const isFull = remainingSlots === 0;
+  // Tự đặt mình làm người chăm sóc chính (server loại người gọi khỏi danh sách mời): chỉ tài khoản có role MANAGER/STAFF
+  // (Quản trị kiêm Quản lý thì có; Quản trị thuần không, backend từ chối USER_NOT_ASSIGNABLE).
+  const canPickSelf = hasTeamRole(rolesOf(authUser ?? {}));
+  const selfOption = useMemo<CareTeamInvitee | undefined>(
+    () => (canPickSelf && actor.userId ? { id: actor.userId, displayName: SELF_LABEL, teamNames: [] } : undefined),
+    [canPickSelf, actor.userId],
+  );
+
+  // Trả focus sau khi khung đóng. Sau khi đặt PRIMARY, nút "Mời người" chỉ xuất hiện khi dữ liệu khách tải lại: đợi đến khi có nút.
+  useEffect(() => {
+    const target = focusReturnRef.current;
+    if (panel !== null || target === null) return;
+    const button = (target === 'primary' ? primaryButtonRef : inviteButtonRef).current;
+    if (!button) return;
+    button.focus();
+    focusReturnRef.current = null;
+  }, [panel, canInvite]);
+
+  const openPanel = (mode: PanelMode) => {
+    focusReturnRef.current = null;
+    setPanel(mode);
+  };
+
+  const closePanel = (target: FocusTarget | null = panel) => {
+    focusReturnRef.current = target;
+    setPanel(null);
+    setSelected([]);
+    setErrorMessage(null);
+  };
 
   const handle = async <T,>(pending: Promise<ApiResult<T>>, successTitle: string): Promise<boolean> => {
     const result = await pending;
     if (!result.ok) {
-      showToast({ type: 'error', title: result.error.message });
+      showToast({ type: 'error', title: describeCareTeamError(result.error) });
       return false;
     }
     showToast({ title: successTitle });
     return true;
   };
 
-  const addMember = async () => {
-    if (!newMemberId) return;
-    // Khách chưa có phụ trách chính: người đầu tiên được thêm là phụ trách chính (bắt buộc chọn khi phân lần đầu).
-    const isSaved = await handle(
-      api.addCareTeamMembers(customer.id, { userIds: [newMemberId], primaryUserId: hasPrimary ? undefined : newMemberId }),
-      hasPrimary ? 'Đã thêm người cùng chăm sóc' : 'Đã phân người phụ trách chính',
-    );
-    if (isSaved) {
-      setNewMemberId('');
-      setIsAdding(false);
+  const submit = async () => {
+    if (!panel || selected.length === 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    const userIds = selected.map((invitee) => invitee.id);
+    // Đặt người chăm sóc chính lần đầu: một lần, gửi kèm `primaryUserId` (sau đó bị khóa, không đổi/gỡ).
+    const result = await api.addCareTeamMembers(customer.id, panel === 'primary' ? { userIds: [userIds[0]], primaryUserId: userIds[0] } : { userIds });
+    setIsSubmitting(false);
+    if (!result.ok) {
+      setErrorMessage(describeCareTeamError(result.error));
+      return;
     }
+    showToast({ title: panel === 'primary' ? 'Đã đặt người chăm sóc chính' : `Đã mời ${userIds.length} người vào nhóm chăm sóc` });
+    closePanel(panel === 'primary' ? 'afterPrimarySet' : panel);
   };
 
   return (
@@ -59,137 +140,79 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
         <p className={MUTED_TEXT_CLASS}>Chưa phân người chăm sóc.</p>
       ) : (
         <ul className="space-y-2">
-          {careTeam.map((member) => {
-            const isPrimary = member.role === 'PRIMARY';
-            return (
-              <li key={member.user.id} className={`${INSET_CLASS} flex items-center justify-between gap-2 p-2.5`}>
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-theme-sm font-medium text-gray-800 dark:text-white/90">
-                    {isPrimary && <Crown size={14} aria-hidden="true" className="shrink-0 text-warning-500" />}
-                    <span className="truncate">{member.user.fullName}</span>
-                  </p>
-                  <p className="text-theme-xs text-gray-500 dark:text-gray-400">
-                    {isPrimary ? 'Phụ trách chính' : 'Cùng chăm sóc'}
-                    {member.user.jobTitle && ` · ${member.user.jobTitle}`}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {!isPrimary && permissions.canChangePrimary && (
-                    <button
-                      type="button"
-                      onClick={() => handle(api.changePrimary(customer.id, member.user.id), `Đã đổi phụ trách chính sang ${member.user.displayName}`)}
-                      className={BUTTON_LINK_CLASS}
-                      title="Đặt làm phụ trách chính"
-                    >
-                      <Crown size={12} aria-hidden="true" />
-                      Đặt chính
-                    </button>
-                  )}
-                  {(isPrimary ? permissions.canChangePrimary : permissions.canManageCareTeam) && (
-                    <button
-                      type="button"
-                      aria-label={`Gỡ ${member.user.displayName} khỏi nhóm chăm sóc`}
-                      title="Gỡ khỏi nhóm"
-                      onClick={() => {
-                        if (isPrimary) {
-                          setRemovingPrimaryId(member.user.id);
-                          setReplacementId('');
-                          return;
-                        }
-                        handle(api.removeCareTeamMember(customer.id, member.user.id), `Đã gỡ ${member.user.displayName} khỏi nhóm chăm sóc`);
-                      }}
-                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-error-50 hover:text-error-500 dark:hover:bg-error-500/10"
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </li>
-            );
-          })}
+          {careTeam.map((member) => (
+            <MemberRow
+              key={member.user.id}
+              member={member}
+              canRemove={member.role === 'MEMBER' && permissions.canManageCareTeam}
+              onRemove={() => {
+                void handle(api.removeCareTeamMember(customer.id, member.user.id), `Đã gỡ ${member.user.displayName} khỏi nhóm chăm sóc`);
+              }}
+            />
+          ))}
         </ul>
       )}
 
-      {permissions.canManageCareTeam &&
-        (isAdding ? (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <select value={newMemberId} onChange={(event) => setNewMemberId(event.target.value)} aria-label="Chọn người chăm sóc" className={SOLID_INPUT_CLASS}>
-              <option value="">— Chọn người —</option>
-              {candidates.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.fullName}
-                  {user.team ? ` (${user.team.label})` : ''}
-                </option>
-              ))}
-            </select>
-            <div className="flex gap-2">
-              <button type="button" onClick={addMember} disabled={!newMemberId} className={`${BUTTON_PRIMARY_CLASS} shrink-0`}>
-                <Check size={16} aria-hidden="true" />
-                Thêm
-              </button>
-              <button type="button" onClick={() => setIsAdding(false)} aria-label="Huỷ thêm người" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setIsAdding(true)} disabled={candidates.length === 0} className={BUTTON_DASHED_CLASS}>
-            <Plus size={12} aria-hidden="true" />
-            Thêm người
-          </button>
-        ))}
+      {hasPrimary && <p className="text-theme-xs text-gray-500 dark:text-gray-400">Người chăm sóc chính được cố định, không đổi hoặc gỡ được.</p>}
 
-      {permissions.canReviewJoinRequests && pendingRequests.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-brand-100 bg-brand-50 p-3 dark:border-brand-500/25 dark:bg-brand-500/10">
-          <p className="text-theme-xs font-semibold text-brand-600 dark:text-brand-400">Đề nghị tham gia nhóm chăm sóc</p>
-          {pendingRequests.map((request) => (
-            <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 text-theme-xs">
-              <span className="text-gray-700 dark:text-gray-300">
-                <strong>{request.requester.displayName}</strong> · {formatVnDateTime(request.createdAt)}
-                {request.message && <span className="block italic text-gray-500">“{request.message}”</span>}
-              </span>
-              <span className="flex gap-1">
-                <button type="button" onClick={() => handle(api.resolveCareTeamRequest(request.id, 'APPROVED'), 'Đã duyệt đề nghị tham gia')} className={BUTTON_LINK_CLASS}>
-                  Duyệt
-                </button>
-                <button type="button" onClick={() => handle(api.resolveCareTeamRequest(request.id, 'REJECTED'), 'Đã từ chối đề nghị')} className={`${BUTTON_LINK_CLASS} text-error-500`}>
-                  Từ chối
-                </button>
-              </span>
-            </div>
-          ))}
+      {canInvite && (
+        <p className="text-theme-xs font-medium text-gray-600 dark:text-gray-300">
+          {memberCount}/{MAX_CARE_TEAM_MEMBERS} thành viên phụ
+        </p>
+      )}
+
+      {panel === null && canSetInitialPrimary && (
+        <button ref={primaryButtonRef} type="button" onClick={() => openPanel('primary')} className={BUTTON_DASHED_CLASS}>
+          <UserPlus size={12} aria-hidden="true" />
+          Đặt người chăm sóc chính
+        </button>
+      )}
+
+      {panel === null && canInvite && (
+        <div className="space-y-1.5">
+          <button ref={inviteButtonRef} type="button" onClick={() => openPanel('invite')} disabled={isFull} className={`${BUTTON_DASHED_CLASS} disabled:cursor-not-allowed disabled:opacity-50`}>
+            <Plus size={12} aria-hidden="true" />
+            Mời người
+          </button>
+          {isFull && (
+            <p role="status" className="text-theme-xs text-gray-500 dark:text-gray-400">
+              Nhóm đã đủ {MAX_CARE_TEAM_MEMBERS} thành viên phụ, hãy gỡ bớt trước khi mời thêm.
+            </p>
+          )}
         </div>
       )}
 
-      <ConfirmDialog
-        isOpen={removingPrimaryId !== null}
-        title="Gỡ người phụ trách chính"
-        description="Mỗi khách phải có đúng một người phụ trách chính. Chọn người thay thế trước khi gỡ."
-        confirmLabel="Gỡ và thay người"
-        tone="danger"
-        onCancel={() => setRemovingPrimaryId(null)}
-        onConfirm={async () => {
-          if (!removingPrimaryId) return;
-          if (!replacementId) {
-            showToast({ type: 'error', title: 'Vui lòng chọn người phụ trách chính thay thế.' });
-            return;
-          }
-          if (await handle(api.removeCareTeamMember(customer.id, removingPrimaryId, replacementId), 'Đã gỡ và đổi người phụ trách chính')) {
-            setRemovingPrimaryId(null);
-          }
-        }}
-      >
-        <select value={replacementId} onChange={(event) => setReplacementId(event.target.value)} aria-label="Người phụ trách chính thay thế" className={SOLID_INPUT_CLASS}>
-          <option value="">— Chọn người thay thế —</option>
-          {[...careTeam.filter((member) => member.user.id !== removingPrimaryId).map((member) => member.user), ...candidates]
-            .filter((user, index, list) => list.findIndex((item) => item.id === user.id) === index)
-            .map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.fullName}
-              </option>
-            ))}
-        </select>
-      </ConfirmDialog>
+      {panel !== null && (
+        <div className="space-y-3">
+          <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{panel === 'primary' ? 'Chọn người chăm sóc chính' : 'Mời người vào nhóm chăm sóc'}</p>
+          {panel === 'primary' && <p className="text-theme-xs text-gray-500 dark:text-gray-400">Chỉ đặt được một lần; sau đó người chăm sóc chính bị khóa, không đổi hoặc gỡ được.</p>}
+          {panel === 'invite' && remainingSlots === 1 && <p className="text-theme-xs text-gray-500 dark:text-gray-400">Còn đúng 1 chỗ: chọn người khác sẽ thay người đã chọn.</p>}
+          <CareTeamInvitePicker
+            customerId={customer.id}
+            selected={selected}
+            onChange={setSelected}
+            maxSelectable={panel === 'primary' ? 1 : remainingSlots}
+            isDisabled={isSubmitting}
+            shouldAutoFocus
+            pinnedOption={panel === 'primary' ? selfOption : undefined}
+          />
+          {errorMessage && (
+            <p role="alert" className="text-theme-sm text-error-600 dark:text-error-400">
+              {errorMessage}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void submit()} disabled={selected.length === 0 || isSubmitting} className={BUTTON_PRIMARY_CLASS}>
+              <Check size={16} aria-hidden="true" />
+              {panel === 'primary' ? 'Đặt làm người chăm sóc chính' : selected.length > 0 ? `Mời ${selected.length} người` : 'Mời'}
+            </button>
+            <button type="button" onClick={() => closePanel()} disabled={isSubmitting} className="inline-flex items-center gap-1 rounded-lg p-2 text-theme-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
+              <X size={16} aria-hidden="true" />
+              Huỷ
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

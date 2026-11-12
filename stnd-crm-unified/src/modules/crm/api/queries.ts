@@ -20,6 +20,7 @@ import {
 import { toVnDateKey } from '@crm/lib/dateTime';
 import { toProjectLabel } from '@crm/lib/projectRules';
 import { getPhoneSearchVariants, maskPhoneDisplay, normalizePhone } from '@crm/lib/phone';
+import { parseCustomerCode } from '@crm/lib/customerCode';
 import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmDataState } from '@crm/store/crmReducer';
 import type { CustomerFilters } from '@crm/types/app';
@@ -28,10 +29,12 @@ import { canAccessCustomer, getCustomerPermissions, teamIdsOfUser, type CrmActor
 import type {
   AppointmentListQuery,
   AppointmentView,
-  AssignableUser,
   CareLogView,
-  CareTeamRequestView,
+  CareTeamInvitee,
+  CareTeamInviteeQuery,
   CustomerDetail,
+  CustomerAssignee,
+  CustomerAssigneeQuery,
   CustomerListItem,
   DeletedCustomerItem,
   DeletedCustomerQuery,
@@ -42,7 +45,6 @@ import type {
   ListCounts,
   NationalIdViewEntry,
   Paginated,
-  PhoneLookupResult,
 } from './types';
 
 export const DEFAULT_PAGE_LIMIT = 20;
@@ -71,6 +73,12 @@ export const toStatusRef = (catalogs: CrmCatalogs, statusId: string): StatusRef 
 const toProjectRefs = (catalogs: CrmCatalogs, projectIds: readonly string[]): Ref[] =>
   projectIds.map((id) => ({ id, label: toProjectLabel(catalogs.projects, id) }));
 
+/** Người phụ trách chính kèm `isLocked` (tài khoản đã khóa vẫn hiển thị, UI gắn nhãn "đã khóa"). */
+const toPrimaryAssignee = (users: readonly CrmUser[], userId: string | null): (UserRef & { isLocked: boolean }) | null => {
+  const ref = toUserRef(users, userId);
+  return ref ? { ...ref, isLocked: users.find((item) => item.id === userId)?.isActive === false } : null;
+};
+
 export const toListItem = (state: CrmDataState, customer: Customer): CustomerListItem => {
   const { catalogs, users } = state;
   const source = customer.sourceId ? catalogs.leadSources.find((item) => item.id === customer.sourceId) : undefined;
@@ -78,7 +86,9 @@ export const toListItem = (state: CrmDataState, customer: Customer): CustomerLis
   return {
     id: customer.id,
     fullName: customer.fullName,
-    phoneMasked: maskPhoneDisplay(customer.phone),
+    customerCode: customer.customerCode ?? null,
+    // Khách chưa có SĐT -> null (không phải chuỗi rỗng) để UI ẩn dòng SĐT.
+    phoneMasked: customer.phone ? maskPhoneDisplay(customer.phone) : null,
     status: toStatusRef(catalogs, customer.statusId),
     source: source ? { id: source.id, label: source.label } : null,
     projects: toProjectRefs(catalogs, customer.interestedProjectIds),
@@ -89,7 +99,7 @@ export const toListItem = (state: CrmDataState, customer: Customer): CustomerLis
     }),
     progress: getProgressPercent(customer.criteria),
     criteriaDone: Object.fromEntries(CRITERIA_KEYS.map((key) => [key, customer.criteria[key].isDone])) as Record<CriterionKey, boolean>,
-    primaryAssignee: toUserRef(users, customer.primaryAssigneeId),
+    primaryAssignee: toPrimaryAssignee(users, customer.primaryAssigneeId),
     careTeamSize: customer.careTeam.length,
     nextAppointmentAt: customer.nextAppointmentAt,
     lastCareLogAt: customer.lastCareLogAt,
@@ -112,6 +122,18 @@ const hasAny = (values: readonly string[] | undefined): values is string[] => Bo
  * Từ khoá SĐT: bỏ ký tự phân cách `[\s+().-]`; còn lại toàn chữ số (>= 3) thì so theo chữ số, gồm cả các biến thể
  * "+84912345678" / "0912-345-678" / "0912.345.678" (qua `getPhoneSearchVariants`).
  */
+/**
+ * Từ khóa mã khách (v1.0.5): `KH-12`, `kh000123`, `kh 123` (không phân biệt hoa/thường, bỏ khoảng trắng). Khớp khi mã bằng dạng đệm 6 số
+ * hoặc bắt đầu bằng phần đã gõ. Từ khóa TOÀN SỐ vẫn là SĐT; muốn tìm mã phải gõ `KH`.
+ */
+const matchesCodeKeyword = (customerCode: string | null | undefined, rawKeyword: string): boolean => {
+  const typed = /^kh-?(\d+)$/i.exec(rawKeyword.replace(/\s/g, ''));
+  if (!typed || !customerCode) return false;
+  const digits = typed[1];
+  const sequence = parseCustomerCode(customerCode);
+  return sequence !== null && (sequence === Number(digits) || customerCode.slice(3).startsWith(digits));
+};
+
 const matchesPhoneKeyword = (searchText: string, rawKeyword: string): boolean => {
   const compact = rawKeyword.replace(/[\s+().-]/g, '');
   if (!/^\d{3,}$/.test(compact)) return false;
@@ -122,7 +144,14 @@ const matchesPhoneKeyword = (searchText: string, rawKeyword: string): boolean =>
 /** So khớp 1 khách với bộ lọc (không gồm `listGroup`). Tìm kiếm không dấu qua `searchText` (04 §3.2.3). */
 export const matchesCustomerFilters = (customer: Customer, filters: Partial<CustomerFilters>): boolean => {
   const keyword = normalizeVietnamese(filters.q ?? '');
-  if (keyword && !customer.searchText.includes(keyword) && !matchesPhoneKeyword(customer.searchText, filters.q ?? '')) return false;
+  if (
+    keyword &&
+    !customer.searchText.includes(keyword) &&
+    !matchesPhoneKeyword(customer.searchText, filters.q ?? '') &&
+    !matchesCodeKeyword(customer.customerCode, filters.q ?? '')
+  ) {
+    return false;
+  }
   if (hasAny(filters.statusIds) && !filters.statusIds.includes(customer.statusId)) return false;
   if (hasAny(filters.sourceIds) && (!customer.sourceId || !filters.sourceIds.includes(customer.sourceId))) return false;
   if (hasAny(filters.projectIds) && !customer.interestedProjectIds.some((id) => filters.projectIds?.includes(id))) return false;
@@ -250,6 +279,8 @@ export const getCustomer = (state: CrmDataState, actor: CrmActor, customerId: st
           fullName: user?.fullName ?? 'Không rõ',
           jobTitle: user?.jobTitle ?? '',
           avatarUrl: user?.avatarUrl,
+          role: user?.role,
+          isLocked: user ? !user.isActive : undefined,
         },
         role: member.role,
         addedAt: member.addedAt,
@@ -353,7 +384,7 @@ export const toAppointmentView = (state: CrmDataState, actor: CrmActor, appointm
   customer: {
     id: customer.id,
     fullName: customer.fullName,
-    phoneMasked: maskPhoneDisplay(customer.phone),
+    phoneMasked: customer.phone ? maskPhoneDisplay(customer.phone) : null,
     status: toStatusRef(state.catalogs, customer.statusId),
     projects: toProjectRefs(state.catalogs, customer.interestedProjectIds),
   },
@@ -428,120 +459,74 @@ export const listNationalIdViews = (state: CrmDataState, actor: CrmActor, custom
     .map((view) => ({ viewer: requireUserRef(state.users, view.viewerId), viewedAt: view.viewedAt, purpose: 'VIEW' }));
 };
 
-/** Băm FNV-1a 32 bit -> base36 (token mờ cho mô phỏng; backend dùng token ký/ngẫu nhiên có hạn). */
-const hashRef = (value: string): string => {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(36);
-};
-
-/** Token mờ để gửi đề nghị tham gia: gắn với người gửi, KHÔNG chứa id nội bộ của khách (TB9). */
-export const makeJoinRef = (actorId: string, customerId: string): string => `JR-${hashRef(`${actorId}|${customerId}|stnd-crm`)}${hashRef(`${customerId}|${actorId}`)}`;
-
-/** Đổi token về khách; không khớp -> null (cùng một kết quả cho "không tồn tại" và "không được phép"). */
-export const resolveJoinRef = (state: CrmDataState, actorId: string, ref: string): Customer | null =>
-  state.customers.find((customer) => makeJoinRef(actorId, customer.id) === ref) ?? null;
-
-/**
- * `POST /crm/customers/phone-lookups` (X2): chỉ trả "đã có, do [tên] chăm sóc" — KHÔNG lộ tên/mã/SĐT của khách ngoài phạm vi.
- */
-export const lookupPhone = (
-  state: CrmDataState,
-  actor: CrmActor,
-  phone: string,
-  excludeCustomerId?: string,
-): PhoneLookupResult | null => {
-  const normalizedPhone = normalizePhone(phone);
-  if (!normalizedPhone) return null;
-  const existing = state.customers.find((customer) => customer.id !== excludeCustomerId && normalizePhone(customer.phone) === normalizedPhone);
-  if (!existing) {
-    return { normalizedPhone, exists: false, isAccessible: false, caredByName: null, canRequestJoin: false, hasPendingRequest: false };
-  }
-  const isAccessible = canAccessCustomer(actor, existing, state.users);
-  // [Prototype] Khách đã xóa mềm vẫn giữ chỗ SĐT (unique index) nhưng không thể gửi đề nghị tham gia.
-  const isDeleted = Boolean(existing.deletedAt);
-  const primary = existing.primaryAssigneeId ? state.users.find((user) => user.id === existing.primaryAssigneeId) : undefined;
-  const hasPendingRequest = state.careTeamRequests.some(
-    (request) => request.customerId === existing.id && request.requesterId === actor.userId && request.status === 'PENDING',
-  );
-  const canRequestJoin = !isAccessible && !isDeleted && actor.role !== 'ADMIN' && !hasPendingRequest;
-  return {
-    normalizedPhone,
-    exists: true,
-    isAccessible,
-    customerId: isAccessible ? existing.id : undefined,
-    // Người đã xem được khách thì dùng "Xem hồ sơ" (không cần đề nghị); người chưa xem được mới có token để đề nghị.
-    customerRef: canRequestJoin ? makeJoinRef(actor.userId, existing.id) : undefined,
-    caredByName: primary?.displayName ?? null,
-    canRequestJoin,
-    hasPendingRequest,
-  };
-};
-
-/** `GET /crm/care-team-requests?box=mine|to-review` */
-export const listCareTeamRequests = (state: CrmDataState, actor: CrmActor, box: 'mine' | 'to-review'): CareTeamRequestView[] =>
-  state.careTeamRequests
-    .filter((request) => {
-      if (box === 'mine') return request.requesterId === actor.userId;
-      const customer = state.customers.find((item) => item.id === request.customerId);
-      if (!customer || !canAccessCustomer(actor, customer, state.users)) return false;
-      return getCustomerPermissions(actor, customer).canReviewJoinRequests;
-    })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((request) => {
-      const customer = state.customers.find((item) => item.id === request.customerId);
-      // Người gửi không được biết tên khách (X2) — chỉ người duyệt thấy.
-      const isReviewer = box === 'to-review';
-      return {
-        id: request.id,
-        customer: isReviewer && customer ? { id: customer.id, fullName: customer.fullName } : null,
-        requester: requireUserRef(state.users, request.requesterId),
-        message: request.message,
-        status: request.status,
-        createdAt: request.createdAt,
-        resolvedBy: toUserRef(state.users, request.resolvedBy),
-        resolvedAt: request.resolvedAt,
-        resolutionNote: null,
-      };
-    });
-
-/** Tài khoản có role Quản lý/Nhân viên đang hoạt động (backend `roles: { $in: [MANAGER, STAFF] }`, `status: ACTIVE`). */
-const isTeamAccount = (user: CrmUser & { roles?: readonly string[] }): boolean =>
+/** Tài khoản MANAGER/STAFF đang hoạt động, chưa khóa (backend: `status: ACTIVE`, `roles` chứa MANAGER hoặc STAFF). */
+const isInvitableAccount = (user: CrmUser & { roles?: readonly string[] }): boolean =>
   user.isActive && (user.roles ?? [user.role]).some((role) => role === 'MANAGER' || role === 'STAFF');
 
-/**
- * Nhóm mà người gọi được "phân người vào" (`resolveAssignableTeamIds`): Quản trị = mọi nhóm (null); Quản lý = CHỈ nhóm mình quản lý;
- * Nhân viên = các nhóm mình thuộc về.
- */
-export const resolveAssignableTeamIds = (actor: CrmActor): string[] | null => {
-  if (actor.role === 'ADMIN') return null;
-  if (actor.role === 'MANAGER') return actor.managedTeamIds;
-  return actor.teamIds;
+const CARE_TEAM_INVITEE_MAX_LIMIT = 20;
+const CUSTOMER_ASSIGNEE_MAX_LIMIT = 100;
+const SEARCH_TEXT_MAX_LENGTH = 50;
+
+const paginate = <T>(items: readonly T[], page: number | undefined, limit: number): Paginated<T> => {
+  const totalPages = Math.max(1, Math.ceil(items.length / limit));
+  const current = Math.min(totalPages, Math.max(1, page ?? 1));
+  return { data: items.slice((current - 1) * limit, current * limit), meta: { total: items.length, page: current, limit, totalPages } };
 };
 
-const toAssignable = (state: CrmDataState, user: AdminUser): AssignableUser => {
-  const team = state.teams.find((item) => item.id === teamIdsOfUser(user)[0]);
-  return { id: user.id, displayName: user.displayName, fullName: user.fullName, role: user.role, team: team ? { id: team.id, label: team.name } : null };
+const teamsOfUser = (state: CrmDataState, user: AdminUser): Ref[] =>
+  teamIdsOfUser(user).flatMap((teamId) => {
+    const team = state.teams.find((item) => item.id === teamId);
+    return team ? [{ id: team.id, label: team.name }] : [];
+  });
+
+const matchesDisplayName = (user: CrmUser, q: string | undefined): boolean => {
+  const keyword = normalizeVietnamese((q ?? '').slice(0, SEARCH_TEXT_MAX_LENGTH).trim());
+  return !keyword || normalizeVietnamese(user.displayName).includes(keyword);
 };
 
 /**
- * `GET /crm/assignable-users` — người có thể phân chăm sóc (Quản lý/Nhân viên đang hoạt động; người nhiều nhóm xuất hiện nếu BẤT KỲ nhóm
- * nào nằm trong phạm vi người gọi). `purpose = 'filter'` (ô LỌC "Người phụ trách", lọc ≠ gán): với Quản lý là CÁC NGƯỜI XUẤT HIỆN trong
- * nhóm chăm sóc của tập khách Quản lý thấy (kể cả người ngoài nhóm mình quản lý, người đã khóa); Quản trị/Nhân viên như chế độ gán.
+ * `GET /crm/care-team-invitees` (v1.0.5, FR-13, 14) — người có thể mời vào nhóm chăm sóc. CHỈ id, tên hiển thị, tên nhóm
+ * (không email/SĐT/vai trò). Có `customerId`: người gọi phải là Quản trị/Quản lý hoặc PRIMARY của khách đó và kết quả loại người đã
+ * trong nhóm. Không `customerId`: chỉ Quản trị/Quản lý (thao tác hàng loạt). Loại chính người gọi; sắp theo tên hiển thị.
+ * Không đủ quyền/khách ngoài phạm vi -> trang rỗng (backend 403/404).
  */
-export const listAssignableUsers = (state: CrmDataState, actor: CrmActor, purpose: 'assign' | 'filter' = 'assign'): AssignableUser[] => {
-  if (purpose === 'filter' && actor.role === 'MANAGER') {
-    const visibleIds = new Set(getAccessibleCustomers(state, actor).flatMap((customer) => customer.careTeam.map((member) => member.userId)));
-    return state.users.filter((user) => visibleIds.has(user.id)).map((user) => toAssignable(state, user));
+export const listCareTeamInvitees = (state: CrmDataState, actor: CrmActor, query: CareTeamInviteeQuery = {}): Paginated<CareTeamInvitee> => {
+  const limit = Math.min(CARE_TEAM_INVITEE_MAX_LIMIT, Math.max(1, query.limit ?? CARE_TEAM_INVITEE_MAX_LIMIT));
+  const isAdminOrManager = actor.role === 'ADMIN' || actor.role === 'MANAGER';
+  let excludedIds = new Set<string>();
+  if (query.customerId) {
+    const customer = findAccessibleCustomer(state, actor, query.customerId);
+    if (!customer || !(isAdminOrManager || getPrimaryUserId(customer.careTeam) === actor.userId)) return paginate([], 1, limit);
+    excludedIds = new Set(customer.careTeam.map((member) => member.userId));
+  } else if (!isAdminOrManager) {
+    return paginate([], 1, limit);
   }
-  const scopeTeamIds = resolveAssignableTeamIds(actor);
-  return state.users
-    .filter(isTeamAccount)
-    .filter((user) => scopeTeamIds === null || teamIdsOfUser(user).some((teamId) => scopeTeamIds.includes(teamId)))
-    .map((user) => toAssignable(state, user));
+  const invitees = state.users
+    .filter((user) => isInvitableAccount(user) && user.id !== actor.userId && !excludedIds.has(user.id) && matchesDisplayName(user, query.q))
+    .sort((first, second) => first.displayName.localeCompare(second.displayName, 'vi'))
+    .map((user) => ({ id: user.id, displayName: user.displayName, teamNames: teamsOfUser(state, user).map((team) => team.label) }));
+  return paginate(invitees, query.page, limit);
+};
+
+/**
+ * `GET /crm/customer-assignees` (v1.0.5, FR-09, 18) — nguồn ô lọc "Người phụ trách": những người XUẤT HIỆN trong `careTeam` của các khách
+ * người gọi thấy (bỏ khách xóa mềm), gồm cả tài khoản đã khóa (để lọc được khách cũ của họ). Áp cho mọi vai trò; không lọc trạng thái/role.
+ */
+export const listCustomerAssignees = (state: CrmDataState, actor: CrmActor, query: CustomerAssigneeQuery = {}): Paginated<CustomerAssignee> => {
+  const limit = Math.min(CUSTOMER_ASSIGNEE_MAX_LIMIT, Math.max(1, query.limit ?? CUSTOMER_ASSIGNEE_MAX_LIMIT));
+  const visibleIds = new Set(
+    getAccessibleCustomers(state, actor)
+      .filter((customer) => !customer.deletedAt)
+      .flatMap((customer) => customer.careTeam.map((member) => member.userId)),
+  );
+  const assignees = state.users
+    .filter((user) => visibleIds.has(user.id) && (!query.teamId || teamIdsOfUser(user).includes(query.teamId)) && matchesDisplayName(user, query.q))
+    .sort((first, second) => first.displayName.localeCompare(second.displayName, 'vi'))
+    .map((user): CustomerAssignee => {
+      const teams = teamsOfUser(state, user);
+      return { id: user.id, displayName: user.displayName, role: user.role, team: teams[0] ?? null, teams, isLocked: !user.isActive };
+    });
+  return paginate(assignees, query.page, limit);
 };
 
 // ---------------------------------------------------------------------------

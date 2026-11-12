@@ -7,18 +7,16 @@ import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type Quer
 import { useCallback, useMemo, useRef } from 'react';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useDebouncedValue } from '@crm/hooks/useDebouncedValue';
-import { isValidPhone } from '@crm/lib/phone';
 import { includesVietnamese } from '@crm/lib/text';
 import { listProjectFilterOptions, type ProjectFilterOption } from '@crm/lib/projectRules';
 import { buildAssigneeFilterOptions, type AssigneeFilterOption } from '@crm/lib/assigneeFilter';
-import type { AdminUser, CrmCatalogs, CrmSettings, CrmUser, PersonaFieldDefinition, Team, TeamMember } from '@crm/types/crm';
+import type { AdminPersonaField, AdminTag, AdminUser, CrmCatalogs, CrmSettings, CrmUser, PersonaFieldDefinition, Team, TeamMember } from '@crm/types/crm';
 import type { CrmActor } from './access';
 import * as admin from './http/adminApi';
 import * as catalogApi from './http/catalogApi';
-import { hashFingerprint, toResult } from './http/crmHttp';
+import { toResult } from './http/crmHttp';
 import { isNotFoundError, toApiError } from './http/crmErrors';
 import { crmRoleOf } from '../../../utils/userRoles';
-import type { DetailMappingContext } from './http/customerMappers';
 import * as care from './http/careApi';
 import * as customerApi from './http/customerApi';
 import * as scheduling from './http/schedulingApi';
@@ -27,9 +25,8 @@ import type {
   ApiError,
   AppointmentListQuery,
   AppointmentView,
-  AssignableUser,
   CareLogView,
-  CareTeamRequestView,
+  CareTeamInvitee,
   CustomerDetail,
   CustomerListItem,
   CustomerListQuery,
@@ -42,7 +39,6 @@ import type {
   ListCounts,
   NationalIdViewEntry,
   Paginated,
-  PhoneLookupResult,
 } from './types';
 import { addDaysToDateKey, getVnTodayKey } from '@crm/lib/dateTime';
 
@@ -61,6 +57,9 @@ export const crmKeys = {
   catalogs: ['crm', 'catalogs'] as const,
   data: ['crm', 'data'] as const,
 };
+
+/** Tiền tố khóa query của `useCareTeamInvitees`: `['crm','care-team-invitees', customerId, q, page]`. */
+const CARE_TEAM_INVITEES_KEY = ['crm', 'care-team-invitees'] as const;
 
 const CATALOG_STALE_MS = 5 * 60 * 1000;
 const DATA_STALE_MS = 15 * 1000;
@@ -115,12 +114,13 @@ const EMPTY_CATALOGS: CrmCatalogs = { statuses: [], leadSources: [], areas: [], 
 const EMPTY_FIELDS: PersonaFieldDefinition[] = [];
 const EMPTY_USERS: CrmUser[] = [];
 const EMPTY_ADMIN_USERS: AdminUser[] = [];
+const EMPTY_ADMIN_TAGS: AdminTag[] = [];
+const EMPTY_ADMIN_PERSONA_FIELDS: AdminPersonaField[] = [];
 const EMPTY_TEAMS: (Team & { code: string; memberCount: number; isActive: boolean })[] = [];
 
-/** Danh mục + người dùng + nhóm + cấu hình chân dung. `isLoading` = còn danh mục bắt buộc chưa tải xong. */
+/** Danh mục + nhóm + cấu hình chân dung (không còn danh sách người dùng: mời dùng `useCareTeamInvitees`, lọc dùng `useAssigneeFilterOptions`). `isLoading` = còn danh mục bắt buộc chưa tải xong. */
 export const useCatalogs = () => {
   const actor = useCrmActor();
-  const authUser = useAuthStore((state) => state.user);
   const canSeeTeams = actor.role === 'ADMIN' || actor.role === 'MANAGER';
   const statuses = useQuery(catalogQuery('statuses', catalogApi.fetchStatuses));
   const leadSources = useQuery(catalogQuery('lead-sources', catalogApi.fetchLeadSources));
@@ -129,11 +129,10 @@ export const useCatalogs = () => {
   const projects = useQuery(catalogQuery('projects', (signal) => catalogApi.fetchProjects({}, signal)));
   const tags = useQuery(catalogQuery('tags', catalogApi.fetchTags));
   const personaFields = useQuery(catalogQuery('persona-fields', catalogApi.fetchPersonaFields));
-  const assignable = useQuery(catalogQuery('assignable-users', catalogApi.fetchAssignableUsers));
   const teams = useQuery(catalogQuery('teams', catalogApi.fetchTeams, canSeeTeams));
   const settings = useQuery(catalogQuery('settings', catalogApi.fetchCrmSettings, canSeeTeams));
 
-  const required = [statuses, leadSources, areas, contactResults, projects, tags, personaFields, assignable];
+  const required = [statuses, leadSources, areas, contactResults, projects, tags, personaFields];
   const firstError = required.find((query) => query.isError);
 
   const catalogs = useMemo<CrmCatalogs>(
@@ -144,22 +143,23 @@ export const useCatalogs = () => {
     [statuses.data, leadSources.data, areas.data, projects.data, tags.data, contactResults.data],
   );
 
-  /** Người phân chăm sóc được + bản thân (để tên mình luôn tra được). */
-  const users = useMemo<CrmUser[]>(() => {
-    const base = assignable.data ?? EMPTY_USERS;
-    if (!authUser || base.some((user) => user.id === authUser._id)) return base;
-    return [...base, { id: authUser._id, fullName: authUser.displayName, displayName: authUser.displayName, role: crmRoleOf(authUser), jobTitle: '', teamId: authUser.teamId ?? null, isActive: true }];
-  }, [assignable.data, authUser]);
+  const tagsData = tags.data;
+  const hasTagsError = tags.isError;
+  const existingTagIds = useMemo<string[] | null>(() => (tagsData && !hasTagsError ? tagsData.map((tag) => tag.id) : null), [tagsData, hasTagsError]);
 
   const refetch = () => required.forEach((query) => void query.refetch());
 
   return {
     catalogs,
-    users,
     teams: teams.data ?? EMPTY_TEAMS,
     settings: (settings.data ?? null) as CrmSettings | null,
     personaFields: personaFields.data ?? EMPTY_FIELDS,
     isLoading: required.some((query) => query.isLoading),
+    /**
+     * Id thẻ THẬT từ server, độc lập với việc 5 danh mục khác đã tải đủ chưa (`catalogs.tags` là `[]` khi còn thiếu danh mục khác).
+     * `null` = chưa có dữ liệu thật hoặc lần tải thẻ đang lỗi -> KHÔNG được dọn id thẻ mồ côi khỏi bộ lọc.
+     */
+    existingTagIds,
     isError: Boolean(firstError),
     error: firstError ? toApiError(firstError.error) : null,
     refetch,
@@ -167,8 +167,8 @@ export const useCatalogs = () => {
 };
 
 /**
- * Lựa chọn cho ô LỌC "Người phụ trách" (CustomerToolbar, AdvancedFilterModal, DailyTasks) — `GET /crm/assignable-users?purpose=filter`.
- * Query RIÊNG (khóa khác `assignable-users` của ô GÁN) để lọc ≠ gán; thuộc `crmKeys.data` nên tự làm mới sau mỗi thao tác ghi
+ * Lựa chọn cho ô LỌC "Người phụ trách" (CustomerToolbar, AdvancedFilterModal, DailyTasks) — `GET /crm/customer-assignees`.
+ * Query RIÊNG, thuộc `crmKeys.data` nên tự làm mới sau mỗi thao tác ghi
  * (đổi người phụ trách/nhóm chăm sóc làm tập người trong bộ lọc đổi theo).
  */
 export const useAssigneeFilterOptions = (): AssigneeFilterOption[] => {
@@ -198,32 +198,6 @@ export const useProjectFilterOptions = (): ProjectFilterOption[] => {
   const { data: counts } = useProjectsWithCounts();
   const referenced = useMemo(() => new Set([...counts].filter(([, count]) => count > 0).map(([id]) => id)), [counts]);
   return useMemo(() => listProjectFilterOptions(catalogs.projects, referenced), [catalogs.projects, referenced]);
-};
-
-/** `GET /crm/assignable-users` */
-export const useAssignableUsers = (): QueryState<AssignableUser[]> => {
-  const { users, isLoading, isError, error, refetch } = useCatalogs();
-  const data = useMemo(
-    () =>
-      users
-        .filter((user) => user.role !== 'ADMIN')
-        .map((user) => ({ id: user.id, displayName: user.displayName, fullName: user.fullName, role: user.role, team: user.teamId ? { id: user.teamId, label: user.teamName ?? '' } : null })),
-    [users],
-  );
-  return { data, isLoading, isFetching: false, isError, error, refetch };
-};
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Ngữ cảnh ánh xạ chi tiết khách
-// ---------------------------------------------------------------------------------------------------------------------
-
-/** Ngữ cảnh gắn quyền duyệt/chức danh khi map chi tiết khách (đọc mới nhất qua ref, không làm đổi khóa query). */
-const useDetailContext = (): (() => DetailMappingContext) => {
-  const actor = useCrmActor();
-  const { users } = useCatalogs();
-  const ref = useRef<DetailMappingContext>({ actor: { userId: actor.userId, role: actor.role } });
-  ref.current = { actor: { userId: actor.userId, role: actor.role }, roleOf: (userId) => users.find((user) => user.id === userId)?.role };
-  return useCallback(() => ref.current, []);
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -270,10 +244,9 @@ export const useListCounts = (query: CustomerListQuery): QueryState<ListCounts> 
 
 /** `GET /crm/customers/:id` — `data` null khi đang tải hoặc 404 (ngoài phạm vi); phân biệt bằng `isLoading`/`isNotFound`. */
 export const useCustomerDetail = (customerId: string | null | undefined): QueryState<CustomerDetail | null> & { isNotFound: boolean } => {
-  const getContext = useDetailContext();
   const result = useQuery({
     queryKey: [...crmKeys.data, 'customer', customerId],
-    queryFn: ({ signal }) => customerApi.fetchCustomerDetail(customerId as string, getContext(), signal),
+    queryFn: ({ signal }) => customerApi.fetchCustomerDetail(customerId as string, signal),
     enabled: Boolean(customerId),
     staleTime: DATA_STALE_MS,
     retry: retryTransient,
@@ -348,46 +321,25 @@ export const useNationalIdViews = (customerId: string | null | undefined, isEnab
   return stateOf(result, []);
 };
 
-/**
- * `POST /crm/customers/phone-lookups` (X2): kiểm trùng SĐT. SĐT nằm trong body (không lên URL/log). Hạn mức 30/phút/người nên
- * chỉ tra khi SĐT hợp lệ, đã debounce; 429 -> không có kết quả (UI vẫn cho nhập, backend chặn trùng khi lưu).
- */
-export const usePhoneLookup = (phone: string, excludeCustomerId?: string): PhoneLookupResult | null => {
-  const debouncedPhone = useDebouncedValue(phone, 500);
-  const isReady = isValidPhone(debouncedPhone) && debouncedPhone === phone;
-  const result = useQuery({
-    // Khóa dùng bản băm: SĐT thô không nằm trong khóa cache/devtools.
-    queryKey: [...crmKeys.data, 'phone-lookup', hashFingerprint(debouncedPhone)],
-    queryFn: ({ signal }) => customerApi.postPhoneLookup(debouncedPhone, signal),
-    enabled: isReady,
-    staleTime: 20 * 1000,
-    gcTime: 60 * 1000,
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
-  if (!isReady || !result.data) return null;
-  // Tra ra chính khách đang sửa (SĐT không đổi) không phải là trùng.
-  if (excludeCustomerId && result.data.customerId === excludeCustomerId) return null;
-  return result.data;
-};
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Nhóm chăm sóc, lịch hẹn, việc hôm nay
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** `GET /crm/care-team-requests` (đang chờ duyệt). Trả thêm map `requestId -> customerId` để lọc theo khách. */
-export const useCareTeamRequests = (box: 'mine' | 'to-review', isEnabled = true): QueryState<(CareTeamRequestView & { customerId: string })[]> => {
+/**
+ * `GET /crm/care-team-invitees` (FR-14): người có thể mời vào nhóm chăm sóc (tên + tên nhóm). Có `customerId` = mời vào khách đó (loại người
+ * đã trong nhóm); bỏ trống = thao tác hàng loạt (chỉ Quản trị/Quản lý). `q` do caller debounce (`useDebouncedValue`); `keepPreviousData` để
+ * danh sách không nhấp nháy khi gõ/đổi trang. Khóa `['crm','care-team-invitees', customerId, q, page]` được `invalidateCrm` làm mới sau mỗi thao tác ghi.
+ */
+export const useCareTeamInvitees = (customerId: string | undefined, q: string, page: number, isEnabled = true): QueryState<Paginated<CareTeamInvitee>> => {
   const result = useQuery({
-    queryKey: [...crmKeys.data, 'care-team-requests', box],
-    queryFn: async ({ signal }) => {
-      const { items, customerIds } = await care.fetchCareTeamRequests(box, signal);
-      return items.map((item) => ({ ...item, customerId: customerIds.get(item.id) ?? item.customer?.id ?? '' }));
-    },
+    queryKey: [...CARE_TEAM_INVITEES_KEY, customerId, q, page],
+    queryFn: ({ signal }) => care.fetchCareTeamInvitees({ customerId, q, page }, signal),
     enabled: isEnabled,
+    placeholderData: keepPreviousData,
     staleTime: DATA_STALE_MS,
     retry: retryTransient,
   });
-  return stateOf(result, []);
+  return stateOf(result, EMPTY_PAGE<CareTeamInvitee>());
 };
 
 /** Cửa sổ mặc định khi màn không chỉ định: 14 ngày trước tới 45 ngày sau (≤ 62 ngày theo 05 §2.9). */
@@ -473,6 +425,65 @@ export const useNotifications = (query: { isRead?: boolean; page?: number; limit
   return stateOf(result, EMPTY_PAGE<scheduling.NotificationItem>());
 };
 
+/** Số thông báo mỗi lần tải của danh sách cuộn vô hạn (FR-38). */
+export const NOTIFICATION_PAGE_SIZE = 20;
+
+const EMPTY_NOTIFICATIONS: scheduling.NotificationItem[] = [];
+
+/**
+ * `GET /notifications` theo trang, cuộn tới cuối thì tải thêm (FR-38): dùng cho màn `/notifications` (mobile) và dropdown desktop.
+ * - 20 mục mỗi trang, mới nhất trước; còn trang kế khi `meta.page < meta.totalPages`.
+ * - `loadMore` KHÔNG gọi trùng: bỏ qua khi đang tải (kể cả khi gọi liên tiếp trong cùng một nhịp trước lúc render lại).
+ * - Gộp các trang và loại trùng theo `id` (thông báo mới đến làm lệch trang có thể lặp mục ở biên).
+ * - Lỗi giữa chừng giữ nguyên các trang đã tải: `isLoadMoreError = true`, gọi lại `loadMore` để thử lại.
+ * Hook `useNotifications` cũ giữ nguyên. Đánh dấu đã đọc (`useNotificationActions`) làm tươi cả danh sách này lẫn `unread-count`
+ * vì cùng nằm dưới khóa `[...crmKeys.data, 'notifications']`.
+ */
+export const useInfiniteNotifications = (query: { isRead?: boolean } = {}, isEnabled = true) => {
+  const isReadFilter = query.isRead;
+  const result = useInfiniteQuery({
+    queryKey: [...crmKeys.data, 'notifications', 'infinite', isReadFilter ?? 'all'],
+    queryFn: ({ pageParam, signal }) => scheduling.fetchNotifications({ isRead: isReadFilter, page: pageParam, limit: NOTIFICATION_PAGE_SIZE }, signal),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.meta.page < last.meta.totalPages ? last.meta.page + 1 : undefined),
+    enabled: isEnabled,
+    staleTime: DATA_STALE_MS,
+    retry: retryTransient,
+  });
+  const { fetchNextPage, hasNextPage, isFetching } = result;
+
+  const items = useMemo<scheduling.NotificationItem[]>(() => {
+    if (!result.data) return EMPTY_NOTIFICATIONS;
+    const seen = new Set<string>();
+    return result.data.pages.flatMap((page) => page.data).filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
+  }, [result.data]);
+
+  // Khóa đồng bộ: IntersectionObserver có thể báo nhiều lần trước khi React kịp cập nhật `isFetchingNextPage`.
+  const isLoadingMoreRef = useRef(false);
+  const loadMore = useCallback(() => {
+    if (!hasNextPage || isFetching || isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    void fetchNextPage().finally(() => {
+      isLoadingMoreRef.current = false;
+    });
+  }, [fetchNextPage, hasNextPage, isFetching]);
+
+  return {
+    data: items,
+    total: result.data?.pages[0]?.meta.total ?? 0,
+    isLoading: result.isLoading,
+    isFetching,
+    isFetchingMore: result.isFetchingNextPage,
+    hasMore: Boolean(hasNextPage),
+    isError: result.isError,
+    /** Lỗi khi tải trang kế (các trang đã tải vẫn còn). */
+    isLoadMoreError: result.isFetchNextPageError,
+    error: result.isError ? toApiError(result.error) : null,
+    refetch: () => void result.refetch(),
+    loadMore,
+  };
+};
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Quản trị
 // ---------------------------------------------------------------------------------------------------------------------
@@ -487,6 +498,35 @@ export const useAdminUsers = (isEnabled = true): QueryState<AdminUser[]> => {
     retry: retryTransient,
   });
   return stateOf(result, EMPTY_ADMIN_USERS);
+};
+
+/** `GET /crm/tags` cho màn quản trị (có số khách). Cùng nhóm khóa `catalogs` nên làm mới cùng danh mục sau khi sửa/gộp/xóa thẻ. */
+export const useAdminTags = (isEnabled = true): QueryState<AdminTag[]> => {
+  const result = useQuery({
+    queryKey: [...crmKeys.catalogs, 'admin-tags'],
+    queryFn: ({ signal }) => admin.fetchAdminTags(signal),
+    enabled: isEnabled,
+    staleTime: DATA_STALE_MS,
+    retry: retryTransient,
+    refetchOnWindowFocus: false,
+  });
+  return stateOf(result, EMPTY_ADMIN_TAGS);
+};
+
+/**
+ * `GET /crm/persona-fields` cho màn quản trị (có id, thứ tự, cờ hệ thống, cả trường đã tắt). Cùng nhóm khóa `catalogs` với
+ * `persona-fields` nên sau khi sửa/sắp xếp, cả màn này lẫn form chân dung/bộ lọc đều được làm mới.
+ */
+export const useAdminPersonaFields = (isEnabled = true): QueryState<AdminPersonaField[]> => {
+  const result = useQuery({
+    queryKey: [...crmKeys.catalogs, 'admin-persona-fields'],
+    queryFn: ({ signal }) => admin.fetchAdminPersonaFields(signal),
+    enabled: isEnabled,
+    staleTime: DATA_STALE_MS,
+    retry: retryTransient,
+    refetchOnWindowFocus: false,
+  });
+  return stateOf(result, EMPTY_ADMIN_PERSONA_FIELDS);
 };
 
 /** `GET /teams/:id/members` — phân trang + tìm theo tên; giữ trang cũ khi đổi trang/tìm để danh sách không nhấp nháy. */
@@ -549,6 +589,8 @@ export const useProjectsWithCounts = (): QueryState<Map<string, number>> => {
 export const invalidateCrm = async (queryClient: QueryClient, options: { shouldIncludeCatalogs?: boolean } = {}): Promise<void> => {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: crmKeys.data }),
+    // Người được mời loại người đã trong nhóm -> làm mới sau mỗi thao tác ghi (khóa nằm ngoài `crmKeys.data` theo kiến trúc).
+    queryClient.invalidateQueries({ queryKey: CARE_TEAM_INVITEES_KEY }),
     options.shouldIncludeCatalogs ? queryClient.invalidateQueries({ queryKey: crmKeys.catalogs }) : Promise.resolve(),
   ]);
 };
@@ -556,7 +598,6 @@ export const invalidateCrm = async (queryClient: QueryClient, options: { shouldI
 /** Hàm ghi (tên theo endpoint tài liệu 05) — bất đồng bộ, trả `ApiResult`. */
 export const useCrmApi = (): CrmApi => {
   const queryClient = useQueryClient();
-  const getContext = useDetailContext();
   const fieldMap = usePersonaFieldMap();
   const fieldMapRef = useRef(fieldMap);
   fieldMapRef.current = fieldMap;
@@ -565,10 +606,9 @@ export const useCrmApi = (): CrmApi => {
       createHttpCrmApi({
         // Danh mục chỉ làm mới khi thao tác quản trị/thẻ mới đổi danh mục ().
         invalidate: (options) => invalidateCrm(queryClient, options),
-        getContext,
         getPersonaFields: () => fieldMapRef.current,
       }),
-    [queryClient, getContext],
+    [queryClient],
   );
 };
 

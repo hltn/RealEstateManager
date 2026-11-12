@@ -186,7 +186,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       ['GET', 'GET', '/crm/lead-sources', READ_ALL],
       ['GET', 'GET', '/crm/contact-results', READ_ALL],
       ['GET', 'GET', '/crm/areas', READ_ALL],
-      ['GET', 'GET', '/crm/assignable-users', READ_ALL],
+      ['GET', 'GET', '/crm/customer-assignees', READ_ALL],
       ['GET', 'GET', '/teams', ['admin', 'manager1']],
       ['GET', 'GET', '/crm/settings', ['admin', 'manager1']],
       ['POST', 'POST', '/crm/projects', ['admin']],
@@ -353,7 +353,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
   });
 
   // -------------------------------------------------------------------------
-  describe('Nhóm (teams) + assignable-users', () => {
+  describe('Nhóm (teams)', () => {
     it('tạo nhóm: mã lưu HOA, trả quản lý + memberCount; trùng mã (khác hoa thường) 409; quản lý phải là MANAGER', async () => {
       const kd1 = await call('POST', '/teams', 'admin', {
         name: 'Nhóm Kinh doanh 1',
@@ -445,47 +445,6 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(manager.body.data.map((t: any) => t.code)).toEqual(['KD1']);
     });
 
-    it('assignable-users: phạm vi theo vai trò, loại người bị khóa/ADMIN/EDITOR, ép teamId trong phạm vi', async () => {
-      const names = (res: Res) =>
-        res.body.data.map((u: any) => u.displayName).sort();
-
-      const admin = await call('GET', '/crm/assignable-users', 'admin');
-      expect(names(admin)).toEqual(
-        ['manager1', 'manager2', 'staffA', 'staffB', 'staffC'].sort(),
-      );
-      expect(admin.body.meta.limit).toBe(100);
-
-      const manager = await call('GET', '/crm/assignable-users', 'manager1');
-      expect(names(manager)).toEqual(['staffA', 'staffB']);
-      expect(manager.body.data[0].team).toEqual({
-        id: ids.kd1,
-        label: 'Nhóm Kinh doanh 1',
-      });
-
-      const staff = await call('GET', '/crm/assignable-users', 'staffC');
-      expect(names(staff)).toEqual(['staffC']);
-
-      // Lọc teamId ngoài phạm vi (dò nhóm khác) => rỗng, không lộ.
-      const outside = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.kd2}`,
-        'manager1',
-      );
-      expect(outside.body.data).toEqual([]);
-      const adminFiltered = await call(
-        'GET',
-        `/crm/assignable-users?teamId=${ids.kd2}`,
-        'admin',
-      );
-      expect(names(adminFiltered)).toEqual(['staffC']);
-
-      // Nhân viên chưa thuộc nhóm nào không thấy ai.
-      await createUser('loner', UserRole.STAFF);
-      expect(
-        (await call('GET', '/crm/assignable-users', 'loner')).body.data,
-      ).toEqual([]);
-    });
-
     it('hạ vai trò Quản lý: bị gỡ khỏi managerIds (cùng transaction); chuyển sang ADMIN còn xóa teamId; Quản lý mất quyền xem nhóm cũ', async () => {
       await call('PATCH', `/users/${ids.manager2}/team`, 'admin', {
         teamId: ids.kd2,
@@ -567,7 +526,9 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
         status: 'UPCOMING',
         isActive: true,
         customerCount: 0,
-        propertyTypes: ['Căn hộ', 'Shophouse'],
+        // FR-46: response trả nhãn suy ra từ propertyTypeCodes (chữ cũ ánh xạ qua bộ khớp).
+        propertyTypes: ['Căn hộ chung cư', 'Nhà phố / Shophouse'],
+        propertyTypeCodes: ['APARTMENT', 'TOWNHOUSE'],
         area: null,
       });
       ids.project = res.body.data.id;
@@ -630,7 +591,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       }
     });
 
-    it('sửa dự án: PATCH một phần, kiểm giá theo giá trị hiện có, null xóa field không bắt buộc, đổi mã vẫn kiểm trùng', async () => {
+    it('sửa dự án: PATCH một phần, kiểm giá theo giá trị hiện có, null xóa field không bắt buộc, đổi mã khác bị chặn bất biến (FR-40)', async () => {
       const ok = await call('PATCH', `/crm/projects/${ids.project}`, 'admin', {
         status: 'SELLING',
         description: 'Mô tả',
@@ -677,8 +638,11 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
         'admin',
         { code: 'min' },
       );
-      expect(dupCode.status).toBe(409);
-      expect(dupCode.body.errorCode).toBe('PROJECT_CODE_DUPLICATED');
+      // FR-40 (Q1): mã dự án bất biến nên đổi sang mã khác (kể cả mã của dự án khác) là 400, không còn 409.
+      expect([dupCode.status, dupCode.body.errorCode]).toEqual([
+        400,
+        'PROJECT_CODE_IMMUTABLE',
+      ]);
 
       // Đổi mã của chính nó sang cách viết hoa khác là hợp lệ.
       const sameCode = await call(
@@ -691,7 +655,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(sameCode.body.data.code).toBe('THU01');
     });
 
-    it('mã cũ chứa "_"/"-" (không migrate): PATCH gửi lại đúng mã cũ => 200, đổi sang mã mới còn "_" => 400, đổi sang mã sạch => 200 (PT-031)', async () => {
+    it('mã cũ chứa "_"/"-" (không migrate): PATCH gửi lại đúng mã cũ => 200, đổi sang mã khác => 400 PROJECT_CODE_IMMUTABLE (FR-40)', async () => {
       const legacyId = new Types.ObjectId();
       await connection.collection('projects').insertOne({
         _id: legacyId,
@@ -715,12 +679,14 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       const bad = await call('PATCH', url, 'admin', { code: 'NEW_CODE' });
       expect([bad.status, bad.body.errorCode]).toEqual([
         400,
-        'VALIDATION_FAILED',
+        'PROJECT_CODE_IMMUTABLE',
       ]);
 
       const clean = await call('PATCH', url, 'admin', { code: 'OLDCODE1' });
-      expect(clean.status).toBe(200);
-      expect(clean.body.data.code).toBe('OLDCODE1');
+      expect([clean.status, clean.body.errorCode]).toEqual([
+        400,
+        'PROJECT_CODE_IMMUTABLE',
+      ]);
     });
 
     /** Chèn thẳng dự án mã cũ (bỏ qua DTO) để mô phỏng dữ liệu production chưa migrate. */
@@ -776,13 +742,13 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       ]);
     });
 
-    it('PATCH mã: đổi sang mã sai quy tắc mới => 400 VALIDATION_FAILED, details.fields=["code"], mã gốc và codeNormalized không đổi, không ghi audit', async () => {
+    it('PATCH mã: đổi sang mã khác => 400 PROJECT_CODE_IMMUTABLE (FR-40), details.fields=["code"], mã gốc và codeNormalized không đổi, không ghi audit', async () => {
       const id = await insertLegacyProject('KEEP_old-1');
       const url = `/crm/projects/${id}`;
 
       const bad = await call('PATCH', url, 'admin', { code: 'NEW-CODE' });
       expect(bad.status).toBe(400);
-      expect(bad.body.errorCode).toBe('VALIDATION_FAILED');
+      expect(bad.body.errorCode).toBe('PROJECT_CODE_IMMUTABLE');
       expect(bad.body.details).toEqual({ fields: ['code'] });
 
       // Sai ngay ở DTO (nới): 31 ký tự, khoảng trắng giữa, dấu tiếng Việt, rỗng, null.
@@ -805,14 +771,16 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(await auditActions(id)).toEqual([]);
     });
 
-    it('PATCH mã cũ sang mã trùng không phân biệt hoa thường với dự án đã xóa mềm => 409 PROJECT_CODE_DUPLICATED', async () => {
+    it('PATCH mã cũ sang mã của dự án đã xóa mềm => 400 PROJECT_CODE_IMMUTABLE (FR-40, bất biến chặn trước khi chạm unique)', async () => {
       await insertLegacyProject('TAKEN1', new Date());
       const id = await insertLegacyProject('FREE_old-2');
       const res = await call('PATCH', `/crm/projects/${id}`, 'admin', {
         code: 'taken1',
       });
-      expect(res.status).toBe(409);
-      expect(res.body.errorCode).toBe('PROJECT_CODE_DUPLICATED');
+      expect([res.status, res.body.errorCode]).toEqual([
+        400,
+        'PROJECT_CODE_IMMUTABLE',
+      ]);
     });
 
     it('tạo mã: đúng 30 ký tự chữ thường + khoảng trắng đầu/cuối => 201, lưu đã cắt, giữ nguyên chữ thường', async () => {
@@ -829,24 +797,24 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect(stored?.code).toBe(code);
     });
 
-    it('race: PATCH đổi mã cũ sang mã sạch song song với PATCH "gửi lại mã cũ" => không bao giờ ghi lại mã cũ sau khi đã đổi (transaction + snapshot)', async () => {
+    it('race (FR-40): hai PATCH song song cùng mã (khác hoa/thường) đều 200 và mã bất biến; PATCH sang mã khác luôn 400 PROJECT_CODE_IMMUTABLE', async () => {
       for (let round = 0; round < 5; round += 1) {
         const id = await insertLegacyProject(`RACE_old-${round}`);
         const url = `/crm/projects/${id}`;
-        const [change, resend] = await Promise.all([
-          call('PATCH', url, 'admin', { code: `RACECLEAN${round}` }),
+        const [first, second, other] = await Promise.all([
           call('PATCH', url, 'admin', { code: `race_OLD-${round}` }),
+          call('PATCH', url, 'admin', { code: `RACE_OLD-${round}` }),
+          call('PATCH', url, 'admin', { code: `RACECLEAN${round}` }),
         ]);
-        expect(change.status).toBe(200);
-        // Gửi lại mã cũ: 200 nếu chạy trước, 400 nếu chạy sau khi mã đã đổi (đọc lại sau retry).
-        expect([200, 400]).toContain(resend.status);
+        expect([first.status, second.status]).toEqual([200, 200]);
+        expect([other.status, other.body.errorCode]).toEqual([
+          400,
+          'PROJECT_CODE_IMMUTABLE',
+        ]);
         const stored = await connection
           .collection('projects')
           .findOne({ _id: new Types.ObjectId(id) });
-        // Cả hai thắng => thứ tự tuần tự hợp lệ duy nhất là resend rồi change; resend 400 => change chạy trước.
-        // Cả hai trường hợp mã cuối cùng đều là mã sạch (không bị mã cũ đè lại do đọc cũ).
-        expect(stored?.code).toBe(`RACECLEAN${round}`);
-        expect(stored?.codeNormalized).toBe(String(stored?.code).toUpperCase());
+        expect(stored?.codeNormalized).toBe(`RACE_OLD-${round}`);
       }
     });
 

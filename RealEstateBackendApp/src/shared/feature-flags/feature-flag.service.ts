@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 export enum FeatureFlag {
   /** Bật toàn bộ module CRM. */
   CRM_ENABLED = 'CRM_ENABLED',
-  /** Đẩy thông báo FCM (giai đoạn 2, M7) — mặc định tắt, NoopPushProvider thay thế. */
+  /** Đẩy thông báo Web Push VAPID (M7) — mặc định tắt hoặc thiếu `VAPID_*` thì NoopPushProvider thay thế. */
   CRM_PUSH = 'CRM_PUSH',
   /** Import khách từ file (M8). */
   CRM_IMPORT = 'CRM_IMPORT',

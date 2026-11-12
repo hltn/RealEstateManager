@@ -109,18 +109,43 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
   /** SĐT VN hợp lệ, duy nhất theo thứ tự gọi. */
   const nextPhone = () => `091${String(1_000_000 + ++phoneSeq)}`;
 
+  /**
+   * Tạo khách qua API (v1.0.5, FR-10/FR-11): người gọi luôn là PRIMARY và `POST customers` KHÔNG còn nhận `careTeam`
+   * (400). Tham số `extra.careTeam` chỉ là cách viết gọn của test: người tạo = `primaryUserId`, rồi mời `memberIds` qua
+   * `POST .../care-team/members`. Có mời thì `res` là chi tiết MỚI NHẤT (mỗi lần mời tăng `version`).
+   */
   const createCustomer = async (
     as: string,
     extra: Record<string, unknown> = {},
   ): Promise<{ id: string; phone: string; res: Res }> => {
+    const { careTeam, ...body } = extra as {
+      careTeam?: { memberIds: string[]; primaryUserId: string };
+    } & Record<string, unknown>;
+    const creator = careTeam
+      ? Object.keys(ids).find((key) => ids[key] === careTeam.primaryUserId)
+      : as;
+    if (!creator) throw new Error('primaryUserId của careTeam không có token');
     const phone = nextPhone();
-    const res = await call('POST', '/crm/customers', as, {
+    const res = await call('POST', '/crm/customers', creator, {
       fullName: `Khách ${phone}`,
       phone,
-      ...extra,
+      ...body,
     });
     expect(res.status).toBe(201);
-    return { id: res.body.data.id, phone, res };
+    const id = res.body.data.id as string;
+    if (careTeam && careTeam.memberIds.length > 0) {
+      const invited = await call(
+        'POST',
+        `/crm/customers/${id}/care-team/members`,
+        creator,
+        { userIds: careTeam.memberIds },
+      );
+      expect(invited.status).toBe(201);
+      const latest = await call('GET', `/crm/customers/${id}`, creator);
+      expect(latest.status).toBe(200);
+      return { id, phone, res: latest };
+    }
+    return { id, phone, res };
   };
 
   const listIds = async (as: string, query = ''): Promise<string[]> => {
@@ -258,7 +283,6 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       > = [
         ['GET', '/crm/customers'],
         ['GET', '/crm/customers/list-counts'],
-        ['POST', '/crm/customers/phone-lookups'],
         ['POST', '/crm/customers'],
         ['GET', `/crm/customers/${cust}`],
         ['PATCH', `/crm/customers/${cust}`],
@@ -508,7 +532,7 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       expect(sub).toContain(seed.id);
     });
 
-    it('Redis lỗi => 503 (fail-closed) cho phone-lookups, phone-views, national-id-views, tìm kiếm; không lộ số', async () => {
+    it('Redis lỗi => 503 (fail-closed) cho phone-views, national-id-views, tìm kiếm; không lộ số', async () => {
       const redis = app.get<{ eval: (...args: unknown[]) => Promise<unknown> }>(
         REDIS_CLIENT,
       );
@@ -521,12 +545,6 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
         .mockRejectedValue(new Error('redis down'));
       try {
         const attempts: Array<[string, 'GET' | 'POST', string, unknown]> = [
-          [
-            'lookup',
-            'POST',
-            '/crm/customers/phone-lookups',
-            { phone: c.phone },
-          ],
           [
             'phone-view',
             'POST',
@@ -628,39 +646,25 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       expect(idAlerts).toHaveLength(1);
     });
 
-    it('phone-lookups cho số của khách NGOÀI phạm vi: chỉ tên người phụ trách + customerRef, không lộ họ tên/email/SĐT; PHONE_LOOKUP ghi 1 bản/lần', async () => {
+    it('v1.0.5 (FR-01): tạo khách bằng số ĐÃ CÓ của khách ngoài phạm vi vẫn 201, không lộ khách kia (tên, người phụ trách, id) — không còn 409/phone-lookups làm kênh dò', async () => {
       const c = await createCustomer('admin', {
         fullName: 'Bí Mật Họ Tên',
         email: 'bimat@example.com',
         careTeam: { memberIds: [], primaryUserId: ids.staffC },
       });
-      const before = (await auditOf(c.id, 'PHONE_LOOKUP')).length;
-      const res = await call('POST', '/crm/customers/phone-lookups', 'staffA', {
-        phone: c.phone,
-      });
-      expect(res.status).toBe(200);
-      const json = JSON.stringify(res.body);
-      for (const secret of ['Bí Mật', 'bimat@', 'searchText']) {
-        expect(json).not.toContain(secret);
-      }
-      // số điện thoại chỉ xuất hiện ở normalizedPhone (chính là input người tra gửi lên)
-      const { normalizedPhone, ...rest } = res.body.data;
-      expect(normalizedPhone).toBe(`+84${c.phone.slice(1)}`);
-      expect(JSON.stringify(rest)).not.toContain(c.phone.slice(3));
-      expect(res.body.data).toMatchObject({
-        exists: true,
-        isAccessible: false,
-        caredByName: 'staffC',
-      });
-      expect((await auditOf(c.id, 'PHONE_LOOKUP')).length).toBe(before + 1);
-      // lỗi 409 khi tạo trùng cũng chỉ có cùng thông tin
       const dup = await call('POST', '/crm/customers', 'staffA', {
         fullName: 'x',
         phone: c.phone,
       });
-      expect(dup.status).toBe(409);
-      expect(JSON.stringify(dup.body)).not.toContain('Bí Mật');
-      expect(JSON.stringify(dup.body)).not.toContain('bimat@');
+      expect(dup.status).toBe(201);
+      expect(dup.body.data.id).not.toBe(c.id);
+      const json = JSON.stringify(dup.body);
+      for (const secret of ['Bí Mật', 'bimat@', 'staffC', c.id, 'caredByName']) {
+        expect(json).not.toContain(secret);
+      }
+      // hai khách cùng SĐT là hợp lệ và độc lập: mỗi khách có mã riêng, chỉ phạm vi của chính mình thấy
+      expect(dup.body.data.customerCode).not.toBe(c.res.body.data.customerCode);
+      expect((await call('GET', `/crm/customers/${c.id}`, 'staffA')).status).toBe(404);
     });
   });
 
@@ -692,29 +696,32 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
   });
 
   // ---------------------------------------------------------------------------------------------
-  describe('Lách giới hạn phone-lookups qua đường tạo/sửa khách (409 trùng SĐT tiết lộ cùng thông tin)', () => {
-    it('POST /crm/customers với số đã có của khách ngoài phạm vi phải bị giới hạn tốc độ như phone-lookups (30/phút/người)', async () => {
+  describe('Không còn kênh dò sự tồn tại của SĐT qua đường tạo khách (v1.0.5)', () => {
+    it('40 lần POST /crm/customers với số đã có của khách ngoài phạm vi: luôn 201 (không 409/429 phân biệt có/không), không phản hồi nào lộ khách kia', async () => {
       await createUser('prober', UserRole.STAFF);
-      const targets: string[] = [];
+      const targets: Array<{ id: string; phone: string }> = [];
       for (let index = 0; index < 4; index += 1) {
         targets.push(
-          (
-            await createCustomer('admin', {
-              careTeam: { memberIds: [], primaryUserId: ids.staffC },
-            })
-          ).phone,
+          await createCustomer('admin', {
+            careTeam: { memberIds: [], primaryUserId: ids.staffC },
+          }),
         );
       }
-      const statuses: number[] = [];
+      const results: Res[] = [];
       for (let index = 0; index < 40; index += 1) {
-        const res = await call('POST', '/crm/customers', 'prober', {
-          fullName: 'Probe',
-          phone: targets[index % targets.length],
-        });
-        statuses.push(res.status);
+        results.push(
+          await call('POST', '/crm/customers', 'prober', {
+            fullName: 'Probe',
+            phone: targets[index % targets.length].phone,
+          }),
+        );
       }
-      // mong đợi: có 429 sau ~30 lần; thực tế mọi lần đều 409 và lộ caredByName
-      expect(statuses).toContain(429);
+      expect(results.map((res) => res.status)).toEqual(
+        Array.from({ length: 40 }, () => 201),
+      );
+      const json = JSON.stringify(results.map((res) => res.body));
+      for (const target of targets) expect(json).not.toContain(target.id);
+      expect(json).not.toContain('caredByName');
     });
   });
 
@@ -841,11 +848,9 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       ).toBe(1);
       for (const res of results) {
         expect([201, 409]).toContain(res.status);
+        // v1.0.5: không còn trùng SĐT; 409 duy nhất có thể gặp là yêu cầu cùng khóa đang xử lý dở.
         if (res.status === 409) {
-          expect([
-            'IDEMPOTENCY_IN_PROGRESS',
-            'CUSTOMER_PHONE_DUPLICATED',
-          ]).toContain(res.body.errorCode);
+          expect(res.body.errorCode).toBe('IDEMPOTENCY_IN_PROGRESS');
         }
       }
       expect(
@@ -884,7 +889,6 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       });
       for (const body of [
         { fullName: null },
-        { phone: null },
         { interestedProjectIds: null },
         { statusId: status.NET },
         { careTeam: {} },
@@ -907,6 +911,24 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       });
       expect(ok.status).toBe(200);
       expect(ok.body.data.email).toBeNull();
+
+      // v1.0.5 (FR-01): SĐT là tùy chọn nên `phone: null` hợp lệ = xóa SĐT; sau đó khách không còn số để xem (409).
+      const cleared = await call('PATCH', `/crm/customers/${c.id}`, 'admin', {
+        version: ok.body.data.version,
+        phone: null,
+      });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.data.phoneMasked).toBeNull();
+      const view = await call(
+        'POST',
+        `/crm/customers/${c.id}/phone-views`,
+        'admin',
+        { purpose: 'VIEW' },
+      );
+      expect([view.status, view.body.errorCode]).toEqual([
+        409,
+        'CUSTOMER_PHONE_NOT_SET',
+      ]);
     });
   });
 

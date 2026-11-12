@@ -1,6 +1,6 @@
 # STND CRM Unified — prototype thiết kế trên nền Admin App
 
-Prototype **chỉ để thiết kế** (không backend, không test) cho module **Quản lý khách hàng (CRM)**, dựng **trên nền code thật** của `../RealEstateAdminApp/` (chỉ sao chép, không sửa bản gốc).
+Prototype **chỉ để thiết kế** (không backend; chỉ có unit test vitest cho lớp API/hook/lib, chạy `npm test`) cho module **Quản lý khách hàng (CRM)**, dựng **trên nền code thật** của `../RealEstateAdminApp/` (chỉ sao chép, không sửa bản gốc).
 
 - Khung (sidebar, header, theme, toast, modal, bảng, phân trang…), **toàn bộ module CRM (giao diện + hành vi người dùng)** và các màn Admin là bản sao của Admin App ở commit `6eed7bf` (2026-10-31).
 - **Khác app chính ở đúng một chỗ: dữ liệu.** App chính gọi API thật (`modules/crm/api/http/*` + React Query); prototype giữ nguyên bề mặt `@crm/api` (tên hook/hàm, tham số, kiểu trả về, mã lỗi + thông điệp tiếng Việt) nhưng chạy trên **store mock** trong trình duyệt. Nhờ đó màn chép từ app chính chạy **nguyên văn**.
@@ -18,7 +18,7 @@ npm run lint     # tsc -b (TypeScript, noUnusedLocals/Parameters, erasableSyntax
 npm run build    # tsc -b && vite build -> dist/
 ```
 
-Stack (giống Admin App): Vite 8, React 19, TypeScript 6, Tailwind CSS v4, react-router-dom 7, @tanstack/react-query 5, zustand 5, axios, lucide-react, react-hot-toast, react-helmet-async, flatpickr, react-hook-form + zod. **Không có** vitest/testing-library — prototype không viết test.
+Stack (giống Admin App): Vite 8, React 19, TypeScript 6, Tailwind CSS v4, react-router-dom 7, @tanstack/react-query 5, zustand 5, axios, lucide-react, react-hot-toast, react-helmet-async, flatpickr, react-hook-form + zod. Có vitest + testing-library (jsdom) cho unit test lớp API/hook/lib/storage (`npm test`).
 
 **Giao diện mặc định SÁNG** (`ThemeContext` đọc theme đã lưu ngay trong initializer + script inline ở `index.html` để không nháy); chuyển tối bằng nút mặt trăng ở header (lưu `localStorage["theme"]`).
 
@@ -119,7 +119,7 @@ Màn của app chính chỉ import dữ liệu từ `@crm/api` (đọc: hook; gh
 
 - **Chép nguyên văn** `RealEstateAdminApp/src/modules/crm/screens/<Màn>/**` (bỏ `*.test.*`, thư mục `test/`) vào `src/modules/crm/screens/` — không cần sửa import.
 - Hook đọc trả `{ data, isLoading, isFetching, isError, error, refetch }` như app chính; vì tính **đồng bộ** từ store nên `isLoading`/`isError` luôn `false` (nhánh Skeleton/lỗi của màn vẫn có trong code, chỉ không bật). Hook quản trị (`useAdminUsers`, `useTeamMembers`, `useDeletedCustomers`) trả **403 giả** khi người dùng không đủ quyền.
-- Hàm ghi (`useCrmApi()`) trả `Promise<ApiResult<T>>` sau 180ms; **kiểm quyền + phạm vi + khóa lạc quan `version` (409 `VERSION_CONFLICT`) + mã lỗi nghiệp vụ** giống backend (`CUSTOMER_PHONE_DUPLICATED`, `CUSTOMER_NOT_DROPPED`, `USER_OUT_OF_TEAM`, `TEAM_NOT_EMPTY`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_PURGE_IN_PROGRESS`, `LAST_ADMIN_REQUIRED`…).
+- Hàm ghi (`useCrmApi()`) trả `Promise<ApiResult<T>>` sau 180ms; **kiểm quyền + phạm vi + khóa lạc quan `version` (409 `VERSION_CONFLICT`) + mã lỗi nghiệp vụ** giống backend (`CUSTOMER_PHONE_NOT_SET`, `PRIMARY_LOCKED`, `CARE_TEAM_LIMIT_EXCEEDED`, `CUSTOMER_NOT_DROPPED`, `USER_OUT_OF_TEAM`, `TEAM_NOT_EMPTY`, `CUSTOMER_ANONYMIZED`, `CUSTOMER_PURGE_IN_PROGRESS`, `LAST_ADMIN_REQUIRED`…).
 - Người thao tác = **tài khoản mẫu đang đăng nhập** (`auth.store`), đọc LÚC GỌI nên đổi tài khoản có hiệu lực ngay; hồ sơ vai trò/nhóm lấy từ store CRM (`api/actor.ts`).
 - **Chưa mô phỏng**: ảnh đính kèm nhật ký (cờ TẮT như app chính mặc định; upload trả 404), Zalo ZNS/gọi trong app, đồng bộ lịch (cờ TẮT), job nền (nhập file chạy đồng bộ ở `mockCrmApi.ts`).
 

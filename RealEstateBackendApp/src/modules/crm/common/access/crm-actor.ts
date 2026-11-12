@@ -30,25 +30,7 @@ export const sharesAnyTeam = (
 ): boolean => left.some((a) => right.some((b) => a.equals(b)));
 
 /**
- * Tập nhóm mà actor được phân người vào chăm sóc khách khi bị giới hạn phạm vi (nguồn luật DUY NHẤT dùng chung cho
- * `assertAssignable` và danh sách `assignable-users`, để danh sách không liệt kê người mà thao tác phân sau đó sẽ bị từ chối):
- * - ADMIN: `null` = không giới hạn.
- * - MANAGER (role cao nhất): CHỈ các nhóm mình quản lý (không gồm nhóm mình chỉ là thành viên).
- * - STAFF: các nhóm mình thuộc về.
- * - Vai trò khác: rỗng.
- * Ngoài ra chính actor luôn được phân cho chính mình (`assertAssignable` cho qua riêng; danh sách không thêm mục này).
- */
-export const resolveAssignableTeamIds = (
-  actor: CrmActor,
-): Types.ObjectId[] | null => {
-  if (actor.role === UserRole.ADMIN) return null;
-  if (actor.role === UserRole.MANAGER) return actor.managedTeamIds;
-  if (actor.role === UserRole.STAFF) return actor.teamIds;
-  return [];
-};
-
-/**
- * Tập nhóm mà actor được "nhìn thấy" (danh sách nhóm, người có thể phân chăm sóc).
+ * Tập nhóm mà actor được "nhìn thấy" (danh sách nhóm).
  * - ADMIN: `null` = không giới hạn.
  * - MANAGER (role cao nhất): nhóm mình quản lý + mọi nhóm mình thuộc về.
  * - STAFF: chỉ các nhóm mình thuộc về (chưa có nhóm thì rỗng).

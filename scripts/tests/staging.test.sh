@@ -3,6 +3,8 @@
 # scripts/tests/staging.test.sh — test rào chắn của staging local, KHÔNG cần Docker thật:
 #   - scripts/staging.sh: guard_environment (cổng, tên, DOCKER_HOST/DOCKER_CONTEXT/endpoint context), confirm (ASSUME_YES), prepare_env
 #     (gỡ biến shell trùng khóa trong .env.staging.example)
+#   - scripts/staging.sh restore-dump/snapshot (T-18, FR-21): chỉ nhắm rhstg_mongo, bắt buộc --yes, archive chỉ trong .staging/, bị từ chối thì
+#     KHÔNG gọi Docker (docker stub ghi nhật ký); tĩnh: mongorestore --drop kèm --nsInclude realestate.*, không nhắc container dev/prod
 #   - deploy.sh: check_staging_vars (đường dẫn DEPLOY_* tương đối trong repo; biến staging chỉ hợp lệ qua wrapper) và mặc định y hệt cũ
 #   - scripts/staging/shims/docker: chỉ đổi đường dẫn host sau cờ đường dẫn (cần cygpath, bỏ qua nếu không có)
 # Hàm được TRÍCH từ file thật (sed), docker thay bằng stub. Chạy:  bash scripts/tests/staging.test.sh  (thoát 0 nếu đạt)
@@ -28,7 +30,7 @@ LOG_PREFIX="test"
 source "$ROOT_DIR/scripts/lib/ops-common.sh"
 
 extract_fn() { sed -n "/^$1() {/,/^}/p" "$2"; }
-for fn in assert_staging_name guard_environment confirm prepare_env is_windows; do
+for fn in assert_staging_name guard_environment confirm prepare_env is_windows resolve_dump_archive; do
   src="$(extract_fn "$fn" "$ROOT_DIR/scripts/staging.sh")"
   [[ -n "$src" ]] || { echo "Không trích được $fn từ scripts/staging.sh" >&2; exit 2; }
   eval "$src"
@@ -151,6 +153,92 @@ cp "$ROOT_DIR/scripts/lib/ops-common.sh" "$TMP/dep/scripts/lib/ops-common.sh"
 sed -i 's/^main "\$@"$/printf "%s|%s|%s|%s|[%s]|%s|%s" "$ENV_FILE" "$RUNTIME_ENV_FILE" "$LOGS_DIR" "$BACKUP_DIR" "$NINE_ROUTER_CONTAINER" "$MONGO_CONTAINER" "$BACKEND_CONTAINER"; exit 0/' "$TMP/dep/deploy.sh"
 defaults="$(env -i PATH="$PATH" HOME="${HOME:-/}" bash "$TMP/dep/deploy.sh" 2>&1)"
 expect_eq "deploy.sh mặc định (env -i) y hệt bản cũ" ".env.docker|.env|logs|backups|[realestate_9router]|realestate_mongo|realestate_backend" "$defaults"
+
+# ── T-18: restore-dump / snapshot (FR-21) ────────────────────────────────────
+# Chạy staging.sh THẬT với `docker` stub đứng đầu PATH: stub ghi mọi lệnh gọi vào $DOCKER_CALLS rồi thoát 1. Các trường hợp bị từ chối
+# phải dừng TRƯỚC mọi lệnh Docker (nhật ký không tồn tại). STAGING_ALLOW_DOCKER_HOST=1 để guard không gọi `docker context inspect`.
+mkdir -p "$TMP/stubbin"
+cat > "$TMP/stubbin/docker" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$DOCKER_CALLS"
+exit 1
+STUB
+chmod +x "$TMP/stubbin/docker"
+printf 'not-a-real-dump' > "$TMP/outside.archive.gz"
+rd_rc() { # "<VAR=giá trị ...>" <đối số staging.sh ...>: môi trường sạch (env -i), in "rc=<mã> | output"; xóa nhật ký docker trước
+  local envs="$1" out rc=0
+  shift
+  rm -f "$TMP/docker.calls"
+  # shellcheck disable=SC2086  # tách từ có chủ ý: mỗi phần tử là VAR=giá-trị không chứa khoảng trắng
+  out="$(env -i PATH="$TMP/stubbin:$PATH" HOME="${HOME:-/}" DOCKER_CALLS="$TMP/docker.calls" STAGING_ALLOW_DOCKER_HOST=1 $envs bash "$ROOT_DIR/scripts/staging.sh" "$@" 2>&1 </dev/null)" || rc=$?
+  printf 'rc=%s | %s' "$rc" "$out"
+}
+check_rd() { # mô tả rc chuỗi_phải_có "<VAR=...>" đối_số...
+  local desc="$1" rc="$2" want="$3" envs="$4" res calls="no-docker-calls"
+  shift 4
+  res="$(rd_rc "$envs" "$@")"
+  [[ ! -e "$TMP/docker.calls" ]] || calls="docker-calls: $(cat "$TMP/docker.calls")"
+  expect_eq "restore-dump: $desc (rc)" "rc=$rc" "${res%% |*}"
+  [[ -z "$want" ]] || expect_contains "restore-dump: $desc (thông báo)" "$want" "$res"
+  expect_eq "restore-dump: $desc (không gọi docker)" "no-docker-calls" "$calls"
+}
+check_rd "thiếu archive"                       1 "Thiếu đường dẫn archive" "X=1" restore-dump --yes
+check_rd "thiếu --yes (không hỏi tương tác)"   1 "bắt buộc thêm --yes"    "X=1" restore-dump "$TMP/outside.archive.gz"
+check_rd "ASSUME_YES chung chung không tính"   1 "bắt buộc thêm --yes"    "ASSUME_YES=1" restore-dump "$TMP/outside.archive.gz"
+check_rd "tùy chọn lạ"                         1 "không hợp lệ"           "X=1" restore-dump --force "$TMP/outside.archive.gz" --yes
+check_rd "hai archive"                         1 "MỘT đường dẫn"          "X=1" restore-dump a b --yes
+check_rd "MONGO_CONTAINER=realestate_mongo (prod) bị từ chối" 1 "Từ chối" "MONGO_CONTAINER=realestate_mongo" restore-dump "$TMP/outside.archive.gz" --yes
+check_rd "BACKEND_CONTAINER=realestate_backend bị từ chối"    1 "Từ chối" "BACKEND_CONTAINER=realestate_backend" restore-dump "$TMP/outside.archive.gz" --yes
+check_rd "COMPOSE_PROJECT_NAME=realestate-dev bị từ chối"     1 "Từ chối" "COMPOSE_PROJECT_NAME=realestate-dev" restore-dump "$TMP/outside.archive.gz" --yes
+check_rd "cổng backend 27017 (mongo dev) bị từ chối"          1 "thuộc dev/prod" "STAGING_BACKEND_PORT=27017" restore-dump "$TMP/outside.archive.gz" --yes
+check_rd "STAGING_ASSUME_YES=1 KHÔNG thay được --yes" 1 "bắt buộc thêm --yes" "STAGING_ASSUME_YES=1" restore-dump "$TMP/outside.archive.gz"
+check_rd "archive ngoài .staging/ bị từ chối"  1 "NGOÀI .staging"         "X=1" restore-dump "$TMP/outside.archive.gz" --yes
+check_rd "archive không tồn tại"               1 "Không thấy file"        "X=1" restore-dump "$TMP/nope.gz" --yes
+check_rd "archive là thư mục"                  1 "Không thấy file"        "X=1" restore-dump "$TMP" --yes
+check_rd "snapshot nhãn chứa ký tự lạ"         1 "Nhãn snapshot"          "X=1" snapshot 'a/../b'
+check_rd "runner thiếu lệnh"                  1 "Thiếu lệnh runner"      "X=1" runner
+check_rd "runner với project dev bị từ chối"   1 "Từ chối"                "COMPOSE_PROJECT_NAME=realestate-dev" runner status
+check_rd "step3 với container prod bị từ chối" 1 "Từ chối"                "MONGO_CONTAINER=realestate_mongo" step3
+
+# resolve_dump_archive (hàm trích nguyên văn): chấp nhận file gzip thật trong <root>/.staging/, từ chối phần còn lại. ROOT_DIR đổi sang thư mục tạm.
+mkdir -p "$TMP/rd/.staging/sub" "$TMP/rd/other"
+printf 'dump giả' | gzip > "$TMP/rd/.staging/ok.archive.gz"
+printf 'dump giả' | gzip > "$TMP/rd/.staging/sub/ok2.archive.gz"
+printf 'dump giả' | gzip > "$TMP/rd/other/outside.gz"
+: > "$TMP/rd/.staging/empty.gz"
+printf 'khong phai gzip' > "$TMP/rd/.staging/plain.gz"
+ln -s "$TMP/rd/other/outside.gz" "$TMP/rd/.staging/link.gz" 2>/dev/null || true
+rda() { local out rc=0; out="$( ( ROOT_DIR="$TMP/rd"; resolve_dump_archive "$1" ) 2>&1 )" || rc=$?; printf 'rc=%s | %s' "$rc" "$out"; }
+res="$(rda "$TMP/rd/.staging/ok.archive.gz")";       expect_eq "resolve: file gzip trong .staging được nhận" "rc=0 | $(readlink -f "$TMP/rd/.staging/ok.archive.gz")" "$res"
+res="$(rda "$TMP/rd/.staging/sub/ok2.archive.gz")";  expect_eq "resolve: thư mục con của .staging được nhận" "rc=0 | $(readlink -f "$TMP/rd/.staging/sub/ok2.archive.gz")" "$res"
+res="$(rda "$TMP/rd/other/outside.gz")";             expect_contains "resolve: file ngoài .staging bị từ chối" "NGOÀI" "$res"
+res="$(rda "$TMP/rd/.staging/../other/outside.gz")"; expect_contains "resolve: .. thoát khỏi .staging bị từ chối" "NGOÀI" "$res"
+if [[ -L "$TMP/rd/.staging/link.gz" ]]; then
+  res="$(rda "$TMP/rd/.staging/link.gz")";           expect_contains "resolve: symlink trỏ ra ngoài bị từ chối" "NGOÀI" "$res"
+fi
+res="$(rda "$TMP/rd/.staging/empty.gz")";            expect_contains "resolve: file rỗng bị từ chối" "rỗng" "$res"
+res="$(rda "$TMP/rd/.staging/plain.gz")";            expect_contains "resolve: không phải gzip bị từ chối" "không phải gzip" "$res"
+res="$(rda "$TMP/rd/.staging/missing.gz")";          expect_contains "resolve: thiếu file bị từ chối" "Không thấy file" "$res"
+res="$(rda "$TMP/rd/.staging")";                     expect_contains "resolve: thư mục bị từ chối" "Không thấy file" "$res"
+res="$(rda "")";                                     expect_contains "resolve: đường dẫn rỗng bị từ chối" "Thiếu đường dẫn" "$res"
+
+# Tĩnh (đọc mã nguồn thật): restore-dump chỉ nhắm $STG_MONGO, mongorestore luôn --drop + --nsInclude "realestate.*", không nhắc tên container
+# dev/prod, chỉ MỘT dropDatabase (realestate); .staging/ nằm trong .gitignore và không có dump nào được git theo dõi.
+rd_src="$(sed -n '/^cmd_restore_dump() {/,/^}/p' "$ROOT_DIR/scripts/staging.sh")"
+expect_contains "tĩnh: mongorestore có --drop"            '--drop'                                    "$rd_src"
+expect_contains "tĩnh: mongorestore giới hạn --nsInclude" '--nsInclude "realestate.*"'                "$rd_src"
+expect_contains "tĩnh: chạy trong container staging"      'docker exec -i "$STG_MONGO"'               "$rd_src"
+expect_contains "tĩnh: dropDatabase chỉ realestate"       "getSiblingDB('realestate').dropDatabase()" "$rd_src"
+expect_eq "tĩnh: restore-dump không nhắc container dev/prod" "0" "$(grep -cE 'realestate_(mongo|backend|dev)|realestate-dev' <<<"$rd_src" || true)"
+expect_eq "tĩnh: restore-dump chỉ có MỘT dropDatabase"       "1" "$(grep -c 'dropDatabase' <<<"$rd_src" || true)"
+expect_eq "tĩnh: mọi docker exec/run/rm/cp trong restore-dump nhắm STG_MONGO" "0" "$(grep -E 'docker (exec|run|rm|cp)' <<<"$rd_src" | grep -vc 'STG_MONGO' || true)"
+if git -C "$ROOT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  expect_eq "git: .staging/ được ignore"           ".staging/x.gz" "$(git -C "$ROOT_DIR" check-ignore .staging/x.gz)"
+  expect_eq "git: .staging/snapshots/ được ignore" ".staging/snapshots/a.json" "$(git -C "$ROOT_DIR" check-ignore .staging/snapshots/a.json)"
+  expect_eq "git: không có file nào dưới .staging/ được theo dõi" "0" "$(git -C "$ROOT_DIR" ls-files -- .staging | wc -l | tr -d ' ')"
+fi
+# Snapshot chỉ đọc: script mongosh không có lệnh ghi/xóa.
+expect_eq "snapshot.js không có lệnh ghi/xóa" "0" "$(grep -cE '\.(insert|update|delete|drop|remove|createIndex|dropIndex|save|replace|bulkWrite|renameCollection)[A-Za-z]*\(|dropDatabase' "$ROOT_DIR/scripts/staging/rehearsal-snapshot.js" || true)"
 
 # ── shim docker: chỉ đổi đường dẫn host sau cờ đường dẫn ────────────────────
 if command -v cygpath >/dev/null 2>&1; then

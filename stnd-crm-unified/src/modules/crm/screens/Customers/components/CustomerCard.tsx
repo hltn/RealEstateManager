@@ -1,10 +1,11 @@
 /**
  * Thẻ khách của danh sách trên điện thoại (02 §7: bảng chuyển thành danh sách thẻ).
- * Tên + SĐT che + tình trạng, dự án, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, cập nhật cuối + 4 nút liên hệ.
+ * Tên + SĐT che + mã KH (mọi vai trò) + tình trạng, dự án, tiến độ 4 chấm, "Chăm sóc: <tên>" (chỉ Quản trị/Quản lý), hẹn tiếp theo, cập nhật cuối + nút liên hệ (ẩn Gọi/Zalo khi chưa có SĐT).
  */
 import { CalendarDays, Star } from 'lucide-react';
 import type { CustomerListItem } from '@crm/api';
 import { ContactActionGrid } from '@crm/components/ContactActionGrid';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { ProgressDots } from '@crm/components/ProgressDots';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
@@ -16,9 +17,11 @@ const FIELD_LABEL_CLASS = 'shrink-0 text-theme-xs text-gray-400 dark:text-gray-5
 
 interface CustomerCardProps {
   customer: CustomerListItem;
+  /** Dòng "Chăm sóc: <tên>": chỉ Quản trị/Quản lý (FR-09). */
+  showPrimaryAssignee: boolean;
 }
 
-export const CustomerCard = ({ customer }: CustomerCardProps) => {
+export const CustomerCard = ({ customer, showPrimaryAssignee }: CustomerCardProps) => {
   const { selectCustomer } = useCrmActions();
   const projectSummary = formatProjectSummary(customer.projects);
 
@@ -31,7 +34,10 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
               {customer.fullName}
             </span>
           </button>
-          <p className="font-mono text-theme-xs text-gray-500 dark:text-gray-400">{customer.phoneMasked}</p>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-theme-xs text-gray-500 dark:text-gray-400">
+            {customer.phoneMasked ? <span className="font-mono">{customer.phoneMasked}</span> : !customer.customerCode && <span>Chưa có SĐT</span>}
+            <CustomerCodeBadge code={customer.customerCode} />
+          </p>
         </div>
         <CustomerStatusChip status={customer.status} />
       </div>
@@ -49,21 +55,24 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
             <ProgressDots progress={customer.progress} criteriaDone={customer.criteriaDone} />
           </dd>
         </div>
-        <div className="flex min-w-0 items-center gap-1.5">
-          <dt className={FIELD_LABEL_CLASS}>Phụ trách:</dt>
-          <dd className="flex min-w-0 items-center gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300">
-            {customer.primaryAssignee ? (
-              <>
-                <Star size={11} className="shrink-0 fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
-                <span className="truncate">{customer.primaryAssignee.displayName}</span>
-                {customer.careTeamSize > 1 && <span className="text-gray-400">+{customer.careTeamSize - 1}</span>}
-              </>
-            ) : (
-              'Chưa phân'
-            )}
-          </dd>
-        </div>
-        <div className="flex items-center justify-end gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300">
+        {showPrimaryAssignee && (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <dt className={FIELD_LABEL_CLASS}>Chăm sóc:</dt>
+            <dd className="flex min-w-0 items-center gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300">
+              {customer.primaryAssignee ? (
+                <>
+                  <Star size={11} className="shrink-0 fill-warning-400 text-warning-400" aria-label="Người chăm sóc chính" />
+                  <span className="truncate">{customer.primaryAssignee.displayName}</span>
+                  {customer.primaryAssignee.isLocked && <span className="shrink-0 text-gray-400">(đã khóa)</span>}
+                  {customer.careTeamSize > 1 && <span className="text-gray-400">+{customer.careTeamSize - 1}</span>}
+                </>
+              ) : (
+                'Chưa phân'
+              )}
+            </dd>
+          </div>
+        )}
+        <div className={`flex items-center gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300 ${showPrimaryAssignee ? 'justify-end' : 'col-span-2'}`}>
           <dt className="sr-only">Hẹn tiếp theo</dt>
           <dd className="flex items-center gap-1">
             <CalendarDays size={14} className="shrink-0 text-brand-500 dark:text-brand-400" aria-hidden="true" />
@@ -79,7 +88,7 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
         </div>
       </dl>
 
-      <ContactActionGrid customerId={customer.id} />
+      <ContactActionGrid customerId={customer.id} hasPhone={customer.phoneMasked !== null} />
     </article>
   );
 };

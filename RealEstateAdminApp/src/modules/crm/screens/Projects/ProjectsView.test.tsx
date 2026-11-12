@@ -40,7 +40,7 @@ vi.mock('@crm/api', async () => {
     ...real,
     useCrmApi: () => api,
     useCrmActor: () => ({ userId: 'u', role: state.role, teamId: null, managedTeamIds: [] }),
-    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, users: [] }),
+    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, personaFields: [], users: [] }),
     useProjectsWithCounts: () => ({ data: state.counts }),
     useDeletedProjects: () => ({ data: state.deleted }),
   };

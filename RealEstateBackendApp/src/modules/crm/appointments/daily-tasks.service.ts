@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
+import { CatalogRefDto } from '../../../common/dto/ref.dto';
 import { PaginationMetaDto } from '../../../common/dto/paginated-response.dto';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import {
@@ -19,6 +20,12 @@ import {
   CustomerStatusDocument,
 } from '../catalogs/schemas/customer-status.schema';
 import { CareLog, CareLogDocument } from '../care-logs/schemas/care-log.schema';
+import {
+  findStatusRefsByGroups,
+  StatusGroupRefs,
+  statusInRefsCondition,
+  statusNotInRefsCondition,
+} from '../common/utils/status-group-codes.util';
 import { CrmSettingsService } from '../crm-settings/crm-settings.service';
 import {
   AccessContext,
@@ -26,8 +33,11 @@ import {
 } from '../customers/access/customer-access.service';
 import { toPhoneMasked } from '../customers/customer.mapper';
 import { insufficientRole } from '../customers/customer.errors';
-import { toRef, toUserRef } from '../customers/customer-refs.service';
-import { CustomerRefsService } from '../customers/customer-refs.service';
+import {
+  CatalogRef,
+  CustomerRefsService,
+  toUserRef,
+} from '../customers/customer-refs.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import {
   PersonaField,
@@ -42,6 +52,7 @@ import {
   AppointmentStatus,
   AppointmentType,
 } from './appointment.constants';
+import { toProjectRef } from './appointment.mapper';
 import { customerScopeStages } from './customer-scope-stages.util';
 import {
   DailyTaskResponseDto,
@@ -68,7 +79,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Trần số khách quét cho nguồn "dịp đặc biệt" (ngày có quá nhiều dịp thì chỉ lấy phần đầu, an toàn bộ nhớ). */
 const OCCASION_CUSTOMER_CAP = 2000;
 const CUSTOMER_TASK_PROJECTION =
-  'fullName phone anonymizedAt statusId interestedProjectIds primaryAssigneeId';
+  'fullName phone anonymizedAt statusId interestedProjectIds interestedProjectCodes primaryAssigneeId';
 
 /** Một việc chưa dựng response (chỉ có id tham chiếu), đủ để sắp xếp và phân trang giữa các nguồn. */
 interface TaskCandidate {
@@ -81,6 +92,8 @@ interface TaskCandidate {
   appointmentId?: Types.ObjectId;
   /** Dự án của lịch hẹn (chỉ việc kiểu lịch hẹn có gắn dự án). */
   projectId?: Types.ObjectId;
+  /** Mã dự án của lịch hẹn (ghi kép với `projectId`; lịch cũ chưa có thì dịch từ id khi dựng response). */
+  projectCode?: string | null;
   careLogId?: Types.ObjectId;
   assigneeId: Types.ObjectId | null;
 }
@@ -104,14 +117,22 @@ interface SourceQuery {
 
 const EMPTY: SourceResult = { total: 0, items: [] };
 
+/** Dự án đã dịch của một trang việc, tra được theo id hoặc theo mã (HOA). */
+interface ProjectRefs {
+  byId: Map<string, CatalogRef>;
+  byCode: Map<string, CatalogRef>;
+}
+
 /** Phần field của khách mà các nguồn việc cần (SĐT chỉ để che thành `phoneMasked`, không có CCCD). */
 type CustomerLeanForTask = {
   _id: Types.ObjectId;
   fullName: string;
-  phone?: string;
+  phone?: string | null;
   anonymizedAt?: Date | null;
   statusId: Types.ObjectId;
   interestedProjectIds?: Types.ObjectId[];
+  /** Mã dự án khách quan tâm (ghi kép với `interestedProjectIds`; khách cũ chưa có thì dùng id). */
+  interestedProjectCodes?: string[];
   primaryAssigneeId?: Types.ObjectId | null;
   lastCareLogAt?: Date | null;
   createdAt?: Date;
@@ -242,7 +263,7 @@ export class DailyTasksService {
     ]);
   }
 
-  /** Lịch hẹn SCHEDULED trong khoảng; `mine` = mình là người thực hiện hoặc phụ trách chính của khách. */
+  /** Lịch hẹn SCHEDULED trong khoảng; `mine` = mình là người thực hiện hoặc nằm trong nhóm chăm sóc của khách (FR-19). */
   private async appointmentSource(params: SourceQuery): Promise<SourceResult> {
     const { ctx, mine, window, limit } = params;
     const pipeline: PipelineStage[] = [
@@ -253,14 +274,14 @@ export class DailyTasksService {
           startAt: windowToQuery(window),
         },
       },
-      ...customerScopeStages(this.repo, ctx, { primaryAssigneeId: 1 }),
+      ...customerScopeStages(this.repo, ctx, { 'careTeam.userId': 1 }),
       ...(mine
         ? [
             {
               $match: {
                 $or: [
                   { assigneeId: ctx.actor.userId },
-                  { 'customer.0.primaryAssigneeId': ctx.actor.userId },
+                  { 'customer.0.careTeam.userId': ctx.actor.userId },
                 ],
               },
             },
@@ -285,6 +306,7 @@ export class DailyTasksService {
           startAt: Date;
           assigneeId: Types.ObjectId;
           projectId?: Types.ObjectId | null;
+          projectCode?: string | null;
         }>;
         total: Array<{ count: number }>;
       }>(pipeline)
@@ -299,7 +321,10 @@ export class DailyTasksService {
         title: row.title || APPOINTMENT_TYPE_LABELS[row.type],
         suggestion: row.note,
         appointmentId: row._id,
-        ...(row.projectId && { projectId: row.projectId }),
+        ...(row.projectId && {
+          projectId: row.projectId,
+          projectCode: row.projectCode ?? null,
+        }),
         assigneeId: row.assigneeId,
       })),
     };
@@ -307,7 +332,7 @@ export class DailyTasksService {
 
   /**
    * Bước tiếp theo của nhật ký MỚI NHẤT của khách (`occurredAt` = `lastCareLogAt` của khách: có nhật ký mới hơn là
-   * đã chăm sóc xong việc này), chưa có lịch hẹn đi kèm. `mine` = mình là người ghi nhật ký hoặc phụ trách chính.
+   * đã chăm sóc xong việc này), chưa có lịch hẹn đi kèm. `mine` = mình là người ghi nhật ký hoặc nằm trong nhóm chăm sóc của khách (FR-19).
    */
   private async followUpSource(params: SourceQuery): Promise<SourceResult> {
     const { ctx, mine, window, limit } = params;
@@ -320,7 +345,7 @@ export class DailyTasksService {
         },
       },
       ...customerScopeStages(this.repo, ctx, {
-        primaryAssigneeId: 1,
+        'careTeam.userId': 1,
         lastCareLogAt: 1,
       }),
       {
@@ -339,7 +364,7 @@ export class DailyTasksService {
               $match: {
                 $or: [
                   { authorId: ctx.actor.userId },
-                  { 'customer.0.primaryAssigneeId': ctx.actor.userId },
+                  { 'customer.0.careTeam.userId': ctx.actor.userId },
                 ],
               },
             },
@@ -400,7 +425,7 @@ export class DailyTasksService {
     });
     if (dateKeys.length === 0) return EMPTY;
 
-    const droppedStatusIds = await this.statusIdsOf([ListGroup.DROPPED]);
+    const droppedStatuses = await this.statusRefsOf([ListGroup.DROPPED]);
     const monthDays = dateKeys.flatMap((dateKey) => {
       const [, month, day] = dateKey.split('-').map(Number);
       // 29/02 của người sinh năm nhuận được nhắc vào 28/02 ở năm không nhuận.
@@ -417,7 +442,7 @@ export class DailyTasksService {
         $or: monthDays.map(([month, day]) => ({
           occasions: { $elemMatch: { month, day } },
         })),
-        statusId: { $nin: droppedStatusIds },
+        ...statusNotInRefsCondition(droppedStatuses),
         ...(mine && { 'careTeam.userId': ctx.actor.userId }),
       },
       {
@@ -468,7 +493,7 @@ export class DailyTasksService {
 
   /**
    * Khách Chưa tiếp cận/Có quan tâm quá `staleCustomerDays` ngày chưa có nhật ký (tính từ nhật ký mới nhất, hoặc từ
-   * lúc tạo khách nếu chưa có nhật ký). Luôn thuộc nhóm "Hôm nay" (việc tồn đọng, không có hạn). `mine` = phụ trách chính.
+   * lúc tạo khách nếu chưa có nhật ký). Luôn thuộc nhóm "Hôm nay" (việc tồn đọng, không có hạn). `mine` = mình nằm trong nhóm chăm sóc (FR-19; khách nhóm rỗng chỉ hiện ở chế độ `team`).
    */
   private async staleSource(
     params: SourceQuery,
@@ -477,19 +502,24 @@ export class DailyTasksService {
     const { ctx, mine, group, now, limit } = params;
     if (group !== undefined && group !== DailyTaskGroup.TODAY) return EMPTY;
 
-    const staleStatusIds = await this.statusIdsOf([
+    const staleStatuses = await this.statusRefsOf([
       ListGroup.NOT_CONTACTED,
       ListGroup.INTERESTED,
     ]);
     const cutoff = new Date(now.getTime() - staleDays * MS_PER_DAY);
     const filter = {
-      statusId: { $in: staleStatusIds },
-      'careTeam.0': { $exists: true },
-      $or: [
-        { lastCareLogAt: { $lt: cutoff } },
-        { lastCareLogAt: null, createdAt: { $lt: cutoff } },
+      // `$and`: cả điều kiện tình trạng lẫn điều kiện nhật ký đều dùng `$or`.
+      $and: [
+        statusInRefsCondition(staleStatuses),
+        {
+          $or: [
+            { lastCareLogAt: { $lt: cutoff } },
+            { lastCareLogAt: null, createdAt: { $lt: cutoff } },
+          ],
+        },
       ],
-      ...(mine && { primaryAssigneeId: ctx.actor.userId }),
+      'careTeam.0': { $exists: true },
+      ...(mine && { 'careTeam.userId': ctx.actor.userId }),
     };
     const [total, customers] = await Promise.all([
       this.repo.count(ctx.scope, filter),
@@ -523,13 +553,9 @@ export class DailyTasksService {
     };
   }
 
-  private async statusIdsOf(groups: ListGroup[]): Promise<Types.ObjectId[]> {
-    const statuses = await this.statusModel
-      .find({ listGroup: { $in: groups } })
-      .select('_id')
-      .lean()
-      .exec();
-    return statuses.map((status) => status._id);
+  /** `code` + id của các tình trạng thuộc nhóm `groups`: lọc khách theo `statusCode`, dự phòng `statusId` (FR-40). */
+  private statusRefsOf(groups: ListGroup[]): Promise<StatusGroupRefs> {
+    return findStatusRefsByGroups(this.statusModel, groups);
   }
 
   private async occasionLabels(keys: string[]): Promise<Map<string, string>> {
@@ -563,14 +589,13 @@ export class DailyTasksService {
       customers.map((customer) => [String(customer._id), customer]),
     );
     const lastLogs = await this.latestCareLogs(customerIds);
-    const maps = await this.refs.resolve({
-      statusIds: customers.map((customer) => customer.statusId),
-      projectIds: [
-        ...customers.flatMap((customer) => customer.interestedProjectIds ?? []),
-        ...items.map((item) => item.projectId),
-      ],
-      userIds: items.map((item) => item.assigneeId),
-    });
+    const [maps, projects] = await Promise.all([
+      this.refs.resolve({
+        statusIds: customers.map((customer) => customer.statusId),
+        userIds: items.map((item) => item.assigneeId),
+      }),
+      this.resolveProjects(customers, items),
+    ]);
 
     return items.flatMap((item) => {
       const customer = customerById.get(String(item.customerId));
@@ -595,13 +620,15 @@ export class DailyTasksService {
               listGroup: undefined as never,
               color: null,
             },
-            projects: (customer.interestedProjectIds ?? []).map(
-              (projectId) => toRef(projectId, maps.projects)!,
-            ),
+            projects: this.customerProjectRefs(customer, projects),
           },
           title: item.title,
           // Dự án của buổi hẹn (chỉ việc kiểu lịch hẹn có gắn dự án), tách khỏi `customer.projects`.
-          project: toRef(item.projectId, maps.projects),
+          project: toProjectRef(
+            item.projectId,
+            item.projectCode,
+            projects.byId,
+          ),
           lastCareLog: log
             ? {
                 occurredAt: log.occurredAt.toISOString(),
@@ -620,6 +647,52 @@ export class DailyTasksService {
         },
       ];
     });
+  }
+
+  /**
+   * Dịch dự án của cả trang sang `{ id, code, label }` theo lô (tối đa hai `$in`, không N+1): khách ưu tiên mã
+   * `interestedProjectCodes`, khách cũ chưa có mã thì dùng `interestedProjectIds`; dự án của lịch hẹn theo id.
+   */
+  private async resolveProjects(
+    customers: CustomerLeanForTask[],
+    items: TaskCandidate[],
+  ): Promise<ProjectRefs> {
+    const [byCode, byIdRefs] = await Promise.all([
+      this.refs.resolveByCodes(
+        'project',
+        customers.flatMap((customer) => customer.interestedProjectCodes ?? []),
+      ),
+      this.refs.resolveByIds('project', [
+        ...customers.flatMap((customer) =>
+          customer.interestedProjectCodes?.length
+            ? []
+            : (customer.interestedProjectIds ?? []),
+        ),
+        ...items.map((item) => item.projectId),
+      ]),
+    ]);
+    const all = [...byCode, ...byIdRefs];
+    // Mã và id cùng trỏ một bản ghi: gộp hai nguồn để tra theo id (lịch hẹn) hay theo mã (khách).
+    return {
+      byId: new Map(all.map((ref) => [String(ref.id), ref])),
+      byCode: new Map(all.map((ref) => [ref.code, ref])),
+    };
+  }
+
+  /** Dự án khách quan tâm theo mã (khách cũ chưa có mã thì theo id); bỏ dự án không còn tồn tại. */
+  private customerProjectRefs(
+    customer: CustomerLeanForTask,
+    projects: ProjectRefs,
+  ): CatalogRefDto[] {
+    const codes = customer.interestedProjectCodes ?? [];
+    const refs = codes.length
+      ? codes.map((code) => projects.byCode.get(code.toUpperCase()))
+      : (customer.interestedProjectIds ?? []).map((id) =>
+          projects.byId.get(String(id)),
+        );
+    return refs.flatMap((ref) =>
+      ref ? [{ id: String(ref.id), code: ref.code, label: ref.label }] : [],
+    );
   }
 
   /** Nhật ký mới nhất của mỗi khách trong lô (một aggregation). */

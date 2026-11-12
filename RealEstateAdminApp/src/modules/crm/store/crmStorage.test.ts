@@ -37,7 +37,7 @@ describe('crmStorage — version + migration an toàn', () => {
     window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: 1, data: { customers: 'hỏng' } }));
     const store = createCrmStore();
     expect(store.getState().state.customers.length).toBeGreaterThan(0);
-    expect(store.getState().state.customers.every((customer) => customer.phone.startsWith('+'))).toBe(true);
+    expect(store.getState().state.customers.every((customer) => customer.phone === null || customer.phone.startsWith('+'))).toBe(true);
   });
 
   it('CCCD đầy đủ không nằm trong dữ liệu lưu localStorage chính', () => {

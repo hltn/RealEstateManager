@@ -260,7 +260,11 @@ export class NewsArticleService implements OnModuleInit {
 
     for (const article of articles) {
       try {
-        const urlHash = article.urlHash || generateUrlHash(article.url);
+        // FR-14: urlHash từ client chỉ nhận chuỗi, object (`{ $ne }`) bị bỏ qua và tính lại từ url
+        const urlHash: string =
+          typeof article.urlHash === 'string' && article.urlHash
+            ? article.urlHash
+            : generateUrlHash(article.url);
 
         const existing = await this.newsArticleModel.findOne({ urlHash });
         if (existing) {
@@ -952,9 +956,11 @@ Content: ${article.content || article.summary || 'N/A'}
    * Chi xoa dung cac hash duoc truyen vao, khong anh huong bai khac.
    */
   async deleteArticlesByUrlHashes(urlHashes: string[]): Promise<void> {
-    if (urlHashes.length === 0) return;
+    // FR-14: chỉ nhận chuỗi trước khi vào filter Mongo
+    const safeHashes = urlHashes.filter((h): h is string => typeof h === 'string');
+    if (safeHashes.length === 0) return;
     await this.newsArticleModel
-      .deleteMany({ urlHash: { $in: urlHashes } })
+      .deleteMany({ urlHash: { $in: safeHashes } })
       .exec();
   }
 

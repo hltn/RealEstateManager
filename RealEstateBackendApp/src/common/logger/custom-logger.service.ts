@@ -1,9 +1,7 @@
 import { ConsoleLogger, Injectable } from '@nestjs/common';
 import type { Logger } from 'winston';
-import {
-  createAppFileLogger,
-  resolveLoggerOptions,
-} from './winston.config';
+import { createAppFileLogger, resolveLoggerOptions } from './winston.config';
+import { redactPii } from './pii-redactor.util';
 
 /** Số cấp `cause` tối đa được in thêm cho một Error. */
 const MAX_ERROR_CAUSE_DEPTH = 5;
@@ -144,6 +142,11 @@ export class CustomLogger extends ConsoleLogger {
     return `${callerInfo}${String(message)}`;
   }
 
+  /** FR-15: che PII ở mọi tham số phụ dạng chuỗi (stack, context). */
+  private static redactParams(params: unknown[]): unknown[] {
+    return params.map((p) => (typeof p === 'string' ? redactPii(p) : p));
+  }
+
   private fileLogger: Logger | null | undefined;
 
   private getFileLogger(): Logger | null {
@@ -175,32 +178,32 @@ export class CustomLogger extends ConsoleLogger {
   }
 
   log(message: unknown, ...optionalParams: unknown[]): void {
-    const prepended = this.prependCallerInfo(message);
-    super.log(prepended, ...optionalParams);
+    const prepended = redactPii(this.prependCallerInfo(message));
+    super.log(prepended, ...CustomLogger.redactParams(optionalParams));
     this.forwardToFile('log', prepended);
   }
 
   error(message: unknown, ...optionalParams: unknown[]): void {
-    const prepended = this.prependCallerInfo(message);
-    super.error(prepended, ...optionalParams);
+    const prepended = redactPii(this.prependCallerInfo(message));
+    super.error(prepended, ...CustomLogger.redactParams(optionalParams));
     this.forwardToFile('error', prepended);
   }
 
   warn(message: unknown, ...optionalParams: unknown[]): void {
-    const prepended = this.prependCallerInfo(message);
-    super.warn(prepended, ...optionalParams);
+    const prepended = redactPii(this.prependCallerInfo(message));
+    super.warn(prepended, ...CustomLogger.redactParams(optionalParams));
     this.forwardToFile('warn', prepended);
   }
 
   debug(message: unknown, ...optionalParams: unknown[]): void {
-    const prepended = this.prependCallerInfo(message);
-    super.debug(prepended, ...optionalParams);
+    const prepended = redactPii(this.prependCallerInfo(message));
+    super.debug(prepended, ...CustomLogger.redactParams(optionalParams));
     this.forwardToFile('debug', prepended);
   }
 
   verbose(message: unknown, ...optionalParams: unknown[]): void {
-    const prepended = this.prependCallerInfo(message);
-    super.verbose(prepended, ...optionalParams);
+    const prepended = redactPii(this.prependCallerInfo(message));
+    super.verbose(prepended, ...CustomLogger.redactParams(optionalParams));
     this.forwardToFile('verbose', prepended);
   }
 }

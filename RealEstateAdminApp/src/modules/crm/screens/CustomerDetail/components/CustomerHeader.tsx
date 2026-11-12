@@ -1,12 +1,15 @@
-// Đầu trang chi tiết khách (02 §4.3): tên + tình trạng (đổi được) + phụ trách chính + SĐT che + Gọi/Zalo + ghi chú nhanh/đặt hẹn.
+// Đầu trang chi tiết khách (02 §4.3): tên + mã KH + tình trạng (đổi được) + phụ trách chính + SĐT che + Gọi/Zalo + ghi chú nhanh/đặt hẹn.
+// Khách chưa có SĐT (FR-02): ẩn dòng SĐT và nút Gọi/Zalo (không disable). Mã KH: desktop cạnh tên; mobile ở `MobileDetailHeader`.
 // Desktop: breadcrumb + thẻ ngang; mobile: thẻ gọn (nút Gọi/Zalo cố định ở `MobileContactFooter`).
 import { CalendarPlus, MessageCircle, NotebookPen, Phone, Star } from 'lucide-react';
 import type { CustomerDetail } from '@crm/api';
 import { CrmBreadcrumb } from '@crm/components/CrmBreadcrumb';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { useContactActions } from '@crm/hooks/useContactActions';
 import { formatVnRelative, formatVnDateTime } from '@crm/lib/dateTime';
 import { getInitials } from '@crm/lib/staff';
-import { BUTTON_PRIMARY_LG_CLASS, BUTTON_SUCCESS_LG_CLASS, CARD_CLASS, ICON_BUTTON_OUTLINE_CLASS } from '@crm/lib/uiClasses';
+import { BUTTON_PRIMARY_LG_CLASS, BUTTON_SUCCESS_LG_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, ICON_BUTTON_OUTLINE_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { buildCrmPath } from '@crm/routes';
 import { useCrmActions } from '@crm/store';
 import { DeleteCustomerButton } from './DeleteCustomerButton';
@@ -27,10 +30,12 @@ export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderP
 
   const meta = (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-theme-sm text-gray-500 dark:text-gray-400">
-      <span className="inline-flex items-center gap-1.5">
-        <Phone size={15} aria-hidden="true" className="text-gray-400" />
-        <PhoneDisplay customer={customer} />
-      </span>
+      {hasPhone(customer.phoneMasked) && (
+        <span className="inline-flex items-center gap-1.5">
+          <Phone size={15} aria-hidden="true" className="text-gray-400" />
+          <PhoneDisplay customer={customer} />
+        </span>
+      )}
       <span className="inline-flex items-center gap-1">
         <Star size={14} aria-hidden="true" className="fill-warning-400 text-warning-400" />
         Phụ trách chính:{' '}
@@ -76,6 +81,7 @@ export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderP
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-xl font-semibold text-gray-800 md:text-2xl dark:text-white/90">{customer.fullName}</h1>
+              <CustomerCodeBadge code={customer.customerCode} className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`} />
               <StatusDropdown customer={customer} />
             </div>
             {meta}
@@ -84,14 +90,18 @@ export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderP
 
         {/* 1 nút brand duy nhất (Gọi) theo quy tắc màu Admin: Gọi xanh dương, Zalo xanh lá. */}
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <button type="button" onClick={() => callCustomer(customer.id)} className={BUTTON_PRIMARY_LG_CLASS}>
-            <Phone size={18} aria-hidden="true" />
-            Gọi
-          </button>
-          <button type="button" onClick={() => messageZalo(customer.id)} className={BUTTON_SUCCESS_LG_CLASS}>
-            <MessageCircle size={18} aria-hidden="true" />
-            Zalo
-          </button>
+          {hasPhone(customer.phoneMasked) && (
+            <>
+              <button type="button" onClick={() => callCustomer(customer.id)} className={BUTTON_PRIMARY_LG_CLASS}>
+                <Phone size={18} aria-hidden="true" />
+                Gọi
+              </button>
+              <button type="button" onClick={() => messageZalo(customer.id)} className={BUTTON_SUCCESS_LG_CLASS}>
+                <MessageCircle size={18} aria-hidden="true" />
+                Zalo
+              </button>
+            </>
+          )}
           <button type="button" onClick={onAddNote} aria-label="Ghi chú" title="Ghi chú" className={ICON_BUTTON_OUTLINE_CLASS}>
             <NotebookPen size={18} aria-hidden="true" />
           </button>

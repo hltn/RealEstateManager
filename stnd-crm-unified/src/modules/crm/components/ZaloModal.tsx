@@ -28,7 +28,8 @@ export const buildZaloTemplates = (customer: ContactTarget): string[] => {
 /** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
 export interface ContactTarget {
   name: string;
-  phone: string;
+  /** `null`/rỗng = khách chưa có SĐT: không vẽ số (modal chỉ mở khi có số, giữ phòng thủ). */
+  phone: string | null;
   preferredSalutation: string;
   interestedProjects: string[];
   staffName?: string;
@@ -84,7 +85,7 @@ export const ZaloModal = ({ customer, onClose, onSent }: ZaloModalProps) => {
                 Gửi tin nhắn Zalo ZNS / Tư vấn
               </h3>
               <p className="truncate text-theme-sm text-gray-500 dark:text-gray-400">
-                Gửi tới: <span className="font-medium text-gray-700 dark:text-gray-300">{customer.name}</span> ({customer.phone})
+                Gửi tới: <span className="font-medium text-gray-700 dark:text-gray-300">{customer.name}</span>{customer.phone ? ` (${customer.phone})` : ''}
               </p>
             </div>
           </div>

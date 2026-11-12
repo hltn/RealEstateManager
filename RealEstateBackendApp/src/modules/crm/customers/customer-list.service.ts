@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
+import { BusinessException } from '../../../common/exceptions/business.exception';
+import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { PaginationMetaDto } from '../../../common/dto/paginated-response.dto';
 import {
   buildPaginationMeta,
@@ -25,6 +27,11 @@ import {
 import { CrmAbuseMonitorService } from '../common/security/crm-abuse-monitor.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { parseSort } from '../common/utils/sort-parser.util';
+import {
+  refArrayInCondition,
+  refInCondition,
+} from '../common/utils/ref-codes-condition.util';
+import { statusInRefsCondition } from '../common/utils/status-group-codes.util';
 import { buildPersonaFilterConditions } from '../persona/persona.rules';
 import { CustomerAccessService } from './access/customer-access.service';
 import {
@@ -33,7 +40,12 @@ import {
   toDeletedListItem,
   toListItem,
 } from './customer.mapper';
-import { CustomerRefsService } from './customer-refs.service';
+import {
+  CatalogRef,
+  CatalogRefKind,
+  CustomerRefsService,
+  normalizeCodes,
+} from './customer-refs.service';
 import { CustomersRepository, DeletedMode } from './customers.repository';
 import {
   CustomerFilterQueryDto,
@@ -60,6 +72,13 @@ const SORTABLE_FIELDS = [
   'personaCompleteness',
 ] as const;
 const VIETNAMESE_COLLATION = { locale: 'vi' } as const;
+/** Kết quả chuẩn hóa một bộ lọc danh mục; `codeRefs` có sẵn khi đã dịch mã (gửi cả id lẫn code). */
+interface ResolvedFilterRef {
+  ids?: Types.ObjectId[];
+  codes?: string[];
+  codeRefs?: CatalogRef[];
+}
+
 const NO_MATCH = { _id: { $in: [] as Types.ObjectId[] } };
 
 const toObjectIds = (ids: string[] | undefined): Types.ObjectId[] =>
@@ -111,7 +130,11 @@ export class CustomerListService {
     };
   }
 
-  /** Số khách mỗi tab (cùng bộ lọc trừ `listGroup`): 1 aggregation `$group` theo `statusId`. */
+  /**
+   * Số khách mỗi tab (cùng bộ lọc trừ `listGroup`): 1 aggregation `$group` theo `statusCode` (FR-40).
+   * Nhóm kèm `statusId` để khách chưa có `statusCode` (dữ liệu cũ, trước khi lệnh bù chạy) vẫn được đếm đúng
+   * bằng cách dịch id sang mã trong bộ nhớ, nên tổng không bao giờ thiếu khách.
+   */
   async counts(
     jwt: JwtPayload,
     query: CustomerFilterQueryDto,
@@ -121,15 +144,24 @@ export class CustomerListService {
     const filter = await this.buildFilter(query);
 
     const [rows, statuses] = await Promise.all([
-      this.repo.aggregate<{ _id: Types.ObjectId; count: number }>(
-        ctx.scope,
-        filter,
-        [{ $group: { _id: '$statusId', count: { $sum: 1 } } }],
-      ),
-      this.statusModel.find({}).select('listGroup').lean().exec(),
+      this.repo.aggregate<{
+        _id: { code?: string | null; id: Types.ObjectId };
+        count: number;
+      }>(ctx.scope, filter, [
+        {
+          $group: {
+            _id: { code: '$statusCode', id: '$statusId' },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      this.statusModel.find({}).select('code listGroup').lean().exec(),
     ]);
-    const groupOf = new Map(
-      statuses.map((status) => [String(status._id), status.listGroup]),
+    const statusById = new Map(
+      statuses.map((status) => [String(status._id), status]),
+    );
+    const statusByCode = new Map(
+      statuses.map((status) => [status.code, status]),
     );
     const counts: CustomerListCountsDto = {
       ALL: 0,
@@ -139,12 +171,28 @@ export class CustomerListService {
       DROPPED: 0,
       byStatus: [],
     };
+    // Gộp theo mã (một tình trạng có thể có hàng đã điền mã và hàng chưa điền).
+    const byCode = new Map<string, { statusId: string; count: number }>();
     for (const row of rows) {
       counts.ALL += row.count;
-      const group: ListGroup | undefined = groupOf.get(String(row._id));
+      const status =
+        (row._id.code ? statusByCode.get(row._id.code) : undefined) ??
+        statusById.get(String(row._id.id));
+      const group: ListGroup | undefined = status?.listGroup;
       if (group) counts[group] += row.count;
-      counts.byStatus.push({ statusId: String(row._id), count: row.count });
+      const code = row._id.code ?? status?.code;
+      if (!code) continue;
+      const entry = byCode.get(code) ?? {
+        statusId: String(status?._id ?? row._id.id),
+        count: 0,
+      };
+      entry.count += row.count;
+      byCode.set(code, entry);
     }
+    counts.byStatus = [...byCode].map(([statusCode, entry]) => ({
+      ...entry,
+      statusCode,
+    }));
     return counts;
   }
 
@@ -154,6 +202,7 @@ export class CustomerListService {
     query: ListDeletedCustomersQueryDto,
   ): Promise<{ data: DeletedCustomerListItemDto[]; meta: PaginationMetaDto }> {
     const ctx = await this.access.resolve(jwt);
+    await this.guardSearch(jwt, query.q);
     const { page, limit, skip } = normalizePagination(query.page, query.limit);
     const conditions: Record<string, unknown>[] = [];
     if (query.q) {
@@ -228,7 +277,7 @@ export class CustomerListService {
     await this.rateLimit.consumeDeduped(
       jwt.sub,
       'CUSTOMER_SEARCH',
-      `${keyword.kind}:${keyword.kind === 'phone' ? keyword.digits : keyword.text}`,
+      `${keyword.kind}:${keyword.kind === 'name' || keyword.kind === 'email' ? keyword.text : keyword.digits}`,
     );
     if (keyword.kind === 'phone') {
       await this.abuse.trackPhoneSearch(jwt.sub, keyword.digits);
@@ -246,25 +295,27 @@ export class CustomerListService {
   ): Promise<Record<string, unknown>> {
     const conditions: Record<string, unknown>[] = [];
 
-    const statusCondition = await this.statusCondition(
-      query.statusIds,
-      listGroup,
-    );
+    const statusCondition = await this.statusCondition(query, listGroup);
     if (statusCondition) conditions.push(statusCondition);
 
-    if (query.sourceIds?.length) {
-      conditions.push({ sourceId: { $in: toObjectIds(query.sourceIds) } });
-    }
-    if (query.projectIds?.length) {
-      conditions.push({
-        interestedProjectIds: { $in: toObjectIds(query.projectIds) },
-      });
-    }
-    if (query.areaIds?.length) {
-      conditions.push({
-        areaId: { $in: await this.expandAreas(query.areaIds) },
-      });
-    }
+    const sourceFilter = await this.refFilter(
+      'source',
+      { ids: query.sourceIds, codes: query.sourceCodes },
+      { idField: 'sourceId', codeField: 'sourceCode', param: 'sourceCodes' },
+    );
+    if (sourceFilter) conditions.push(sourceFilter);
+    const projectFilter = await this.refFilter(
+      'project',
+      { ids: query.projectIds, codes: query.projectCodes },
+      {
+        idField: 'interestedProjectIds',
+        codeField: 'interestedProjectCodes',
+        param: 'projectCodes',
+      },
+    );
+    if (projectFilter) conditions.push(projectFilter);
+    const areaFilter = await this.areaCondition(query);
+    if (areaFilter) conditions.push(areaFilter);
     if (query.tagIds?.length) {
       conditions.push({ tagIds: { $in: toObjectIds(query.tagIds) } });
     }
@@ -325,36 +376,162 @@ export class CustomerListService {
     return conditions.length > 0 ? { $and: conditions } : {};
   }
 
-  /** `listGroup` (tab) + `statusIds` => `statusId $in` (giao của hai tập); tab ALL không lọc. */
+  /**
+   * `listGroup` (tab) + `statusCodes` => `statusCode $in` (giao của hai tập); tab ALL không lọc (FR-40). Kèm nhánh
+   * `statusId` cho khách chưa backfill `statusCode` (Architecture Q3) để khách đó không biến mất khỏi tab.
+   * `statusIds` (cũ, PWA cũ) giữ nguyên đường cũ: lọc theo `statusId` (giao với tab nếu có).
+   */
   private async statusCondition(
-    statusIds: string[] | undefined,
+    query: CustomerFilterQueryDto,
     listGroup: string | undefined,
   ): Promise<Record<string, unknown> | null> {
-    let ids: Types.ObjectId[] | null = statusIds?.length
-      ? toObjectIds(statusIds)
-      : null;
-    if (listGroup && listGroup !== 'ALL') {
-      const inGroup = await this.statusModel
-        .find({ listGroup })
-        .select('_id')
-        .lean()
-        .exec();
-      const groupIds = new Set(inGroup.map((status) => String(status._id)));
-      ids = ids
-        ? ids.filter((id) => groupIds.has(String(id)))
-        : inGroup.map((status) => status._id);
-    }
-    if (ids === null) return null;
-    return ids.length > 0 ? { statusId: { $in: ids } } : NO_MATCH;
-  }
+    const picked = await this.resolveFilterRef(
+      'status',
+      { ids: query.statusIds, codes: query.statusCodes },
+      'statusCodes',
+    );
+    const inTab = !!listGroup && listGroup !== 'ALL';
 
-  private async expandAreas(areaIds: string[]): Promise<Types.ObjectId[]> {
-    const roots = toObjectIds(areaIds);
-    const areas = await this.areaModel
-      .find({ $or: [{ _id: { $in: roots } }, { ancestorIds: { $in: roots } }] })
-      .select('_id')
+    if (picked.ids) {
+      let ids = picked.ids;
+      if (inTab) {
+        const inGroup = await this.statusModel
+          .find({ listGroup })
+          .select('_id')
+          .lean()
+          .exec();
+        const groupIds = new Set(inGroup.map((status) => String(status._id)));
+        ids = ids.filter((id) => groupIds.has(String(id)));
+      }
+      return ids.length > 0 ? { statusId: { $in: ids } } : NO_MATCH;
+    }
+
+    let codes: string[] | null = picked.codes ?? null;
+    if (codes === null && !inTab) return null;
+    // Tình trạng của tab, hoặc tình trạng theo `statusCodes`: lấy cả id để khách chưa backfill `statusCode` vẫn khớp.
+    const candidates = await this.statusModel
+      .find(inTab ? { listGroup } : { code: { $in: codes ?? [] } })
+      .select('code')
       .lean()
       .exec();
-    return areas.map((area) => area._id);
+    if (inTab) {
+      const groupCodes = candidates.map((status) => status.code);
+      codes = codes
+        ? codes.filter((code) => groupCodes.includes(code))
+        : groupCodes;
+    }
+    const picks = codes ?? [];
+    if (picks.length === 0) return NO_MATCH;
+    return statusInRefsCondition({
+      codes: picks,
+      ids: candidates
+        .filter((status) => picks.includes(status.code))
+        .map((status) => status._id),
+    });
+  }
+
+  /**
+   * Lọc nguồn/dự án: `…Codes` lọc theo `code` KÈM nhánh id song song cho khách chưa backfill `…Code` (FR-40,
+   * Architecture 5.1.8a); `…Ids` (cũ) lọc thuần theo id. `ids` của nhánh id lấy từ đúng MỘT lần `resolveByCodes`
+   * (không N+1). Nguồn là trường đơn (`refInCondition`); dự án quan tâm là mảng (`refArrayInCondition`).
+   */
+  private async refFilter(
+    kind: CatalogRefKind,
+    input: { ids?: string[]; codes?: string[] },
+    fields: { idField: string; codeField: string; param: string },
+  ): Promise<Record<string, unknown> | null> {
+    const picked = await this.resolveFilterRef(kind, input, fields.param);
+    if (picked.codes) {
+      // Dùng lại kết quả dịch của `resolveFilterRef` nếu có (gửi cả id lẫn code), nếu không thì dịch đúng một lần.
+      const refs =
+        picked.codeRefs ?? (await this.refs.resolveByCodes(kind, picked.codes));
+      const condition =
+        kind === 'project' ? refArrayInCondition : refInCondition;
+      return condition(fields, {
+        codes: picked.codes,
+        ids: refs.map((ref) => ref.id),
+      });
+    }
+    if (picked.ids) return { [fields.idField]: { $in: picked.ids } };
+    return null;
+  }
+
+  /**
+   * Chuẩn hóa một bộ lọc danh mục: chỉ `codes` -> mã (mã dự án chuẩn hóa chữ HOA); chỉ `ids` -> id (đường cũ);
+   * có cả hai: phải cùng một tập bản ghi (nếu không 400) rồi dùng mã. Không có gì -> `{}`.
+   * Mã không tồn tại vẫn nằm trong bộ lọc (không khớp khách nào), không báo lỗi.
+   */
+  private async resolveFilterRef(
+    kind: CatalogRefKind,
+    input: { ids?: string[]; codes?: string[] },
+    param: string,
+  ): Promise<ResolvedFilterRef> {
+    const codes = input.codes ?? [];
+    const ids = input.ids ?? [];
+    let codeRefs: CatalogRef[] | undefined;
+    if (codes.length === 0) {
+      return ids.length > 0 ? { ids: toObjectIds(ids) } : {};
+    }
+    if (ids.length > 0) {
+      const [byCode, byId] = await Promise.all([
+        this.refs.resolveByCodes(kind, codes),
+        this.refs.resolveByIds(kind, toObjectIds(ids)),
+      ]);
+      const idSet = new Set(byId.map((ref) => String(ref.id)));
+      const sameSet =
+        idSet.size === byCode.length &&
+        idSet.size === new Set(ids).size &&
+        byCode.every((ref) => idSet.has(String(ref.id)));
+      if (!sameSet) {
+        throw new BusinessException(
+          ErrorCode.VALIDATION_FAILED,
+          'Bộ lọc id và code không cùng một tập bản ghi',
+          HttpStatus.BAD_REQUEST,
+          { field: param },
+        );
+      }
+      codeRefs = byCode;
+    }
+    return { codes: normalizeCodes(kind, codes), codeRefs };
+  }
+
+  /**
+   * `areaCodes`/`areaIds` gồm cả khu vực con (qua `ancestorIds`). `areaCodes`: nhánh mã dùng `areaCode` của cả cây,
+   * nhánh id dùng `areaId` của chính các khu vực đã mở rộng (khách chưa backfill `areaCode`; khu vực con chưa có
+   * `code` chỉ còn nhánh id).
+   */
+  private async areaCondition(
+    query: CustomerFilterQueryDto,
+  ): Promise<Record<string, unknown> | null> {
+    const picked = await this.resolveFilterRef(
+      'area',
+      { ids: query.areaIds, codes: query.areaCodes },
+      'areaCodes',
+    );
+    if (picked.ids) {
+      const areas = await this.expandAreas(picked.ids);
+      return { areaId: { $in: areas.map((area) => area._id) } };
+    }
+    if (!picked.codes) return null;
+    const roots =
+      picked.codeRefs ?? (await this.refs.resolveByCodes('area', picked.codes));
+    const areas = await this.expandAreas(roots.map((ref) => ref.id));
+    return refInCondition(
+      { codeField: 'areaCode', idField: 'areaId' },
+      {
+        codes: areas.flatMap((area) => (area.code ? [area.code] : [])),
+        ids: areas.map((area) => area._id),
+      },
+    );
+  }
+
+  private expandAreas(
+    roots: Types.ObjectId[],
+  ): Promise<Array<{ _id: Types.ObjectId; code?: string }>> {
+    return this.areaModel
+      .find({ $or: [{ _id: { $in: roots } }, { ancestorIds: { $in: roots } }] })
+      .select('_id code')
+      .lean()
+      .exec();
   }
 }

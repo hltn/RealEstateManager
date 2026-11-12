@@ -435,7 +435,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       ).toBe(403);
     });
 
-    it('phụ trách chính thêm người cùng nhóm; thành viên thường 403; người khác nhóm/bị khóa/EDITOR 400 USER_NOT_ASSIGNABLE', async () => {
+    it('phụ trách chính thêm người; thành viên thường 403; người bị khóa/EDITOR/chỉ-Quản-trị 400 USER_NOT_ASSIGNABLE (không còn lý do "khác nhóm")', async () => {
       const added = await call(
         'POST',
         `/crm/customers/${c1}/care-team/members`,
@@ -457,10 +457,10 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       expect(memberAdds.status).toBe(403);
       expect(memberAdds.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
 
-      // Phụ trách chính (Nhân viên) chỉ phân cho người cùng nhóm; Quản lý chỉ cho nhóm mình quản lý.
+      // FR-13: người được mời chỉ cần ACTIVE và có role Manager/Staff; KHÔNG còn giới hạn theo nhóm người mời.
       for (const [who, target] of [
-        ['staffA', 'staffC'],
-        ['manager1', 'staffC'],
+        ['staffA', 'blockedStaff'],
+        ['manager1', 'editor'],
         ['admin', 'blockedStaff'],
         ['admin', 'editor'],
         ['admin', 'admin'],
@@ -480,7 +480,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       }
     });
 
-    it('thêm trùng => 409; gửi primaryUserId khi nhóm đã có người => 400; Quản trị thêm người nhóm khác => teamIds mở rộng và Quản lý nhóm đó thấy khách', async () => {
+    it('thêm trùng => 409; gửi primaryUserId khi nhóm đã có người => 400; Nhân viên PRIMARY mời Nhân viên NHÓM KHÁC => 201, teamIds mở rộng và Quản lý nhóm của người được mời thấy khách', async () => {
       const duplicate = await call(
         'POST',
         `/crm/customers/${c1}/care-team/members`,
@@ -512,13 +512,15 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         ).body.data.map((item: any) => item.id),
       ).not.toContain(c1);
 
+      // FR-13: Nhân viên (PRIMARY, nhóm A) mời staffC (nhóm B) — trước v1.0.5 bị 400 USER_NOT_ASSIGNABLE.
       const crossTeam = await call(
         'POST',
         `/crm/customers/${c1}/care-team/members`,
-        'admin',
+        'staffA',
         { userIds: [ids.staffC] },
       );
       expect(crossTeam.status).toBe(201);
+      expect(crossTeam.body.data.primary.id).toBe(ids.staffA);
       expect(new Set((await customerDoc(c1))!.teamIds.map(String))).toEqual(
         new Set([ids.teamA, ids.teamB]),
       );
@@ -530,48 +532,23 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       await expectCareTeamInvariant(c1);
     });
 
-    it('đổi phụ trách chính: chỉ Quản trị/Quản lý; người cũ thành MEMBER; luôn đúng 1 PRIMARY', async () => {
-      const forbidden = await call(
-        'PUT',
-        `/crm/customers/${c1}/care-team/primary`,
-        'staffA',
-        { userId: ids.staffB },
-      );
-      expect(forbidden.status).toBe(403);
-      expect(forbidden.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
-
-      const changed = await call(
-        'PUT',
-        `/crm/customers/${c1}/care-team/primary`,
-        'manager1',
-        { userId: ids.staffB },
-      );
-      expect(changed.status).toBe(200);
-      expect(changed.body.data.primary.id).toBe(ids.staffB);
-      expect(
-        changed.body.data.members.find((m: any) => m.user.id === ids.staffA)
-          .role,
-      ).toBe('MEMBER');
+    it('FR-11: PRIMARY bị khóa — route PUT primary đã xóa (404) và phụ trách chính không đổi', async () => {
+      for (const who of ['staffA', 'manager1', 'admin']) {
+        const res = await call(
+          'PUT',
+          `/crm/customers/${c1}/care-team/primary`,
+          who,
+          { userId: ids.staffB },
+        );
+        expect([who, res.status]).toEqual([who, 404]);
+      }
+      const team = await call('GET', `/crm/customers/${c1}/care-team`, 'admin');
+      expect(team.body.data.primary.id).toBe(ids.staffA);
+      expect(await auditOf(c1, 'PRIMARY_CHANGED')).toHaveLength(0);
       await expectCareTeamInvariant(c1);
-      const [audit] = await auditOf(c1, 'PRIMARY_CHANGED');
-      expect(audit.changes[0]).toMatchObject({
-        field: 'primaryAssignee',
-        from: 'staffA',
-        to: 'staffB',
-      });
-
-      // Đổi sang chính người đang là phụ trách chính: không có gì thay đổi (không audit thêm).
-      const again = await call(
-        'PUT',
-        `/crm/customers/${c1}/care-team/primary`,
-        'manager1',
-        { userId: ids.staffB },
-      );
-      expect(again.status).toBe(200);
-      expect(await auditOf(c1, 'PRIMARY_CHANGED')).toHaveLength(1);
     });
 
-    it('gỡ: phụ trách chính phải có người thay (chỉ Quản trị/Quản lý); thành viên thường không gỡ được ai; người thay là người mới thì phải hợp lệ', async () => {
+    it('FR-11: gỡ PRIMARY luôn 409 PRIMARY_LOCKED (kể cả Quản trị/Quản lý/chính PRIMARY, kể cả gửi newPrimaryUserId thừa); thành viên thường không gỡ được ai; gỡ MEMBER vẫn được', async () => {
       const [selfRemove, memberRemove] = await Promise.all([
         call(
           'DELETE',
@@ -581,47 +558,39 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         call(
           'DELETE',
           `/crm/customers/${c1}/care-team/members/${ids.staffC}`,
-          'staffA',
+          'staffB',
         ),
       ]);
       expect(selfRemove.status).toBe(403);
       expect(memberRemove.status).toBe(403);
 
-      const noReplacement = await call(
-        'DELETE',
-        `/crm/customers/${c1}/care-team/members/${ids.staffB}`,
-        'manager1',
-      );
-      expect(noReplacement.status).toBe(400);
-      expect(noReplacement.body.errorCode).toBe('PRIMARY_REPLACEMENT_REQUIRED');
-
-      const invalidReplacement = await call(
-        'DELETE',
-        `/crm/customers/${c1}/care-team/members/${ids.staffB}?newPrimaryUserId=${ids.staffD}`,
-        'manager1',
-      );
-      expect(invalidReplacement.status).toBe(400);
-      expect(invalidReplacement.body.errorCode).toBe('USER_NOT_ASSIGNABLE');
-
-      // staffC đã là thành viên nhưng thuộc nhóm B (ngoài phạm vi Quản lý nhóm A): vẫn phải bị từ chối.
-      const outOfScopeReplacement = await call(
-        'DELETE',
-        `/crm/customers/${c1}/care-team/members/${ids.staffB}?newPrimaryUserId=${ids.staffC}`,
-        'manager1',
-      );
-      expect(outOfScopeReplacement.status).toBe(400);
-      expect(outOfScopeReplacement.body.errorCode).toBe('USER_NOT_ASSIGNABLE');
+      for (const who of ['manager1', 'admin', 'staffA']) {
+        const locked = await call(
+          'DELETE',
+          `/crm/customers/${c1}/care-team/members/${ids.staffA}?newPrimaryUserId=${ids.staffB}`,
+          who,
+        );
+        expect([who, locked.status, locked.body.errorCode]).toEqual([
+          who,
+          409,
+          'PRIMARY_LOCKED',
+        ]);
+      }
+      expect(
+        (await call('GET', `/crm/customers/${c1}/care-team`, 'admin')).body.data
+          .primary.id,
+      ).toBe(ids.staffA);
 
       const removed = await call(
         'DELETE',
-        `/crm/customers/${c1}/care-team/members/${ids.staffB}?newPrimaryUserId=${ids.staffC}`,
+        `/crm/customers/${c1}/care-team/members/${ids.staffB}`,
         'admin',
       );
       expect(removed.status).toBe(200);
       expect(memberIdsOf(removed).sort()).toEqual(
         [ids.staffA, ids.staffC].sort(),
       );
-      expect(removed.body.data.primary.id).toBe(ids.staffC);
+      expect(removed.body.data.primary.id).toBe(ids.staffA);
       await expectCareTeamInvariant(c1);
       await expectTeamIdsMatchMembers(c1);
       expect(await auditOf(c1, 'CARE_TEAM_MEMBER_REMOVED')).toHaveLength(1);
@@ -644,11 +613,6 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
           `/crm/customers/${c1}/care-team/members`,
           { userIds: [ids.staffD] },
         ],
-        [
-          'PUT',
-          `/crm/customers/${c1}/care-team/primary`,
-          { userId: ids.staffB },
-        ],
         ['GET', `/crm/customers/${c1}/care-logs`, undefined],
         [
           'POST',
@@ -670,15 +634,15 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       }
     });
 
-    it('Quản trị gỡ phụ trách chính và chọn người thay chưa có trong nhóm (không nhóm): người thay được thêm làm PRIMARY, teamIds cập nhật theo nhóm hiện tại', async () => {
+    it('Quản trị gỡ thành viên nhóm khác: teamIds cập nhật theo nhóm hiện tại và Quản lý nhóm đó mất quyền ngay', async () => {
       const res = await call(
         'DELETE',
-        `/crm/customers/${c1}/care-team/members/${ids.staffC}?newPrimaryUserId=${ids.staffD}`,
+        `/crm/customers/${c1}/care-team/members/${ids.staffC}`,
         'admin',
       );
       expect(res.status).toBe(200);
-      expect(res.body.data.primary.id).toBe(ids.staffD);
-      expect(memberIdsOf(res).sort()).toEqual([ids.staffA, ids.staffD].sort());
+      expect(res.body.data.primary.id).toBe(ids.staffA);
+      expect(memberIdsOf(res)).toEqual([ids.staffA]);
       await expectCareTeamInvariant(c1);
       await expectTeamIdsMatchMembers(c1);
       // staffC rời nhóm => Quản lý nhóm B mất quyền với khách này ngay.
@@ -688,9 +652,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
     });
 
     it('đồng thời: nhiều người cùng thêm thành viên không mất cập nhật; thêm trùng một người chỉ thành công một lần', async () => {
-      const { id } = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffA },
-      });
+      const { id } = await createCustomer('staffA');
       const adds = await Promise.all(
         ['staffB', 'staffC', 'staffD'].map((who) =>
           call('POST', `/crm/customers/${id}/care-team/members`, 'admin', {
@@ -704,9 +666,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       await expectCareTeamInvariant(id);
       await expectTeamIdsMatchMembers(id);
 
-      const { id: other } = await createCustomer('admin', {
-        careTeam: { memberIds: [], primaryUserId: ids.staffA },
-      });
+      const { id: other } = await createCustomer('staffA');
       const same = await Promise.all(
         [1, 2, 3, 4].map(() =>
           call('POST', `/crm/customers/${other}/care-team/members`, 'admin', {
@@ -726,9 +686,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
 
     it('đồng thời với đổi nhóm của người dùng: teamIds của khách luôn khớp nhóm HIỆN TẠI của thành viên (không write-skew)', async () => {
       for (let round = 0; round < 6; round += 1) {
-        const { id } = await createCustomer('admin', {
-          careTeam: { memberIds: [], primaryUserId: ids.staffA },
-        });
+        const { id } = await createCustomer('staffA');
         const [add, move] = await Promise.all([
           call('POST', `/crm/customers/${id}/care-team/members`, 'admin', {
             userIds: [ids.staffD],
@@ -740,270 +698,6 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         expect([add.status, move.status]).toEqual([201, 200]);
         await expectTeamIdsMatchMembers(id);
       }
-    });
-  });
-
-  // ---------------------------------------------------------------------------------------------
-  describe('Đề nghị tham gia nhóm chăm sóc', () => {
-    let cr: string;
-    let crPhone: string;
-    let requestId: string;
-
-    it('gửi đề nghị: customerRef từ phone-lookups; hasPendingRequest phản ánh đề nghị đang chờ; trùng/đã trong nhóm/không tồn tại bị từ chối', async () => {
-      ({ id: cr, phone: crPhone } = await createCustomer('staffA', {
-        fullName: 'Khách Cần Xin Vào',
-      }));
-      await call('POST', `/crm/customers/${cr}/care-team/members`, 'staffA', {
-        userIds: [ids.staffB],
-      });
-
-      const before = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffD',
-        {
-          phone: crPhone,
-        },
-      );
-      expect(before.body.data).toMatchObject({
-        exists: true,
-        isAccessible: false,
-        canRequestJoin: true,
-        hasPendingRequest: false,
-        customerRef: cr,
-      });
-
-      const created = await call('POST', '/crm/care-team-requests', 'staffD', {
-        customerRef: cr,
-        message: 'Em quen khách này, xin tham gia',
-      });
-      expect(created.status).toBe(201);
-      expect(created.body.data).toMatchObject({ status: 'PENDING' });
-      requestId = created.body.data.id;
-
-      const after = await call(
-        'POST',
-        '/crm/customers/phone-lookups',
-        'staffD',
-        {
-          phone: crPhone,
-        },
-      );
-      expect(after.body.data.hasPendingRequest).toBe(true);
-      // Người khác chưa gửi nên vẫn false.
-      expect(
-        (
-          await call('POST', '/crm/customers/phone-lookups', 'staffC', {
-            phone: crPhone,
-          })
-        ).body.data.hasPendingRequest,
-      ).toBe(false);
-
-      const duplicate = await call(
-        'POST',
-        '/crm/care-team-requests',
-        'staffD',
-        {
-          customerRef: cr,
-        },
-      );
-      expect(duplicate.status).toBe(409);
-      expect(duplicate.body.errorCode).toBe('JOIN_REQUEST_EXISTS');
-
-      const alreadyIn = await call(
-        'POST',
-        '/crm/care-team-requests',
-        'staffA',
-        {
-          customerRef: cr,
-        },
-      );
-      expect(alreadyIn.status).toBe(409);
-      expect(alreadyIn.body.errorCode).toBe('ALREADY_IN_CARE_TEAM');
-
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'staffC', {
-            customerRef: new Types.ObjectId().toHexString(),
-          })
-        ).status,
-      ).toBe(404);
-      // Quản trị không cần đề nghị (đã thấy mọi khách); EDITOR không có quyền CRM.
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'admin', {
-            customerRef: cr,
-          })
-        ).status,
-      ).toBe(403);
-      expect(
-        (
-          await call('POST', '/crm/care-team-requests', 'editor', {
-            customerRef: cr,
-          })
-        ).status,
-      ).toBe(403);
-    });
-
-    it('hộp "mình gửi" không lộ tên khách; hộp "cần duyệt" chỉ có người duyệt hợp lệ (Quản trị, Quản lý trong phạm vi, phụ trách chính)', async () => {
-      const mine = await call(
-        'GET',
-        '/crm/care-team-requests?box=mine',
-        'staffD',
-      );
-      expect(mine.status).toBe(200);
-      expect(mine.body.meta.total).toBe(1);
-      expect(mine.body.data[0]).toMatchObject({
-        id: requestId,
-        status: 'PENDING',
-        requester: { id: ids.staffD },
-        customer: { id: cr },
-      });
-      expect(mine.body.data[0].customer.fullName).toBeUndefined();
-
-      const toReview = (who: string, query = '') =>
-        call('GET', `/crm/care-team-requests?box=to-review${query}`, who);
-      const reviewers: Array<[string, number]> = [
-        ['staffA', 1], // phụ trách chính
-        ['admin', 1],
-        ['manager1', 1], // Quản lý nhóm A
-        ['staffB', 0], // thành viên thường
-        ['staffC', 0], // ngoài nhóm
-        ['manager2', 0], // Quản lý nhóm khác
-        ['staffD', 0], // chính người gửi
-      ];
-      for (const [who, expected] of reviewers) {
-        const res = await toReview(who);
-        expect([who, res.status, res.body.meta.total]).toEqual([
-          who,
-          200,
-          expected,
-        ]);
-      }
-      const seen = await toReview('staffA');
-      expect(seen.body.data[0].customer).toMatchObject({
-        id: cr,
-        fullName: 'Khách Cần Xin Vào',
-      });
-      expect(
-        (await toReview('staffA', '&status=APPROVED')).body.meta.total,
-      ).toBe(0);
-      expect(
-        (await call('GET', '/crm/care-team-requests', 'staffA')).status,
-      ).toBe(400);
-    });
-
-    it('duyệt: thành viên thường 403, người gửi tự duyệt/người lạ hủy 404; phụ trách chính duyệt => thêm MEMBER; duyệt lại 409', async () => {
-      const member = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestId}`,
-        'staffB',
-        { status: 'APPROVED' },
-      );
-      expect(member.status).toBe(403);
-      expect(member.body.errorCode).toBe('CARE_TEAM_ACTION_FORBIDDEN');
-      expect(
-        (
-          await call(
-            'PATCH',
-            `/crm/care-team-requests/${requestId}`,
-            'staffD',
-            { status: 'APPROVED' },
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await call(
-            'PATCH',
-            `/crm/care-team-requests/${requestId}`,
-            'staffC',
-            { status: 'CANCELED' },
-          )
-        ).status,
-      ).toBe(404);
-
-      const approved = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestId}`,
-        'staffA',
-        { status: 'APPROVED', resolutionNote: 'OK' },
-      );
-      expect(approved.status).toBe(200);
-      expect(approved.body.data).toMatchObject({
-        status: 'APPROVED',
-        resolvedBy: { id: ids.staffA },
-      });
-      const doc = await customerDoc(cr);
-      expect(
-        doc!.careTeam.find((m: any) => String(m.userId) === ids.staffD),
-      ).toMatchObject({ role: 'MEMBER' });
-      await expectCareTeamInvariant(cr);
-      await expectTeamIdsMatchMembers(cr);
-      expect((await call('GET', `/crm/customers/${cr}`, 'staffD')).status).toBe(
-        200,
-      );
-      expect(await auditOf(cr, 'JOIN_REQUEST_RESOLVED')).toHaveLength(1);
-
-      const again = await call(
-        'PATCH',
-        `/crm/care-team-requests/${requestId}`,
-        'staffA',
-        { status: 'REJECTED' },
-      );
-      expect(again.status).toBe(409);
-      expect(again.body.errorCode).toBe('JOIN_REQUEST_RESOLVED');
-    });
-
-    it('người gửi hủy được và gửi lại được; duyệt và hủy đồng thời chỉ một bên thắng, trạng thái và nhóm luôn nhất quán', async () => {
-      const { id } = await createCustomer('staffA');
-      const first = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: id,
-      });
-      expect(first.status).toBe(201);
-      const canceled = await call(
-        'PATCH',
-        `/crm/care-team-requests/${first.body.data.id}`,
-        'staffC',
-        { status: 'CANCELED' },
-      );
-      expect(canceled.status).toBe(200);
-      expect(canceled.body.data.status).toBe('CANCELED');
-
-      const second = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: id,
-      });
-      expect(second.status).toBe(201);
-      const [approve, cancel] = await Promise.all([
-        call(
-          'PATCH',
-          `/crm/care-team-requests/${second.body.data.id}`,
-          'admin',
-          { status: 'APPROVED' },
-        ),
-        call(
-          'PATCH',
-          `/crm/care-team-requests/${second.body.data.id}`,
-          'staffC',
-          { status: 'CANCELED' },
-        ),
-      ]);
-      expect([approve.status, cancel.status].sort()).toEqual([200, 409]);
-      const stored = await connection
-        .collection('care_team_requests')
-        .findOne({ _id: new Types.ObjectId(second.body.data.id) });
-      const inTeam = (await customerDoc(id))!.careTeam.some(
-        (m: any) => String(m.userId) === ids.staffC,
-      );
-      expect(inTeam).toBe(stored!.status === 'APPROVED');
-      expect(['APPROVED', 'CANCELED']).toContain(stored!.status);
-
-      const mine = await call(
-        'GET',
-        '/crm/care-team-requests?box=mine&limit=100',
-        'staffC',
-      );
-      expect(mine.body.meta.total).toBe(2);
     });
   });
 
@@ -1957,11 +1651,20 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
           content: 'Chị Bí Mật ở số 12 Lê Lợi, muốn căn 3PN',
         },
       );
-      const request = await call('POST', '/crm/care-team-requests', 'staffC', {
-        customerRef: id,
+      // Luồng gửi đề nghị đã bỏ (v1.0.5, T-13): chèn thẳng bản ghi PENDING cũ để kiểm việc ẩn danh vẫn dọn collection.
+      const requestId = new Types.ObjectId();
+      await connection.collection('care_team_requests').insertOne({
+        _id: requestId,
+        customerId: new Types.ObjectId(id),
+        requesterId: new Types.ObjectId(ids.staffC),
+        status: 'PENDING',
         message: 'Tôi quen chị Bí Mật',
+        resolvedBy: null,
+        resolvedAt: null,
+        resolutionNote: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
-      expect(request.status).toBe(201);
       expect(storage.objects.has(imageKey)).toBe(true);
 
       const anonymized = await call(
@@ -2023,7 +1726,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
 
       const storedRequest = await connection
         .collection('care_team_requests')
-        .findOne({ _id: new Types.ObjectId(request.body.data.id) });
+        .findOne({ _id: requestId });
       expect(storedRequest).toMatchObject({
         message: null,
         status: 'CANCELED',
@@ -2046,7 +1749,12 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       b1 = (await createCustomer('staffA')).id;
       b2 = (await createCustomer('staffA')).id;
       b3 = (await createCustomer('staffC')).id;
+      // Khách cũ (trước v1.0.5) chưa có nhóm chăm sóc: người tạo mới luôn là PRIMARY nên dựng bằng DB.
       bNoTeam = (await createCustomer('admin')).id;
+      await customers().updateOne(
+        { _id: new Types.ObjectId(bNoTeam) },
+        { $set: { careTeam: [], primaryAssigneeId: null, teamIds: [] } },
+      );
     });
 
     const bulk = (
@@ -2143,22 +1851,18 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         { customerId: bNoTeam, errorCode: 'PRIMARY_REQUIRED' },
       ]);
 
+      // FR-11: bulk ASSIGN không đặt/đổi PRIMARY — truyền primaryUserId bị từ chối cả lô, không khách nào đổi.
       const withPrimary = await bulk('admin', {
         type: 'ASSIGN',
         customerIds: [b1, bNoTeam],
         payload: { memberIds: [ids.staffC], primaryUserId: ids.staffB },
       });
-      expect(withPrimary.body.data.succeeded).toEqual([b1, bNoTeam]);
+      expect(withPrimary.status).toBe(400);
+      expect(withPrimary.body.errorCode).toBe('VALIDATION_FAILED');
       expect((await customerDoc(b1))!.primaryAssigneeId.toString()).toBe(
-        ids.staffB,
+        ids.staffA,
       );
-      expect((await customerDoc(bNoTeam))!.primaryAssigneeId.toString()).toBe(
-        ids.staffB,
-      );
-      for (const id of [b1, bNoTeam]) {
-        await expectCareTeamInvariant(id);
-        await expectTeamIdsMatchMembers(id);
-      }
+      expect((await customerDoc(bNoTeam))!.careTeam).toHaveLength(0);
 
       const invalid = await bulk('admin', {
         type: 'ASSIGN',

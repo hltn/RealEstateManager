@@ -1,6 +1,6 @@
 /**
- * Bộ lọc nâng cao danh sách khách (X3): tình trạng, nguồn, dự án (tìm không dấu), khu vực, người chăm sóc
- * (bất kỳ ai trong nhóm) / phụ trách chính, tiến độ, ngày cập nhật, nghề nghiệp, thẻ.
+ * Bộ lọc nâng cao danh sách khách (X3): tình trạng, nguồn, dự án (tìm không dấu), khu vực, người phụ trách
+ * (bất kỳ ai trong nhóm) / phụ trách chính, tiến độ, ngày cập nhật, nghề nghiệp, thẻ, trường chân dung lọc được (FR-49).
  * - Web: vỏ `components/ui/modal` của Admin; App: `BottomSheet`.
  * Bản nháp giữ cục bộ; chỉ ghi vào store khi bấm "Áp dụng" hoặc "Thiết lập lại".
  */
@@ -8,7 +8,15 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Check, ListFilter, RotateCcw, Search } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
 import { useAssigneeFilterOptions, useCatalogs, useProjectFilterOptions } from '@crm/api';
-import { PROGRESS_FILTER_OPTIONS, toggleValue } from '@crm/lib/customerFilters';
+import {
+  buildPersonaFilterFields,
+  getPersonaFilterValues,
+  PROGRESS_FILTER_OPTIONS,
+  pruneOrphanPersonaFilters,
+  togglePersonaFilter,
+  toggleValue,
+} from '@crm/lib/customerFilters';
+import { groupTagsByCategory } from '@crm/lib/tagCategories';
 import { includesVietnamese } from '@crm/lib/text';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, CAPTION_CLASS, MODAL_INPUT_CLASS, PILL_ACTIVE_CLASS, PILL_IDLE_CLASS } from '@crm/lib/uiClasses';
 import type { CustomerFilters } from '@crm/types/app';
@@ -23,6 +31,8 @@ const CHIP_BASE_CLASS =
 interface AdvancedFilterModalProps {
   filters: CustomerFilters;
   variant: AdvancedFilterVariant;
+  /** Hiện nhóm "Phụ trách chính" (FR-17: chỉ Quản trị/Quản lý; mặc định ẩn). Nhân viên vẫn lọc được "Người phụ trách". */
+  isShowingPrimaryFilter?: boolean;
   onApply: (filters: CustomerFilters) => void;
   onReset: () => void;
   onClose: () => void;
@@ -69,10 +79,13 @@ const ChipGroup = <T extends string | number>({ title, options, selected, onTogg
   </section>
 );
 
-export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClose }: AdvancedFilterModalProps) => {
-  const { catalogs } = useCatalogs();
+export const AdvancedFilterModal = ({ filters, variant, isShowingPrimaryFilter = false, onApply, onReset, onClose }: AdvancedFilterModalProps) => {
+  const { catalogs, personaFields } = useCatalogs();
+  const tagGroups = useMemo(() => groupTagsByCategory(catalogs.tags.filter((tag) => tag.isActive)), [catalogs.tags]);
   const staffOptions = useAssigneeFilterOptions();
   const [draft, setDraft] = useState<CustomerFilters>(filters);
+  // FR-49: trường chân dung lọc được lấy từ `GET /crm/persona-fields` (thêm/bớt ở màn Trường chân dung thì tự thấy).
+  const personaFilterFields = useMemo(() => buildPersonaFilterFields(personaFields, draft.personaFilters), [personaFields, draft.personaFilters]);
   const [projectKeyword, setProjectKeyword] = useState('');
   const isSheet = variant === 'sheet';
   const toggle = <K extends 'statusIds' | 'sourceIds' | 'projectIds' | 'areaIds' | 'assigneeIds' | 'primaryAssigneeIds' | 'tagIds'>(key: K, value: string) =>
@@ -82,11 +95,13 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
   const visibleProjects = useMemo(() => projectOptions.filter((project) => includesVietnamese(project.searchText, projectKeyword)), [projectOptions, projectKeyword]);
 
   const handleApply = () => {
-    onApply(draft);
+    // Danh sách trường chưa tải (rỗng) thì giữ nguyên, tránh xóa nhầm bộ lọc hợp lệ.
+    const personaFilters = personaFields.length > 0 ? pruneOrphanPersonaFilters(draft.personaFilters, personaFilterFields) : draft.personaFilters;
+    onApply({ ...draft, personaFilters });
     onClose();
   };
   const handleReset = () => {
-    setDraft({ ...draft, statusIds: [], sourceIds: [], projectIds: [], areaIds: [], assigneeIds: [], primaryAssigneeIds: [], progress: [], updatedFrom: '', updatedTo: '', occupation: '', tagIds: [] });
+    setDraft({ ...draft, statusIds: [], sourceIds: [], projectIds: [], areaIds: [], assigneeIds: [], primaryAssigneeIds: [], progress: [], updatedFrom: '', updatedTo: '', occupation: '', tagIds: [], personaFilters: [] });
     setProjectKeyword('');
     onReset();
   };
@@ -140,20 +155,47 @@ export const AdvancedFilterModal = ({ filters, variant, onApply, onReset, onClos
         selected={draft.areaIds}
         onToggle={(value) => toggle('areaIds', value)}
       />
-      <ChipGroup title="Người chăm sóc (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
-      <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />
+      <ChipGroup title="Người phụ trách (chính hoặc hỗ trợ)" options={staffOptions} selected={draft.assigneeIds} onToggle={(value) => toggle('assigneeIds', value)} />
+      {isShowingPrimaryFilter && (
+        <ChipGroup title="Phụ trách chính" options={staffOptions} selected={draft.primaryAssigneeIds} onToggle={(value) => toggle('primaryAssigneeIds', value)} />
+      )}
       <ChipGroup
         title="Tiến độ"
         options={PROGRESS_FILTER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
         selected={draft.progress}
         onToggle={(value) => setDraft((current) => ({ ...current, progress: toggleValue(current.progress, value) }))}
       />
-      <ChipGroup
-        title="Thẻ sở thích / nghề nghiệp (khớp tất cả thẻ chọn)"
-        options={catalogs.tags.filter((tag) => tag.isActive).map((tag) => ({ value: tag.id, label: `#${tag.name}` }))}
-        selected={draft.tagIds}
-        onToggle={(value) => toggle('tagIds', value)}
-      />
+      {tagGroups.length === 0 ? (
+        <ChipGroup title="Thẻ (khớp tất cả thẻ chọn)" options={[]} selected={draft.tagIds} onToggle={(value) => toggle('tagIds', value)} />
+      ) : (
+        tagGroups.map((group, index) => (
+          <ChipGroup
+            key={group.category}
+            title={group.title}
+            options={group.tags.map((tag) => ({ value: tag.id, label: `#${tag.name}` }))}
+            selected={draft.tagIds.filter((id) => group.tags.some((tag) => tag.id === id))}
+            onToggle={(value) => toggle('tagIds', value)}
+          >
+            {index === 0 && <p className="text-theme-xs text-gray-500 dark:text-gray-400">Khách phải có tất cả thẻ đã chọn.</p>}
+          </ChipGroup>
+        ))
+      )}
+
+      {personaFilterFields.length > 0 && (
+        <div className="space-y-6" data-testid="persona-filter-block">
+          {personaFilterFields.map((field, index) => (
+            <ChipGroup
+              key={field.key}
+              title={field.label}
+              options={field.options}
+              selected={getPersonaFilterValues(draft.personaFilters, field.key)}
+              onToggle={(value) => setDraft((current) => ({ ...current, personaFilters: togglePersonaFilter(current.personaFilters, field.key, value) }))}
+            >
+              {index === 0 && <p className="text-theme-xs text-gray-500 dark:text-gray-400">Chân dung khách: chọn nhiều giá trị của cùng một mục là khớp một trong các giá trị; khác mục thì phải khớp đủ.</p>}
+            </ChipGroup>
+          ))}
+        </div>
+      )}
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="space-y-1.5">

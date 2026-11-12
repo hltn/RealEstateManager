@@ -4,6 +4,7 @@ import { buildCareLogBody } from './careApi';
 import { toArea, toPersonaField, toProject, toStatusTone } from './catalogMappers';
 import { toAppointment, toCareLog, toDailyTask, toCustomerDetail, toCustomerPersona, toDeletedCustomer, toHistoryEntry, toPersonaValueBody } from './customerMappers';
 import { buildCustomerListParams, buildCustomerFilterParams, normalizeSearchTerm } from './customerQuery';
+import { cleanParams } from './crmHttp';
 import { toProjectBody } from './projectBody';
 import type { CareLogDto, CustomerDetailDto, PersonaFieldDto } from './dto';
 
@@ -11,6 +12,7 @@ const STATUS = { id: 's1', code: 'NOT_CONTACTED', label: 'Chưa tiếp cận', l
 
 const detailDto = (overrides: Partial<CustomerDetailDto> = {}): CustomerDetailDto => ({
   id: 'c1',
+  customerCode: 'KH-000001',
   fullName: 'Nguyễn Văn An',
   phoneMasked: '0912 ••• 678',
   status: STATUS,
@@ -35,8 +37,8 @@ const detailDto = (overrides: Partial<CustomerDetailDto> = {}): CustomerDetailDt
     timing: { isDone: false, description: '', updatedAt: null, updatedBy: null },
   },
   careTeam: [
-    { user: { id: 'u1', displayName: 'Hạnh' }, role: 'PRIMARY', addedAt: 't', addedBy: null },
-    { user: { id: 'u2', displayName: 'Minh' }, role: 'MEMBER', addedAt: 't', addedBy: { id: 'u1', displayName: 'Hạnh' } },
+    { user: { id: 'u1', displayName: 'Hạnh', role: 'STAFF', isLocked: false }, role: 'PRIMARY', addedAt: 't', addedBy: null },
+    { user: { id: 'u2', displayName: 'Minh', role: 'MANAGER', isLocked: true }, role: 'MEMBER', addedAt: 't', addedBy: { id: 'u1', displayName: 'Hạnh' } },
   ],
   nationalIdMasked: '••••1234',
   hasNationalId: true,
@@ -47,33 +49,54 @@ const detailDto = (overrides: Partial<CustomerDetailDto> = {}): CustomerDetailDt
   createdBy: null,
   createdVia: 'WEB',
   nextActionSuggestions: [],
-  permissions: { canEdit: true, canManageCareTeam: false, canChangePrimary: false, canDelete: false },
+  permissions: { canEdit: true, canManageCareTeam: false, canSetInitialPrimary: false, canDelete: false },
   version: 3,
   ...overrides,
 });
 
 describe('toCustomerDetail', () => {
   it('map email null -> chuỗi rỗng, người hệ thống khi thiếu, quyền theo response + canRevealNationalId ở cấp trên', () => {
-    const detail = toCustomerDetail(detailDto(), { actor: { userId: 'u9', role: 'STAFF' } });
+    const detail = toCustomerDetail(detailDto());
     expect(detail.email).toBe('');
     expect(detail.createdBy.displayName).toBe('Hệ thống');
     expect(detail.version).toBe(3);
-    expect(detail.permissions).toMatchObject({ canEdit: true, canManageCareTeam: false, canRevealNationalId: false });
+    expect(detail.permissions).toMatchObject({ canEdit: true, canManageCareTeam: false, canSetInitialPrimary: false, canRevealNationalId: false });
+    expect(detail.permissions).not.toHaveProperty('canChangePrimary');
+    expect(detail.permissions).not.toHaveProperty('canReviewJoinRequests');
     expect(detail.status.tone).toBe('gray');
   });
 
-  it('canReviewJoinRequests: Quản trị/Quản lý hoặc phụ trách chính; thành viên thường thì không', () => {
-    const review = (userId: string, role: 'ADMIN' | 'MANAGER' | 'STAFF') => toCustomerDetail(detailDto(), { actor: { userId, role } }).permissions.canReviewJoinRequests;
-    expect(review('u1', 'STAFF')).toBe(true); // phụ trách chính
-    expect(review('u2', 'STAFF')).toBe(false); // thành viên thường
-    expect(review('x', 'MANAGER')).toBe(true);
-    expect(review('x', 'ADMIN')).toBe(true);
+  it('customerCode và phoneMasked: giữ nguyên; khách chưa có SĐT -> phoneMasked null, vẫn có mã', () => {
+    const detail = toCustomerDetail(detailDto());
+    expect(detail).toMatchObject({ customerCode: 'KH-000001', phoneMasked: '0912 ••• 678' });
+    const noPhone = toCustomerDetail(detailDto({ phoneMasked: null }));
+    expect(noPhone.phoneMasked).toBeNull();
+    expect(noPhone.customerCode).toBe('KH-000001');
+    expect(toCustomerDetail(detailDto({ customerCode: null })).customerCode).toBeNull();
   });
 
-  it('chức danh thành viên suy từ vai trò khi tra được', () => {
-    const detail = toCustomerDetail(detailDto(), { actor: { userId: 'u1', role: 'STAFF' }, roleOf: (id) => (id === 'u2' ? 'MANAGER' : undefined) });
-    expect(detail.careTeam[1].user.jobTitle).toBe('Quản lý');
-    expect(detail.careTeam[0].user.jobTitle).toBe('');
+  it('canSetInitialPrimary đi từ response (không còn suy ra từ vai trò người xem)', () => {
+    expect(toCustomerDetail(detailDto({ permissions: { canEdit: true, canManageCareTeam: true, canSetInitialPrimary: true, canDelete: false } })).permissions.canSetInitialPrimary).toBe(true);
+    expect(toCustomerDetail(detailDto()).permissions.canSetInitialPrimary).toBe(false);
+  });
+
+  it('chức danh thành viên lấy từ careTeam[].user.role; isLocked giữ nguyên', () => {
+    const detail = toCustomerDetail(detailDto());
+    expect(detail.careTeam[0].user).toMatchObject({ jobTitle: 'Nhân viên kinh doanh', isLocked: false });
+    expect(detail.careTeam[1].user).toMatchObject({ jobTitle: 'Quản lý', isLocked: true });
+  });
+
+  it('user.role vắng (undefined) hoặc null -> chức danh rỗng, không ném lỗi', () => {
+    const detail = toCustomerDetail(
+      detailDto({
+        careTeam: [
+          { user: { id: 'u1', displayName: 'Hạnh' }, role: 'PRIMARY', addedAt: 't', addedBy: null },
+          { user: { id: 'u2', displayName: 'Minh', role: null }, role: 'MEMBER', addedAt: 't', addedBy: null },
+        ],
+      }),
+    );
+    expect(detail.careTeam.map((member) => member.user.jobTitle)).toEqual(['', '']);
+    expect(detail.careTeam[0].user).not.toHaveProperty('isLocked');
   });
 });
 
@@ -231,8 +254,14 @@ describe('danh mục', () => {
     const create = toProjectBody(project, { isCreate: true });
     expect(create).not.toHaveProperty('isActive');
     expect(create).not.toHaveProperty('fullName');
-    expect(create).toMatchObject({ developer: null, location: null, areaId: null, propertyTypes: ['Căn hộ'] });
-    expect(toProjectBody(project).isActive).toBe(false);
+    // FR-46: gửi MÃ loại hình (rỗng khi dự án chưa có mã), không còn gửi nhãn.
+    expect(create).toMatchObject({ code: 'A1', developer: null, location: null, areaCode: null, propertyTypeCodes: [] });
+    expect(create).not.toHaveProperty('propertyTypes');
+    const update = toProjectBody(project);
+    expect(update.isActive).toBe(false);
+    // Q1: PATCH không gửi `code` (bất biến) và không gửi loại hình khi người dùng chưa đụng tới.
+    expect(update).not.toHaveProperty('code');
+    expect(update).not.toHaveProperty('propertyTypeCodes');
   });
 });
 
@@ -283,8 +312,16 @@ describe('tham số danh sách khách (05 §2.3)', () => {
     expect(normalizeSearchTerm(' a ')).toBeUndefined();
     expect(normalizeSearchTerm('  an ')).toBe('an');
     const params = buildCustomerListParams({ q: 'a', listGroup: 'ALL', statusIds: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: '  ' });
-    expect(params).toMatchObject({ q: undefined, listGroup: undefined, statusIds: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: undefined });
+    expect(params).toMatchObject({ q: undefined, listGroup: undefined, statusCodes: ['1', '2'], progress: [0, 25], page: 2, limit: 20, sort: '-progress', occupation: undefined });
     expect(buildCustomerListParams({ listGroup: 'NET' }).listGroup).toBe('NET');
+  });
+
+  it('personaFilters (FR-49) gửi nguyên `fieldKey:value`, cả list lẫn list-counts; rỗng thì không gửi', () => {
+    const personaFilters = ['property_type:APT', 'property_type:VILLA', 'loan_support:true'];
+    expect(buildCustomerListParams({ personaFilters }).personaFilters).toEqual(personaFilters);
+    expect(buildCustomerFilterParams({ personaFilters }).personaFilters).toEqual(personaFilters);
+    expect(cleanParams(buildCustomerFilterParams({ personaFilters }))?.personaFilters).toBe('property_type:APT,property_type:VILLA,loan_support:true');
+    expect(cleanParams(buildCustomerFilterParams({ personaFilters: [] }))).toBeUndefined();
   });
 
   it('list-counts: không có page/limit/sort/listGroup', () => {
@@ -300,7 +337,7 @@ describe('body nhật ký (05 §2.6)', () => {
     expect(full).toEqual({
       content: 'a',
       contactChannel: 'ZALO',
-      contactResultId: 'r1',
+      contactResultCode: 'r1',
       attachmentIds: ['x'],
       nextAction: { suggestion: 'Gọi lại', dueAt: '2026-10-30T02:00:00.000Z', appointment: { type: 'CALLBACK' } },
     });

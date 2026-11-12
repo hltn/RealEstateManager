@@ -62,6 +62,8 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
   const TypeIcon = style.icon;
   const actionVariant = getAppointmentActionVariant(appointment.type);
   const isCompleted = appointment.status === 'DONE';
+  /** Khách chưa có SĐT (null hoặc "" của dữ liệu cũ): ẩn nút Gọi. */
+  const hasPhone = Boolean(appointment.customer.phoneMasked);
   const title = getAppointmentTitle(appointment);
 
   const openProfile = () => selectCustomer(appointment.customer.id);
@@ -139,10 +141,12 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
         <div className="flex shrink-0 flex-col gap-2 border-t border-gray-100 pt-3 md:w-44 md:border-t-0 md:pt-0 dark:border-white/[0.05]">
           {actionVariant === 'visit' && (
             <>
-              <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
-                <PhoneCall size={14} aria-hidden="true" />
-                Gọi nhanh
-              </button>
+              {hasPhone && (
+                <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
+                  <PhoneCall size={14} aria-hidden="true" />
+                  Gọi nhanh
+                </button>
+              )}
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={openProfile} className={ACTION_OUTLINE_CLASS}>
                   Hồ sơ khách
@@ -170,10 +174,12 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           {actionVariant === 'reminder' && (
             <>
-              <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_PRIMARY_CLASS}>
-                <PhoneCall size={14} aria-hidden="true" />
-                Gọi ngay cho khách
-              </button>
+              {hasPhone && (
+                <button type="button" onClick={() => callCustomer(appointment.customer.id)} className={ACTION_PRIMARY_CLASS}>
+                  <PhoneCall size={14} aria-hidden="true" />
+                  Gọi ngay cho khách
+                </button>
+              )}
               <div className="flex items-center gap-1.5">
                 <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
                   {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}

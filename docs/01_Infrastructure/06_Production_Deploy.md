@@ -1,6 +1,6 @@
 # 06 — Triển khai production (Docker Compose)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.5 (2026-11-10)
 
 Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Tài liệu này mô tả kiến trúc, biến môi trường, cách triển khai mới, **quy trình nâng cấp từ bản Mongo standalone cũ**, sao lưu và xử lý sự cố. Stack dev (`RealEstateBackendApp/docker-compose.dev.yml`, project `realestate-dev`) là hệ thống riêng, không bị ảnh hưởng.
 
@@ -75,7 +75,10 @@ Mẫu toàn placeholder: `.env.docker.example`. Biến mới cần thêm vào `.
 | `MONGO_APP_USERNAME`, `MONGO_APP_PASSWORD`, `S3_APP_ACCESS_KEY_ID`, `S3_APP_SECRET_ACCESS_KEY` | không | tài khoản quyền tối thiểu cho backend (thay root) | mặc định để trống = backend dùng root như cũ. Cách tạo và chuyển: **mục 13** (PT-016). Mật khẩu hex, không đặt trong repo |
 | `S3_SIGNED_URL_TTL_SECONDS`, `REDIS_KEY_PREFIX` | không | backend | mặc định 900 và `rem:` |
 | `CRM_ENABLED`, `CRM_ATTACHMENTS_ENABLED` | không | cờ CRM dùng chung backend (`FEATURE_CRM_*`) và build frontend (`VITE_*`) | mặc định `false`; xem mục 10. **Không** đặt `FEATURE_CRM_*` trong `.env.docker` (compose ghi đè) |
+| `CRM_PUSH_ENABLED`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `PUSH_ENDPOINT_HOST_ALLOWLIST` | không | Web Push (`FEATURE_CRM_PUSH` do compose chuyển từ `CRM_PUSH_ENABLED`) | mặc định tắt; cách sinh khóa VAPID, bật/tắt khẩn cấp: xem **mục 10** và **mục 15**. **Không** đặt `FEATURE_CRM_PUSH` trong `.env.docker` |
 | `FRONTEND_URL` | nên có | CORS (origin duy nhất được phép) và chuyển hướng sau Google Drive OAuth | `https://<domain-admin>` (scheme + host, không dấu `/` cuối, không đường dẫn); thiếu thì compose dùng `http://localhost` (OAuth sẽ về localhost). Cách kiểm: mục 13.1 |
+| `HELMET_CSP_ENABLED` | không | bật Content-Security-Policy của Helmet trên backend | mặc định `false` (`true`, không phân biệt hoa/thường và không có khoảng trắng thừa, thì bật; giá trị khác thì tắt); chỉ bật khi Admin SPA phục vụ riêng (nginx) và đã thử Swagger UI + web admin không bị chặn |
+| `QUEUE_WORKERS_ENABLED` | không | backend chạy worker + job lặp BullMQ (nhắc lịch hẹn, dọn ảnh, gửi push) | mặc định `true` khi bỏ trống ở production; chỉ đặt `false` khi tách tiến trình worker riêng (phải còn >= 1 instance `true`, nếu không nhắc lịch/push/thumbnail không chạy). Nhận `true|1|yes|on` |
 | `CRM_PII_ENCRYPTION_KEY` | **có khi bật CRM** | mã hóa CCCD (AES-256-GCM) | `openssl rand -base64 32`; **mất khóa = không giải mã lại được CCCD đã lưu**, sao lưu ngoài máy chủ |
 | `CLOUDFLARE_TUNNEL_TOKEN` | **có** | token Cloudflare Tunnel (`cloudflared`) | lấy ở Cloudflare Zero Trust; thiếu thì `docker compose` báo lỗi ngay (trước đây thiếu thì cloudflared chạy với token rỗng và lỗi âm thầm) |
 | `NINE_ROUTER_INITIAL_PASSWORD` | có | mật khẩu dashboard 9Router (`INITIAL_PASSWORD` của container `nine-router`) | `openssl rand -hex 16`; theo README chỉ có tác dụng khi volume `nine_router_data` chưa có mật khẩu đã lưu (VPS đang chạy: không đổi được mật khẩu hiện có, nhưng vẫn phải điền); không ghi vào repo/chat |
@@ -214,6 +217,8 @@ Quy ước: chạy ở thư mục gốc repo trên máy production.
 **Mức kiểm chứng:** các bước của bản quy trình cũ (backup 5.1, `stop` 5.2, bật replica set + tạo user trên dữ liệu cũ 5.3, `up`, kiểm dữ liệu 5.5) đã chạy thật trên volume mẫu (2 document còn nguyên sau nâng cấp), trừ đường lui 5.8. **Chuỗi MỚI chưa từng chạy end-to-end**: 5.0a (gỡ sửa tay, chuyển nhánh), chỉ `up` 4 service ở 5.4, migration 005/006 qua `scripts/run-migration.sh` ở 5.4a (ts-node và migration 005/006 đã chạy thật trên image `builder` ở máy dev, chưa chạy trên VPS), 5.4b với `nine-router`, và đường lui 5.8 mới (dùng compose cũ đã lưu). Làm trên VPS từng bước, thấy điều lạ thì dừng.
 
 **5.0 Chuẩn bị**
+
+> Các lệnh ở 5.0 và 5.0a là quy trình **tay** cho VPS chạy nhánh `production` (ghi cứng `origin production`, đúng với VPS). Từ v1.0.5 `deploy.sh` **không còn ép nhánh `production`**: nó pull trên nhánh đang checkout theo upstream của nhánh đó (mục 11, 11.8). Hai việc này độc lập, đừng nhầm.
 
 ```bash
 git status --short                                            # phải trống; còn dòng nào (vd ` M docker-compose.yml`) thì làm 5.0a thay cho `git pull`
@@ -643,6 +648,105 @@ docker exec -i realestate_mongo bash -c 'mongorestore --config <(printf "passwor
 #   mc mirror --overwrite /backup/crm-attachments local/crm-attachments
 ```
 
+### 6.1. Khôi phục DB + code về bản trước deploy bằng `scripts/restore.sh`
+
+Mỗi lần `deploy.sh` chạy (trừ `--plan-only`) để lại một **bộ ba** cùng thời gian `<TS>` trong `backups/`: dump DB (`deploy-pre-<TS>.archive.gz`), **bundle code** (`deploy-code-pre-<TS>.bundle`, `git bundle` của nhánh đang chạy, quyền 600, đã `git bundle verify`) và **manifest** (`deploy-pre-<TS>.manifest`, mục 11.8). Ngoài ra có thẻ git **cục bộ** `pre-deploy-<TS>` (không bao giờ push). `scripts/restore.sh` đọc manifest rồi đưa **cả DB lẫn code** về đúng thời điểm đó, thay cho việc gõ tay các lệnh ở trên.
+
+```bash
+bash scripts/restore.sh --list                         # liệt kê các manifest (chỉ đọc, không cần Docker)
+bash scripts/restore.sh --latest                       # DRY-RUN mặc định: kiểm điều kiện, in kế hoạch + cảnh báo, KHÔNG đổi gì
+bash scripts/restore.sh --manifest backups/deploy-pre-<TS>.manifest            # dry-run một bản cụ thể
+bash scripts/restore.sh --manifest backups/deploy-pre-<TS>.manifest --apply --yes   # THỰC SỰ khôi phục
+```
+
+| Tùy chọn | Ý nghĩa |
+|---|---|
+| `--list` / `--latest` / `--manifest <file>` | Chọn bản khôi phục (đúng một). `--manifest` chỉ nhận file nằm trong thư mục backup. |
+| `--apply --yes` | Bắt buộc **cả hai** mới chạy thật. Thiếu `--yes` thoát mã 2. **Không có biến môi trường thay `--yes`** (giống `restore-dump` của `scripts/staging.sh`). |
+| `--db-only` | Chỉ nạp lại DB, giữ nguyên code đang chạy (chạy lại backend bằng image hiện có). |
+| `--code-only` | Chỉ đưa code về commit cũ và build lại, không đụng DB (script cảnh báo nếu deploy đó đã qua bước 90). |
+| `--use-image-tag` | Không build lại: gắn lại image dự phòng `<project>-backend:pre-<TS>` thành `latest` rồi `up --no-build --no-deps backend` (nhanh, dùng khi build lại không đáng tin). |
+| `--skip-safety-db` | (cùng `--apply --yes`) **Không dump lại** DB hiện tại. Dùng khi **chạy lại** sau lần restore bị ngắt giữa `mongorestore`: lúc đó DB dở dang (không còn `users`) nên không dump an toàn được. Chốt chặn (sai một điều kiện là `[HỎNG]`, `--apply` dừng, chưa đổi gì): (a) backup an toàn **mới nhất** `restore-safety-*.archive.gz` phải còn nguyên (> 0 byte, `gzip -t`, `mongorestore --dryRun` thấy `realestate.users`); (b) DB hiện tại phải **thật sự dở dang**: không có collection `users` nhưng có collection khác có dữ liệu. DB khỏe (có `users`) thì cờ bị từ chối (phải dump an toàn mới để không mất dữ liệu hiện có); DB trống thì không cần cờ. Script in rõ backup và thẻ an toàn đã có. Không đi với `--code-only` hay `--list`. |
+| `--allow-infra-change` | Chấp nhận khôi phục code làm **đổi file hạ tầng** (`docker-compose*.yml`, `Dockerfile`, `nginx.conf`, thư mục `docker/`) so với HEAD hiện tại. Mặc định script **dừng, chưa đổi gì** và liệt kê file đổi (vì `up --build` với cấu hình hạ tầng cũ có thể đổi cổng/volume/mạng của stack đang chạy). Không đi với `--db-only` (không đụng code nên không áp dụng). |
+
+Thứ tự khi `--apply --yes`: (1) **chuẩn bị, chưa đổi gì**: nếu repo không còn commit đích thì nạp từ bundle bằng `git fetch <bundle>` ngay lúc này (lỗi thì dừng, DB và backend nguyên vẹn), rồi kiểm lại file hạ tầng đổi và file untracked bị đè; (2) **dừng backend** (để không còn ai ghi DB trong lúc dump); (3) **backup an toàn trạng thái hiện tại** (`mongodump` ra `backups/restore-safety-<TS>.archive.gz` + thẻ git `pre-restore-<TS>`); dump lỗi hoặc bị ngắt ở bước 2-3 thì dữ liệu chưa đổi: script **tự bật lại backend** rồi thoát, không in "dừng giữa chừng"; (4) `dropDatabase realestate` rồi `mongorestore --drop --nsInclude 'realestate.*'` từ dump trong manifest (mật khẩu root chỉ qua pipe/biến môi trường trong container, không lên dòng lệnh/log); (5) `git switch` nhánh cũ + `git reset --hard <OLD_COMMIT>` (manifest `DETACHED=1` thì `git switch --detach`; `DETACHED=1` thắng `BRANCH`); (6) `docker compose up -d --build` (hoặc `--use-image-tag`/`--db-only` như trên); (7) chờ Mongo healthy và backend liveness; (8) kiểm lại: version trong `system` khớp `DB_VERSION_BEFORE`, và **code** khớp manifest: version trong `RealEstateBackendApp/package.json` cùng commit git (script **không** đọc `dist/version.json` trong image).
+
+Cần biết:
+
+- **Sau restore code nằm LÙI so với upstream.** Commit lỗi vẫn còn ở upstream, nên lần `bash deploy.sh` kế tiếp sẽ `git pull --ff-only` kéo lại **đúng commit lỗi** vừa lùi khỏi. Dùng `bash deploy.sh --no-pull` cho tới khi sửa xong ở upstream. `restore.sh` in lại cảnh báo này khi khôi phục xong và trong hướng dẫn "dừng giữa chừng" (trừ `--db-only`).
+- **Cảnh báo ĐỎ "bước 90 một chiều".** Nếu manifest ghi `POST_UP_REACHED=1` (deploy đó đã tới sau `up`, nơi migration 011 một chiều chạy), restore DB về dump trước deploy là **mất mọi dữ liệu sau thời điểm dump** (mục 11, ngoại lệ 011). Script in cảnh báo đỏ; đọc kỹ trước khi thêm `--yes`.
+- **Dừng giữa chừng KHÔNG tự rollback.** Lỗi (hoặc `SIGTERM`/`SIGINT`/`SIGHUP`, thoát mã 143/130/129) sau khi đã đổi DB/code thì script in "RESTORE DỪNG GIỮA CHỪNG" kèm trạng thái và việc cần làm tiếp (bản an toàn `restore-safety-<TS>` và thẻ `pre-restore-<TS>` để quay lại), rồi thoát mã khác 0. **Chạy lại sau khi `mongorestore` bị ngắt:** DB đang dở dang nên bước dump an toàn từ chối (không có `users` nhưng có dữ liệu khác); chạy lại đúng lệnh cũ kèm `--skip-safety-db` (dùng bản an toàn của lần trước).
+- Nhánh đích đang tồn tại nhưng không phải nhánh hiện tại: giữ đầu nhánh cũ bằng thẻ `pre-restore-<TS>-branch-tip` trước khi `reset --hard`. `reset --hard` làm mất thay đổi chưa commit của file đã theo dõi (manifest ghi `TRACKED_DIRTY`, restore cảnh báo).
+- Sau `reset --hard` về commit cũ, **code cũ có thể không chứa `scripts/restore.sh`** (nếu bản đó ra đời trước), nên script nằm trong repo sẽ biến mất giữa chừng. Chạy từ **bản sao ngoài repo** và trỏ `RESTORE_REPO_DIR` về repo:
+  ```bash
+  mkdir -p /tmp/rt/scripts && cp -r scripts/restore.sh scripts/lib /tmp/rt/scripts/
+  RESTORE_REPO_DIR="$PWD" bash /tmp/rt/scripts/restore.sh --manifest backups/deploy-pre-<TS>.manifest --apply --yes
+  ```
+  Thư viện lấy từ `lib/` cạnh bản sao; repo đích là `RESTORE_REPO_DIR` (mặc định: thư mục cha của `scripts/`). Lời nhắc cuối của script cũng in đúng cách chạy này.
+- **Chọn manifest khi một lần deploy bị chạy lại (retry).** Mỗi lần chạy `deploy.sh` tạo một manifest riêng (TS khác nhau). Lần A lỗi rồi chạy lại thành lần B: manifest A giữ **trạng thái thật trước deploy** (dump DB và commit trước khi đụng gì), còn manifest B ghi trạng thái ngay trước lần thử cuối (có thể đã dính thay đổi dở dang của A). `--latest` đưa về **ngay trước lần thử cuối (B)**; muốn về trạng thái trước deploy thì `--list` rồi chọn manifest A bằng `--manifest`. `--latest` tự **bỏ qua manifest không có backup Mongo** (có cảnh báo; `--list` đánh dấu "KHÔNG CÓ"), trừ khi dùng `--code-only`; không còn manifest nào có backup thì dừng, hãy chọn tay bằng `--manifest`. **`--latest` chọn theo tên (thời gian) mới nhất, KỂ CẢ bản thủ công của `backup.sh` (mục 6.2) mới hơn bản trước deploy**: bản thủ công mới nhất có dump DB sẽ được chọn thay cho bản deploy cũ hơn. Luôn đọc dòng `--latest: dùng <manifest>` trước khi thêm `--apply --yes`.
+- `restore.sh` dừng (chưa đổi gì) khi khôi phục code sẽ **đổi file hạ tầng** (dùng `--allow-infra-change` nếu chủ ý) hoặc khi `git reset --hard` sẽ **ghi đè file untracked** có trùng đường dẫn trong cây của commit đích (liệt kê file; chuyển chúng đi chỗ khác rồi chạy lại).
+- Deploy cũ (trước khi có tính năng này) **không có manifest**: dùng lệnh thủ công ở đầu mục 6 và mục 11 (L1/L3).
+- Staging dùng đúng hợp đồng biến môi trường như `deploy.sh` (`DEPLOY_ENV_FILE`, `DEPLOY_BACKUP_DIR`, `MONGO_CONTAINER`, `BACKEND_CONTAINER`, ...).
+- Kiểm trên Windows chỉ qua stub (không có Docker/Mongo/`flock` thật); chưa chạy thật trên Ubuntu 24.04: lần đầu dùng trên server, chạy **dry-run** và diễn tập ở staging trước.
+
+### 6.2. Backup thủ công bằng `scripts/backup.sh` (ngoài lần deploy)
+
+**Quan hệ với `deploy.sh`.** `deploy.sh` **vẫn tự backup trước mỗi lần deploy** (bộ ba ở 6.1), không đổi và không gọi `backup.sh`. `scripts/backup.sh` là **bản chạy tay độc lập**, cùng định dạng file (archive, bundle, tag, manifest, thẻ image) nên `restore.sh` đọc được; hai script chỉ dùng chung thư viện `scripts/lib/ops-common.sh` và khóa `.git/realestate-deploy.lock` (không chạy chồng với `deploy.sh`/`restore.sh`).
+
+**Khi nào dùng:** trước khi sửa tay trên máy chủ (đổi dữ liệu, chạy migration/CLI bằng tay, nâng Mongo), hoặc muốn một điểm khôi phục ngoài chu kỳ deploy. **Không** dùng thay cho backup định kỳ ra ngoài máy chủ.
+
+```bash
+bash scripts/backup.sh                 # đủ bộ: DB + code (bundle + tag) + manifest + thẻ image backend
+bash scripts/backup.sh --db-only       # chỉ mongodump (KHÔNG manifest/bundle/tag)
+bash scripts/backup.sh --code-only     # chỉ bundle + tag + manifest (không đụng Mongo)
+bash scripts/backup.sh --no-image      # bỏ thẻ image
+bash scripts/backup.sh --help
+```
+
+| Tùy chọn | Ý nghĩa |
+|---|---|
+| (mặc định) | Tạo `backups/deploy-pre-<TS>.archive.gz`, `deploy-code-pre-<TS>.bundle`, `deploy-pre-<TS>.manifest`, tag cục bộ `pre-deploy-<TS>` và image `<project>-backend:pre-<TS>`. Manifest có `BACKUP_KIND=manual`, `DEPLOY_STATUS=succeeded`, `STACK_TOUCHED=1`, `POST_UP_REACHED=0`, `NEW_COMMIT = OLD_COMMIT`. |
+| `--db-only` | Chỉ dump DB đã kiểm nội dung. **Không ghi manifest** (cũng không bundle, tag), nên bản này **không hiện trong `restore.sh --list/--latest`**: khôi phục **bằng tay** (lệnh mẫu bên dưới). |
+| `--code-only` | Bundle + tag + manifest với `MONGO_BACKUP_FILE` rỗng, không cần Mongo chạy. Khôi phục bằng `restore.sh --manifest <file> --code-only` (hoặc `--latest --code-only`). Khôi phục DB + code từ bản này không được vì không có dump DB. **Cẩn thận với `--latest` không kèm `--code-only`**: `restore.sh` không từ chối mà **bỏ qua** manifest không có `MONGO_BACKUP_FILE` (có cảnh báo `--latest: bỏ qua ...`) rồi chọn manifest **cũ hơn** có dump DB (thường là bản của một lần deploy trước), tức là DB + code về lần deploy cũ chứ KHÔNG về điểm bạn vừa `--code-only`; chỉ từ chối khi không còn bản nào có dump. Sau `backup.sh --code-only`, đừng dùng `--latest` để khôi phục DB + code: dùng `--manifest <file>` (đúng bản cần) hoặc `--code-only`. |
+| `--no-image` | Không gắn thẻ image backend (cũng tự bỏ qua nếu chưa có container backend). |
+
+Mã thoát: `0` ok | `1` lỗi (gồm `--db-only` khi DB trống, nhánh/bundle/tag/archive/manifest trùng, Mongo tắt khi cần DB) | `2` sai tham số (gồm `--db-only` kèm `--code-only`) | `143`/`130`/`129` bị ngắt (`SIGTERM`/`SIGINT`/`SIGHUP`). Lỗi hoặc bị ngắt giữa chừng: script **xóa các file/tag/thẻ image vừa tạo ở lần chạy đó** (không đụng bản cũ), không có manifest mồ côi.
+
+Khác với `deploy.sh`:
+
+- Không `git pull`, không build, không `up`, không migrate, không dừng container: **chỉ đọc** DB và repo rồi ghi vào `backups/`.
+- Mọi kiểm tiền điều kiện phía code (commit hợp lệ, tên nhánh, file/tag trùng) chạy **trước** khi đọc Mongo hay dump; nhánh có tên ngoài quy tắc (vd `feat#1`) làm script dừng ngay, chưa tạo gì (dùng `--db-only` nếu chỉ cần DB).
+- DB trống (không `users`, không dữ liệu): mặc định **bỏ qua DB nhưng vẫn backup code**; với `--db-only` thì lỗi. DB dở dang (không `users` nhưng có dữ liệu) thì lỗi (không có gì dump hợp lệ để dùng).
+- `NEW_COMMIT = OLD_COMMIT` và `POST_UP_REACHED=0`: manifest mô tả "trạng thái hiện tại", không phải "trước một deploy".
+
+Khôi phục từ bản `--db-only` (không có manifest), chạy trên máy chủ Linux, **sau khi đã có dry-run `--dryRun -v` xem sẽ nạp gì**:
+
+```bash
+F=backups/deploy-pre-<TS>.archive.gz     # nhớ ls -l thấy > 0 byte
+docker exec -i realestate_mongo bash -c 'mongorestore --config <(printf "password: %s\n" "$MONGO_INITDB_ROOT_PASSWORD") -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --archive --gzip --dryRun -v --nsInclude "realestate.*"' < "$F"
+# Hợp lý rồi mới ghi thật (--drop xóa collection hiện có trước khi nạp; backend nên dừng trong lúc nạp: docker compose --env-file .env.docker stop backend)
+docker exec -i realestate_mongo bash -c 'mongorestore --config <(printf "password: %s\n" "$MONGO_INITDB_ROOT_PASSWORD") -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --archive --gzip --drop --nsInclude "realestate.*"' < "$F"
+```
+
+Biến môi trường tùy chọn (không bí mật; nguồn: `scripts/backup.sh`, `scripts/lib/ops-common.sh`):
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `DUMP_TIMEOUT` | `900` | Số giây tối đa cho `mongodump`; quá hạn thì lỗi "mongodump quá ... s" (mã 1, dọn file `.partial`). Tăng khi DB lớn. Phải là số nguyên. |
+| `OPS_EXEC_TIMEOUT` | `300` | Số giây tối đa cho các lệnh `docker exec` kiểm tra (đọc version/collection, `mongorestore --dryRun` kiểm nội dung dump). Phải là số nguyên. |
+| `BACKUP_MIN_FREE_GB` | `2` | Dung lượng trống tối thiểu (GB) ở thư mục repo và thư mục dữ liệu Docker; thiếu thì dừng, chưa tạo gì. Phải là số. |
+| `MONGO_CONTAINER`, `BACKEND_CONTAINER` | `realestate_mongo`, `realestate_backend` | Tên container (chỉ đổi khi thử nghiệm; staging do `scripts/staging.sh` đặt). |
+
+Giới hạn cần biết:
+
+- Dump **không dùng `--oplog`** và **không dừng backend**: ghi đồng thời trong lúc dump có thể làm dump không nhất quán giữa các collection. **Chạy lúc ít tải** (hoặc dừng backend trước nếu cần điểm nhất quán tuyệt đối).
+- `SIGTERM`/`SIGINT`/`SIGHUP` được xử lý **sau khi lệnh con đang chạy** (`mongodump`, `docker exec`, `git bundle`) kết thúc hoặc hết `DUMP_TIMEOUT` (cách bash xử lý bẫy tín hiệu): dừng giữa lúc dump có thể phải chờ; sau đó script mới dọn file/tag/thẻ image vừa tạo và thoát 143/130/129. Nếu bắt buộc dừng ngay (`kill -9`) thì dọn tay `backups/*.partial` và tag `pre-deploy-<TS>` dở dang.
+- Tất cả-hoặc-không: nếu bước code (`git bundle create`/`git bundle verify`, gắn tag, thẻ image, ghi manifest) lỗi **sau khi** dump DB đã xong, script xóa luôn file dump vừa tạo ở lần chạy đó (exit 1). Cần giữ riêng bản DB thì chạy lại `scripts/backup.sh --db-only` sau khi sửa nguyên nhân.
+- Thay đổi chưa commit ở file đã theo dõi **không nằm trong bundle** (manifest chỉ ghi `TRACKED_DIRTY=1` và script cảnh báo).
+- Bản `--code-only` không khôi phục được DB; bản `--db-only` không khôi phục được code.
+- File nằm cùng ổ đĩa với máy chủ **không phải backup thật**: chép `backups/` (archive, bundle, manifest) ra **ngoài máy chủ** (`scp`/`rclone`) như mục 6.
+- Kiểm trên Windows chỉ qua stub (không có Docker/Mongo/`flock` thật); chưa chạy thật trên Ubuntu 24.04: lần đầu dùng trên server, chạy rồi kiểm `ls -l backups/` và `bash scripts/restore.sh --list` (dry-run) trước khi tin cậy.
+
 ## 7. Kiểm tra sức khỏe
 
 ```bash
@@ -719,6 +823,8 @@ docker inspect realestate_backend --format '{{.State.Health.Status}}'           
 11. Token Cloudflare: `CLOUDFLARE_TUNNEL_TOKEN` là biến bắt buộc trong `.env.docker` (mục 5.0a (e) hướng dẫn chép từ `deploy.sh` cũ mà không in ra). Chỉ xóa/`shred` `~/deploy.sh.old` sau khi tunnel đã lên và chạy ổn (5.7).
 12. Từ nay cập nhật bằng `deploy.sh` trong repo (mục 11), thay script cũ trên VPS. Người commit `deploy.sh` từ Windows chạy `git add --chmod=+x deploy.sh scripts/run-migration.sh` để giữ bit thực thi (tài liệu vẫn dùng `bash deploy.sh` nên không phụ thuộc bit này).
 13. Dọn định kỳ thẻ image dự phòng `realestatemanager-backend:pre-*` và image `realestate-migrate:*` (mục 5.7/11); script từ chối chạy khi dung lượng đĩa thấp.
+14. Web Push (v1.0.4): sinh khóa VAPID một lần, đặt `VAPID_*` + `CRM_PUSH_ENABLED` rồi bật theo đúng thứ tự: làm theo **mục 15** (kèm cách tắt khẩn cấp, đổi khóa và checklist thử trên điện thoại thật).
+15. Việc kiểm tay sau deploy v1.0.4 (hậu-deploy, không chặn phát hành): IP thật sau cloudflared (FR-23) và dự án mẫu bị trùng (FR-35): làm theo **mục 16**, điền ô kiểm ở 16.3.
 
 ## 10. Bật CRM trên production
 
@@ -728,7 +834,9 @@ Cờ CRM có hai phía và **phải khớp**: backend đọc lúc chạy, fronte
 |---|---|---|---|
 | `CRM_ENABLED` | `FEATURE_CRM_ENABLED` | `VITE_CRM_ENABLED` | công tắc tổng, mặc định `false`; chỉ ghi đúng `true`/`false` chữ thường (backend nhận cả `1`/`yes`/`on` nhưng frontend thì không, sẽ lệch) |
 | `CRM_ATTACHMENTS_ENABLED` | `FEATURE_CRM_ATTACHMENTS` | `VITE_FEATURE_CRM_ATTACHMENTS` | ảnh nhật ký; cần MinIO + `S3_PUBLIC_ENDPOINT` (mục 3) |
-| (cố định) | `FEATURE_CRM_IMPORT=false`, `FEATURE_CRM_PUSH=false` | `VITE_CRM_MOCK_REPORTS=false`, `VITE_CRM_MOCK_IMPORT_EXPORT=false` | M8 chưa làm; không cho dữ liệu mẫu lọt vào production |
+| `CRM_PUSH_ENABLED` | `FEATURE_CRM_PUSH` (mặc định `false`; kèm `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`; chỉ backend, không có phía frontend; đổi thì `docker compose --env-file .env.docker up -d backend` để tạo lại container, không cần build) | (không có) | Web Push v1.0.4; runbook đầy đủ ở **mục 15** (Web Push VAPID) |
+| `PUSH_ENDPOINT_HOST_ALLOWLIST` (tùy chọn) | `PUSH_ENDPOINT_HOST_ALLOWLIST` (danh sách host cách nhau dấu phẩy, hỗ trợ `*.host`; **chỉ bổ sung** vào mặc định FCM/Mozilla/Apple/WNS, không thay thế; để trống là bình thường, đổi thì tạo lại container backend) | (không có) | Cho phép thêm host dịch vụ push khi nhà cung cấp đổi tên miền (FR-01, chống SSRF) |
+| (cố định) | `FEATURE_CRM_IMPORT=false` | `VITE_CRM_MOCK_REPORTS=false`, `VITE_CRM_MOCK_IMPORT_EXPORT=false` | M8 chưa làm; không cho dữ liệu mẫu lọt vào production |
 
 **Thứ tự thực hiện (trên server, sau khi đã làm xong mục 4 hoặc 5):**
 
@@ -754,10 +862,10 @@ Rồi đăng nhập web: thấy menu "Quản lý khách hàng"; tạo thử mộ
 
 ## 11. Cập nhật stack bằng `deploy.sh`
 
-`deploy.sh` (thư mục gốc repo, thay script cũ trên VPS) cập nhật stack **đang chạy ổn định ở cấu hình mới** lên commit mới nhất của nhánh `production`. Chạy trên server Linux (Ubuntu 24.04), trong thư mục repo, **trong `tmux`/`nohup`** (rớt SSH giữa chừng không làm gián đoạn):
+`deploy.sh` (thư mục gốc repo, thay script cũ trên VPS) cập nhật stack **đang chạy ổn định ở cấu hình mới** lên commit mới nhất của **nhánh đang checkout** (theo upstream của nhánh đó; trên VPS thường là `production`, nhưng script không ép tên nhánh). Chạy trên server Linux (Ubuntu 24.04), trong thư mục repo, **trong `tmux`/`nohup`** (rớt SSH giữa chừng không làm gián đoạn):
 
 ```bash
-bash deploy.sh              # git pull --ff-only origin production, rồi backup + build + up + chờ healthy
+bash deploy.sh              # git pull --ff-only trên nhánh đang checkout (theo upstream), rồi backup + build + up + chờ healthy
 bash deploy.sh --no-pull    # không pull, deploy đúng commit đang checkout
 bash deploy.sh --plan-only  # chỉ lập kế hoạch migration (reconcile dry-run) rồi thoát: không backup, không ghi DB, không up (mục 11.1)
 bash deploy.sh --no-migrate # TẮT tự migrate (mặc định là BẬT): có việc chờ hoặc cần baseline thì dừng trước `up` như trước đây
@@ -774,31 +882,113 @@ Thứ tự các bước của script:
 |---|---|---|
 | 1 | Kiểm tra `docker`, `docker compose`, `curl`, `gzip`; `.env.docker` tồn tại, quyền **không rộng hơn 600**, **không còn giá trị mẫu `<...>`** (chỉ in TÊN biến, không in giá trị); `./.env` là file (tạo rỗng nếu thiếu) | thiếu lệnh, quyền rộng hơn 600 (`chmod 600 .env.docker`), còn `<...>`, `./.env` là thư mục |
 | 1b | Dung lượng trống >= `DEPLOY_MIN_FREE_GB` (mặc định 5 GB) ở thư mục repo và thư mục dữ liệu Docker | thiếu dung lượng: in `docker system df` và gợi ý dọn (5.7) |
-| 2 | `git pull --ff-only origin production` (bỏ qua với `--no-pull`); khóa `.git/realestate-deploy.lock` chống chạy chồng | không ở nhánh `production` hoặc HEAD detached (script **không tự đổi nhánh**: xem 5.0a), working tree có file đã theo dõi bị sửa (vd `docker-compose.yml` sửa tay: xem 5.0a; **đừng `git stash`**), pull không fast-forward |
+| 2 | `git pull --ff-only` trên **nhánh đang checkout** theo upstream của nhánh đó (không ép tên nhánh, không ghi cứng remote; bỏ qua với `--no-pull`); khóa `<git-dir>/realestate-deploy.lock` chống chạy chồng (đúng cả với git worktree, nơi `.git` là file) | HEAD detached hoặc nhánh chưa có upstream (script **không đoán nhánh**, báo rõ và gợi ý `--no-pull`; xem 5.0a), working tree có file đã theo dõi bị sửa (vd `docker-compose.yml` sửa tay: xem 5.0a; **đừng `git stash`**), pull không fast-forward |
+| 2b | **Backup CODE** của nhánh đang checkout (v1.0.5), chạy SAU các điều kiện tiên quyết và TRƯỚC `git pull` (cũng chạy với `--no-pull` và khi downgrade có chủ ý; **không** chạy với `--plan-only`, chế độ này không tạo gì): (i) `git bundle create backups/deploy-code-pre-<TS>.bundle <nhánh>` rồi `git bundle verify`, quyền 600; (ii) thẻ git **cục bộ** `pre-deploy-<TS>` tại commit hiện tại (không push); (iii) ghi manifest `backups/deploy-pre-<TS>.manifest` (mục 11.8, KEY=VALUE, không chứa bí mật, các khóa trạng thái như `STACK_TOUCHED`/`POST_UP_REACHED` được ghi **ngay** khi xảy ra, không chờ lúc thoát nên bị `SIGKILL`/mất điện manifest vẫn đúng). Tên nhánh phải thuộc dạng `restore.sh` chấp nhận (`A-Z a-z 0-9 . _ - /`; không bắt đầu bằng `-` hoặc `/`, không chứa `..` hoặc `//`, không kết thúc bằng `.lock` hoặc `/`), nếu không `deploy.sh` dừng trước khi tạo gì. Bị ngắt bằng `SIGTERM`/`SIGINT`/`SIGHUP` (kill, Ctrl-C, rớt SSH) thì thoát mã 143/130/129: manifest ghi `failed`, không ghi nhầm `succeeded`. HEAD detached thì bundle `HEAD` và manifest ghi `DETACHED=1`. Bundle/thẻ đã tồn tại thì **không ghi đè** | `git bundle create`/`verify` lỗi (dọn file dở, không để lại bundle hỏng), không ghi được vào thư mục backup |
 | 3 | `docker compose --env-file .env.docker config -q` | thiếu/sai biến bắt buộc (gồm `CLOUDFLARE_TUNNEL_TOKEN`, `NINE_ROUTER_INITIAL_PASSWORD`); stack chưa bị đổi |
 | 3b | Mongo đang healthy thì **đếm (chỉ đọc)** user chưa có `roles[]`/`teamIds[]` bằng cùng bộ lọc với `UserRolesMigrationGuard` | còn user chưa migrate 005: in hướng dẫn `bash scripts/run-migration.sh 005` (tránh backend mới crash-loop). Không đếm được thì chỉ cảnh báo |
 | 4 | Tạo `logs/`, chown `1000:1000` (backend chạy uid 1000; compose chỉ mount `./logs`): thử trực tiếp, rồi `sudo -n`; không được thì **in lệnh `sudo chown ...` để bạn chạy** | không chown được |
 | 5 | `mongodump` DB `realestate` ra `backups/deploy-pre-<thời-gian>.archive.gz` (quyền 600, thư mục 700) qua `docker exec`; mật khẩu đọc từ biến môi trường TRONG container, đưa qua pipe; kiểm **nội dung** (> 0 byte, `gzip -t`, `mongorestore --dryRun` thấy `realestate.users`). **Ngoại lệ DB chưa có dữ liệu:** trước khi dump, script hỏi (chỉ đọc) DB có collection `users` không; nếu **không có `users` và không collection nào có document** (Mongo vừa dựng, backend chưa boot lần nào; "có document" kiểm bằng `findOne`, không tin số đếm trong metadata) thì in cảnh báo "DB chưa có dữ liệu" và **bỏ qua backup** (mongodump sẽ không sinh `realestate.users` nên bước kiểm nội dung từ chối oan). Trạng thái "chỉ có collection `system` có document, không có `users`" (sổ phiên bản do runner ghi ở 6b của một lần deploy đầu bị dở dang trước `up`) cũng được coi là chưa có dữ liệu nghiệp vụ, có cảnh báo riêng (một DB production cũ đã baseline vẫn có `users`/collection nghiệp vụ nên không rơi vào nhánh này). Có `users` (kể cả rỗng) thì backup vẫn bắt buộc như thường | mongo không chạy, không hỏi được Mongo, DB không có `users` nhưng có collection khác có dữ liệu (mơ hồ: script không đoán, in cách kiểm; collection `system` không tính là mơ hồ), mongodump lỗi hoặc quá `DUMP_TIMEOUT` (mặc định 900 giây), file rỗng/hỏng/không phải dump DB `realestate` (bước kiểm nội dung có thời hạn `OPS_EXEC_TIMEOUT`, mặc định 300 giây) |
 | 6 | Gắn thẻ image backend đang chạy thành `<project>-backend:pre-<thời-gian>` (bản dự phòng) | |
 | 6a | `export GIT_COMMIT=<commit ngắn>` rồi `docker compose build backend` (build arg `GIT_COMMIT` ghi commit vào `dist/version.json` của image mới). **Chưa đụng stack đang chạy** (container cũ giữ image cũ theo ID) | build lỗi (stack không đổi) |
-| 6b | Migration theo version (PT-027, **mặc định BẬT**), chạy runner trong image vừa build bằng `docker compose run --rm --no-deps backend node dist/migrations/cli.js`, **luôn SAU backup bước 5**: (i) `reconcile --by deploy --skip-version` (**dry-run**, chỉ đọc) in kế hoạch; (ii) nếu dry-run ổn và `BACKUP_FILE` không rỗng (hoặc bước 5 đã bỏ qua backup vì DB chưa có dữ liệu; khi đó script hỏi lại DB ngay trước khi ghi và chỉ chạy tiếp nếu vẫn chưa có dữ liệu nghiệp vụ; không hỏi lại được thì dừng, DB đã có dữ liệu thì dừng và yêu cầu chạy lại `bash deploy.sh --no-pull` để có backup mới): đặt `STACK_TOUCHED=1` rồi `reconcile --apply --by deploy --skip-version` (baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc, rồi chạy migration 007+ còn chờ; **chưa ghi `version`** vì code mới chưa chạy; ngoại lệ **DB mới tinh** (`version` chưa có, `users` rỗng): runner ghi `version` ngay ở bước này dù có `--skip-version`). Mongo chưa có container (triển khai mới) thì bỏ qua bước này. Với `--no-migrate`: chạy `status --json` như trước, còn việc chờ hoặc cần baseline thì dừng. Với `--plan-only`: chỉ chạy (i) (không `--skip-version`) rồi thoát, **không** backup, **không** up | runner trả **3** (khóa), **4** (probe không đạt, cần xử lý tay), **5** (downgrade, trừ khi `DEPLOY_ALLOW_DOWNGRADE=1`), **1** (lỗi/từ chối): dừng **trước `up`**, stack chưa đổi, in nguyên nhân và lệnh; riêng mã 1 từ `--apply` coi như dữ liệu có thể đổi một phần (in hướng dẫn "không quay code cũ") |
+| 6b | Migration theo version (PT-027, **mặc định BẬT**), chạy runner trong image vừa build bằng `docker compose run --rm --no-deps backend node dist/migrations/cli.js`, **luôn SAU backup bước 5**: (i) `reconcile --by deploy --skip-version --phase pre-up` (**dry-run**, chỉ đọc) in kế hoạch; (ii) nếu dry-run ổn và `BACKUP_FILE` không rỗng (hoặc bước 5 đã bỏ qua backup vì DB chưa có dữ liệu; khi đó script hỏi lại DB ngay trước khi ghi và chỉ chạy tiếp nếu vẫn chưa có dữ liệu nghiệp vụ; không hỏi lại được thì dừng, DB đã có dữ liệu thì dừng và yêu cầu chạy lại `bash deploy.sh --no-pull` để có backup mới): đặt `STACK_TOUCHED=1` rồi `reconcile --apply --by deploy --skip-version --phase pre-up` (baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc, rồi chạy migration **pre-up** 007..010 còn chờ; migration pha `post-up` (011, v1.0.5) **không** chạy ở đây mà ở bước 90, mục 11.6; **chưa ghi `version`** vì code mới chưa chạy; ngoại lệ **DB mới tinh** (`version` chưa có, `users` rỗng): runner ghi `version` ngay ở bước này dù có `--skip-version`). Mongo chưa có container VÀ chưa có volume `<project>_mongo_data` (triển khai mới, DB trống) thì bỏ qua bước này TRƯỚC `up` và bước **8a** bù ngay trong cùng lần deploy (xem dưới; không cần deploy lần hai). Với `--no-migrate`: chạy `status --json` như trước, còn việc chờ hoặc cần baseline thì dừng. Với `--plan-only`: chỉ chạy (i) (không `--skip-version`, **không** `--phase` nên kế hoạch thấy mọi pha, gồm cả 011 post-up) rồi thoát, **không** backup, **không** up | runner trả **3** (khóa), **4** (probe không đạt, cần xử lý tay), **5** (downgrade, trừ khi `DEPLOY_ALLOW_DOWNGRADE=1`), **1** (lỗi/từ chối): dừng **trước `up`**, stack chưa đổi, in nguyên nhân và lệnh; riêng mã 1 từ `--apply` coi như dữ liệu có thể đổi một phần (in hướng dẫn "không quay code cũ") |
 | 7 | `docker compose --env-file .env.docker up -d --build` | build/up lỗi |
 | 8 | Chờ `realestate_mongo` healthy (mặc định 120 giây) và backend liveness `http://localhost/api/v1/health/liveness` (mặc định 120 giây) | quá hạn, hoặc container backend `exited` |
-| 8b | Nếu bước 6b đọc được trạng thái: `reconcile --apply --by deploy` (không `--skip-version`) để ghi `version` (và `commit`) của app vào collection `system` (migration đã xong ở 6b nên chỉ còn ghi phiên bản). Trên DB mới tinh `version` đã được ghi ở 6b nên 8b là **no-op, mã `0`**. Downgrade có chủ ý (`DEPLOY_ALLOW_DOWNGRADE=1` và runner báo mã 5 ở 6b): **bỏ qua**, không ghi và không hạ `version` | **không làm deploy thất bại**: lỗi chỉ cảnh báo kèm lệnh ghi lại sau |
+| 8a | **Chỉ khi CÀI MỚI thật sự** (6b đặt `FRESH_INSTALL=1`: KHÔNG có container Mongo VÀ KHÔNG có volume `<project>_mongo_data`), ngay sau liveness: `reconcile --apply --by deploy --phase pre-up` (không `--skip-version`; chạy 007..010 và ghi `version`; không backup vì DB trống; 011 để bước 90). **Không phụ thuộc `--no-migrate`/`DEPLOY_AUTO_MIGRATE=0`** (ngoại lệ có chủ ý: DB trống thật sự nên không có gì để hỏng); `--plan-only` thoát trước nên không chạy. Có volume Mongo mà không có container thì **không** coi là cài mới: bỏ qua cả 6b lẫn 8a, in cảnh báo (dữ liệu có thể còn, không migrate khi chưa backup) | **làm deploy THẤT BẠI** (`die`, exit 1, không chạy 8c) kèm lệnh chạy lại |
+| 8b | **Bỏ qua khi cài mới (8a đã ghi `version`).** Nếu bước 6b đọc được trạng thái: `reconcile --apply --by deploy --phase pre-up` (không `--skip-version`) để ghi `version` (và `commit`) của app vào collection `system` (migration đã xong ở 6b nên chỉ còn ghi phiên bản). Trên DB mới tinh `version` đã được ghi ở 6b nên 8b là **no-op, mã `0`**. Downgrade có chủ ý (`DEPLOY_ALLOW_DOWNGRADE=1` và runner báo mã 5 ở 6b): **bỏ qua**, không ghi và không hạ `version` | **không làm deploy thất bại**: lỗi chỉ cảnh báo kèm lệnh ghi lại sau |
+| 8c | **Điểm gọi hậu-migrate dùng chung (v1.0.5, thay bước 8c cũ; chạy MỌI lần deploy)**, ngay sau 8a/8b khi backend đã sống: hàm `run_post_migrate_steps` chạy lần lượt các tệp `scripts/post-migrate/[0-9][0-9]-*.sh` **theo thứ tự tên** bằng `bash <tệp>` (không phụ thuộc bit thực thi). Mỗi tệp nhận `ENV_FILE`, `LOGS_DIR`, `TS`, `DOC`, `LOG_PREFIX` qua môi trường, tự chạy lệnh trong container, tự ghi log `logs/deploy-<tên>-<thời-gian>.log` và tự in cảnh báo đỏ khi lỗi. `deploy.sh` **không** chứa logic bù mã hay migration của các bước này. Ba tệp hiện có (chi tiết ở mục 11.6): `10-catalog-codes.sh` (bù mã danh mục, chính là bước 8c cũ), `20-customer-codes.sh` (bù mã khách), `90-post-up-migrations.sh` (migration 011 một chiều). Không thấy tệp bước nào dạng `[0-9][0-9]-*.sh` thì `die` (không bỏ qua im lặng việc bù mã). Downgrade có chủ ý (`DEPLOY_ALLOW_DOWNGRADE=1` và runner báo mã 5 ở 6b): **bỏ qua TOÀN BỘ** ba bước (image cũ không có các CLI này) | **Khác 8b, làm deploy THẤT BẠI**: tệp bước thoát khác 0 thì có cảnh báo **đỏ** ở stderr cùng log riêng của bước, rồi `deploy.sh` `die` kèm tên bước ("Bước hậu-migrate '<tên>' thất bại"), thoát mã `1` (không in "Deploy xong", không chạy `compose ps`) và in hướng dẫn lùi/sửa tiến (`print_recovery`, vì `STACK_TOUCHED=1`); các bước **sau** KHÔNG chạy. Backend vẫn đang chạy; sửa nguyên nhân rồi chạy lại `bash deploy.sh --no-pull` (hoặc đúng lệnh ghi trong cảnh báo đỏ) |
+
+> **Đổi tên bước 8c (v1.0.5).** Từ v1.0.5 bước "8c bù mã danh mục" là tệp `scripts/post-migrate/10-catalog-codes.sh` (hành vi giữ nguyên, log `deploy-catalog-codes-<thời-gian>.log`). Các chỗ khác của tài liệu này (11.2, 11.4, 15.7 và đoạn L1/L2 ở dưới) vẫn nói "bước 8c" cho phần này: đọc là "bước 10 của điểm gọi hậu-migrate". Toàn bộ phần mới của v1.0.5 (khách có mã, SĐT tùy chọn, bước 20 và 90) nằm ở mục 11.6; việc báo người dùng sau deploy ở mục 11.7.
 
 Biến tùy chọn: `MONGO_TIMEOUT`, `HEALTH_TIMEOUT` (giây), `HEALTH_URL`, `DEPLOY_MIN_FREE_GB`, `DUMP_TIMEOUT`, `OPS_EXEC_TIMEOUT`, `DEPLOY_AUTO_MIGRATE` (`1` mặc định = tự baseline + migrate; `0` = như `--no-migrate`; cờ dòng lệnh thắng biến), `DEPLOY_ALLOW_DOWNGRADE` (`1` = cho phép cố ý deploy code có version thấp hơn DB; mặc định `0`). `--migrate` và `--no-migrate` loại trừ nhau (mã thoát 2). Chưa có container `realestate_mongo` (triển khai mới): script bỏ qua backup (không có dữ liệu) và nói rõ. Container Mongo đã chạy nhưng DB `realestate` chưa có dữ liệu (không `users`, không document nào): cũng bỏ qua backup và nói rõ (xem bước 5). DB đã có `users` thì backup luôn bắt buộc.
 
 **Vì sao KHÔNG rollback bằng `git checkout` (khác `deploy.sh` cũ):** khi dữ liệu Mongo đã được nâng cấp (replica set + xác thực, migration 005/006), compose và code của commit cũ **không đọc được volume mới**; quay code về commit cũ rồi build lại có thể làm hỏng thêm đúng lúc cần ổn định nhất. Vì vậy khi lỗi script chỉ **in hướng dẫn** rồi thoát mã khác 0:
 
+0. **Từ v1.0.5 có đường tự động:** `bash scripts/restore.sh --latest` (dry-run) rồi `--manifest <file> --apply --yes` đưa DB + code về bản trước deploy (mục 6.1, manifest ở 11.8). Các bước thủ công dưới đây vẫn dùng được (và là cách duy nhất cho deploy cũ không có manifest).
 1. Xem nguyên nhân: `docker compose --env-file .env.docker logs --tail 100 backend`.
 2. Dữ liệu **chưa đổi** (chưa chạy migration `--apply`, chưa nâng cấp Mongo): dùng lại image dự phòng, không đụng git:
    ```bash
    docker tag <project>-backend:pre-<thời-gian> <project>-backend:latest
    docker compose --env-file .env.docker up -d --no-build --no-deps backend
    ```
-3. Dữ liệu **đã đổi**: không quay về bản cũ. Với deploy thường lệ (lâu sau lần nâng cấp standalone) **chỉ** dùng `mongorestore` từ file `backups/deploy-pre-*.archive.gz` (mục 6; luôn kèm `--nsInclude 'realestate.*'`). Mục 5.8 (khôi phục volume) chỉ dành cho sự cố **ngay sau** lần nâng cấp standalone, vì nó đưa cả DB về ngày nâng cấp và mất mọi dữ liệu phát sinh sau đó.
+   **Ngoại lệ v1.0.4 cho migration 007 (mã danh mục, FR-40) và 008 (loại hình, FR-46): được lùi IMAGE dù migration đã `--apply`.** Hai migration này chỉ **thêm** trường mới (`areas.code`, các trường `...Code`, `propertyTypeCodes`, index) và **vẫn ghi id cũ**, nên image cũ đọc dữ liệu bình thường. Ba mức, thử theo thứ tự:
+   - **L1 (an toàn, mặc định):** chỉ lùi image bằng đúng hai lệnh `docker tag` / `up -d --no-build --no-deps backend` ở mục 2 trên. Không đụng dữ liệu. Bản ghi image cũ ghi trong lúc lùi sẽ thiếu `code`; khi tiến lại, bước 8c chạy lại và tự sửa chúng.
+   - **L2 (chỉ khi cần dọn trường mới):** `$unset` đúng các trường mới do 007/008 thêm, **chỉ sau khi đã lùi image** (L1 xong mới `$unset`, nếu không backend mới ghi lại ngay). Danh sách trường và lệnh mẫu đầy đủ ở **"Lùi L2: `$unset` trường mã mới của 007/008"** ngay dưới danh sách này; dùng được độc lập lúc xử sự cố.
+   - **L3 (cuối cùng):** `mongorestore` từ `backups/deploy-pre-*` như mục 3 dưới đây; mất mọi dữ liệu phát sinh sau backup.
 
-Việc script KHÔNG làm: chạy migration khi có `--no-migrate` hoặc `DEPLOY_AUTO_MIGRATE=0` (mục 11.1), **chạy lại migration 002..006** (runner chỉ ghi sổ chúng khi probe chỉ-đọc chứng minh không còn việc, mục 11.1; muốn thực sự chạy 005/006 vẫn dùng `scripts/run-migration.sh`), chép backup ra ngoài máy chủ, dọn image dự phòng, đổi Cloudflare, pin image (mục 12). Runner không tự backup: nó dựa vào backup mongodump ở bước 5 (vì thế phần ghi của `reconcile` luôn chạy **sau** bước backup). **Dọn dung lượng:** mỗi lần deploy để lại một thẻ `realestatemanager-backend:pre-*` (và `scripts/run-migration.sh` để lại `realestate-migrate:*` nếu không dùng `--cleanup`). Dọn định kỳ theo 5.7: liệt kê `docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(realestatemanager-backend:pre-|realestate-migrate:)'`, giữ vài thẻ gần nhất, xóa phần còn lại bằng `docker image rm`, rồi `docker image prune -f`.
+   Thứ tự bắt buộc: **L1 (lùi image) trước, rồi L2 (`$unset`), cuối cùng mới L3 (`mongorestore`)**. Dừng ở mức nhỏ nhất đủ giải quyết sự cố; đa số trường hợp chỉ cần L1. Migration **009** chỉ thêm index và lùi bằng `down`. Ngoại lệ này **chỉ áp dụng cho migration 007 và 008**, **không** áp dụng cho migration khác (005/006, nâng cấp Mongo, 009...), **ngoại trừ ngoại lệ v1.0.5 ngay dưới** cho migration 010.
+
+   **Ngoại lệ v1.0.5 cho migration 010 (index mã khách) và ranh giới "bước 90 (011) một chiều" (FR-21).** Migration **010** chỉ **thêm** (index partial unique `customers.customerCode_1` và counter `CUSTOMER_CODE`, không đụng `phone`), nên lùi IMAGE về v1.0.3 vẫn được dù 010 đã `--apply` (khách chưa có `customerCode` không vi phạm index partial; mã thừa không ảnh hưởng v1.0.3). Ranh giới nằm ở **bước 90** (migration **011**, MỘT CHIỀU, mục 11.6):
+   - **Trước bước 90 (011 CHƯA chạy):** lùi image v1.0.3 như thường lệ (L1: `docker tag` + `up -d --no-build --no-deps backend`, như mục 2 ở trên). `phone_1` vẫn unique nên v1.0.3 chạy đúng. Khi tiến lại, bước 20 tự bù mã cho khách image cũ vừa tạo.
+   - **Sau bước 90 (011 ĐÃ chạy hoặc chạy dở): chỉ sửa tiến (fix-forward), KHÔNG lùi image v1.0.3.** 011 bỏ unique `phone_1` (tạo `phone_1` thường) và đổi `phone` dạng `anonymized:...` về `null`, nên `phone` có thể `null`/trùng còn mapper v1.0.3 giả định `phone` là chuỗi. Sửa nguyên nhân rồi deploy lại. Muốn quay lại hẳn thì chỉ còn `mongorestore` từ `backups/deploy-pre-*` (mất mọi dữ liệu sau thời điểm dump, và đó là việc Oniichan quyết định, không tự chạy).
+   - **Kiểm 011 đã chạy chưa:** `$RUN status` (`RUN` như ở 11.1): dòng `011_crm_drop_unique_phone (deploy, <ngày>)` nằm trong mục **"Đã áp dụng"** là đã chạy; còn nằm trong "Migration chờ" (`[post-up]`, "Chờ post-up: 1") là chưa. Cách khác: `docker exec` mongosh kiểm `customers.getIndexes()` thấy `phone_1` **không** còn `unique: true`. **Đừng dựa vào việc file `logs/deploy-post-up-<thời-gian>.log` có tồn tại:** bước 90 tạo file này ngay từ đầu, kể cả khi cổng chặn từ chối chạy 011 (lúc đó trong log chỉ có đầu ra `status`, không có dòng `reconcile`); muốn dùng log thì đọc nội dung để biết lý do lỗi hoặc từ chối. `deploy.sh` in hướng dẫn tương tự trong `print_recovery` (mục 2c) khi deploy lỗi sau `up`: ở đó cũng chỉ tin `status`, và nói rõ file log chỉ để đọc lý do.
+3. Dữ liệu **đã đổi** (migration 005/006, nâng cấp Mongo...): không quay về bản cũ. Với deploy thường lệ (lâu sau lần nâng cấp standalone) **chỉ** dùng `mongorestore` từ file `backups/deploy-pre-*.archive.gz` (mục 6; luôn kèm `--nsInclude 'realestate.*'`). Mục 5.8 (khôi phục volume) chỉ dành cho sự cố **ngay sau** lần nâng cấp standalone, vì nó đưa cả DB về ngày nâng cấp và mất mọi dữ liệu phát sinh sau đó.
+
+**Lùi L2: `$unset` trường mã mới của 007/008 (ngoại lệ chỉ cho 007/008, dùng độc lập lúc xử sự cố).** Chạy trên máy chủ Linux (bash/WSL, không phải Git Bash trên Windows), thư mục repo, `realestate_mongo` đang chạy. Chỉ làm khi L1 chưa đủ (ví dụ cần loại hẳn các trường mới khỏi dữ liệu).
+
+Điều kiện trước khi `$unset` (thiếu một điều kiện thì DỪNG, đừng chạy):
+
+1. **Đã lùi image (L1) xong và backend đang chạy bản cũ.** Kiểm: hai ID dưới đây phải **giống nhau** (thay `<project>` và `<thời-gian>` đúng thẻ `pre-*` của lần deploy lỗi):
+   ```bash
+   docker inspect realestate_backend --format '{{.Image}}'
+   docker image inspect <project>-backend:pre-<thời-gian> --format '{{.Id}}'
+   ```
+   Nếu backend mới còn chạy, nó sẽ ghi lại các trường vừa xóa (và deploy tiếp theo cũng sẽ điền lại, xem cuối mục).
+2. **Có bản backup mới nhất còn dùng được** (`backups/deploy-pre-*.archive.gz` của lần deploy này, kiểm `ls -l` > 0 byte). Nên dump thêm ngay trước khi `$unset` theo mục 6 nếu đã có dữ liệu ghi sau backup.
+
+**Danh sách trường được `$unset` (đủ, không thêm, không bớt).** Đã đối chiếu Architecture v1.0.4 mục 3.1 và 5.1.7 với mã nguồn `migrate-catalog-codes.ts` (007) và `migrate-project-property-type-codes.ts` (008):
+
+| Collection | Trường mới cần `$unset` | Do migration |
+|---|---|---|
+| `customers` | `statusCode`, `sourceCode`, `areaCode`, `interestedProjectCodes` | 007 |
+| `care_logs` | `contactResultCode` | 007 |
+| `appointments` | `projectCode` | 007 |
+| `projects` | `areaCode` | 007 |
+| `projects` | `propertyTypeCodes`, `unmappedPropertyTypes` | 008 |
+| `areas` | `code` | 007 |
+
+**KHÔNG `$unset`** các trường id cũ mà image cũ đọc: `statusId`, `sourceId`, `areaId`, `interestedProjectIds`, `contactResultId`, `projectId`, `propertyTypes` (007/008 ghi kép, không xóa, không sửa chúng). Trường `changes[].fromCode`/`toCode` trong `crm_audit_logs` (Architecture 3.1) do ứng dụng ghi, không do 007/008, nên **cũng không** nằm trong L2 (image cũ bỏ qua).
+
+**Bước A. Đếm TRƯỚC (chỉ đọc).** Mỗi dòng in số bản ghi đang có trường đó:
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+const fields = {
+  customers: ["statusCode", "sourceCode", "areaCode", "interestedProjectCodes"],
+  care_logs: ["contactResultCode"],
+  appointments: ["projectCode"],
+  projects: ["areaCode", "propertyTypeCodes", "unmappedPropertyTypes"],
+  areas: ["code"],
+};
+for (const [coll, list] of Object.entries(fields)) {
+  print(coll + " (tong): " + d.getCollection(coll).countDocuments({}));
+  for (const f of list) print("  " + coll + "." + f + " ton tai: " + d.getCollection(coll).countDocuments({ [f]: { $exists: true } }));
+}
+EOF
+```
+
+**Bước B. `$unset` (GHI dữ liệu, chỉ sau khi hai điều kiện trên đạt).** `updateMany({}, ...)` qua mongosh gốc nên **không đổi `updatedAt`/`version`**. Mỗi lệnh in `modifiedCount`:
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+printjson(d.customers.updateMany({}, { $unset: { statusCode: "", sourceCode: "", areaCode: "", interestedProjectCodes: "" } }));
+printjson(d.care_logs.updateMany({}, { $unset: { contactResultCode: "" } }));
+printjson(d.appointments.updateMany({}, { $unset: { projectCode: "" } }));
+printjson(d.projects.updateMany({}, { $unset: { areaCode: "", propertyTypeCodes: "", unmappedPropertyTypes: "" } }));
+printjson(d.areas.updateMany({}, { $unset: { code: "" } }));
+EOF
+```
+
+**Bước C. Đếm SAU (chỉ đọc).** Chạy lại đúng script ở bước A. **Mọi dòng `... ton tai` phải bằng `0`**, còn các dòng `(tong)` phải **bằng** bước A (không mất bản ghi). Dòng nào khác `0`: image mới có thể còn chạy và đang ghi lại (quay lại điều kiện 1), rồi chạy lại bước B. Nếu `(tong)` lệch với bước A: DỪNG, không làm thêm, báo người phụ trách rồi cân nhắc L3.
+
+**Index mới còn lại là vô hại, không cần xóa.** `$unset` không xóa index: các index do 007 tạo vẫn còn (`areas.code_1` unique partial chỉ áp dụng cho `code` kiểu chuỗi nên không chặn bản ghi không có `code`; `customers.statusCode_1`, `sourceCode_1`, `areaCode_1`, `interestedProjectCodes_1`, `deletedAt_1_statusCode_1_lastUpdatedAt_-1`, `primaryAssigneeId_1_statusCode_1`; `care_logs.contactResultCode_1` sparse; `appointments.projectCode_1_startAt_1`; `projects.areaCode_1`, `propertyTypeCodes_1`). Index trên trường vắng chỉ tốn một ít dung lượng, image cũ bỏ qua chúng, và lần deploy sau `createIndex` coi là đã có.
+
+**Tiến lại sau L2:** deploy bản mới như thường. Runner 007/008 và bước 8c tự điền lại mọi `...Code`/`propertyTypeCodes` từ các id cũ (đều idempotent). Riêng `areas.code`: mã được tính lại theo quy tắc xác định (tỉnh seed có mã cố định, khu vực khác sinh từ tên, thêm hậu tố `_2`, `_3` nếu trùng), nên thường trùng mã cũ nhưng **không đảm bảo** nếu danh sách khu vực đã đổi trong lúc lùi; vì vậy chỉ dùng L2 khi thật cần, ưu tiên L1.
+
+Việc script KHÔNG làm: chạy migration khi có `--no-migrate` hoặc `DEPLOY_AUTO_MIGRATE=0` (mục 11.1; ngoại lệ duy nhất: CÀI MỚI thật sự, không container và không volume Mongo, vẫn chạy bước 8a trên DB trống), **chạy lại migration 002..006** (runner chỉ ghi sổ chúng khi probe chỉ-đọc chứng minh không còn việc, mục 11.1; muốn thực sự chạy 005/006 vẫn dùng `scripts/run-migration.sh`), chép backup ra ngoài máy chủ, dọn image dự phòng, đổi Cloudflare, pin image (mục 12). Runner không tự backup: nó dựa vào backup mongodump ở bước 5 (vì thế phần ghi của `reconcile` luôn chạy **sau** bước backup). **Dọn dung lượng:** mỗi lần deploy để lại một thẻ `realestatemanager-backend:pre-*` (và `scripts/run-migration.sh` để lại `realestate-migrate:*` nếu không dùng `--cleanup`). Dọn định kỳ theo 5.7: liệt kê `docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(realestatemanager-backend:pre-|realestate-migrate:)'`, giữ vài thẻ gần nhất, xóa phần còn lại bằng `docker image rm`, rồi `docker image prune -f`.
 
 ### 11.1. Phiên bản hệ thống và runner migration (PT-027)
 
@@ -852,16 +1042,16 @@ Từ v1.0.3 hệ thống lưu **phiên bản** và **sổ migration đã chạy*
   ```
 
   Đọc kết quả probe 002..006. Nếu cả 5 đạt và kế hoạch là "ghi sổ baseline, ghi version 1.0.3" thì chạy deploy thật: `bash deploy.sh --no-pull` (tự backup, tự baseline, `up`, ghi version). Không còn quy trình 5 bước tay (kiểm 005/006, backup, dry-run baseline, baseline, deploy lại). Version ghi vào `system` là version của app đang deploy (`1.0.3`); sổ `by=baseline` kèm số đếm là bằng chứng.
-- **Triển khai mới (chưa có container Mongo):** lần deploy đầu bỏ qua backup (bước 5) và migration (6b, 8b) vì không có DB để đọc/ghi (có cảnh báo), rồi `up -d --build`; backend khởi động lần đầu tự seed admin theo `ADMIN_EMAIL`/`ADMIN_PASSWORD` (mục 2) nên `version` **chưa** được ghi ở lần này. Ở lần deploy **sau** (Mongo đã có container), `reconcile` chạy bình thường: vì `users` đã có admin, nó đi theo hàng "`version` chưa có, `users` có dữ liệu" của bảng trên (probe 002..006, đạt hết thì baseline rồi ghi `version`). Kết quả phụ thuộc probe 006 (đòi đủ 34 tỉnh): nếu CRM đã bật seed khu vực thì 34 tỉnh đã có; nếu `areas` còn rỗng thì kết quả phụ thuộc việc probe 006 có chấp nhận `areas` rỗng hay không (đang là việc riêng ở phía code runner, tài liệu này chưa khẳng định). Probe không đạt thì deploy dừng mã 4 trước `up` theo mục "Mã 4" bên dưới; đọc output để biết id nào không đạt. Mongo đã chạy nhưng DB chưa có dữ liệu (kịch bản 13 bên dưới) là trường hợp khác: `users` chưa có thì không backup, runner ghi `version` ngay ở 6b.
+- **Triển khai mới (chưa có container Mongo):** lần deploy đầu bỏ qua backup (bước 5) và migration trước `up` (6b) vì không có DB để đọc/ghi (có cảnh báo), rồi `up -d --build`; sau liveness, bước **8a** chạy `reconcile --apply --by deploy` (bản vá T-19) nên cài mới chỉ cần MỘT lần deploy và `version` được ghi ngay. "Cài mới" nghĩa là không container Mongo **và** không volume `<project>_mongo_data`; có volume mà thiếu container thì KHÔNG phải cài mới (không chạy 8a). (Đoạn mô tả dưới đây về "lần deploy sau" là hành vi trước bản vá T-19, giữ lại cho trường hợp 8a bị bỏ qua.) Ở lần deploy **sau** (Mongo đã có container), `reconcile` chạy bình thường: vì `users` đã có admin, nó đi theo hàng "`version` chưa có, `users` có dữ liệu" của bảng trên (probe 002..006, đạt hết thì baseline rồi ghi `version`). Kết quả phụ thuộc probe 006 (đòi đủ 34 tỉnh): nếu CRM đã bật seed khu vực thì 34 tỉnh đã có; nếu `areas` còn rỗng thì kết quả phụ thuộc việc probe 006 có chấp nhận `areas` rỗng hay không (đang là việc riêng ở phía code runner, tài liệu này chưa khẳng định). Probe không đạt thì deploy dừng mã 4 trước `up` theo mục "Mã 4" bên dưới; đọc output để biết id nào không đạt. Mongo đã chạy nhưng DB chưa có dữ liệu (kịch bản 13 bên dưới) là trường hợp khác: `users` chưa có thì không backup, runner ghi `version` ngay ở 6b.
 - **Khi `deploy.sh` dừng trước `up` (stack chưa đổi), theo mã thoát của runner:**
   - **Mã 3 (khóa):** có runner khác đang chạy, hoặc tiến trình chết để lại khóa mồ côi. Kiểm `docker ps` không còn lệnh `... node dist/migrations/cli.js` nào đang chạy rồi `$RUN unlock`, chạy lại deploy. Không tự gỡ khóa theo thời gian vì có thể phá một migration đang chạy lâu.
   - **Mã 4 (cần xử lý tay):** ít nhất một probe của 002..006 không đạt (dữ liệu còn việc, hoặc không xác minh được). Runner không ghi gì. Output nêu id và số đếm. Xử lý: chạy migration tương ứng bằng tay, có backup mới, dry-run trước: 005/006 bằng `bash scripts/run-migration.sh 005|006` (mục 5.4a); 002/003/004 cũng bằng `bash scripts/run-migration.sh 002|003|004` (script ts-node ở `RealEstateBackendApp/scripts/migrations/`, chạy trong image dựng từ stage `builder`; `--apply` vẫn bắt buộc backup mongodump mới; riêng **002 `--apply`** in cảnh báo XÓA VĨNH VIỄN bản trùng url, đòi gõ `XOA-BAN-TRUNG-URL` (hoặc `--yes`), và kiểm backup chứa cả `realestate.users` lẫn `raw_articles`/`news_articles` đang tồn tại trong DB: snapshot NDJSON của script nằm trong container nên mất khi thoát, đường lui duy nhất là backup mongodump). Rồi chạy lại `bash deploy.sh --no-pull`.
   - **Mã 4 do probe 002 vượt trần** (dữ liệu bài viết rất lớn): probe 002 có **trần 1.000.000 doc mỗi collection hoặc 5 phút**; vượt thì probe báo "không xác minh được" (`reason` trong output) và runner dừng mã 4, **không phải dữ liệu hỏng**. Làm: (1) dry-run script 002 bằng tay: `bash scripts/run-migration.sh 002` (đọc kỹ: phải báo không còn urlHash MD5 và không còn url trùng); (2) nếu 0 việc, ghi baseline tay với đúng `--version`/`--commit` của bản đang deploy: `$RUN baseline --version <x.y.z> --commit <sha>` (dry-run) rồi thêm `--apply`; (3) chạy lại `bash deploy.sh --no-pull`. Hằng số trần chỉnh ở `RealEstateBackendApp/src/migrations/baseline-probes/probe-002-urlhash.ts` (`PROBE_002_MAX_DOCS_PER_COLLECTION`, `PROBE_002_MAX_DURATION_MS`), phải build lại image sau khi đổi.
   - **Mã 5 (downgrade):** version trong DB cao hơn version của code sắp deploy, thường do pull nhầm nhánh hoặc commit cũ. Runner không ghi gì. Kiểm lại nhánh/commit. Cố ý khôi phục bản cũ: `DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh --no-pull`; khi đó `deploy.sh` **bỏ qua migrate** và **không ghi/hạ `version`** (DB giữ version cao hơn), cảnh báo rõ. Code cũ có thể không đọc được dữ liệu đã migrate: đọc lý do không rollback bằng `git checkout` ở mục 11 trước khi dùng.
   - **Mã 1 (lỗi hoặc từ chối):** kết nối Mongo lỗi, sổ không liền mạch, version DB sai định dạng, Mongo không phải replica set (runner từ chối ngay cả ở **dry-run** và `--plan-only`, sau khi in probe và kế hoạch; nếu dùng nguyên URI có `replicaSet=rs0` trên Mongo standalone thì lỗi là `Server selection timed out`), hoặc một migration (007+) lỗi giữa chừng. Ở bước dry-run: stack chưa đổi. Ở `--apply`: có thể một migration đã chạy dở nên dữ liệu đổi một phần; `deploy.sh` in hướng dẫn "không quay code/image cũ", sửa nguyên nhân rồi chạy lại.
-- **Lệnh `baseline` thủ công: lối thoát, giữ nguyên.** Dùng khi đã tự kiểm 002..006 (ví dụ sau khi xử lý mã 4 bằng cách khác, hoặc chạy với `--no-migrate`): `$RUN baseline --version <x.y.z> --commit <sha>` (dry-run), thêm `--apply` để ghi; sau đó `$RUN status` phải thoát `0` rồi chạy `bash deploy.sh --no-pull`. `--no-migrate` giữ hành vi cũ: `status`, còn việc chờ hoặc cần baseline thì dừng trước `up` và in lệnh (cách A: bỏ `--no-migrate`; cách B: làm tay). **Phạm vi của cờ:** `--no-migrate` chỉ chặn migrate **trước `up`** (bước 6b); bước 8b sau khi backend sống vẫn chạy `reconcile --apply` nên vẫn ghi `version` khi DB sạch (không còn việc chờ). Ở chế độ này `deploy.sh` **không** phát hiện downgrade ở bước 6b; bước 8b vẫn không bao giờ hạ `version` (runner trả mã 5, chỉ cảnh báo).
+- **Lệnh `baseline` thủ công: lối thoát, giữ nguyên.** Dùng khi đã tự kiểm 002..006 (ví dụ sau khi xử lý mã 4 bằng cách khác, hoặc chạy với `--no-migrate`): `$RUN baseline --version <x.y.z> --commit <sha>` (dry-run), thêm `--apply` để ghi; sau đó `$RUN status` phải thoát `0` rồi chạy `bash deploy.sh --no-pull`. `--no-migrate` giữ hành vi cũ: `status`, còn việc chờ hoặc cần baseline thì dừng trước `up` và in lệnh (cách A: bỏ `--no-migrate`; cách B: làm tay). **Phạm vi của cờ:** `--no-migrate` chỉ chặn migrate **trước `up`** (bước 6b); bước 8b sau khi backend sống vẫn chạy `reconcile --apply` nên vẫn ghi `version` khi DB sạch (không còn việc chờ). **Ngoại lệ cài mới:** `--no-migrate` + cài mới thật sự (không container, không volume Mongo) thì bước 8a vẫn chạy `reconcile --apply` đủ 007/008/009 + `version` trên DB trống (an toàn vì không có dữ liệu để hỏng); nếu có volume Mongo mà không có container thì 8a không chạy. Ở chế độ này `deploy.sh` **không** phát hiện downgrade ở bước 6b; bước 8b vẫn không bao giờ hạ `version` (runner trả mã 5, chỉ cảnh báo).
 - **Khóa còn sót** (runner chết giữa chừng, kể cả chết giữa lúc ghi sổ baseline): `reconcile`/`status` thoát mã `3`, `deploy.sh` dừng trước `up`; kiểm `docker ps` không có `... run ... node dist/migrations/cli.js` nào đang chạy rồi `$RUN unlock`. Chạy lại là an toàn: id đã vào sổ được bỏ qua, probe chỉ chạy cho id còn thiếu, không nhân đôi. Chết sau pha migrate (trước hoặc sau `up`) mà chưa ghi `version`: lần sau (hoặc bước 8b) chỉ còn ghi `version`.
-- **Migration lỗi:** runner dừng ở cái lỗi, ghi `migration-last-error` (đã lọc chuỗi kết nối), thoát mã `1`; dữ liệu có thể đã đổi một phần. **Không quay về code/image cũ**: sửa nguyên nhân rồi chạy lại `up --apply` (mỗi migration phải chạy lại được an toàn); cần hoàn tác thì khôi phục `mongorestore` từ `backups/deploy-pre-*` (mục 6).
+- **Migration lỗi:** runner dừng ở cái lỗi, ghi `migration-last-error` (đã lọc chuỗi kết nối), thoát mã `1`; dữ liệu có thể đã đổi một phần. **Không quay về code/image cũ**: sửa nguyên nhân rồi chạy lại `up --apply` (mỗi migration phải chạy lại được an toàn); cần hoàn tác thì khôi phục `mongorestore` từ `backups/deploy-pre-*` (mục 6). **Ngoại lệ v1.0.4:** nếu migration đã `--apply` xong là 007 và/hoặc 008 (chỉ thêm trường, vẫn ghi id cũ) thì lùi image `pre-<thời-gian>` là an toàn (L1; L2 `$unset` sau khi lùi; L3 mongorestore là cuối cùng), xem mục 11, mục 2 và 3 của danh sách hướng dẫn khi lỗi. Bước 8c (bù mã danh mục) sẽ chạy lại ở lần tiến sau.
 - **Đĩa:** runner chạy bằng image backend vừa build nên **không cần** `docker build --target builder` (~3,75 GB, ~13 phút) như `scripts/run-migration.sh`; đây là lý do 007 trở đi dùng runner.
 
 `deploy.sh` trước đây nằm trong `.gitignore` (là script cục bộ của VPS); nay là file được quản lý trong repo, và `/backups/`, `/logs/`, `/tmp/` ở gốc repo được ignore (backup chứa dữ liệu khách hàng, không được commit).
@@ -886,10 +1076,14 @@ Từ v1.0.3 hệ thống lưu **phiên bản** và **sổ migration đã chạy*
 | 12 | Triển khai mới (chưa có container `realestate_mongo`) | `bash deploy.sh` | Bỏ qua backup và migration (có cảnh báo), `up` chạy; lần deploy sau mới ghi `version` |
 | 13 | **DB mới tinh** (Mongo đã chạy, `system` trống, `users` rỗng). Hai biến thể: **13a** `users` tồn tại nhưng rỗng; **13b** DB `realestate` chưa có cả collection `users` (backend chưa boot lần nào) | `bash deploy.sh --no-pull` | 13a: backup chạy bình thường (mongodump vẫn sinh `realestate.users`). 13b: cảnh báo "DB chưa có dữ liệu", **bỏ qua backup**, vẫn cho `--apply` (script hỏi lại DB ngay trước khi ghi). Cả hai: không baseline; ở 6b (`--skip-version`) runner **ghi `version` ngay** (kế hoạch `versionToWrite` = version app, đã áp dụng); `up`; 8b là no-op mã `0`. `$RUN status` thoát `0`, version = version app |
 | 14 | Probe 002 vượt trần (hạ tạm `PROBE_002_MAX_DOCS_PER_COLLECTION` xuống vài doc trong image thử, dữ liệu giả có nhiều bài hơn) | `bash deploy.sh --no-pull` | Dừng **trước `up`** mã `4`, output nêu probe 002 "không xác minh được"; không ghi gì. Làm theo mục mã 4 ở trên (dry-run `run-migration.sh 002`, rồi `baseline` tay), chạy lại: hoàn tất |
+| 15 | (v1.0.4, T-17/T-18) Bản sao dữ liệu production, image có CLI `crm-catalog-codes.cli.js` | `bash deploy.sh --no-pull` | Sau `up`, liveness và 8b, log có dòng "Bước 8c" và lệnh `crm-catalog-codes.cli.js --apply` chạy **một lần**; có file `logs/deploy-catalog-codes-<thời-gian>.log`; thoát `0`; chạy lần hai: lệnh bù là no-op |
+| 16 | Như 15 nhưng lệnh bù lỗi (ví dụ làm hỏng một bản ghi để CLI báo mồ côi, thoát mã `1`) | `bash deploy.sh --no-pull` | Cảnh báo **đỏ** "bước bù mã danh mục (8c) THẤT BẠI (mã 1)" kèm đường dẫn log; `deploy.sh` thoát mã `1`, không in "Deploy xong"; log được ghi; backend vẫn chạy. Sửa nguyên nhân, chạy lại: hoàn tất |
 
 **Đã diễn tập thật (2026-11-03, Docker thật trên Windows/Git Bash, project thử `rhs`, tên container riêng, log/seed/fixture ở `D:\Jobs\_deploy_rehearsal`, không phải VPS):** 14 kịch bản trên đã chạy, theo báo cáo diễn tập 14/14 đạt về hành vi sau khi sửa các lệch tìm thấy. Các lệch liên quan tới script/tài liệu đã xử lý: (L2) DB chưa có collection `users` làm bước backup chết (mongodump mã 0 nhưng archive không có `realestate.users`): nay `deploy.sh` phân loại DB bằng `classify_db` (xem bước 5); (L3) kịch bản 6 biến thể 005 dừng ở cổng `check_users_migrated`, không phải mã runner 4; (L4b) Mongo standalone bị runner từ chối ngay ở dry-run (kịch bản 11); (L5) cảnh báo `(\nmissing)` khi container chưa tồn tại (nay dùng `inspect_field`); (L1) tài liệu "triển khai mới" ở 11.1, phần probe 006 chấp nhận `areas` rỗng là việc ở phía code runner. Sau các sửa đó chỉ **chạy lại** trên Docker các kịch bản 1, 2, 12, 13 (13a và 13b) và ca mơ hồ (không `users`, `areas` có dữ liệu: `deploy.sh` dừng, mã 1); các sửa ở `classify_db` sau đó (kiểm "có dữ liệu" bằng `findOne` thay `estimatedDocumentCount`, trạng thái chỉ-`system` coi như trống) cũng đã được **chạy lại đầu-cuối bằng `deploy.sh` thật (2026-11-03, đều đạt)**: (L1) cài mới rồi `deploy` lần 2 (backup chạy vì `users` đã có admin, probe 006 đạt với `areasEmpty`, baseline 002..006 `by=baseline`, ghi `version`, `status` mã 0; lần 3 là no-op); (M2) 13a, 13b, kịch bản 2 (baseline thường) và trạng thái chỉ-`system`. **Trung thực về trạng thái chỉ-`system`:** khi ép `up` lỗi bằng cách bỏ `ADMIN_*` (backend crash), Mongoose vẫn kịp tạo `users` (rỗng) nên lần deploy sau đi nhánh `HAS_USERS` (có backup), **không** phải chỉ-`system`; muốn gặp đúng `EMPTY_SYSTEM_ONLY` phải dựng **thủ công** (dừng backend, xóa mọi collection trừ `system`), và đã kiểm theo cách đó. Trạng thái này thực tế chỉ xảy ra khi `up` lỗi trước khi backend khởi động. Từ lần này việc diễn tập lặp lại bằng một lệnh cố định: mục 11.3 "Staging local".
 
 **Chưa kiểm được / không khẳng định:** (a) khóa chống chạy chồng `flock`: Git Bash trên Windows không có `flock` nên script bỏ qua khóa (có cảnh báo), cơ chế khóa chưa được thử; (b) việc `docker compose up` tạo lại container backend ở mỗi lần deploy: hành vi trên Docker Desktop (containerd) có thể khác Docker Engine trên Ubuntu, chưa đối chiếu; (c) dung lượng đĩa thư mục dữ liệu Docker (`/var/lib/docker`) không đọc được trên Windows nên bước 1b bị bỏ qua mục đó; (d) `mongodump` **không tạo prelude cho collection không tồn tại** (nên DB chưa có `users` làm `verify_backup_archive` từ chối): đây là hành vi quan sát được ở bước diễn tập, hiện `deploy.sh` né bằng `classify_db`; chưa thử với mọi phiên bản `mongo:7`; (e) kịch bản cài-mới-rồi-deploy-lần-hai (L1) chưa chạy; (f) toàn bộ chưa chạy trên VPS Ubuntu thật.
+
+**Test bước 8c không cần Docker** (v1.0.4): `bash scripts/tests/deploy-catalog-codes.test.sh` (thoát 0 nếu đạt). Trích `main`, `apply_catalog_codes`, `run_catalog_codes_cli`, `compose` từ `deploy.sh` thật, thay `docker` và các bước khác bằng stub ghi thứ tự gọi; chứng minh: lệnh bù chạy sau `up`, sau liveness và sau 8b, trước `compose ps`; gọi đúng `compose run --rm --no-deps -T backend node dist/migrations/crm-catalog-codes.cli.js --apply`; lệnh bù mã `1` hoặc `2` thì cảnh báo đỏ và deploy thoát `1`; log được ghi; downgrade có chủ ý thì bỏ qua. Test **không** chạy CLI với Mongo thật (đó là kiểm chứng T-18 trên bản sao: kịch bản 15 và 16 ở bảng trên).
 
 **Test shell không cần Docker** (hàm lấy từ file thật, `docker` bị thay bằng stub trong thư mục tạm): `bash scripts/tests/ops-common.test.sh` (thoát 0 nếu đạt). Nó phủ `inspect_field`, `classify_db` (bảng trường hợp, fail-closed khi mongosh lỗi/rỗng/chỉ có cảnh báo) và `auto_reconcile` (tổ hợp `BACKUP_FILE` × cờ DB trống × kết quả `classify_db`), nhưng **không** kiểm đoạn JS chạy trong mongosh. Đoạn JS (dùng `findOne`, không dùng `estimatedDocumentCount`, vì số đếm trong metadata có thể về 0 sau `kill -9` mongod trong khi collection vẫn có dữ liệu; đã tái hiện trên Mongo thật: sau `kill -9` `estimatedDocumentCount()` trả 0, `findOne` vẫn thấy document) chỉ kiểm được trên một Mongo thật, ví dụ container thử `docker run -d --name x_mongo -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=<pw> mongo:7` rồi gọi `nonempty_collections x_mongo` sau khi `source scripts/lib/ops-common.sh` (đặt `LOG_PREFIX`).
 
@@ -911,7 +1105,7 @@ bash scripts/staging.sh down                   # gỡ container, GIỮ dữ li�
 bash scripts/staging.sh reset [--images] [--yes]   # xóa DỮ LIỆU staging về trống (volume); --images: xóa cả image staging
 ```
 
-`deploy [args]` chuyển nguyên `args` cho `deploy.sh` và **mặc định thêm `--no-pull`** (thêm `--pull` của wrapper để cho phép `git pull`, khi đó cần đang ở nhánh `production`). Cài mới (kịch bản 12): `reset` rồi `deploy` (lần 1: không có Mongo nên bỏ qua backup/migration, backend tự seed admin), `deploy` lần 2. Admin web: `ADMIN_EMAIL`/`ADMIN_PASSWORD` trong `.staging/env`. Backend: `http://127.0.0.1:13100` (đổi bằng `STAGING_BACKEND_PORT`, chỉ nhận dải 13100-13199; cổng frontend `STAGING_FRONTEND_PORT` chỉ nhận 18080-18099; các cổng dev/prod 80, 443, 3000, 6379, 9000, 9001, 20128, 27017 bị chặn tường minh). Frontend tắt mặc định: `STAGING_FRONTEND=1` bật service `frontend` ở `127.0.0.1:18080` (xem Giới hạn). Muốn xem log: `docker logs rhstg_backend`. Dữ liệu tạm nằm ở `.staging/` (env, backend.env, logs, backups; đã `.gitignore`).
+`deploy [args]` chuyển nguyên `args` cho `deploy.sh` và **mặc định thêm `--no-pull`** (thêm `--pull` của wrapper để cho phép `git pull`, khi đó `deploy.sh` pull trên nhánh đang checkout theo upstream của nhánh đó). Cài mới (kịch bản 12): `reset` rồi `deploy` (lần 1: không có Mongo nên bỏ qua backup/migration, backend tự seed admin), `deploy` lần 2. Admin web: `ADMIN_EMAIL`/`ADMIN_PASSWORD` trong `.staging/env`. Backend: `http://127.0.0.1:13100` (đổi bằng `STAGING_BACKEND_PORT`, chỉ nhận dải 13100-13199; cổng frontend `STAGING_FRONTEND_PORT` chỉ nhận 18080-18099; các cổng dev/prod 80, 443, 3000, 6379, 9000, 9001, 20128, 27017 bị chặn tường minh). Frontend tắt mặc định: `STAGING_FRONTEND=1` bật service `frontend` ở `127.0.0.1:18080` (xem Giới hạn). Muốn xem log: `docker logs rhstg_backend`. Dữ liệu tạm nằm ở `.staging/` (env, backend.env, logs, backups; đã `.gitignore`).
 
 **Điều kiện:** có sẵn image `mongo:7`, `redis:7-alpine`, `cgr.dev/chainguard/minio:latest` (thiếu thì compose sẽ phải tải: `init` cảnh báo, wrapper không tự pull) và image nền `node:24.18.1-slim` trong cache build để build backend. Wrapper **không** tải gì thêm.
 
@@ -948,6 +1142,203 @@ bash scripts/staging.sh reset [--images] [--yes]   # xóa DỮ LIỆU staging v�
 **Test của rào chắn (không cần Docker):** `bash scripts/tests/staging.test.sh` (cổng, tên, DOCKER_HOST/context, `ASSUME_YES`, gỡ biến shell, kiểm biến `DEPLOY_*` của `deploy.sh`, mặc định `env -i`, shim `docker`) và `bash scripts/tests/ops-common.test.sh`; hàm được trích từ file thật, `docker` thay bằng stub.
 
 **Dọn:** `bash scripts/staging.sh reset --images --yes` xóa container, volume, mạng, image staging (và `logs`/`backups` tạm); `rm -rf .staging` xóa luôn env giả. Không đụng dev/prod, không cần `docker system prune`.
+
+### 11.4. A0 (v1.0.4): diễn tập migration 007/008/009 trên bản sao dữ liệu thật (T-18)
+
+Ngày 2026-11-06, `devops-agent`, dump production (file nằm ngoài repo, không ghi tên và dung lượng) do Oniichan cung cấp. **Chỉ ghi số đếm, không ghi dữ liệu cá nhân.** Môi trường: `mongo:7` replica set 1 node tạm (tên `tmp-t18-`, `127.0.0.1:27099`, `--tmpfs`, không mount volume), backend build từ working tree (`npm run build`, CLI chạy bằng `node` trên máy dev, không qua image). Đã dọn hết sau khi xong.
+
+**Dữ liệu sau restore (4.809 document, 0 lỗi):** `customers` 8, `care_logs` 7, `appointments` 3, `projects` 10 (4 chưa xóa mềm), `areas` 34, `customer_statuses` 4, `catalog_items` 20, `persona_fields` 25, `users` 5. Sổ migration có 002..006 (baseline), version DB `1.0.3`.
+
+| Bước | Kết quả (số đếm) |
+|---|---|
+| `reconcile` dry-run | Chờ 007, 008, 009; không ghi gì; thoát `0` |
+| `crm-catalog-codes.cli` dry-run | 007: `areasCoded=34 projectsAreaCoded=9 customersStatusCoded=8 customersSourceCoded=7 customersAreaCoded=8 customersProjectsCoded=8 careLogsCoded=3 appointmentsCoded=0 orphans=0`; 008: `projectsCoded=10 projectsWithUnmapped=0 unmappedTexts=0` |
+| `reconcile --apply` | 007, 008, 009 xong, số đếm đúng bằng dry-run; 009 tạo 2 index; thoát `0` |
+| `reconcile --apply` lần hai | "Migration chờ: không có", thoát `0` |
+| `crm-catalog-codes.cli` dry-run rồi `--apply` sau migrate | Toàn số `0` (cả 007 và 008), `orphans=0`, thoát `0` |
+
+**Bất biến 3.1 (đếm):** khách có `statusId` 8, thiếu `statusCode` 0; `sourceId` 7, thiếu 0; `areaId` 8, thiếu 0; `interestedProjectIds` không rỗng 5, thiếu `interestedProjectCodes` 0; `care_logs.contactResultId` 3, thiếu 0; `appointments.projectId` 0; `projects.areaId` 9, thiếu `areaCode` 0; `areas` 34, thiếu `code` 0. Số bản ghi mà `…Id` trỏ tới danh mục có `code` khác `…Code`: **0** ở cả 7 cặp (kể cả từng phần tử của `interestedProjectIds`). `propertyTypeCodes` 12 giá trị trên 8 dự án, **0** giá trị ngoài `options[].value`, `unmappedPropertyTypes` 0; `propertyTypes` cũ giữ nguyên 8 dự án. Index `areas.code_1` unique partial có, hai index 009 có. Dữ liệu thật **không** có bản ghi thiếu `…Code` sau migrate (không có khách xóa mềm: 0).
+
+**Ca DB trống (phát hiện lỗi thật):** DB mới hoàn toàn, hoặc DB có dữ liệu nhưng thiếu trường `persona_fields.key = property_type` (thử bằng xóa đúng một document cấu hình ở bản sao thứ hai), đều làm **008 ném `PropertyTypeFieldMissingError`** ("Seed trường chân dung property_type rồi chạy lại"), kể cả dry-run:
+- `crm-catalog-codes.cli`: bước 007 OK, bước 008 LỖI, thoát `1` (cả dry-run lẫn `--apply`), tiến trình không chết giữa chừng, in tóm tắt từng bước.
+- `reconcile --apply` (DB trống): 007 chạy xong và ghi sổ, **008 lỗi, runner dừng, thoát `1`, không chạy 009, không ghi `version`**; trạng thái sau đó: 007 đã ghi sổ, chờ 008 và 009, "Lỗi gần nhất" ghi 008. Xảy ra y hệt với bản dump thật đã bỏ `property_type`.
+- Ý nghĩa (hành vi QUAN SÁT ĐƯỢC TRƯỚC KHI SỬA): chuỗi `deploy.sh` trên DB mới tinh (kịch bản 13 ở 11.2) đã **dừng ở 6b** vì trường `property_type` chỉ được seed khi backend khởi động lần đầu (`PersonaSeedService`), mà backend chưa chạy lúc 6b. **Đã sửa:** 008 khi thiếu trường `property_type` mà KHÔNG có dự án nào cần mã (`projects` rỗng hoặc không dự án nào có chữ loại hình cần dịch) thì coi là "không có việc": log cảnh báo `CẢNH BÁO`, thoát OK (cả dry-run lẫn `--apply`); runner chạy hết 007/008/009 và ghi `version`, CLI `crm-catalog-codes` thoát `0`, nên `deploy.sh` không còn dừng ở 6b/8c trên DB mới tinh. Thiếu trường mà CÓ dự án cần mã vẫn ném `PropertyTypeFieldMissingError` (cấu hình hỏng thật). Production (đã có `property_type`) không đổi hành vi. Đã kiểm bằng integration trên replica set (registry thật, DB trống); chưa chạy lại kịch bản 13 bằng Docker thật.
+
+**`explain` truy vấn nhánh `$or` id/code (dữ liệu thật):** khách theo `statusCode`/`statusId`: `OR` hai `IXSCAN` (`deletedAt_1_statusCode_1_lastUpdatedAt_-1` và `statusCode_1`), 5 trả về, 5 document quét, 7 khóa; theo `sourceCode`/`sourceId`: `SUBPLAN > OR > IXSCAN(sourceCode_1) x2`, 7 trả về, 8 quét, 9 khóa; theo `interestedProjectCodes`/`interestedProjectIds`: `SUBPLAN > OR > IXSCAN(interestedProjectIds_1) + IXSCAN(interestedProjectCodes_1)`; lịch hẹn theo `projectCode`/`projectId`: `SUBPLAN > OR > IXSCAN(projectId_1_startAt_1) + IXSCAN(projectCode_1_startAt_1)`. Không có `COLLSCAN`. (Quy mô 8 khách nên chỉ chứng minh dùng index, không chứng minh hiệu năng ở quy mô lớn.)
+
+**Tương thích lùi (L1, L2):** image v1.0.3 không có trên máy và không `pull` được, nên chạy **mã nguồn tag `v1.0.3` đã build** (`git archive` ra thư mục tạm ngoài repo, `nest build`, `node dist/main.js`, phụ thuộc lấy từ `node_modules` hiện tại; khác image thật ở lớp đóng gói, cùng mã ứng dụng) với Redis tạm, trỏ vào bản sao đã migrate. Khởi động bình thường, `GET /crm/customers` trả 8/8, `list-counts` `ALL=8`, `GET /crm/projects` 4 (đúng số dự án chưa xóa mềm). **L2** theo đúng danh sách ở trên (mongosh, đếm trước/sau): `modifiedCount` `customers` 8, `care_logs` 3, `appointments` 0, `projects` 10, `areas` 34; sau đó mọi trường mã mới bằng `0`, tổng bản ghi không đổi, id cũ còn nguyên (`statusId` 8, `sourceId` 7, `areaId` 8, `contactResultId` 3, `projects.areaId` 9, `propertyTypes` 8 dự án). v1.0.3 khởi động lại **sau L2** vẫn trả đúng 8 khách, 4 dự án. Tiến lại: lệnh bù `--apply` điền lại đủ (`areasCoded=34`, `customersStatusCoded=8`, `projectsCoded=10`, ...), lần sau toàn `0`.
+
+**Review `qa-agent` vòng 1 (T-18 bước 5, Arch 5.1.8):** không có lỗi Critical; bản vá 008 (ca DB trống / thiếu `property_type`) đạt; các việc QA nêu đã đóng. Kịch bản 13 (DB trống) đã xác nhận bằng integration test sau bản vá 008; **chưa** chạy `deploy.sh` Docker thật trên DB mới tinh.
+
+**Bổ sung L1 bằng image v1.0.3 thật (2026-11-06, `devops-agent`):** build image từ `git archive v1.0.3` ra thư mục tạm ngoài repo (tag tạm `tmp-t18-v103:test`, build exit 0, 3 stage), chạy trỏ vào replica set `mongo:7` tạm (`tmp-t18-*`, `--tmpfs`, mạng riêng, cổng 127.0.0.1) dựng lại từ đúng dump trên (8 khách, 10 dự án, 34 khu vực), rồi migrate bằng `reconcile --apply` (007/008/009, thoát `0`) và `crm-catalog-codes.cli --apply` lần sau (`projectsCoded=0 projectsWithUnmapped=0 unmappedTexts=0`, thoát `0`). Image v1.0.3 (`FEATURE_CRM_ENABLED=true`, cần `CRM_PII_ENCRYPTION_KEY` giả) khởi động `Nest application successfully started`; với JWT ADMIN ký bằng secret giả: `GET /api/v1/crm/customers` 200 `n=8 total=8`, `GET /api/v1/crm/projects` 200 `n=4 total=4`, `GET /api/v1/crm/customers/list-counts` 200 `ALL=8`. Kết quả khớp lần chạy bằng mã nguồn ở trên: **image v1.0.3 đọc đúng DB đã migrate 007/008/009** (bản sao, không phải production). Đã dọn sạch container, mạng, image, volume ẩn và thư mục tạm `tmp-t18-*`; chỉ ghi số đếm.
+
+**Chưa kiểm chứng:** chạy bằng image Docker **v1.0.4** thật và `deploy.sh` trên bản sao (CLI migrate vẫn chạy từ `node` trên máy dev); hiệu năng ở quy mô lớn; ca ghi/đọc ngược bằng image v1.0.3 sau L2 (L2 chỉ đã kiểm bằng mã nguồn v1.0.3); kịch bản 13 (DB trống) chạy `deploy.sh` Docker thật (gom vào T-19 hoặc diễn tập staging). `qa-agent` vòng 2 (2026-11-06) đã duyệt T-18; T-19 là task QA liên module riêng, ghi báo cáo vào mục này.
+
+**Review và test xuyên module A0 (T-19, 2026-11-06, `qa-agent`):** chạy không cần Docker (replica set `mongodb-memory-server`, dữ liệu giả). Bộ A0 hiện có: 10 suite integration, 194 ca xanh (migration 007/008/009, lệnh bù, reconcile, ghi kép khách/nhật ký/lịch hẹn/dự án qua HTTP, lọc/đếm theo `code`, lệch `…Id`/`…Code` thì 400, bản ghi thiếu `code` vẫn lọc/đếm/chặn xóa `CATALOG_IN_USE`/`PROJECT_IN_USE`, `countActiveCustomersByProjects` đếm id-hoặc-code không đếm trùng, đổi nhãn không đổi `code`). Bổ sung `src/migrations/crm-a0-cross-module.integration.spec.ts` (2 ca): registry THẬT reconcile trên dữ liệu cũ chỉ-id ở mọi collection (ghi sổ đủ 007/008/009, bất biến 3.1 bằng 0, không đổi `updatedAt`/`version`, chạy lần hai không đổi dữ liệu) và kịch bản lùi rồi tiến (bản cũ ghi chen chỉ-id, reconcile không tự lành, lệnh bù dry-run không ghi, `--apply` điền đủ, lần sau không đổi). Toàn bộ unit BE: 164 suite, 2306 ca xanh; `tsc` BE 0 lỗi. Lỗi: Critical 0, High 0. Chưa làm được: kịch bản 13 chạy `deploy.sh` thật trên DB trống (cần Docker Desktop; logic đã được integration test phủ).
+
+**Kịch bản 13 chạy `deploy.sh` Docker thật trên DB trống (T-19, 2026-11-06, `devops-agent`):** bản sao cô lập ngoài repo (`D:\Jobs\tmp-t19-work`, đã xóa), sinh từ `scripts/staging.sh` + `docker-compose.staging.yml` với tên đổi sang `tmp-t19-` (project `tmp-t19-stg`, container `tmp-t19-*`, volume/mạng `tmp-t19-stg_*`, image `tmp-t19-stg-backend`), cổng `127.0.0.1:13190`, secret giả sinh ngẫu nhiên, `.env.docker` thật không dùng. Hai chỗ khác bản repo, chỉ trong bản sao: đổi chuỗi tên project/container (kể cả hằng `realestate-staging` trong `check_staging_vars` của `deploy.sh`); mọi logic còn lại giữ nguyên. Image backend build từ cây làm việc hiện tại (`package.json` vẫn `1.0.3`: chưa nâng số bản, T-69; `GIT_COMMIT=unknown` vì bản sao không có `.git`). Mongo `mongo:7` replica set `rs0` + auth + keyFile như production.
+- **Lần 1: `deploy.sh --no-pull` trên DB trống (không có container, không volume): thoát `0`.** Build image OK; **6b bị bỏ qua** (`Chưa có container tmp-t19-mongo (triển khai mới?): bỏ qua migration`), backup bỏ qua (chưa có gì); `up -d --build` OK; mongo healthy, backend liveness OK sau ~11s, `docker compose ps` backend `healthy`; **8b bị bỏ qua** (`MIGRATION_GATE_RAN=0`); **8c chạy sau `up`, thoát `0`**: `[1/2] 007 OK` (toàn số `0`: `areasCoded=0 customersStatusCoded=0 ...`), `[2/2] 008 OK` (CẢNH BÁO "không có trường property_type", không có dự án cần mã nên bỏ qua, **không ném lỗi**). Trạng thái runner sau lần 1: **sổ rỗng, 3 migration chờ (007/008/009), `version` DB chưa có, `status` thoát `4` ("CẦN BASELINE": `users` đã có do backend seed admin)**; backend log cảnh báo "Còn 3 migration chờ chạy".
+- **Lần 2: `deploy.sh --no-pull` ngay trên DB đó: thoát `0`.** Backup `mongodump` OK (đã kiểm nội dung), thẻ image `pre-<thời-gian>`; dry-run: probe 002..006 **đều đạt** (0 việc), ghi baseline 002..006; `reconcile --apply --skip-version` chạy **007, 008, 009 hết** (008 `Xong`, không ném lỗi, cảnh báo như trên), 009 tạo index; backend liveness OK; 8b `Đã ghi phiên bản hệ thống: 1.0.3`; 8c thoát `0` (toàn `0`, 007/008 OK). `status` cuối: **Đã áp dụng 8 (002..006 baseline, 007/008/009 by deploy), Migration chờ: không có, Khóa: không có, thoát `0`.**
+- **Kết luận:** 008 không ném lỗi trên DB trống ở cả hai đường (CLI bù ở lần 1, runner ở lần 2); bước bù 8c chạy sau `up` thoát `0`; backend healthy. Nhưng yêu cầu "007+008+009 chạy hết **trong một lần deploy** trên DB trống" **chưa đạt**: lần 1 chỉ chạy 8c (007+008 qua CLI bù, **không có 009**), reconcile phải đợi lần deploy thứ hai.
+- **Phát hiện hạ tầng (không tự sửa, cần Oniichan/`architect-agent` quyết):** (1) [ĐÃ SỬA ở T-19 bản vá, xem mục "Bản vá T-19" bên dưới] `migration_gate` thoát sớm khi chưa có container Mongo, nên cài mới không ghi sổ/`version`, không chạy 009 (thiếu 2 index), và `status` báo mã `4` cho tới khi deploy lần hai (an toàn dữ liệu, vì DB trống; 2 index 009 thiếu chỉ ảnh hưởng hiệu năng cron/thumbnail). Hướng sửa gợi ý: ở nhánh "chưa có container" của deploy mới, sau `up` + liveness thì chạy `reconcile --apply --by deploy` (trên DB mới tinh runner tự ghi version, không cần backup), hoặc ghi rõ vào runbook "cài mới = chạy `deploy.sh` hai lần". (2) 008 vẫn cảnh báo thiếu `property_type` ở lần 2: trường `property_type` **chỉ được seed khi `CRM_ENABLED=true`** (`PersonaSeedService`); bản staging chạy cờ tắt sẽ không có trường này (lần chạy T-19 đã quan sát thiếu). Vô hại khi `projects` rỗng, nhưng **phải bật `CRM_ENABLED=true` và xác nhận đã có `property_type` trước khi nhập dự án thật** vào DB mới (xem "Kiểm tra trước khi import" ở cuối mục này).
+- **Dọn dẹp:** `staging.sh reset --images --yes` (container, 3 volume, mạng, hai image `tmp-t19-stg-backend:latest`/`:pre-*`), xóa thư mục bản sao. Sau đó `docker ps -a`, `volume ls`, `network ls`, `images` không còn thứ gì `tmp-t19-` và đúng bằng trạng thái trước khi chạy. Không đụng Mongo dev/prod, container `mongodb`, `D:\mongodb`, volume cũ, `D:\Jobs\prod-dumps\`; không có dữ liệu cá nhân hay secret trong log/doc.
+
+**Bản vá T-19: cài mới chỉ cần MỘT lần deploy (2026-11-06, `devops-agent`, Oniichan đã duyệt).** `deploy.sh`: `migration_gate` ở nhánh "chưa có container Mongo" đặt `FRESH_INSTALL=1` **chỉ khi cũng không có volume `<project>_mongo_data`** (hàm `mongo_volume_exists`; container bị `compose down/rm` mà volume còn dữ liệu thì giữ hành vi cũ: bỏ qua migration, in cảnh báo, không chạy migration không backup); sau `up` + mongo healthy + backend liveness, hàm mới `fresh_install_reconcile` (bước **8a**) chạy `reconcile --apply --by deploy` (cùng `run_migration_cli` với 6b/8b, không `--skip-version`, không backup vì DB trống): runner baseline 002..006 (probe đạt), chạy 007/008/009 và ghi `version`. Lỗi (mã khác 0) thì `die`: deploy exit 1, không chạy 8c, in lệnh chạy lại. Khi `FRESH_INSTALL=1`, `sync_system_version` (8b) bỏ qua vì 8a đã ghi version. Mọi nhánh khác (DB đã có dữ liệu, `--plan-only`, `--no-migrate`, downgrade) không đổi. Runbook: **cài mới = chạy `deploy.sh` MỘT lần**, không cần lần hai. Thông điệp cảnh báo của `migration_gate` đã đổi tương ứng.
+- Test shell: `scripts/tests/deploy-catalog-codes.test.sh` thêm ca cài mới (reconcile gọi đúng 1 lần, SAU `up` và liveness, TRƯỚC 8c, đúng `--apply --by deploy` không `--skip-version`; reconcile lỗi mã 1 và 4 thì deploy exit 1, không "Deploy xong", không chạy 8c; nhánh DB có dữ liệu vẫn đúng 1 reconcile và không có 8a). Bộ test shell: deploy-catalog-codes 56 đạt (gồm ca gate thật: volume, --no-migrate, --plan-only), ops-common 67 đạt, staging 105 đạt, 0 hỏng.
+- **Kịch bản 13 chạy lại bằng Docker thật (bản vá, 2026-11-06):** cô lập `tmp-t19-` như lần trước (bản sao ngoài repo `D:\Jobs\tmp-t19-work`, project `tmp-t19-stg`, cổng `127.0.0.1:13190`, secret giả). **MỘT lần `deploy.sh` trên DB trống: thoát `0`.** 6b bỏ qua kèm cảnh báo mới; `up` OK; mongo healthy; liveness OK sau ~12s; **8a**: probe 002..006 đạt rồi baseline, 007 (toàn số `0`), 008 (cảnh báo thiếu `property_type`, không ném lỗi, vì không có dự án), 009 tạo 2 index, `Đã ghi phiên bản hệ thống: 1.0.3`; 8c thoát `0`; 4 container `healthy`. `status` ngay sau lần deploy đó: phiên bản app = DB = `1.0.3`, Đã áp dụng 8 (002..006 baseline, 007/008/009 by deploy), Migration chờ: không có, Khóa: không có, thoát `0`. Không cần lần deploy thứ hai. Chưa thử nhánh lỗi 8a bằng Docker thật (chỉ test shell). Điểm (2) ở phát hiện trên vẫn còn, ngoài phạm vi T-19: `property_type` chỉ được seed khi `CRM_ENABLED=true`, nên bản staging chạy cờ tắt sẽ thiếu trường này (008 chỉ cảnh báo vì chưa có dự án).
+
+**Kiểm tra trước khi import dự án vào DB mới (chỉ đếm, không in dữ liệu cá nhân):**
+1. Xác nhận `CRM_ENABLED=true` (và `FEATURE_CRM_ENABLED=true` nếu image dùng cờ này) trong env của backend đang chạy; nếu đang tắt thì bật rồi khởi động lại backend để `PersonaSeedService` seed.
+2. Đếm trường đã seed, kết quả phải là `1`: `db.persona_fields.countDocuments({ key: 'property_type' })` (mongosh trong container mongo, chỉ in số đếm, không dùng `find()` in nội dung).
+3. Nếu `0`: dừng import, không chạy `crm-catalog-codes --apply` cho tới khi đủ `1`; nếu cố chạy khi đã có dự án cần mã thì 008 ném `PropertyTypeFieldMissingError`.
+- **Dọn dẹp:** `staging.sh reset --images --yes` rồi xóa thư mục bản sao và log tạm. Sau đó `docker ps -a` chỉ còn `realestate_dev_*` và `mongodb` như trước; volume, mạng, image `tmp-t19-` đều 0; không còn thư mục `tmp-t19` trong `D:\Jobs`. Không đụng Mongo dev/prod, `mongodb` cũ, `D:\mongodb`, `D:\Jobs\prod-dumps\`.
+
+### 11.5. T-20: `npm audit` trước/sau và build image backend (Web Push, `sharp`)
+
+Ngày 2026-11-06, `devops-agent`. Phạm vi: `RealEstateBackendApp` thêm `sharp ^0.35.5`, `web-push ^3.6.7`, `@types/web-push ^3.6.4` (so với HEAD).
+
+**`npm audit` trước/sau:** lấy `package.json` + `package-lock.json` ở HEAD (`git show HEAD:...`) và bản hiện tại ra hai thư mục tạm ngoài repo, chạy `npm audit --package-lock-only --json` (có và không `--omit=dev`). Hai lệnh thoát `1` ở cả hai bản (đều đã có lỗ hổng sẵn từ trước). Thư mục tạm đã xóa.
+
+| Phạm vi | Bản | critical | high | moderate | low | tổng |
+|---|---|---|---|---|---|---|
+| `--omit=dev` | HEAD | 1 | 18 | 9 | 0 | 28 |
+| `--omit=dev` | hiện tại | 1 | 18 | 9 | 0 | 28 |
+| toàn bộ (cả dev) | HEAD | 3 | 19 | 26 | 3 | 51 |
+| toàn bộ (cả dev) | hiện tại | 3 | 19 | 26 | 3 | 51 |
+
+Tập tên gói có lỗ hổng (`--omit=dev`) **giống hệt** nhau (diff rỗng). **Kết luận: thêm `sharp`, `web-push`, `@types/web-push` (và phụ thuộc kéo theo) không tạo thêm lỗ hổng Critical/High nào, cũng không thêm lỗ hổng mức nào.** Critical/High còn lại đều có sẵn từ trước, không liên quan Web Push (Critical `proxy-addr`; High gồm `fastify`, `@nestjs/platform-express`, `multer`, `axios`, `undici`, `body-parser`, ... qua `@nestjs/*`, `firecrawl`); xử lý bump riêng ngoài phạm vi v1.0.4.
+
+**Build image và compose (T-20):**
+- `docker compose config` với biến giả: thoát `0`; 5 biến push (`FEATURE_CRM_PUSH`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `PUSH_ENDPOINT_HOST_ALLOWLIST`) nằm trong `environment` của backend (không `build.args`, không vào image).
+- `docker build RealEstateBackendApp` (tag tạm `tmp-t20-backend:test`, base `node:24.18.1-slim`): thoát `0`, 3 stage (`deps`, `builder`, `production`), khoảng 58 giây (có cache).
+- Chạy container tạm từ image đó (`--entrypoint node`, `--rm`): `require('web-push')` in `sendNotification` và `generateVAPIDKeys` đều là `function`; `sharp` trên `-slim` (linux x64, Node 24.18.1) tạo ảnh 64x48 trong bộ nhớ, resize 32x24, `toBuffer` ra PNG, đọc lại `metadata()` được `png 32x24`, buffer khác rỗng. Tức binary `sharp` prebuilt chạy được trên image `-slim`.
+- Đã xóa image `tmp-t20-backend:test` và mọi container tạm.
+
+**Chưa kiểm chứng:** build trên kiến trúc khác (arm64) nếu VPS khác `linux/amd64`; `sharp` xử lý ảnh thật (JPEG/HEIC) và sinh thumbnail qua hàng đợi trong container production; chưa chạy `npm audit` trên VPS với registry thật (kết quả trên phụ thuộc cơ sở dữ liệu advisory lúc chạy).
+
+### 11.6. v1.0.5 "Định danh khách hàng": điểm gọi hậu-migrate, thứ tự deploy, lùi, diễn tập bằng dump (T-19, FR-20, FR-21, FR-23)
+
+Phần này mô tả hành vi **thực tế** của `deploy.sh` và `scripts/post-migrate/*.sh` (đã đối chiếu mã nguồn ngày 2026-11-10). Thiết kế gốc: `docs/06_Module_Customer_Management/11_Dinh_Danh_Khach_Hang_Architecture.md` mục 5.7 đến 5.10.
+
+> **CẢNH BÁO: migration 011 là MỘT CHIỀU (không có `down`).** Nó bỏ ràng buộc unique của `customers.phone` (tạo lại `phone_1` thường) và đổi `phone` dạng `anonymized:<id>` về `null`. Sau khi chạy không dựng lại unique được (đã có SĐT trùng/`null`) và **không lùi image v1.0.3** được (mục 11.6.4). **Chưa lên production khi Oniichan chưa xác nhận** (sau diễn tập staging 11.6.5 và báo cáo đạt). Việc `deploy.sh` lên production là hành động không hoàn tác.
+
+#### 11.6.1. Thứ tự deploy v1.0.5: 010 → `up` → 10 → 20 → 90
+
+| Thứ tự | Bước của `deploy.sh` | Việc làm | Ghi chú |
+|---|---|---|---|
+| 1 | 5 | `mongodump` DB `realestate` ra `backups/deploy-pre-<thời-gian>.archive.gz` | Bắt buộc, là đường quay lại duy nhất sau 011 |
+| 2 | 6b | `reconcile --apply --by deploy --skip-version --phase pre-up`: chạy migration **pre-up** còn chờ, gồm **010** (index partial unique `customers.customerCode_1` chỉ tính mã dạng chuỗi, và counter `CUSTOMER_CODE`; **không** bù mã, **không** đụng `phone`) | Image v1.0.3 vẫn đang phục vụ; 010 chỉ thêm nên image cũ không bị ảnh hưởng. Migration **011** (pha `post-up`) **không** chạy ở đây |
+| 3 | 7, 8 | `up -d --build` rồi chờ Mongo healthy và backend liveness | Backend mới chạy; từ đây khách mới nhận mã ngay khi tạo |
+| 4 | 8a / 8b | `reconcile --apply --by deploy --phase pre-up` (8a chỉ khi cài mới; 8b ghi `version`) | `version` do bước 8b ghi; bước 90 dùng `--skip-version` nên không ghi lại |
+| 5 | **10** | `10-catalog-codes.sh`: bù mã danh mục (v1.0.4) | Giữ nguyên hành vi 8c cũ |
+| 6 | **20** | `20-customer-codes.sh`: bù mã khách `KH-xxxxxx` | Khách cũ và khách image v1.0.3 tạo trong khoảng 6b → `up` chưa có mã |
+| 7 | **90** | `90-post-up-migrations.sh`: migration 011 (bỏ unique SĐT, **một chiều**) | Đứng cuối có chủ ý: bù mã lỗi thì bước một chiều chưa xảy ra |
+
+Với `--plan-only`: dry-run `reconcile` **không** truyền `--phase`, nên kế hoạch in đủ 007, 008, 009, 010 (pre-up) và 011 (post-up) (mục 11 bước 6b).
+
+#### 11.6.2. Điểm gọi hậu-migrate và ba script
+
+`main()` của `deploy.sh` gọi tuần tự `fresh_install_reconcile` (8a) → `sync_system_version` (8b) → `run_post_migrate_steps`. Hàm cuối chạy mọi tệp `scripts/post-migrate/[0-9][0-9]-*.sh` theo thứ tự tên bằng `bash <tệp>`; không có tệp nào thì `die`; `DOWNGRADE_ACTIVE=1` thì bỏ qua **toàn bộ**. Thêm bước mới = thêm một tệp đúng khuôn tên và hợp đồng (nhận `ENV_FILE`, `LOGS_DIR`, `TS`, `DOC`, `LOG_PREFIX` qua môi trường; tự ghi log; thoát khác 0 khi lỗi), không sửa `deploy.sh`. Mọi lệnh chạy trong container: `docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/<...>`. Các tệp không chạy tay bởi người dùng (trừ lệnh chạy lại ghi trong cảnh báo đỏ).
+
+| Tệp | Lệnh trong container | Log (`logs/`) | Hành vi và khi lỗi |
+|---|---|---|---|
+| `10-catalog-codes.sh` | `crm-catalog-codes.cli.js --apply` | `deploy-catalog-codes-<thời-gian>.log` | Bù mã danh mục (007/008). Thoát khác 0 (`1` lỗi/mồ côi/thiếu mã, `2` sai tham số, hoặc docker lỗi): cảnh báo **đỏ** kèm lệnh chạy lại, `die`, **bước 20 và 90 không chạy** |
+| `20-customer-codes.sh` | `crm-customer-codes.cli.js --apply` | `deploy-customer-codes-<thời-gian>.log` | Bù mã khách theo lô (mặc định 500) theo `createdAt, _id`, mỗi lô một transaction; idempotent (chạy lại không đổi mã đã cấp; chạy dở thì lần sau nối tiếp). Thoát khác 0: cảnh báo đỏ ("bước 90 CHƯA chạy") kèm lệnh chạy lại, `die`, bước 90 không chạy. **Lưu ý:** khi sổ chưa có migration 010 (`--no-migrate`, DB cũ...), CLI in "chưa áp dụng, bỏ qua" và **thoát 0 mà không ghi gì**; vì vậy mã thoát 0 ở bước này **không chứng minh** đã bù mã (logic "010 chưa áp dụng" nằm ở CLI, không ở shell). Cổng chặn nằm ở bước 90 |
+| `90-post-up-migrations.sh` | (1) `cli.js status --json` (chỉ đọc), rồi (2) `cli.js reconcile --apply --by deploy --skip-version --phase post-up` | `deploy-post-up-<thời-gian>.log` | Chạy migration 011. **Cổng chặn trước `--apply`:** TỪ CHỐI (thoát `1`, không ghi gì) khi `status` thoát khác 0 (`3` có khóa, `4` cần baseline, ...), khi không đọc được danh sách chờ trong JSON (fail-closed), hoặc khi **còn bất kỳ migration pre-up chờ** (gồm 010 chưa áp dụng). Lý do: cổng này còn kiểm thêm điều runner không kiểm được (bước 20 có thể đã thoát 0 mà chưa bù mã vì sổ chưa có 010; không có cổng thì 011 bỏ unique khi khách chưa có mã). Runner cũng tự từ chối `--phase post-up` khi còn pre-up số nhỏ hơn chờ (mục 11.6.3, quy tắc hai chiều) nên lỗ hổng sổ (011 vào sổ, 010 chưa) bị chặn ở cả hai lớp. Lỗi `--apply` (thoát khác 0): cảnh báo đỏ "011 có thể đã chạy MỘT PHẦN: kiểm `status` trước", `die` |
+
+Mọi bước lỗi đều kết thúc bằng `deploy.sh` thoát mã `1`, không in "Deploy xong", và (vì `STACK_TOUCHED=1` sau bước 7) in `print_recovery` (mục 11.6.4). Backend vẫn chạy bản mới. Log mỗi bước chỉ chứa đầu ra lệnh (không bí mật; PII không nằm trong đầu ra của CLI, chỉ số đếm). Nhớ chép/xóa log theo quy ước thư mục `logs/` hiện có.
+
+#### 11.6.3. Cờ `--phase` của runner
+
+- `reconcile` và `up` nhận `--phase pre-up|post-up|all` (mặc định `all`). Cờ chỉ **chọn** migration chờ theo pha (`pre-up` là mặc định của mỗi migration; 007 đến 010 là `pre-up`, 011 là `post-up`); không đổi cách ghi sổ, khóa hay mã thoát. `status` in `[pre-up]`/`[post-up]` cạnh mỗi migration chờ và dòng `Chờ post-up: N`.
+- `deploy.sh` truyền `--phase pre-up` ở 6b (cả dry-run lẫn `--apply`), 8a và 8b; bước 90 truyền `--phase post-up`; `--plan-only` không truyền (mọi pha).
+- **Quy tắc an toàn sổ (HAI chiều):** một lần chạy theo pha không được ghi sổ vượt mặt migration pha **kia** còn chờ có số **nhỏ hơn**; vi phạm thì runner **từ chối (mã `1`, không ghi gì)**, ở cả `up` lẫn `reconcile`, cả dry-run lẫn `--apply`; `--phase all` (mặc định) chạy theo thứ tự số nên luôn hợp lệ. Thông báo nêu id đang chờ và lệnh cần chạy trước:
+  - Chạy `--phase pre-up` mà còn `post-up` chờ số nhỏ hơn một `pre-up` chờ: "chạy `--phase post-up` trước". Tình huống: bản sau (có migration 012 `pre-up`) deploy lên DB mà bước 90 của lần v1.0.5 chưa xong. Xử lý: chạy 011 trước (`$RUN reconcile --apply --by cli --skip-version --phase post-up`, sau khi bù mã) rồi deploy lại.
+  - Chạy `--phase post-up` mà còn `pre-up` chờ số nhỏ hơn một `post-up` chờ (ví dụ 010 chưa áp dụng mà chạy 011): "chạy `--phase pre-up` trước". Lý do: 011 là một chiều, nếu ghi sổ khi 010 chưa chạy thì sổ có 011 mà thiếu 010, lần `reconcile` sau bị từ chối vì sổ không liền mạch và các pre-up chờ không bao giờ áp dụng được bằng runner. Chỉ xảy ra khi bỏ sót 6b hoặc chạy tay; `deploy.sh` luôn chạy pre-up (6b/8a/8b) trước bước 90 nên luồng deploy hợp lệ không bị ảnh hưởng. Xử lý: chạy `$RUN reconcile --apply --by cli --skip-version --phase pre-up`, bù mã (bước 20), rồi chạy lại bước post-up.
+- Chạy tay khi cần (không qua `deploy.sh`; `RUN` như ở 11.1): `$RUN reconcile --by cli --phase pre-up` (dry-run), thêm `--apply` để ghi.
+
+#### 11.6.4. Cửa sổ `E11000` giữa `up` và bước 90 (đã được Oniichan chấp nhận)
+
+Từ lúc `up` xong đến khi bước 90 xong, `customers.phone_1` **vẫn là unique** (011 chưa chạy), trong khi backend mới cho phép khách không có SĐT (`phone: null`) và SĐT trùng. Hậu quả có thể xảy ra trong cửa sổ này: tạo khách **thứ hai không có SĐT**, hoặc khách trùng SĐT với khách khác, làm Mongo báo `E11000` và người dùng thấy lỗi tạo khách. Cửa sổ dài bằng thời gian bước 10 và 20 (bù mã theo lô: quy mô hàng nghìn khách thì vài chục giây đến vài phút; đo thật ở staging 11.6.5). **Đã chấp nhận** (Architecture 11.1b #4): giữ thứ tự 10 → 20 → 90, **deploy ngoài giờ cao điểm**, không làm gì thêm; hết cửa sổ khi bước 90 xong. Nếu bước 10/20 lỗi và deploy dừng thì cửa sổ **kéo dài đến khi sửa và chạy lại**: ưu tiên sửa nhanh hoặc lùi image (khi 011 chưa chạy, bảng dưới). Khách tạo bởi backend mới trong cửa sổ đã có mã ngay; mã chỉ có thể không đúng thứ tự thời gian tuyệt đối so với khách được bù (thông tin, 11.1b #9).
+
+**Hướng dẫn lùi / sửa tiến (đồng bộ với `print_recovery` mục 2c của `deploy.sh`; chi tiết ngoại lệ ở mục 11, danh sách "Khi lỗi"):**
+
+| Tình huống | Lùi image v1.0.3 | Việc làm |
+|---|---|---|
+| Lỗi **trước** bước 90, 011 **chưa** chạy (6b, `up`, bước 10, bước 20, hoặc bước 90 **từ chối** vì còn pre-up chờ) | **Được** (L1: `docker tag` + `up -d --no-build --no-deps backend`; 010 chỉ thêm nên v1.0.3 đọc bình thường, `phone_1` còn unique) | Chọn lùi hoặc sửa nguyên nhân rồi chạy lại `bash deploy.sh --no-pull`. Khi tiến lại, bước 20 bù mã cho khách image cũ vừa tạo |
+| Bước 90 `--apply` lỗi hoặc chạy dở | Chỉ khi **chắc 011 chưa chạy**: kiểm bên dưới trước. Runner không ghi sổ cho migration lỗi nhưng 011 làm tuần tự (gỡ unique, tạo `phone_1` thường, đổi `anonymized:` về `null`) nên có thể đã chạy một phần | Kiểm bên dưới; nếu `phone_1` đã không còn unique thì coi như **đã chạy**: chỉ sửa tiến |
+| Bước 90 xong, 011 **đã** áp dụng (kể cả phát hiện lỗi về sau) | **KHÔNG** (`phone` có thể `null`/trùng, mapper v1.0.3 giả định chuỗi) | **Chỉ sửa tiến**: sửa nguyên nhân rồi deploy lại. Quay lại duy nhất bằng `mongorestore` từ `backups/deploy-pre-*` (mục 6, kèm `--nsInclude 'realestate.*'`; mất dữ liệu sau thời điểm dump) và **do Oniichan quyết định** |
+
+**Cách kiểm 011 đã chạy chưa (chỉ đọc):** `$RUN status`, tìm `011_crm_drop_unique_phone (deploy, <ngày>)` trong mục **"Đã áp dụng"** (đã chạy) hay trong "Migration chờ ... `[post-up]`" với "Chờ post-up: 1" (chưa). Kiểm chéo trường hợp chạy dở: mongosh `db.getSiblingDB('realestate').customers.getIndexes()` (mẫu `docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin` có xác thực như L2 ở mục 11): `phone_1` còn `unique: true` = 011 chưa gỡ unique. Không dựa vào việc file `logs/deploy-post-up-<thời-gian>.log` có tồn tại: bước 90 tạo file ngay từ đầu, kể cả khi cổng chặn từ chối (lúc đó trong log chỉ có đầu ra `status`).
+
+#### 11.6.5. Diễn tập bằng bản sao dump production ở staging (FR-21; Architecture 5.10)
+
+Trước khi lên production, diễn tập toàn bộ chuỗi trên staging local (11.3) bằng **bản sao dump production** (Oniichan cung cấp; xem `D:\Jobs\prod-dumps` chỉ dùng cho việc này, không động production):
+
+1. **Dump chỉ nằm trong `.staging/`** (thư mục đã `.gitignore` bằng `/.staging/`; không bao giờ commit, không gửi chat, không dán nội dung vào tài liệu hay log). Dump chứa dữ liệu cá nhân thật: chỉ ghi **số đếm** vào báo cáo.
+2. Nạp vào staging bằng `bash scripts/staging.sh restore-dump <đường-dẫn-archive> --yes`. Cờ `--yes` **bắt buộc** (lệnh không hỏi tương tác, và chỉ nhận cờ này, không nhận biến `STAGING_ASSUME_YES`); archive phải nằm trong `.staging/`; lệnh chỉ nhắm `rhstg_mongo`, cùng rào tên/cổng của wrapper, XÓA DB `realestate` **của staging** rồi nạp lại bằng `mongorestore`. Các lệnh phụ trợ của diễn tập: `snapshot [nhãn]` (chụp chỉ đọc số đếm, index, doc `system` vào `.staging/snapshots/`), `runner <lệnh...>` (chạy runner migration trên staging, vd `runner reconcile --apply --skip-version --phase pre-up`), `step3` (giả lập khoảng giữa 6b và `up`: chèn hai khách không mã và thử một khách trùng SĐT). Quy trình từng bước kèm kết quả mong đợi và bảng ghi kết quả nằm ở `scripts/staging/REHEARSAL.md`.
+3. Sáu bước diễn tập (Architecture 5.10): (1) chụp trước: số khách, số khách có SĐT trùng, số khách `anonymized:`, số khách `careTeam` không rỗng nhưng `primaryAssigneeId` null (phải `0`), `listIndexes` của `customers`, doc `system`; (2) `deploy --plan-only` (chờ 007..010 pre-up và 011 post-up); (3) giả lập khoảng 6b → `up`: chạy tay `reconcile --apply --skip-version --phase pre-up`, chèn hai khách **không có `customerCode`** (phải thành công nhờ index partial) và một khách trùng SĐT (phải **lỗi**: unique `phone_1` còn, xác nhận 011 chưa chạy); (4) `deploy` đầy đủ: 10 → 20 (mọi khách có mã, hai khách vừa chèn có mã) → 90; sau đó tạo hai khách cùng SĐT qua API phải thành công, không còn `anonymized:`, `phone_1` thường; (5) chạy lại (idempotent: không đổi mã, bước 20 báo 0 việc) và kịch bản `up` lỗi giữa chừng rồi deploy lại (bước 20 vẫn bù đủ); (6) đo thời gian từng bước, kiểm log `deploy-*.log`, kiểm `--no-migrate` (bước 20 thoát 0 khi sổ chưa có 010, bước 90 từ chối) và downgrade có chủ ý (bỏ qua toàn bộ điểm gọi).
+4. **Xóa sau diễn tập:** `bash scripts/staging.sh reset --yes` (xóa container và volume dữ liệu staging, kể cả `.staging/backups` và `.staging/logs`; thêm `--images` nếu muốn xóa luôn image staging) rồi xóa file dump khỏi `.staging/` (hoặc `rm -rf .staging`). Kiểm lại bằng `git status` rằng không có file dump nào bị theo dõi.
+5. Báo cáo cho Oniichan (số đếm trước/sau, thời gian từng bước, cửa sổ `E11000` đo được) **trước khi** xin xác nhận lên production.
+
+**Test shell không cần Docker cho điểm gọi hậu-migrate:** `bash scripts/tests/deploy-post-migrate.test.sh` (105 ca đạt, gồm ca readonly như deploy.sh thật, cập nhật 2026-11-11 cho T-36) kiểm lớp shell: thứ tự 10 → 20 → 90 chạy tệp bước **thật** với `docker` giả, bước lỗi dừng các bước sau, đúng đối số và tên log, cổng chặn của bước 90 (từ chối khi còn pre-up chờ, `status` lỗi, thiếu danh sách chờ), 6b/8a/8b có `--phase pre-up`, `--plan-only` không có `--phase`, `deploy.sh` không còn logic bù mã ngoài điểm gọi chung, `print_recovery` có câu "sau bước 90 chỉ sửa tiến", downgrade có chủ ý bỏ qua toàn bộ. `deploy-catalog-codes.test.sh` vẫn đạt (69 ca). Hai test **không** chạy CLI với Mongo thật: đó là việc của diễn tập staging ở trên.
+
+### 11.7. Sau deploy v1.0.5 (việc cho Oniichan và người vận hành)
+
+v1.0.5 **xóa hẳn, không giữ bản chuyển tiếp** các endpoint của luồng cũ (Architecture 11.1b #5): máy còn chạy bản web/PWA cũ sẽ gọi vào route không còn và gặp lỗi cho tới khi tải bản mới.
+
+| Đã xóa (trả `404`) | Dùng cho |
+|---|---|
+| `POST /api/v1/crm/customers/phone-lookups` | Kiểm tra trùng SĐT khi tạo khách |
+| `PUT /api/v1/crm/customers/:id/care-team/primary` | Đổi người chăm sóc chính |
+| `GET /api/v1/crm/assignable-users` (cả `purpose=assign` và `purpose=filter`) | Danh sách người gán/lọc; thay bằng `care-team-invitees` và `customer-assignees` |
+| `POST/GET/PATCH /api/v1/crm/care-team-requests` | Đề nghị tham gia nhóm chăm sóc (và hộp thông báo của nó) |
+| Trường `careTeam` ở body tạo khách (`POST /api/v1/crm/customers`) | Bản cũ gửi trường này nên bị `400` (ValidationPipe `forbidNonWhitelisted`: "property careTeam should not exist") |
+
+**Việc cần làm sau khi `deploy.sh` xong:**
+
+1. **Báo người dùng tải lại cứng hoặc đóng và mở lại PWA.** Trình duyệt máy tính: tải lại cứng (`Ctrl+F5` hoặc `Ctrl+Shift+R`). PWA đã cài trên điện thoại: đóng hẳn rồi mở lại; theo cấu hình `RealEstateAdminApp/vite.config.ts` (`registerType: 'prompt'`, mục 14) bản mới chỉ kích hoạt khi người dùng **bấm "Cập nhật"** trên thông báo, nên dặn bấm nút đó (không thấy thì tải lại cứng lần nữa). Cloudflare không được giữ `sw.js`/`index.html` cũ (mục 14.4); kiểm theo 14.3.
+2. **Theo dõi `404` và `400` của các route trên vài ngày đầu** (số lượng giảm dần về 0 khi người dùng đã tải bản mới). Nginx của frontend ghi access log ra stdout của container, ví dụ (chỉ đọc):
+   ```bash
+   docker compose --env-file .env.docker logs --since 24h frontend 2>&1 \
+     | grep -E 'phone-lookups|assignable-users|care-team-requests|care-team/primary' | grep -E '" (404|400) '
+   ```
+   Route lạ lặp lại từ cùng một người dùng = máy đó chưa tải bản mới: nhắc tải lại. `400` do trường `careTeam` đi qua đường dẫn bình thường của `POST /api/v1/crm/customers` nên **không lộ trong lệnh trên**; nếu backend ghi log lỗi `400`, tìm chuỗi `property careTeam should not exist` (`docker compose --env-file .env.docker logs --since 24h backend | grep 'careTeam'`), nếu không thì theo dõi số `400` của route này tăng bất thường. (Chưa kiểm trên stack thật mức chi tiết log `400` của backend.)
+3. **Kiểm bằng `status` và số đếm sau deploy (chỉ đọc):** `$RUN status` thoát `0`, `011_crm_drop_unique_phone` nằm trong "Đã áp dụng", "Chờ post-up: 0"; `docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/crm-customer-codes.cli.js` (dry-run, không `--apply`) báo không còn khách thiếu mã; mongosh `customers.getIndexes()` thấy `customerCode_1` unique partial và `phone_1` **không** unique.
+4. **Ghi nhận cho Oniichan:** migration 011 là **một chiều**; từ bước 90 trở đi chỉ sửa tiến, không lùi image v1.0.3 (11.6.4). Quay lại hẳn chỉ bằng `mongorestore` từ backup bước 5 (mất dữ liệu sau thời điểm dump) và do Oniichan quyết định.
+
+### 11.8. Manifest và bundle code của mỗi lần deploy (bước 2b)
+
+Mỗi lần deploy (trừ `--plan-only`) tạo trong `backups/` (thư mục 700, file 600; đường dẫn trong manifest **tương đối so với thư mục repo**):
+
+| File | Nội dung |
+|---|---|
+| `deploy-pre-<TS>.archive.gz` | dump DB `realestate` (bước 5) |
+| `deploy-code-pre-<TS>.bundle` | `git bundle` của nhánh đang checkout, đã `git bundle verify` |
+| `deploy-pre-<TS>.manifest` | mô tả bản khôi phục (bảng dưới) |
+| thẻ git `pre-deploy-<TS>` | **cục bộ**, tại `OLD_COMMIT`, không push |
+
+Manifest là `KEY=VALUE` mỗi dòng, **không chứa bí mật**; `restore.sh` đọc bằng bộ lọc khóa cho phép (không `source` file). Khóa:
+
+| Khóa | Ý nghĩa |
+|---|---|
+| `MANIFEST_VERSION`, `TS`, `CREATED_AT`, `HOST` | phiên bản định dạng, mã thời gian, giờ UTC, tên máy |
+| `COMPOSE_PROJECT`, `MONGO_CONTAINER`, `BACKEND_CONTAINER` | định danh stack (staging dùng tên khác) |
+| `BRANCH`, `DETACHED` | nhánh trước deploy; `DETACHED=1` khi HEAD detached |
+| `OLD_COMMIT` (40 hex), `OLD_COMMIT_SHORT`, `NEW_COMMIT` | commit trước và sau `git pull` |
+| `APP_VERSION_OLD`, `APP_VERSION_NEW` | version trong `RealEstateBackendApp/package.json` trước/sau |
+| `DB_VERSION_BEFORE`, `DB_VERSION_READ` | version trong collection `system` trước deploy; `DB_VERSION_READ=0` nghĩa là không đọc được (restore không tự kiểm version) |
+| `MONGO_BACKUP_FILE` | dump DB của lần deploy (rỗng nếu DB chưa có dữ liệu nên bỏ qua backup) |
+| `CODE_BUNDLE`, `CODE_BUNDLE_REF`, `CODE_TAG` | bundle code, ref trong bundle (`refs/heads/<nhánh>` hoặc `HEAD`), thẻ git |
+| `PREV_IMAGE_REPO`, `PREV_IMAGE_TAG` | image backend dự phòng (cho `--use-image-tag`) |
+| `TRACKED_DIRTY`, `NO_PULL` | file đã theo dõi bị sửa lúc deploy; có dùng `--no-pull` |
+| `STACK_TOUCHED`, `POST_UP_REACHED` | deploy đã đụng stack/dữ liệu; đã tới sau `up` (nơi bước 90, migration 011 một chiều, chạy) |
+| `DEPLOY_STATUS`, `FINISHED_AT` | `started` (đang chạy hoặc bị ngắt), rồi `succeeded`/`failed` khi `deploy.sh` thoát |
+| `BACKUP_KIND` | chỉ có ở bản do `scripts/backup.sh` tạo: `manual` (backup thủ công, mục 6.2); `deploy.sh` không ghi khóa này. `restore.sh --list` hiện nhãn, các khóa lạ khác bị bỏ qua |
+
+Dùng manifest để khôi phục: mục 6.1 (`scripts/restore.sh`). Backup code **không đổi** nguyên tắc ở đầu mục 11 (không rollback bằng `git checkout` thủ công khi dữ liệu đã đổi): restore chỉ chạy khi bạn gõ `--apply --yes`, luôn có backup an toàn trước và cảnh báo đỏ khi deploy đã qua bước 90.
+
+**Lưu ý nhánh.** `deploy.sh` **không còn cổng ép nhánh `production`** (quyết định của Oniichan): cả backup code lẫn `git pull --ff-only` ở bước 2 chạy trên **nhánh đang checkout**, pull theo upstream của nhánh đó (không ghi cứng `origin <tên nhánh>`). Vẫn giữ: `--ff-only`, working tree phải sạch (file đã theo dõi), và `--no-pull` (deploy đúng commit đang checkout, vẫn có bundle/manifest). HEAD detached hoặc nhánh chưa có upstream thì `deploy.sh` **từ chối** (không đoán nhánh) và gợi ý `--no-pull`; việc này xảy ra TRƯỚC khi tạo bundle/manifest nên không để lại gì. Hệ quả: chạy nhầm trên nhánh thử nghiệm sẽ deploy nhánh đó, nên luôn kiểm `git branch --show-current` trước (log của `deploy.sh` in nhánh và upstream đang pull).
 
 ## 12. Ghim image theo digest và nâng cấp image có chủ đích (PT-009)
 
@@ -1204,5 +1595,384 @@ Cloudflare mặc định cache theo **phần mở rộng** (`.js`, `.css`, ảnh
 4. Nên để tắt các tính năng sửa JS/HTML ở edge cho hostname admin (Rocket Loader, và Auto Minify nếu tài khoản còn tùy chọn này): chúng đổi nội dung file mà precache của service worker đã ghi nhận theo bản build.
 
 > Trạng thái: **chưa kiểm chứng trên Cloudflare thật** (không có quyền/không thể thử từ repo): hành vi `cf-cache-status` của `sw.js`/`index.html`, Cache Rule bypass và Purge là việc của Oniichan. Cũng **chưa kiểm** với bản build frontend thật có `sw.js`/`workbox-*.js` thật (bảng 14.2 dùng `dist` giả); tên file thật do `vite-plugin-pwa` sinh ra cần đối chiếu với các location ở 14.1 khi có bản build đầu tiên (nếu có file mới không băm tên như `registerSW.js` thì đã có sẵn, tên khác thì phải thêm location). Luồng cập nhật/offline của service worker trên trình duyệt thật cũng thuộc phần frontend, chưa phải phạm vi tài liệu này.
+
+## 15. Web Push VAPID (v1.0.4, T-43, FR-08)
+
+Runbook bật/tắt/đổi khóa Web Push trên VPS. Đối chiếu mã nguồn: `push-provider.factory.ts` (chọn nhà cung cấp **một lần lúc khởi động**), `push-subscriptions.controller.ts` (`GET /push-subscriptions/config`), worker `push.send` + `push.sweep`.
+
+**Nguyên tắc chung**
+- Khóa riêng VAPID là bí mật: **không dán vào chat, không commit, không in ra màn hình**. Mọi lệnh dưới đây ghi thẳng vào file quyền 600 hoặc chỉ in độ dài/số đếm.
+- `VAPID_*` và `CRM_PUSH_ENABLED` chỉ nằm ở `environment` của backend (không `build.args`, không vào image, không có phía frontend: frontend lấy khóa công khai lúc chạy qua `/push-subscriptions/config`). Đổi các biến này chỉ cần **tạo lại container**, không build: `docker compose --env-file .env.docker up -d backend` (vài giây).
+- Khi cờ tắt hoặc khóa sai, backend **vẫn khởi động bình thường** với `NoopPushProvider`; hộp thông báo trong app vẫn hoạt động, chỉ không có push ra thiết bị.
+- Mọi lệnh chạy ở thư mục gốc repo trên VPS (nơi có `docker-compose.yml` và `.env.docker`).
+
+### 15.1. Thứ tự bật trên production
+
+Chỉ bật push (bước 5) khi các bước trước đã xong; đảo thứ tự có thể làm người dùng nhận push khi dữ liệu/quyền chưa đúng:
+
+1. Các task bảo mật dữ liệu **T-01..T-04 (FR-14/15/16)** đã làm xong **và đã qua `qa-agent`** (không còn Critical/High). Push gửi nội dung thông báo ra dịch vụ ngoài nên phải đúng quyền/PII trước.
+2. Phần push của backend/frontend đã nằm trong bản deploy (T-16..T-38, T-39..T-42) và `deploy.sh` đã chạy thành công (mục 11).
+3. **A0 xong**: migration 007/008/009 đã `--apply` (mục 11.4) **và** bước bù mã danh mục 8c chạy xong (15.7).
+4. Sinh khóa VAPID một lần (15.2) và đặt vào `.env.docker` (15.3) với **cờ vẫn `false`**; `up -d backend`; kiểm `config` (15.4) phải ra `enabled:false`.
+5. Đặt `CRM_PUSH_ENABLED=true`, `up -d backend`, kiểm `config` ra `enabled:true` (15.4) và log có dòng "Web Push bật" (15.5).
+6. Thử bằng thao tác thật trên điện thoại (15.8, 15.12), theo dõi `pushStatus` (15.9).
+
+Bước 4-6 là việc **sau deploy do Oniichan làm** (T-48), nằm ngoài `/spec-implement`. Cờ tắt lại được bất cứ lúc nào (15.10).
+
+### 15.2. Sinh khóa VAPID (một lần, không hiển thị khóa)
+
+Dùng đúng thư viện `web-push` trong image backend (không cần Node trên máy chủ). `umask 077` để file ra quyền 600; lệnh ghi thẳng vào file, **không in khóa lên màn hình**:
+
+```bash
+umask 077
+docker compose --env-file .env.docker run --rm --no-deps -T backend node -e \
+  "const k=require('web-push').generateVAPIDKeys();process.stdout.write('VAPID_PUBLIC_KEY='+k.publicKey+'\nVAPID_PRIVATE_KEY='+k.privateKey+'\n')" \
+  > ~/vapid.new.env
+ls -l ~/vapid.new.env   # kỳ vọng: -rw------- và > 0 byte
+```
+
+Kiểm độ dài (không in giá trị): khóa công khai **87** ký tự, khóa riêng **43** ký tự (base64url của 65 và 32 byte):
+
+```bash
+awk -F= '/^VAPID_PUBLIC_KEY=/{print "public:", length($2)} /^VAPID_PRIVATE_KEY=/{print "private:", length($2)}' ~/vapid.new.env
+# kỳ vọng: public: 87 / private: 43
+```
+
+**Sao lưu khóa riêng vào trình quản lý mật khẩu ngay lúc này** (mở file bằng trình soạn thảo trên máy chủ và chép tay, hoặc `scp` về máy cá nhân; không qua chat/email). Mất khóa riêng cũng như đổi khóa: mọi thiết bị đã đăng ký thành vô hiệu (15.11).
+
+### 15.3. Đặt `VAPID_*` và `CRM_PUSH_ENABLED` vào `.env.docker`
+
+```bash
+# 1) Xóa dòng cũ (nếu có), bảo đảm file kết thúc bằng xuống dòng, rồi nối khóa mới
+sed -i '/^VAPID_PUBLIC_KEY=/d;/^VAPID_PRIVATE_KEY=/d' .env.docker
+[ -n "$(tail -c1 .env.docker)" ] && echo >> .env.docker
+cat ~/vapid.new.env >> .env.docker
+chmod 600 .env.docker
+
+# 2) Xóa file tạm chứa khóa (khóa riêng đã có trong .env.docker và trình quản lý mật khẩu)
+shred -u ~/vapid.new.env
+
+# 3) Đặt các biến còn lại (mở bằng trình soạn thảo, KHÔNG echo giá trị bí mật):
+#    VAPID_SUBJECT=mailto:<email liên hệ thật>   (bắt buộc là mailto: hoặc https:)
+#    CRM_PUSH_ENABLED=false                      (ở bước 4 của 15.1; bước 5 mới đổi thành true)
+grep -nE '^(CRM_PUSH_ENABLED|VAPID_SUBJECT)=' .env.docker
+
+# 4) Kiểm độ dài khóa trong .env.docker (không in giá trị)
+awk -F= '/^VAPID_PUBLIC_KEY=/{print "public:", length($2)} /^VAPID_PRIVATE_KEY=/{print "private:", length($2)}' .env.docker
+
+# 5) Kiểm compose nhận biến mà KHÔNG lộ khóa riêng: chỉ in cờ/subject, còn khóa chỉ đếm số dòng có giá trị (kỳ vọng 1)
+docker compose --env-file .env.docker config | grep -E 'FEATURE_CRM_PUSH|VAPID_SUBJECT|PUSH_ENDPOINT'
+docker compose --env-file .env.docker config | grep -c '^ *VAPID_PRIVATE_KEY: .\+'
+
+# 6) Áp dụng (tạo lại container backend, không build)
+docker compose --env-file .env.docker up -d backend
+```
+
+`.env.docker` đã nằm ngoài git (mục 2). Đã có bản sao lưu `.env.docker` ngoài máy chủ (mục 9, việc 1): cập nhật bản sao đó sau khi thêm `VAPID_*`.
+
+### 15.4. Kiểm `GET /push-subscriptions/config`
+
+Endpoint cần đăng nhập (mọi vai trò CRM). Mật khẩu nhập tay, không nằm trên dòng lệnh hay lịch sử shell:
+
+```bash
+read -rp 'Email: ' E; read -rsp 'Mật khẩu: ' P; echo
+TOKEN=$(printf '{"email":"%s","password":"%s"}' "$E" "$P" \
+  | curl -s http://localhost/api/v1/auth/login -H 'content-type: application/json' -d @- \
+  | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+unset P
+curl -s http://localhost/api/v1/push-subscriptions/config -H "Authorization: Bearer $TOKEN"; echo
+unset TOKEN
+```
+
+Đăng nhập chịu giới hạn 5 lần/phút/IP ở production: nhập sai nhiều lần sẽ bị chặn tạm.
+
+| Trạng thái | Kết quả `data` |
+|---|---|
+| `CRM_PUSH_ENABLED=true` + `VAPID_*` hợp lệ | `{"enabled":true,"publicKey":"<87 ký tự>"}`; 10 ký tự đầu của `publicKey` phải trùng đầu `VAPID_PUBLIC_KEY` trong `.env.docker` |
+| Cờ `false` | `{"enabled":false,"publicKey":null}` |
+| Cờ `true` nhưng thiếu/sai biến `VAPID_*` | `{"enabled":false,"publicKey":null}` (backend đã quay về Noop, xem log ở 15.5) |
+
+Khóa công khai là thông tin công khai (trình duyệt nào cũng nhận được), in ra được; **khóa riêng thì không bao giờ**.
+
+### 15.5. Log khởi động mong đợi
+
+```bash
+docker compose --env-file .env.docker logs --since 5m backend | grep -E 'Web Push|FEATURE_CRM_PUSH'
+```
+
+- Thành công: `Web Push bật (VAPID hợp lệ), dùng WebPushProvider.`
+- Cờ bật nhưng sai cấu hình (log mức ERROR, chỉ nêu **tên** biến, không kèm giá trị): `FEATURE_CRM_PUSH đang bật nhưng thiếu hoặc sai định dạng: VAPID_PUBLIC_KEY, ...` rồi quay về Noop. Sửa biến theo tên đã nêu rồi `up -d backend` lại.
+- Cờ tắt: không có dòng nào ở trên (Noop im lặng).
+
+### 15.6. Quan hệ giữa các lớp (để hiểu `pushStatus`)
+
+- Khi có sự kiện, Dispatcher ghi thông báo vào hộp thư với `pushStatus=PENDING`; job `push.send` (BullMQ) gửi sau khi transaction commit; `push.sweep` (chu kỳ 60 giây) xếp lại các thông báo `PENDING` quá 30 giây (lưới an toàn khi Redis/worker gián đoạn). Sổ gửi theo thiết bị nằm ở `push_deliveries`.
+- `pushStatus`: `PENDING`, `SENT`, `SKIPPED` (cờ tắt, người nhận không còn `ACTIVE`, loại thông báo bị tắt, giờ yên lặng, không có thiết bị, vượt giới hạn 3 push/đợt), `FAILED`.
+- Dịch vụ push trả 404/410 nghĩa là thiết bị không còn: backend thu hồi thiết bị đó (lý do `GONE`). Tối đa 3 thiết bị/người; đăng ký quá 90 ngày không làm mới thì hết hạn.
+- Có 4 loại thông báo trong danh mục push. `CUSTOMER_ASSIGNED` chỉ push khi người nhận được thêm làm **thành viên (MEMBER)**; đổi người phụ trách chính (PRIMARY) hay tạo khách mới **không** push.
+
+### 15.7. Bù mã danh mục A0 sau `up` (bước 8c)
+
+`deploy.sh` đã chạy bước này **tự động mọi lần deploy** (mục 11, bước 8c) và fail deploy nếu thoát khác 0. Chạy tay khi cần xác nhận, hoặc sau khi `up` thủ công ngoài `deploy.sh`:
+
+```bash
+docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/crm-catalog-codes.cli.js --apply
+echo "exit=$?"   # kỳ vọng exit=0; khác 0 thì DỪNG, không bật push
+```
+
+Lệnh idempotent (chạy lại an toàn). Điều kiện bật push ở 15.1 yêu cầu A0 xong để danh mục dựa trên mã khớp dữ liệu.
+
+### 15.8. Thử push bằng thao tác thật (không có endpoint "Gửi thử")
+
+Hệ thống **không có** endpoint gửi thử; thử bằng đúng luồng nghiệp vụ. Cần một **tài khoản thử** (STAFF hoặc MANAGER, không phải tài khoản quản trị của Oniichan) và một điện thoại thật:
+
+1. Trên điện thoại, mở web admin bằng HTTPS (domain thật). **PWA phải cập nhật bản mới trước**: khi thấy thông báo bản mới, bấm **"Cập nhật"**. Thiết bị chưa cập nhật còn chạy service worker cũ, **không xử lý được push** nên sẽ không hiện thông báo dù backend đã gửi.
+2. iPhone: bắt buộc **"Thêm vào Màn hình chính"** rồi mở từ biểu tượng đó (iOS 16.4 trở lên); mở trong tab Safari thường không nhận push.
+3. Đăng nhập tài khoản thử, vào **Cài đặt thông báo**, bật thông báo và cho phép quyền khi trình duyệt hỏi. Kiểm: thiết bị hiện trong danh sách thiết bị của chính mình (`GET /push-subscriptions`).
+4. Dùng một tài khoản **có quyền thêm thành viên** vào một khách thử, **thêm tài khoản thử làm thành viên cùng phụ trách (MEMBER)**. Quy tắc thật là hàm `canManageMembers` trong `RealEstateBackendApp/src/modules/crm/care-teams/care-team.rules.ts`, ba nhóm người được thêm: (a) **ADMIN**; (b) **MANAGER trong phạm vi quản lý** (khách phải nằm trong phạm vi của MANAGER đó, ngoài phạm vi sẽ báo không tìm thấy khách; người được thêm cũng bị kiểm theo phạm vi của người thao tác); (c) **PRIMARY (phụ trách chính) của chính khách đó**. STAFF **không** phải PRIMARY của khách đó thì không thêm được (kể cả đang là MEMBER của khách đó): backend trả 403 "Chỉ Quản trị, Quản lý hoặc phụ trách chính được thêm thành viên". Nên dùng tài khoản ADMIN của Oniichan cho bước này.
+5. Mong đợi trong khoảng 1 phút: điện thoại hiện push tiêu đề **"Bạn được mời cùng phụ trách một khách"**; chạm vào mở `/crm/customers/<id>` của khách đó. Thông báo trong app xuất hiện, `pushStatus` của nó chuyển `SENT` (truy vấn ở 15.9).
+6. Dọn: gỡ tài khoản thử khỏi nhóm phụ trách của khách thử (không để dữ liệu thử lẫn vào dữ liệu thật).
+
+Nếu không hiện push: xem `pushStatus` và `push_deliveries` ở 15.9 (`SKIPPED` cho biết lý do; `FAILED` kèm mã lỗi), rồi lỗi thường gặp ở 15.12.
+
+### 15.9. Truy vấn theo dõi `pushStatus` (chỉ đọc)
+
+Chạy trên VPS. Dòng `auth` đầu lấy tài khoản root từ biến môi trường của container (cùng cách mục 5), không có mật khẩu trên dòng lệnh. Script **chỉ đọc**:
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+const show = (label, cursor, fmt) => { print(label); cursor.forEach(r => print("  " + fmt(r))); };
+show("(1) pushStatus cua thong bao tao trong 24 gio qua:",
+  d.notifications.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: "$pushStatus", n: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+  r => r._id + ": " + r.n);
+print("(2) PENDING qua 2 phut (nghi Redis/worker):");
+print("  " + d.notifications.countDocuments({ pushStatus: "PENDING", createdAt: { $lt: new Date(Date.now() - 2 * 60 * 1000) } }));
+show("(3) Thiet bi bi thu hoi trong 24 gio qua, theo ly do (GONE = dich vu push bao 404/410):",
+  d.push_subscriptions.aggregate([{ $match: { revokedAt: { $gte: since } } }, { $group: { _id: "$revokedReason", n: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+  r => r._id + ": " + r.n);
+show("(4) Ket qua gui theo thiet bi trong 24 gio qua (FAILED 401/403 = nghi sai khoa VAPID):",
+  d.push_deliveries.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: { status: "$status", code: "$lastErrorCode" }, n: { $sum: 1 } } }, { $sort: { n: -1 } }]),
+  r => r._id.status + " code=" + r._id.code + ": " + r.n);
+print("(5) Thiet bi dang hieu luc:");
+print("  " + d.push_subscriptions.countDocuments({ revokedAt: null }));
+EOF
+```
+
+Cách đọc kết quả:
+
+| Quan sát | Ý nghĩa/việc cần làm |
+|---|---|
+| (1) có `SENT`, ít `FAILED` | Bình thường. `SKIPPED` nhiều là bình thường nếu cờ tắt, giờ yên lặng hoặc người nhận chưa bật thông báo |
+| (2) > 0 kéo dài | Redis/worker `push.send` có vấn đề (`push.sweep` sẽ xếp lại sau chu kỳ 60 giây; nếu vẫn tồn thì kiểm Redis và log backend) |
+| (3) `GONE` tăng đột biến | Nhiều thiết bị bị dịch vụ push từ chối cùng lúc: nghi vừa đổi khóa VAPID (15.11) |
+| (4) `FAILED` mã 401/403 | Nghi `VAPID_*` sai/lệch cặp hoặc `VAPID_SUBJECT` bị từ chối: kiểm 15.4/15.5 |
+| (5) bằng 0 | Chưa ai bật thông báo (hoặc vừa đổi khóa): người dùng cần bật lại |
+
+### 15.10. Tắt khẩn cấp
+
+```bash
+# Đặt CRM_PUSH_ENABLED=false trong .env.docker (mở bằng trình soạn thảo, hoặc:)
+sed -i 's/^CRM_PUSH_ENABLED=.*/CRM_PUSH_ENABLED=false/' .env.docker
+docker compose --env-file .env.docker up -d backend      # vài giây, không build
+# Kiểm: config phải ra {"enabled":false,"publicKey":null} (15.4)
+```
+
+Hiệu lực: provider chọn lại lúc khởi động thành Noop; worker thấy cờ tắt nên thông báo đang `PENDING` chuyển `SKIPPED` (không gửi). Hộp thông báo trong app **vẫn chạy**. **Reversible**: bật lại bằng `CRM_PUSH_ENABLED=true` + `up -d backend`; thiết bị đã đăng ký vẫn còn, người dùng không phải bật lại. Thông báo đã `SKIPPED` trong lúc tắt không được gửi bù.
+
+### 15.11. Đổi khóa VAPID và hệ quả
+
+Chỉ đổi khi nghi lộ khóa riêng hoặc mất khóa. **Hệ quả: toàn bộ đăng ký hiện có gắn với khóa cũ trở nên vô hiệu** (dịch vụ push từ chối, khoảng 401/403/410, rồi bị thu hồi `GONE`), **mọi người dùng phải vào Cài đặt thông báo và bật lại**. **Không hoàn tác được** (đăng ký cũ không khôi phục được bằng khóa cũ nếu đã bị thu hồi). Báo trước cho người dùng.
+
+1. Sinh cặp mới (15.2), thay vào `.env.docker` (15.3), `up -d backend`.
+2. Kiểm `config` (15.4) ra `publicKey` mới; log có "Web Push bật" (15.5).
+3. **Không cần build lại frontend**: frontend lấy khóa công khai lúc chạy. Người dùng bật lại thông báo sẽ đăng ký bằng khóa mới.
+4. Xóa khóa riêng **cũ** khỏi trình quản lý mật khẩu **chỉ sau khi** xác nhận push chạy với khóa mới (thử 15.8).
+
+### 15.12. Checklist thử thủ công trên điện thoại thật (Oniichan)
+
+Đây là phần **kiểm chứng khác** của FR-08 mà unit test không phủ được (nhận push trên thiết bị thật; tham chiếu từ ghi chú T-41/T-56 sang T-44/T-43). Làm sau bước 5 của 15.1. Đánh dấu từng dòng cho cả iPhone (Safari, PWA đã thêm vào Màn hình chính, iOS 16.4+) và Android (Chrome, PWA):
+
+| # | Bước | iPhone | Android |
+|---|---|---|---|
+| 1 | Mở PWA (iPhone: từ biểu tượng Màn hình chính); bấm **"Cập nhật"** nếu có | [ ] | [ ] |
+| 2 | Cài đặt thông báo: bật, cho phép quyền | [ ] | [ ] |
+| 3 | Thiết bị xuất hiện trong danh sách thiết bị của tôi | [ ] | [ ] |
+| 4 | Được thêm làm MEMBER: nhận push khi **app đang đóng/ở nền** | [ ] | [ ] |
+| 5 | Chạm push mở đúng `/crm/customers/<id>` | [ ] | [ ] |
+| 6 | Bật giờ yên lặng bao trùm giờ hiện tại rồi lặp lại bước 4: **không** có push, `pushStatus=SKIPPED` | [ ] | [ ] |
+| 7 | Tắt loại thông báo `CUSTOMER_ASSIGNED` rồi lặp lại bước 4: **không** có push | [ ] | [ ] |
+| 8 | Gỡ thiết bị trong danh sách thiết bị, lặp lại bước 4: **không** có push | [ ] | [ ] |
+| 9 | Đăng xuất: thiết bị bị thu hồi, không còn nhận push cho tài khoản đó | [ ] | [ ] |
+| 10 | Thiết bị **chưa** bấm "Cập nhật" (còn bản cũ): không hiện push, đây là hành vi dự kiến | [ ] | [ ] |
+
+Lỗi thường gặp: iPhone không mở từ Màn hình chính thì không đăng ký được; chặn thông báo ở cài đặt hệ điều hành; chế độ tiết kiệm pin/Focus chặn hiển thị; domain không phải HTTPS.
+
+### 15.13. Rollback image với migration 007/008 (Q10)
+
+Nếu sau khi bật cần lùi bản: **được lùi image** dù migration 007/008 đã `--apply` (chúng chỉ thêm trường mới, image cũ vẫn đọc id cũ). Quy trình L1 (lùi image), L2 (`$unset` nếu cần), L3 (`mongorestore`) nằm ở **mục 11**, đoạn "Ngoại lệ v1.0.4 cho migration 007 (mã danh mục, FR-40) và 008 (loại hình, FR-46)". Trước khi lùi, **tắt push trước (15.10)**; lùi image không xóa đăng ký thiết bị.
+
+### 15.14. Đã kiểm chứng / chưa kiểm chứng
+
+Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo/Redis tạm (đã xóa), khóa/mật khẩu giả, **không đụng môi trường dev/prod**.
+
+**Đã chạy thật:**
+- Sinh khóa bằng `generateVAPIDKeys()` với lệnh ghi file ở 15.2; độ dài đo được **87/43** (đúng ngưỡng 65/32 byte mà factory kiểm).
+- `docker compose config` với biến giả (cờ `true` rồi `false`): `FEATURE_CRM_PUSH` nhận `"true"`/`"false"`, `VAPID_SUBJECT` và `PUSH_ENDPOINT_HOST_ALLOWLIST` có trong `environment` của backend, `VAPID_PRIVATE_KEY` và `VAPID_PUBLIC_KEY` mỗi biến có đúng 1 dòng có giá trị (đếm bằng `grep -c`, không in).
+- Biên dịch (`tsc`) và chạy backend thật từ nguồn với Mongo + Redis tạm: `GET /push-subscriptions/config` ra đúng 3 trạng thái ở bảng 15.4 (`enabled:true` + khóa; cờ tắt; cờ bật nhưng thiếu VAPID thì `enabled:false`); log đúng hai câu ở 15.5.
+- Nội dung truy vấn theo dõi 15.9 chạy trên dữ liệu mẫu gieo vào Mongo tạm (`PENDING/SENT/SKIPPED`, thiết bị thu hồi `GONE`, `push_deliveries`): ra đủ 5 mục, số đếm khớp dữ liệu gieo.
+- `crm-catalog-codes.cli.js --apply` (15.7) trên Mongo tạm rỗng: thoát `0`.
+- T-20 đã ghi riêng: trong image production, `require('web-push').generateVAPIDKeys` là hàm (mục 11.5).
+
+**Chưa kiểm chứng (việc của Oniichan, sau deploy, T-48/T-44):**
+- Push thật tới thiết bị thật (iPhone/Android) và toàn bộ checklist 15.12, gồm hành vi PWA phải bấm "Cập nhật" trên máy thật.
+- VPS thật và Cloudflare: lệnh `docker compose run ... backend node -e ...` (15.2) trong stack thật, `read -rsp` + `curl` qua nginx (15.4), `shred` trên VPS, dòng `auth` bằng biến root trong container Mongo thật (15.9; trên máy dev đã chạy nội dung truy vấn nhưng với Mongo tạm).
+- Đổi khóa (15.11) và tắt khẩn cấp (15.10): mới thử ở mức đổi biến và khởi động lại tiến trình backend trên máy dev, chưa với stack compose đầy đủ.
+- Quy tắc ai được thêm MEMBER (15.8 bước 4) đã **đối chiếu với mã nguồn** (`canManageMembers`: ADMIN, MANAGER trong phạm vi, hoặc PRIMARY của khách đó; đọc code, ngày 2026-11-07); **chưa thử từng vai trò trên bản chạy thật**.
+
+## 16. Việc kiểm tay sau deploy (v1.0.4, T-44, FR-23, FR-35)
+
+Hai việc **Oniichan tự làm trên production sau khi deploy v1.0.4**; code đã xong hoặc không có code, **không có test tự động**, không chặn phát hành (hậu-deploy). Ô kiểm và chỗ ghi kết quả nằm ở 16.3. Quy ước chung: không dán token/mật khẩu vào chat hay file; thay `<domain-admin>` bằng tên miền thật; mọi lệnh VPS chạy ở thư mục gốc repo (nơi có `docker-compose.yml` và `.env.docker`).
+
+| Việc | FR | Cần quyền | Kết quả cần có |
+|---|---|---|---|
+| 16.1 IP thật sau cloudflared | FR-23 | ADMIN + SSH VPS | IP ghi ở audit và IP dùng cho giới hạn tần suất là IP thật của người dùng |
+| 16.2 Dự án mẫu bị trùng | FR-35 | ADMIN | Không còn dự án mẫu trùng trong danh sách dự án |
+
+### 16.1. FR-23: IP thật của người dùng sau cloudflared
+
+**Vì sao cần.** Cấu hình lấy IP thật (mục 2.1: nginx `set_real_ip_from` đúng một IP cloudflared, `CF-Connecting-IP`, backend `TRUST_PROXY=1`) đã chạy được trên stack thử nhưng **chưa từng thử với cloudflared và Cloudflare thật**. Nếu sai, mọi người dùng chung một IP proxy: audit ghi sai IP và 5 lần đăng nhập sai/phút tính cho cả hệ thống.
+
+**Chuẩn bị.** Một thiết bị truy cập web admin **qua Cloudflare** (domain thật, không qua `localhost`/IP của VPS). Dùng điện thoại bật 4G/5G (tắt Wi-Fi) để có IP công khai khác IP của VPS và của máy tính.
+
+**Bước 1. Ghi lại IP công khai thật của thiết bị (IP A).** Trên điện thoại 4G mở một trang "what is my IP" (ví dụ `https://ifconfig.me`) và chép IP. Lưu ý: thiết bị có IPv6 thì Cloudflare gửi IPv6, nên IP A có thể là IPv6.
+
+**Bước 2. Kiểm cấu hình đang chạy trên VPS (chỉ đọc).**
+
+```bash
+docker compose --env-file .env.docker logs backend | grep trustProxy   # kỳ vọng: "trustProxy bật: tin 1 proxy ..."
+docker compose --env-file .env.docker config | grep TRUST_PROXY        # kỳ vọng: TRUST_PROXY: "1"
+docker exec realestate_frontend nginx -T 2>/dev/null | grep -E 'set_real_ip_from|real_ip_header'
+# kỳ vọng: đúng MỘT dòng set_real_ip_from 10.213.77.250 và real_ip_header CF-Connecting-IP (không phải dải mạng)
+```
+
+**Bước 3. Tạo một dòng audit từ thiết bị đó.** Trên điện thoại 4G, đăng nhập web admin bằng tài khoản **ADMIN**, mở một khách thử và bấm **"Hiện số"** ở số điện thoại (ghi audit `PHONE_VIEWED` kèm IP của request, không đổi dữ liệu; chịu giới hạn tần suất xem số theo từng người dùng nên chỉ bấm một hai lần).
+
+**Bước 4. Đọc IP đã ghi (VPS, chỉ đọc, ADMIN).** Mật khẩu nhập tay (cùng cách 15.4); route audit chỉ dành cho ADMIN:
+
+```bash
+read -rp 'Email admin: ' E; read -rsp 'Mật khẩu: ' P; echo
+TOKEN=$(printf '{"email":"%s","password":"%s"}' "$E" "$P" \
+  | curl -s http://localhost/api/v1/auth/login -H 'content-type: application/json' -d @- \
+  | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+unset P
+curl -s "http://localhost/api/v1/crm/audit-logs?action=PHONE_VIEWED&limit=3" -H "Authorization: Bearer $TOKEN" \
+  | grep -o '"ip":[^,}]*'
+unset TOKEN
+```
+
+Dòng đầu tiên (mới nhất) phải có `"ip":"<IP A>"` đúng từng ký tự. Lệnh in cả trường hợp `"ip":null` (backend trả `null` khi request không có IP trong ngữ cảnh): thấy `"ip":null` là lỗi, xem dòng thứ ba của bảng "Cách đọc kết quả sai" bên dưới. Nếu không in dòng nào thì token sai/hết hạn hoặc chưa có dòng `PHONE_VIEWED` (làm lại bước 3 và đăng nhập lại), không phải IP đúng. Cách khác (Mongo, chỉ đọc; dòng `auth` giống 15.9):
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+db.getSiblingDB("realestate").crm_audit_logs.find({ action: "PHONE_VIEWED" }, { ip: 1, createdAt: 1, _id: 0 }).sort({ createdAt: -1 }).limit(3).forEach(r => print(r.createdAt.toISOString() + " " + r.ip));
+EOF
+```
+
+Cách đọc kết quả sai:
+
+| `ip` ghi được | Nghĩa là | Việc cần làm |
+|---|---|---|
+| `10.213.77.x` (`.250` cloudflared, `.1` gateway, hoặc IP container khác) | Backend đang thấy IP nội bộ docker: `set_real_ip_from` không khớp IP thật của cloudflared, hoặc `TRUST_PROXY` thiếu | Đối chiếu IP thật của container `realestate_cloudflared` với `ipv4_address` trong compose và `set_real_ip_from` (mục 2.1); KHÔNG nới thành cả dải mạng |
+| IP của Cloudflare (ví dụ `104.16.x.x`, `172.64.x.x` đến `172.71.x.x`, `2606:4700:...`) | Header `CF-Connecting-IP` không được dùng | Kiểm `real_ip_header CF-Connecting-IP` trong nginx đang chạy (bước 2) |
+| `127.0.0.1`, IP của VPS hoặc `null` | Request không đi qua tunnel hoặc không có IP trong ngữ cảnh | Kiểm lại bước 3 thực sự đi qua `<domain-admin>` (HTTPS), không phải `localhost` |
+| IP khác IP A nhưng là IP công khai | Thiết bị đổi mạng giữa chừng hoặc IPv4/IPv6 khác nhau | Lặp bước 1 và 3 sát nhau, ghi cả IPv4 lẫn IPv6 nếu có |
+
+**Bước 5. Giới hạn tần suất đăng nhập tính theo IP thật.** Dùng **email không tồn tại** (không khóa tài khoản thật nào); mỗi IP được 5 lần/phút:
+
+```bash
+# Từ máy tính nối Wi-Fi/mạng khác (IP B), gửi 6 lần đăng nhập sai
+for i in 1 2 3 4 5 6; do
+  curl -s -o /dev/null -w "%{http_code} " -X POST https://<domain-admin>/api/v1/auth/login \
+    -H 'content-type: application/json' -d '{"email":"khong-ton-tai@example.invalid","password":"sai-mat-khau-1"}'
+done; echo
+# kỳ vọng: 401 401 401 401 401 429
+```
+
+Ngay sau đó (trong vòng 60 giây) đổi sang mạng của IP A (ví dụ máy tính nối điểm phát sóng 4G của điện thoại, hoặc nhờ người khác ở mạng khác) và gửi **một** lần cùng lệnh: kỳ vọng **401** (không phải 429), vì IP A có bộ đếm riêng. Nếu thiết bị thứ hai cũng nhận 429 thì mọi người đang chung một IP proxy: FR-23 chưa đạt, quay lại bảng ở bước 4. Phân biệt 429 của backend (JSON có `statusCode`) với chặn của Cloudflare (trang HTML hoặc mã 1015/403): nếu là Cloudflare thì đó là luật WAF/Rate limiting riêng của Cloudflare, không phải kết quả của phép thử này. Sau 60 giây bộ đếm tự reset.
+
+**Kết quả mong đợi (đạt FR-23):** bước 2 khớp; bước 4 ra đúng IP A; bước 5 hai IP khác nhau có bộ đếm tách biệt. Lệch thì **ghi nhận làm lỗi mới** (mã PT tiếp theo của Plan 03) kèm dòng sai ở bảng bước 4; không tự sửa `nginx.conf` trên VPS.
+
+### 16.2. FR-35: dự án mẫu bị trùng trên production
+
+**Vì sao cần.** Dự án mẫu (seed) hiện nhận diện bằng `seedKey` bất biến, nhưng bản seed **cũ** (trước khi có `seedKey`) có thể đã để lại dự án mẫu bị đổi tên/mã: lần seed sau không nhận ra bản đổi tên và tạo thêm một bản mẫu mới, nên danh sách có hai dự án giống nhau. Đây là việc kiểm dữ liệu, **không còn việc sửa code**. 8 dự án mẫu (mã/tên): `QTERRA` Q'Terra, `PRIVIA` The Privia, `ECOPARK` Ecopark Grand, `VHOP` Vinhomes Ocean Park, `LUMIERE` Lumiere Riverside, `MASTERI` Masteri Centre Point, `AQUA` Aqua City Waterfront, `VHGP` Vinhomes Grand Park.
+
+**Chuẩn bị.** Tài khoản **ADMIN** (xóa/khôi phục dự án chỉ dành cho ADMIN). Đã có bản sao lưu từ lần deploy (`deploy.sh` backup trước khi chạy); xóa ở đây là **xóa mềm, khôi phục được** nên không cần backup riêng.
+
+**Bước 1. Xem danh sách trên web.** Vào menu **Quản lý khách hàng > Danh sách dự án** (`/crm/projects`), bật **"Hiện cả dự án ngừng hoạt động"**. So với 8 dự án mẫu ở trên và ghi lại các cặp trùng (cùng tên, hoặc tên gần giống và cùng chủ đầu tư). Mỗi thẻ có số **"Khách quan tâm"**.
+
+**Bước 2. (Khuyến nghị) Đối chiếu bằng truy vấn chỉ đọc để không sót.** Chạy trên VPS; dòng `auth` giống 15.9:
+
+```bash
+docker exec -i realestate_mongo mongosh --quiet --norc --file /dev/stdin <<'EOF'
+db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+const d = db.getSiblingDB("realestate");
+print("(1) Du an chua xoa (so luong): " + d.projects.countDocuments({ deletedAt: null }));
+print("(2) Ten trung (khong phan biet hoa/thuong, dau), chi du an chua xoa:");
+d.projects.aggregate(
+  [
+    { $match: { deletedAt: null } },
+    { $group: { _id: "$name", n: { $sum: 1 }, codes: { $push: "$code" } } },
+    { $match: { n: { $gt: 1 } } },
+    { $sort: { _id: 1 } },
+  ],
+  { collation: { locale: "vi", strength: 1 } }
+).forEach(r => print("  " + r._id + " x" + r.n + " ma=" + r.codes.join(",")));
+print("(3) Toan bo du an chua xoa (ten | ma | nha phat trien | dang hoat dong | co seedKey):");
+d.projects.find({ deletedAt: null }).sort({ developer: 1, name: 1 }).collation({ locale: "vi" }).forEach(p =>
+  print("  " + p.name + " | " + p.code + " | " + (p.developer || "-") + " | " + p.isActive + " | " + (p.seedKey ? "co" : "KHONG")));
+EOF
+```
+
+Mục (2) rỗng và mục (3) không có hai dòng giống nhau là đạt. Mục (2) chỉ bắt trùng **tên**; trùng do đổi tên phải nhìn mục (3) (cùng chủ đầu tư, tên gần giống).
+
+**Bước 3. Quyết định bản giữ và bản xóa cho từng cặp trùng.**
+- **Giữ** bản đang có khách quan tâm (hoặc bản đã được Quản trị chỉnh tên/mã).
+- **Xóa** bản còn lại, thường là bản mẫu mới sinh ra: `seedKey` = `co`, mã nằm trong 8 mã mẫu, **0 khách**. Xóa mềm vẫn giữ `seedKey` nên lần seed sau **không tạo lại** (seed bỏ qua khi `seedKey` đã tồn tại, kể cả đã xóa mềm).
+- Bấm **"Xoá dự án"** trên thẻ bản cần xóa. Nếu dự án còn khách, hệ thống chặn xóa (409 `PROJECT_IN_USE`) và chỉ đề nghị **"Ngừng hoạt động"** (ẩn khỏi lựa chọn mới, khách cũ giữ liên kết). Hai bản cùng có khách thì **không xóa**: chọn ngừng hoạt động bản kém quan trọng hơn hoặc để nguyên và ghi vào 16.3 (hệ thống chưa có công cụ gộp dự án).
+- **Reversible**: dự án đã xóa nằm ở **"Hiện dự án đã xoá" > "Khôi phục"** (ADMIN).
+
+**Bước 4. Xác nhận.** Tải lại trang; chạy lại truy vấn bước 2 (nếu dùng) và xem danh sách: không còn cặp trùng ngoài các trường hợp đã ghi nhận ở 16.3.
+
+**Kết quả mong đợi (đạt FR-35):** danh sách dự án không còn dự án mẫu trùng, hoặc phần trùng còn lại đã được ghi rõ lý do (cùng có khách) ở 16.3.
+
+### 16.3. Ô kiểm và ghi kết quả (Oniichan điền sau deploy)
+
+Điền trực tiếp vào bảng này (không ghi mật khẩu/token; IP người dùng được ghi dạng rút gọn nếu ngại, ví dụ che octet cuối).
+
+| # | Việc | Đạt | Ngày/Người | Ghi chú (lệch thì ghi mã PT mới) |
+|---|---|---|---|---|
+| 1 | 16.1 bước 2: `trustProxy` bật, `TRUST_PROXY=1`, nginx đúng một `set_real_ip_from` | [ ] | | |
+| 2 | 16.1 bước 4: `ip` trong audit khớp IP thật của thiết bị | [ ] | | |
+| 3 | 16.1 bước 5: hai IP khác nhau có bộ đếm đăng nhập riêng | [ ] | | |
+| 4 | 16.2 bước 1-2: đã xem danh sách dự án và ghi các cặp trùng (nếu có) | [ ] | | |
+| 5 | 16.2 bước 3-4: đã xóa/ngừng bản trùng (hoặc xác nhận không có) và danh sách sạch | [ ] | | |
+
+### 16.4. Đã kiểm chứng / chưa kiểm chứng
+
+Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo tạm (đã xóa), dữ liệu mẫu giả, không đụng môi trường dev/prod.
+
+**Đã làm:**
+- Truy vấn Mongo ở 16.2 bước 2 (gồm `collation` tiếng Việt `strength: 1` cho `$group`) chạy được trên `mongo:7` với dữ liệu giả có sẵn cặp trùng tên (khác chữ hoa/thường, khác hoặc không có `seedKey`) và một bản đã xóa mềm: mục (2) chỉ bắt các bản chưa xóa, mục (3) in đúng cột.
+- Đối chiếu mã nguồn: `req.ip` được ghi vào audit (`request-context.middleware.ts` rồi `crm-audit-log.service.ts`, trường `ip` của `crm_audit_logs`); `GET /api/v1/crm/audit-logs` chỉ ADMIN và trả `ip`, nhận tham số `action`, `limit`; hành động `PHONE_VIEWED` ghi audit; xóa dự án chỉ ADMIN, xóa mềm, chặn 409 khi còn khách; `ensureSeeded` bỏ qua khi `seedKey` đã tồn tại kể cả đã xóa mềm; đăng nhập giới hạn 5 lần/phút/IP ở production (mục 2.1).
+
+**Chưa kiểm chứng (cần VPS/Cloudflare thật, việc của Oniichan):**
+- Toàn bộ 16.1 trên cloudflared và Cloudflare thật: IP thật ghi vào audit, hành vi `CF-Connecting-IP` (kể cả IPv6/Pseudo IPv4), phép thử 429 qua tunnel.
+- Lệnh `docker exec realestate_frontend nginx -T` (16.1 bước 2) và route `GET /api/v1/crm/audit-logs` bằng `curl` + `grep -o` **chưa chạy thật** (chưa dựng stack đầy đủ; dạng JSON trả về chỉ đọc từ mã, `grep -o '"ip":[^,}]*'` không phụ thuộc cấu trúc bọc ngoài). Dòng `auth` Mongo trong container thật đã nêu ở 15.14.
+- 16.2 trên dữ liệu production thật: số lượng và hình dạng cặp trùng thực tế, thao tác "Xoá dự án"/"Ngừng hoạt động"/"Khôi phục" trên giao diện thật (chỉ đọc mã giao diện).
+- Chưa có số liệu nào về việc production có thực sự đang có dự án trùng hay không.
 
 [← Về chỉ mục Hạ tầng](README.md)

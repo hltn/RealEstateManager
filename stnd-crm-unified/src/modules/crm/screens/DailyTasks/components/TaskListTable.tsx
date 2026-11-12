@@ -60,7 +60,7 @@ export const TaskListTable = ({ tasks }: { tasks: DailyTask[] }) => {
                 </td>
                 <td className="hidden whitespace-nowrap px-5 py-4 text-theme-sm text-gray-700 xl:table-cell dark:text-gray-300">{task.assignee?.displayName ?? '—'}</td>
                 <td className="px-5 py-4">
-                  <TableContactActions customerId={task.customer.id} customerName={task.customer.fullName} />
+                  <TableContactActions customerId={task.customer.id} customerName={task.customer.fullName} hasPhone={task.customer.phoneMasked !== null} />
                 </td>
               </tr>
             ))}

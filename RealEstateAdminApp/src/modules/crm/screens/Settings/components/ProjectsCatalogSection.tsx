@@ -3,7 +3,7 @@
  * (`POST/PATCH /crm/projects`); xóa mềm/khôi phục làm ở màn Dự án.
  */
 import { useState } from 'react';
-import { EyeOff, Pencil, Plus } from 'lucide-react';
+import { EyeOff, Pencil, Plus, TriangleAlert } from 'lucide-react';
 import { useCatalogs, useCrmApi, useProjectsWithCounts } from '@crm/api';
 import { PROJECT_STATUS_LABELS } from '@crm/lib/projectRules';
 import { BUTTON_PRIMARY_CLASS, BUTTON_SOFT_SM_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
@@ -44,6 +44,12 @@ export const ProjectsCatalogSection = () => {
                   <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>
                     <EyeOff size={12} aria-hidden="true" />
                     Đã ngừng
+                  </span>
+                )}
+                {(project.unmappedPropertyTypes?.length ?? 0) > 0 && (
+                  <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.warning}`} title={project.unmappedPropertyTypes?.join(', ')}>
+                    <TriangleAlert size={12} aria-hidden="true" />
+                    Loại hình cũ chưa khớp
                   </span>
                 )}
               </p>

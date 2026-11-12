@@ -8,6 +8,13 @@ const httpError = (status: number, data: unknown): AxiosError => {
 };
 
 describe('normalizeApiError (05 §1.3, §5)', () => {
+  it('409 CUSTOMER_PHONE_NOT_SET -> giữ mã, dùng thông báo "Khách chưa có số điện thoại" khi server trả tiếng Anh/rỗng', () => {
+    const fromServer = normalizeApiError(httpError(409, { statusCode: 409, message: 'Khách chưa có số điện thoại', errorCode: 'CUSTOMER_PHONE_NOT_SET' }));
+    expect(fromServer).toMatchObject({ statusCode: 409, errorCode: 'CUSTOMER_PHONE_NOT_SET', message: 'Khách chưa có số điện thoại' });
+    const fallback = normalizeApiError(httpError(409, { statusCode: 409, message: 'Conflict', errorCode: 'CUSTOMER_PHONE_NOT_SET' }));
+    expect(fallback.message).toBe('Khách chưa có số điện thoại.');
+  });
+
   it('giữ errorCode + message tiếng Việt + details của server', () => {
     const error = normalizeApiError(httpError(409, { statusCode: 409, message: 'Hồ sơ đã bị sửa', errorCode: 'VERSION_CONFLICT', details: { currentVersion: 7 } }));
     expect(error).toMatchObject({ statusCode: 409, errorCode: 'VERSION_CONFLICT', message: 'Hồ sơ đã bị sửa', details: { currentVersion: 7 } });

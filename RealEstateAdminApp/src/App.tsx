@@ -21,7 +21,7 @@ import { UserRole } from './types/user';
 import HomeIndex from './components/auth/HomeIndex';
 // [Prototype] Module Quản lý khách hàng (CRM) — xem src/modules/crm
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
-import { buildCrmRoute, buildNotificationsRoute } from '@crm/crmRoute';
+import { buildCrmRoute, buildNotificationSettingsRoute, buildNotificationsRoute } from '@crm/crmRoute';
 
 /** Chặn route tin tức theo vai trò (EDITOR/ADMIN); vai trò CRM chuyển về /crm/today. */
 const NewsGuard = ({ children }: { children: ReactNode }) => (
@@ -54,6 +54,7 @@ function App() {
             {/* [Prototype] Module Quản lý khách hàng — CrmLayout bọc CrmProvider + bottom nav mobile */}
             {buildCrmRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
             {buildNotificationsRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
+            {buildNotificationSettingsRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
 
             {/* Nhóm tin tức: ADMIN/EDITOR; MANAGER/STAFF bị chuyển về CRM (RoleGuard) */}
             <Route path="manage-wp" element={<NewsGuard><ManageWpScreen /></NewsGuard>} />

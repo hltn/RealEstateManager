@@ -1,35 +1,51 @@
 /**
- * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + SĐT che + mã), tình trạng, dự án, nguồn,
- * khu vực, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú).
+ * 1 dòng bảng khách (02 §4.2) theo mẫu bảng Admin: ô chọn, khách (tên + mã KH + SĐT che + mục đích mua), tình trạng, dự án, nguồn,
+ * khu vực, tiến độ 4 chấm, người chăm sóc chính (chỉ Quản trị/Quản lý, FR-17), ngày cập nhật, thao tác (Gọi / Zalo / Ghi chú).
  * Cột phụ ẩn dần ở màn hẹp (khớp `CUSTOMER_TABLE_COLUMNS` ở màn), còn chật thì cuộn ngang trong vỏ bảng.
  */
 import type { MouseEvent } from 'react';
 import { Star } from 'lucide-react';
 import type { CustomerListItem } from '@crm/api';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { ProgressDots } from '@crm/components/ProgressDots';
 import { TableContactActions } from '@crm/components/TableContactActions';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
-import { formatVnDate, formatVnDateTime, formatVnRelative } from '@crm/lib/dateTime';
-import { CHECKBOX_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
+import { formatVnDate, formatVnDateTime } from '@crm/lib/dateTime';
+import { CHECKBOX_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
+import type { PersonaFieldDefinition } from '@crm/types/crm';
+import { PurchasePurposesLine } from './PurchasePurposesLine';
 
 interface CustomerTableRowProps {
   customer: CustomerListItem;
   isSelected: boolean;
   onToggleSelect: (customerId: string) => void;
+  /** Hiện ô "Người chăm sóc chính" (chỉ Quản trị/Quản lý; mặc định ẩn, khớp cột tiêu đề ở màn). */
+  isShowingPrimaryAssignee?: boolean;
+  /** Định nghĩa trường `purchase_purposes` để dịch mã -> nhãn (màn tải 1 lần, truyền xuống). */
+  purchasePurposeField?: Pick<PersonaFieldDefinition, 'optionItems'>;
 }
 
 const TEXT_MUTED = 'text-theme-xs text-gray-500 dark:text-gray-400';
 
-export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: CustomerTableRowProps) => {
+/**
+ * Nền hàng, 4 trạng thái phải phân biệt được bằng mắt (2 nhánh loại trừ nhau để không xung đột `hover:bg-*`):
+ * thường (trắng) < hover thường (xám gray-200, không xanh, khác đường kẻ `divide-gray-100` của tbody)
+ * < đã chọn (brand-50) < đã chọn + hover (brand-100).
+ */
+const ROW_BG_CLASS = 'hover:bg-gray-200 dark:hover:bg-white/[0.08]';
+const ROW_SELECTED_BG_CLASS = 'bg-brand-50 hover:bg-brand-100 dark:bg-brand-500/[0.10] dark:hover:bg-brand-500/[0.20]';
+
+export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, isShowingPrimaryAssignee = false, purchasePurposeField }: CustomerTableRowProps) => {
   const { selectCustomer } = useCrmActions();
   const openDetail = () => selectCustomer(customer.id);
   const stop = (event: MouseEvent) => event.stopPropagation();
   const projectSummary = formatProjectSummary(customer.projects);
 
   return (
-    <tr onClick={openDetail} className={`cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.02] ${isSelected ? 'bg-brand-25 dark:bg-brand-500/[0.06]' : ''}`}>
+    <tr onClick={openDetail} className={`cursor-pointer transition-colors ${isSelected ? ROW_SELECTED_BG_CLASS : ROW_BG_CLASS}`}>
       <td className="w-10 px-4 py-4" onClick={stop}>
         <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(customer.id)} aria-label={`Chọn ${customer.fullName}`} className={CHECKBOX_CLASS} />
       </td>
@@ -44,9 +60,15 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
         >
           {customer.fullName}
         </button>
-        <p className={TEXT_MUTED}>
-          <span className="tabular-nums">{customer.phoneMasked}</span>
-        </p>
+        {/* Mã KH ngay cạnh SĐT; khách không SĐT chỉ hiện mã, không dấu phân cách thừa. */}
+        {(customer.customerCode || hasPhone(customer.phoneMasked)) && (
+          <p className={`${TEXT_MUTED} flex flex-wrap items-center gap-x-1.5`}>
+            <CustomerCodeBadge code={customer.customerCode} />
+            {customer.customerCode && hasPhone(customer.phoneMasked) && <span aria-hidden="true">·</span>}
+            {hasPhone(customer.phoneMasked) && <span className="tabular-nums">{customer.phoneMasked}</span>}
+          </p>
+        )}
+        <PurchasePurposesLine purposes={customer.purchasePurposes} field={purchasePurposeField} className="max-w-[220px]" />
         <div className="pt-1.5 2xl:hidden">{projectSummary && <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span>}</div>
       </td>
       <td className="px-4 py-4">
@@ -58,25 +80,25 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect }: Custo
       <td className="px-4 py-4">
         <ProgressDots progress={customer.progress} criteriaDone={customer.criteriaDone} />
       </td>
-      <td className="hidden px-4 py-4 lg:table-cell">
-        {customer.primaryAssignee ? (
-          <span className="flex items-center gap-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">
-            <Star size={12} className="fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
-            {customer.primaryAssignee.displayName}
-            {customer.careTeamSize > 1 && <span className={TEXT_MUTED}>+{customer.careTeamSize - 1}</span>}
-          </span>
-        ) : (
-          <span className={TEXT_MUTED}>Chưa phân</span>
-        )}
-      </td>
-      <td className="hidden whitespace-nowrap px-4 py-4 xl:table-cell" title={formatVnDateTime(customer.nextAppointmentAt)}>
-        <span className="text-theme-xs font-medium text-gray-800 dark:text-white/90">{customer.nextAppointmentAt ? formatVnRelative(customer.nextAppointmentAt) : '—'}</span>
-      </td>
+      {isShowingPrimaryAssignee && (
+        <td className="hidden px-4 py-4 lg:table-cell">
+          {customer.primaryAssignee ? (
+            <span className="flex flex-wrap items-center gap-1 text-theme-sm font-medium text-gray-800 dark:text-white/90">
+              <Star size={12} className="fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
+              {customer.primaryAssignee.displayName}
+              {customer.primaryAssignee.isLocked && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>đã khóa</span>}
+              {customer.careTeamSize > 1 && <span className={TEXT_MUTED}>+{customer.careTeamSize - 1}</span>}
+            </span>
+          ) : (
+            <span className={TEXT_MUTED}>Chưa phân</span>
+          )}
+        </td>
+      )}
       <td className={`hidden whitespace-nowrap px-4 py-4 2xl:table-cell ${TEXT_MUTED}`} title={formatVnDateTime(customer.lastUpdatedAt)}>
         {formatVnDate(customer.lastUpdatedAt)}
       </td>
       <td className="px-4 py-4">
-        <TableContactActions customerId={customer.id} customerName={customer.fullName} />
+        <TableContactActions customerId={customer.id} customerName={customer.fullName} hasPhone={hasPhone(customer.phoneMasked)} />
       </td>
     </tr>
   );

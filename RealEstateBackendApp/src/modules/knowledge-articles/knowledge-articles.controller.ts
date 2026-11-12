@@ -35,8 +35,7 @@ import {
   PreviewScheduleDto,
   ActivateScheduleDto,
 } from './dtos/nl-cron.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
+import { AdminOnly } from '../crm/common/access/admin-only.decorator';
 import { IdempotencyService } from '../../common/services/idempotency.service';
 import { runIdempotent } from '../../common/utils/idempotent-request.util';
 import { AuditLogService } from '../news-fire-crawl-manager/services/audit-log.service';
@@ -59,7 +58,7 @@ export class KnowledgeArticlesController {
 
   // ── Config Endpoints ────────────────────────────────────
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('config/wp')
   @ApiOperation({ summary: 'Get WordPress connection config (password masked)' })
   async getWpConfig() {
@@ -72,7 +71,7 @@ export class KnowledgeArticlesController {
     return { data: masked };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Put('config/wp')
   @ApiOperation({ summary: 'Update WordPress connection config' })
   async updateWpConfig(@Body() body: UpdateWpConfigDto) {
@@ -88,7 +87,7 @@ export class KnowledgeArticlesController {
     return { message: 'WP config updated', data: doc.config };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('config/wp/verify')
   @HttpCode(200)
   @ApiOperation({ summary: 'Verify WordPress connection (health check)' })
@@ -97,7 +96,7 @@ export class KnowledgeArticlesController {
     return { data: result };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('config/ai-writing')
   @ApiOperation({ summary: 'Get AI writing config' })
   async getAiWritingConfig() {
@@ -105,7 +104,7 @@ export class KnowledgeArticlesController {
     return { data };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Put('config/ai-writing')
   @ApiOperation({ summary: 'Update AI writing config' })
   async updateAiWritingConfig(@Body() body: UpdateAiWritingConfigDto) {
@@ -115,7 +114,7 @@ export class KnowledgeArticlesController {
     return { message: 'AI writing config updated', data: doc.config };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('config/ai-image')
   @ApiOperation({ summary: 'Get AI image config' })
   async getAiImageConfig() {
@@ -123,7 +122,7 @@ export class KnowledgeArticlesController {
     return { data };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Put('config/ai-image')
   @ApiOperation({ summary: 'Update AI image config' })
   async updateAiImageConfig(@Body() body: UpdateAiImageConfigDto) {
@@ -133,7 +132,7 @@ export class KnowledgeArticlesController {
     return { message: 'AI image config updated', data: doc.config };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('config/ai-image/test')
   @HttpCode(200)
   @ApiOperation({ summary: 'Test AI image generation' })
@@ -142,7 +141,7 @@ export class KnowledgeArticlesController {
     return { data: result };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('config/cron')
   @ApiOperation({ summary: 'Get cron config' })
   async getCronConfig() {
@@ -150,7 +149,7 @@ export class KnowledgeArticlesController {
     return { data };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Put('config/cron')
   @ApiOperation({ summary: 'Update cron config' })
   async updateCronConfig(@Body() body: UpdateKnowledgeCronConfigDto) {
@@ -162,7 +161,7 @@ export class KnowledgeArticlesController {
 
   // ── Knowledge Article Endpoints ─────────────────────────
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('/')
   @ApiOperation({ summary: 'List knowledge articles (paginated)' })
   async getKnowledgeArticles(
@@ -171,7 +170,7 @@ export class KnowledgeArticlesController {
     return this.knowledgeArticleService.listArticles(query);
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('/:id')
   @ApiOperation({ summary: 'Get knowledge article detail' })
   @ApiParam({ name: 'id', description: 'Knowledge article ID' })
@@ -180,7 +179,7 @@ export class KnowledgeArticlesController {
     return { data };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('/:id/retry')
   @ApiOperation({ summary: 'Retry a failed knowledge article' })
   @ApiParam({ name: 'id', description: 'Knowledge article ID' })
@@ -189,7 +188,7 @@ export class KnowledgeArticlesController {
     return { message: 'Retry initiated', data: result };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('/:id/publish')
   @ApiOperation({ summary: 'Publish a ready knowledge article to WordPress' })
   @ApiParam({ name: 'id', description: 'Knowledge article ID' })
@@ -221,7 +220,7 @@ export class KnowledgeArticlesController {
     );
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('/:id/republish')
   @ApiOperation({ summary: 'Republish (update) an existing WordPress post' })
   @ApiParam({ name: 'id', description: 'Knowledge article ID' })
@@ -254,7 +253,7 @@ export class KnowledgeArticlesController {
     );
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Delete('/:id')
   @ApiOperation({ summary: 'Soft delete a knowledge article' })
   @ApiParam({ name: 'id', description: 'Knowledge article ID' })
@@ -271,7 +270,7 @@ export class KnowledgeArticlesController {
     return { message: 'Article deleted' };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('bulk/delete')
   @ApiOperation({ summary: 'Bulk soft delete knowledge articles' })
   async bulkDeleteArticles(
@@ -306,7 +305,7 @@ export class KnowledgeArticlesController {
     );
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('bulk/publish')
   @ApiOperation({ summary: 'Bulk publish knowledge articles' })
   async bulkPublishArticles(
@@ -355,7 +354,7 @@ export class KnowledgeArticlesController {
 
   // ── Pipeline Endpoints ──────────────────────────────────
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('pipeline/run')
   @ApiOperation({ summary: 'Start batch pipeline' })
   async startPipeline(@Body() body?: RunPipelineDto) {
@@ -366,7 +365,7 @@ export class KnowledgeArticlesController {
     });
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('pipeline/:jobId')
   @ApiOperation({ summary: 'Poll pipeline status' })
   @ApiParam({ name: 'jobId', description: 'Pipeline job ID' })
@@ -378,7 +377,7 @@ export class KnowledgeArticlesController {
     return status;
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('pipeline/:batchId/retry-failed')
   @ApiOperation({ summary: 'Retry all failed articles in a pipeline batch' })
   @ApiParam({ name: 'batchId', description: 'Batch ID' })
@@ -390,7 +389,7 @@ export class KnowledgeArticlesController {
     };
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('pipeline/logs')
   @ApiOperation({ summary: 'List pipeline logs (paginated)' })
   async getPipelineLogs(@Query() query: GetPipelineLogsQueryDto) {
@@ -402,7 +401,7 @@ export class KnowledgeArticlesController {
     });
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Get('pipeline/logs/:batchId')
   @ApiOperation({ summary: 'Get pipeline log detail' })
   @ApiParam({ name: 'batchId', description: 'Batch ID' })
@@ -413,21 +412,21 @@ export class KnowledgeArticlesController {
 
   // ── NL Cron Endpoints ───────────────────────────────────
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('cron/parse-nl')
   @ApiOperation({ summary: 'Parse natural language to cron expression' })
   async parseNlSchedule(@Body() body: ParseNlDto) {
     return this.nlCronService.parseDescription(body.description);
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('cron/preview')
   @ApiOperation({ summary: 'Preview next 5 run times for a cron expression' })
   async previewSchedule(@Body() body: PreviewScheduleDto) {
     return this.nlCronService.previewSchedule(body.cronExpression);
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Put('cron/activate')
   @ApiOperation({ summary: 'Save and activate cron schedule' })
   async activateSchedule(@Body() body: ActivateScheduleDto) {
@@ -437,7 +436,7 @@ export class KnowledgeArticlesController {
     );
   }
 
-  @Roles(UserRole.ADMIN)
+  @AdminOnly()
   @Post('cron/test-run')
   @ApiOperation({ summary: 'Manual test run (no schedule)' })
   async testRun(@Body() body?: RunPipelineDto) {

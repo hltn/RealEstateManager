@@ -1,16 +1,22 @@
 /**
  * Lưu/đọc dữ liệu CRM prototype trong localStorage, CÓ version schema + sao lưu khi hỏng.
  *
- * - [Prototype] Schema hiện tại: v6 (khóa riêng `stnd_crm_proto_*`, KHÔNG dùng chung với app chính). Khác app chính (chỉ dùng store cho
+ * - [Prototype] Schema hiện tại: v7 (khóa riêng `stnd_crm_proto_*`, KHÔNG dùng chung với app chính). Khác app chính (chỉ dùng store cho
  *   dữ liệu mẫu báo cáo/nhập xuất), prototype lưu TOÀN BỘ dữ liệu CRM mẫu ở đây. Thêm so với bản đầu: tài khoản nhiều role/nhóm
  *   (`roles[]`, `teamIds[]`), nhóm có `code/isActive`, khách xóa mềm, thông báo trong app.
+ * - v7 (v1.0.5): khách có `customerCode` (`KH-000123`, nullable) và `phone` có thể `null`. Dữ liệu v6 được NÂNG CẤP (không xóa): cấp mã khách tuần tự
+ *   theo `createdAt`, giữ nguyên SĐT; bản v6 gốc giữ ở khóa `stnd_crm_proto_data_backup_v6`.
  * - Dữ liệu cũ hơn v6 / payload hỏng nặng: không tương thích -> xoá và nạp lại seed (bản gốc giữ ở khóa `_corrupt_` để cứu thủ công).
  * - Một khách hỏng KHÔNG làm mất cả CSDL: khách hỏng bị loại riêng (kèm dữ liệu con), bản gốc lưu ở `stnd_crm_proto_data_corrupt_<timestamp>`.
  */
+import { nextCustomerCode } from '@crm/lib/customerCode';
+import { buildSearchText } from '@crm/lib/customerRules';
 import { pruneNationalIds } from '@crm/lib/nationalIdVault';
 import type { CrmDataState, CrmSession } from './crmReducer';
 
-export const CRM_SCHEMA_VERSION = 6;
+export const CRM_SCHEMA_VERSION = 7;
+/** Version cũ nhất còn nâng cấp được (v6 -> v7). Cũ hơn: xóa và nạp lại seed. */
+export const CRM_MIN_MIGRATABLE_VERSION = 6;
 export const CRM_STORAGE_KEY = 'stnd_crm_proto_data';
 export const CRM_SESSION_STORAGE_KEY = 'stnd_crm_proto_session_v1';
 /** Khoá bản sao dữ liệu cũ (`<prefix><version>`). */
@@ -65,7 +71,9 @@ const isCustomerV3 = (value: unknown): boolean =>
   isRecord(value) &&
   isString(value.id) &&
   isString(value.fullName) &&
-  isString(value.phone) &&
+  // v1.0.5: SĐT có thể null (khách chưa có số); mã khách nullable (khách cũ chưa cấp mã).
+  isNullableString(value.phone) &&
+  (value.customerCode === undefined || isNullableString(value.customerCode)) &&
   isString(value.statusId) &&
   isString(value.createdAt) &&
   isString(value.searchText) &&
@@ -161,6 +169,8 @@ const normalizeCustomer = (value: unknown): unknown =>
   isRecord(value)
     ? {
         ...value,
+        customerCode: withDefault(value.customerCode, isNullableString, null),
+        phone: withDefault(value.phone, isNullableString, null),
         occasions: withDefault(value.occasions, Array.isArray, []),
         persona: withDefault(value.persona, Array.isArray, []),
         tagIds: withDefault(value.tagIds, isStringArray, []),
@@ -172,6 +182,51 @@ const normalizeCustomer = (value: unknown): unknown =>
         searchText: withDefault(value.searchText, isString, ''),
       }
     : value;
+
+/**
+ * Nâng cấp v6 -> v7: cấp `customerCode` cho khách chưa có, theo thứ tự `createdAt` tăng dần (bằng nhau thì giữ thứ tự mảng), nối tiếp mã lớn
+ * nhất đã có; dựng lại `searchText` để tìm theo mã. Không đổi SĐT. Dữ liệu sai hình dạng giữ nguyên (bước kiểm sau sẽ vá/loại).
+ */
+export const migrateV6ToV7 = (data: unknown): unknown => {
+  if (!isRecord(data) || !Array.isArray(data.customers)) return data;
+  const customers = data.customers as unknown[];
+  const codeOf = (customer: unknown): string | null => (isRecord(customer) && isString(customer.customerCode) ? customer.customerCode : null);
+  const createdAtOf = (customer: unknown): string => (isRecord(customer) && isString(customer.createdAt) ? customer.createdAt : '');
+  const issued = new Map<unknown, string>();
+  const existingCodes: (string | null)[] = customers.map(codeOf);
+  customers
+    .map((customer, index) => ({ customer, index }))
+    .filter(({ customer }) => isRecord(customer) && !codeOf(customer))
+    .sort((first, second) => createdAtOf(first.customer).localeCompare(createdAtOf(second.customer)) || first.index - second.index)
+    .forEach(({ customer }) => {
+      const code = nextCustomerCode(existingCodes);
+      existingCodes.push(code);
+      issued.set(customer, code);
+    });
+  return {
+    ...data,
+    customers: customers.map((customer) => {
+      const code = issued.get(customer);
+      if (!code || !isRecord(customer)) return customer;
+      const canRebuild = isString(customer.fullName);
+      return {
+        ...customer,
+        customerCode: code,
+        phone: isString(customer.phone) ? customer.phone : null,
+        ...(canRebuild
+          ? {
+              searchText: buildSearchText({
+                fullName: customer.fullName as string,
+                phone: isString(customer.phone) ? customer.phone : null,
+                email: isString(customer.email) ? customer.email : undefined,
+                customerCode: code,
+              }),
+            }
+          : {}),
+      };
+    }),
+  };
+};
 
 const normalizeCareLog = (value: unknown): unknown => {
   if (!isRecord(value)) return value;
@@ -321,13 +376,21 @@ export const loadCrmData = (): CrmDataState | null => {
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (isRecord(parsed)) {
-      if (parsed.schemaVersion === CRM_SCHEMA_VERSION) {
-        const result = salvageCrmData(normalizeCrmData(parsed.data));
+      const version = parsed.schemaVersion;
+      if (version === CRM_SCHEMA_VERSION || version === CRM_MIN_MIGRATABLE_VERSION) {
+        const isMigrating = version !== CRM_SCHEMA_VERSION;
+        const result = salvageCrmData(normalizeCrmData(isMigrating ? migrateV6ToV7(parsed.data) : parsed.data));
         if (result) {
           const isPatched = result.droppedCount > 0;
           if (isPatched) {
             backupCorruptPayload(storage, raw);
             pruneNationalIds(new Set(result.data.customers.map((customer) => customer.id)));
+          }
+          if (isMigrating) {
+            // Giữ bản v6 gốc để quay lại được, rồi ghi dữ liệu đã nâng cấp dưới version mới.
+            setItemWithQuotaRetry(storage, `${CRM_BACKUP_KEY_PREFIX}${version}`, raw);
+          }
+          if (isPatched || isMigrating) {
             setItemWithQuotaRetry(storage, CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: CRM_SCHEMA_VERSION, data: result.data }));
           }
           return result.data;

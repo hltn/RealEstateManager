@@ -5,6 +5,9 @@ import { useCrmApi } from '@crm/api';
 import { useCrmActions } from '@crm/store';
 import { useIsMobile } from './useIsMobile';
 
+/** Thông báo khi bấm gọi/Zalo cho khách chưa có SĐT (nút đã ẩn; đây là lớp phòng thủ cho dữ liệu cũ/đua trạng thái). */
+export const PHONE_NOT_SET_NOTICE = 'Khách chưa có số điện thoại';
+
 export interface ContactActions {
   /** Gọi khách: mặc định mở `tel:`; chỉ khi bật cờ `isInAppCallEnabled` (desktop) mới mở CallModal. */
   callCustomer: (customerId: string) => Promise<void>;
@@ -25,7 +28,8 @@ export const useContactActions = (): ContactActions => {
     const requirePhone = async (customerId: string, purpose: 'VIEW' | 'CALL'): Promise<string | null> => {
       const result = await api.createPhoneView(customerId, purpose);
       if (!result.ok) {
-        actions.showToast({ type: 'error', title: result.error.message });
+        // 409 CUSTOMER_PHONE_NOT_SET (khách chưa có SĐT): thông báo cố định, không phụ thuộc câu chữ của máy chủ.
+        actions.showToast({ type: 'error', title: result.error.errorCode === 'CUSTOMER_PHONE_NOT_SET' ? PHONE_NOT_SET_NOTICE : result.error.message });
         return null;
       }
       return result.data.phone;

@@ -9,7 +9,6 @@ import * as care from './http/careApi';
 import type { BulkResult } from './http/careApi';
 import { toResult } from './http/crmHttp';
 import { toApiError } from './http/crmErrors';
-import type { DetailMappingContext } from './http/customerMappers';
 import * as customerApi from './http/customerApi';
 import * as scheduling from './http/schedulingApi';
 import type {
@@ -30,7 +29,6 @@ import type {
 export interface HttpCrmApiDependencies {
   /** Làm mới dữ liệu đang hiển thị sau khi ghi. */
   invalidate: (options: { shouldIncludeCatalogs?: boolean }) => Promise<void> | void;
-  getContext: () => DetailMappingContext;
   getPersonaFields: () => ReadonlyMap<string, PersonaFieldDefinition>;
 }
 
@@ -41,7 +39,7 @@ export interface SaveProfileInput {
   personaValues?: PersonaValueInput[];
 }
 
-export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: HttpCrmApiDependencies) => {
+export const createHttpCrmApi = ({ invalidate, getPersonaFields }: HttpCrmApiDependencies) => {
   /**
    * Bọc một thao tác ghi: kết quả `ApiResult`. LUÔN làm mới dữ liệu sau khi ghi (kể cả lỗi): 409 `VERSION_CONFLICT` cần version mới,
    * và thao tác nhiều bước (`saveCustomerProfile`) có thể đã ghi một phần trước khi lỗi. Làm mới KHÔNG reset form đang nhập
@@ -57,8 +55,8 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
 
   return {
     // --- Khách ----------------------------------------------------------------------------------------------------
-    createCustomer: (input: CreateCustomerInput) => write(() => customerApi.postCustomer(input, getContext())),
-    updateCustomer: (customerId: string, input: UpdateCustomerInput) => write(() => customerApi.patchCustomer(customerId, input, getContext())),
+    createCustomer: (input: CreateCustomerInput) => write(() => customerApi.postCustomer(input)),
+    updateCustomer: (customerId: string, input: UpdateCustomerInput) => write(() => customerApi.patchCustomer(customerId, input)),
     updateCustomerStatus: (customerId: string, body: { statusId: string; version: number; reason?: string }): Promise<ApiResult<UpdateStatusResult>> => write(() => customerApi.patchStatus(customerId, body)),
     updateCustomerCriteria: (customerId: string, body: { version: number; criteria: CriteriaPatch }) => write(() => customerApi.patchCriteria(customerId, body.version, body.criteria)),
     putNationalId: (customerId: string, nationalId: string) => write(() => customerApi.putNationalIdValue(customerId, nationalId)),
@@ -75,7 +73,7 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
       write(async () => {
         let version = input.version;
         if (input.profile) {
-          const detail = await customerApi.patchCustomer(customerId, { ...input.profile, version }, getContext());
+          const detail = await customerApi.patchCustomer(customerId, { ...input.profile, version });
           version = detail.version;
         }
         if (input.personaValues && input.personaValues.length > 0) {
@@ -95,10 +93,7 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
 
     // --- Nhóm chăm sóc ----------------------------------------------------------------------------------------------
     addCareTeamMembers: (customerId: string, body: { userIds: string[]; primaryUserId?: string }) => write(() => care.postCareTeamMembers(customerId, body)),
-    removeCareTeamMember: (customerId: string, userId: string, newPrimaryUserId?: string) => write(() => care.deleteCareTeamMember(customerId, userId, newPrimaryUserId)),
-    changePrimary: (customerId: string, userId: string) => write(() => care.putPrimary(customerId, userId)),
-    createCareTeamRequest: (body: { customerRef: string; message?: string }) => write(() => care.postCareTeamRequest(body)),
-    resolveCareTeamRequest: (requestId: string, status: 'APPROVED' | 'REJECTED' | 'CANCELED') => write(() => care.patchCareTeamRequest(requestId, { status })),
+    removeCareTeamMember: (customerId: string, userId: string) => write(() => care.deleteCareTeamMember(customerId, userId)),
 
     // --- Nhật ký + ảnh ----------------------------------------------------------------------------------------------
     createCareLog: (customerId: string, input: CreateCareLogInput, primaryUserId: string | null = null): Promise<ApiResult<CareLogView>> => write(() => care.postCareLog(customerId, input, primaryUserId)),
@@ -120,6 +115,17 @@ export const createHttpCrmApi = ({ invalidate, getContext, getPersonaFields }: H
     // --- Hàng loạt, thẻ ----------------------------------------------------------------------------------------------
     bulkOperation: (operation: BulkOperation): Promise<ApiResult<BulkResult>> => write(() => care.postBulkOperation(operation)),
     createTag: (body: { name: string; category: string }) => write(() => admin.createTag(body), { shouldIncludeCatalogs: true }),
+    // Sửa/gộp/xóa thẻ đổi cả danh mục `tags` (bộ lọc, gắn hàng loạt, form chân dung) lẫn thẻ gắn trên khách -> làm mới cả danh mục và dữ liệu.
+    updateTag: (id: string, body: admin.TagPatchBody) => write(() => admin.patchTag(id, body), { shouldIncludeCatalogs: true }),
+    mergeTag: (id: string, mergeIntoId: string) => write(() => admin.mergeTag(id, mergeIntoId), { shouldIncludeCatalogs: true }),
+    deleteTag: (id: string) => write(() => admin.deleteTag(id), { shouldIncludeCatalogs: true }),
+
+    // --- Trường chân dung (Quản trị, FR-41) --------------------------------------------------------------------------
+    // Đổi cấu hình trường đổi cả form chân dung/bộ lọc (danh mục `persona-fields`) lẫn độ đầy đủ của khách -> làm mới cả danh mục và dữ liệu.
+    updatePersonaField: (id: string, body: admin.PersonaFieldPatchBody) => write(() => admin.patchPersonaField(id, body), { shouldIncludeCatalogs: true }),
+    createPersonaField: (body: admin.PersonaFieldCreateBody) => write(() => admin.postPersonaField(body), { shouldIncludeCatalogs: true }),
+    deletePersonaField: (id: string) => write(() => admin.deletePersonaField(id), { shouldIncludeCatalogs: true }),
+    reorderPersonaFields: (items: admin.PersonaFieldOrderItem[]) => write(() => admin.putPersonaFieldOrder(items), { shouldIncludeCatalogs: true }),
 
     // --- Quản trị -----------------------------------------------------------------------------------------------------
     createProject: (body: admin.ProjectBody) => write(() => admin.postProject(body), { shouldIncludeCatalogs: true }),

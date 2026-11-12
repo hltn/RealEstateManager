@@ -35,8 +35,12 @@ describe('AuthResponseDto / UserPublicDto shape (mục 6.3)', () => {
       roles: [UserRole.EDITOR],
     });
     // Đảm bảo shape KHÔNG có password/status.
-    expect((instance as unknown as Record<string, unknown>).password).toBeUndefined();
-    expect((instance as unknown as Record<string, unknown>).status).toBeUndefined();
+    expect(
+      (instance as unknown as Record<string, unknown>).password,
+    ).toBeUndefined();
+    expect(
+      (instance as unknown as Record<string, unknown>).status,
+    ).toBeUndefined();
   });
 
   it('AuthResponseDto chứa { accessToken, user: UserPublicDto }', () => {

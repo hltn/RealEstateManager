@@ -6,13 +6,9 @@ export enum CareTeamRequestStatus {
   CANCELED = 'CANCELED',
 }
 
-/** Hộp xem đề nghị: `mine` = mình gửi, `to-review` = mình có quyền duyệt. */
-export enum CareTeamRequestBox {
-  MINE = 'mine',
-  TO_REVIEW = 'to-review',
-}
-
 export const JOIN_MESSAGE_MAX_LENGTH = 500;
 export const RESOLUTION_NOTE_MAX_LENGTH = 500;
+/** Số thành viên phụ (MEMBER) tối đa của một khách (FR-17); PRIMARY không tính. */
+export const MAX_CARE_TEAM_MEMBERS = 10;
 /** Số thành viên tối đa một lần thêm. */
 export const MAX_MEMBERS_PER_ADD = 20;

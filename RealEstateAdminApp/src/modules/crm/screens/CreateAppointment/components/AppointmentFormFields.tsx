@@ -13,6 +13,7 @@ import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { REMINDER_OPTIONS } from '@crm/lib/appointmentAdapters';
 import { getDatePickerInputClass, getTextareaClass } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { formatLongDateVi, getFieldId, getProjectOfficeLocation, NOTE_MAX_LENGTH } from '../createAppointmentForm';
 import type { CreateAppointmentForm } from '../useCreateAppointmentForm';
 import { CustomerPicker } from './CustomerPicker';
@@ -61,7 +62,7 @@ export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) =
               // Khách đang chọn luôn có trong danh sách dù ngoài trang đầu.
               ...(selectedCustomer && !customers.some((customer) => customer.id === selectedCustomer.id) ? [selectedCustomer] : []),
               ...customers,
-            ].map((customer) => ({ value: customer.id, label: `${customer.fullName} — ${customer.phoneMasked}` }))}
+            ].map((customer) => ({ value: customer.id, label: hasPhone(customer.phoneMasked) ? `${customer.fullName} — ${customer.phoneMasked}` : customer.fullName }))}
             {...getFieldA11yProps(getErrorId(customerId), errors.customerId)}
           />
         )}
@@ -218,7 +219,7 @@ export const SyncNotice = ({ assigneeName }: { assigneeName: string }) => (
     <Info size={20} aria-hidden="true" className="mt-0.5 shrink-0" />
     <p className="text-theme-sm leading-relaxed text-gray-700 dark:text-gray-300">
       Lịch hẹn sau khi tạo sẽ hiện trong mục <strong className="font-semibold">“Việc hôm nay”</strong> của {assigneeName || 'người thực hiện'} vào đúng ngày hẹn
-      và cập nhật cột "Hẹn" của khách.
+      và cập nhật lịch hẹn kế tiếp của khách.
     </p>
   </div>
 );

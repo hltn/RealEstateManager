@@ -7,8 +7,9 @@
  *
  * [Prototype] Bổ sung so với bản đầu: khách trạng thái "Bỏ" thuộc nhiều người phụ trách, khách CHƯA PHÂN CÔNG, khách thuộc nhóm của
  * tài khoản nhiều role/nhiều nhóm, khách đã XÓA MỀM (bình thường / đã ẩn danh hóa / xóa vĩnh viễn dở dang), đề nghị tham gia nhóm
- * chăm sóc đang chờ, lịch hẹn có dự án / đã hủy / đã hoàn thành kèm kết quả, thông báo trong app cho từng tài khoản mẫu.
+ * chăm sóc (v1.0.5: đã bỏ luồng xin tham gia nên không còn đề nghị mẫu), khách CHƯA CÓ SĐT, khách TRÙNG SĐT với khách khác (cho phép từ v1.0.5), mã khách `KH-xxxxxx` theo thứ tự seed, lịch hẹn có dự án / đã hủy / đã hoàn thành kèm kết quả, thông báo trong app cho từng tài khoản mẫu.
  */
+import { formatCustomerCode } from '@crm/lib/customerCode';
 import { addDaysToDateKey, getVnTodayKey, vnDateTimeToIso } from '@crm/lib/dateTime';
 import {
   buildCareTeam,
@@ -27,7 +28,8 @@ type PersonaSeed = Record<string, string | string[] | boolean | [number, number]
 interface CustomerSeed {
   id: string;
   fullName: string;
-  phone: string;
+  /** `null` = khách chưa có SĐT (v1.0.5). */
+  phone: string | null;
   email?: string;
   statusId: string;
   sourceId?: string;
@@ -72,7 +74,8 @@ const toPersonaValues = (seed: PersonaSeed, updatedBy: string, updatedAt: string
     }
   });
 
-const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
+/** `sequence` = số thứ tự trong danh sách seed (bắt đầu từ 1) -> mã khách `KH-000001`... */
+const buildCustomer = (seed: CustomerSeed, at: AtFn, sequence: number): Customer => {
   const createdAt = at(-seed.createdDaysAgo, '09:00');
   const creatorId = seed.createdById ?? seed.primaryId ?? 'admin';
   const careTeam = seed.primaryId ? buildCareTeam(seed.primaryId, seed.memberIds ?? [], creatorId, createdAt) : [];
@@ -87,6 +90,7 @@ const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
   return {
     id: seed.id,
    
+    customerCode: formatCustomerCode(sequence),
     fullName: seed.fullName,
     phone: seed.phone,
     email: seed.email ?? '',
@@ -108,7 +112,7 @@ const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
     notes: seed.notes ?? '',
     lastCareLogAt: null,
     nextAppointmentAt: null,
-    searchText: buildSearchText({ fullName: seed.fullName, phone: seed.phone, email: seed.email }),
+    searchText: buildSearchText({ fullName: seed.fullName, phone: seed.phone, email: seed.email, customerCode: formatCustomerCode(sequence) }),
     createdAt,
     createdBy: creatorId,
     createdVia: 'WEB',
@@ -312,9 +316,21 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
       statusId: 'st-not-contacted', sourceId: 'src-website', projectIds: ['proj-3'], areaId: 'area-ha-noi',
       primaryId: 'hanh', createdDaysAgo: 2,
     },
+    // v1.0.5: khách CHƯA CÓ SĐT (không có nút gọi/Zalo/hiện số; "Hiện số" -> 409 CUSTOMER_PHONE_NOT_SET).
+    {
+      id: 'CUST-017', fullName: 'Mai Thị Hồng', phone: null, email: 'hong.mai@example.com',
+      statusId: 'st-not-contacted', sourceId: 'src-facebook', areaId: 'area-tp-ho-chi-minh',
+      primaryId: 'hanh', createdDaysAgo: 1,
+    },
+    // v1.0.5: TRÙNG SĐT với CUST-001 (hệ thống không còn chặn trùng; mỗi khách có mã riêng).
+    {
+      id: 'CUST-018', fullName: 'Nguyễn Văn An (hồ sơ khác)', phone: '+84912345678', email: '',
+      statusId: 'st-not-contacted', sourceId: 'src-website', areaId: 'area-ha-noi',
+      primaryId: 'tuan', createdDaysAgo: 1,
+    },
   ];
 
-  const customers = seeds.map((seed) => buildCustomer(seed, at));
+  const customers = seeds.map((seed, index) => buildCustomer(seed, at, index + 1));
   const nationalIds = Object.fromEntries(seeds.filter((seed) => seed.nationalId).map((seed) => [seed.id, seed.nationalId as string]));
 
   const log = (
@@ -422,10 +438,8 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     };
   });
 
-  // Đề nghị tham gia nhóm chăm sóc đang chờ: Thảo (nhóm 1) đề nghị chăm sóc khách của Nhóm 2 -> Minh (phụ trách chính) duyệt.
-  const careTeamRequests: CareTeamRequest[] = [
-    { id: 'CTR-001', customerId: 'CUST-002', requesterId: 'thao', message: 'Khách là người quen của em, em đã tư vấn trước đây về The Privia.', status: 'PENDING', createdAt: at(-1, '11:20'), resolvedBy: null, resolvedAt: null },
-  ];
+  // v1.0.5: backend đã bỏ luồng xin tham gia nhóm chăm sóc -> không còn đề nghị mẫu (mảng giữ lại cho dữ liệu lưu cũ).
+  const careTeamRequests: CareTeamRequest[] = [];
 
   return { customers: enrichedCustomers, careLogs, appointments, careTeamRequests, nationalIds };
 };

@@ -64,7 +64,7 @@ export const getNextOccurrenceKey = (month: number, day: number, todayKey: strin
 const toTaskCustomer = (state: CrmDataState, customer: Customer): DailyTask['customer'] => ({
   id: customer.id,
   fullName: customer.fullName,
-  phoneMasked: maskPhoneDisplay(customer.phone),
+  phoneMasked: customer.phone ? maskPhoneDisplay(customer.phone) : null,
   status: toStatusRef(state.catalogs, customer.statusId),
   projects: customer.interestedProjectIds.map((id) => ({ id, label: toProjectLabel(state.catalogs.projects, id) })),
 });

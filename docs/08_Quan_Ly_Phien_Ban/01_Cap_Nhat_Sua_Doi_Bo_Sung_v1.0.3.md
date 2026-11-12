@@ -1,10 +1,10 @@
-# Cập nhật, sửa đổi và bổ sung sau test production — v1.0.3 (Kế hoạch)
+# Cập nhật, sửa đổi và bổ sung sau test production — v1.0.3 (Đã hoàn tất)
 
 > **Phiên bản tài liệu:** v1.0.3
 
-> Bản nháp kế hoạch, chưa phát hành (phiên bản đang chạy production là v1.0.2). Ngày 2026-11-02: phần lớn mục đã được code và test trong repo (chưa commit, chưa deploy); trạng thái từng mục ở mục 4.
+> Kế hoạch v1.0.3 đã hoàn tất: mọi mục `Xong` hoặc `Bỏ` (Oniichan xác nhận 2026-11-04). v1.0.3 đã deploy lên production ngày 2026-11-04 (phiên bản đang chạy production là v1.0.3). Ngày 2026-11-02: phần lớn mục đã được code và test trong repo; trạng thái từng mục ở mục 4.
 
-> **Mục đích file:** gom **mọi việc cần sửa hoặc bổ sung phát hiện sau khi chạy test trên production** vào một chỗ, theo mã mục `PT-NNN`, để giao việc cho từng agent và nghiệm thu. File này là **kế hoạch của v1.0.3**; phiên bản đang chạy production là **v1.0.2**.
+> **Mục đích file:** gom **mọi việc cần sửa hoặc bổ sung phát hiện sau khi chạy test trên production** vào một chỗ, theo mã mục `PT-NNN`, để giao việc cho từng agent và nghiệm thu. File này là **kế hoạch và hồ sơ của v1.0.3**; phiên bản đang chạy production là **v1.0.3** (từ 2026-11-04; trước đó v1.0.2).
 > **Tài liệu liên quan:** [`README.md`](README.md) (mục lục phiên bản), [`../01_Infrastructure/06_Production_Deploy.md`](../01_Infrastructure/06_Production_Deploy.md) (triển khai, nâng cấp, backup), [`../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) (đợt A–D thuộc v1.0.2).
 > **Bảo mật:** tài liệu này chỉ ghi **tên biến**, không ghi giá trị bí mật (token, mật khẩu, khóa).
 
@@ -72,41 +72,41 @@ Khi thêm lỗi mới, chép khối này và điền đủ các dòng:
 
 ## 4. Bảng tổng hợp
 
-Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028`, `PT-029` và `PT-030` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (trạng thái `Xong một phần`: code và test xong, chưa commit, chưa deploy; còn việc thử trên mobile thật; PT-030 là PWA cài được trên iPhone và Android, còn thử máy thật và Lighthouse); `PT-031` do **Oniichan yêu cầu bổ sung ngày 2026-11-04** (đổi quy tắc mã dự án thành chữ và số viết liền, tối đa 30 ký tự, kèm FE tự điền mã từ tên; `Xong một phần`: code và test xong, chưa commit, chưa deploy). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. Tình trạng ngày 2026-11-02 (sau khi triển khai trong repo, **chưa commit, chưa deploy**): 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần` (PT-001, PT-002, PT-008, PT-009, PT-016, PT-017 đến PT-027; mỗi mục ghi đúng việc còn lại, chủ yếu là kiểm trên VPS hoặc iPhone Safari thật, hoặc việc của Oniichan), 0 mục `Đang sửa`, 3 mục `Bỏ` (PT-012, PT-014, PT-015, Oniichan quyết định không làm ngày 2026-11-02), 2 mục `Mới` (PT-005 và PT-006, việc của Oniichan: test AI qua 9Router; nới đĩa VPS) (tổng 27 tại thời điểm đó; từ 2026-11-03 thêm PT-028, PT-029 và PT-030, đều `Xong một phần`, nên bảng dưới có 30 mục; từ 2026-11-04 thêm PT-031 (`Xong một phần`), nên bảng dưới có **31 mục**). **Quy ước:** `Xong một phần` ở đây nghĩa là đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật; `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
+Nguồn: `PT-001` đến `PT-012` là **phát hiện lúc nâng cấp**; `PT-013` đến `PT-016` do **QA đề xuất**. `PT-017` đến `PT-026` do **Oniichan test production ngày 2026-11-02**; `PT-027` do **Oniichan yêu cầu bổ sung ngày 2026-11-02**; `PT-028`, `PT-029` và `PT-030` do **Oniichan yêu cầu bổ sung ngày 2026-11-03** (PT-030 là PWA cài được trên iPhone và Android); `PT-031` do **Oniichan yêu cầu bổ sung ngày 2026-11-04** (đổi quy tắc mã dự án thành chữ và số viết liền, tối đa 30 ký tự, kèm FE tự điền mã từ tên). Mức độ ở các mục này là **đề xuất**, Oniichan sẽ rà lại. **Tình trạng ngày 2026-11-04 (Oniichan xác nhận): 28 mục `Xong`** (PT-001 đến PT-011, PT-013, PT-016 đến PT-031), **3 mục `Bỏ`** (PT-012, PT-014, PT-015; Oniichan quyết định không làm ngày 2026-11-02), 0 mục `Xong một phần`, 0 mục `Đang sửa`, 0 mục `Mới` (tổng **31 mục**). Lịch sử: ngày 2026-11-02 (sau khi triển khai trong repo) có 6 mục `Xong` (PT-003, PT-004, PT-007, PT-010, PT-011, PT-013), 16 mục `Xong một phần`, 3 mục `Bỏ` và 2 mục `Mới` (PT-005, PT-006), tổng 27; từ 2026-11-03 thêm PT-028, PT-029, PT-030 và từ 2026-11-04 thêm PT-031 (đều `Xong một phần` lúc đó, tổng 31); ngày 2026-11-04 Oniichan xác nhận toàn bộ mục còn lại (gồm kiểm trên iPhone/Android thật, VPS, AI qua 9Router, nới đĩa) đã xong. **Quy ước:** `Xong một phần` là trạng thái trung gian (đã code và test trong repo nhưng còn việc phải kiểm trên VPS hoặc iPhone thật); `Xong` là mục chỉ là tài liệu hoặc đã kiểm đủ.
 
 | Mã | Tiêu đề | Mức độ | Nhóm | Trạng thái |
 |---|---|---|---|---|
-| [PT-001](#pt-001--thiếu-healthcheck-cho-backend-và-route-health-chưa-ghi-vào-tài-liệu) | Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu | Minor | DevOps / Tài liệu | Xong một phần |
-| [PT-002](#pt-002--healthcheck-của-mongo-còn-đặt-mật-khẩu-trên-dòng-lệnh) | Healthcheck Mongo còn đặt mật khẩu trên dòng lệnh | Minor | DevOps | Xong một phần |
+| [PT-001](#pt-001--thiếu-healthcheck-cho-backend-và-route-health-chưa-ghi-vào-tài-liệu) | Thiếu healthcheck cho backend và route health chưa ghi vào tài liệu | Minor | DevOps / Tài liệu | Xong |
+| [PT-002](#pt-002--healthcheck-của-mongo-còn-đặt-mật-khẩu-trên-dòng-lệnh) | Healthcheck Mongo còn đặt mật khẩu trên dòng lệnh | Minor | DevOps | Xong |
 | [PT-003](#pt-003--bật-ảnh-đính-kèm-crm) | Bật ảnh đính kèm CRM | Cải tiến | DevOps | Xong |
 | [PT-004](#pt-004--xác-nhận-giá-trị-s3_bucket_exports) | Xác nhận giá trị `S3_BUCKET_EXPORTS` | Minor | DevOps | Xong |
-| [PT-005](#pt-005--chưa-kiểm-chứng-thao-tác-ai-qua-9router) | Chưa kiểm chứng thao tác AI qua 9Router | Major | BE / DevOps | Mới |
-| [PT-006](#pt-006--dung-lượng-đĩa-vps-căng) | Dung lượng đĩa VPS căng (chặn `deploy.sh` kế tiếp) | Major | DevOps | Mới |
+| [PT-005](#pt-005--chưa-kiểm-chứng-thao-tác-ai-qua-9router) | Chưa kiểm chứng thao tác AI qua 9Router | Major | BE / DevOps | Xong |
+| [PT-006](#pt-006--dung-lượng-đĩa-vps-căng) | Dung lượng đĩa VPS căng (chặn `deploy.sh` kế tiếp) | Major | DevOps | Xong |
 | [PT-007](#pt-007--bổ-sung-kinh-nghiệm-thực-tế-vào-06_production_deploymd) | Bổ sung kinh nghiệm thực tế vào `06_Production_Deploy.md` | Minor | Tài liệu | Xong |
-| [PT-008](#pt-008--swagger-công-khai-trên-production) | Swagger công khai trên production | Major | BE | Xong một phần |
-| [PT-009](#pt-009--ghim-phiên-bản-các-image-theo-digest) | Ghim phiên bản các image theo digest | Cải tiến | DevOps | Xong một phần |
+| [PT-008](#pt-008--swagger-công-khai-trên-production) | Swagger công khai trên production | Major | BE | Xong |
+| [PT-009](#pt-009--ghim-phiên-bản-các-image-theo-digest) | Ghim phiên bản các image theo digest | Cải tiến | DevOps | Xong |
 | [PT-010](#pt-010--dọn-dẹp-sau-vài-ngày-mục-57) | Dọn dẹp sau vài ngày (mục 5.7) | Minor | DevOps | Xong |
 | [PT-011](#pt-011--rà-soát-bảo-mật-token-cloudflare-tunnel) | Rà soát bảo mật token Cloudflare tunnel | Minor | DevOps | Xong |
 | [PT-012](#pt-012--khách-và-dự-án-trỏ-khu-vực-cũ-bị-bỏ-trống-khu-vực) | Khách và dự án trỏ khu vực cũ bị bỏ trống khu vực | Minor | Dữ liệu | Bỏ |
 | [PT-013](#pt-013--sao-lưu-crm_pii_encryption_key-ra-ngoài-máy-chủ) | Sao lưu `CRM_PII_ENCRYPTION_KEY` ra ngoài máy chủ (làm ngay) | Major | DevOps | Xong |
 | [PT-014](#pt-014--hiển-thị-số-phiên-bản-đang-chạy-thật) | Hiển thị số phiên bản đang chạy thật | Cải tiến | BE / DevOps | Bỏ |
 | [PT-015](#pt-015--backup-định-kỳ-chép-ra-ngoài-vps-và-thử-khôi-phục) | Backup định kỳ, chép ra ngoài VPS và thử khôi phục | Major | DevOps | Bỏ |
-| [PT-016](#pt-016--các-việc-bảo-mật-còn-tồn-ở-mục-9) | Các việc bảo mật còn tồn ở mục 9 | Minor | DevOps / BE | Xong một phần |
-| [PT-017](#pt-017--màn-hình-mobile-bỏ-hiển-thị-tên-khách-hàng-ở-breadcrumb) | Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb | Minor | FE | Xong một phần |
-| [PT-018](#pt-018--tab-thông-tin-bỏ-sđt-và-ẩn-các-trường-chưa-có-dữ-liệu) | Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu | Cải tiến | FE | Xong một phần |
-| [PT-019](#pt-019--dự-án-quan-tâm-chuyển-sang-selectbox-có-ô-tìm-kiếm) | Dự án quan tâm chuyển sang selectbox có ô tìm kiếm | Cải tiến | FE | Xong một phần |
-| [PT-020](#pt-020--nhật-ký-chỉ-hiện-form-ghi-chú-khi-bấm-nút-ghi-chú) | Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú | Minor | FE | Xong một phần |
-| [PT-021](#pt-021--lịch-sử-thay-đổi-thu-gọn-và-tải-khi-bấm-xem) | Lịch sử thay đổi: thu gọn và tải khi bấm xem | Cải tiến | FE | Xong một phần |
-| [PT-022](#pt-022--nhật-ký-chăm-sóc-thiếu-nút-sửa) | Nhật ký chăm sóc thiếu nút Sửa; bỏ quy tắc tác giả sửa trong 24 giờ | Major | BE / FE / Tài liệu | Xong một phần |
-| [PT-023](#pt-023--tiến-độ-đủ-34-tiêu-chí-thì-tự-chuyển-trạng-thái-khách) | Tiến độ đủ 3/4 tiêu chí thì tự chuyển trạng thái khách | Cải tiến | FE (+ BE, cần thiết kế) | Xong một phần |
-| [PT-024](#pt-024--sidebar-mobile-chưa-phủ-kín-từ-mép-trên-màn-hình) | Sidebar mobile chưa phủ kín từ mép trên màn hình | Minor | FE | Xong một phần |
-| [PT-025](#pt-025--sidebar-mobile-không-tự-đóng-sau-khi-chọn-mục-chuyển-nút-x-sang-phải) | Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải | Major | FE | Xong một phần |
-| [PT-026](#pt-026--form-tạo-lịch-hẹn-mobile-icon-đè-lên-chữ-ở-ô-giờ-và-dự-án) | Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án | Major | FE | Xong một phần |
-| [PT-027](#pt-027--lưu-phiên-bản-hệ-thống-trong-db-và-cơ-chế-tự-chạy-migration-khi-nâng-cấp) | Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp | Major (đề xuất; cải tiến nền tảng) | BE / DevOps / Dữ liệu | Xong một phần |
-| [PT-028](#pt-028--chuyển-nút-ghi-chú-ở-tab-nhật-ký-xuống-thanh-đáy-mobile-và-chỉnh-lại-nút-trên-desktop) | Chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile; chỉnh lại nút trên desktop | Cải tiến | FE | Xong một phần |
-| [PT-029](#pt-029--màn-hình-mobile-bỏ-nút-chỉnh-sửa-ở-hàng-tiêu-đề) | Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề | Minor | FE | Xong một phần |
-| [PT-030](#pt-030--biến-web-admin-thành-pwa-cài-được-trên-iphone-và-android) | Biến web admin thành PWA cài được trên iPhone và Android (không offline dữ liệu) | Cải tiến | FE | Xong một phần |
-| [PT-031](#pt-031--đổi-quy-tắc-mã-dự-án-thành-chữ-và-số-viết-liền-fe-tự-điền-mã-từ-tên) | Đổi quy tắc mã dự án thành chữ và số viết liền (tối đa 30 ký tự), FE tự điền mã từ tên | Cải tiến | BE / FE / Tài liệu | Xong một phần |
+| [PT-016](#pt-016--các-việc-bảo-mật-còn-tồn-ở-mục-9) | Các việc bảo mật còn tồn ở mục 9 | Minor | DevOps / BE | Xong |
+| [PT-017](#pt-017--màn-hình-mobile-bỏ-hiển-thị-tên-khách-hàng-ở-breadcrumb) | Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb | Minor | FE | Xong |
+| [PT-018](#pt-018--tab-thông-tin-bỏ-sđt-và-ẩn-các-trường-chưa-có-dữ-liệu) | Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu | Cải tiến | FE | Xong |
+| [PT-019](#pt-019--dự-án-quan-tâm-chuyển-sang-selectbox-có-ô-tìm-kiếm) | Dự án quan tâm chuyển sang selectbox có ô tìm kiếm | Cải tiến | FE | Xong |
+| [PT-020](#pt-020--nhật-ký-chỉ-hiện-form-ghi-chú-khi-bấm-nút-ghi-chú) | Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú | Minor | FE | Xong |
+| [PT-021](#pt-021--lịch-sử-thay-đổi-thu-gọn-và-tải-khi-bấm-xem) | Lịch sử thay đổi: thu gọn và tải khi bấm xem | Cải tiến | FE | Xong |
+| [PT-022](#pt-022--nhật-ký-chăm-sóc-thiếu-nút-sửa) | Nhật ký chăm sóc thiếu nút Sửa; bỏ quy tắc tác giả sửa trong 24 giờ | Major | BE / FE / Tài liệu | Xong |
+| [PT-023](#pt-023--tiến-độ-đủ-34-tiêu-chí-thì-tự-chuyển-trạng-thái-khách) | Tiến độ đủ 3/4 tiêu chí thì tự chuyển trạng thái khách | Cải tiến | FE (+ BE, cần thiết kế) | Xong |
+| [PT-024](#pt-024--sidebar-mobile-chưa-phủ-kín-từ-mép-trên-màn-hình) | Sidebar mobile chưa phủ kín từ mép trên màn hình | Minor | FE | Xong |
+| [PT-025](#pt-025--sidebar-mobile-không-tự-đóng-sau-khi-chọn-mục-chuyển-nút-x-sang-phải) | Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải | Major | FE | Xong |
+| [PT-026](#pt-026--form-tạo-lịch-hẹn-mobile-icon-đè-lên-chữ-ở-ô-giờ-và-dự-án) | Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án | Major | FE | Xong |
+| [PT-027](#pt-027--lưu-phiên-bản-hệ-thống-trong-db-và-cơ-chế-tự-chạy-migration-khi-nâng-cấp) | Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp | Major (đề xuất; cải tiến nền tảng) | BE / DevOps / Dữ liệu | Xong |
+| [PT-028](#pt-028--chuyển-nút-ghi-chú-ở-tab-nhật-ký-xuống-thanh-đáy-mobile-và-chỉnh-lại-nút-trên-desktop) | Chuyển nút Ghi chú ở tab Nhật ký xuống thanh đáy mobile; chỉnh lại nút trên desktop | Cải tiến | FE | Xong |
+| [PT-029](#pt-029--màn-hình-mobile-bỏ-nút-chỉnh-sửa-ở-hàng-tiêu-đề) | Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề | Minor | FE | Xong |
+| [PT-030](#pt-030--biến-web-admin-thành-pwa-cài-được-trên-iphone-và-android) | Biến web admin thành PWA cài được trên iPhone và Android (không offline dữ liệu) | Cải tiến | FE | Xong |
+| [PT-031](#pt-031--đổi-quy-tắc-mã-dự-án-thành-chữ-và-số-viết-liền-fe-tự-điền-mã-từ-tên) | Đổi quy tắc mã dự án thành chữ và số viết liền (tối đa 30 ký tự), FE tự điền mã từ tên | Cải tiến | BE / FE / Tài liệu | Xong |
 
 ## 5. Chi tiết các mục
 
@@ -127,7 +127,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | `docker compose ps` chỉ biết container chạy chứ không biết ứng dụng sẵn sàng; người vận hành dễ gọi nhầm `/api/v1/health`, thấy 404 rồi tưởng backend hỏng |
 | Đề xuất | Thêm `healthcheck` cho `backend` gọi liveness (kiểm công cụ có sẵn trong image trước khi chọn lệnh; cân nhắc ảnh hưởng tới `depends_on` của service khác); ghi hai route vào mục 7 |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): `docker-compose.yml` có `healthcheck` cho service `backend`; `06_Production_Deploy.md` mục 7 đã ghi hai route health. **Còn lại:** sau khi deploy, kiểm `docker inspect realestate_backend` ra trạng thái `healthy` |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Đã xong trong repo: `docker-compose.yml` có `healthcheck` cho service `backend`; `06_Production_Deploy.md` mục 7 đã ghi hai route health. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** sau khi deploy, kiểm `docker inspect realestate_backend` ra trạng thái `healthy` |
 
 #### PT-002 — Healthcheck của Mongo còn đặt mật khẩu trên dòng lệnh
 
@@ -144,7 +144,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Lộ mật khẩu root cho ai xem được tiến trình trong container hoặc trên host; phạm vi hẹp nhưng trái nguyên tắc của tài liệu triển khai |
 | Đề xuất | Đổi healthcheck sang `mongosh` đọc mật khẩu từ biến môi trường trong script (không `-p ...`); kiểm lại `rs.initiate` idempotent vẫn đúng; thử trên volume mẫu trước |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): healthcheck của `mongo` không còn mật khẩu trên dòng lệnh (đã thử trên `mongo:7` thật). **Còn lại:** deploy, kiểm container `mongo` ra `healthy` và `docker top` không còn ` -p `. **Ghi chú:** `up -d` sẽ tạo lại container `mongo` một lần (do đổi cấu hình healthcheck), gián đoạn vài chục giây |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Đã xong trong repo: healthcheck của `mongo` không còn mật khẩu trên dòng lệnh (đã thử trên `mongo:7` thật). **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** deploy, kiểm container `mongo` ra `healthy` và `docker top` không còn ` -p `. **Ghi chú:** `up -d` sẽ tạo lại container `mongo` một lần (do đổi cấu hình healthcheck), gián đoạn vài chục giây |
 
 #### PT-003 — Bật ảnh đính kèm CRM
 
@@ -189,13 +189,13 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Mô tả | Sau nâng cấp, thao tác AI qua 9Router chưa được kiểm chứng. `NINEROUTER_API_KEY` là biến **phía backend** (key tạo trong dashboard 9Router, lưu trong `.env` của backend); image 9Router không đọc biến này nên nó **cố ý bị bỏ khỏi service `nine-router` trong compose** (xem `06_Production_Deploy.md` mục 1). Volume `nine_router_data` còn nguyên |
 | Màn hình / API | Web admin, màn Cấu hình AI, thao tác tải danh sách model; backend gọi 9Router qua tên service trong mạng compose |
 | Bước tái hiện | 1. Đăng nhập web admin bằng tài khoản ADMIN. 2. Vào Cấu hình AI. 3. Bấm tải danh sách model |
-| Kết quả thực tế | Chưa test |
+| Kết quả thực tế | Ngày 2026-11-02 Oniichan báo đã test xong (chưa ghi chi tiết); ngày 2026-11-04 Oniichan xác nhận đã kiểm chứng xong thao tác AI qua 9Router (không ghi kết quả chi tiết) |
 | Kết quả mong đợi | Danh sách model hiện ra, không lỗi 401/5xx |
 | Mức độ | Major |
 | Ảnh hưởng | Nếu hỏng thì mọi tính năng dùng AI (tin tức, bài chuyên gia, phân tích) ngừng chạy |
 | Đề xuất | Oniichan test như bước tái hiện. Nếu 401 hoặc 5xx: xem `docker logs` của `realestate_9router` và `realestate_backend`; **kiểm tra key tạo trong dashboard 9Router và giá trị `NINEROUTER_API_KEY` trong `.env` của backend** có còn khớp nhau. **Không bao giờ xóa volume `nine_router_data`.** Dashboard 9Router chỉ vào được qua SSH tunnel tới cổng 20128 (bind `127.0.0.1`), không mở ra Internet |
 | Người phụ trách | Oniichan (test), `devops-agent` + `coder-backend-agent` (xử lý nếu lỗi) |
-| Trạng thái | Mới |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04: đã kiểm chứng thao tác AI qua 9Router; không ghi kết quả chi tiết). Trước đó `Mới`; Oniichan báo đã test xong từ 2026-11-02 nhưng chưa ghi kết quả |
 
 #### PT-006 — Dung lượng đĩa VPS căng
 
@@ -210,9 +210,9 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Kết quả mong đợi | Trống từ 5 GB trở lên (đúng ngưỡng mặc định của script) để build kế tiếp không bị chặn và không chạm đáy nguy hiểm (nhu cầu đỉnh khoảng 4,1 GB theo `06_Production_Deploy.md` mục 5.4a và 5.4b) |
 | Mức độ | Major |
 | Ảnh hưởng | **Chặn lần `bash deploy.sh` kế tiếp:** `deploy.sh` (`DEPLOY_MIN_FREE_GB`, mặc định 5) và `scripts/run-migration.sh` (`MIGRATE_MIN_FREE_GB`, mặc định 5) dừng khi đĩa trống dưới 5 GB; đĩa còn khoảng 4,4 GB (số mới nhất, ngày 2026-11-02, sau dọn dẹp), vẫn dưới 5 GB nên deploy vẫn bị chặn; lần bật ảnh đính kèm phải né `deploy.sh` và build tay frontend vì lý do này cho tới khi dọn/nới đĩa, hoặc hạ ngưỡng có chủ đích (chấp nhận rủi ro đầy đĩa giữa chừng, xem 5.4b). Đầy đĩa giữa chừng khi build hoặc khi Mongo ghi có thể làm hỏng dữ liệu hoặc làm sập stack |
-| Đề xuất | Dọn thêm theo mục 5.4b ("Kẹt đĩa") và 5.7: journal vacuum, `~/.npm`, log cũ, image mồ côi; **tuyệt đối không** `docker volume prune`, `docker system prune --volumes`, `docker image prune -a`. Dọn xong mới deploy; theo dõi dung lượng trước mỗi lần build; cân nhắc nới đĩa VPS. **Nhận định (2026-11-02):** Oniichan đang chuẩn bị nới đĩa VM VirtualBox (`nhanubuntu`, 25 -> 50 GB; tắt VM, `VBoxManage modifymedium disk <Location> --resize 51200`, rồi trong máy ảo `growpart /dev/sda 2` và `resize2fs /dev/sda2`); chưa làm xong |
+| Đề xuất | Dọn thêm theo mục 5.4b ("Kẹt đĩa") và 5.7: journal vacuum, `~/.npm`, log cũ, image mồ côi; **tuyệt đối không** `docker volume prune`, `docker system prune --volumes`, `docker image prune -a`. Dọn xong mới deploy; theo dõi dung lượng trước mỗi lần build; cân nhắc nới đĩa VPS. **Nhận định (2026-11-02):** Oniichan đang chuẩn bị nới đĩa VM VirtualBox (`nhanubuntu`, 25 -> 50 GB; tắt VM, `VBoxManage modifymedium disk <Location> --resize 51200`, rồi trong máy ảo `growpart /dev/sda 2` và `resize2fs /dev/sda2`); Oniichan xác nhận đã nới xong (2026-11-04) |
 | Người phụ trách | `devops-agent`; Oniichan quyết nới đĩa |
-| Trạng thái | Mới |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04: đã nới đĩa VPS để `deploy.sh` không bị chặn; không ghi số liệu dung lượng sau khi nới). Trước đó `Mới` (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB) |
 
 #### PT-007 — Bổ sung kinh nghiệm thực tế vào `06_Production_Deploy.md`
 
@@ -246,7 +246,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Hiện tại: lộ danh sách endpoint, kiểu dữ liệu, mã lỗi nghiệp vụ cho người ngoài, giúp dò tấn công. Sau khi sửa: **không còn trang docs công khai trên production**; tài liệu API chỉ xem được ở dev/staging |
 | Đề xuất | **Quyết định:** chỉ gọi `SwaggerModule.setup` khi `NODE_ENV` khác `production` (hiện `RealEstateBackendApp/src/main.ts:77-85` luôn bật). Cập nhật bảng "Hành vi khi `NODE_ENV=production`" trong `06_Production_Deploy.md`; kiểm thử không làm hỏng test đếm route Swagger; thêm test production không có route docs, môi trường khác có. **Cần xác minh trước khi coi là xong:** `docker-compose.yml:242` đặt `NODE_ENV=production` cho service `backend`, nhưng chưa kiểm giá trị thật trong container production đang chạy (`realestate_backend`) và chưa rõ staging (nếu có) đặt `NODE_ENV` là gì, để "dev/staging vẫn bật" đúng. Không chọn phương án chặn ở nginx/Cloudflare Access |
 | Người phụ trách | `coder-backend-agent` (`devops-agent` xác minh `NODE_ENV` thật trên production) |
-| Trạng thái | Xong một phần (2026-11-02). Code và test xong trong repo (chưa commit, chưa deploy). **Quy tắc thực tế chặt hơn câu đã chốt ở trên:** Swagger chỉ bật khi `NODE_ENV` (sau khi trim và hạ chữ thường) thuộc allowlist `development`, `test`, `staging`, `local`; giá trị lạ, chưa đặt hoặc `production` thì **tắt** (fail-safe). Lý do: bản đầu viết kiểu "khác `production` thì bật" (fail-open, gõ nhầm `prod` hay `Production` là lộ docs) do QA phát hiện nên đã đổi. Đã cập nhật bảng "Hành vi khi `NODE_ENV=production`" trong `06_Production_Deploy.md` để nêu allowlist. **Còn lại:** deploy rồi kiểm `NODE_ENV` thật trong container production (`docker exec realestate_backend printenv NODE_ENV`) và `/api/v1/docs` trả 404 |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test xong trong repo. **Quy tắc thực tế chặt hơn câu đã chốt ở trên:** Swagger chỉ bật khi `NODE_ENV` (sau khi trim và hạ chữ thường) thuộc allowlist `development`, `test`, `staging`, `local`; giá trị lạ, chưa đặt hoặc `production` thì **tắt** (fail-safe). Lý do: bản đầu viết kiểu "khác `production` thì bật" (fail-open, gõ nhầm `prod` hay `Production` là lộ docs) do QA phát hiện nên đã đổi. Đã cập nhật bảng "Hành vi khi `NODE_ENV=production`" trong `06_Production_Deploy.md` để nêu allowlist. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** deploy rồi kiểm `NODE_ENV` thật trong container production (`docker exec realestate_backend printenv NODE_ENV`) và `/api/v1/docs` trả 404 |
 
 #### PT-009 — Ghim phiên bản các image theo digest
 
@@ -263,7 +263,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Nâng cấp bất ngờ khi pull lại; khó tái hiện sự cố |
 | Đề xuất | Lấy digest đang chạy của cả năm image, ghim vào `.env.docker` hoặc compose; ghi quy trình nâng cấp image có chủ đích vào tài liệu |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): cơ chế biến `MONGO_IMAGE`, `REDIS_IMAGE`, `NINE_ROUTER_IMAGE`, `CLOUDFLARED_IMAGE`, `MINIO_IMAGE` trong compose và script `scripts/print-image-digests.sh`. **Chưa ghim digest nào** (cả 5 image vẫn dùng tag trôi cho tới khi có digest). **Còn lại (việc của Oniichan):** chạy script trên VPS, dán các dòng `*_IMAGE=` vào `.env.docker`, rồi `up -d --no-deps` từng service |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Đã xong trong repo: cơ chế biến `MONGO_IMAGE`, `REDIS_IMAGE`, `NINE_ROUTER_IMAGE`, `CLOUDFLARED_IMAGE`, `MINIO_IMAGE` trong compose và script `scripts/print-image-digests.sh`. Lúc 2026-11-02 chưa ghim digest nào. **Việc còn lại trước đây của Oniichan (đã hoàn tất, Oniichan xác nhận 2026-11-04):** chạy script trên VPS, dán các dòng `*_IMAGE=` vào `.env.docker`, rồi `up -d --no-deps` từng service |
 
 #### PT-010 — Dọn dẹp sau vài ngày (mục 5.7)
 
@@ -386,7 +386,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Backend lộ quyền root nếu bị khai thác; sai `FRONTEND_URL` có thể gây lỗi liên kết/CORS; cổng DB mở ra ngoài là rủi ro lớn nếu có |
 | Đề xuất | Làm lần lượt (c), (a), (b); (b) cần đổi cấu hình kết nối cẩn thận và thử trên môi trường thử trước |
 | Người phụ trách | `devops-agent` (+ `coder-backend-agent` cho (b)) |
-| Trạng thái | Xong một phần (2026-11-02). Đã xong trong repo (chưa commit, chưa deploy): runbook mục 13 của `06_Production_Deploy.md`; compose hỗ trợ biến `MONGO_APP_*` và `S3_APP_*` (mặc định để trống thì vẫn dùng root, nên không đổi hành vi nếu Oniichan chưa làm). **Còn lại (việc của Oniichan):** chạy 13.1 và 13.2, quyết 13.3 và 13.4. Lưu ý: lệnh `mc admin` ở 13.4 **chưa được kiểm** với phiên bản `mc` có trong image |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Đã xong trong repo: runbook mục 13 của `06_Production_Deploy.md`; compose hỗ trợ biến `MONGO_APP_*` và `S3_APP_*` (mặc định để trống thì vẫn dùng root, nên không đổi hành vi nếu Oniichan chưa làm). **Việc còn lại trước đây của Oniichan (đã hoàn tất, Oniichan xác nhận 2026-11-04):** chạy 13.1 và 13.2, quyết 13.3 và 13.4. Lưu ý: lệnh `mc admin` ở 13.4 **chưa được kiểm** với phiên bản `mc` có trong image |
 
 #### PT-017 — Màn hình mobile bỏ hiển thị tên khách hàng ở breadcrumb
 
@@ -404,7 +404,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Tên dài chiếm chỗ trên màn hình hẹp |
 | Đề xuất | Ẩn đoạn tên khách trong breadcrumb ở viewport mobile; kiểm các màn khác dùng cùng breadcrumb (sửa khách, tạo lịch hẹn) để không lệch |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy). **Còn lại:** Oniichan thử trên iPhone Safari thật |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật |
 
 #### PT-018 — Tab Thông tin: bỏ SĐT và ẩn các trường chưa có dữ liệu
 
@@ -422,7 +422,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Màn hình dài, nhiều dòng trống, khó đọc trên mobile |
 | Đề xuất | Ẩn trường rỗng ở chế độ xem (chế độ sửa vẫn phải hiện đủ để nhập). **Cần xác nhận với Oniichan:** quy tắc C14 trong tài liệu 01 cho thành viên nhóm xem số đầy đủ và gọi (ghi `PHONE_VIEWED`), và thiết kế mobile có nút Gọi/Zalo cố định; bỏ SĐT khỏi section "Thông tin" nhưng vẫn phải còn đường xem/gọi số |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy). **Cách đã làm với SĐT:** SĐT chỉ bị bỏ khỏi section "Thông tin"; vẫn còn ở thẻ tóm tắt (số được che, nút "Hiện số" ghi `PHONE_VIEWED`) và ở nút Gọi/Zalo. **Còn lại:** Oniichan thử trên iPhone Safari thật |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo. **Cách đã làm với SĐT:** SĐT chỉ bị bỏ khỏi section "Thông tin"; vẫn còn ở thẻ tóm tắt (số được che, nút "Hiện số" ghi `PHONE_VIEWED`) và ở nút Gọi/Zalo. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật |
 
 #### PT-019 — Dự án quan tâm chuyển sang selectbox có ô tìm kiếm
 
@@ -440,7 +440,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Chọn dự án chậm khi có nhiều dự án |
 | Đề xuất | Dùng selectbox đa chọn có tìm kiếm (không dấu nếu có thể); dùng chung cho màn tạo khách và các nơi chọn dự án; kiểm bàn phím ảo trên iOS Safari không che danh sách |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm combobox bằng preview Chromium 375x667. **Còn lại:** Oniichan thử trên iPhone Safari thật, đặc biệt bàn phím iOS có che danh sách không. **Ô "Dự án" ở form tạo lịch hẹn (mục 7 câu 22):** Oniichan quyết đổi sang ô chọn có tìm kiếm (2026-11-02); **đã làm** bằng `SearchableSelect` (một lựa chọn, tìm không dấu, có "Không chọn"). Mất nhãn nhóm "Khách quan tâm" / "Dự án khác" nhưng dự án khách quan tâm xếp đầu khi chưa gõ; chưa có trạng thái loading/lỗi riêng (như ô cũ). Chưa thử trên iPhone Safari thật |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo; đã kiểm combobox bằng preview Chromium 375x667. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật, đặc biệt bàn phím iOS có che danh sách không. **Ô "Dự án" ở form tạo lịch hẹn (mục 7 câu 22):** Oniichan quyết đổi sang ô chọn có tìm kiếm (2026-11-02); **đã làm** bằng `SearchableSelect` (một lựa chọn, tìm không dấu, có "Không chọn"). Mất nhãn nhóm "Khách quan tâm" / "Dự án khác" nhưng dự án khách quan tâm xếp đầu khi chưa gõ; chưa có trạng thái loading/lỗi riêng (như ô cũ). (Thử trên iPhone Safari thật: Oniichan xác nhận xong 2026-11-04.) |
 
 #### PT-020 — Nhật ký: chỉ hiện form ghi chú khi bấm nút Ghi chú
 
@@ -458,7 +458,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Chiếm chỗ trên màn hình hẹp; giao diện thiếu phần có thể khiến không ghi đủ thông tin |
 | Đề xuất | Xác minh trước phần "giao diện không đầy đủ" trên iPhone Safari và 375x667 (chụp ảnh); nếu đó là lỗi khiến không ghi được nhật ký thì nâng mức độ lên Major; sau đó đổi sang hiển thị theo nút |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm form ghi chú bằng preview Chromium 375x667. **Nguyên nhân lỗi "giao diện không đầy đủ":** nút "Ghi chú" trước đây mở `QuickNoteModal` rút gọn; nay mở form đầy đủ ở tab Nhật ký, và có hỏi xác nhận khi bỏ bản nháp. **`QuickNoteModal` (mục 7 câu 21):** Oniichan quyết nâng lên form đầy đủ (2026-11-02); **đã làm:** `QuickNoteModal` bị xóa, thay bằng `CareLogDialog` (tái dùng `CareLogComposer`; modal trên web, BottomSheet trên app; hỏi xác nhận khi bỏ bản nháp), nên màn Việc hôm nay, danh sách khách và lịch hẹn cũng mở form đầy đủ; nhãn menu "Ghi chú nhanh" giữ nguyên. `BottomSheet` dùng `useKeyboardInset` để nâng lên trên bàn phím iOS (các sheet khác cũng hưởng). **Còn lại:** Oniichan thử trên iPhone Safari thật (bàn phím iOS, tải ảnh) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo; đã kiểm form ghi chú bằng preview Chromium 375x667. **Nguyên nhân lỗi "giao diện không đầy đủ":** nút "Ghi chú" trước đây mở `QuickNoteModal` rút gọn; nay mở form đầy đủ ở tab Nhật ký, và có hỏi xác nhận khi bỏ bản nháp. **`QuickNoteModal` (mục 7 câu 21):** Oniichan quyết nâng lên form đầy đủ (2026-11-02); **đã làm:** `QuickNoteModal` bị xóa, thay bằng `CareLogDialog` (tái dùng `CareLogComposer`; modal trên web, BottomSheet trên app; hỏi xác nhận khi bỏ bản nháp), nên màn Việc hôm nay, danh sách khách và lịch hẹn cũng mở form đầy đủ; nhãn menu "Ghi chú nhanh" giữ nguyên. `BottomSheet` dùng `useKeyboardInset` để nâng lên trên bàn phím iOS (các sheet khác cũng hưởng). **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật (bàn phím iOS, tải ảnh) |
 
 #### PT-021 — Lịch sử thay đổi: thu gọn và tải khi bấm xem
 
@@ -476,7 +476,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Tải thừa dữ liệu, màn hình dài, chậm hơn trên mạng di động |
 | Đề xuất | Thu gọn mặc định (accordion), bật `enabled` của truy vấn khi mở; giữ nguyên dữ liệu sau khi đóng lại để không tải lại |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy): thu gọn mặc định, chỉ gọi API khi mở, `staleTime` của lịch sử là 5 phút. **Còn lại:** Oniichan thử trên iPhone Safari thật |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo: thu gọn mặc định, chỉ gọi API khi mở, `staleTime` của lịch sử là 5 phút. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật |
 
 #### PT-022 — Nhật ký chăm sóc thiếu nút Sửa
 
@@ -494,7 +494,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Ghi sai nhật ký thì không sửa được trên giao diện dù backend cho phép; quy tắc 24 giờ còn chặn tác giả sửa nhật ký cũ. Sau khi đổi: tác giả có thêm quyền (nới quyền), nhật ký có thể bị sửa/xóa lâu sau khi ghi; lịch sử/audit hiện có vẫn ghi lại các lần sửa/xóa |
 | Đề xuất | (1) FE: thêm nút Sửa (mở lại form với dữ liệu cũ, gồm ảnh đính kèm), xử lý xung đột; hiển thị theo `canEdit` từ BE, không kiểm 24 giờ ở FE. (2) BE: bỏ kiểm tra 24 giờ (`isWithinEditWindow`), bỏ ném `CARE_LOG_EDIT_WINDOW_EXPIRED`, bỏ hằng `CARE_LOG_EDIT_WINDOW_MS`; tác giả luôn được sửa/xóa/gỡ ảnh. (3) Bỏ khai báo ApiResponse 403 `CARE_LOG_EDIT_WINDOW_EXPIRED` ở controller. (4) Cập nhật test BE (bỏ/viết lại ca "quá 24 giờ", thêm ca tác giả sửa nhật ký rất cũ vẫn được, người khác vẫn 403) và test FE. (5) Sửa tài liệu API và kỹ thuật (liệt kê bên dưới). **Đây là thay đổi quy tắc nghiệp vụ; API tương thích ngược:** nới quyền, không đổi hợp đồng (cùng endpoint, cùng body, cùng mã thành công; chỉ bớt một nhánh 403), client cũ vẫn chạy. Xóa hay giữ hằng `ErrorCode.CARE_LOG_EDIT_WINDOW_EXPIRED`: mục 7 câu 18 |
 | Người phụ trách | `coder-backend-agent` (bỏ quy tắc, mã lỗi, test BE) + `coder-frontend-agent` (nút Sửa, bỏ xử lý mã lỗi nếu có, test FE); `qa-agent` review code và test; tài liệu API/kỹ thuật cập nhật cùng đợt |
-| Trạng thái | Xong một phần (2026-11-02). BE, FE và tài liệu 04, 05, 08 đã xong trong repo (chưa commit, chưa deploy); `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành rỗng (trừ ghi chú lịch sử trong file này). Giả định ở mục 7 câu 18 đã được áp dụng: bỏ quy tắc cho cả ba thao tác (sửa, xóa, gỡ ảnh đã gắn) và xóa hẳn mã lỗi. **Còn lại:** Oniichan thử nút Sửa trên máy thật (iPhone Safari) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). BE, FE và tài liệu 04, 05, 08 đã xong trong repo; `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành rỗng (trừ ghi chú lịch sử trong file này). Giả định ở mục 7 câu 18 đã được áp dụng: bỏ quy tắc cho cả ba thao tác (sửa, xóa, gỡ ảnh đã gắn) và xóa hẳn mã lỗi. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử nút Sửa trên máy thật (iPhone Safari) |
 
 ##### Phạm vi thay đổi PT-022 (chỉ liệt kê, chưa sửa)
 
@@ -533,7 +533,7 @@ Lưu ý: mục này giữ lại để tham chiếu, không còn là việc sẽ 
 | Ảnh hưởng | Đổi quy tắc nghiệp vụ: tình trạng khách và các danh sách (tab theo nhóm) có thể đổi mà người dùng không thao tác trực tiếp; ảnh hưởng thống kê, bộ lọc, thông báo và audit |
 | Đề xuất | (Đề xuất ban đầu lúc lập kế hoạch; **đã triển khai** theo mục "Thiết kế PT-023" ngay dưới bảng.) `architect-agent` thiết kế trước, rồi `coder-backend-agent` và `coder-frontend-agent`. Gợi ý cho thiết kế: kích hoạt ở backend trong cùng transaction với cập nhật tiêu chí (`customer-criteria.service.ts`, `withTransaction`), tái dùng `CustomerStatusChangeService.applyChange` (nhận `session`, ghi audit `STATUS_CHANGED`, kiểm khóa lạc quan `version`); audit lấy người tick làm người thực hiện, không cần `reason`; (ban đầu đề xuất thêm một dấu hiệu cho biết trạng thái do cơ chế này đặt để phục vụ chiều ngược lại; **không còn cần** sau khi chốt (b) ngày 2026-11-03, xem mục "Thiết kế PT-023" điểm 1); thiết kế quyết giao diện báo thế nào khi trạng thái tự đổi và Hoàn tác 10 giây có áp dụng không. Các điểm còn mở ở mục 7 câu 9 |
 | Người phụ trách | `architect-agent` (thiết kế), sau đó `coder-backend-agent` + `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). BE, FE và test xong trong repo (chưa commit, chưa deploy). **Đã chốt (2026-11-02):** câu 19 (4/4 bỏ một tiêu chí xuống 3/4 thì **tự lên "Khách net"**; quy tắc code đã đổi theo, xem mục "Thiết kế PT-023") và câu 20 (trạng thái tùy biến bị đè, hạ thì về `INTERESTED` hệ thống: Oniichan chấp nhận). **Đã chốt (2026-11-03):** 3 điểm mở ở mục 7 câu 9; BE đã sửa theo (a), (b), (c) (xem mục "Thiết kế PT-023", cập nhật 2026-11-03; (a) dùng loại thông báo mới `CUSTOMER_STATUS_AUTO_CHANGED`, Neptune duyệt 2026-11-03). **Còn lại:** (1) FE hiển thị loại thông báo mới (nhãn trong `lib/notifications.ts`, `crmWriteApi.ts`, trang cài đặt thông báo); (2) Oniichan thử trên iPhone Safari thật; (3) khi làm nhập CSV (M8) phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng" (xem ghi chú trong mục thiết kế bên dưới) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). BE, FE và test xong trong repo. **Đã chốt (2026-11-02):** câu 19 (4/4 bỏ một tiêu chí xuống 3/4 thì **tự lên "Khách net"**; quy tắc code đã đổi theo, xem mục "Thiết kế PT-023") và câu 20 (trạng thái tùy biến bị đè, hạ thì về `INTERESTED` hệ thống: Oniichan chấp nhận). **Đã chốt (2026-11-03):** 3 điểm mở ở mục 7 câu 9; BE đã sửa theo (a), (b), (c) (xem mục "Thiết kế PT-023", cập nhật 2026-11-03; (a) dùng loại thông báo mới `CUSTOMER_STATUS_AUTO_CHANGED`, Neptune duyệt 2026-11-03). **Việc còn lại trước đây (Oniichan xác nhận 2026-11-04, không ghi chi tiết):** (1) FE hiển thị loại thông báo mới (nhãn trong `lib/notifications.ts`, `crmWriteApi.ts`, trang cài đặt thông báo); (2) Oniichan thử trên iPhone Safari thật. **Ghi chú cho tương lai (không phải việc còn lại của v1.0.3):** khi làm nhập CSV (M8) phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng" (xem ghi chú trong mục thiết kế bên dưới)
 
 ##### Thiết kế PT-023 (tóm tắt, đã triển khai)
 
@@ -582,7 +582,7 @@ Do `architect-agent` soạn; đây là bản tóm tắt thiết kế **đã áp 
 | Ảnh hưởng | Giao diện thiếu chỉn chu; có thể do header đè hoặc `z-index` và vùng an toàn (safe area) của iOS |
 | Đề xuất | Kiểm vị trí, `z-index` và chiều cao panel so với header; thử cả iPhone thật (Safari, thanh địa chỉ co giãn) lẫn giả lập |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm sidebar bằng preview Chromium 375x667. **Còn lại:** Oniichan thử trên iPhone Safari thật, đặc biệt thanh địa chỉ co giãn |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo; đã kiểm sidebar bằng preview Chromium 375x667. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật, đặc biệt thanh địa chỉ co giãn |
 
 #### PT-025 — Sidebar mobile không tự đóng sau khi chọn mục; chuyển nút X sang phải
 
@@ -600,7 +600,7 @@ Do `architect-agent` soạn; đây là bản tóm tắt thiết kế **đã áp 
 | Ảnh hưởng | Phải đóng tay mới thấy màn hình đã chuyển; điều hướng mobile khó dùng |
 | Đề xuất | Đóng sidebar khi đổi route (kể cả mục có mục con); đặt nút X trong panel, góc phải; thử trên iPhone Safari và 375x667 |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm sidebar bằng preview Chromium 375x667. **Còn lại:** Oniichan thử trên iPhone Safari thật. Điểm a11y có từ trước, chưa xử lý: sidebar mobile khi đóng vẫn nằm trong thứ tự Tab (mục 7 câu 24) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo; đã kiểm sidebar bằng preview Chromium 375x667. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật. Điểm a11y có từ trước, chưa xử lý: sidebar mobile khi đóng vẫn nằm trong thứ tự Tab (mục 7 câu 24) |
 
 #### PT-026 — Form tạo lịch hẹn mobile: icon đè lên chữ ở ô Giờ và Dự án
 
@@ -618,7 +618,7 @@ Do `architect-agent` soạn; đây là bản tóm tắt thiết kế **đã áp 
 | Ảnh hưởng | Khó đọc giá trị đã chọn, thao tác sai; thấy rõ trên màn hẹp |
 | Đề xuất | Thêm padding trái cho mọi ô có icon (chung một lớp tiện ích), kiểm ô `time` và ô select riêng của Safari iOS vì chúng hay bỏ qua kiểu mặc định; rà các form mobile khác cùng kiểu |
 | Người phụ trách | `coder-frontend-agent` |
-| Trạng thái | Xong một phần (2026-11-02). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); đã kiểm bằng preview Chromium 375x667. Sửa bằng **lớp dùng chung** nên các form mobile khác có icon cũng được sửa theo; placeholder ô "Địa điểm" đổi thành "Nhập địa chỉ gặp khách". Ô "Dự án" ở form tạo lịch hẹn đã đổi sang `SearchableSelect` có tìm kiếm (Oniichan quyết, mục 7 câu 22; xem PT-019); `index.html` thiếu `viewport-fit=cover`: Oniichan đã nghe giải thích, đề xuất mặc định **chưa thêm**, chờ Oniichan quyết (mục 7 câu 23). **Còn lại:** Oniichan thử trên iPhone Safari thật, đặc biệt ô `time` và ô select (Safari iOS hay bỏ qua kiểu mặc định) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Code và test (vitest) xong trong repo; đã kiểm bằng preview Chromium 375x667. Sửa bằng **lớp dùng chung** nên các form mobile khác có icon cũng được sửa theo; placeholder ô "Địa điểm" đổi thành "Nhập địa chỉ gặp khách". Ô "Dự án" ở form tạo lịch hẹn đã đổi sang `SearchableSelect` có tìm kiếm (Oniichan quyết, mục 7 câu 22; xem PT-019); `index.html` thiếu `viewport-fit=cover`: Oniichan đã nghe giải thích, sau đó đã thêm khi làm PWA (PT-030, mục 7 câu 23). **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật, đặc biệt ô `time` và ô select (Safari iOS hay bỏ qua kiểu mặc định) |
 
 #### PT-027 — Lưu phiên bản hệ thống trong DB và cơ chế tự chạy migration khi nâng cấp
 
@@ -636,11 +636,11 @@ Do `architect-agent` soạn; đây là bản tóm tắt thiết kế **đã áp 
 | Ảnh hưởng | Không có sổ thì dễ chạy sót hoặc chạy lại migration có bước xóa (006 xóa khu vực cũ), khó biết production đang ở trạng thái dữ liệu nào, và `deploy.sh` phải viết riêng một cổng cho từng migration (như `check_users_migrated`) |
 | Đề xuất | Một collection `system`, một runner CLI trong image backend do `deploy.sh` gọi, dry-run mặc định, 002 đến 006 ghi "đã áp dụng" một lần (bản đầu: lệnh `baseline` tay; **từ 2026-11-03: `deploy.sh` tự làm qua lệnh `reconcile` sau probe chỉ-đọc, `baseline` tay chỉ còn là lối thoát**). Chi tiết ở 6 mục thiết kế bên dưới; các điểm cần Oniichan quyết ở mục 7 (câu 11 đến 17). Phạm vi gồm cả việc **đưa số phiên bản app vào image Docker** (Dockerfile sao chép `package.json` vào image, hoặc sinh `dist/version.json` lúc build) để runner đọc được; trước đây phần này tách sang PT-014, nay PT-014 đã `Bỏ` nên thuộc PT-027 |
 | Người phụ trách | `architect-agent` (thiết kế, xong); `coder-backend-agent` (runner, test); `devops-agent` (`deploy.sh`, Dockerfile, tài liệu `06_Production_Deploy.md`); `qa-agent` (review code và test) |
-| Trạng thái | Xong một phần (cập nhật 2026-11-03). Đã xong trong repo (chưa commit, chưa deploy): runner `src/migrations/**` (lệnh `status`, `up`, `unlock`, `baseline`; sổ trong collection `system`); Dockerfile sinh `dist/version.json`; QA đã build image thật và chạy runner trong container. **Bổ sung 2026-11-03 (tự baseline + tự migrate theo version, xem mục 4b):** lệnh `reconcile` của runner (do `coder-backend-agent` làm; `qa-agent` đã review, đã sửa theo review) và `deploy.sh` tự gọi nó (mặc định BẬT; `--no-migrate` để tắt; `--migrate` còn là bí danh; `--plan-only` chỉ xem kế hoạch, kèm `--no-migrate` thì `--plan-only` thắng và có thông báo; `DEPLOY_ALLOW_DOWNGRADE=1` cho downgrade cố ý). Sau vòng sửa QA: DB mới tinh ghi `version` ngay ở 6b (8b là no-op); `up`/`up --apply` thủ công cũng có thể trả mã 5; probe 002 có trần (vượt thì mã 4 "không xác minh được"); `baseline --version` từ chối số có 0 đứng đầu. `deploy.sh` đã qua `bash -n`, `shellcheck` và kiểm luồng bằng stub (chưa kiểm với runner thật hay Docker thật). **Còn lại (việc của Oniichan):** (1) chạy `bash deploy.sh --plan-only` MỘT lần trên VPS trước lần deploy 1.0.3 đầu tiên, đọc kết quả probe 002..006; (2) chạy `bash deploy.sh --no-pull` (tự backup, tự baseline, `up`, ghi `version`); (3) thử `deploy.sh` đầu-cuối trên môi trường thử theo mục 11.2 của `06_Production_Deploy.md`. **Lưu ý:** mã 4 (probe không đạt) và mã 5 (downgrade) là chốt chặn chủ ý, dừng **trước `up`** (stack chưa đổi), không còn "lần deploy đầu luôn dừng ở mã 4". Khóa mồ côi (tiến trình chết để lại khóa) chỉ gỡ bằng `unlock` |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, cập nhật 2026-11-03). Đã xong trong repo: runner `src/migrations/**` (lệnh `status`, `up`, `unlock`, `baseline`; sổ trong collection `system`); Dockerfile sinh `dist/version.json`; QA đã build image thật và chạy runner trong container. **Bổ sung 2026-11-03 (tự baseline + tự migrate theo version, xem mục 4b):** lệnh `reconcile` của runner (do `coder-backend-agent` làm; `qa-agent` đã review, đã sửa theo review) và `deploy.sh` tự gọi nó (mặc định BẬT; `--no-migrate` để tắt; `--migrate` còn là bí danh; `--plan-only` chỉ xem kế hoạch, kèm `--no-migrate` thì `--plan-only` thắng và có thông báo; `DEPLOY_ALLOW_DOWNGRADE=1` cho downgrade cố ý). Sau vòng sửa QA: DB mới tinh ghi `version` ngay ở 6b (8b là no-op); `up`/`up --apply` thủ công cũng có thể trả mã 5; probe 002 có trần (vượt thì mã 4 "không xác minh được"); `baseline --version` từ chối số có 0 đứng đầu. `deploy.sh` đã qua `bash -n`, `shellcheck` và kiểm luồng bằng stub (chưa kiểm với runner thật hay Docker thật). **Việc còn lại trước đây của Oniichan (đã hoàn tất, Oniichan xác nhận 2026-11-04):** (1) chạy `bash deploy.sh --plan-only` MỘT lần trên VPS trước lần deploy 1.0.3 đầu tiên, đọc kết quả probe 002..006; (2) chạy `bash deploy.sh --no-pull` (tự backup, tự baseline, `up`, ghi `version`); (3) thử `deploy.sh` đầu-cuối trên môi trường thử theo mục 11.2 của `06_Production_Deploy.md`. **Lưu ý:** mã 4 (probe không đạt) và mã 5 (downgrade) là chốt chặn chủ ý, dừng **trước `up`** (stack chưa đổi), không còn "lần deploy đầu luôn dừng ở mã 4". Khóa mồ côi (tiến trình chết để lại khóa) chỉ gỡ bằng `unlock` |
 
 ##### Thiết kế PT-027 (bản tối giản)
 
-Do `architect-agent` soạn, **chưa code, chờ Oniichan duyệt** (mục 7, câu 11 đến 17). Đã đối chiếu `nodejs-react-mongo-coding-guidelines`: collection mới là thay đổi tương thích ngược (thêm, không sửa/xóa field cũ); runner không đi qua request web nên không cần Idempotency-Key; không đưa Queue/Cache vào vì chưa có nhu cầu.
+Do `architect-agent` soạn, đây là thiết kế ban đầu, **đã triển khai và Oniichan duyệt** (xem Trạng thái của PT-027; mục 7, câu 11 đến 17). Đã đối chiếu `nodejs-react-mongo-coding-guidelines`: collection mới là thay đổi tương thích ngược (thêm, không sửa/xóa field cũ); runner không đi qua request web nên không cần Idempotency-Key; không đưa Queue/Cache vào vì chưa có nhu cầu.
 
 **1. Collection `system` (key-value).** Mỗi document là một biến, `_id` là khóa:
 
@@ -684,7 +684,7 @@ Chọn "mỗi migration một document" thay vì một mảng `applied[]` vì gh
 **Ranh giới với các mục liên quan:**
 
 - **PT-014** (hiển thị số phiên bản): `Bỏ` (Oniichan quyết định, 2026-11-02), không làm phần hiện số phiên bản ở Swagger, health hay chân trang web. Phần **đưa số phiên bản app vào image Docker** (cần để runner ghi `version` vào `system`) thuộc PT-027, ghi ở mục 5; PT-027 không còn phụ thuộc kỹ thuật vào PT-014.
-- **PT-006** (đĩa): **điều kiện để deploy**: đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được. Runner chạy bằng image backend đã build nên bỏ được bước `docker build --target builder` riêng của `run-migration.sh`.
+- **PT-006** (đĩa): **điều kiện để deploy**: đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên lúc đó chưa deploy được (đã nới đĩa xong, Oniichan xác nhận 2026-11-04). Runner chạy bằng image backend đã build nên bỏ được bước `docker build --target builder` riêng của `run-migration.sh`.
 - **PT-001** (healthcheck): không đổi ý nghĩa liveness/readiness; backend không chạy migration nên không ảnh hưởng `start_period`.
 - **PT-007** (tài liệu triển khai): cập nhật `06_Production_Deploy.md` (mục 5.4a, 11) cùng đợt. **PT-015** (backup định kỳ) đã `Bỏ` (Oniichan, 2026-11-02) nên không có việc cập nhật tài liệu theo PT-015; runner vẫn không tự backup và dựa vào backup tự động trước mỗi lần deploy của `deploy.sh`.
 
@@ -710,7 +710,7 @@ Chỉ là gợi ý, **chưa giao việc**. Mọi nhóm FE đều phải thử tr
 | (f) Nút Ghi chú và nút Chỉnh sửa ở màn chi tiết khách | PT-028, PT-029 | `coder-frontend-agent`; cùng màn với nhóm (a), nên làm sau khi nhóm (a) đã chốt để khỏi sửa chồng lên nhau. Chờ Oniichan trả lời 2 câu hỏi trong chính mục PT-028 |
 | (g) PWA (cài lên màn hình chính) | PT-030 | `coder-frontend-agent` (code, icon, test) + `devops-agent` (nginx, header cache; tài liệu hạ tầng); `qa-agent` review. Không phụ thuộc nhóm khác, nhưng `viewport-fit=cover` đổi cách tính vùng an toàn nên nên thử cùng đợt với nhóm (c), (d), (f) trên iPhone thật |
 | (h) Quy tắc mã dự án | PT-031 | `coder-backend-agent` (pattern, DTO, service, test, tài liệu) + `coder-frontend-agent` (tự điền mã, ô Mã viết hoa; làm song song, không đụng file của nhau); `qa-agent` review code và test. Không phụ thuộc nhóm khác; không cần migration (mã cũ giữ nguyên) |
-| (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên chưa deploy được). Dockerfile đưa số phiên bản vào image nằm trong phạm vi PT-027 (PT-014 đã `Bỏ`). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
+| (e) Nền tảng phiên bản và migration | PT-027 | Cải tiến nền tảng, **nên làm TRƯỚC** nếu Oniichan đồng ý. **Tiên quyết: PT-006** (đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh` nên lúc đó chưa deploy được; đã nới đĩa xong, Oniichan xác nhận 2026-11-04). Dockerfile đưa số phiên bản vào image nằm trong phạm vi PT-027 (PT-014 đã `Bỏ`). `coder-backend-agent` (runner), `devops-agent` (`deploy.sh`, Dockerfile), `qa-agent` review code và test; chờ Oniichan trả lời mục 7 (câu 11 đến 17) |
 
 Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý, vì mọi thay đổi schema/dữ liệu về sau sẽ dựa vào nó (hiện chưa mục PT nào bắt buộc migration, nhưng PT-023 có thể phát sinh); **điều kiện để deploy được là xử lý PT-006 (đĩa) trước**. Nhóm (a), (c), (d) thuần giao diện không phụ thuộc vào nhóm (e).
 
@@ -730,7 +730,7 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 | Ảnh hưởng | Thao tác ghi chú, việc làm nhiều nhất của sale sau cuộc gọi, hiện nằm xa tầm ngón cái ở mobile; desktop thì thiếu chỉn chu |
 | Đề xuất | (1) Mobile: thêm nút "Ghi chú" vào `MobileContactFooter` (thanh đáy), tiếp tục dùng `openCreate` của `useNoteComposer` để mở form; chỉ hiện nút ở tab Nhật ký hay ở mọi tab là điểm cần Oniichan chốt (câu hỏi 1). Ẩn nút khoanh đỏ ở mobile (`variant === 'mobile'`) trong `CareLogComposer`, giữ nguyên ở desktop. (2) Desktop: đưa nút lên đầu thẻ "Nhật ký chăm sóc" (cùng hàng với tiêu đề), thay vì đứng riêng trên thẻ. (3) Cập nhật test vitest (`CustomerDetail.mobile.test.tsx` đang kiểm thanh đáy chỉ có Gọi điện và Nhắn Zalo, dòng 107 đến 115). (4) Kiểm tra khi form ghi chú đang mở thì thanh đáy không che ô nhập (form cuộn vào vùng nhìn thấy, xem `CareLogForm.tsx:89`) |
 | Người phụ trách | `coder-frontend-agent`; `qa-agent` review code và test |
-| Trạng thái | Xong một phần (2026-11-03). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); `qa-agent` đã review (không Major), đã sửa theo review. Oniichan chưa trả lời 2 câu hỏi nên dùng mặc định: nút Ghi chú ở thanh đáy hiện ở **mọi tab**; nút Ghi chú ở thẻ đầu hồ sơ (`CustomerHeader.tsx:56`) **giữ nguyên** (mobile hiện có Ghi chú ở cả thẻ đầu hồ sơ và thanh đáy). **Đã làm:** mobile bỏ nút khoanh đỏ, thanh đáy 3 nút (Ghi chú, Gọi điện, Nhắn Zalo; dưới 360px bớt padding và ẩn icon); bấm Ghi chú ở thanh đáy thì sang tab Nhật ký, mở form, cuộn và focus, nháp không mất. Desktop: nút Ghi chú nằm cùng hàng tiêu đề thẻ "Nhật ký chăm sóc" (căn phải), ẩn khi form đang mở, quay lại sau khi lưu hoặc hủy (`CareLogComposer` ở trạng thái đóng không còn vẽ nút nào, cả desktop). Vitest toàn module CRM 789 test pass, `tsc -b` sạch (Neptune chạy lại). **Còn lại:** Oniichan thử trên iPhone Safari thật (bàn phím ảo, vùng an toàn thanh đáy, màn 320px) và chốt 2 câu hỏi nếu muốn đổi; E2E Playwright chưa chạy (cần backend; chỉ đổi comment ở `e2e/lib/ui.ts`) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-03). Code và test (vitest) xong trong repo; `qa-agent` đã review (không Major), đã sửa theo review. Oniichan chưa trả lời 2 câu hỏi nên dùng mặc định: nút Ghi chú ở thanh đáy hiện ở **mọi tab**; nút Ghi chú ở thẻ đầu hồ sơ (`CustomerHeader.tsx:56`) **giữ nguyên** (mobile hiện có Ghi chú ở cả thẻ đầu hồ sơ và thanh đáy). **Đã làm:** mobile bỏ nút khoanh đỏ, thanh đáy 3 nút (Ghi chú, Gọi điện, Nhắn Zalo; dưới 360px bớt padding và ẩn icon); bấm Ghi chú ở thanh đáy thì sang tab Nhật ký, mở form, cuộn và focus, nháp không mất. Desktop: nút Ghi chú nằm cùng hàng tiêu đề thẻ "Nhật ký chăm sóc" (căn phải), ẩn khi form đang mở, quay lại sau khi lưu hoặc hủy (`CareLogComposer` ở trạng thái đóng không còn vẽ nút nào, cả desktop). Vitest toàn module CRM 789 test pass, `tsc -b` sạch (Neptune chạy lại). **Việc còn lại trước đây (Oniichan xác nhận 2026-11-04):** Oniichan thử trên iPhone Safari thật (bàn phím ảo, vùng an toàn thanh đáy, màn 320px). Hai câu hỏi trên Oniichan chưa trả lời riêng nên vẫn giữ mặc định đã nêu; E2E Playwright chưa chạy (cần backend; chỉ đổi comment ở `e2e/lib/ui.ts`)
 
 #### PT-029 — Màn hình mobile bỏ nút "Chỉnh sửa" ở hàng tiêu đề
 
@@ -748,7 +748,7 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 | Ảnh hưởng | Giao diện thiếu gọn. **Không mất chức năng (Neptune đã đọc code, 2026-11-03):** cùng đích `edit_persona` (`/customers/:id/persona`) vẫn vào được bằng nút "Sửa" ở thẻ "Thông tin" (`CustomerInfoCard.tsx:24`) và thẻ "Chân dung khách hàng" (`PersonaCards.tsx:52`), cả hai đều nằm ở tab Thông tin |
 | Đề xuất | Xóa nút và import `Pencil`, `BUTTON_LINK_CLASS`, `useCrmActions().navigate` khỏi `MobileDetailHeader.tsx` (giữ `goBack`); sửa test thành "KHÔNG có nút Chỉnh sửa". Chỉ áp dụng cho mobile: `MobileDetailHeader` chỉ được dùng ở `CustomerDetail.mobile.tsx:43`, nên desktop không bị ảnh hưởng. Làm chung đợt với PT-028 (cùng màn, cùng agent) |
 | Người phụ trách | `coder-frontend-agent`; `qa-agent` review code và test |
-| Trạng thái | Xong một phần (2026-11-03). Code và test (vitest) xong trong repo (chưa commit, chưa deploy); `qa-agent` đã review (không Major). Nút "Chỉnh sửa" ở tiêu đề mobile đã xóa, test đổi thành kiểm không còn nút. **Còn lại:** Oniichan xem trên mobile thật. Lưu ý: nếu người dùng đang ở tab Nhật ký hay Tiến độ thì muốn sửa khách phải quay về tab Thông tin (đề xuất chấp nhận; nếu Oniichan muốn giữ một lối tắt khác ở các tab đó thì báo lại) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-03). Code và test (vitest) xong trong repo; `qa-agent` đã review (không Major). Nút "Chỉnh sửa" ở tiêu đề mobile đã xóa, test đổi thành kiểm không còn nút. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** Oniichan xem trên mobile thật. Lưu ý: nếu người dùng đang ở tab Nhật ký hay Tiến độ thì muốn sửa khách phải quay về tab Thông tin (đề xuất chấp nhận; nếu Oniichan muốn giữ một lối tắt khác ở các tab đó thì báo lại) |
 
 #### PT-030 — Biến web admin thành PWA cài được trên iPhone và Android
 
@@ -766,7 +766,7 @@ Nhóm (e) nên làm **trước** các nhóm còn lại nếu Oniichan đồng ý
 | Ảnh hưởng | Nhân viên mở ứng dụng nhanh hơn từ Màn hình chính; không ảnh hưởng dữ liệu. Rủi ro đã chặn: service worker **không bao giờ** cache dữ liệu (CCCD, hồ sơ khách, ảnh signed URL) |
 | Đề xuất | Xem "Quyết định đã chốt" và "Đã làm" ngay dưới |
 | Người phụ trách | `coder-frontend-agent` (code, icon, test, tài liệu mục này); `devops-agent` (nginx và tài liệu hạ tầng); `qa-agent` review |
-| Trạng thái | Xong một phần (2026-11-03). Code, test (vitest) và build xong trong repo (chưa commit, chưa deploy). **Chưa** thử trên iPhone và Android thật, **chưa** chạy Lighthouse, **chưa** kiểm Cloudflare. Việc còn lại: mục "Việc Oniichan tự làm" bên dưới |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-03). Code, test (vitest) và build xong trong repo. Việc kiểm trên iPhone và Android thật, chạy Lighthouse và kiểm Cloudflare (mục "Việc Oniichan tự làm" bên dưới) Oniichan đã xác nhận xong 2026-11-04; không ghi kết quả chi tiết |
 
 ##### Quyết định đã chốt (Oniichan duyệt 2026-11-03)
 
@@ -812,7 +812,7 @@ Khi có `viewport-fit=cover`, các `env(safe-area-inset-*)` mới có giá trị
 - `dist/sw.js`: danh sách precache **không** có `/api`, không có `index.html`, không có `runtimeCaching`; chỉ có một chỗ nhắc `/api`: `denylist:[/^\/api\//]` của `NavigationRoute`.
 - Trình duyệt headless (Playwright, Chromium) chạy trên `vite preview`: service worker đăng ký ở scope `/`, manifest không lỗi, **không có lỗi installability**, cache chỉ có 124 mục vỏ ứng dụng (không `/api`, không `index.html`, không manifest), mất mạng thì điều hướng ra "Không có kết nối" và nút Thử lại tải lại được ứng dụng; luồng cập nhật (build lại, quay lại tab) hiện "Có phiên bản mới", **không** tự tải lại, và chỉ tải lại sau khi bấm "Cập nhật".
 
-##### Việc Oniichan tự làm
+##### Việc Oniichan tự làm (đã xong, Oniichan xác nhận 2026-11-04)
 
 1. Cài thử trên **iPhone Safari** (Chia sẻ, Thêm vào MH chính) và **Android Chrome** (menu Cài đặt ứng dụng): đúng tên, icon, mở toàn màn hình; làm theo mục mới trong [`02_Checklist_Kiem_iPhone_v1.0.3.md`](02_Checklist_Kiem_iPhone_v1.0.3.md).
 2. Chạy **Lighthouse** (mục PWA/Best practices) trên môi trường staging.
@@ -836,7 +836,7 @@ Khi có `viewport-fit=cover`, các `env(safe-area-inset-*)` mới có giá trị
 | Ảnh hưởng | Mã dự án dùng để tìm và hiển thị; đổi quy tắc **không** đổi dữ liệu cũ. Không đổi cơ chế so trùng: `code` giữ như người gửi, unique không phân biệt hoa thường qua `codeNormalized` (kể cả dự án đã xóa mềm), trùng ⇒ 409 `PROJECT_CODE_DUPLICATED` |
 | Đề xuất | Xem "Quyết định đã chốt" và "Đã làm" ngay dưới |
 | Người phụ trách | `coder-backend-agent` (BE, unit test, tài liệu mục này); `coder-frontend-agent` (FE, trong `RealEstateAdminApp/`); `qa-agent` review code và test |
-| Trạng thái | Xong một phần (2026-11-04). Code BE và test xong trong repo (chưa commit, chưa deploy); phần FE do `coder-frontend-agent` làm song song. **Còn lại:** deploy, Oniichan thử thêm/sửa dự án trên web (đặc biệt sửa dự án có mã cũ chứa `-`/`_`) |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-04). Code BE và test xong trong repo; phần FE do `coder-frontend-agent` làm song song. **Việc còn lại trước đây (đã hoàn tất, Oniichan xác nhận 2026-11-04):** deploy, Oniichan thử thêm/sửa dự án trên web (đặc biệt sửa dự án có mã cũ chứa `-`/`_`) |
 
 ##### Quyết định đã chốt (Oniichan, 2026-11-04)
 
@@ -861,7 +861,7 @@ Khi có `viewport-fit=cover`, các `env(safe-area-inset-*)` mới có giá trị
 
 ## 6. Kết quả test production do Oniichan ghi nhận
 
-**Phần lớn còn để trống** (ngày 2026-11-02 đã ghi dòng 11 ảnh đính kèm và dòng 12 giao diện mobile; dòng 1 và 4 do Oniichan báo đã xong, chưa ghi chi tiết; dòng 10 không còn áp dụng). Oniichan điền cột "Kết quả" (ví dụ Đạt / Lỗi / Không áp dụng) và cột "Mã mục lỗi liên quan" (ví dụ `PT-017`) khi test. Lỗi mới phát hiện được thêm ở mục 5 từ `PT-017`.
+**Phần lớn để trống.** Ngày 2026-11-02 đã ghi dòng 11 ảnh đính kèm và dòng 12 giao diện mobile; dòng 1 và 4 do Oniichan báo đã xong, chưa ghi chi tiết; dòng 10 không còn áp dụng; ngày 2026-11-04 thêm dòng 13: Oniichan xác nhận toàn bộ mục còn lại đã xong. Oniichan điền cột "Kết quả" (ví dụ Đạt / Lỗi / Không áp dụng) và cột "Mã mục lỗi liên quan" (ví dụ `PT-017`) khi test. Lỗi mới phát hiện được thêm ở mục 5 từ `PT-017`.
 
 | # | Hạng mục test (đề xuất) | Cách làm | Kết quả | Mã mục lỗi liên quan |
 |---|---|---|---|---|
@@ -876,14 +876,15 @@ Khi có `viewport-fit=cover`, các `env(safe-area-inset-*)` mới có giá trị
 | 9 | Health sau deploy | Gọi `GET /api/v1/health/liveness` và `GET /api/v1/health/readiness` (liên quan PT-001); readiness phải 200 khi MongoDB, Redis, S3/MinIO sẵn sàng | | |
 | 10 | Đường lui 5.8 còn dùng được | Trước khi làm PT-010, kiểm các điều kiện của đường lui 5.8 (image `*:pre-upgrade`, backup volume, dump `pre-upgrade`) còn nguyên và dùng được. Ngày dự kiến hết thời hạn giữ đường lui: không còn cần (xem cột Kết quả) | Không còn áp dụng: image `*:pre-upgrade` đã xóa ngày 2026-11-02 theo yêu cầu Oniichan (PT-010), nên đường lui 5.8 không còn dùng được | PT-010 |
 | 11 | Ảnh đính kèm | Đính kèm một ảnh vào nhật ký/chi tiết khách và xem lại ảnh (liên quan PT-003) | OK (2026-11-02) | Không |
-| 12 | Giao diện mobile | Dùng web admin trên iPhone (Safari) và giả lập iPhone SE 375x667: chi tiết khách, nhật ký, sidebar, tạo lịch hẹn | Có lỗi: xem PT-017 đến PT-026 (2026-11-02). Code sửa xong (2026-11-02), chờ Oniichan thử lại trên iPhone | PT-017 đến PT-026 |
+| 12 | Giao diện mobile | Dùng web admin trên iPhone (Safari) và giả lập iPhone SE 375x667: chi tiết khách, nhật ký, sidebar, tạo lịch hẹn | Có lỗi: xem PT-017 đến PT-026 (2026-11-02). Code sửa xong (2026-11-02); 2026-11-04: Oniichan xác nhận đã thử lại xong trên iPhone thật | PT-017 đến PT-026 |
+| 13 | Xác nhận hoàn tất các mục còn lại của v1.0.3 | Oniichan kiểm các việc còn lại ghi ở từng mục PT | 2026-11-04: Oniichan xác nhận toàn bộ mục còn lại đã xong (gồm kiểm trên iPhone/Android thật, VPS, AI qua 9Router, nới đĩa); v1.0.3 đã deploy lên production ngày 2026-11-04. Không ghi kết quả chi tiết | PT-001, PT-002, PT-005, PT-006, PT-008, PT-009, PT-016 đến PT-031 |
 
 ## 7. Điều cần Oniichan quyết
 
 Đã xong hoặc đã chốt (không còn cần quyết):
 
 - PT-003 bật ảnh đính kèm (2026-11-02).
-- **Câu 1, 2, 3, 4: Oniichan báo "Đã xong" (2026-11-02):** (1) cất `CRM_PII_ENCRYPTION_KEY` vào password manager và xác nhận đủ 44 ký tự; (2) xóa tunnel trống `minio.stnd.vn`; (3) thẻ git `v1.0.2`; (4) test đăng nhập web và thao tác AI. Đây là lời báo của Oniichan; **Neptune sẽ kiểm lại cụ thể từng việc** (đặc biệt câu 3: thẻ `v1.0.2` đang trỏ commit nào, đã push chưa), kết quả kiểm chưa ghi ở đây. Đã cập nhật theo lời báo: PT-013 `Xong`, PT-003 (việc còn lại: không còn), mục 2 và mục 6 (dòng 1 và 4 ghi "Oniichan báo đã xong, chưa ghi chi tiết"). PT-005 chưa đổi vì Oniichan chưa ghi kết quả cụ thể. Riêng câu 3: hướng (a) hay (b) Oniichan đã chọn chưa ghi, Neptune sẽ kiểm `git tag` để ghi lại.
+- **Câu 1, 2, 3, 4: Oniichan báo "Đã xong" (2026-11-02):** (1) cất `CRM_PII_ENCRYPTION_KEY` vào password manager và xác nhận đủ 44 ký tự; (2) xóa tunnel trống `minio.stnd.vn`; (3) thẻ git `v1.0.2`; (4) test đăng nhập web và thao tác AI. Đây là lời báo của Oniichan; **Neptune sẽ kiểm lại cụ thể từng việc** (đặc biệt câu 3: thẻ `v1.0.2` đang trỏ commit nào, đã push chưa), kết quả kiểm chưa ghi ở đây. Đã cập nhật theo lời báo: PT-013 `Xong`, PT-003 (việc còn lại: không còn), mục 2 và mục 6 (dòng 1 và 4 ghi "Oniichan báo đã xong, chưa ghi chi tiết"). PT-005 lúc đó chưa đổi vì Oniichan chưa ghi kết quả cụ thể (sau đó đã `Xong` theo xác nhận 2026-11-04). Riêng câu 3: hướng (a) hay (b) Oniichan đã chọn chưa ghi, Neptune sẽ kiểm `git tag` để ghi lại.
 - **Câu 5 (PT-010 dọn dẹp): đã xong (2026-11-02).** Oniichan đồng ý "Làm đi" cả 4 bước; Neptune đã thực hiện xong trên VPS (chi tiết ở PT-010), PT-010 `Xong`. Phần còn mở của câu 5 xem bên dưới.
 - **Câu 7 (PT-008):** chốt **tắt Swagger khi `NODE_ENV=production`**.
 - **Câu 8 (PT-015):** **Oniichan quyết định bỏ PT-015 (2026-11-02)**, không còn cần chọn nơi lưu ngoài máy chủ.
@@ -903,8 +904,8 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 1. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** cất `CRM_PII_ENCRYPTION_KEY` vào password manager và xác nhận đủ 44 ký tự (PT-013). Bản `.env.docker` trên máy cá nhân chứa mọi bí mật khác nên giữ kín, không đưa vào repo.
 2. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** xóa tunnel trống tên `minio.stnd.vn` (Inactive) trong Cloudflare (PT-003).
 3. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** thẻ git `v1.0.2` đặt lên đâu. Oniichan báo đã xong (2026-11-02); hướng đã chọn chưa ghi, Neptune sẽ kiểm `git tag` để ghi lại. Bối cảnh để Neptune kiểm: production chạy `e6099c0` nhưng manifest ở commit đó còn cũ (backend 0.0.1, admin 0.0.0, mobile 1.0.0); hai hướng (a) đặt thẻ lên `e6099c0` và ghi rõ manifest lệch số, (b) đặt thẻ lên commit nâng 1.0.2 rồi triển khai lại; thẻ cục bộ `v1.0.2` từng trỏ `ad59c4b`, thẻ `v1.0.1` trên remote trỏ `932db04` (2026-08-24). **Push thẻ chỉ làm khi Oniichan đồng ý.**
-4. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** test đăng nhập web và thao tác AI (PT-005, mục 6). Mục 6 (dòng 1 và 4) đã ghi "Oniichan báo đã xong (2026-11-02), chưa ghi chi tiết"; kết quả cụ thể chưa có và PT-005 chưa đổi.
-5. **Dọn dẹp ở PT-010: đã xong (2026-11-02).** Còn mở: nới đĩa VPS (PT-006: đĩa còn khoảng 4,4 GB, vẫn dưới ngưỡng 5 GB nên chặn `deploy.sh` kế tiếp; Oniichan đang chuẩn bị nới đĩa VM VirtualBox 25 -> 50 GB, chưa xong). Ý "ngày hết thời hạn giữ đường lui 5.8" không còn cần (đường lui 5.8 đã không còn).
+4. **Đã xong (Oniichan báo 2026-11-02, Neptune sẽ kiểm lại):** test đăng nhập web và thao tác AI (PT-005, mục 6). Mục 6 (dòng 1 và 4) đã ghi "Oniichan báo đã xong (2026-11-02), chưa ghi chi tiết"; kết quả cụ thể chưa có và PT-005 lúc đó chưa đổi (sau đó đã `Xong` theo xác nhận 2026-11-04).
+5. **Dọn dẹp ở PT-010: đã xong (2026-11-02).** Nới đĩa VPS (PT-006) **đã xong, Oniichan xác nhận 2026-11-04** (trước đó đĩa còn khoảng 4,4 GB, dưới ngưỡng 5 GB của `deploy.sh`). Ý "ngày hết thời hạn giữ đường lui 5.8" không còn cần (đường lui 5.8 đã không còn).
 6. **Đã chốt (2026-11-02):** token Cloudflare tunnel (PT-011) không lộ ra ngoài VPS, không cần xoay; PT-011 `Xong`.
 7. **Đã chốt (2026-11-02):** Swagger (PT-008) **tắt khi `NODE_ENV=production`**.
 8. **Đã chốt: bỏ PT-015 (Oniichan, 2026-11-02).** Mục PT-015 giữ lại với trạng thái `Bỏ`; không làm backup định kỳ. Lưu ý rủi ro: không có cron backup/chép ra ngoài; chỉ còn backup thủ công và backup tự động trước mỗi lần deploy của `deploy.sh`.
@@ -935,8 +936,8 @@ Còn cần quyết (giữ nguyên số câu để không vỡ tham chiếu; câu
 - Mục 6 đã được Oniichan điền đủ các dòng áp dụng; mỗi dòng lỗi có mã `PT-NNN`.
 - Mỗi mục sửa code có test đi kèm và đã qua `qa-agent` review; mọi mục giao diện (FE) đã thử trên iPhone SE 375x667 và Safari iOS.
 - `06_Production_Deploy.md` đã cập nhật theo PT-007 và các thay đổi hạ tầng (PT-001, PT-002, PT-008, PT-009; PT-015 đã `Bỏ` nên không có phần cập nhật).
-- PT-022: BE đã bỏ kiểm 24 giờ và mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED` (test cập nhật), FE có nút Sửa, tài liệu 04, 05, 08 đã sửa đúng các dòng liệt kê ở mục PT-022; `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành không còn kết quả (trừ ghi chú lịch sử trong file này). **Tình trạng 2026-11-02:** các điều kiện này đã đạt trong repo; còn Oniichan thử nút Sửa trên máy thật.
-- **Tình trạng đáp ứng DoD ngày 2026-11-02:** 16 mục `Xong một phần` chỉ chuyển sang `Xong` khi đã kiểm đúng việc còn lại ghi ở từng mục (kiểm sau deploy trên VPS, hoặc Oniichan thử trên iPhone Safari thật, hoặc việc của Oniichan như baseline PT-027, ghim digest PT-009, runbook PT-016); PT-005 và PT-006 còn `Mới`. Với PT-023, mục 7 câu 9, 19, 20 đã chốt (2026-11-02, 2026-11-03); còn FE hiển thị loại thông báo mới và Oniichan thử trên máy thật; khi làm nhập CSV (M8) phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
+- PT-022: BE đã bỏ kiểm 24 giờ và mã lỗi `CARE_LOG_EDIT_WINDOW_EXPIRED` (test cập nhật), FE có nút Sửa, tài liệu 04, 05, 08 đã sửa đúng các dòng liệt kê ở mục PT-022; `grep CARE_LOG_EDIT_WINDOW_EXPIRED` trong code và tài liệu hiện hành không còn kết quả (trừ ghi chú lịch sử trong file này). **Tình trạng 2026-11-02:** các điều kiện này đã đạt trong repo; Oniichan đã thử nút Sửa trên máy thật (xác nhận 2026-11-04).
+- **Tình trạng đáp ứng DoD ngày 2026-11-04:** Oniichan xác nhận mọi mục còn lại (20 mục `Xong một phần` và 2 mục `Mới` trước đó) đã `Xong`, gồm việc kiểm sau deploy trên VPS, thử trên iPhone Safari và Android thật, việc của Oniichan (baseline PT-027, ghim digest PT-009, runbook PT-016, nới đĩa PT-006, kiểm AI PT-005); v1.0.3 đã deploy production ngày 2026-11-04. Không ghi kết quả chi tiết của từng lần kiểm. Với PT-023, mục 7 câu 9, 19, 20 đã chốt (2026-11-02, 2026-11-03); khi làm nhập CSV (M8) phải giữ quy tắc "CSV không kích hoạt tự đổi tình trạng".
 - PT-023: tài liệu 04 (quy tắc nghiệp vụ; field `statusAutoSource` trên khách đã bỏ 2026-11-03, chỉ còn dấu trong audit) và 05 (response `autoStatusChange` của `PATCH /crm/customers/:id/criteria`) đã cập nhật; không còn chỗ nào khẳng định tiến độ không tự đổi tình trạng.
 - Nếu Oniichan duyệt PT-027: 6 tiêu chí nghiệm thu của mục đó đã đạt (qua `qa-agent`), gồm việc Dockerfile đưa số phiên bản app vào image (PT-014 đã `Bỏ`, phần này thuộc PT-027); lần deploy 1.0.3 đầu tiên trên production đã tự baseline thành công (Oniichan chạy `bash deploy.sh --plan-only` xem probe trước, rồi `bash deploy.sh --no-pull`); checklist phát hành ở [`README.md`](README.md) mục 5 đã bổ sung bước migration.
 - Số phiên bản đã nâng lên 1.0.3 trong `package.json` và lockfile của ba ứng dụng, và trong `app.json` (chỉ `RealEstateApp` có file này); bảng ở [`README.md`](README.md) đã cập nhật; tài liệu đổi nội dung đã cập nhật dòng "Phiên bản tài liệu".

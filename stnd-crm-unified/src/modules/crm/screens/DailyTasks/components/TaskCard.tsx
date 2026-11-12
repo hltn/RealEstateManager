@@ -130,7 +130,7 @@ export const TaskCard = ({ task }: TaskCardProps) => {
         <TaskDoneButton task={task} />
       </div>
 
-      <ContactActionGrid customerId={task.customer.id} />
+      <ContactActionGrid customerId={task.customer.id} hasPhone={task.customer.phoneMasked !== null} />
     </article>
   );
 };

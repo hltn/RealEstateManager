@@ -51,7 +51,8 @@ export const AppointmentMoreMenu = ({ appointment, orientation = 'horizontal' }:
   const items: MenuItem[] = [
     { label: 'Xem hồ sơ khách', icon: UserRound, onSelect: () => selectCustomer(appointment.customer.id) },
     { label: 'Ghi chú nhanh', icon: NotebookPen, onSelect: () => openQuickNote(appointment.customer.id) },
-    { label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customer.id) },
+    // Khách chưa có SĐT: không có số để nhắn Zalo -> ẩn mục.
+    ...(appointment.customer.phoneMasked ? [{ label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customer.id) }] : []),
     {
       label: appointment.status === 'DONE' ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
       icon: appointment.status === 'DONE' ? Undo2 : CircleCheck,

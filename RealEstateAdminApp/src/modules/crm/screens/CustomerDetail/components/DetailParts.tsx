@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { STATUS_TONE_STYLES } from '@crm/components/statusToneStyles';
 import { isDroppedStatus } from '@crm/lib/customerRules';
 import { formatVnDateTime } from '@crm/lib/dateTime';
-import { formatPhoneDisplay } from '@crm/lib/phone';
+import { formatPhoneDisplay, hasPhone } from '@crm/lib/phone';
 import { getInitials } from '@crm/lib/staff';
 import { BUTTON_LINK_CLASS, CARD_TITLE_CLASS, CHIP_CLASS, CHIP_TONE_CLASS, DIVIDER_CLASS, INFO_LABEL_CLASS, INFO_VALUE_CLASS } from '@crm/lib/uiClasses';
 import type { CustomerStatusItem } from '@crm/types/crm';
@@ -149,7 +149,10 @@ export const StatusDropdown = ({ customer, align = 'left' }: StatusDropdownProps
 // SĐT + CCCD che theo quyền (C9)
 // ---------------------------------------------------------------------------
 
-/** SĐT che 3 số cuối; "Hiện số" dành cho mọi người xem được khách (kể cả thành viên nhóm), MỖI lần hiện ghi log PHONE_VIEWED. */
+/**
+ * SĐT che 3 số cuối; "Hiện số" dành cho mọi người xem được khách (kể cả thành viên nhóm), MỖI lần hiện ghi log PHONE_VIEWED.
+ * Khách chưa có SĐT (`phoneMasked` null, FR-02): không render gì (ẩn cả nút "Hiện số", không gọi API).
+ */
 export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerDetail; className?: string }) => {
   const api = useCrmApi();
   const { showToast } = useCrmActions();
@@ -169,6 +172,7 @@ export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerD
     }
     setRevealedPhone(result.data.phone);
   };
+  if (!hasPhone(customer.phoneMasked)) return null;
   return (
     <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
       <span className="font-medium tracking-wide tabular-nums text-gray-800 dark:text-white/90">

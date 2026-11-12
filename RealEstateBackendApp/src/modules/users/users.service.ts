@@ -25,6 +25,8 @@ import { BusinessException } from '../../common/exceptions/business.exception';
 import { ErrorCode } from '../../common/exceptions/error-codes';
 import { escapeRegex } from '../../common/utils/regex.util';
 import { isDuplicateKeyError } from '../../common/utils/mongo-error.util';
+import { PushRevokedReason } from '../notifications/push/push-subscription.constants';
+import { PushSubscriptionManagementService } from '../notifications/push/push-subscription-management.service';
 import { withTransaction } from '../../shared/database/with-transaction.util';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { diffFields } from '../crm/audit-logs/audit-diff.util';
@@ -76,6 +78,7 @@ export class UsersService {
     @InjectConnection() private readonly connection: Connection,
     private readonly audit: CrmAuditLogService,
     private readonly teamSync: CustomerTeamSyncService,
+    private readonly pushSubscriptions: PushSubscriptionManagementService,
   ) {}
 
   /**
@@ -186,22 +189,33 @@ export class UsersService {
       lastLoginAt: null,
     };
 
-    if (teamIds.length === 0) {
-      return toUserPublicProfile(await this.userModel.create(newUser));
-    }
+    // Hai POST đồng thời cùng email cùng qua kiểm trước: chỉ unique index {email, deletedAt} bắt được (E11000 → 409).
+    try {
+      if (teamIds.length === 0) {
+        return toUserPublicProfile(await this.userModel.create(newUser));
+      }
 
-    // Có nhóm: kiểm nhóm + "khóa ghi" nhóm + tạo user trong CÙNG transaction để việc xóa nhóm đồng thời
-    // không để lại tài khoản mới trỏ vào nhóm đã xóa (xem TeamsService.setUserTeams).
-    assertRolesCanJoinTeam(roles);
-    const created = await withTransaction(this.connection, async (session) => {
-      await lockActiveTeams(this.teamModel, teamIds, session);
-      const [doc] = await this.userModel.create(
-        [{ ...newUser, teamId: teamIds[0], teamIds }],
-        { session },
+      // Có nhóm: kiểm nhóm + "khóa ghi" nhóm + tạo user trong CÙNG transaction để việc xóa nhóm đồng thời
+      // không để lại tài khoản mới trỏ vào nhóm đã xóa (xem TeamsService.setUserTeams).
+      assertRolesCanJoinTeam(roles);
+      const created = await withTransaction(
+        this.connection,
+        async (session) => {
+          await lockActiveTeams(this.teamModel, teamIds, session);
+          const [doc] = await this.userModel.create(
+            [{ ...newUser, teamId: teamIds[0], teamIds }],
+            { session },
+          );
+          return doc;
+        },
       );
-      return doc;
-    });
-    return toUserPublicProfile(created);
+      return toUserPublicProfile(created);
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        throw new ConflictException(EMAIL_IN_USE_MESSAGE);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -417,6 +431,15 @@ export class UsersService {
         .lean()
         .exec();
       if (!after) throw new NotFoundException('User not found');
+
+      // Khóa tài khoản: thu hồi mọi thiết bị push cùng transaction (không gửi thêm push sau khi khóa).
+      if (dto.status !== UserStatus.ACTIVE) {
+        await this.pushSubscriptions.revokeAllForUser(
+          userId,
+          PushRevokedReason.ACCOUNT_DISABLED,
+          session,
+        );
+      }
 
       await this.audit.record(
         {

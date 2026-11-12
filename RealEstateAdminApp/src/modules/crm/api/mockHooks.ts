@@ -10,7 +10,6 @@ import { buildActor, type CrmActor } from './access';
 import { getDashboardReport, type DashboardQuery } from './dashboard';
 import type { CustomerExportFile } from './exports';
 import { createMockCrmApi, type MockCrmApi } from './mockCrmApi';
-import { lookupPhone } from './queries';
 import type { ApiResult, CustomerListQuery } from './types';
 
 /** Actor của người dùng MẪU trong store mock. */
@@ -43,11 +42,4 @@ export const useDashboardReport = (query: DashboardQuery) => {
 export const useCustomerExport = () => {
   const api = useMockCrmApi();
   return useCallback((query: CustomerListQuery): ApiResult<CustomerExportFile> => api.createCustomerExport(query), [api]);
-};
-
-/** Kiểm "SĐT này đã có trong dữ liệu mẫu?" khi kiểm file nhập (mock). */
-export const useMockPhoneExists = (): ((phone: string) => boolean) => {
-  const state = useCrmRawState();
-  const actor = useMockActor();
-  return useCallback((phone: string) => lookupPhone(state, actor, phone)?.exists ?? false, [state, actor]);
 };

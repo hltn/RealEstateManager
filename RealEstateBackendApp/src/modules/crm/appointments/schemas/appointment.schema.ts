@@ -20,6 +20,9 @@ import {
  * - `sourceCareLogId`: nhật ký đã sinh ra lịch hẹn này (nextAction.appointment).
  * - `projectId`: dự án của buổi hẹn (tùy chọn, mọi loại lịch). Chỉ gắn MỚI được dự án còn hoạt động; dự án ngừng/ẩn
  *   sau đó vẫn hiển thị tên. Bản ghi cũ không có field này = chưa gắn dự án (không cần migration).
+ * - `projectCode`: mã bất biến của dự án (`projects.codeNormalized`, chữ HOA), GHI KÉP cùng `projectId` (FR-40,
+ *   Architecture 5.1.1). Lọc theo dự án dùng field này; bản ghi cũ chưa có cho tới khi migration `007` điền
+ *   (mapper dịch từ `projectId` để hiển thị).
  */
 @Schema({ timestamps: true, collection: 'appointments' })
 export class Appointment {
@@ -81,6 +84,9 @@ export class Appointment {
   @Prop({ type: Types.ObjectId, default: null })
   projectId: Types.ObjectId | null;
 
+  @Prop({ type: String, default: null })
+  projectCode?: string | null;
+
   @Prop({ type: Types.ObjectId, required: true })
   createdBy: Types.ObjectId;
 
@@ -107,3 +113,5 @@ AppointmentSchema.index({ customerId: 1, startAt: 1 });
 AppointmentSchema.index({ status: 1, startAt: 1 });
 // Lọc danh sách lịch theo dự án trong khoảng thời gian.
 AppointmentSchema.index({ projectId: 1, startAt: 1 });
+// Lọc danh sách lịch theo mã dự án bất biến trong khoảng thời gian (FR-40, ghi kép với `projectId`).
+AppointmentSchema.index({ projectCode: 1, startAt: 1 });

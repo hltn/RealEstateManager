@@ -3,9 +3,9 @@
  * Danh mục nhỏ tải 1 lần (04 §7.6): gom nhiều trang (mỗi trang tối đa 100) tới giới hạn an toàn.
  */
 import type { Area, CatalogItem, ContactResult, CrmSettings, CrmUser, CustomerStatusItem, PersonaFieldDefinition, Project, Tag, Team } from '@crm/types/crm';
-import type { AreaDto, AssignableUserDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, TagDto, TeamDto } from './dto';
+import type { AreaDto, CustomerAssigneeDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, TagDto, TeamDto } from './dto';
 import { crmHttp, type QueryParams } from './crmHttp';
-import { assignableToUser, toArea, toCatalogItem, toContactResult, toCrmSettings, toPersonaField, toProject, toStatusItem, toTag, toTeam } from './catalogMappers';
+import { assigneeToUser, toAreaList, toCatalogItem, toContactResult, toCrmSettings, toPersonaField, toProject, toStatusItem, toTag, toTeam } from './catalogMappers';
 
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 5;
@@ -24,7 +24,7 @@ export const fetchAllPages = async <T>(url: string, params: QueryParams = {}, si
 export const fetchStatuses = async (signal?: AbortSignal): Promise<CustomerStatusItem[]> => (await fetchAllPages<CustomerStatusDto>('/crm/customer-statuses', {}, signal)).map(toStatusItem);
 export const fetchLeadSources = async (signal?: AbortSignal): Promise<CatalogItem[]> => (await fetchAllPages<LeadSourceDto>('/crm/lead-sources', {}, signal)).map(toCatalogItem);
 export const fetchContactResults = async (signal?: AbortSignal): Promise<ContactResult[]> => (await fetchAllPages<ContactResultDto>('/crm/contact-results', {}, signal)).map(toContactResult);
-export const fetchAreas = async (signal?: AbortSignal): Promise<Area[]> => (await fetchAllPages<AreaDto>('/crm/areas', {}, signal)).map(toArea);
+export const fetchAreas = async (signal?: AbortSignal): Promise<Area[]> => toAreaList(await fetchAllPages<AreaDto>('/crm/areas', {}, signal));
 /** `isDeleted` chỉ Quản trị (xem dự án đã xóa mềm). */
 export const fetchProjects = async (options: { isDeleted?: boolean } = {}, signal?: AbortSignal): Promise<Project[]> =>
   (await fetchAllPages<ProjectDto>('/crm/projects', { isDeleted: options.isDeleted, sort: 'name' }, signal)).map(toProject);
@@ -32,15 +32,12 @@ export const fetchTags = async (signal?: AbortSignal): Promise<Tag[]> => (await 
 export const fetchPersonaFields = async (signal?: AbortSignal): Promise<PersonaFieldDefinition[]> =>
   (await fetchAllPages<PersonaFieldDto>('/crm/persona-fields', {}, signal)).map(toPersonaField);
 
-/** Người có thể phân chăm sóc (Quản trị: tất cả; Quản lý/Nhân viên: trong phạm vi nhóm). */
-export const fetchAssignableUsers = async (signal?: AbortSignal): Promise<CrmUser[]> => (await fetchAllPages<AssignableUserDto>('/crm/assignable-users', {}, signal)).map(assignableToUser);
-
 /**
- * Nguồn cho ô LỌC "Người phụ trách" (`purpose=filter`), tách khỏi ô GÁN (lọc ≠ gán): Quản lý nhận mọi người trong careTeam của tập khách
- * mình thấy (kể cả người ngoài nhóm mình quản lý, ADMIN/EDITOR cũ); Quản trị/Nhân viên nhận như `fetchAssignableUsers`.
+ * Nguồn cho ô LỌC "Người phụ trách" (`GET /crm/customer-assignees`, v1.0.5): người trong careTeam của tập khách người xem thấy
+ * (kể cả tài khoản đã khóa). Không còn nguồn "gán" riêng: người để mời vào nhóm chăm sóc lấy từ `care-team-invitees` (xem `useCareTeamInvitees`).
  */
 export const fetchAssigneeFilterUsers = async (signal?: AbortSignal): Promise<CrmUser[]> =>
-  (await fetchAllPages<AssignableUserDto>('/crm/assignable-users', { purpose: 'filter' }, signal)).map(assignableToUser);
+  (await fetchAllPages<CustomerAssigneeDto>('/crm/customer-assignees', {}, signal)).map(assigneeToUser);
 
 /** Nhóm: Quản trị và Quản lý (Nhân viên không gọi — 403). */
 export const fetchTeams = async (signal?: AbortSignal): Promise<(Team & { code: string; memberCount: number; isActive: boolean })[]> =>

@@ -22,9 +22,11 @@ export interface CrmUser {
   /** Chức danh hiển thị (không dùng để phân quyền). */
   jobTitle: string;
   teamId: string | null;
-  /** Tên nhóm (có khi lấy từ `assignable-users`). */
+  /** Tên nhóm (có khi lấy từ `customer-assignees`). */
   teamName?: string;
   isActive: boolean;
+  /** Tài khoản bị khóa (từ `customer-assignees`): vẫn có thể là người chăm sóc cũ của khách, UI hiện nhãn "đã khóa". */
+  isLocked?: boolean;
   avatarUrl?: string;
 }
 
@@ -61,6 +63,8 @@ export interface Team {
 export interface UserRef {
   id: string;
   displayName: string;
+  /** Tài khoản bị khóa (`BLOCKED`, FR-18): chỉ có ở người chăm sóc chính/thành viên nhóm chăm sóc để hiện nhãn "đã khóa". */
+  isLocked?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +103,7 @@ export interface CatalogItem {
 
 /** Khu vực (nơi khách đang ở). Prototype: danh sách phẳng, chưa có cây tỉnh/quận. */
 export interface Area {
+  /** `code` bất biến của backend (FR-40); bản ghi chưa migrate: id cũ. */
   id: string;
   name: string;
   /** Tên gốc của khu vực (không kèm tên khu vực cha) — dùng khi sửa. */
@@ -123,6 +128,10 @@ export interface Project {
   areaId: string | null;
   /** Loại hình sản phẩm, vd ["Căn hộ", "Shophouse"] (không bắt buộc; 04 §3.3 `propertyTypes[]`). */
   propertyTypes: string[];
+  /** `value` lựa chọn loại hình (FR-46), chỉ đọc; có khi backend đã trả. */
+  propertyTypeCodes?: string[];
+  /** Chữ loại hình cũ chưa ánh xạ được (FR-46); Quản trị cần chọn lại. */
+  unmappedPropertyTypes?: string[];
   /** Khoảng giá (VNĐ, theo `priceUnit`); null = chưa nhập. Khi có cả hai thì `priceFrom <= priceTo`. */
   priceFrom: number | null;
   priceTo: number | null;
@@ -147,6 +156,15 @@ export interface Tag {
   name: string;
   category: TagCategory;
   isActive: boolean;
+}
+
+/** Thẻ ở màn quản trị (FR-42): kèm số khách đang gắn và màu (`#RRGGBB`, tên màu thiết kế hoặc null). */
+export interface AdminTag {
+  id: string;
+  name: string;
+  category: TagCategory;
+  usageCount: number;
+  color: string | null;
 }
 
 /** Kết quả liên hệ + mốc hẹn gợi ý (04 §3.3 `CONTACT_RESULT`). */
@@ -218,6 +236,29 @@ export interface PersonaFieldDefinition {
   isActive: boolean;
 }
 
+/** Một lựa chọn của trường SELECT/MULTI_SELECT: `value` là mã lưu vào dữ liệu khách (bất biến), `label` là nhãn hiển thị. */
+export interface PersonaOptionItem {
+  value: string;
+  label: string;
+  isActive: boolean;
+}
+
+/**
+ * Trường chân dung ở màn quản trị (FR-41, chỉ Quản trị): khác `PersonaFieldDefinition` ở chỗ giữ `id`, `order`, `isSystem`
+ * và `groupCode` NGUYÊN BẢN của máy chủ (nhóm lạ không bị gom về "Cá nhân") để sắp xếp/sửa đúng bản ghi.
+ */
+export interface AdminPersonaField {
+  id: string;
+  key: string;
+  label: string;
+  groupCode: string;
+  type: PersonaFieldType;
+  options: PersonaOptionItem[];
+  order: number;
+  isSystem: boolean;
+  isActive: boolean;
+}
+
 export type PersonaSource = 'CUSTOMER_SHARED' | 'STAFF_OBSERVED' | 'IMPORTED';
 
 export interface PersonaValue {
@@ -270,8 +311,10 @@ export type CreatedVia = 'WEB' | 'MOBILE' | 'IMPORT';
 export interface Customer {
   id: string;
   fullName: string;
-  /** E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). Duy nhất toàn hệ thống. */
-  phone: string;
+  /** E.164, vd "+84912345678" (đã chuẩn hoá trước khi lưu). Tùy chọn (null = chưa có SĐT) và KHÔNG còn duy nhất (v1.0.5: nhiều khách có thể trùng SĐT). */
+  phone: string | null;
+  /** Mã định danh "KH-000123" (v1.0.5). Bất biến, không tái sử dụng; null = chưa được cấp (dữ liệu cũ). */
+  customerCode: string | null;
   /** Không bắt buộc; nếu có nhập thì phải đúng định dạng email. */
   email: string;
   statusId: string;

@@ -1,7 +1,6 @@
 /**
  * Quy tắc kiểm tra dữ liệu form khách hàng (dùng chung Thêm khách / Sửa hồ sơ). Hàm thuần -> dễ test.
- * QT3/QT9: chỉ Họ tên + SĐT bắt buộc; mọi trường khác tuỳ chọn (chỉ kiểm định dạng khi có nhập).
- * Trùng SĐT kiểm ở lớp dữ liệu (`lookupPhone`), không so khớp danh sách khách ở UI để không lộ thông tin (X2).
+ * v1.0.5: chỉ Họ tên bắt buộc; SĐT và mọi trường khác tuỳ chọn (chỉ kiểm định dạng khi có nhập). SĐT được TRÙNG (không còn kiểm trùng).
  */
 import { isValidEmail } from '@crm/lib/email';
 import { isValidPhone } from '@crm/lib/phone';
@@ -19,9 +18,9 @@ export const getFullNameError = (fullName: string): string | undefined => {
   return undefined;
 };
 
-/** Lỗi SĐT (bắt buộc + chuẩn hoá được về E.164). */
+/** Lỗi SĐT (tuỳ chọn: rỗng = hợp lệ; có nhập thì phải chuẩn hoá được về E.164). */
 export const getPhoneFormatError = (phone: string): string | undefined => {
-  if (!phone.trim()) return 'Vui lòng nhập số điện thoại khách hàng.';
+  if (!phone.trim()) return undefined;
   if (!isValidPhone(phone)) return 'Số điện thoại không hợp lệ (VD: 0912 345 678, số nước ngoài ghi dạng +...).';
   return undefined;
 };

@@ -13,6 +13,7 @@ import type {
   PersonaFieldDefinition,
   PersonaGroupCode,
   Project,
+  Ref,
   StatusRef,
   StatusTone,
   Tag,
@@ -21,17 +22,30 @@ import type {
   UserRole,
 } from '@crm/types/crm';
 import { rolesOf } from '../../../../utils/userRoles';
-import type { AreaDto, AssignableUserDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, StatusRefDto, TagDto, TeamDto, TeamMemberDto, UserDto } from './dto';
+import { rememberCatalogId, toUiCatalogId, type CatalogKind } from './catalogIds';
+import type { AreaDto, CustomerAssigneeDto, CatalogRefDto, ContactResultDto, CrmSettingsDto, CustomerStatusDto, LeadSourceDto, PersonaFieldDto, ProjectDto, StatusRefDto, TagDto, TeamDto, TeamMemberDto, UserDto } from './dto';
 
 const STATUS_TONES: readonly StatusTone[] = ['gray', 'success', 'warning', 'error', 'brand'];
 
 /** `color` của backend là chuỗi tự do (tên màu thiết kế); ngoài danh sách -> xám. */
 export const toStatusTone = (color: string | null | undefined): StatusTone => (STATUS_TONES.includes(color as StatusTone) ? (color as StatusTone) : 'gray');
 
-export const toStatusRef = (dto: StatusRefDto): StatusRef => ({ id: dto.id, code: dto.code, label: dto.label, listGroup: dto.listGroup, tone: toStatusTone(dto.color) });
+/**
+ * Tham chiếu danh mục (nguồn, khu vực, dự án, kết quả liên hệ) -> `Ref` của UI với id = `code` (FR-40).
+ * Backend chưa trả `code` (bản ghi chưa migrate): dùng id cũ để UI không lỗi.
+ */
+export const toCatalogRef = (kind: CatalogKind, dto: CatalogRefDto): Ref => ({
+  id: dto.code ? rememberCatalogId(kind, dto.id, dto.code) : toUiCatalogId(kind, dto.id),
+  label: dto.label,
+});
+
+/** Giống `toCatalogRef` cho trường có thể null. */
+export const toNullableCatalogRef = (kind: CatalogKind, dto: CatalogRefDto | null | undefined): Ref | null => (dto ? toCatalogRef(kind, dto) : null);
+
+export const toStatusRef = (dto: StatusRefDto): StatusRef => ({ id: rememberCatalogId('statuses', dto.id, dto.code), code: dto.code, label: dto.label, listGroup: dto.listGroup, tone: toStatusTone(dto.color) });
 
 export const toStatusItem = (dto: CustomerStatusDto): CustomerStatusItem => ({
-  id: dto.id,
+  id: rememberCatalogId('statuses', dto.id, dto.code),
   code: dto.code,
   label: dto.label,
   listGroup: dto.listGroup,
@@ -42,10 +56,10 @@ export const toStatusItem = (dto: CustomerStatusDto): CustomerStatusItem => ({
   isActive: dto.isActive,
 });
 
-export const toCatalogItem = (dto: LeadSourceDto): CatalogItem => ({ id: dto.id, code: dto.code, label: dto.label, order: dto.order, isActive: dto.isActive });
+export const toCatalogItem = (dto: LeadSourceDto): CatalogItem => ({ id: rememberCatalogId('leadSources', dto.id, dto.code), code: dto.code, label: dto.label, order: dto.order, isActive: dto.isActive });
 
 export const toContactResult = (dto: ContactResultDto): ContactResult => ({
-  id: dto.id,
+  id: rememberCatalogId('contactResults', dto.id, dto.code),
   label: dto.label,
   suggestedFollowUpDays: dto.suggestedFollowUpDays,
   suggestionText: dto.suggestionText,
@@ -58,21 +72,42 @@ export const toContactResult = (dto: ContactResultDto): ContactResult => ({
  */
 export const toArea = (dto: AreaDto): Area => {
   const parent = dto.path.length > 0 ? dto.path[dto.path.length - 1].label : '';
-  return { id: dto.id, name: parent ? `${dto.name} · ${parent}` : dto.name, rawName: dto.name, type: dto.type, parentId: dto.parentId, order: dto.order, isActive: dto.isActive };
+  return {
+    id: rememberCatalogId('areas', dto.id, dto.code),
+    name: parent ? `${dto.name} · ${parent}` : dto.name,
+    rawName: dto.name,
+    type: dto.type,
+    // `parentId` của UI cũng là `code` của khu vực cha (cây khu vực dựng theo id của UI).
+    parentId: dto.parentId ? toUiCatalogId('areas', dto.parentId) : null,
+    order: dto.order,
+    isActive: dto.isActive,
+  };
+};
+
+/** Cả danh sách: ghi nhớ id <-> code của mọi khu vực TRƯỚC khi đổi `parentId` (cha có thể đứng sau con). */
+export const toAreaList = (dtos: readonly AreaDto[]): Area[] => {
+  dtos.forEach((dto) => rememberCatalogId('areas', dto.id, dto.code));
+  return dtos.map(toArea);
 };
 
 /**
  * Dự án: backend không có tên đầy đủ/đơn vị giá/phân khúc -> `fullName` = `name`, `priceUnit` = TOTAL, `segment` rỗng.
  */
+/** Chuẩn hóa mã dự án như backend (`codeNormalized`): bỏ khoảng trắng đầu/cuối, chữ HOA. */
+export const normalizeProjectCode = (code: string): string => code.trim().toUpperCase();
+
 export const toProject = (dto: ProjectDto): Project => ({
-  id: dto.id,
+  // id của UI = `codeNormalized` (khóa tham chiếu của backend); `code` giữ chữ người nhập để hiển thị.
+  id: rememberCatalogId('projects', dto.id, normalizeProjectCode(dto.code)),
   code: dto.code,
   name: dto.name,
   fullName: dto.name,
   developer: dto.developer ?? '',
   location: dto.location ?? '',
-  areaId: dto.area?.id ?? null,
+  areaId: dto.areaCode ?? (dto.area ? toCatalogRef('areas', dto.area).id : null),
   propertyTypes: dto.propertyTypes ?? [],
+  ...(dto.propertyTypeCodes ? { propertyTypeCodes: dto.propertyTypeCodes } : {}),
+  ...(dto.unmappedPropertyTypes ? { unmappedPropertyTypes: dto.unmappedPropertyTypes } : {}),
   priceFrom: dto.priceFrom,
   priceTo: dto.priceTo,
   priceUnit: 'TOTAL',
@@ -114,8 +149,8 @@ export const toPersonaField = (dto: PersonaFieldDto): PersonaFieldDefinition => 
 /** Role CRM của UI: chỉ ADMIN/MANAGER/STAFF; EDITOR (ngang STAFF, không có quyền CRM) và giá trị lạ -> STAFF. */
 export const toCrmRole = (role: string | undefined): UserRole => (role === 'ADMIN' || role === 'MANAGER' ? role : 'STAFF');
 
-/** Người có thể phân chăm sóc / người trong bộ lọc phụ trách (assignable-users) -> `CrmUser`. */
-export const assignableToUser = (dto: AssignableUserDto): CrmUser => ({
+/** Người trong bộ lọc phụ trách (`customer-assignees`) -> `CrmUser`. */
+export const assigneeToUser = (dto: CustomerAssigneeDto): CrmUser => ({
   id: dto.id,
   fullName: dto.displayName,
   displayName: dto.displayName,
@@ -124,6 +159,7 @@ export const assignableToUser = (dto: AssignableUserDto): CrmUser => ({
   teamId: dto.team?.id ?? null,
   teamName: dto.team?.label,
   isActive: true,
+  isLocked: dto.isLocked ?? false,
 });
 
 /** Tài khoản từ `/users` (chỉ Quản trị) -> `AdminUser` (EDITOR ngang STAFF nên `role` EDITOR đổi thành STAFF; `roles` giữ nguyên EDITOR). */

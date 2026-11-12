@@ -1,37 +1,69 @@
 /**
  * Thẻ khách của danh sách trên điện thoại (02 §7: bảng chuyển thành danh sách thẻ).
- * Tên + SĐT che + tình trạng, dự án, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, cập nhật cuối + 4 nút liên hệ.
+ * Tên + mã KH + SĐT che + mục đích mua + tình trạng, dự án, tiến độ 4 chấm, phụ trách, hẹn tiếp theo, cập nhật cuối + 4 nút liên hệ.
  */
 import { CalendarDays, Star } from 'lucide-react';
 import type { CustomerListItem } from '@crm/api';
 import { ContactActionGrid } from '@crm/components/ContactActionGrid';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { ProgressDots } from '@crm/components/ProgressDots';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { formatVnDate, formatVnRelative } from '@crm/lib/dateTime';
 import { CARD_CLASS, PROJECT_CHIP_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
+import type { PersonaFieldDefinition } from '@crm/types/crm';
+import { PurchasePurposesLine } from './PurchasePurposesLine';
+
+/**
+ * Phản hồi nền của thẻ khách. Tailwind v4 (đã kiểm tra bản 4.3.x) sinh CSS khác nhau cho 2 loại đầu vào:
+ * - `hover:` được bọc trong `@media (hover: hover)` => chỉ chuột/bút mới đổi nền; màn cảm ứng bỏ qua hoàn toàn.
+ * - `active:` là `:active` thuần, chạy cả khi chạm => dùng làm phản hồi chạm cho mobile.
+ * Ràng buộc: cuộn danh sách bằng ngón tay không được nháy nền thẻ. Trình duyệt hủy `:active` ngay khi nhận ra cử chỉ cuộn,
+ * nên `active:delay-100` (transition-delay CHỈ gắn ở trạng thái active) giữ nền chưa kịp tô trong 100ms đầu:
+ * cuộn => `:active` bị hủy trước khi màu bắt đầu đổi; chạm thật (giữ quá 100ms) => nền mới hiện.
+ * Thả tay thì quay về trạng thái thường (không có delay): nền vẫn fade 150ms của `transition-colors`, nhưng không bị trễ thêm.
+ * Phản hồi nền này đúng nghĩa vì CẢ THẺ bấm được (mở chi tiết khách, giống hàng bảng desktop); vùng tương tác bên trong thẻ
+ * (cụm nút liên hệ) tự chặn nổi bọt nên không mở chi tiết thêm lần nữa.
+ * `dark:` là `@custom-variant dark (&:is(.dark *))` ở index.css => mỗi biến thể nền cần một bản `dark:` riêng.
+ */
+const CARD_FEEDBACK_CLASS =
+  'transition-colors hover:bg-gray-50 active:bg-gray-50 active:delay-100 dark:hover:bg-white/[0.06] dark:active:bg-white/[0.06]';
 
 const FIELD_LABEL_CLASS = 'shrink-0 text-theme-xs text-gray-400 dark:text-gray-500';
 
 interface CustomerCardProps {
   customer: CustomerListItem;
+  /** Hiện dòng "Chăm sóc: <tên> (đã khóa)" (chỉ Quản trị/Quản lý, FR-17; mặc định ẩn). */
+  isShowingPrimaryAssignee?: boolean;
+  /** Định nghĩa trường `purchase_purposes` để dịch mã -> nhãn (màn tải 1 lần, truyền xuống). */
+  purchasePurposeField?: Pick<PersonaFieldDefinition, 'optionItems'>;
 }
 
-export const CustomerCard = ({ customer }: CustomerCardProps) => {
+export const CustomerCard = ({ customer, isShowingPrimaryAssignee = false, purchasePurposeField }: CustomerCardProps) => {
   const { selectCustomer } = useCrmActions();
   const projectSummary = formatProjectSummary(customer.projects);
 
   return (
-    <article className={`${CARD_CLASS} p-4`}>
+    <article onClick={() => selectCustomer(customer.id)} className={`${CARD_CLASS} cursor-pointer p-4 ${CARD_FEEDBACK_CLASS}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <button type="button" onClick={() => selectCustomer(customer.id)} className="flex min-w-0 items-baseline gap-1.5 text-left">
+          {/* Giữ <button> cho bàn phím / trình đọc màn hình; click (cả do Enter/Space sinh ra) nổi bọt lên <article> để mở chi tiết, không gọi riêng. */}
+          <button type="button" className="flex min-w-0 items-baseline gap-1.5 text-left">
             <span className="truncate text-base font-semibold text-gray-800 transition-colors hover:text-brand-500 dark:text-white/90 dark:hover:text-brand-400">
               {customer.fullName}
             </span>
           </button>
-          <p className="font-mono text-theme-xs text-gray-500 dark:text-gray-400">{customer.phoneMasked}</p>
+          {/* Mã KH ngay cạnh SĐT; khách không SĐT chỉ hiện mã, không dấu phân cách thừa. */}
+          {(customer.customerCode || hasPhone(customer.phoneMasked)) && (
+            <p className="flex flex-wrap items-center gap-x-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+              <CustomerCodeBadge code={customer.customerCode} />
+              {customer.customerCode && hasPhone(customer.phoneMasked) && <span aria-hidden="true">·</span>}
+              {hasPhone(customer.phoneMasked) && <span className="font-mono">{customer.phoneMasked}</span>}
+            </p>
+          )}
+          <PurchasePurposesLine purposes={customer.purchasePurposes} field={purchasePurposeField} />
         </div>
         <CustomerStatusChip status={customer.status} />
       </div>
@@ -49,21 +81,25 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
             <ProgressDots progress={customer.progress} criteriaDone={customer.criteriaDone} />
           </dd>
         </div>
-        <div className="flex min-w-0 items-center gap-1.5">
-          <dt className={FIELD_LABEL_CLASS}>Phụ trách:</dt>
-          <dd className="flex min-w-0 items-center gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300">
-            {customer.primaryAssignee ? (
-              <>
-                <Star size={11} className="shrink-0 fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
-                <span className="truncate">{customer.primaryAssignee.displayName}</span>
-                {customer.careTeamSize > 1 && <span className="text-gray-400">+{customer.careTeamSize - 1}</span>}
-              </>
-            ) : (
-              'Chưa phân'
-            )}
-          </dd>
-        </div>
-        <div className="flex items-center justify-end gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300">
+        {isShowingPrimaryAssignee && (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <dt className={FIELD_LABEL_CLASS}>Chăm sóc:</dt>
+            <dd className="flex min-w-0 items-center gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300">
+              {customer.primaryAssignee ? (
+                <>
+                  <Star size={11} className="shrink-0 fill-warning-400 text-warning-400" aria-label="Phụ trách chính" />
+                  <span className="truncate">{customer.primaryAssignee.displayName}</span>
+                  {customer.primaryAssignee.isLocked && <span className="shrink-0 text-gray-400">(đã khóa)</span>}
+                  {customer.careTeamSize > 1 && <span className="text-gray-400">+{customer.careTeamSize - 1}</span>}
+                </>
+              ) : (
+                'Chưa phân'
+              )}
+            </dd>
+          </div>
+        )}
+        {/* Không có ô "Chăm sóc" (Nhân viên) thì ô hẹn chiếm cả hàng, tránh lệch sang cột trái. */}
+        <div className={`flex items-center gap-1 text-theme-xs font-medium text-gray-700 dark:text-gray-300 ${isShowingPrimaryAssignee ? 'justify-end' : 'col-span-2'}`}>
           <dt className="sr-only">Hẹn tiếp theo</dt>
           <dd className="flex items-center gap-1">
             <CalendarDays size={14} className="shrink-0 text-brand-500 dark:text-brand-400" aria-hidden="true" />
@@ -79,7 +115,7 @@ export const CustomerCard = ({ customer }: CustomerCardProps) => {
         </div>
       </dl>
 
-      <ContactActionGrid customerId={customer.id} />
+      <ContactActionGrid customerId={customer.id} hasPhone={hasPhone(customer.phoneMasked)} />
     </article>
   );
 };

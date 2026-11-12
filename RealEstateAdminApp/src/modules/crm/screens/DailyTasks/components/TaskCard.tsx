@@ -11,6 +11,7 @@ import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { formatVnRelative } from '@crm/lib/dateTime';
 import { NEXT_STEP_HINT_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import { TASK_CATEGORY_META } from '../taskCategoryMeta';
 import { getTaskDueText, TASK_KIND_LABELS } from '../taskFilters';
@@ -84,7 +85,7 @@ export const TaskCard = ({ task }: TaskCardProps) => {
             </button>
             <CustomerStatusChip status={task.customer.status} size="small" />
           </div>
-          {task.customer.phoneMasked && (
+          {hasPhone(task.customer.phoneMasked) && (
             <p className="mt-1 flex min-w-0 items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
               <Phone size={13} className="shrink-0" aria-hidden="true" />
               <span className="truncate tabular-nums">{task.customer.phoneMasked}</span>
@@ -130,7 +131,7 @@ export const TaskCard = ({ task }: TaskCardProps) => {
         <TaskDoneButton task={task} />
       </div>
 
-      <ContactActionGrid customerId={task.customer.id} />
+      <ContactActionGrid customerId={task.customer.id} hasPhone={hasPhone(task.customer.phoneMasked)} />
     </article>
   );
 };

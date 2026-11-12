@@ -4,6 +4,7 @@ import {
   ATTACHMENT_ORIGINAL_NAME_MAX_LENGTH,
   AttachmentKind,
   AttachmentStatus,
+  ThumbStatus,
 } from '../care-log.constants';
 
 /**
@@ -38,6 +39,18 @@ export class CrmAttachment {
 
   @Prop({ type: String, default: null })
   thumbKey: string | null;
+
+  /** Trạng thái job thumbnail (FR-26): `NONE` -> `READY` (có `thumbKey`) hoặc `FAILED`. */
+  @Prop({
+    type: String,
+    enum: Object.values(ThumbStatus),
+    default: ThumbStatus.NONE,
+  })
+  thumbStatus: ThumbStatus;
+
+  /** Số lần job thumbnail đã thất bại (chẩn đoán). */
+  @Prop({ type: Number, default: 0 })
+  thumbAttempts: number;
 
   @Prop({
     type: String,
@@ -86,3 +99,5 @@ CrmAttachmentSchema.index({ customerId: 1, createdAt: -1 });
 CrmAttachmentSchema.index({ careLogId: 1 }, { sparse: true });
 // Dọn ảnh mồ côi (READY > 24 giờ) và purge file của ảnh REMOVED.
 CrmAttachmentSchema.index({ status: 1, createdAt: 1 });
+// Index `{ thumbStatus: 1, createdAt: 1 }` (partial, job bù thumbnail) KHÔNG khai báo ở đây: tạo bằng migration `009`
+// (collection đã có dữ liệu, Architecture 5.1.10); khai báo thêm sẽ để Mongoose autoIndex tạo trùng/khác tên.

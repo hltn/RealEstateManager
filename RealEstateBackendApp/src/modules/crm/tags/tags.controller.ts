@@ -29,6 +29,7 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
+import { ActiveCrmUser } from '../common/access/active-crm-user.decorator';
 import { AdminOnly } from '../common/access/admin-only.decorator';
 import {
   CreateTagDto,
@@ -49,7 +50,7 @@ export class TagsController {
   constructor(private readonly tags: TagsService) {}
 
   @Get()
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({ summary: 'Danh sách / gợi ý thẻ khi gõ' })
   @ApiPaginatedResponse(TagResponseDto)
   list(@Query() query: ListTagsQueryDto) {

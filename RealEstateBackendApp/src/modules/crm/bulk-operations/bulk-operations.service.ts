@@ -110,12 +110,17 @@ export class BulkOperationsService {
     const { payload } = dto;
     switch (dto.type) {
       case BulkOperationType.CHANGE_STATUS: {
-        if (!payload.statusId) {
-          throw validationFailed('CHANGE_STATUS cần payload.statusId', {
-            field: 'payload.statusId',
-          });
+        if (!payload.statusId && !payload.statusCode) {
+          throw validationFailed(
+            'CHANGE_STATUS cần payload.statusCode hoặc payload.statusId',
+            { field: 'payload.statusCode' },
+          );
         }
-        const targetId = oid(payload.statusId);
+        // FR-40: nhận `statusCode` (ưu tiên) hoặc `statusId` (cũ); có cả hai mà không cùng bản ghi thì 400 cho cả lô.
+        const targetId = await this.statusChanges.resolveTargetId(
+          payload,
+          'payload.statusCode',
+        );
         return (customerId, session) =>
           this.statusChanges.applyChange(
             ctx,
@@ -189,17 +194,17 @@ export class BulkOperationsService {
   ) {
     // Nhân viên không được phân người chăm sóc hàng loạt (ma trận 4.2).
     if (!isAdminOrManager(ctx.actor)) throw insufficientRole();
+    // PRIMARY đã khóa (FR-11): hàng loạt chỉ thêm MEMBER, không đặt/đổi PRIMARY.
+    if (payload.primaryUserId) {
+      throw validationFailed('ASSIGN không đặt phụ trách chính hàng loạt', {
+        field: 'payload.primaryUserId',
+      });
+    }
     const memberIds = (payload.memberIds ?? []).map(oid);
-    const primaryUserId = payload.primaryUserId
-      ? oid(payload.primaryUserId)
-      : undefined;
-    if (memberIds.length === 0 && !primaryUserId) {
-      throw validationFailed(
-        'ASSIGN cần payload.memberIds hoặc primaryUserId',
-        {
-          field: 'payload',
-        },
-      );
+    if (memberIds.length === 0) {
+      throw validationFailed('ASSIGN cần payload.memberIds', {
+        field: 'payload.memberIds',
+      });
     }
     return (customerId: string, session: ClientSession) =>
       this.careTeam.applyInSession(
@@ -208,16 +213,17 @@ export class BulkOperationsService {
         {
           // Quản trị/Quản lý đã được chặn ở trên; phạm vi khách do `CustomerScope` bảo đảm.
           authorize: () => undefined,
+          // Khách `careTeam` rỗng: `planAddMembers` báo `PRIMARY_REQUIRED` riêng khách đó (đặt PRIMARY lần đầu dùng POST members).
           plan: (current, now) =>
             planAddMembers(
               current,
-              { userIds: memberIds, primaryUserId },
+              { userIds: memberIds },
               ctx.actor.userId,
               now,
-              { skipExisting: true, allowPrimaryChange: true },
+              { skipExisting: true },
             ),
-          restrictToActorScope: true,
           source,
+          origin: 'BULK_ADD',
         },
         session,
       );

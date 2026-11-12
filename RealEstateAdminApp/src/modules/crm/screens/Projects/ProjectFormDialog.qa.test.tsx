@@ -39,7 +39,7 @@ vi.mock('@crm/api', async () => {
   return {
     ...real,
     useCrmApi: () => api,
-    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, users: [] }),
+    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, personaFields: [], users: [] }),
   };
 });
 
@@ -180,27 +180,17 @@ describe('Sửa: mã cũ', () => {
     expect(api.updateProject).not.toHaveBeenCalled();
   });
 
-  it('đổi mã rồi gõ lại đúng mã cũ (khác hoa thường): vẫn lưu được', async () => {
+  it('Q1: ô Mã chỉ đọc khi Sửa: không gõ đổi được, giữ mã cũ và PATCH không gửi code', async () => {
     state.projects = [legacy()];
     api.updateProject.mockResolvedValue({ ok: true, data: legacy() });
     const user = userEvent.setup();
     setup(legacy());
-    await user.clear(codeInput());
-    await user.type(codeInput(), 'old_code-1');
+    expect(codeInput()).toHaveAttribute('readonly');
+    await user.type(codeInput(), 'xyz');
+    expect(codeInput().value).toBe('OLD_CODE-1');
     await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
-    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith('p1', expect.objectContaining({ code: 'OLD_CODE-1' })));
-  });
-
-  it('xoá trống ô Mã khi Sửa: báo bắt buộc và KHÔNG tự điền theo tên', async () => {
-    state.projects = [legacy()];
-    const user = userEvent.setup();
-    setup(legacy());
-    await user.clear(codeInput());
-    await user.type(nameInput(), ' mới');
-    expect(codeInput().value).toBe('');
-    await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Vui lòng nhập mã dự án.');
-    expect(api.updateProject).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.updateProject).toHaveBeenCalled());
+    expect(api.updateProject.mock.calls[0][1]).not.toHaveProperty('code');
   });
 });
 
@@ -218,14 +208,31 @@ describe('a11y lỗi ô Mã', () => {
     expect(alert).toHaveTextContent('Mã chỉ gồm chữ không dấu và số');
   });
 
-  it('lỗi 409 từ BE cũng gắn đúng aria cho ô Mã', async () => {
+  it('lỗi 409 từ BE với mã tự gõ tay: gắn đúng aria cho ô Mã', async () => {
+    api.createProject.mockResolvedValue({ ok: false, error: { statusCode: 409, errorCode: 'PROJECT_CODE_DUPLICATED', message: 'Mã dự án đã tồn tại' } });
+    const user = userEvent.setup();
+    setup();
+    await user.type(nameInput(), 'Sky');
+    await user.clear(codeInput());
+    await user.type(codeInput(), 'abc');
+    await user.click(screen.getByRole('button', { name: 'Thêm dự án' }));
+    const alert = await screen.findByRole('alert');
+    expect(codeInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(codeInput().getAttribute('aria-describedby')).toBe(alert.id);
+  });
+
+  it('hết lượt tự đổi mã tự điền: ô Tên aria-invalid trỏ đúng thông báo; ô Mã không báo lỗi và không giữ mã đã bị trùng', async () => {
     api.createProject.mockResolvedValue({ ok: false, error: { statusCode: 409, errorCode: 'PROJECT_CODE_DUPLICATED', message: 'Mã dự án đã tồn tại' } });
     const user = userEvent.setup();
     setup();
     await user.type(nameInput(), 'Sky');
     await user.click(screen.getByRole('button', { name: 'Thêm dự án' }));
-    const alert = await screen.findByRole('alert');
-    expect(codeInput()).toHaveAttribute('aria-invalid', 'true');
-    expect(codeInput().getAttribute('aria-describedby')).toBe(alert.id);
+    const nameAlert = await screen.findByText(/Không tạo được mã dự án không trùng/);
+    const sentCodes = api.createProject.mock.calls.map(([body]) => (body as { code: string }).code);
+    expect(sentCodes.length).toBeGreaterThan(1);
+    expect(nameInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput().getAttribute('aria-describedby')).toBe(nameAlert.closest('[id]')?.id);
+    expect(codeInput()).not.toHaveAttribute('aria-invalid', 'true');
+    expect(sentCodes).not.toContain(codeInput().value);
   });
 });

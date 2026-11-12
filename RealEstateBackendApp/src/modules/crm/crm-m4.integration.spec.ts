@@ -1864,6 +1864,20 @@ describe('CRM M4 — chân dung và thẻ', () => {
       expect(await idsOf('occupation=KẾ%20TOÁN%20VIÊN', 'admin')).toEqual([cF]);
       expect(await idsOf('occupation=%2E%2A', 'admin')).toEqual([]);
 
+      // Danh sách trả `purchasePurposes` (mã) nhờ projection `$elemMatch`, không lộ mảng `persona` hay trường khác.
+      const listed = await call(
+        'GET',
+        `/crm/customers?limit=100&tagIds=${tag.travel}`,
+        'admin',
+      );
+      const byId = new Map<string, any>(
+        (listed.body.data as { id: string }[]).map((item) => [item.id, item]),
+      );
+      expect(byId.get(cF).purchasePurposes).toEqual(['INVEST_RENT']);
+      expect(byId.get(cG).purchasePurposes).toEqual([]);
+      expect(JSON.stringify(listed.body)).not.toContain('"persona"');
+      expect(JSON.stringify(listed.body)).not.toContain('Kế toán viên');
+
       const only = `&tagIds=${tag.travel}`;
       expect(
         await idsOf(`personaFilters=property_type:APARTMENT${only}`, 'admin'),

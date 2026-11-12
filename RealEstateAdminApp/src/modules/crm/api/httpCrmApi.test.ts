@@ -14,7 +14,7 @@ import { createHttpCrmApi } from './httpCrmApi';
 
 const invalidate = vi.fn();
 const setup = () =>
-  createHttpCrmApi({ invalidate, getContext: () => ({ actor: { userId: 'u1', role: 'ADMIN' as const } }), getPersonaFields: () => new Map() });
+  createHttpCrmApi({ invalidate, getPersonaFields: () => new Map() });
 
 beforeEach(() => {
   patchCustomer.mockReset();
@@ -36,7 +36,7 @@ describe('saveCustomerProfile: hồ sơ -> chân dung -> CCCD, chuyền version 
       nationalId: ' 012345678901 ',
     });
     expect(result).toEqual({ ok: true, data: { version: 6 } });
-    expect(patchCustomer).toHaveBeenCalledWith('c1', { fullName: 'An', version: 4 }, expect.anything());
+    expect(patchCustomer).toHaveBeenCalledWith('c1', { fullName: 'An', version: 4 });
     expect(patchPersona.mock.calls[0][1]).toBe(5);
     expect(putNationalIdValue).toHaveBeenCalledWith('c1', '012345678901');
     expect(invalidate).toHaveBeenCalledTimes(1);

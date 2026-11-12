@@ -24,6 +24,7 @@ import type { AppointmentView as Appointment } from '@crm/api';
 import { APPOINTMENT_TYPE_STYLES, getAppointmentActionVariant } from '../appointmentTypeStyles';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { CARD_CLASS, CHIP_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { AppointmentMoreMenu } from './AppointmentMoreMenu';
 
 interface AppointmentCardDesktopProps {
@@ -94,7 +95,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
               <span className="truncate font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</span>
               <CustomerStatusChip status={appointment.customer.status} size="small" />
             </InfoRow>
-            {appointment.customer.phoneMasked && (
+            {hasPhone(appointment.customer.phoneMasked) && (
               <InfoRow icon={<Phone size={16} />}>
                 <span className="truncate">
                   SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customer.phoneMasked}</strong>

@@ -3,7 +3,7 @@ import { InjectConnection } from '@nestjs/mongoose';
 import { ClientSession, Connection, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
-import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../notifications/notification-dispatcher.service';
 import {
   CrmAuditAction,
   CrmAuditChange,
@@ -54,7 +54,7 @@ export class CustomerCriteriaService {
     private readonly refs: CustomerRefsService,
     private readonly audit: CrmAuditLogService,
     private readonly statusChange: CustomerStatusChangeService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
   ) {}
 
   /**
@@ -266,7 +266,7 @@ export class CustomerCriteriaService {
       session,
     );
     // Thông báo người cùng chăm sóc (trừ người tick) CÙNG transaction, chỉ khi tình trạng đã đổi thật (tới đây là chắc chắn).
-    await this.notifications.createMany(
+    await this.notifications.dispatch(
       buildAutoStatusNotifications({
         customerId: new Types.ObjectId(id),
         customerName: before.fullName,

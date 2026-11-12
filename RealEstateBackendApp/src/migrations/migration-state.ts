@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb';
 import { validateMigrationRegistry } from './migration.registry';
-import type { Migration, MigrationActor } from './migration.types';
+import { getMigrationPhase, matchesPhase } from './migration-phase';
+import type { Migration, MigrationActor, PhaseFilter } from './migration.types';
 import {
   BASELINE_MIGRATION_IDS,
   MIGRATION_DOC_PREFIX,
@@ -114,14 +115,22 @@ export const hasUserData = async (db: Db): Promise<boolean> =>
     .collection(USERS_COLLECTION)
     .findOne({}, { projection: { _id: 1 } })) !== null;
 
-/** Danh sách migration chưa có trong sổ, theo thứ tự số tăng dần. */
+/**
+ * Danh sách migration chưa có trong sổ, theo thứ tự số tăng dần. `phase` chỉ CHỌN theo pha (mặc định `all` = mọi
+ * pha, giữ hành vi cũ); không đổi cách ghi sổ.
+ */
 export const selectPendingMigrations = (
   migrations: readonly Migration[],
   applied: readonly AppliedMigrationDoc[],
+  phase: PhaseFilter = 'all',
 ): Migration[] => {
   const appliedIds = new Set(applied.map((doc) => doc.id));
   return migrations
-    .filter((migration) => !appliedIds.has(migration.id))
+    .filter(
+      (migration) =>
+        !appliedIds.has(migration.id) &&
+        matchesPhase(getMigrationPhase(migration), phase),
+    )
     .sort((a, b) => a.id.localeCompare(b.id));
 };
 

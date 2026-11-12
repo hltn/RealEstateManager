@@ -12,6 +12,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { CatalogCode } from '../../../../common/decorators/catalog-code.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { HasVisibleChar } from '../../../../common/decorators/has-visible-char.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
@@ -34,10 +35,21 @@ export enum BulkOperationType {
 }
 
 export class BulkOperationPayloadDto {
-  @ApiPropertyOptional({ description: 'CHANGE_STATUS: tình trạng đích' })
+  @ApiPropertyOptional({
+    description:
+      'CHANGE_STATUS: tình trạng đích. Deprecated: dùng `statusCode`; phải gửi một trong hai',
+  })
   @IsOptional()
   @IsMongoId()
   statusId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'CHANGE_STATUS: mã tình trạng đích (gửi cùng `statusId` mà không cùng bản ghi: 400)',
+  })
+  @OptionalNotNull()
+  @CatalogCode()
+  statusCode?: string;
 
   @ApiPropertyOptional({
     type: [String],
@@ -51,7 +63,8 @@ export class BulkOperationPayloadDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'ASSIGN: người được thêm vào nhóm chăm sóc (đã có thì bỏ qua)',
+    description:
+      'ASSIGN: người được thêm vào nhóm chăm sóc (đã có thì bỏ qua; không giới hạn theo nhóm; khách đã đủ 10 thành viên phụ báo CARE_TEAM_LIMIT_EXCEEDED riêng từng khách)',
   })
   @OptionalNotNull()
   @ArrayMaxSize(MAX_MEMBERS)
@@ -61,7 +74,7 @@ export class BulkOperationPayloadDto {
 
   @ApiPropertyOptional({
     description:
-      'ASSIGN: phụ trách chính. Bắt buộc với khách chưa có nhóm; khách đã có nhóm thì đổi phụ trách chính sang người này',
+      'ASSIGN: KHÔNG được truyền (400 VALIDATION_FAILED) — PRIMARY đã khóa, hàng loạt chỉ thêm MEMBER; khách chưa có nhóm báo PRIMARY_REQUIRED riêng từng khách',
   })
   @IsOptional()
   @IsMongoId()

@@ -38,6 +38,8 @@ interface HandlerInfo {
   hasRoles: boolean;
   hasPublic: boolean;
   hasAnyRole: boolean;
+  /** `@ActiveCrmUser()` (FR-21): `@Roles(...CRM_ROLES)` + kiểm lại status/role theo DB. */
+  hasActiveCrmUser: boolean;
 }
 
 const findControllerFiles = (dir: string): string[] =>
@@ -61,9 +63,10 @@ const collectHandlers = (): HandlerInfo[] => {
     const className = /^export class (\w+)/.exec(lines[classLine])![1];
     const classHeader = lines.slice(0, classLine + 1).join('\n');
     const classLevel = {
-      hasRoles: /@(Roles|AdminOnly)\(/.test(classHeader),
+      hasRoles: /@(Roles|AdminOnly|ActiveCrmUser)\(/.test(classHeader),
       hasPublic: /@Public\(/.test(classHeader),
       hasAnyRole: /@AnyRole\(/.test(classHeader),
+      hasActiveCrmUser: /@ActiveCrmUser\(/.test(classHeader),
     };
 
     let current = { ...classLevel };
@@ -71,7 +74,10 @@ const collectHandlers = (): HandlerInfo[] => {
     for (let index = classLine + 1; index < lines.length; index += 1) {
       const line = lines[index];
       if (HTTP_DECORATOR.test(line)) hasHttp = true;
-      if (/@(Roles|AdminOnly)\(/.test(line)) current.hasRoles = true;
+      if (/@(Roles|AdminOnly|ActiveCrmUser)\(/.test(line)) {
+        current.hasRoles = true;
+      }
+      if (/@ActiveCrmUser\(/.test(line)) current.hasActiveCrmUser = true;
       if (/@Public\(/.test(line)) current.hasPublic = true;
       if (/@AnyRole\(/.test(line)) current.hasAnyRole = true;
       const signature = METHOD_SIGNATURE.exec(line);
@@ -115,7 +121,7 @@ describe('RolesGuard default-deny — vai trò MANAGER/STAFF không lọt vào r
   it('các controller CRM/nhóm/người dùng đều khai báo @Roles (hoặc @Public/@AnyRole) tường minh trên mọi handler', () => {
     const offenders = handlers
       .filter((handler) =>
-        /^(Teams|Areas|LeadSources|ContactResults|CustomerStatuses|Projects|AssignableUsers|CrmSettings|Users|Customers|CustomerSensitiveData|CustomerLifecycle|CustomerHistories)Controller\./.test(
+        /^(Teams|Areas|LeadSources|ContactResults|CustomerStatuses|Projects|CrmSettings|Users|Customers|CustomerAssignees|CustomerSensitiveData|CustomerLifecycle|CustomerHistories)Controller\./.test(
           handler.label,
         ),
       )
@@ -125,6 +131,58 @@ describe('RolesGuard default-deny — vai trò MANAGER/STAFF không lọt vào r
       )
       .map((handler) => handler.label);
     expect(offenders).toEqual([]);
+  });
+
+  it('FR-21 (Q8): 8 GET danh mục CRM (tình trạng, nguồn, kết quả liên hệ, khu vực, dự án x2, thẻ, trường chân dung) dùng @ActiveCrmUser()', () => {
+    const expected = [
+      'AreasController.list',
+      'ContactResultsController.list',
+      'CustomerStatusesController.list',
+      'LeadSourcesController.list',
+      'PersonaFieldsController.list',
+      'ProjectsController.getById',
+      'ProjectsController.list',
+      'TagsController.list',
+    ];
+    const actual = handlers
+      .filter((handler) => handler.hasActiveCrmUser)
+      .map((handler) => handler.label)
+      .sort();
+    expect(actual).toEqual(expected);
+  });
+
+  it('FR-21 (Q8): GET danh mục CRM không còn @Roles(...CRM_ROLES) trần (tin JWT) trong nguồn controller', () => {
+    const files = [
+      'catalogs/areas.controller.ts',
+      'catalogs/contact-results.controller.ts',
+      'catalogs/customer-statuses.controller.ts',
+      'catalogs/lead-sources.controller.ts',
+      'projects/projects.controller.ts',
+      'persona/persona-fields.controller.ts',
+      'tags/tags.controller.ts',
+    ];
+    for (const file of files) {
+      const lines = fs
+        .readFileSync(path.join(SRC_ROOT, 'modules', 'crm', file), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ''))
+        .replace(/\/\/.*$/gm, '')
+        .split(/\r?\n/);
+      // Với mỗi @Get(...) thì decorator quyền ngay sau đó phải là @ActiveCrmUser(), không phải @Roles(...).
+      lines.forEach((line, index) => {
+        if (!/^\s*@Get\(/.test(line)) return;
+        const block = lines.slice(index, index + 4).join(' ');
+        expect({ file, line: index + 1, hit: /@Roles\(/.test(block) }).toEqual({
+          file,
+          line: index + 1,
+          hit: false,
+        });
+        expect({
+          file,
+          line: index + 1,
+          active: /@ActiveCrmUser\(/.test(block),
+        }).toEqual({ file, line: index + 1, active: true });
+      });
+    }
   });
 
   describe('RolesGuard thật + Reflector thật trên handler thật', () => {

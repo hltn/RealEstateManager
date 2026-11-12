@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { IdempotencyService } from '../../../common/services/idempotency.service';
 import { RedisModule } from '../../../shared/redis/redis.module';
+import { CountersModule } from '../../../shared/counters/counters.module';
 import { StorageModule } from '../../../shared/storage/storage.module';
+import { Team, TeamSchema } from '../../teams/schemas/team.schema';
 import { User, UserSchema } from '../../users/schemas/user.schema';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
 import {
@@ -32,6 +34,8 @@ import {
 import { ProjectsModule } from '../projects/projects.module';
 import { Tag, TagSchema } from '../tags/schemas/tag.schema';
 import { CustomerAccessService } from './access/customer-access.service';
+import { CustomerAssigneesController } from './customer-assignees.controller';
+import { CustomerAssigneesService } from './customer-assignees.service';
 import { CustomerCareAnonymizerService } from './customer-care-anonymizer.service';
 import { CustomerCriteriaService } from './customer-criteria.service';
 import { CustomerDeletionService } from './customer-deletion.service';
@@ -61,8 +65,10 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
       { name: User.name, schema: UserSchema },
+      // Gom tên nhóm cho `customer-assignees`.
+      { name: Team.name, schema: TeamSchema },
       { name: CrmAuditLog.name, schema: CrmAuditLogSchema },
-      // Đề nghị tham gia nhóm (`hasPendingRequest`) và dữ liệu chăm sóc cần ẩn danh hóa cùng khách (M3).
+      // Dữ liệu đề nghị tham gia nhóm cần ẩn danh hóa cùng khách, và dữ liệu chăm sóc (M3).
       { name: CareTeamRequest.name, schema: CareTeamRequestSchema },
       { name: CareLog.name, schema: CareLogSchema },
       { name: CrmAttachment.name, schema: CrmAttachmentSchema },
@@ -86,12 +92,15 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     // Hủy/dựng lại nhắc việc khi xóa mềm/khôi phục và ẩn danh hóa khách (M5).
     RemindersCoreModule,
     NotificationsModule,
+    // Cấp mã khách `KH-xxxxxx` trong transaction tạo khách (FR-07).
+    CountersModule,
   ],
   controllers: [
     CustomersController,
     CustomerSensitiveDataController,
     CustomerLifecycleController,
     CustomerHistoriesController,
+    CustomerAssigneesController,
   ],
   providers: [
     IdempotencyService,
@@ -108,6 +117,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerDeletionService,
     CustomerPurgeService,
     CustomerHistoriesService,
+    CustomerAssigneesService,
     CustomerCareAnonymizerService,
     CustomerTagsService,
     CustomerPersonaAnonymizerService,

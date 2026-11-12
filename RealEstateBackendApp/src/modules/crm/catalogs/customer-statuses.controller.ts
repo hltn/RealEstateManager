@@ -23,8 +23,6 @@ import {
 } from '../../../common/decorators/api-response.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
 import { CustomerStatusesService } from './customer-statuses.service';
@@ -34,6 +32,7 @@ import {
   ListCustomerStatusesQueryDto,
   UpdateCustomerStatusDto,
 } from './dtos/customer-status.dto';
+import { ActiveCrmUser } from '../common/access/active-crm-user.decorator';
 import { AdminOnly } from '../common/access/admin-only.decorator';
 
 /** Tình trạng khách (tài liệu 05 mục 2.8). Đọc: Quản trị/Quản lý/Nhân viên. Ghi: Quản trị. */
@@ -45,7 +44,7 @@ export class CustomerStatusesController {
   constructor(private readonly statusesService: CustomerStatusesService) {}
 
   @Get()
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({
     summary: 'Danh sách tình trạng khách (lọc theo nhóm danh sách, trạng thái)',
   })

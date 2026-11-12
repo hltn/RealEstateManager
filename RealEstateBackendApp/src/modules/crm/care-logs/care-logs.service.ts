@@ -26,10 +26,13 @@ import {
 } from '../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { AppointmentsWriteService } from '../appointments/appointments-write.service';
-import { invalidField } from '../appointments/appointment.rules';
+import {
+  assertProjectInputConsistent,
+  invalidField,
+} from '../appointments/appointment.rules';
 import { CrmSettingsService } from '../crm-settings/crm-settings.service';
 import { RemindersWriterService } from '../reminders/reminders-writer.service';
-import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../notifications/notification-dispatcher.service';
 import { NotificationType } from '../../notifications/notification.constants';
 import {
   AccessContext,
@@ -39,16 +42,25 @@ import {
   customerNotFound,
   resolveClientSource,
 } from '../customers/customer.errors';
-import { CustomerRefsService } from '../customers/customer-refs.service';
+import {
+  CatalogRef,
+  CustomerRefsService,
+} from '../customers/customer-refs.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import { CareLogAttachmentsService } from './care-log-attachments.service';
 import { CareLogSource } from './care-log.constants';
-import { CareLogLean, toCareLogResponse } from './care-log.mapper';
+import {
+  CareLogLean,
+  ContactResultRefs,
+  toCareLogResponse,
+} from './care-log.mapper';
 import {
   assertAttachmentCount,
   assertCanModifyCareLog,
   assertOccurredAtNotFuture,
+  ContactResultIntent,
   diffAttachmentIds,
+  readContactResultIntent,
 } from './care-log.rules';
 import {
   CareLogResponseDto,
@@ -86,7 +98,7 @@ export class CareLogsService {
     private readonly featureFlags: FeatureFlagService,
     private readonly appointmentsWriter: AppointmentsWriteService,
     private readonly reminders: RemindersWriterService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
     private readonly settings: CrmSettingsService,
   ) {}
 
@@ -170,6 +182,13 @@ export class CareLogsService {
         'nextAction.dueAt',
       );
     }
+    if (dto.nextAction?.appointment) {
+      // Một bên null (gỡ dự án) mà bên kia có giá trị là mâu thuẫn => 400 trước khi ghi bất cứ thứ gì.
+      assertProjectInputConsistent(
+        dto.nextAction.appointment.projectId,
+        dto.nextAction.appointment.projectCode,
+      );
+    }
 
     const customer = await this.repo.findOne(ctx.scope, customerId, {
       session,
@@ -177,10 +196,11 @@ export class CareLogsService {
     });
     if (!customer) throw customerNotFound();
 
-    const contactResultId = dto.contactResultId
-      ? oid(dto.contactResultId)
-      : null;
-    await this.refs.lockAndAssert({ contactResultId }, session);
+    // Ghi kép (FR-40): dịch id/code về một bản ghi danh mục, ghi cả `contactResultId` lẫn `contactResultCode`.
+    const contactResult = await this.assignContactResult(
+      readContactResultIntent(dto.contactResultId, dto.contactResultCode),
+      session,
+    );
 
     const _id = new Types.ObjectId();
     const attached = await this.attachments.attachToCareLog(
@@ -205,6 +225,8 @@ export class CareLogsService {
           projectId: dto.nextAction.appointment.projectId
             ? oid(dto.nextAction.appointment.projectId)
             : null,
+          // Ghi kép (FR-40): `projectCode` ưu tiên hơn `projectId`; writer dịch về một dự án và ghi cả hai.
+          projectCode: dto.nextAction.appointment.projectCode ?? null,
           sourceCareLogId: _id,
         },
         auditSource,
@@ -221,7 +243,8 @@ export class CareLogsService {
       occurredAt,
       content: dto.content,
       contactChannel: dto.contactChannel,
-      contactResultId,
+      contactResultId: contactResult?.id ?? null,
+      contactResultCode: contactResult?.code ?? null,
       nextAction: dto.nextAction
         ? {
             suggestion: dto.nextAction.suggestion ?? null,
@@ -261,7 +284,7 @@ export class CareLogsService {
       now,
       session,
     );
-    await this.notifyCareTeam(ctx, customer, now, session);
+    await this.notifyCareTeam(ctx, customer, _id, now, session);
 
     const changes: CrmAuditChange[] = [
       { field: 'careLog.content', from: null, to: dto.content },
@@ -309,6 +332,7 @@ export class CareLogsService {
       fullName: string;
       careTeam?: Array<{ userId: Types.ObjectId }>;
     },
+    careLogId: Types.ObjectId,
     now: Date,
     session: ClientSession,
   ): Promise<void> {
@@ -320,20 +344,28 @@ export class CareLogsService {
     const windowMs = careLogNotifyDebounceMinutes * 60 * 1000;
     // 0 phút = không gộp (mỗi ghi chú một thông báo).
     const bucket = windowMs > 0 ? Math.floor(now.getTime() / windowMs) : null;
-    await this.notifications.createMany(
-      recipients.map((member) => ({
-        userId: member.userId,
-        type: NotificationType.CARE_LOG_ADDED,
-        title: 'Ghi chú chăm sóc mới',
-        body: `${ctx.actor.displayName} vừa ghi chú cho khách ${customer.fullName}`,
-        data: {
-          customerId: customer._id,
-          deepLink: `/crm/customers/${String(customer._id)}`,
+    // Gộp = 0 phút thì khóa theo chính ghi chú (`careLogId`) để mỗi ghi chú vẫn một thông báo (và một push).
+    const dedupeKey = `CARE_LOG:${String(customer._id)}:${bucket ?? String(careLogId)}`;
+    await this.notifications.dispatch(
+      [
+        {
+          type: NotificationType.CARE_LOG_ADDED,
+          recipientIds: recipients.map((member) => member.userId),
+          inApp: {
+            title: 'Ghi chú chăm sóc mới',
+            body: `${ctx.actor.displayName} vừa ghi chú cho khách ${customer.fullName}`,
+          },
+          vars: {
+            actorName: ctx.actor.displayName,
+            customerName: customer.fullName,
+          },
+          data: {
+            customerId: customer._id,
+            deepLink: `/crm/customers/${String(customer._id)}`,
+          },
+          dedupeKey,
         },
-        ...(bucket !== null && {
-          dedupeKey: `CARE_LOG:${String(customer._id)}:${bucket}`,
-        }),
-      })),
+      ],
       session,
     );
   }
@@ -397,17 +429,21 @@ export class CareLogsService {
             });
           }
         }
-        if (dto.contactResultId !== undefined) {
-          const next = dto.contactResultId ? oid(dto.contactResultId) : null;
-          if (String(next ?? '') !== String(log.contactResultId ?? '')) {
-            await this.refs.lockAndAssert({ contactResultId: next }, session);
-            set.contactResultId = next;
-            changes.push({
-              field: 'careLog.contactResult',
-              from: log.contactResultId ? String(log.contactResultId) : null,
-              to: next ? String(next) : null,
-            });
-          }
+        const contactResult = await this.changeContactResult(
+          readContactResultIntent(dto.contactResultId, dto.contactResultCode),
+          log.contactResultId ?? null,
+          session,
+        );
+        if (contactResult.changed) {
+          const next = contactResult.ref;
+          // Ghi kép (FR-40): id và code luôn đổi cùng nhau.
+          set.contactResultId = next?.id ?? null;
+          set.contactResultCode = next?.code ?? null;
+          changes.push({
+            field: 'careLog.contactResult',
+            from: log.contactResultId ? String(log.contactResultId) : null,
+            to: next ? String(next.id) : null,
+          });
         }
 
         let removedKeys: string[] = [];
@@ -552,6 +588,60 @@ export class CareLogsService {
     assertAttachmentCount(count);
   }
 
+  /**
+   * Gán kết quả liên hệ mới (tạo nhật ký): dịch `id`/`code` về MỘT bản ghi đang hoạt động (400 nếu không tồn tại/đã
+   * ngừng/id và code lệch nhau) rồi "khóa ghi" bản ghi đó trong transaction. Không gửi gì hoặc bỏ chọn: `null`.
+   */
+  private async assignContactResult(
+    intent: ContactResultIntent,
+    session: ClientSession,
+  ): Promise<CatalogRef | null> {
+    if (intent.kind !== 'assign') return null;
+    const ref = await this.refs.resolveOneForAssign(
+      'contactResult',
+      {
+        id: intent.id ? oid(intent.id) : null,
+        code: intent.code,
+      },
+      intent.field,
+      session,
+    );
+    await this.refs.lockAndAssert(
+      { contactResultId: ref?.id ?? null },
+      session,
+    );
+    return ref;
+  }
+
+  /**
+   * Sửa kết quả liên hệ của nhật ký có sẵn. Gửi lại đúng giá trị đang lưu (theo id và/hoặc code) là KHÔNG đổi, kể cả khi
+   * danh mục đó đã ngừng hoạt động sau này (sửa nội dung không bị chặn); chỉ giá trị mới mới phải còn hoạt động.
+   */
+  private async changeContactResult(
+    intent: ContactResultIntent,
+    current: Types.ObjectId | null,
+    session: ClientSession,
+  ): Promise<{ changed: boolean; ref: CatalogRef | null }> {
+    if (intent.kind === 'unchanged') return { changed: false, ref: null };
+    if (intent.kind === 'clear') return { changed: !!current, ref: null };
+    if (current) {
+      const [stored] = await this.refs.resolveByIds(
+        'contactResult',
+        [current],
+        {
+          session,
+        },
+      );
+      const sameId = !intent.id || intent.id === String(current);
+      const sameCode = !intent.code || intent.code === stored?.code;
+      if (stored && sameId && sameCode) return { changed: false, ref: null };
+    }
+    return {
+      changed: true,
+      ref: await this.assignContactResult(intent, session),
+    };
+  }
+
   private async findLog(
     customerId: string,
     logId: string,
@@ -653,13 +743,28 @@ export class CareLogsService {
     logs: CareLogLean[],
     ctx: AccessContext,
   ): Promise<CareLogResponseDto[]> {
-    const [maps, urls] = await Promise.all([
-      this.refs.resolve({
-        userIds: logs.map((log) => log.authorId),
-        contactResultIds: logs.map((log) => log.contactResultId),
-      }),
+    const [maps, contactResults, urls] = await Promise.all([
+      this.refs.resolve({ userIds: logs.map((log) => log.authorId) }),
+      // Dịch id sang { code, label } một lần `$in` (kể cả danh mục đã xóa mềm); mapper dùng khi log thiếu `code`.
+      this.refs.resolveByIds(
+        'contactResult',
+        logs.map((log) => log.contactResultId),
+      ),
       this.attachments.signUrls(logs),
     ]);
-    return logs.map((log) => toCareLogResponse(log, ctx.actor, maps, urls));
+    const contactResultRefs: ContactResultRefs = new Map(
+      contactResults.map((ref) => [
+        String(ref.id),
+        { code: ref.code, label: ref.label },
+      ]),
+    );
+    return logs.map((log) =>
+      toCareLogResponse(
+        log,
+        ctx.actor,
+        { users: maps.users, contactResults: contactResultRefs },
+        urls,
+      ),
+    );
   }
 }

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AppointmentsModule } from './appointments/appointments.module';
-import { AssignableUsersModule } from './assignable-users/assignable-users.module';
 import { BulkOperationsModule } from './bulk-operations/bulk-operations.module';
 import { CareLogsModule } from './care-logs/care-logs.module';
 import { CareTeamsModule } from './care-teams/care-teams.module';
@@ -27,7 +26,6 @@ import { TagsModule } from './tags/tags.module';
   imports: [
     CatalogsModule,
     ProjectsModule,
-    AssignableUsersModule,
     CrmSettingsModule,
     CustomersModule,
     CareTeamsModule,

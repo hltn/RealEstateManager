@@ -614,8 +614,10 @@ export class CustomCrawlerService {
    * Chỉ giữ lại để tránh break nếu còn chỗ nào đó gọi — KHÔNG dùng cho analyze-raw nữa.
    */
   async deleteRawArticlesNotIn(urlHashes: string[]): Promise<void> {
+    // FR-14: chỉ nhận chuỗi trước khi vào filter Mongo
+    const safeHashes = urlHashes.filter((h): h is string => typeof h === 'string');
     await this.rawArticleModel
-      .deleteMany({ urlHash: { $nin: urlHashes } })
+      .deleteMany({ urlHash: { $nin: safeHashes } })
       .exec();
   }
 
@@ -631,10 +633,17 @@ export class CustomCrawlerService {
     submittedHashes: string[],
     keepHashes: string[],
   ): Promise<void> {
+    // FR-14: ép kiểu chuỗi (phần tử object kiểu `{ $ne: ... }` bị loại) trước khi vào filter Mongo
+    const safeSubmitted = submittedHashes.filter(
+      (h): h is string => typeof h === 'string' && h.length > 0,
+    );
+    const safeKeep = (keepHashes ?? []).filter(
+      (h): h is string => typeof h === 'string' && h.length > 0,
+    );
     // Không có bài nào được submit → bỏ qua, tránh xóa nhầm
-    if (submittedHashes.length === 0) return;
+    if (safeSubmitted.length === 0) return;
     await this.rawArticleModel
-      .deleteMany({ urlHash: { $in: submittedHashes, $nin: keepHashes } })
+      .deleteMany({ urlHash: { $in: safeSubmitted, $nin: safeKeep } })
       .exec();
   }
 }

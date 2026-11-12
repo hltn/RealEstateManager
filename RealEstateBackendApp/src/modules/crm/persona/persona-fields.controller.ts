@@ -26,10 +26,9 @@ import {
 } from '../../../common/decorators/api-response.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
+import { ActiveCrmUser } from '../common/access/active-crm-user.decorator';
 import { AdminOnly } from '../common/access/admin-only.decorator';
 import {
   CreatePersonaFieldDto,
@@ -52,7 +51,7 @@ export class PersonaFieldsController {
   constructor(private readonly fields: PersonaFieldsService) {}
 
   @Get()
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({ summary: 'Danh sách trường chân dung (render form, bộ lọc)' })
   @ApiPaginatedResponse(PersonaFieldResponseDto)
   list(@Query() query: ListPersonaFieldsQueryDto) {
@@ -102,7 +101,11 @@ export class PersonaFieldsController {
       'Sửa trường (nhãn, lựa chọn, trọng số, bật/tắt...); key bất biến, type khóa khi đã có dữ liệu',
   })
   @ApiDataResponse(PersonaFieldResponseDto)
-  @ApiResponse({ status: 409, description: 'PERSONA_FIELD_TYPE_LOCKED' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PERSONA_FIELD_TYPE_LOCKED (đã có dữ liệu khách) hoặc PERSONA_FIELD_SYSTEM (đổi kiểu trường hệ thống)',
+  })
   async update(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

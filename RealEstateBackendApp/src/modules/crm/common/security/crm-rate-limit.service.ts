@@ -7,8 +7,6 @@ import { REDIS_CLIENT } from '../../../../shared/redis/redis.constants';
 
 /** Giới hạn theo NGƯỜI DÙNG (tài liệu 04 mục 7.3): xác định sau khi đã xác thực, khác Throttler theo IP. */
 export const RATE_LIMITS = {
-  /** `phone-lookups`: 30 lần/phút/người. */
-  PHONE_LOOKUP: { limit: 30, windowMs: 60_000 },
   /** `phone-views`: 60 lần/phút/người. */
   PHONE_VIEW: { limit: 60, windowMs: 60_000 },
   /** `national-id-views`: 10 lần/phút/người. */
@@ -19,8 +17,10 @@ export const RATE_LIMITS = {
   ATTACHMENT_UPLOAD: { limit: 30, windowMs: 60_000 },
   /** Thao tác hàng loạt (mỗi lần tới 200 khách): 10 lần/phút/người. */
   BULK_OPERATION: { limit: 10, windowMs: 60_000 },
-  /** Đề nghị tham gia nhóm chăm sóc: 20 lần/phút/người (chống spam người duyệt). */
-  JOIN_REQUEST: { limit: 20, windowMs: 60_000 },
+  /** Mời thành viên phụ (`POST care-team/members`): 30 lần/phút/người (FR-17, chống lạm dụng mở rộng phạm vi xem khách). */
+  CARE_TEAM_INVITE: { limit: 30, windowMs: 60_000 },
+  /** Tìm người được mời (`GET care-team-invitees`): 60 lần/phút/người (FR-14, chống dò danh sách người dùng). */
+  INVITEE_SEARCH: { limit: 60, windowMs: 60_000 },
   /** Tạo thẻ mới: 30 lần/phút/người (mọi vai trò được tạo thẻ, chống làm rác danh sách thẻ). */
   TAG_CREATE: { limit: 30, windowMs: 60_000 },
 } as const;

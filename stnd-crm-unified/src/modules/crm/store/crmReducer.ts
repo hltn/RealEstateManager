@@ -118,8 +118,6 @@ export type CrmAction =
   | { type: 'notifications/markAllRead'; userId: string }
   | { type: 'nationalIds/viewed'; view: NationalIdView; meta: MutationMeta }
   | { type: 'phones/viewed'; customerId: string; meta: MutationMeta }
-  | { type: 'careTeamRequests/add'; request: CareTeamRequest; meta: MutationMeta }
-  | { type: 'careTeamRequests/resolve'; requestId: string; status: CareTeamRequest['status']; meta: MutationMeta }
   | { type: 'catalogs/upsert'; kind: CatalogKind; item: CatalogItemOf<CatalogKind> }
   | { type: 'auditLogs/add'; log: AuditLog }
   | { type: 'users/upsert'; user: AdminUser }
@@ -194,13 +192,6 @@ const createChangeLog = (
   };
 };
 
-const isPhoneTaken = (customers: readonly Customer[], phone: string, excludeCustomerId?: string): boolean => {
-  const normalized = normalizePhone(phone);
-  return customers.some(
-    (customer) => customer.id !== excludeCustomerId && (normalizePhone(customer.phone) ?? customer.phone) === (normalized ?? phone),
-  );
-};
-
 /** Lịch hẹn sắp tới gần nhất (SCHEDULED, chưa qua) của khách — cột "HẸN" (04 §3.2 `nextAppointmentAt`). */
 const getNextAppointmentAt = (appointments: readonly Appointment[], customerId: string, now: string): string | null =>
   appointments
@@ -259,7 +250,6 @@ const applyCustomerUpdate = (
 ): CrmState => {
   const before = state.customers.find((customer) => customer.id === customerId);
   if (!before) return state;
-  if (patch.phone !== undefined && isPhoneTaken(state.customers, patch.phone, customerId)) return state;
   if (patch.careTeam !== undefined) {
     if (!isCareTeamValid(patch.careTeam)) return state;
     // Chỉ kiểm người MỚI vào nhóm (người cũ đã khoá vẫn được giữ cho tới khi bị gỡ).
@@ -339,10 +329,12 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
 
     case 'customers/create': {
       const { customer, meta } = action;
-      // QT4: SĐT duy nhất toàn hệ thống; QT3: phải có tên + SĐT; QT7: nhóm chăm sóc hợp lệ.
-      if (!customer.fullName.trim() || !normalizePhone(customer.phone)) return state;
-      if (isPhoneTaken(state.customers, customer.phone) || state.customers.some((item) => item.id === customer.id)) return state;
-      if (!isCareTeamValid(customer.careTeam) || findNonAssignableUserIds(state.users, customer.careTeam.map((member) => member.userId)).length > 0) return state;
+      // v1.0.5: SĐT TÙY CHỌN (null được) và KHÔNG còn duy nhất; có thì phải chuẩn hóa được. QT7: nhóm chăm sóc hợp lệ.
+      if (!customer.fullName.trim() || (customer.phone !== null && !normalizePhone(customer.phone))) return state;
+      if (state.customers.some((item) => item.id === customer.id)) return state;
+      // Người tạo luôn là PRIMARY của khách mình tạo (kể cả Quản trị) nên không bị kiểm "không phải Quản trị"; người khác vẫn bị kiểm.
+      const otherMemberIds = customer.careTeam.map((member) => member.userId).filter((userId) => userId !== meta.actorId);
+      if (!isCareTeamValid(customer.careTeam) || findNonAssignableUserIds(state.users, otherMemberIds).length > 0) return state;
       const created = withDerivedFields({ ...customer, lastUpdatedAt: meta.now, lastUpdatedBy: meta.actorId, version: 1 });
       return {
         ...state,
@@ -542,34 +534,6 @@ export const crmReducer = (state: CrmState, action: CrmAction): CrmState => {
         nationalIdViews: [action.view, ...state.nationalIdViews],
         changeLogs: [createChangeLog(state, action.view.customerId, 'NATIONAL_ID_VIEWED', [], action.meta), ...state.changeLogs],
       };
-
-    case 'careTeamRequests/add': {
-      const isDuplicatePending = state.careTeamRequests.some(
-        (request) =>
-          request.customerId === action.request.customerId && request.requesterId === action.request.requesterId && request.status === 'PENDING',
-      );
-      if (isDuplicatePending) return state;
-      return {
-        ...state,
-        careTeamRequests: [action.request, ...state.careTeamRequests],
-        changeLogs: [createChangeLog(state, action.request.customerId, 'JOIN_REQUEST_CREATED', [], action.meta), ...state.changeLogs],
-      };
-    }
-
-    case 'careTeamRequests/resolve': {
-      const request = state.careTeamRequests.find((item) => item.id === action.requestId);
-      if (!request || request.status !== 'PENDING') return state;
-      return {
-        ...state,
-        careTeamRequests: state.careTeamRequests.map((item) =>
-          item.id === action.requestId ? { ...item, status: action.status, resolvedBy: action.meta.actorId, resolvedAt: action.meta.now } : item,
-        ),
-        changeLogs: [
-          createChangeLog(state, request.customerId, 'JOIN_REQUEST_RESOLVED', [{ field: 'Đề nghị tham gia', from: 'PENDING', to: action.status }], action.meta),
-          ...state.changeLogs,
-        ],
-      };
-    }
 
     case 'catalogs/upsert':
       return { ...state, catalogs: upsertCatalog(state.catalogs, action.kind, action.item) };

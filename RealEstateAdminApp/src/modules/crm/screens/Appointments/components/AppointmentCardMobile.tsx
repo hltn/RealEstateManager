@@ -12,6 +12,7 @@ import type { AppointmentView as Appointment } from '@crm/api';
 import { APPOINTMENT_TYPE_STYLES, getAppointmentActionVariant } from '../appointmentTypeStyles';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { CARD_CLASS, CHIP_SMALL_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { AppointmentMoreMenu } from './AppointmentMoreMenu';
 
 interface AppointmentCardMobileProps {
@@ -68,7 +69,7 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
           <CustomerStatusChip status={appointment.customer.status} size="small" />
         </div>
 
-        {appointment.customer.phoneMasked && (
+        {hasPhone(appointment.customer.phoneMasked) && (
           <div className="flex min-w-0 items-center gap-2">
             <Phone size={16} aria-hidden="true" className="shrink-0 text-gray-400 dark:text-gray-500" />
             <span className="truncate tabular-nums">

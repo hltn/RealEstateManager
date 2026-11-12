@@ -4,7 +4,7 @@ import { Job, JobsOptions, Queue, RepeatOptions, Worker } from 'bullmq';
 import { withTimeout } from '../../common/utils/with-timeout.util';
 import { buildBullPrefix, buildRedisOptions } from '../redis/redis.config';
 import { isQueueWorkersEnabled } from './queue-runtime.config';
-import { DEFAULT_JOB_OPTIONS } from './queue.constants';
+import { DEFAULT_JOB_OPTIONS, QUEUE_JOB_OPTIONS } from './queue.constants';
 
 export type QueueJobHandler = (job: Job) => Promise<unknown>;
 
@@ -51,13 +51,18 @@ export class QueueRuntimeService implements OnApplicationShutdown {
   registerWorker(
     queueName: string,
     handler: QueueJobHandler,
-    options: { concurrency?: number } = {},
+    options: {
+      concurrency?: number;
+      /** Giới hạn tốc độ worker (tùy chọn; không truyền thì không giới hạn như trước). */
+      limiter?: { max: number; duration: number };
+    } = {},
   ): void {
     if (!this.isEnabled() || this.closing) return;
     const worker = new Worker(queueName, handler, {
       connection: buildRedisOptions(this.config),
       prefix: buildBullPrefix(this.config),
       concurrency: options.concurrency ?? 1,
+      ...(options.limiter ? { limiter: options.limiter } : {}),
     });
     worker.on('error', (error) =>
       this.logger.error(`Worker ${queueName} lỗi: ${error.message}`),
@@ -115,6 +120,12 @@ export class QueueRuntimeService implements OnApplicationShutdown {
     return this.getQueue(queueName).add(jobName, data, options);
   }
 
+  /** Lấy job theo `jobId` (để kiểm tra trạng thái/xóa job cũ trước khi `add` lại). Trả `null` khi runtime tắt hoặc không có job. */
+  async getJob(queueName: string, jobId: string): Promise<Job | null> {
+    if (!this.isEnabled()) return null;
+    return (await this.getQueue(queueName).getJob(jobId)) ?? null;
+  }
+
   async onApplicationShutdown(): Promise<void> {
     this.closing = true;
     // Worker đóng trước (chờ job đang chạy xong) rồi mới đóng kết nối queue.
@@ -132,7 +143,7 @@ export class QueueRuntimeService implements OnApplicationShutdown {
       queue = new Queue(queueName, {
         connection: buildRedisOptions(this.config),
         prefix: buildBullPrefix(this.config),
-        defaultJobOptions: DEFAULT_JOB_OPTIONS,
+        defaultJobOptions: QUEUE_JOB_OPTIONS[queueName] ?? DEFAULT_JOB_OPTIONS,
       });
       queue.on('error', (error) =>
         this.logger.error(`Queue ${queueName} lỗi: ${error.message}`),

@@ -130,3 +130,22 @@ export const assertRangeValid = (from: Date, to: Date): void => {
     );
   }
 };
+
+/**
+ * Dự án gửi dạng `projectId` (cũ) và/hoặc `projectCode` (mới): MỘT giá trị `null` (gỡ dự án) đi cùng giá trị kia có
+ * dữ liệu là mâu thuẫn => 400 `VALIDATION_FAILED` (FR-40, Architecture 4.2). Hai giá trị cùng có dữ liệu mà khác bản ghi
+ * do `CustomerRefsService.resolveOneForAssign` kiểm.
+ */
+export const assertProjectInputConsistent = (
+  projectId: string | null | undefined,
+  projectCode: string | null | undefined,
+): void => {
+  const anyNull = projectId === null || projectCode === null;
+  const anyValue = !!projectId || !!projectCode;
+  if (anyNull && anyValue) {
+    throw invalidField(
+      'projectId và projectCode mâu thuẫn: một giá trị null (gỡ dự án), một giá trị có dữ liệu',
+      'projectCode',
+    );
+  }
+};

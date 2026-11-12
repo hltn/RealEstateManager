@@ -2,14 +2,20 @@ import { Types } from 'mongoose';
 import { CrmActor } from '../common/access/crm-actor';
 import { maskPhone } from '../common/utils/phone-normalizer.util';
 import { ListGroup } from '../catalogs/catalog.enums';
+import { canSetInitialPrimary } from '../care-teams/care-team.rules';
 import { getDeleteDenial } from './access/customer-delete-policy';
 import { isAdminOrManager } from './access/customer-scope';
-import { CareRole, CRITERIA_KEYS } from './customer.constants';
+import {
+  CareRole,
+  CRITERIA_KEYS,
+  PURCHASE_PURPOSES_FIELD_KEY,
+} from './customer.constants';
 import type { CustomerLean } from './customers.repository';
 import type { RefIds, RefMaps } from './customer-refs.service';
-import { toRef, toUserRef } from './customer-refs.service';
+import { toCatalogRef, toRef, toUserRef } from './customer-refs.service';
 import {
   CareTeamMemberDto,
+  CareTeamUserRefDto,
   CriteriaDoneDto,
   CriteriaResponseDto,
   CriterionResponseDto,
@@ -22,8 +28,17 @@ import {
 import { maskNationalId } from './utils/customer-rules.util';
 
 /** Field cần đọc để dựng list item (KHÔNG gồm nationalId, searchText). */
-export const LIST_PROJECTION =
-  'fullName phone statusId sourceId interestedProjectIds areaId tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
+const LIST_FIELDS =
+  'customerCode fullName phone statusId sourceId sourceCode interestedProjectIds areaId areaCode tagIds progress criteria.demand.isDone criteria.motivation.isDone criteria.finance.isDone criteria.timing.isDone careTeam.userId primaryAssigneeId nextAppointmentAt lastCareLogAt lastUpdatedAt personaCompleteness deletedAt deletedBy anonymizedAt purgingAt';
+
+/**
+ * Projection của danh sách khách. `persona` chứa trường nhạy cảm nên KHÔNG lấy cả mảng: `$elemMatch` chỉ đọc
+ * đúng phần tử `purchase_purposes` (tối đa một phần tử mỗi khách, cùng document nên không thêm query).
+ */
+export const LIST_PROJECTION: Record<string, unknown> = {
+  ...Object.fromEntries(LIST_FIELDS.split(' ').map((field) => [field, 1])),
+  persona: { $elemMatch: { fieldKey: PURCHASE_PURPOSES_FIELD_KEY } },
+};
 
 const iso = (date: Date | null | undefined): string | null =>
   date ? new Date(date).toISOString() : null;
@@ -58,15 +73,36 @@ const emptyStatus = (id: Types.ObjectId): StatusRefDto => ({
 });
 
 /**
- * SĐT đã che để hiển thị (VD `0912 ••• 678`). Khách đã ẩn danh hiện `••••`; thiếu SĐT (dữ liệu cũ) trả chuỗi rỗng thay vì
- * ném lỗi. Dùng chung cho danh sách khách, lịch hẹn và việc hôm nay để mọi nơi che đúng một kiểu, không bao giờ lộ số đầy đủ.
+ * SĐT đã che để hiển thị (VD `0912 ••• 678`); `null` khi khách không có SĐT (FR-01/04, kể cả thiếu field ở dữ liệu cũ)
+ * hoặc đã ẩn danh (số đã xóa, không còn gì để che). Không bao giờ ném lỗi và không bao giờ lộ số đầy đủ. Dùng chung cho
+ * danh sách khách, lịch hẹn và việc hôm nay để mọi nơi che đúng một kiểu.
  */
 export const toPhoneMasked = (doc: {
   phone?: string | null;
   anonymizedAt?: Date | null;
-}): string => {
-  if (doc.anonymizedAt) return '••••';
-  return doc.phone ? maskPhone(doc.phone) : '';
+}): string | null => {
+  if (doc.anonymizedAt) return null;
+  return doc.phone ? maskPhone(doc.phone) : null;
+};
+
+/**
+ * Mã lựa chọn "Mục đích mua" của khách (VD `LIVING`), rỗng khi chưa có. Chỉ trích đúng giá trị của trường này, không
+ * trả phần tử persona nào khác; khách ẩn danh trả rỗng. Trường bị tắt/xóa mềm vẫn giữ giá trị nên không kiểm tra cấu hình.
+ */
+export const toPurchasePurposes = (
+  doc: Pick<CustomerLean, 'persona' | 'anonymizedAt'>,
+): string[] => {
+  if (doc.anonymizedAt) return [];
+  const entry = (doc.persona ?? []).find(
+    (item) => item.fieldKey === PURCHASE_PURPOSES_FIELD_KEY,
+  );
+  // Dữ liệu cũ có thể lưu `valueOptions` sai kiểu (chuỗi, object): coi như chưa chọn thay vì ném lỗi làm hỏng cả trang danh sách.
+  const options: unknown = entry?.valueOptions;
+  if (!Array.isArray(options)) return [];
+  const picked = options.filter(
+    (code): code is string => typeof code === 'string' && code !== '',
+  );
+  return [...new Set(picked)];
 };
 
 export const toListItem = (
@@ -74,14 +110,23 @@ export const toListItem = (
   refs: RefMaps,
 ): CustomerListItemDto => ({
   id: String(doc._id),
+  // Mã không phải PII và không đổi quyền xem: mọi vai trò thấy mã của khách họ được thấy. Chưa bù mã -> null.
+  customerCode: typeof doc.customerCode === 'string' ? doc.customerCode : null,
   fullName: doc.fullName,
   phoneMasked: toPhoneMasked(doc),
+  purchasePurposes: toPurchasePurposes(doc),
   status: refs.statuses.get(String(doc.statusId)) ?? emptyStatus(doc.statusId),
-  source: toRef(doc.sourceId, refs.sources),
-  projects: (doc.interestedProjectIds ?? []).map(
-    (id) => toRef(id, refs.projects)!,
+  // FR-40: `code` dịch từ id (đổi nhãn không đổi mã); danh mục bị xóa cứng thì rơi về mã đã lưu (nguồn, khu vực) hoặc rỗng, không lỗi.
+  source: toCatalogRef(
+    doc.sourceId,
+    refs.sources,
+    refs.codes.sources,
+    doc.sourceCode,
   ),
-  area: toRef(doc.areaId, refs.areas),
+  projects: (doc.interestedProjectIds ?? []).map(
+    (id) => toCatalogRef(id, refs.projects, refs.codes.projects)!,
+  ),
+  area: toCatalogRef(doc.areaId, refs.areas, refs.codes.areas, doc.areaCode),
   tags: (doc.tagIds ?? []).flatMap((id) => {
     const ref = toRef(id, refs.tags);
     // Thẻ đã xóa mềm không có nhãn trong `refs.tags` => không hiện.
@@ -89,7 +134,11 @@ export const toListItem = (
   }),
   progress: doc.progress ?? 0,
   criteriaDone: criteriaDone(doc),
-  primaryAssignee: toUserRef(doc.primaryAssigneeId, refs.users),
+  primaryAssignee: toUserRef(
+    doc.primaryAssigneeId,
+    refs.users,
+    refs.userStates,
+  ),
   careTeamSize: doc.careTeam?.length ?? 0,
   nextAppointmentAt: iso(doc.nextAppointmentAt),
   lastCareLogAt: iso(doc.lastCareLogAt),
@@ -149,6 +198,19 @@ export const toConsentResponse = (
   note: doc.dataConsent?.note ?? null,
 });
 
+/**
+ * `user` của thành viên nhóm: id + tên + `isLocked` (FR-18) + role cao nhất (FE tra vai trò thành viên). Dùng chung cho
+ * chi tiết khách và `care-team` để hai response thống nhất. Thiếu `userStates` hoặc thiếu id (user không còn trong DB)
+ * thì `role = null`, không `isLocked`, không ném lỗi.
+ */
+export const toMemberUser = (
+  userId: Types.ObjectId,
+  maps: Pick<RefMaps, 'users' | 'userStates'>,
+): CareTeamUserRefDto => ({
+  ...toUserRef(userId, maps.users, maps.userStates)!,
+  role: maps.userStates?.get(String(userId))?.role ?? null,
+});
+
 const isPrimary = (doc: CustomerLean, actor: CrmActor): boolean =>
   (doc.careTeam ?? []).some(
     (member) =>
@@ -164,7 +226,7 @@ export const toDetail = (
   const primary = isPrimary(doc, actor);
   const listItem = toListItem(doc, refs);
   const careTeam: CareTeamMemberDto[] = (doc.careTeam ?? []).map((member) => ({
-    user: toUserRef(member.userId, refs.users)!,
+    user: toMemberUser(member.userId, refs),
     role: member.role,
     addedAt: iso(member.addedAt)!,
     addedBy: toUserRef(member.addedBy, refs.users),
@@ -187,7 +249,8 @@ export const toDetail = (
     permissions: {
       canEdit: true,
       canManageCareTeam: privileged || primary,
-      canChangePrimary: privileged,
+      // Khách cũ chưa có PRIMARY: Admin/Manager được đặt đúng một lần (FR-11); đã có PRIMARY thì khóa.
+      canSetInitialPrimary: canSetInitialPrimary(actor, doc.careTeam ?? []),
       // Cùng một nguồn luật với route xóa (`getDeleteDenial`); FE chỉ hiện nút Xóa khi khách thuộc nhóm "Bỏ".
       canDelete:
         getDeleteDenial(actor, doc, {

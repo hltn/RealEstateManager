@@ -20,6 +20,7 @@ import { NlCronService } from './services/nl-cron.service';
 import { CategoryRotationService } from './services/category-rotation.service';
 import { NewsFireCrawlManagerModule } from '../news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { SharedModule } from '../../shared/shared.module';
+import { CrmCommonModule } from '../crm/common/crm-common.module';
 
 
 @Module({
@@ -31,6 +32,8 @@ import { SharedModule } from '../../shared/shared.module';
     // Import NewsArticle model + exported IdempotencyService + AuditLogService.
     NewsFireCrawlManagerModule,
     SharedModule,
+    // CrmActorService cho ActiveAdminGuard của @AdminOnly() (FR-21).
+    CrmCommonModule,
   ],
   controllers: [KnowledgeArticlesController],
   providers: [

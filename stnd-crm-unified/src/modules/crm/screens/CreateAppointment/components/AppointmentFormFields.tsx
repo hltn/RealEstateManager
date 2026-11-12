@@ -61,7 +61,7 @@ export const CustomerFields = ({ form, customerControl }: CustomerFieldsProps) =
               // Khách đang chọn luôn có trong danh sách dù ngoài trang đầu.
               ...(selectedCustomer && !customers.some((customer) => customer.id === selectedCustomer.id) ? [selectedCustomer] : []),
               ...customers,
-            ].map((customer) => ({ value: customer.id, label: `${customer.fullName} — ${customer.phoneMasked}` }))}
+            ].map((customer) => ({ value: customer.id, label: [customer.fullName, [customer.customerCode, customer.phoneMasked].filter(Boolean).join(' · ')].filter(Boolean).join(' — ') }))}
             {...getFieldA11yProps(getErrorId(customerId), errors.customerId)}
           />
         )}

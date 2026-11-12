@@ -1,6 +1,6 @@
 /**
  * Bất biến C8 dùng chung cho MỌI đường gán người chăm sóc (tạo khách, thêm/gỡ thành viên, đổi phụ trách chính,
- * bulk ASSIGN, duyệt đề nghị, import): người được gán phải tồn tại, đang hoạt động và không phải Quản trị.
+ * bulk ASSIGN, import; luồng duyệt đề nghị tham gia đã gỡ ở v1.0.5): người được gán phải tồn tại, đang hoạt động và không phải Quản trị.
  */
 import { findNonAssignableUserIds } from '@crm/lib/customerRules';
 import type { CrmDataState } from '@crm/store/crmReducer';
