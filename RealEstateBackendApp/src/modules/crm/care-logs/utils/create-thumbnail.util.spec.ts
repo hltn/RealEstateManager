@@ -8,7 +8,7 @@ import {
   jpegWithExif,
   pngClaimingHugeDimensions,
   sampleImage,
-} from './thumbnail-test-images';
+} from './thumbnail-test-images.fixture';
 
 describe('createThumbnail (FR-26)', () => {
   it('FR-26: ảnh ngang lớn thu về cạnh dài 320px, giữ tỉ lệ, xuất WebP và trả kích thước ảnh gốc', async () => {

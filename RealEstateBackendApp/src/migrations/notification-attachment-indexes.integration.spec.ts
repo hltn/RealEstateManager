@@ -5,7 +5,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import type { Db } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { createMemoryReplSet } from '../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../shared/database/memory-replset.fixture';
 import { MIGRATIONS } from './migration.registry';
 import type { Migration } from './migration.types';
 

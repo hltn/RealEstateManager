@@ -16,7 +16,7 @@
 | CSS | **Tailwind CSS v4** qua `@tailwindcss/vite`; cấu hình bằng `@theme` trong `index.css`, **không có** `tailwind.config.js`; có `@tailwindcss/typography` (lớp `prose`) | `index.css:4-5`, `../vite.config.ts:10` |
 | Phông | **Outfit** (Google Fonts 100–900), là phông duy nhất (`--font-*: initial`) | `index.css:1, 10-11, 190` |
 | Chế độ tối | Lớp `.dark` gắn vào **`<html>`** (`document.documentElement`), biến thể `@custom-variant dark (&:is(.dark *))`. **Mặc định là SÁNG** khi chưa có `localStorage.theme` (người đã chọn tối vẫn giữ tối; `index.html` gắn lớp `dark` trước khi vẽ để không nháy) | `index.css:7`, `context/ThemeContext.tsx`, `index.html` |
-| Biểu tượng | **2 bộ song song**: (1) SVG tùy biến của TailAdmin trong `src/icons/*.svg`, nạp bằng `vite-plugin-svgr` (`?react`) — dùng ở menu trái, Login, Quản lý tài khoản; (2) **lucide-react** — dùng ở hầu hết màn còn lại (18 tệp). Ngoài ra nhiều SVG viết thẳng (inline) ở header, modal, alert | `icons/index.ts:1-56`, `layout/AppSidebar.tsx:6-18`, `screens/LoginScreen.tsx`, `screens/UserManagementScreen.tsx:11`, `../vite.config.ts:11-15` |
+| Biểu tượng | **2 bộ song song**: (1) SVG tùy biến của TailAdmin trong `src/icons/*.svg`, nạp bằng `vite-plugin-svgr` (`?react`) — dùng ở menu trái, Login, Quản lý tài khoản; (2) **lucide-react** — dùng ở hầu hết màn còn lại (18 tệp). Ngoài ra nhiều SVG viết thẳng (inline) ở header, modal, alert | `icons/index.ts` (18 icon còn dùng), `layout/AppSidebar.tsx:6-18`, `screens/LoginScreen.tsx`, `screens/UserManagementScreen.tsx:11`, `../vite.config.ts:11-15` |
 | Thông báo nhỏ (toast) | `react-hot-toast`, một `<Toaster position="top-right" duration=4000>` toàn cục (≈21 lời gọi `toast.*`) + **một toast tự viết** `ToastNotification` bị chép lặp ở 3 màn | `main.tsx:19`; `screens/ManageWpScreen.tsx:29-97`, `AiPromptConfigScreen.tsx:16`, `KnowledgeArticlesScreen.tsx:84` |
 | Biểu mẫu | react-hook-form + zod (Login, Tạo tài khoản); các màn khác dùng `useState` | `screens/UserManagementScreen.tsx:3-5, 30-38` |
 | Chọn ngày | flatpickr + react-flatpickr, bọc trong `ui/DatePicker.tsx` (CSS tùy biến ở `index.css:394-557`) | `components/ui/DatePicker.tsx` |
@@ -116,13 +116,13 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 | `ThemeToggleButton` | `components/common/ThemeToggleButton.tsx` | — | Nút tròn 44px viền |
 | `UserDropdown`, `NotificationDropdown` | `components/header/` | — | Avatar chữ cái đầu `h-11 w-11 bg-brand-500` (`UserDropdown.tsx:40`) |
 | `ProtectedRoute`, `RoleGuard`, `AuthInitializer` | `components/auth/` | `allowedRoles`, `fallback` | Spinner toàn trang `border-4 border-t-brand-500` |
-| `GoogleDriveStatusBadge`, `ExportButton`, `FolderInput` | `components/google-drive/` | — | Riêng tính năng phân tích thị trường |
+| `GoogleDriveStatusBadge`, `ExportButton` | `components/google-drive/` | — | Riêng tính năng phân tích thị trường |
 | `PageMeta` / `AppWrapper` | `components/common/PageMeta.tsx` | `title`, `description` | Chỉ `AppWrapper` (HelmetProvider) được dùng; chưa màn nào đặt `<PageMeta>` |
-| Hook | `hooks/useDebouncedValue.ts` (400ms), `hooks/useAuth.ts`, `hooks/useHeaderStatusReset.ts` | | |
+| Hook | `hooks/useDebouncedValue.ts` (mặc định 400ms; CRM dùng wrapper `modules/crm/hooks/useDebouncedValue.ts` mặc định 250ms), `hooks/useAuth.ts`, `hooks/useHeaderStatusReset.ts` | | |
 
-### 4.2 Có sẵn nhưng **chưa màn nào dùng** (thừa từ TailAdmin)
+### 4.2 Component thừa từ TailAdmin: đã xóa
 
-`ui/button/Button.tsx` (size `sm|md`, variant `primary|outline`, `startIcon/endIcon` — **không có prop `type`**), `ui/badge/Badge.tsx` (variant `light|solid`, color `primary|success|error|warning|info|light|dark`), `ui/table/index.tsx` (Table/Header/Body/Row/Cell chỉ là vỏ không kiểu), `ui/alert/Alert.tsx` (success/error/warning/info), `ui/avatar/Avatar.tsx` (chỉ ảnh, 6 cỡ, chấm trạng thái), `ui/images/*`, `ui/videos/*`, `common/ComponentCard.tsx`, `common/PageBreadCrumb.tsx` (chữ "Home"), `common/ScrollToTop.tsx`, `common/ThemeTogglerTwo.tsx`, `common/ChartTab.tsx`, `common/GridShape.tsx`, `components/header/Header.tsx` (bản trùng của AppHeader), `hooks/useModal.ts`, `hooks/useGoBack.ts`.
+Các component và hook mẫu của TailAdmin mà không màn nào dùng (nút, huy hiệu, bảng, cảnh báo, avatar, ảnh/video mẫu, thẻ bao, breadcrumb, header trùng với `layout/AppHeader`, hook mở modal/quay lại) đã bị xóa ở FR-09 (Thống nhất môi trường). Mọi component ở mục 4.1 đều đang được dùng.
 
 → Các màn thật viết **lớp Tailwind trực tiếp** cho nút, chip, bảng, ô nhập, hộp thoại, công tắc. Vì vậy chuẩn thực tế là **các mẫu lớp ở mục 5**, không phải component.
 
@@ -214,7 +214,7 @@ Chép **nguyên tệp** `src/index.css` (đã gồm đủ token, `menu-item*`, f
 | 10 | Bảng nằm trong "thẻ trắng" | Vỏ bảng chỉ có viền + `rounded-2xl`, **không nền**; `thead` nền `gray-50`/`gray-900` (chỉ trang Users có nền trắng) |
 | 11 | Toast "chưa xác nhận" | `react-hot-toast` top-right 4s + toast tự viết lặp ở 3 màn |
 | 12 | Hộp thoại chưa rõ | `Modal` chung `rounded-3xl` (chỉ 1 màn dùng); còn lại tự viết `bg-black/50` + `rounded-2xl`, z-index lộn xộn |
-| 13 | Chưa có tệp component (cần gửi thêm) | Có `ui/button, badge, table, alert, avatar…` nhưng **không màn nào dùng**; chuẩn thật là mẫu lớp (mục 5) |
+| 13 | Chưa có tệp component (cần gửi thêm) | Không có component nút, huy hiệu, bảng, cảnh báo, avatar dùng chung (bản thừa từ TailAdmin đã xóa vì không màn nào dùng); chuẩn thật là mẫu lớp (mục 5) |
 | 14 | "Không thêm màu ngoài thang" là hiện trạng | Hiện trạng dùng nhiều màu mặc định Tailwind (`red` 91, `emerald` 60, `blue` 37, `amber` 36 lần) |
 | 15 | Ô nhập form "nền gray-50 viền gray-200 cao ~42px" | 3 kiểu ô nhập khác nhau (thanh lọc / form cấu hình viền `gray-300` / form modal nền trong suốt) |
 | 16 | Chip "AI" `purple-100/purple-800` (ước lượng) | `purple-100/purple-700` (`ExternalLogsScreen.tsx:76`) |
@@ -245,9 +245,9 @@ Chép **nguyên tệp** `src/index.css` (đã gồm đủ token, `menu-item*`, f
 | Danh sách thẻ khách hàng thay bảng trên mobile | Không | Làm mới (bảng vẫn dùng mẫu mục 5 cho desktop) |
 | Lightbox ảnh, khay ảnh cuộn ngang, tải ảnh lên | Không | Làm mới |
 | Hộp thoại Gọi điện / Zalo / Ghi chú nhanh | Có `Modal` gốc | Dựng trên `components/ui/modal` |
-| Breadcrumb | `PageBreadCrumb` (không dùng, chữ "Home") | Sửa nhãn tiếng Việt rồi dùng |
+| Breadcrumb | Có `CrmBreadcrumb` (`modules/crm/components/CrmBreadcrumb.tsx`); bản breadcrumb thừa của TailAdmin đã xóa | Dùng `CrmBreadcrumb` |
 | Dropdown chọn tình trạng dạng chip | Có `Dropdown` | Ghép `Dropdown` + chip mục 5 |
-| Ô gợi ý AI | `Alert` (info, không dùng) | Dùng `Alert` hoặc thông báo trong trang mục 5 |
+| Ô gợi ý AI | Không (component `Alert` thừa của TailAdmin đã xóa) | Thông báo trong trang theo mục 5 |
 | Kết quả tìm kiếm thả xuống ở header | Ô tìm chỉ trang trí | Làm mới |
 | Thanh trượt khoảng (ngân sách) | Không | Làm mới |
 | Toast | Có `react-hot-toast` | Dùng `toast.*`, bỏ `Toast` của Stitch |

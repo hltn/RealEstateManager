@@ -40,7 +40,7 @@ import { GlobalExceptionFilter } from '../../../common/filters/global-exception.
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { RequestContextMiddleware } from '../../../common/middleware/request-context.middleware';
-import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../shared/database/memory-replset.fixture';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import { FeatureFlagModule } from '../../../shared/feature-flags/feature-flag.module';
 import { QueueNames } from '../../../shared/queue/queue.constants';

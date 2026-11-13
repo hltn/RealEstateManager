@@ -6,7 +6,7 @@ import { MongoClient, ObjectId } from 'mongodb';
 import type { Db } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { COUNTER_KEY } from '../modules/crm/customers/customer-code.constants';
-import { createMemoryReplSet } from '../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../shared/database/memory-replset.fixture';
 import { runCustomerCodesCli } from './crm-customer-codes-app';
 import type { CustomerCodesCliDeps } from './crm-customer-codes-app';
 import { createCustomerCodeIndex } from './customer-code-index';

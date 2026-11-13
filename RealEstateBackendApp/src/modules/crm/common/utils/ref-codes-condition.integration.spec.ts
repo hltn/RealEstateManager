@@ -4,7 +4,7 @@
  */
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Collection, MongoClient, ObjectId } from 'mongodb';
-import { createMemoryReplSet } from '../../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../../shared/database/memory-replset.fixture';
 import {
   refArrayInCondition,
   refInCondition,

@@ -21,7 +21,7 @@ import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Model, Types } from 'mongoose';
 import sharp from 'sharp';
 import { UserRole } from '../../../common/enums/user-role.enum';
-import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../shared/database/memory-replset.fixture';
 import { FeatureFlagService } from '../../../shared/feature-flags/feature-flag.service';
 import { QueueRuntimeService } from '../../../shared/queue/queue-runtime.service';
 import {
@@ -59,7 +59,7 @@ import {
   CrmAttachmentDocument,
   CrmAttachmentSchema,
 } from './schemas/crm-attachment.schema';
-import { sampleImage } from './utils/thumbnail-test-images';
+import { sampleImage } from './utils/thumbnail-test-images.fixture';
 
 jest.setTimeout(300_000);
 

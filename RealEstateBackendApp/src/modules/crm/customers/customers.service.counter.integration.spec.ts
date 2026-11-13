@@ -16,7 +16,7 @@ import {
   CounterSchema,
 } from '../../../shared/counters/counter.schema';
 import { CounterService } from '../../../shared/counters/counter.service';
-import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../shared/database/memory-replset.fixture';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import { CrmActor } from '../common/access/crm-actor';
 import {

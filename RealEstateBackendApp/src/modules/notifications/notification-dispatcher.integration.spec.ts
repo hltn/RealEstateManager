@@ -10,7 +10,7 @@ import { getConnectionToken, MongooseModule } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Types } from 'mongoose';
-import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.fixture';
 import { withTransaction } from '../../shared/database/with-transaction.util';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
 import { QueueRuntimeService } from '../../shared/queue/queue-runtime.service';

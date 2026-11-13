@@ -6,7 +6,7 @@
 import { MongoClient } from 'mongodb';
 import type { Db } from 'mongodb';
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
-import { createMemoryReplSet } from '../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../shared/database/memory-replset.fixture';
 import { runCli } from './cli-app';
 import { EXIT_CODE } from './migration-runner';
 import * as migrationState from './migration-state';

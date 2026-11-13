@@ -7,7 +7,7 @@
 import mongoose, { Connection, InferSchemaType, Model, Schema } from 'mongoose';
 import { MongoServerError } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { createMemoryReplSet } from './memory-replset.util';
+import { createMemoryReplSet } from './memory-replset.fixture';
 import { registerAfterCommit } from './after-commit.util';
 import { withTransaction } from './with-transaction.util';
 

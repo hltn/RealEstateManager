@@ -6,7 +6,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import type { Db } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { createMemoryReplSet } from '../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../shared/database/memory-replset.fixture';
 import { CatalogItemType } from '../modules/crm/catalogs/catalog.enums';
 import { runCli } from './cli-app';
 import { runCatalogCodesCli } from './crm-catalog-codes-app';

@@ -2,14 +2,12 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { NewsFireCrawlManagerModule } from './modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { ExternalLogModule } from './modules/external-log/external-log.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { SettingsModule } from './modules/settings/settings.module';
-import { HealthModule } from './health.module';
+import { HealthModule } from './health/health.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -69,9 +67,7 @@ import { NoSqlOperatorInterceptor } from './common/security/nosql-operator.inter
     // Knowledge Articles (auto-write, auto-publish pipeline).
     KnowledgeArticlesModule,
   ],
-  controllers: [AppController],
   providers: [
-    AppService,
     // FR-14: chặn toán tử `$` ở body/query/params (chạy sau guard, trước ValidationPipe).
     { provide: APP_INTERCEPTOR, useClass: NoSqlOperatorInterceptor },
   ],

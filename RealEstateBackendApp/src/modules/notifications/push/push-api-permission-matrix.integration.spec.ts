@@ -33,7 +33,7 @@ import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { GlobalExceptionFilter } from '../../../common/filters/global-exception.filter';
-import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../shared/database/memory-replset.fixture';
 import { FeatureFlagModule } from '../../../shared/feature-flags/feature-flag.module';
 import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';
 import { createRedisClientStub } from '../../../shared/redis/redis-client.fixture';

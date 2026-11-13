@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import { StorageBucket } from '../../../shared/storage/file-storage.interface';
 import { AttachmentThumbnailProcessor } from './attachment-thumbnail.processor';
 import { AttachmentStatus, ThumbStatus } from './care-log.constants';
-import { sampleImage } from './utils/thumbnail-test-images';
+import { sampleImage } from './utils/thumbnail-test-images.fixture';
 
 // `withTransaction` thật cần replica set: ở unit test chỉ chạy `work` với session giả (transaction thật ở integration test).
 jest.mock('../../../shared/database/with-transaction.util', () => ({

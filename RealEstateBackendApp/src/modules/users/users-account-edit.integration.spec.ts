@@ -15,7 +15,7 @@ import { Test } from '@nestjs/testing';
 import * as argon2 from 'argon2';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Types } from 'mongoose';
-import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.fixture';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
 import { createRedisClientStub } from '../../shared/redis/redis-client.fixture';

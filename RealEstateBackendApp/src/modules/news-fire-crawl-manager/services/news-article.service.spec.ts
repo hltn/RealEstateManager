@@ -11,7 +11,7 @@ import { WordPressService } from './wordpress.service';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { EmbeddingService } from './embedding.service';
-import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
+import { ArticleExtractorUtil } from '../utils/article-extractor.util';
 
 /** Tao chainable query mock: find(query).sort().skip().limit().exec() -> data */
 function chainableFind(data: any) {

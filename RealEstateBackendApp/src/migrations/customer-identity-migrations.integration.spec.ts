@@ -10,7 +10,7 @@ import {
   COUNTER_KEY,
   CUSTOMER_CODE_INDEX,
 } from '../modules/crm/customers/customer-code.constants';
-import { createMemoryReplSet } from '../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../shared/database/memory-replset.fixture';
 import { runCli } from './cli-app';
 import { EXIT_CODE } from './migration-runner';
 import { MIGRATIONS } from './migration.registry';

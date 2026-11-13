@@ -61,7 +61,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // [Prototype] Module CRM alias
+      // Alias module CRM (`@crm/*` trỏ tới src/modules/crm)
       '@crm': fileURLToPath(new URL('./src/modules/crm', import.meta.url)),
     },
   },

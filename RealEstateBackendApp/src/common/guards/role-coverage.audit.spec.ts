@@ -24,7 +24,6 @@ import { RolesGuard } from './roles.guard';
 
 /** Route dành cho mọi người dùng đã đăng nhập, có chủ đích (không phải lỗ hổng). */
 const ANY_ROLE_ALLOWLIST = [
-  'AppController.getHello',
   'AuthController.logout',
   'AuthController.me',
 ];

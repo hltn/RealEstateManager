@@ -14,7 +14,7 @@ import { UnrecoverableError } from 'bullmq';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type Redis from 'ioredis';
 import { Connection, Types } from 'mongoose';
-import { createMemoryReplSet } from '../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../shared/database/memory-replset.fixture';
 import { FeatureFlagModule } from '../../../shared/feature-flags/feature-flag.module';
 import { QueueRuntimeService } from '../../../shared/queue/queue-runtime.service';
 import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';

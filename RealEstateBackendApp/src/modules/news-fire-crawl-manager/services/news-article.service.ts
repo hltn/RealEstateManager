@@ -11,7 +11,7 @@ import { Model, Types } from 'mongoose';
 import { NewsArticle, NewsStatus } from '../schemas/news-article.schema';
 import { RawArticle } from '../schemas/raw-article.schema';
 import { WordPressService } from './wordpress.service';
-import { ArticleExtractorUtil } from '../../../utils/article-extractor.util';
+import { ArticleExtractorUtil } from '../utils/article-extractor.util';
 import { AIFilterService } from './ai-filter.service';
 import { AiPromptConfigService } from './ai-prompt-config.service';
 import { EmbeddingService } from './embedding.service';
@@ -27,7 +27,7 @@ import {
   startOfDayUtc,
   endOfDayUtc,
 } from '../../../common/utils/timezone.util';
-import { cosineSimilarity } from '../../../utils/cosine-similarity.util';
+import { cosineSimilarity } from '../utils/cosine-similarity.util';
 
 /**
  * Normalize content: unescape literal \\n, \\t, \\r than ky tu that.

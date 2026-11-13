@@ -30,7 +30,7 @@ import { KnowledgeArticlesModule } from '../../modules/knowledge-articles/knowle
 import { NewsFireCrawlManagerModule } from '../../modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { SettingsModule } from '../../modules/settings/settings.module';
 import { User, UserDocument } from '../../modules/users/schemas/user.schema';
-import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.fixture';
 import { createRedisClientStub } from '../../shared/redis/redis-client.fixture';
 import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 import { JwtAuthGuard } from './jwt-auth.guard';

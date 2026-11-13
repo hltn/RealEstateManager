@@ -15,7 +15,7 @@ import {
   formatCustomerCode,
 } from '../modules/crm/customers/customer-code.constants';
 import { CustomerSchema } from '../modules/crm/customers/schemas/customer.schema';
-import { createMemoryReplSet } from '../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../shared/database/memory-replset.fixture';
 import { runCli } from './cli-app';
 import { runCustomerCodesCli } from './crm-customer-codes-app';
 import type { CustomerCodesCliDeps } from './crm-customer-codes-app';
