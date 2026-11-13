@@ -117,9 +117,9 @@ describe('T-26 POST /push-subscriptions (FR-01)', () => {
     });
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
+    process.env.CRM_ENABLED = 'true';
     // Cờ push cố ý TẮT: API đăng ký vẫn phải hoạt động (Architecture 4.1, Plan mục 3 quy tắc 12).
-    process.env.FEATURE_CRM_PUSH = 'false';
+    process.env.CRM_PUSH_ENABLED = 'false';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     replSet = await createMemoryReplSet();
 
@@ -595,9 +595,9 @@ describe('T-26 POST /push-subscriptions (FR-01)', () => {
     });
   });
 
-  describe('cờ FEATURE_CRM_PUSH tắt', () => {
+  describe('cờ CRM_PUSH_ENABLED tắt', () => {
     it('FR-01: API vẫn hoạt động khi cờ push tắt (lưu để không mất khi bật cờ sau)', async () => {
-      expect(process.env.FEATURE_CRM_PUSH).toBe('false');
+      expect(process.env.CRM_PUSH_ENABLED).toBe('false');
       const user = newUser();
       const res = await register(user.token, validBody());
       expect(res.status).toBe(201);

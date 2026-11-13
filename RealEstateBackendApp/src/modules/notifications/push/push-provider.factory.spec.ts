@@ -21,7 +21,7 @@ function build(env: Record<string, string | undefined>) {
 }
 
 const FULL_ENV = {
-  FEATURE_CRM_PUSH: 'true',
+  CRM_PUSH_ENABLED: 'true',
   VAPID_PUBLIC_KEY: keys.publicKey,
   VAPID_PRIVATE_KEY: keys.privateKey,
   VAPID_SUBJECT: 'mailto:info@stnd.vn',
@@ -45,7 +45,7 @@ describe('createPushProvider (factory PUSH_PROVIDER)', () => {
   });
 
   it('FR-07: cờ tắt -> Noop, im lặng (không log lỗi dù thiếu biến)', () => {
-    const { provider, logger } = build({ FEATURE_CRM_PUSH: 'false' });
+    const { provider, logger } = build({ CRM_PUSH_ENABLED: 'false' });
 
     expect(provider).toBeInstanceOf(NoopPushProvider);
     expect(logger.error).not.toHaveBeenCalled();

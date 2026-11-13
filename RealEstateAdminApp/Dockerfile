@@ -4,18 +4,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-# VITE_API_URL phải truyền lúc build vì Vite bundle biến vào JS
-ARG VITE_API_URL=/api/v1
-ENV VITE_API_URL=$VITE_API_URL
-# Cờ module CRM (Vite nhúng lúc build). Mặc định tắt; compose truyền giá trị cùng biến với backend.
-ARG VITE_CRM_ENABLED=false
-ARG VITE_FEATURE_CRM_ATTACHMENTS=false
-ARG VITE_CRM_MOCK_REPORTS=false
-ARG VITE_CRM_MOCK_IMPORT_EXPORT=false
-ENV VITE_CRM_ENABLED=$VITE_CRM_ENABLED
-ENV VITE_FEATURE_CRM_ATTACHMENTS=$VITE_FEATURE_CRM_ATTACHMENTS
-ENV VITE_CRM_MOCK_REPORTS=$VITE_CRM_MOCK_REPORTS
-ENV VITE_CRM_MOCK_IMPORT_EXPORT=$VITE_CRM_MOCK_IMPORT_EXPORT
+# Không còn ARG/ENV VITE_*: cấu hình FE đọc LÚC CHẠY qua /env.js (FR-15) do entrypoint sinh từ env của container,
+# nên một image dùng được cho mọi môi trường; đổi cờ chỉ cần đặt lại env và restart/tạo lại container, không build lại.
 RUN npm run build
 
 # ── Stage 2: Nginx để serve static files ──────────────────────────────────────
@@ -34,5 +24,12 @@ ENV CLIENT_MAX_BODY=6m
 ENV NGINX_ENVSUBST_FILTER='^(BACKEND_UPSTREAM|TRUSTED_PROXY_IP|CLIENT_MAX_BODY)$'
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
+# Entrypoint sinh /usr/share/nginx/html/env.js (window.__APP_CONFIG__) từ allowlist khóa env mỗi lần container khởi động.
+# Image nginx chạy mọi /docker-entrypoint.d/*.sh có quyền thực thi theo thứ tự tên (sau 20-envsubst); giá trị sai thì
+# script thoát khác 0 và container dừng, log chỉ nêu TÊN khóa. Khóa env (đặt ở compose/`docker run -e`): API_URL, CRM_ENABLED,
+# CRM_ATTACHMENTS_ENABLED, CRM_PUSH_ENABLED, CRM_IMPORT_ENABLED, CRM_FEATURE_ZALO_ZNS, CRM_FEATURE_IN_APP_CALL,
+# CRM_FEATURE_APPOINTMENT_SYNC, CRM_MOCK_REPORTS, CRM_MOCK_IMPORT_EXPORT và FRONTEND_URL (thành appUrl). Mặc định mọi cờ false, API_URL=/api/v1.
+COPY docker-entrypoint.d/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
+RUN chmod 755 /docker-entrypoint.d/40-runtime-config.sh
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import InstallAppButtons from './InstallAppButtons';
 import { startInstallPromptCapture, type BeforeInstallPromptEvent } from './installPromptCapture';
 
+/** Giả `runtimeConfig` (đọc một lần khi nạp module nên test đổi `appUrl` qua đối tượng này). Mặc định rỗng = dùng origin. */
+const mockRuntimeConfig = vi.hoisted(() => ({ appUrl: '' }));
+vi.mock('../config/runtimeConfig', () => ({ runtimeConfig: mockRuntimeConfig }));
+
 const IPHONE_SAFARI_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 const IPHONE_CHROME_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0.0.0 Mobile/15E148 Safari/604.1';
 const IPADOS_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15';
@@ -47,6 +51,7 @@ const makePromptEvent = (outcome: 'accepted' | 'dismissed' = 'accepted') => {
 let stopCapture: () => void;
 
 beforeEach(() => {
+  mockRuntimeConfig.appUrl = '';
   stopCapture = startInstallPromptCapture();
 });
 
@@ -285,5 +290,39 @@ describe('InstallAppButtons: hộp thoại iOS', () => {
     await userEvent.click(screen.getByRole('button', IOS_BUTTON));
 
     expect(screen.getByRole('dialog', { name: 'Cài ứng dụng trên iPhone/iPad' })).toBeInTheDocument();
+  });
+});
+
+describe('InstallAppButtons: địa chỉ web trong hướng dẫn (FR-15 appUrl, FR-27)', () => {
+  const APP_URL = 'https://crm.example.com';
+
+  it('có runtimeConfig.appUrl: hộp thoại iOS hiện đúng appUrl (không phải origin)', async () => {
+    mockRuntimeConfig.appUrl = APP_URL;
+    setNavigator({ userAgent: IPHONE_SAFARI_UA, platform: 'iPhone', maxTouchPoints: 5 });
+    render(<InstallAppButtons />);
+
+    await userEvent.click(screen.getByRole('button', IOS_BUTTON));
+
+    expect(screen.getByTestId('install-app-url').textContent).toBe(APP_URL);
+    expect(screen.getByTestId('install-app-url').textContent).not.toContain(window.location.origin);
+  });
+
+  it('có runtimeConfig.appUrl: hướng dẫn dự phòng Android cũng hiện appUrl', async () => {
+    mockRuntimeConfig.appUrl = APP_URL;
+    setNavigator({ userAgent: ANDROID_UA, platform: 'Linux armv81', maxTouchPoints: 5 });
+    render(<InstallAppButtons />);
+
+    await userEvent.click(screen.getByRole('button', ANDROID_BUTTON));
+
+    expect(screen.getByTestId('install-app-url').textContent).toBe(APP_URL);
+  });
+
+  it('appUrl rỗng: rơi về window.location.origin', async () => {
+    mockRuntimeConfig.appUrl = '';
+    setNavigator({ userAgent: WINDOWS_UA, platform: 'Win32' });
+    render(<InstallAppButtons />);
+
+    await userEvent.click(screen.getByRole('button', IOS_BUTTON));
+    expect(screen.getByTestId('install-app-url').textContent).toBe(window.location.origin);
   });
 });

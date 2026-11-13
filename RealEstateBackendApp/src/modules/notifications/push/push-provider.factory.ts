@@ -48,7 +48,7 @@ function findInvalidVapidVars(vapid: WebPushVapidConfig): string[] {
 
 /**
  * Chọn nhà cung cấp push MỘT LẦN lúc khởi động (Architecture 5.4, L6):
- * cờ `FEATURE_CRM_PUSH` bật VÀ đủ `VAPID_*` hợp lệ thì `WebPushProvider`, ngược lại `NoopPushProvider`.
+ * cờ `CRM_PUSH_ENABLED` bật VÀ đủ `VAPID_*` hợp lệ thì `WebPushProvider`, ngược lại `NoopPushProvider`.
  * Cờ bật nhưng thiếu/sai biến thì log ERROR một lần (tên biến, không kèm giá trị) và vẫn khởi động
  * bình thường với Noop: không bao giờ làm sập app vì cấu hình push.
  * Đổi biến môi trường cần tạo lại container (`docker compose up -d backend`) mới có hiệu lực.
@@ -73,7 +73,7 @@ export function createPushProvider(
   const invalid = findInvalidVapidVars(vapid);
   if (invalid.length > 0) {
     logger.error(
-      `FEATURE_CRM_PUSH đang bật nhưng thiếu hoặc sai định dạng: ${invalid.join(', ')}. ` +
+      `CRM_PUSH_ENABLED đang bật nhưng thiếu hoặc sai định dạng: ${invalid.join(', ')}. ` +
         'Quay về NoopPushProvider (push tắt, hộp thông báo trong app vẫn hoạt động).',
     );
     return new NoopPushProvider();

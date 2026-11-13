@@ -52,8 +52,8 @@ interface Res {
 }
 
 const ENV_KEYS = [
-  'FEATURE_CRM_ENABLED',
-  'FEATURE_CRM_PUSH',
+  'CRM_ENABLED',
+  'CRM_PUSH_ENABLED',
   'CRM_PII_ENCRYPTION_KEY',
   'VAPID_SUBJECT',
   'VAPID_PUBLIC_KEY',
@@ -75,7 +75,7 @@ describe('T-27/T-28/T-29 quản lý thiết bị push', () => {
   ): Promise<NestFastifyApplication> => {
     for (const key of ENV_KEYS) delete process.env[key];
     Object.assign(process.env, {
-      FEATURE_CRM_ENABLED: 'true',
+      CRM_ENABLED: 'true',
       CRM_PII_ENCRYPTION_KEY: 'ab'.repeat(32),
       ...env,
     });
@@ -157,7 +157,7 @@ describe('T-27/T-28/T-29 quản lý thiết bị push', () => {
     for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
     replSet = await createMemoryReplSet();
     // App chính: cờ push TẮT, API quản lý vẫn phải hoạt động.
-    app = await buildApp({ FEATURE_CRM_PUSH: 'false' });
+    app = await buildApp({ CRM_PUSH_ENABLED: 'false' });
     connection = app.get<Connection>(getConnectionToken());
     jwt = app.get(JwtService);
     await Promise.all(
@@ -213,7 +213,7 @@ describe('T-27/T-28/T-29 quản lý thiết bị push', () => {
 
     it('cờ bật và đủ VAPID hợp lệ: enabled=true kèm publicKey, không lộ khóa riêng', async () => {
       const on = await buildApp({
-        FEATURE_CRM_PUSH: 'true',
+        CRM_PUSH_ENABLED: 'true',
         VAPID_SUBJECT: 'mailto:admin@example.com',
         VAPID_PUBLIC_KEY: VAPID.publicKey,
         VAPID_PRIVATE_KEY: VAPID.privateKey,
@@ -227,7 +227,7 @@ describe('T-27/T-28/T-29 quản lý thiết bị push', () => {
     });
 
     it('cờ bật nhưng thiếu VAPID: enabled=false, publicKey=null', async () => {
-      const missing = await buildApp({ FEATURE_CRM_PUSH: 'true' });
+      const missing = await buildApp({ CRM_PUSH_ENABLED: 'true' });
       const user = newUser();
       const res = await call(missing, 'GET', '/config', user.token);
       expect(res.body).toEqual({ data: { enabled: false, publicKey: null } });

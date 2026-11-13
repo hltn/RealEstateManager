@@ -574,7 +574,7 @@ export class CareLogsService {
 
   // --------------------------------------------------------------------------------------------
 
-  /** Ảnh đính kèm chỉ dùng được khi cờ `FEATURE_CRM_ATTACHMENTS` bật; tối đa 5 ảnh/ghi chú. */
+  /** Ảnh đính kèm chỉ dùng được khi cờ `CRM_ATTACHMENTS_ENABLED` bật; tối đa 5 ảnh/ghi chú. */
   private assertAttachmentsAllowed(count: number): void {
     if (count === 0) return;
     if (!this.featureFlags.isEnabled(FeatureFlag.CRM_ATTACHMENTS)) {

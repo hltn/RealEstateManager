@@ -366,8 +366,8 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
     }
     const parsed = new URL(redisUrl);
     redisConnection = { host: parsed.hostname, port: Number(parsed.port) };
-    process.env.FEATURE_CRM_ENABLED = 'true';
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_ENABLED = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.QUEUE_WORKERS_ENABLED = 'true';
     process.env.REDIS_KEY_PREFIX = `it-t37-${RUN_ID}:`;
@@ -393,9 +393,9 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
       .overrideProvider(PUSH_PROVIDER)
       .useValue({
         name: 'fake',
-        isEnabled: () => process.env.FEATURE_CRM_PUSH === 'true',
+        isEnabled: () => process.env.CRM_PUSH_ENABLED === 'true',
         initialStatus: () =>
-          process.env.FEATURE_CRM_PUSH === 'true'
+          process.env.CRM_PUSH_ENABLED === 'true'
             ? NotificationPushStatus.PENDING
             : NotificationPushStatus.SKIPPED,
         send: providerSend,
@@ -464,8 +464,8 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
   });
 
   afterAll(async () => {
-    delete process.env.FEATURE_CRM_ENABLED;
-    delete process.env.FEATURE_CRM_PUSH;
+    delete process.env.CRM_ENABLED;
+    delete process.env.CRM_PUSH_ENABLED;
     delete process.env.CRM_PII_ENCRYPTION_KEY;
     delete process.env.QUEUE_WORKERS_ENABLED;
     delete process.env.REDIS_KEY_PREFIX;
@@ -480,7 +480,7 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
   });
 
   beforeEach(() => {
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     behavior = defaultBehavior;
     sendLog.length = 0;
   });
@@ -835,7 +835,7 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
     it('cờ tắt lúc Dispatcher ghi: SKIPPED ngay, không có job, không push', async () => {
       const userId = await createRawUser();
       const device = await createSubscription(userId, 'off1');
-      process.env.FEATURE_CRM_PUSH = 'false';
+      process.env.CRM_PUSH_ENABLED = 'false';
 
       await dispatcher.dispatch([careLogRequest([userId])]);
       const [doc] = await notificationsOfUser(userId);
@@ -856,7 +856,7 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
       expect(doc.pushStatus).toBe('PENDING');
       expect(await jobStateOf(doc._id)).toBe('waiting');
 
-      process.env.FEATURE_CRM_PUSH = 'false';
+      process.env.CRM_PUSH_ENABLED = 'false';
       await pushQueue.resume();
 
       expect(await waitSettled(doc._id)).toBe('SKIPPED');
@@ -869,7 +869,7 @@ describe('T-37 M7 Web Push đầu-cuối (Redis + BullMQ thật)', () => {
       const old = new Date(Date.now() - 5 * MINUTE);
       const a = await insertNotification(userId, { createdAt: old });
       const b = await insertNotification(userId, { createdAt: old });
-      process.env.FEATURE_CRM_PUSH = 'false';
+      process.env.CRM_PUSH_ENABLED = 'false';
 
       const result = await sweepAt(new Date());
       await sleep(300);

@@ -124,7 +124,7 @@ describe('FR-41 (T-62) — quy tắc BE của /crm/persona-fields (HTTP + MongoD
     );
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
+    process.env.CRM_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-fr41-${RUN_ID}:`;
     replSet = await createMemoryReplSet();

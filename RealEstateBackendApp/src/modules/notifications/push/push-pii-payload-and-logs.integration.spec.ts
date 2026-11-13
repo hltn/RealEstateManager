@@ -272,8 +272,8 @@ describe('T-38 PII của payload push thật và log luồng push (tích hợp)'
   };
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_ENABLED = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     replSet = await createMemoryReplSet();
     redisStub = createRedisClientStub();
@@ -288,7 +288,7 @@ describe('T-38 PII của payload push thật và log luồng push (tích hợp)'
       .overrideProvider(PUSH_PROVIDER)
       .useValue({
         name: 'fake',
-        isEnabled: () => process.env.FEATURE_CRM_PUSH === 'true',
+        isEnabled: () => process.env.CRM_PUSH_ENABLED === 'true',
         initialStatus: () => NotificationPushStatus.PENDING,
         send,
       })
@@ -316,13 +316,13 @@ describe('T-38 PII của payload push thật và log luồng push (tích hợp)'
   });
 
   afterAll(async () => {
-    delete process.env.FEATURE_CRM_PUSH;
+    delete process.env.CRM_PUSH_ENABLED;
     await moduleRef?.close();
     await replSet?.stop();
   });
 
   beforeEach(async () => {
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     await Promise.all(
       [
         'notifications',
@@ -752,7 +752,7 @@ describe('T-38 PII của payload push thật và log luồng push (tích hợp)'
       await dispatcher.dispatch([
         buildRequest(NotificationType.CARE_LOG_ADDED, flagOff.userId),
       ]);
-      process.env.FEATURE_CRM_PUSH = 'false';
+      process.env.CRM_PUSH_ENABLED = 'false';
       await sweep.run(new Date(Date.now() + 60_000));
 
       const logs = allLogs();

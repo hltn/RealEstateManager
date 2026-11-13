@@ -135,7 +135,7 @@ describe('CRM M2 — kiểm tải sơ bộ danh sách trên 10.000 khách', () =
   };
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
+    process.env.CRM_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-perf-${randomUUID().slice(0, 8)}:`;
     replSet = await createMemoryReplSet();
@@ -307,7 +307,7 @@ describe('CRM M2 — kiểm tải sơ bộ danh sách trên 10.000 khách', () =
 
   afterAll(async () => {
     console.table(report);
-    delete process.env.FEATURE_CRM_ENABLED;
+    delete process.env.CRM_ENABLED;
     delete process.env.CRM_PII_ENCRYPTION_KEY;
     delete process.env.REDIS_KEY_PREFIX;
     await app?.close();

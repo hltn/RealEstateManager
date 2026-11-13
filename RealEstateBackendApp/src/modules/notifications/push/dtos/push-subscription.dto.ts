@@ -146,7 +146,7 @@ export class PushSubscriptionListDto {
 export class PushConfigDto {
   @ApiProperty({
     description:
-      'Cờ `FEATURE_CRM_PUSH` bật VÀ đủ biến `VAPID_*` hợp lệ. FE chỉ hiện nút bật push khi `true`',
+      'Cờ `CRM_PUSH_ENABLED` bật VÀ đủ biến `VAPID_*` hợp lệ. FE chỉ hiện nút bật push khi `true`',
   })
   enabled: boolean;
 

@@ -4,9 +4,9 @@ dist/
 build/
 .env
 .env.*
+# Cấu hình AI admin lưu từ màn Settings (SETTINGS_CONFIG_FILE, chứa API key) — không bao giờ commit.
+.settings.env
 !.env.example
-!.env.docker.example
-!.env.staging.example
 !**/.env.example
 .DS_Store
 *.log

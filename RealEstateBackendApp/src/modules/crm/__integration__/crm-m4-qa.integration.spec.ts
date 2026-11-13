@@ -49,7 +49,7 @@ import { CrmSeedService } from '.././seed/crm-seed.service';
 
 jest.setTimeout(300_000);
 
-const FLAG = 'FEATURE_CRM_ENABLED';
+const FLAG = 'CRM_ENABLED';
 const RUN_ID = randomUUID().slice(0, 8);
 
 /** Chữ ký của hai hàm riêng tư của job mà ca kiểm thử cần gọi trực tiếp (mô phỏng một instance khác). */

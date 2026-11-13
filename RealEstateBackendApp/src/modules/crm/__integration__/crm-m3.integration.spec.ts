@@ -53,8 +53,8 @@ import { CrmSeedService } from '.././seed/crm-seed.service';
 
 jest.setTimeout(300_000);
 
-const FLAG = 'FEATURE_CRM_ENABLED';
-const ATTACHMENTS_FLAG = 'FEATURE_CRM_ATTACHMENTS';
+const FLAG = 'CRM_ENABLED';
+const ATTACHMENTS_FLAG = 'CRM_ATTACHMENTS_ENABLED';
 const JWT_SECRET = 'integration-secret';
 const RUN_ID = randomUUID().slice(0, 8);
 const HOUR = 3_600_000;
@@ -1241,7 +1241,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       expect(objectCount()).toBe(before);
     });
 
-    it('phạm vi và cờ: ngoài nhóm 404, EDITOR 403, tắt FEATURE_CRM_ATTACHMENTS => 404 (cả upload lẫn gắn ảnh vào nhật ký)', async () => {
+    it('phạm vi và cờ: ngoài nhóm 404, EDITOR 403, tắt CRM_ATTACHMENTS_ENABLED => 404 (cả upload lẫn gắn ảnh vào nhật ký)', async () => {
       expect((await upload(cp, 'staffC')).status).toBe(404);
       expect((await upload(cp, 'editor')).status).toBe(403);
 

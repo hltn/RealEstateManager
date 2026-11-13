@@ -33,7 +33,7 @@ export interface EncryptedPayload {
  *   (khi xoay khóa: đưa khóa cũ sang biến này, đặt khóa mới + tăng CRM_PII_KEY_VERSION).
  *
  * Fail-fast: khóa sai độ dài/định dạng ⇒ ném lỗi ngay lúc khởi tạo (app không lên được).
- * Khóa hiện hành bắt buộc khi `FEATURE_CRM_ENABLED=true`; khi CRM tắt và chưa cấu hình khóa,
+ * Khóa hiện hành bắt buộc khi `CRM_ENABLED=true`; khi CRM tắt và chưa cấu hình khóa,
  * service vẫn khởi tạo được nhưng encrypt/decrypt sẽ ném lỗi (không làm hỏng các module cũ).
  *
  * Mỗi lần mã hóa dùng IV ngẫu nhiên mới; authTag đảm bảo phát hiện dữ liệu bị sửa.
@@ -59,7 +59,7 @@ export class PiiCryptoService {
       );
     } else if (featureFlags.isEnabled(FeatureFlag.CRM_ENABLED)) {
       throw new Error(
-        'Thiếu CRM_PII_ENCRYPTION_KEY: bắt buộc khi FEATURE_CRM_ENABLED=true (32 byte, base64 hoặc hex)',
+        'Thiếu CRM_PII_ENCRYPTION_KEY: bắt buộc khi CRM_ENABLED=true (32 byte, base64 hoặc hex)',
       );
     } else {
       this.logger.warn(

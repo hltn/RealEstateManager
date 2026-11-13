@@ -4,23 +4,37 @@
  *
  * Bao phủ:
  * - getAiConfig: fallback default + mask apiKey/must1cApiKey.
- * - updateAiConfig: ghi .env, replace dòng có sẵn, append dòng mới, skip '***'.
- * - updateAiConfig: cập nhật process.env song song.
+ * - updateAiConfig: lưu bền vào file riêng SETTINGS_CONFIG_FILE (không phải .env), thay khóa có sẵn, skip '***',
+ *   chống xuống dòng, không rò API key vào log, nạp lại được lúc khởi động.
+ * - updateAiConfig: cập nhật process.env song song (chỉ sau khi ghi file thành công).
  * - getOpenRouterModels: thiếu key → throw; fetch ok → trả data; fetch fail → throw.
  *
- * Mock: ConfigService, fs (existsSync/readFileSync/writeFileSync), global.fetch.
+ * Mock: ConfigService, global.fetch. Phần lưu file dùng file THẬT trong thư mục tạm.
  */
-jest.mock('fs');
-import * as fs from 'fs';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  AI_CONFIG_KEYS,
+  applySettingsConfigFile,
+  readSettingsConfigFile,
+  SettingsEnvTarget,
+} from '../../common/config/settings-config-file';
 import { SettingsService } from './settings.service';
 
 describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () => {
   let service: SettingsService;
   let configService: jest.Mocked<ConfigService>;
-  const existsSpy = fs.existsSync as unknown as jest.Mock;
-  const readSpy = fs.readFileSync as unknown as jest.Mock;
-  const writeSpy = fs.writeFileSync as unknown as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -97,14 +111,36 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
     });
   });
 
-  describe('updateAiConfig — ghi .env', () => {
-    it('file chưa có → create + append key mới + set process.env', () => {
-      existsSpy.mockReturnValue(false);
-      const captured: string[] = [];
-      writeSpy.mockImplementation((_p: string, content: string) => {
-        captured.push(content);
-      });
+  describe('updateAiConfig — lưu bền vào file riêng (SETTINGS_CONFIG_FILE)', () => {
+    const SECRET = 'sk-SECRET-NEVER-LOG-ME';
+    let sandbox: string;
+    let savedPath: string;
+    let envPath: string;
+    const touchedKeys = [...AI_CONFIG_KEYS, 'SETTINGS_CONFIG_FILE'];
+    const savedEnv: Record<string, string | undefined> = {};
+    const originalCwd = process.cwd();
 
+    beforeEach(() => {
+      sandbox = mkdtempSync(join(tmpdir(), 'settings-service-'));
+      savedPath = join(sandbox, 'state', 'ai.env');
+      envPath = join(sandbox, '.env');
+      for (const key of touchedKeys) {
+        savedEnv[key] = process.env[key];
+        delete process.env[key];
+      }
+      process.env.SETTINGS_CONFIG_FILE = savedPath;
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      rmSync(sandbox, { recursive: true, force: true });
+      for (const key of touchedKeys) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
+    });
+
+    it('file chưa có → tạo file (cả thư mục cha) + ghi khóa mới + set process.env', () => {
       const result = service.updateAiConfig({
         provider: 'OpenRouter',
         model: 'gpt-4',
@@ -115,100 +151,150 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       });
 
       expect(result).toEqual({ success: true });
-      expect(writeSpy).toHaveBeenCalledTimes(1);
-      const content = captured[0];
-      expect(content).toContain('OPENROUTER_AI_PROVIDER=OpenRouter');
-      expect(content).toContain('OPENROUTER_AI_MODEL=gpt-4');
-      expect(content).toContain('OPENROUTER_API_KEY=sk-new');
-      expect(content).toContain('NINEROUTER_BASE_URL=http://custom-9router:20128/v1');
-      expect(content).toContain('NINEROUTER_API_KEY=sk-9router-key');
-      expect(content).toContain('NINEROUTER_MODEL=meta/llama-3-70b-instruct');
+      expect(readSettingsConfigFile(savedPath)).toEqual({
+        OPENROUTER_AI_PROVIDER: 'OpenRouter',
+        OPENROUTER_AI_MODEL: 'gpt-4',
+        OPENROUTER_API_KEY: 'sk-new',
+        NINEROUTER_BASE_URL: 'http://custom-9router:20128/v1',
+        NINEROUTER_API_KEY: 'sk-9router-key',
+        NINEROUTER_MODEL: 'meta/llama-3-70b-instruct',
+      });
       // process.env được set song song để reload tức thì.
       expect(process.env.OPENROUTER_AI_PROVIDER).toBe('OpenRouter');
       expect(process.env.OPENROUTER_AI_MODEL).toBe('gpt-4');
       expect(process.env.OPENROUTER_API_KEY).toBe('sk-new');
-
-      delete process.env.OPENROUTER_AI_PROVIDER;
-      delete process.env.OPENROUTER_AI_MODEL;
-      delete process.env.OPENROUTER_API_KEY;
-      delete process.env.NINEROUTER_BASE_URL;
-      delete process.env.NINEROUTER_API_KEY;
-      delete process.env.NINEROUTER_MODEL;
     });
 
-    it('file có sẵn dòng → replace bằng regex, KHÔNG append duplicate', () => {
-      existsSpy.mockReturnValue(true);
-      readSpy.mockReturnValue(
-        'OPENROUTER_AI_PROVIDER=old\nOPENROUTER_API_KEY=old-key\n',
-      );
-      const captured: string[] = [];
-      writeSpy.mockImplementation((_p: string, content: string) => {
-        captured.push(content);
+    it('ghi đủ 9 khóa allowlist khi gửi đủ mọi trường', () => {
+      service.updateAiConfig({
+        provider: 'p',
+        model: 'm',
+        apiKey: 'k1',
+        must1cApiKey: 'k2',
+        must1cModel: 'mm',
+        nineRouterBaseUrl: 'http://x/v1',
+        nineRouterApiKey: 'k3',
+        nineRouterModel: 'nm',
+        activePlatform: '9Router',
       });
+
+      expect(Object.keys(readSettingsConfigFile(savedPath)).sort()).toEqual(
+        [...AI_CONFIG_KEYS].sort(),
+      );
+    });
+
+    it('file có sẵn khóa → thay giá trị, KHÔNG nhân đôi dòng, giữ khóa không đổi', () => {
+      service.updateAiConfig({ provider: 'old', apiKey: 'old-key' });
 
       service.updateAiConfig({ provider: 'new', apiKey: 'new-key' });
 
-      const content = captured[0];
-      // Chỉ 1 dòng OPENROUTER_AI_PROVIDER, đã replace.
-      const lines = content.split('\n').filter((l) => l.startsWith('OPENROUTER_AI_PROVIDER='));
-      expect(lines).toEqual(['OPENROUTER_AI_PROVIDER=new']);
-      expect(content).toContain('OPENROUTER_API_KEY=new-key');
+      const content = readFileSync(savedPath, 'utf8');
+      expect(
+        content.split('\n').filter((l) => l.startsWith('OPENROUTER_AI_PROVIDER=')),
+      ).toHaveLength(1);
+      expect(readSettingsConfigFile(savedPath)).toEqual({
+        OPENROUTER_AI_PROVIDER: 'new',
+        OPENROUTER_API_KEY: 'new-key',
+      });
       expect(content).not.toContain('old-key');
-      expect(content).not.toContain('OPENROUTER_AI_PROVIDER=old');
     });
 
-    it('apiKey="***" → KHÔNG overwrite key thật (sentinel chống ghi nhầm)', () => {
-      existsSpy.mockReturnValue(true);
-      readSpy.mockReturnValue('OPENROUTER_API_KEY=sk-real\n');
-      // Baseline: env đã có key thật — sentinel không được ghi đè.
-      process.env.OPENROUTER_API_KEY = 'sk-real';
-      process.env.NINEROUTER_API_KEY = 'sk-9router-real';
+    it('apiKey="***" → KHÔNG ghi đè key thật (sentinel chống ghi nhầm) cả file lẫn process.env', () => {
+      service.updateAiConfig({ apiKey: 'sk-real', nineRouterApiKey: 'sk-9r' });
 
       service.updateAiConfig({ apiKey: '***', nineRouterApiKey: '***' });
 
-      const content = writeSpy.mock.calls[0][1] as string;
-      expect(content).toContain('OPENROUTER_API_KEY=sk-real');
-      // Không ghi đè bằng "***".
-      expect(content).not.toContain('OPENROUTER_API_KEY=***');
-      expect(content).not.toContain('NINEROUTER_API_KEY=***');
-      // process.env KHÔNG bị thay đổi (sentinel skip cả file lẫn env).
+      expect(readSettingsConfigFile(savedPath)).toEqual({
+        OPENROUTER_API_KEY: 'sk-real',
+        NINEROUTER_API_KEY: 'sk-9r',
+      });
       expect(process.env.OPENROUTER_API_KEY).toBe('sk-real');
-
-      delete process.env.OPENROUTER_API_KEY;
-      delete process.env.NINEROUTER_API_KEY;
     });
 
-    it('must1cApiKey="***" → skip update (giữ key cũ)', () => {
-      existsSpy.mockReturnValue(true);
-      readSpy.mockReturnValue('MUST1C_API_KEY=m-old\n');
+    it('must1cApiKey="***" → giữ key cũ', () => {
+      service.updateAiConfig({ must1cApiKey: 'm-old' });
 
       service.updateAiConfig({ must1cApiKey: '***' });
 
-      const content = writeSpy.mock.calls[0][1] as string;
-      expect(content).toContain('MUST1C_API_KEY=m-old');
-
-      delete process.env.MUST1C_API_KEY;
+      expect(readSettingsConfigFile(savedPath).MUST1C_API_KEY).toBe('m-old');
     });
 
-    it('field undefined → skip, không tạo entry mới', () => {
-      existsSpy.mockReturnValue(true);
-      readSpy.mockReturnValue('OPENROUTER_AI_PROVIDER=keep\n');
+    it('field undefined/rỗng → bỏ qua, không tạo khóa mới và không đổi process.env', () => {
+      service.updateAiConfig({ provider: 'keep' });
 
-      service.updateAiConfig({});
+      service.updateAiConfig({ model: '', apiKey: undefined });
 
-      const content = writeSpy.mock.calls[0][1] as string;
-      expect(content).toBe('OPENROUTER_AI_PROVIDER=keep\n');
+      expect(readSettingsConfigFile(savedPath)).toEqual({
+        OPENROUTER_AI_PROVIDER: 'keep',
+      });
+      expect(process.env.OPENROUTER_AI_MODEL).toBeUndefined();
     });
 
-    it('file tồn tại nhưng không kết thúc newline → append thêm newline trước khi thêm key mới', () => {
-      existsSpy.mockReturnValue(true);
-      readSpy.mockReturnValue('OPENROUTER_AI_PROVIDER=old'); // no trailing newline
+    it('KHÔNG ghi vào .env (file .env của người vận hành không bị đụng tới)', () => {
+      process.chdir(sandbox);
+      delete process.env.SETTINGS_CONFIG_FILE;
+      writeFileSync(envPath, 'OPENROUTER_AI_MODEL=human-managed\n');
 
-      service.updateAiConfig({ model: 'm1' });
+      service.updateAiConfig({ model: 'saved-from-ui' });
 
-      const content = writeSpy.mock.calls[0][1] as string;
-      expect(content).toContain('OPENROUTER_AI_PROVIDER=old\n');
-      expect(content).toContain('OPENROUTER_AI_MODEL=m1\n');
+      expect(readFileSync(envPath, 'utf8')).toBe(
+        'OPENROUTER_AI_MODEL=human-managed\n',
+      );
+      // Mặc định: file riêng `.settings.env` cạnh cwd.
+      expect(
+        readSettingsConfigFile(join(realpathSync(sandbox), '.settings.env')),
+      ).toEqual({ OPENROUTER_AI_MODEL: 'saved-from-ui' });
+    });
+
+    it('giá trị lưu rồi được nạp lại ở lần khởi động sau (vòng đi-về với applySettingsConfigFile)', () => {
+      service.updateAiConfig({ model: 'persisted', apiKey: "k'e#y" });
+      const freshProcessEnv: SettingsEnvTarget = {
+        OPENROUTER_AI_MODEL: 'from-compose',
+      };
+
+      applySettingsConfigFile(freshProcessEnv, savedPath);
+
+      expect(freshProcessEnv).toEqual({
+        OPENROUTER_AI_MODEL: 'persisted',
+        OPENROUTER_API_KEY: "k'e#y",
+      });
+    });
+
+    it('giá trị chứa xuống dòng ở trường không có DTO chặn (provider) → 400, không ghi file, không đổi env', () => {
+      expect(() =>
+        service.updateAiConfig({ provider: 'x\nMONGODB_URI=evil' }),
+      ).toThrow(BadRequestException);
+
+      expect(existsSync(savedPath)).toBe(false);
+      expect(process.env.OPENROUTER_AI_PROVIDER).toBeUndefined();
+    });
+
+    it('ghi file lỗi → ném lỗi và KHÔNG đổi process.env (bộ nhớ không lệch với file)', () => {
+      mkdirSync(savedPath, { recursive: true }); // đích là thư mục → rename lỗi
+
+      expect(() => service.updateAiConfig({ apiKey: SECRET })).toThrow();
+
+      expect(process.env.OPENROUTER_API_KEY).toBeUndefined();
+    });
+
+    it('không rò giá trị API key vào log của service', () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        service.updateAiConfig({ apiKey: SECRET, nineRouterApiKey: SECRET });
+
+        expect(JSON.stringify([logSpy.mock.calls, errorSpy.mock.calls])).not.toContain(
+          SECRET,
+        );
+        expect(logSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
     });
   });
 

@@ -24,13 +24,15 @@ import { TeamsModule } from './modules/teams/teams.module';
 import { MigrationsWarningModule } from './migrations/migrations-warning.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { NoSqlOperatorInterceptor } from './common/security/nosql-operator.interceptor';
+import { ENV_FILE_PATHS } from './common/config/env-files.config';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      // Cùng danh sách và thứ tự ưu tiên với nạp dotenv ở main.ts / CLI migration: file gần thắng, biến tiến trình thắng file.
+      envFilePath: [...ENV_FILE_PATHS],
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
@@ -59,7 +61,7 @@ import { NoSqlOperatorInterceptor } from './common/security/nosql-operator.inter
     // Auth + Users: bật global JwtAuthGuard/RolesGuard/ThrottlerGuard.
     AuthModule,
     UsersModule,
-    // CRM: nhóm làm việc + danh mục + dự án (M1). Route CRM nằm sau cờ FEATURE_CRM_ENABLED.
+    // CRM: nhóm làm việc + danh mục + dự án (M1). Route CRM nằm sau cờ CRM_ENABLED.
     TeamsModule,
     CrmModule,
     // Google Drive Export (OAuth2 flow + Export).

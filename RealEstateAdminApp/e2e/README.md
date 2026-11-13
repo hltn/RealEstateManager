@@ -47,12 +47,12 @@ E2E KHÔNG BAO GIỜ ghi vào `RealEstateBackendApp/dist` (dùng chung với bac
 | Thành phần | Dev (không bị động tới) | E2E |
 |---|---|---|
 | Backend | 3000 (`dist`) | **3100**, `FRONTEND_URL=http://localhost:5183`, chạy `node .e2e-dist/main.js` (build riêng) với cwd rỗng (không nạp `.env` dev) |
-| Admin (Vite) | 5173 | **5183**, `VITE_API_URL` trỏ 3100 |
+| Admin (Vite) | 5173 | **5183**, `API_URL` trỏ 3100 (qua `/env.js` do plugin dev của Vite phục vụ) |
 | MongoDB | container `mongodb`, DB `mongodb` | mongodb-memory-server **replica set**, DB `e2e`, cổng ngẫu nhiên, xóa khi xong |
 | Redis | db 0 | **db 15** (flush đầu và cuối), tiền tố key `e2e:`; có thể dùng chung server Redis dev |
 | MinIO | `crm-attachments`, `crm-exports` | bucket **`e2e-attachments`**, **`e2e-exports`** (tạo lúc đầu, xóa object + bucket lúc cuối) |
 
-Cờ bật: `FEATURE_CRM_ENABLED`, `FEATURE_CRM_ATTACHMENTS`, `VITE_CRM_ENABLED`, `VITE_FEATURE_CRM_ATTACHMENTS`. Ép tắt dữ liệu mẫu của Vite dev: `VITE_CRM_MOCK_REPORTS=false`, `VITE_CRM_MOCK_IMPORT_EXPORT=false` (smoke có kiểm cờ này). AI/Firecrawl/Google để rỗng, crawler tắt. Mọi giá trị test nằm trong `env.ts` (an toàn để commit); `.env.e2e.example` chỉ liệt kê biến ghi đè tùy chọn.
+Cờ bật (dùng chung tên cho backend và Admin): `CRM_ENABLED`, `CRM_ATTACHMENTS_ENABLED`. Phía Admin truyền qua `process.env` cho Vite dev rồi plugin phát ở `/env.js` (FR-15); `adminEnv()` ép MỌI cờ boolean còn lại của allowlist về `false` (`CRM_PUSH_ENABLED`, `CRM_IMPORT_ENABLED`, `CRM_FEATURE_*`, `CRM_MOCK_REPORTS`, `CRM_MOCK_IMPORT_EXPORT`...) để `.env` gốc của máy dev không lọt vào stack E2E (smoke có kiểm cờ mock). AI/Firecrawl/Google để rỗng, crawler tắt. Mọi giá trị test nằm trong `env.ts` (an toàn để commit); `.env.e2e.example` chỉ liệt kê biến ghi đè tùy chọn.
 
 ## Tài khoản seed (chỉ tồn tại trong stack E2E, mật khẩu `Test@12345678`)
 

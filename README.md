@@ -30,12 +30,12 @@ Sơ đồ đầy đủ và quy tắc đặt file mới: `docs/01_Infrastructure/
 
 Hiện tại chạy từng phần bằng npm:
 
-1. Chuẩn bị backend (lần đầu): chạy `npm install` trong `RealEstateBackendApp/`; từ gốc repo chạy `cp RealEstateBackendApp/.env.example RealEstateBackendApp/.env` rồi điền `CRM_PII_ENCRYPTION_KEY` (cách sinh ghi trong `RealEstateBackendApp/.env.example`; chi tiết ở `RealEstateBackendApp/README.md`).
+1. Chuẩn bị backend (lần đầu): chạy `npm install` trong `RealEstateBackendApp/`; từ gốc repo chạy `cp .env.example .env` rồi điền giá trị thật (chú thích từng khóa, kể cả cách sinh `CRM_PII_ENCRYPTION_KEY`, nằm trong `.env.example`; chạy backend trên host thì đổi `MONGODB_URI`/`REDIS_URL` trỏ về `localhost` theo chú thích; chi tiết ở `RealEstateBackendApp/README.md`).
 2. Dựng hạ tầng dev (MongoDB replica set, Redis, MinIO): `docker compose -f RealEstateBackendApp/docker-compose.dev.yml up -d`.
 3. Cài thư viện web admin và chạy: `cd RealEstateAdminApp`, `npm install`, `npm run dev` (chạy cùng lúc Vite và `start:dev` của backend).
 4. Kiểm thử: `npm test` trong từng app.
 
-Biến môi trường của luồng npm nằm ở `RealEstateBackendApp/.env`. `.env.docker.example` chỉ dành cho stack Docker (production/staging, sao chép thành file thật, không commit bí mật), không dùng cho luồng npm này.
+Biến môi trường của mọi luồng (npm, Docker, production, staging) nằm trong MỘT file `.env` ở gốc repo, lập từ mẫu duy nhất `.env.example` (cùng danh sách khóa ở mọi môi trường, chỉ khác giá trị; `.env` không commit). Backend đọc `.env` trong thư mục chạy trước rồi đến `../.env`, nên một file `.env` cũ còn sót trong `RealEstateBackendApp/` sẽ thắng `.env` gốc: hãy xóa nó khi đã chuyển giá trị sang `.env` gốc.
 
 Dựng và chạy dev thống nhất bằng `docker compose` (`release.sh build`, file `.env.example`, `docker-compose.dev.yml`, tùy chọn `docker-compose.dev-watch.yml`): (sẽ có ở v1.0.6, xem tài liệu `docs/01_Infrastructure/10_Thong_Nhat_Moi_Truong_Architecture.md`).
 

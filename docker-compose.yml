@@ -316,14 +316,6 @@ services:
     build:
       context: ./RealEstateAdminApp
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: /api/v1
-        # Cờ Vite NHÚNG LÚC BUILD: đổi CRM_ENABLED/CRM_ATTACHMENTS_ENABLED thì phải build lại frontend (--build).
-        # Cùng biến với backend (FEATURE_CRM_*) để hai phía khớp. Mock (dữ liệu mẫu) luôn tắt ở production.
-        VITE_CRM_ENABLED: ${CRM_ENABLED:-false}
-        VITE_FEATURE_CRM_ATTACHMENTS: ${CRM_ATTACHMENTS_ENABLED:-false}
-        VITE_CRM_MOCK_REPORTS: "false"
-        VITE_CRM_MOCK_IMPORT_EXPORT: "false"
     container_name: realestate_frontend
     restart: unless-stopped
     ports:
@@ -337,6 +329,26 @@ services:
       - TRUSTED_PROXY_IP=${TRUSTED_PROXY_IP:-10.213.77.250}
       # Giới hạn body của /api/ (upload ảnh CRM tối đa 5 MB/file + dư multipart); phải >= giới hạn upload của backend.
       - CLIENT_MAX_BODY=${CLIENT_MAX_BODY:-6m}
+      # Cấu hình FE ĐỌC LÚC CHẠY (FR-15): entrypoint /docker-entrypoint.d/40-runtime-config.sh sinh /env.js từ ĐÚNG các khóa dưới
+      # đây mỗi lần container khởi động (không còn build args VITE_*). Đổi cờ: sửa .env.docker rồi `docker compose --env-file
+      # .env.docker up -d frontend` (tạo lại container, KHÔNG cần --build). Giá trị sai (cờ khác true/false, URL sai) thì
+      # container dừng và log nêu TÊN khóa sai. Chuỗi rỗng = dùng mặc định.
+      # Cờ CRM dùng CÙNG biến với backend (CRM_ENABLED, CRM_ATTACHMENTS_ENABLED, CRM_PUSH_ENABLED) để hai phía khớp.
+      # CRM_IMPORT_ENABLED: FE chưa dùng; backend hiện đặt cứng FEATURE_CRM_IMPORT=false (T-28 thống nhất tên).
+      - API_URL=${API_URL:-/api/v1}
+      - CRM_ENABLED=${CRM_ENABLED:-false}
+      - CRM_ATTACHMENTS_ENABLED=${CRM_ATTACHMENTS_ENABLED:-false}
+      - CRM_PUSH_ENABLED=${CRM_PUSH_ENABLED:-false}
+      - CRM_IMPORT_ENABLED=${CRM_IMPORT_ENABLED:-false}
+      - CRM_FEATURE_ZALO_ZNS=${CRM_FEATURE_ZALO_ZNS:-false}
+      - CRM_FEATURE_IN_APP_CALL=${CRM_FEATURE_IN_APP_CALL:-false}
+      - CRM_FEATURE_APPOINTMENT_SYNC=${CRM_FEATURE_APPOINTMENT_SYNC:-false}
+      # Mock (dữ liệu mẫu): production giữ tắt (mặc định false); chỉ bật khi demo có chủ đích.
+      - CRM_MOCK_REPORTS=${CRM_MOCK_REPORTS:-false}
+      - CRM_MOCK_IMPORT_EXPORT=${CRM_MOCK_IMPORT_EXPORT:-false}
+      # URL công khai của web admin (hiện ở nút cài app). Để TRỐNG = FE dùng origin của trang (khác backend: backend giữ mặc định
+      # http://localhost cho CORS). Nếu đặt thì phải là http(s):// tuyệt đối.
+      - FRONTEND_URL=${FRONTEND_URL:-}
     # Healthcheck (FR-16): nginx trả 200 ở /healthz (không qua backend). Image nginx:alpine có sẵn busybox wget.
     # Dùng 127.0.0.1 (nginx chỉ listen IPv4) thay vì localhost để tránh phân giải ra ::1.
     healthcheck:

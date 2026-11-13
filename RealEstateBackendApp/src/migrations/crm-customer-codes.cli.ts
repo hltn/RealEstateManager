@@ -2,13 +2,13 @@
  * Lệnh bù mã khách (FR-08, FR-21): `node dist/migrations/crm-customer-codes.cli.js [--apply]` (mặc định dry-run).
  * KHÔNG khởi động NestJS; chỉ dùng MongoClient + MONGODB_URI. Logic ở `crm-customer-codes-app.ts`.
  */
-import { config as loadDotenv } from 'dotenv';
+import { loadEnvFiles } from '../common/config/env-files.config';
 import { runCustomerCodesCli } from './crm-customer-codes-app';
 import { sanitizeErrorMessage } from './migration-error.util';
 import { EXIT_CODE } from './migration-runner';
 
-// `quiet`: dotenv >= 17 mặc định in một dòng ra stdout; biến môi trường đã có KHÔNG bị ghi đè.
-loadDotenv({ quiet: true });
+// Helper chung `['.env', '../.env']` (file gần thắng, quiet); biến môi trường đã có KHÔNG bị ghi đè.
+loadEnvFiles();
 
 const writeLine = (stream: NodeJS.WriteStream, line: string): void => {
   stream.write(`${line}\n`);

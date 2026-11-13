@@ -47,7 +47,7 @@ jest.setTimeout(240_000);
 // AppModule kéo theo jsdom (ESM) mà Jest không parse được; chỉ cần đọc metadata nên giả lập.
 jest.mock('jsdom', () => ({ JSDOM: class {} }));
 
-const FLAG = 'FEATURE_CRM_ENABLED';
+const FLAG = 'CRM_ENABLED';
 const JWT_SECRET = 'integration-secret';
 const FAKE_ID = '507f1f77bcf86cd799439011';
 

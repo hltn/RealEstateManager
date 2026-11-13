@@ -25,6 +25,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   // Vite riêng cổng 5184 (khác dev 5173 và stack e2e 5183), API trỏ về origin giả; cờ CRM bật, dữ liệu mẫu tắt.
+  // Cờ truyền bằng tên env mới (FR-15): plugin dev của Vite phát chúng ở `/env.js` (không còn `VITE_*`).
   webServer: {
     command: 'node node_modules/vite/bin/vite.js --port 5184 --strictPort --host localhost',
     cwd: '..',
@@ -32,10 +33,10 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
-      VITE_API_URL: `${MOCK_API_ORIGIN}/api/v1`,
-      VITE_CRM_ENABLED: 'true',
-      VITE_CRM_MOCK_REPORTS: 'false',
-      VITE_CRM_MOCK_IMPORT_EXPORT: 'false',
+      API_URL: `${MOCK_API_ORIGIN}/api/v1`,
+      CRM_ENABLED: 'true',
+      CRM_MOCK_REPORTS: 'false',
+      CRM_MOCK_IMPORT_EXPORT: 'false',
     },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

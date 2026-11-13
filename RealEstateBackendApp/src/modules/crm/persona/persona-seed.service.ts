@@ -27,7 +27,7 @@ export interface PersonaSeedReport {
 /**
  * Seed nhóm trường (`catalog_items` PERSONA_GROUP) và trường chân dung mẫu (tài liệu 04 mục 3.4, gồm nhóm
  * REAL_ESTATE). IDEMPOTENT và KHÔNG GHI ĐÈ: nhận diện bằng `seedKey` nên Quản trị sửa/tắt/xóa mềm trường mẫu không bị
- * seed hoàn tác khi khởi động lại (cùng cơ chế seed của danh mục M1). Chỉ chạy khi `FEATURE_CRM_ENABLED` bật.
+ * seed hoàn tác khi khởi động lại (cùng cơ chế seed của danh mục M1). Chỉ chạy khi `CRM_ENABLED` bật.
  *
  * Tách khỏi `CrmSeedService` (M1) để không đổi báo cáo seed đã có; trường mới thêm vào seed ở bản sau sẽ có mặt sau
  * lần khởi động kế và kích job tính lại độ đầy đủ cho khách cũ.

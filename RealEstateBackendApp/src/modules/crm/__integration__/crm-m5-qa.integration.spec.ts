@@ -55,7 +55,7 @@ import { PersonaSeedService } from '.././persona/persona-seed.service';
 
 jest.setTimeout(300_000);
 
-const FLAG = 'FEATURE_CRM_ENABLED';
+const FLAG = 'CRM_ENABLED';
 const JWT_SECRET = 'integration-secret';
 const RUN_ID = randomUUID().slice(0, 8);
 const DAY_MS = 24 * 60 * 60 * 1000;

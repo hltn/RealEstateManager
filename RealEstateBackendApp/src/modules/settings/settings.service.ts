@@ -1,12 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as fs from 'fs';
-import * as path from 'path';
+import {
+  AiConfigValues,
+  resolveSettingsConfigPath,
+  writeSettingsConfigFile,
+} from '../../common/config/settings-config-file';
 
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
-  private envPath = path.resolve(process.cwd(), '.env');
 
   constructor(private configService: ConfigService) {}
 
@@ -62,54 +64,52 @@ export class SettingsService {
     nineRouterModel?: string;
     activePlatform?: string;
   }) {
-    let envContent = '';
-    if (fs.existsSync(this.envPath)) {
-      envContent = fs.readFileSync(this.envPath, 'utf8');
-    }
-
-    const updates: Record<string, string> = {};
-    if (config.provider) updates['OPENROUTER_AI_PROVIDER'] = config.provider;
-    if (config.model) updates['OPENROUTER_AI_MODEL'] = config.model;
+    const updates: AiConfigValues = {};
+    if (config.provider) updates.OPENROUTER_AI_PROVIDER = config.provider;
+    if (config.model) updates.OPENROUTER_AI_MODEL = config.model;
 
     if (config.apiKey && config.apiKey !== '***') {
-      updates['OPENROUTER_API_KEY'] = config.apiKey;
+      updates.OPENROUTER_API_KEY = config.apiKey;
     }
 
     if (config.must1cApiKey && config.must1cApiKey !== '***') {
-      updates['MUST1C_API_KEY'] = config.must1cApiKey;
+      updates.MUST1C_API_KEY = config.must1cApiKey;
     }
     if (config.must1cModel) {
-      updates['MUST1C_MODEL'] = config.must1cModel;
+      updates.MUST1C_MODEL = config.must1cModel;
     }
     if (config.nineRouterBaseUrl) {
-      updates['NINEROUTER_BASE_URL'] = config.nineRouterBaseUrl;
+      updates.NINEROUTER_BASE_URL = config.nineRouterBaseUrl;
     }
     if (config.nineRouterApiKey && config.nineRouterApiKey !== '***') {
-      updates['NINEROUTER_API_KEY'] = config.nineRouterApiKey;
+      updates.NINEROUTER_API_KEY = config.nineRouterApiKey;
     }
     if (config.nineRouterModel) {
-      updates['NINEROUTER_MODEL'] = config.nineRouterModel;
+      updates.NINEROUTER_MODEL = config.nineRouterModel;
     }
     if (config.activePlatform) {
-      updates['ACTIVE_AI_PLATFORM'] = config.activePlatform;
+      updates.ACTIVE_AI_PLATFORM = config.activePlatform;
     }
 
+    // Chống env injection ở mọi khóa (DTO chỉ chặn một phần): xuống dòng trong giá trị sẽ chèn thêm biến vào file.
     for (const [key, value] of Object.entries(updates)) {
-      const regex = new RegExp(`^${key}=.*$`, 'm');
-      if (regex.test(envContent)) {
-        envContent = envContent.replace(regex, `${key}=${value}`);
-      } else {
-        // if file doesn't end with newline, add one
-        if (envContent && !envContent.endsWith('\n')) {
-          envContent += '\n';
-        }
-        envContent += `${key}=${value}\n`;
+      if (/[\r\n]/.test(value)) {
+        throw new BadRequestException(
+          `Giá trị của ${key} không được chứa ký tự xuống dòng`,
+        );
       }
+    }
+
+    // Ghi bền vào file riêng (SETTINGS_CONFIG_FILE, không phải .env) TRƯỚC khi đổi process.env: ghi lỗi thì
+    // không để bộ nhớ lệch với file. File được nạp lại lúc khởi động (load-env.ts) nên sống qua restart.
+    const filePath = resolveSettingsConfigPath();
+    writeSettingsConfigFile(filePath, updates);
+    for (const [key, value] of Object.entries(updates)) {
       process.env[key] = value;
     }
-
-    fs.writeFileSync(this.envPath, envContent, 'utf8');
-    this.logger.log('AI configuration updated in .env');
+    this.logger.log(
+      `AI configuration saved to ${filePath} (${Object.keys(updates).length} keys changed)`,
+    );
 
     return { success: true };
   }

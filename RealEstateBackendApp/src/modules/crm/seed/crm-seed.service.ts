@@ -46,7 +46,7 @@ export interface CrmSeedReport {
  * nên chỉnh sửa, ngừng hoạt động hay xóa của Quản trị không bị seed hoàn tác khi khởi động lại.
  * Dùng upsert `$setOnInsert` nên an toàn khi nhiều instance khởi động cùng lúc.
  *
- * Chỉ chạy khi `FEATURE_CRM_ENABLED` bật (tắt cờ = không ghi gì vào DB).
+ * Chỉ chạy khi `CRM_ENABLED` bật (tắt cờ = không ghi gì vào DB).
  */
 @Injectable()
 export class CrmSeedService implements OnApplicationBootstrap {

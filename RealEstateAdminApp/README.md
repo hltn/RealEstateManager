@@ -10,7 +10,7 @@ Yêu cầu: Node.js 24.18.1 (khớp `.nvmrc` và Dockerfile), đã chạy `npm i
 
 ```bash
 cd RealEstateAdminApp
-cp .env.example .env     # chỉnh biến VITE_* nếu cần (xem mục "Biến môi trường")
+cp ../.env.example ../.env   # lần đầu, nếu gốc repo chưa có .env (xem mục "Biến môi trường")
 npm run dev              # chạy cùng lúc Vite (FRONT) và backend NestJS (BACK, ../RealEstateBackendApp)
 ```
 
@@ -50,7 +50,7 @@ types/, utils/          Kiểu dùng chung và hàm tiện ích
 
 ## Biến môi trường
 
-Mọi biến `VITE_*` mà mã nguồn đọc được liệt kê và giải thích trong `.env.example`. Vite nhúng biến vào bundle lúc build/khởi động, nên đổi `.env` thì phải chạy lại dev server, và không được đặt bí mật vào biến `VITE_*`. Một số cờ CRM (ví dụ `VITE_FEATURE_CRM_ATTACHMENTS`) phải khớp cờ cùng tên ở backend.
+Frontend không còn `.env` riêng: cấu hình (`API_URL` và cờ `CRM_*`, `CRM_FEATURE_*`, `CRM_MOCK_*`) nằm trong `.env` ở gốc repo, mẫu `../.env.example` (mọi khóa được giải thích ở đó), và được đọc lúc chạy qua `/env.js` (dev: plugin Vite; Docker: entrypoint nginx), không nhúng vào bundle lúc build. Đổi cờ thì tải lại trang (dev: khởi động lại dev server). Không đặt bí mật vào các khóa này: chúng lộ ra trình duyệt. Cờ CRM dùng chung tên với backend.
 
 ## Triển khai
 

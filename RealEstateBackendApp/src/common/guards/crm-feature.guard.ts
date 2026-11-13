@@ -5,7 +5,7 @@ import {
 } from '../../shared/feature-flags/feature-flag.service';
 
 /**
- * Cổng tính năng CRM: khi `FEATURE_CRM_ENABLED` tắt thì mọi route gắn guard này trả 404
+ * Cổng tính năng CRM: khi `CRM_ENABLED` tắt thì mọi route gắn guard này trả 404
  * (giống route không tồn tại) để code CRM merge/deploy an toàn mà không lộ ra Production.
  *
  * - Chạy SAU guard toàn cục (Throttler → JWT → Roles): chưa đăng nhập vẫn là 401, sai role vẫn là 403.

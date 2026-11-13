@@ -35,7 +35,7 @@ const CLIENT_TYPE_HEADER = 'x-client-type';
 
 /**
  * Ảnh đính kèm nhật ký (tài liệu 05 mục 2.6): tải từng ảnh lên trước, rồi gắn vào ghi chú bằng `attachmentIds`
- * khi lưu nhật ký. Bật bằng `FEATURE_CRM_ATTACHMENTS`; tắt => 404.
+ * khi lưu nhật ký. Bật bằng `CRM_ATTACHMENTS_ENABLED`; tắt => 404.
  */
 @ApiTags('CRM - Care log attachments')
 @ApiBearerAuth()

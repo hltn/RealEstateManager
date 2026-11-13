@@ -52,8 +52,8 @@ import { CrmSeedService } from '.././seed/crm-seed.service';
 
 jest.setTimeout(300_000);
 
-const FLAG = 'FEATURE_CRM_ENABLED';
-const ATTACHMENTS_FLAG = 'FEATURE_CRM_ATTACHMENTS';
+const FLAG = 'CRM_ENABLED';
+const ATTACHMENTS_FLAG = 'CRM_ATTACHMENTS_ENABLED';
 const JWT_SECRET = 'integration-secret';
 const RUN_ID = randomUUID().slice(0, 8);
 const HOUR = 3_600_000;

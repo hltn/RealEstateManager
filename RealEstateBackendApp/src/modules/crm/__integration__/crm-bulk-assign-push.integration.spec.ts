@@ -163,8 +163,8 @@ describe('CRM bulk ASSIGN -> pushGroupKey BULK:{requestId} và giới hạn 3 pu
   };
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_ENABLED = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-bulk-push-${RUN_ID}:`;
     replSet = await createMemoryReplSet();
@@ -268,8 +268,8 @@ describe('CRM bulk ASSIGN -> pushGroupKey BULK:{requestId} và giới hạn 3 pu
   });
 
   afterAll(async () => {
-    delete process.env.FEATURE_CRM_ENABLED;
-    delete process.env.FEATURE_CRM_PUSH;
+    delete process.env.CRM_ENABLED;
+    delete process.env.CRM_PUSH_ENABLED;
     delete process.env.CRM_PII_ENCRYPTION_KEY;
     delete process.env.REDIS_KEY_PREFIX;
     await app?.close();

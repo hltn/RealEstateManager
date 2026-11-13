@@ -53,7 +53,7 @@ const OPTIONS: PushSendOptions = {
 function buildFlags(enabled = true): FeatureFlagService {
   const config = {
     get: (key: string) =>
-      key === 'FEATURE_CRM_PUSH' ? `${enabled}` : undefined,
+      key === 'CRM_PUSH_ENABLED' ? `${enabled}` : undefined,
   } as unknown as ConfigService;
   return new FeatureFlagService(config);
 }

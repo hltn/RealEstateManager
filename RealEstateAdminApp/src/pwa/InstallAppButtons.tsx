@@ -1,5 +1,6 @@
 import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Smartphone } from 'lucide-react';
+import { runtimeConfig } from '../config/runtimeConfig';
 import { DialogFrame } from '@crm/components/DialogFrame';
 import { BUTTON_OUTLINE_LG_CLASS, BUTTON_PRIMARY_CLASS } from '@crm/lib/uiClasses';
 import { IosInstallGuideText } from './IosInstallHint';
@@ -10,10 +11,10 @@ import { isIosSafari, readInstallEnvironment } from './iosInstallHintLogic';
 type GuideKind = 'ios' | 'android';
 
 /**
- * Địa chỉ web hiển thị trong hướng dẫn. Hiện là origin của trang đang mở (không ghi cứng tên miền);
- * T-22 (FR-15) sẽ đổi thành `runtimeConfig.appUrl` (nếu trống thì rơi về origin) ngay tại hàm này.
+ * Địa chỉ web hiển thị trong hướng dẫn: `runtimeConfig.appUrl` (FR-15, nguồn env `FRONTEND_URL`, đã kiểm là URL http(s));
+ * chưa cấu hình (rỗng) thì rơi về origin của trang đang mở (không ghi cứng tên miền).
  */
-const resolveAppUrl = (): string => window.location.origin;
+const resolveAppUrl = (): string => runtimeConfig.appUrl || window.location.origin;
 
 const GUIDE_TITLES: Record<GuideKind, string> = {
   ios: 'Cài ứng dụng trên iPhone/iPad',

@@ -170,8 +170,8 @@ describe('PiiCryptoService', () => {
       },
     );
 
-    it('thiếu khóa khi FEATURE_CRM_ENABLED=true thì ném lỗi (không để CRM chạy không mã hóa)', () => {
-      expect(() => createService({ FEATURE_CRM_ENABLED: 'true' })).toThrow(
+    it('thiếu khóa khi CRM_ENABLED=true thì ném lỗi (không để CRM chạy không mã hóa)', () => {
+      expect(() => createService({ CRM_ENABLED: 'true' })).toThrow(
         'Thiếu CRM_PII_ENCRYPTION_KEY',
       );
     });

@@ -39,7 +39,7 @@ import { CrmSeedService } from '.././seed/crm-seed.service';
 
 jest.setTimeout(240_000);
 
-const FLAG = 'FEATURE_CRM_ENABLED';
+const FLAG = 'CRM_ENABLED';
 const JWT_SECRET = 'integration-secret';
 
 type Res = { status: number; body: any };
@@ -226,7 +226,7 @@ describe('CRM M1 — HTTP + MongoDB Replica Set', () => {
       expect((await call('GET', '/crm/projects', null)).status).toBe(401);
     });
 
-    it('tắt FEATURE_CRM_ENABLED: route CRM và /teams trả 404, nhưng /users cũ vẫn chạy', async () => {
+    it('tắt CRM_ENABLED: route CRM và /teams trả 404, nhưng /users cũ vẫn chạy', async () => {
       process.env[FLAG] = 'false';
       try {
         for (const url of [

@@ -69,7 +69,7 @@ echo "== 5) [FR-03] không còn đường dẫn cũ trong mã/test/cấu hình =
 # Mẫu đường dẫn cũ: ghép bằng printf để file test này không tự khớp. Phạm vi: script, test, compose, env mẫu, .gitattributes.
 OLD_RE="$(printf 'scripts/(%s)' 'backup\.sh|restore\.sh|lib\b|tests\b|check-disk\.sh|print-image-digests\.sh|staging\.sh|staging\b')"
 HITS="$(cd "$ROOT_DIR" && grep -rInE "$OLD_RE" deploy.sh backup.sh restore.sh ops scripts docker-compose.yml docker-compose.staging.yml \
-  .env.docker.example .env.staging.example .gitattributes --exclude=layout.test.sh 2>/dev/null | cut -c1-160 || true)"
+  .env.example .env.staging.example .gitattributes --exclude=layout.test.sh 2>/dev/null | cut -c1-160 || true)"
 expect_eq "[FR-03] grep đường dẫn cũ trả về 0 chỗ" "" "$HITS"
 
 echo "== 6) [FR-03] mọi dòng source ops-common.sh trỏ tới file có thật =="

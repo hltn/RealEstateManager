@@ -3,27 +3,32 @@
  * Các hạng mục từng thiếu (F3-04b gỡ ảnh, F4-09 đổi giờ/hủy lịch, F4-02 lịch hẹn ở chi tiết khách, U-A11Y-01 nhãn ô ngày) có test riêng
  * ở spec của luồng đó.
  *
- * Quyết định: ca đối chứng "cờ mẫu bật" không đổi được biến Vite lúc chạy, nên test chặn module `featureFlags.ts` của Vite trong trình duyệt
- * của chính test (không ghi vào mã nguồn sản phẩm) và đổi giá trị biến môi trường `VITE_CRM_MOCK_*` mà Vite nhúng vào module,
- * rồi kiểm biểu ngữ cảnh báo dữ liệu mẫu. Nếu không tìm thấy biến để đổi thì test ĐỎ ngay (không lặng lẽ kiểm sai môi trường).
+ * Quyết định: ca đối chứng "cờ mẫu bật" cần cờ khác với stack E2E (đang ép tắt). Cờ FE nay đọc lúc chạy từ `/env.js` (FR-15,
+ * `window.__APP_CONFIG__`), nên test chặn `/env.js` trong trình duyệt của chính test (không ghi vào mã nguồn sản phẩm), giữ nguyên
+ * nội dung gốc rồi gán thêm `CRM_MOCK_REPORTS`/`CRM_MOCK_IMPORT_EXPORT` = true, sau đó kiểm biểu ngữ cảnh báo dữ liệu mẫu.
+ * Nếu `/env.js` không tải được (không có cấu hình để đổi) thì test ĐỎ ngay (không lặng lẽ kiểm sai môi trường).
  */
 import { test, expect } from '../fixtures';
 import { openCustomerDetail, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
-const MOCK_FLAG_ENV_NAMES = ['VITE_CRM_MOCK_REPORTS', 'VITE_CRM_MOCK_IMPORT_EXPORT'] as const;
+const MOCK_FLAG_NAMES = ['CRM_MOCK_REPORTS', 'CRM_MOCK_IMPORT_EXPORT'] as const;
 
-/** Bật hai cờ dữ liệu mẫu CHỈ trong trình duyệt của test; trả về số biến đã đổi được (kỳ vọng = 2). */
+/** Bật hai cờ dữ liệu mẫu CHỈ trong trình duyệt của test; `patched()` = số lần `/env.js` thật đã được bổ sung cờ (kỳ vọng >= 1 sau `goto`). */
 async function forceMockFlags(page: Page): Promise<{ patched: () => number }> {
   let patchedCount = 0;
-  await page.route(/featureFlags\.ts/, async (route) => {
+  await page.route('**/env.js', async (route) => {
     const response = await route.fetch();
-    let body = await response.text();
-    for (const name of MOCK_FLAG_ENV_NAMES) {
-      const next = body.replace(new RegExp(`("${name}"\\s*:\\s*)"[^"]*"`), '$1"true"');
-      if (next !== body) patchedCount += 1;
-      body = next;
+    if (!response.ok()) {
+      await route.fulfill({ response });
+      return;
     }
+    // Ghi đè sau nội dung gốc: giữ nguyên `API_URL` và các cờ khác do stack E2E phát, chỉ đổi hai cờ mẫu.
+    const overrides = JSON.stringify(Object.fromEntries(MOCK_FLAG_NAMES.map((name) => [name, true])));
+    const body = `${await response.text()}
+window.__APP_CONFIG__ = Object.assign({}, window.__APP_CONFIG__, ${overrides});
+`;
+    patchedCount += 1;
     await route.fulfill({ response, body });
   });
   return { patched: () => patchedCount };
@@ -52,7 +57,7 @@ test.describe('f7-gaps', () => {
     const admin = await loginAs('admin');
     const flags = await forceMockFlags(admin);
     await admin.goto('/crm/reports');
-    expect(flags.patched(), 'không đổi được biến VITE_CRM_MOCK_* trong module featureFlags của Vite').toBe(MOCK_FLAG_ENV_NAMES.length);
+    expect(flags.patched(), 'không bổ sung được cờ CRM_MOCK_* vào /env.js của Vite dev').toBeGreaterThanOrEqual(1);
     await expect(admin.getByRole('note')).toContainText('Dữ liệu mẫu (chưa nối API Báo cáo)');
     await expect(admin.getByRole('button', { name: /Xuất Excel/ })).toBeVisible();
   });

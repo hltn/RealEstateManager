@@ -122,7 +122,7 @@ describe('FR-21 (Q8) — GET danh mục CRM theo DB (HTTP + MongoDB Replica Set)
   };
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
+    process.env.CRM_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     process.env.REDIS_KEY_PREFIX = `it-fr21q8-${RUN_ID}:`;
     replSet = await createMemoryReplSet();

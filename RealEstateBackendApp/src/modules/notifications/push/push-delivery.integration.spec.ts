@@ -169,8 +169,8 @@ describe('T-31 push.send worker (tích hợp)', () => {
   const allLogs = () => logSpies.flatMap((s) => s.mock.calls.flat()).join('\n');
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_ENABLED = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     // Khóa Redis riêng cho lần chạy, không đụng khóa của môi trường khác dùng chung Redis.
     process.env.REDIS_KEY_PREFIX = `it-t33-${Date.now()}:`;
@@ -186,7 +186,7 @@ describe('T-31 push.send worker (tích hợp)', () => {
       .overrideProvider(PUSH_PROVIDER)
       .useValue({
         name: 'fake',
-        isEnabled: () => process.env.FEATURE_CRM_PUSH === 'true',
+        isEnabled: () => process.env.CRM_PUSH_ENABLED === 'true',
         initialStatus: () => NotificationPushStatus.PENDING,
         send,
       })
@@ -210,14 +210,14 @@ describe('T-31 push.send worker (tích hợp)', () => {
   });
 
   afterAll(async () => {
-    delete process.env.FEATURE_CRM_PUSH;
+    delete process.env.CRM_PUSH_ENABLED;
     delete process.env.REDIS_KEY_PREFIX;
     await moduleRef?.close();
     await replSet?.stop();
   });
 
   beforeEach(() => {
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     outcomes.clear();
     queueAdd.mockReset();
     sent.length = 0;
@@ -469,7 +469,7 @@ describe('T-31 push.send worker (tích hợp)', () => {
   });
 
   it('cờ tắt: SKIPPED, không gửi', async () => {
-    process.env.FEATURE_CRM_PUSH = 'false';
+    process.env.CRM_PUSH_ENABLED = 'false';
     const userId = await createUser();
     await createSubscription(userId, 'a');
     const id = await createNotification(userId);

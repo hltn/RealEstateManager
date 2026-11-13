@@ -171,15 +171,15 @@ describe('T-38 ma trận quyền API push (CRM_ROLES, Self, 404 người khác)'
 
   beforeAll(async () => {
     for (const key of [
-      'FEATURE_CRM_ENABLED',
-      'FEATURE_CRM_PUSH',
+      'CRM_ENABLED',
+      'CRM_PUSH_ENABLED',
       'CRM_PII_ENCRYPTION_KEY',
       'AUTH_LOGIN_THROTTLE_LIMIT',
     ]) {
       saved[key] = process.env[key];
     }
-    process.env.FEATURE_CRM_ENABLED = 'true';
-    process.env.FEATURE_CRM_PUSH = 'false';
+    process.env.CRM_ENABLED = 'true';
+    process.env.CRM_PUSH_ENABLED = 'false';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     replSet = await createMemoryReplSet();
     const moduleRef = await Test.createTestingModule({
@@ -249,7 +249,7 @@ describe('T-38 ma trận quyền API push (CRM_ROLES, Self, 404 người khác)'
   });
 
   beforeEach(() => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
+    process.env.CRM_ENABLED = 'true';
   });
 
   describe('xác thực: không/sai token thì 401 ở MỌI route (kể cả logout)', () => {
@@ -597,7 +597,7 @@ describe('T-38 ma trận quyền API push (CRM_ROLES, Self, 404 người khác)'
     it.each(ROUTES.map((r) => [r.name, r] as const))(
       '%s: STAFF nhận 404, không token vẫn 401, EDITOR vẫn 403',
       async (_name, route) => {
-        process.env.FEATURE_CRM_ENABLED = 'false';
+        process.env.CRM_ENABLED = 'false';
         expect((await route.run(newUser(UserRole.STAFF).token)).status).toBe(
           404,
         );
@@ -609,7 +609,7 @@ describe('T-38 ma trận quyền API push (CRM_ROLES, Self, 404 người khác)'
     );
 
     it('logout vẫn hoạt động khi cờ CRM tắt (endpoint cũ, không gắn cổng)', async () => {
-      process.env.FEATURE_CRM_ENABLED = 'false';
+      process.env.CRM_ENABLED = 'false';
       const user = newUser(UserRole.STAFF);
       expect((await call('POST', '/auth/logout', user.token, {})).status).toBe(
         201,

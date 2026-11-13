@@ -91,7 +91,7 @@ describe('T-23 NotificationDispatcher (tích hợp)', () => {
   };
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
+    process.env.CRM_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     replSet = await createMemoryReplSet();
     moduleRef = await Test.createTestingModule({

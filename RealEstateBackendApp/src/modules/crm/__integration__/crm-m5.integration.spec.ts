@@ -62,7 +62,7 @@ import { PersonaSeedService } from '.././persona/persona-seed.service';
 
 jest.setTimeout(300_000);
 
-const FLAG = 'FEATURE_CRM_ENABLED';
+const FLAG = 'CRM_ENABLED';
 const JWT_SECRET = 'integration-secret';
 const RUN_ID = randomUUID().slice(0, 8);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -2831,7 +2831,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         status: 'READY',
         createdAt: new Date(),
       });
-      process.env.FEATURE_CRM_ATTACHMENTS = 'true';
+      process.env.CRM_ATTACHMENTS_ENABLED = 'true';
       let bad: Res;
       try {
         bad = await call('POST', `/crm/customers/${c}/care-logs`, 'staffA', {
@@ -2844,7 +2844,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
           },
         });
       } finally {
-        delete process.env.FEATURE_CRM_ATTACHMENTS;
+        delete process.env.CRM_ATTACHMENTS_ENABLED;
       }
       expect([bad.status, bad.body.details?.field]).toEqual([400, 'projectId']);
       expect(

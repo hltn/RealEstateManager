@@ -3,7 +3,7 @@ import { NotificationPushStatus } from '../notification.constants';
 import { PushProvider, PushSendResult } from './push-provider.interface';
 
 /**
- * Nhà cung cấp rỗng: dùng khi cờ `FEATURE_CRM_PUSH` tắt hoặc thiếu `VAPID_*`. Không gửi gì,
+ * Nhà cung cấp rỗng: dùng khi cờ `CRM_PUSH_ENABLED` tắt hoặc thiếu `VAPID_*`. Không gửi gì,
  * thông báo chỉ nằm trong hộp thông báo trong app (`pushStatus = SKIPPED`).
  */
 @Injectable()

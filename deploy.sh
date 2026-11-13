@@ -454,7 +454,7 @@ git_update() {
 # ── 3) Kiểm tra cú pháp + biến bắt buộc của compose (chưa đụng stack) ────────
 check_compose() {
   log "Kiểm tra docker compose config (cú pháp + biến bắt buộc)..."
-  compose config -q || die "docker compose config lỗi: thiếu/sai biến trong $ENV_FILE (đối chiếu .env.docker.example). Stack chưa bị đổi."
+  compose config -q || die "docker compose config lỗi: thiếu/sai biến trong $ENV_FILE (đối chiếu .env.example). Stack chưa bị đổi."
   check_credential_pair MONGO_APP_USERNAME MONGO_APP_PASSWORD
   check_credential_pair S3_APP_ACCESS_KEY_ID S3_APP_SECRET_ACCESS_KEY
 }

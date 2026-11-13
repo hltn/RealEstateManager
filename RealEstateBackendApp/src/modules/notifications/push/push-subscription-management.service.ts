@@ -35,7 +35,7 @@ const subscriptionNotFound = (): BusinessException =>
  *
  * Mọi truy vấn lọc theo `userId` của CHÍNH người gọi: thiết bị của người khác trả 404 như không tồn tại (không lộ
  * sự tồn tại). Không trường nào trong `endpoint`/`keys`/`endpointHash` đi ra API. Hoạt động bình thường khi cờ
- * `FEATURE_CRM_PUSH` tắt (dữ liệu vẫn được giữ để không mất khi bật cờ sau).
+ * `CRM_PUSH_ENABLED` tắt (dữ liệu vẫn được giữ để không mất khi bật cờ sau).
  */
 @Injectable()
 export class PushSubscriptionManagementService {

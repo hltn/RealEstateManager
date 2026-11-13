@@ -101,8 +101,8 @@ describe('T-32 push.sweep (tích hợp)', () => {
     (await col('notifications').findOne({ _id: id }))?.pushStatus;
 
   beforeAll(async () => {
-    process.env.FEATURE_CRM_ENABLED = 'true';
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_ENABLED = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     process.env.CRM_PII_ENCRYPTION_KEY = 'ab'.repeat(32);
     replSet = await createMemoryReplSet();
     moduleRef = await Test.createTestingModule({
@@ -116,7 +116,7 @@ describe('T-32 push.sweep (tích hợp)', () => {
       .overrideProvider(PUSH_PROVIDER)
       .useValue({
         name: 'fake',
-        isEnabled: () => process.env.FEATURE_CRM_PUSH === 'true',
+        isEnabled: () => process.env.CRM_PUSH_ENABLED === 'true',
         initialStatus: () => NotificationPushStatus.PENDING,
         send,
       })
@@ -142,13 +142,13 @@ describe('T-32 push.sweep (tích hợp)', () => {
   });
 
   afterAll(async () => {
-    delete process.env.FEATURE_CRM_PUSH;
+    delete process.env.CRM_PUSH_ENABLED;
     await moduleRef?.close();
     await replSet?.stop();
   });
 
   beforeEach(async () => {
-    process.env.FEATURE_CRM_PUSH = 'true';
+    process.env.CRM_PUSH_ENABLED = 'true';
     isRedisDown = false;
     jobs.clear();
     queueAdd.mockClear();
@@ -366,7 +366,7 @@ describe('T-32 push.sweep (tích hợp)', () => {
   });
 
   it('cờ tắt: mọi PENDING (kể cả mới) thành SKIPPED, không xếp job, không gọi dịch vụ push; SENT giữ nguyên', async () => {
-    process.env.FEATURE_CRM_PUSH = 'false';
+    process.env.CRM_PUSH_ENABLED = 'false';
     const old = await createNotification();
     const fresh = await createNotification({ createdAt: new Date() });
     const sent = await createNotification({ pushStatus: 'SENT' });

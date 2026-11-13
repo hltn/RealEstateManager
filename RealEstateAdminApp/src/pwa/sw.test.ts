@@ -107,6 +107,29 @@ describe('service worker (sw.ts)', () => {
     expect(registerRouteMock).toHaveBeenCalledTimes(1);
   });
 
+  it('FR-15: /env.js (cấu hình lúc chạy) KHÔNG bao giờ vào precache, kể cả khi có query/hash hoặc dấu / đầu; tệp trùng tên ở thư mục con thì giữ', async () => {
+    await loadServiceWorker([
+      { url: 'assets/index-abc.js', revision: null },
+      { url: 'env.js', revision: 'a' },
+      { url: '/env.js', revision: 'b' },
+      { url: 'env.js?v=1', revision: null },
+      { url: 'env.js#x', revision: null },
+      { url: 'assets/env.js', revision: 'c' },
+      { url: 'offline.html', revision: 'y' },
+    ]);
+
+    expect((precacheAndRouteMock.mock.calls[0][0] as Array<{ url: string }>).map((entry) => entry.url)).toEqual(['assets/index-abc.js', 'assets/env.js', 'offline.html']);
+  });
+
+  it('FR-15: không có runtimeCaching cho /env.js: request script tới /env.js không khớp route nào (đi thẳng ra mạng, đổi cờ không bị giữ bản cũ)', async () => {
+    const { route } = await loadServiceWorker([{ url: 'env.js', revision: 'a' }]);
+    expect(route).toBeDefined();
+    // Chỉ có đúng MỘT route (NavigationRoute); thẻ <script src="/env.js"> có mode "no-cors"/"same-origin", không phải "navigate".
+    expect(registerRouteMock).toHaveBeenCalledTimes(1);
+    for (const mode of ['no-cors', 'same-origin', 'cors']) expect(matchNavigation(route!, '/env.js', mode), mode).toBe(false);
+    expect((precacheAndRouteMock.mock.calls[0][0] as unknown[]).length).toBe(0);
+  });
+
   it('route điều hướng KHÔNG khớp /api/* (kể cả ảnh signed URL, callback) nhưng khớp route SPA; request không phải điều hướng không khớp', async () => {
     const { route } = await loadServiceWorker([]);
     expect(route).toBeDefined();

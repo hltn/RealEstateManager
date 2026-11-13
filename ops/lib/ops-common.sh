@@ -70,7 +70,7 @@ require_no_placeholders() {
   local names
   names="$(list_placeholder_vars "$1" | sort -u | paste -sd ' ' -)"
   if [[ -n "$names" ]]; then
-    die "$1 còn giá trị mẫu (placeholder dạng <...>) ở biến: $names (đối chiếu .env.docker.example)."
+    die "$1 còn giá trị mẫu (placeholder dạng <...>) ở biến: $names (đối chiếu .env.example)."
   fi
 }
 
