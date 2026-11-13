@@ -308,3 +308,23 @@ describe('usePushSubscription: tắt thông báo (FR-01)', () => {
     expect(unsubscribeLocalPush).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('usePushSubscription: tùy chọn isActive (FR-28)', () => {
+  it('FR-28: isActive = false thì không gọi API cấu hình và không đọc trạng thái trình duyệt', async () => {
+    const { result } = renderHook(() => usePushSubscription({ isActive: false }), { wrapper: createWrapper().wrapper });
+    // Cho vòng lặp sự kiện chạy để chắc chắn không có truy vấn nào bị hoãn.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchPushConfig).not.toHaveBeenCalled();
+    expect(readDeviceSnapshot).not.toHaveBeenCalled();
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.canEnable).toBe(false);
+  });
+
+  it('FR-28: không truyền tùy chọn thì vẫn chạy như cũ (trang Cài đặt thông báo không đổi)', async () => {
+    const { result } = renderHook(() => usePushSubscription(), { wrapper: createWrapper().wrapper });
+    await waitFor(() => expect(result.current.canEnable).toBe(true));
+    expect(fetchPushConfig).toHaveBeenCalledTimes(1);
+  });
+});

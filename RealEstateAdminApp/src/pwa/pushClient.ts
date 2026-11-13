@@ -36,7 +36,8 @@ const getRegistration = async (): Promise<ServiceWorkerRegistration | undefined>
   }
 };
 
-const readPermission = (): PushPermission => ('Notification' in window ? Notification.permission : 'default');
+/** Quyền thông báo hiện tại; trình duyệt không có `Notification` thì coi như `default` (thiết bị đó vẫn bị `unsupported` ở `resolveDeviceState`). */
+export const readPermission = (): PushPermission => ('Notification' in window ? Notification.permission : 'default');
 
 /** Ảnh chụp trạng thái hiện tại: state + subscription (nếu có) để nơi gọi dùng lại, không đọc hai lần. */
 export interface DeviceSnapshot {

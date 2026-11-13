@@ -56,7 +56,12 @@ export interface UsePushSubscriptionResult {
   disable: () => Promise<boolean>;
 }
 
-export const usePushSubscription = (): UsePushSubscriptionResult => {
+export interface UsePushSubscriptionOptions {
+  /** `false` thì không gọi API cấu hình và không đọc trạng thái trình duyệt (hộp thoại mời bật FR-28 chỉ kích hoạt khi đủ điều kiện cục bộ). Mặc định `true`. */
+  isActive?: boolean;
+}
+
+export const usePushSubscription = ({ isActive = true }: UsePushSubscriptionOptions = {}): UsePushSubscriptionResult => {
   const queryClient = useQueryClient();
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +71,7 @@ export const usePushSubscription = (): UsePushSubscriptionResult => {
     queryFn: ({ signal }) => fetchPushConfig(signal),
     staleTime: CONFIG_STALE_MS,
     retry: 1,
+    enabled: isActive,
   });
   const config = configQuery.data;
   const isAvailable = config?.enabled === true;
@@ -80,6 +86,7 @@ export const usePushSubscription = (): UsePushSubscriptionResult => {
     },
     staleTime: 0,
     retry: false,
+    enabled: isActive,
   });
   const state = deviceQuery.data ?? null;
 
