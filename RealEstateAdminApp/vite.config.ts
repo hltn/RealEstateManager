@@ -63,6 +63,8 @@ export default defineConfig({
     alias: {
       // Alias module CRM (`@crm/*` trỏ tới src/modules/crm)
       '@crm': fileURLToPath(new URL('./src/modules/crm', import.meta.url)),
+      // Alias module tin tức/crawl (`@news/*` trỏ tới src/modules/news)
+      '@news': fileURLToPath(new URL('./src/modules/news', import.meta.url)),
     },
   },
   server: {

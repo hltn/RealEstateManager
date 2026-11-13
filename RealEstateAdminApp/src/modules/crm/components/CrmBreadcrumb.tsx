@@ -1,8 +1,8 @@
 /**
  * Breadcrumb nhiều cấp dùng chung cho các màn CRM (desktop/tablet).
- * Cùng lớp chữ với `components/common/PageBreadCrumb.tsx` của Admin (`text-sm text-gray-500 dark:text-gray-400`,
- * mục hiện tại `text-gray-800 dark:text-white/90`, mũi tên giữa các mục) — bản Admin chỉ có 1 cấp và chữ "Home"
- * cố định nên module CRM dựng bản nhiều cấp, nhãn tiếng Việt, mỗi cấp là một `<Link>` của react-router.
+ * Lớp chữ theo giao diện Admin (`text-sm text-gray-500 dark:text-gray-400`, mục hiện tại
+ * `text-gray-800 dark:text-white/90`, mũi tên giữa các mục); breadcrumb một cấp cũ của Admin đã bị xóa nên module CRM
+ * tự dựng bản nhiều cấp, nhãn tiếng Việt, mỗi cấp là một `<Link>` của react-router.
  */
 import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';

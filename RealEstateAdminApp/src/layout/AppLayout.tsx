@@ -1,11 +1,11 @@
 import { SidebarProvider, useSidebar } from "../context/SidebarContext";
-import { AnalyzeJobProvider } from "../context/AnalyzeJobContext";
-import { MarketAnalysisJobProvider } from "../context/MarketAnalysisJobContext";
-import { MarketAnalysisWorkflowJobProvider } from "../context/MarketAnalysisWorkflowJobContext";
-import { ManageWpStatusProvider } from "../context/ManageWpStatusContext";
-import { BulkCrawlJobProvider } from "../context/BulkCrawlJobContext";
-import { ManualCrawlJobProvider } from "../context/ManualCrawlJobContext";
-import { GoogleDriveAuthProvider } from "../context/GoogleDriveAuthContext";
+import { AnalyzeJobProvider } from "@news/context/AnalyzeJobContext";
+import { MarketAnalysisJobProvider } from "@news/context/MarketAnalysisJobContext";
+import { MarketAnalysisWorkflowJobProvider } from "@news/context/MarketAnalysisWorkflowJobContext";
+import { ManageWpStatusProvider } from "@news/context/ManageWpStatusContext";
+import { BulkCrawlJobProvider } from "@news/context/BulkCrawlJobContext";
+import { ManualCrawlJobProvider } from "@news/context/ManualCrawlJobContext";
+import { GoogleDriveAuthProvider } from "@news/context/GoogleDriveAuthContext";
 import { Outlet, useLocation } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";

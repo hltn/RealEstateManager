@@ -112,7 +112,7 @@ src/modules/google-drive-export/
 ### Frontend
 
 ```
-src/
+src/modules/news/        (alias @news)
 ├── api/
 │   └── google-drive.api.ts           # API functions: getAuthUrl, getStatus, export, disconnect, validateFolder
 ├── context/
@@ -708,17 +708,17 @@ Không thêm route mới. Google Drive status đặt trong `MarketAnalysisWorkfl
 
 | File | Purpose |
 |------|---------|
-| `src/api/google-drive.api.ts` | API functions (getAuthUrl, getStatus, export, disconnect, validateFolder) |
-| `src/context/GoogleDriveAuthContext.tsx` | React Context + useQuery for Google Drive connection state |
-| `src/components/google-drive/GoogleDriveStatusBadge.tsx` | Connected/disconnected status display |
-| `src/components/google-drive/ExportButton.tsx` | Export button with full state management |
-| `src/components/google-drive/FolderInput.tsx` | Optional folder URL input with validation |
+| `src/modules/news/api/google-drive.api.ts` | API functions (getAuthUrl, getStatus, export, disconnect, validateFolder) |
+| `src/modules/news/context/GoogleDriveAuthContext.tsx` | React Context + useQuery for Google Drive connection state |
+| `src/modules/news/components/google-drive/GoogleDriveStatusBadge.tsx` | Connected/disconnected status display |
+| `src/modules/news/components/google-drive/ExportButton.tsx` | Export button with full state management |
+| `src/modules/news/components/google-drive/FolderInput.tsx` | Optional folder URL input with validation |
 
 ### Frontend — EDIT files
 
 | File | Change |
 |------|--------|
-| `src/screens/MarketAnalysisWorkflowScreen.tsx` | Add Export button to history rows + Google Drive status section |
+| `src/modules/news/screens/MarketAnalysisWorkflowScreen.tsx` | Add Export button to history rows + Google Drive status section |
 
 ---
 

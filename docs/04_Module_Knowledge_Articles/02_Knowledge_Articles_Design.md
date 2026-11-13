@@ -986,7 +986,7 @@ On `updateConfig`, the old job is deleted and a new one is registered (same patt
 ### 9.1 Screens
 
 ```
-RealEstateAdminApp/src/screens/
+RealEstateAdminApp/src/modules/news/screens/
 ├── KnowledgeArticlesScreen.tsx     ← Main list + detail + manual controls
 ├── KnowledgeConfigScreen.tsx       ← WP, AI Writing, AI Image config tabs
 └── KnowledgeCronScreen.tsx         ← NL cron config + pipeline logs
@@ -1050,7 +1050,7 @@ RealEstateAdminApp/src/screens/
 ### 9.3 API Layer
 
 ```
-RealEstateAdminApp/src/api/
+RealEstateAdminApp/src/modules/news/api/
 └── knowledge-articles.api.ts    ← All API calls for knowledge articles
 ```
 
@@ -1325,10 +1325,10 @@ export class PipelineLogService {
 | `RealEstateBackendApp/src/modules/knowledge-articles/types/knowledge-pipeline-state.ts` | NEW | Pipeline step types |
 | `RealEstateBackendApp/src/modules/news-fire-crawl-manager/schemas/news-article.schema.ts` | EDIT | Add `type` and knowledge-specific fields |
 | `RealEstateBackendApp/src/app.module.ts` | EDIT | Register `KnowledgeArticlesModule` |
-| `RealEstateAdminApp/src/screens/KnowledgeArticlesScreen.tsx` | NEW | Article list + detail screen |
-| `RealEstateAdminApp/src/screens/KnowledgeConfigScreen.tsx` | NEW | Config tabs screen |
-| `RealEstateAdminApp/src/screens/KnowledgeCronScreen.tsx` | NEW | NL cron + pipeline logs screen |
-| `RealEstateAdminApp/src/api/knowledge-articles.api.ts` | NEW | API layer |
+| `RealEstateAdminApp/src/modules/news/screens/KnowledgeArticlesScreen.tsx` | NEW | Article list + detail screen |
+| `RealEstateAdminApp/src/modules/news/screens/KnowledgeConfigScreen.tsx` | NEW | Config tabs screen |
+| `RealEstateAdminApp/src/modules/news/screens/KnowledgeCronScreen.tsx` | NEW | NL cron + pipeline logs screen |
+| `RealEstateAdminApp/src/modules/news/api/knowledge-articles.api.ts` | NEW | API layer |
 
 ---
 

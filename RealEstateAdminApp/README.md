@@ -35,15 +35,16 @@ Lưu ý: nếu Vitest báo `localStorage.clear is not a function` thì Node đan
 
 ```text
 App.tsx, main.tsx       Khai báo route, điểm vào ứng dụng
-screens/                Màn hình tin tức, kiến thức, cấu hình, đăng nhập, quản lý người dùng
-components/             Thành phần dùng chung (auth, ui, common, header, users, google-drive)
+screens/                Màn đăng nhập, quản lý người dùng (màn tin tức nằm ở modules/news/screens)
+components/             Thành phần dùng chung (auth, ui, common, header, users)
 layout/                 Khung trang: sidebar, header, AppLayout
 api/                    Hàm gọi backend (axios)
-context/, stores/       Theme, sidebar (context) và Zustand store
+context/, stores/       Theme, sidebar (context) và Zustand store (Provider tin tức nằm ở modules/news/context)
 hooks/                  Hook dùng chung (useAuth, useDebouncedValue ...)
 icons/                  Bộ icon svg và index.ts (nhập bằng `?react`)
 pwa/                    Service worker, nhắc cập nhật, đăng ký thông báo đẩy
 modules/crm/            Module Quản lý khách hàng (alias `@crm/*`), có CrmLayout, api, store, screens riêng
+modules/news/           Module tin tức/crawl (alias `@news/*`): screens, api, context, hooks, components/google-drive
 types/, utils/          Kiểu dùng chung và hàm tiện ích
 ```
 

@@ -1,6 +1,6 @@
 /**
  * Thanh tab module CRM nằm ngang (Việc hôm nay / Khách hàng / Lịch hẹn / Báo cáo).
- * Tách từ mẫu tab gạch chân của Admin: `RealEstateAdminApp/src/screens/KnowledgeConfigScreen.tsx:672-689`
+ * Tách từ mẫu tab gạch chân của Admin: `RealEstateAdminApp/src/modules/news/screens/KnowledgeConfigScreen.tsx:672-689`
  * (nav.flex.gap-1 trong border-b; nút border-b-2, chọn brand-500/600, thường gray-500).
  * Khác bản gốc: mỗi tab là một route (`<Link>`), có chip số đếm lấy từ lớp dữ liệu CRM, cuộn ngang khi hẹp.
  * Tab hiển thị theo vai trò (Báo cáo chỉ Quản lý/Quản trị).

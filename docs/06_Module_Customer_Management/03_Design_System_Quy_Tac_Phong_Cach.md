@@ -2,7 +2,7 @@
 
 > **Phiên bản tài liệu:** v1.0.4
 
-> **Nguồn duy nhất:** mã nguồn `RealEstateAdminApp/` (đọc ngày 21/10/2026). Mọi quy tắc đều dẫn `file:dòng`, đường dẫn tính từ `RealEstateAdminApp/src/` nếu không ghi khác. Không suy từ ảnh chụp.
+> **Nguồn duy nhất:** mã nguồn `RealEstateAdminApp/` (đọc ngày 21/10/2026). Mọi quy tắc đều dẫn `file:dòng`, đường dẫn tính từ `RealEstateAdminApp/src/` nếu không ghi khác (12 màn tin tức đã dời sang `modules/news/screens/`; tên file trần như `ManageWpScreen.tsx:77-97` cũng nằm ở đó). Không suy từ ảnh chụp.
 >
 > **Phạm vi:** phong cách của toàn bộ web admin, dùng làm chuẩn cho module Quản lý khách hàng (CRM). Mục 9 so sánh với bản cũ, mục 10 liệt kê thứ mà 2 thiết kế Stitch cần nhưng Admin App chưa có.
 
@@ -17,7 +17,7 @@
 | Phông | **Outfit** (Google Fonts 100–900), là phông duy nhất (`--font-*: initial`) | `index.css:1, 10-11, 190` |
 | Chế độ tối | Lớp `.dark` gắn vào **`<html>`** (`document.documentElement`), biến thể `@custom-variant dark (&:is(.dark *))`. **Mặc định là SÁNG** khi chưa có `localStorage.theme` (người đã chọn tối vẫn giữ tối; `index.html` gắn lớp `dark` trước khi vẽ để không nháy) | `index.css:7`, `context/ThemeContext.tsx`, `index.html` |
 | Biểu tượng | **2 bộ song song**: (1) SVG tùy biến của TailAdmin trong `src/icons/*.svg`, nạp bằng `vite-plugin-svgr` (`?react`) — dùng ở menu trái, Login, Quản lý tài khoản; (2) **lucide-react** — dùng ở hầu hết màn còn lại (18 tệp). Ngoài ra nhiều SVG viết thẳng (inline) ở header, modal, alert | `icons/index.ts` (18 icon còn dùng), `layout/AppSidebar.tsx:6-18`, `screens/LoginScreen.tsx`, `screens/UserManagementScreen.tsx:11`, `../vite.config.ts:11-15` |
-| Thông báo nhỏ (toast) | `react-hot-toast`, một `<Toaster position="top-right" duration=4000>` toàn cục (≈21 lời gọi `toast.*`) + **một toast tự viết** `ToastNotification` bị chép lặp ở 3 màn | `main.tsx:19`; `screens/ManageWpScreen.tsx:29-97`, `AiPromptConfigScreen.tsx:16`, `KnowledgeArticlesScreen.tsx:84` |
+| Thông báo nhỏ (toast) | `react-hot-toast`, một `<Toaster position="top-right" duration=4000>` toàn cục (≈21 lời gọi `toast.*`) + **một toast tự viết** `ToastNotification` bị chép lặp ở 3 màn | `main.tsx:19`; `modules/news/screens/ManageWpScreen.tsx:29-97`, `AiPromptConfigScreen.tsx:16`, `KnowledgeArticlesScreen.tsx:84` |
 | Biểu mẫu | react-hook-form + zod (Login, Tạo tài khoản); các màn khác dùng `useState` | `screens/UserManagementScreen.tsx:3-5, 30-38` |
 | Chọn ngày | flatpickr + react-flatpickr, bọc trong `ui/DatePicker.tsx` (CSS tùy biến ở `index.css:394-557`) | `components/ui/DatePicker.tsx` |
 | Dữ liệu | axios (1 instance `api/axios.ts`), @tanstack/react-query, zustand (chỉ auth) | `api/axios.ts:12-16`, `main.tsx:10`, `stores/auth.store.ts` |
@@ -42,7 +42,7 @@
 
 **Thực tế sử dụng** (đếm lớp trong `.tsx`): `gray` 1416 · `brand` 311 · `success` 111 · `error` 99 · `warning` 17 · `blue-light` 10. **Song song**, bảng màu mặc định của Tailwind vẫn bật và được dùng nhiều: `red` 91 · `emerald` 60 · `blue` 37 · `amber` 36 · `indigo` 16 · `purple` 8 (toast tự viết, StepCard, chip CRAWL/AI, nút "Làm sạch", nút "Xem nguồn").
 
-**Lớp gọi token không tồn tại (lỗi, không có hiệu lực):** `bg-info-50/…`, `text-info-600` (`screens/ManageWpScreen.tsx:920-922` — chip "Đã crawl" hiển thị không màu); `dark:bg-dark-900`, `hover:text-dark-900` (`layout/AppHeader.tsx:258`, `components/ui/DatePicker.tsx:34`, `components/common/ThemeToggleButton.tsx:9`).
+**Lớp gọi token không tồn tại (lỗi, không có hiệu lực):** `bg-info-50/…`, `text-info-600` (`modules/news/screens/ManageWpScreen.tsx:920-922` — chip "Đã crawl" hiển thị không màu); `dark:bg-dark-900`, `hover:text-dark-900` (`layout/AppHeader.tsx:258`, `components/ui/DatePicker.tsx:34`, `components/common/ThemeToggleButton.tsx:9`).
 
 ### 2.2 Màu theo vai trò (đã đối chiếu code)
 
@@ -51,11 +51,11 @@
 | Nền trang, chữ thân | `bg-gray-50 text-gray-800` | `dark:bg-gray-900 dark:text-gray-300` | `index.css:190` |
 | Viền mặc định mọi phần tử | `gray-200` (base layer) | phải ghi rõ `dark:border-gray-800` hoặc `dark:border-white/[0.05]` | `index.css:183` |
 | Sidebar, header | `bg-white` + viền `gray-200` | `dark:bg-gray-900 dark:border-gray-800` | `layout/AppSidebar.tsx:298`, `layout/AppHeader.tsx:159` |
-| Thẻ/khối nội dung | `bg-white border-gray-200` | `dark:bg-white/[0.03] dark:border-white/[0.05]` (phổ biến) hoặc `dark:bg-gray-dark dark:border-gray-800` | `screens/CronjobScreen.tsx:58`, `screens/UserManagementScreen.tsx:226` |
+| Thẻ/khối nội dung | `bg-white border-gray-200` | `dark:bg-white/[0.03] dark:border-white/[0.05]` (phổ biến) hoặc `dark:bg-gray-dark dark:border-gray-800` | `modules/news/screens/CronjobScreen.tsx:58`, `screens/UserManagementScreen.tsx:226` |
 | Popover/dropdown | `bg-white`, `shadow-theme-lg`, `rounded-xl/2xl` | `dark:bg-gray-dark dark:border-gray-800` | `components/ui/dropdown/Dropdown.tsx:41`, `components/header/UserDropdown.tsx:67` |
-| Hộp thoại | `bg-white` | `dark:bg-gray-900` | `components/ui/modal/index.tsx:54`, `screens/ExternalLogsScreen.tsx:395` |
-| Tiêu đề trang | `text-gray-800` | `dark:text-white/90` | `screens/CronjobScreen.tsx:53` |
-| Chữ phụ / nhãn | `text-gray-500` | `dark:text-gray-400` | `screens/ExternalLogsScreen.tsx:189, 205` |
+| Hộp thoại | `bg-white` | `dark:bg-gray-900` | `components/ui/modal/index.tsx:54`, `modules/news/screens/ExternalLogsScreen.tsx:395` |
+| Tiêu đề trang | `text-gray-800` | `dark:text-white/90` | `modules/news/screens/CronjobScreen.tsx:53` |
+| Chữ phụ / nhãn | `text-gray-500` | `dark:text-gray-400` | `modules/news/screens/ExternalLogsScreen.tsx:189, 205` |
 | Hành động chính | `bg-brand-500 hover:bg-brand-600 text-white` | như sáng | `screens/UserManagementScreen.tsx:217` |
 | Menu đang chọn | `bg-brand-50 text-brand-500` | `dark:bg-brand-500/[0.12] dark:text-brand-400` | `index.css:198-200` |
 | Chấm thông báo | `bg-orange-400` + `animate-ping` | — | `components/header/NotificationDropdown.tsx:29-33` |
@@ -64,9 +64,9 @@
 
 | Token | Cỡ / dòng | Số lần dùng | Dùng thật cho |
 |---|---|---|---|
-| `text-title-sm` | 30/38 | 14 | Tiêu đề trang (`font-semibold`) — `screens/CronjobScreen.tsx:53` |
-| `text-theme-sm` | 14/20 | 86 | Mô tả trang, ô bảng, menu — `screens/ExternalLogsScreen.tsx:189` |
-| `text-theme-xs` | 12/18 | 62 | Tiêu đề cột, nhãn trường chữ hoa — `screens/ExternalLogsScreen.tsx:205, 309` |
+| `text-title-sm` | 30/38 | 14 | Tiêu đề trang (`font-semibold`) — `modules/news/screens/CronjobScreen.tsx:53` |
+| `text-theme-sm` | 14/20 | 86 | Mô tả trang, ô bảng, menu — `modules/news/screens/ExternalLogsScreen.tsx:189` |
+| `text-theme-xs` | 12/18 | 62 | Tiêu đề cột, nhãn trường chữ hoa — `modules/news/screens/ExternalLogsScreen.tsx:205, 309` |
 | `text-theme-xl` | 20/30 | **0** | Không dùng |
 | `text-title-md/lg/xl/2xl` | 36–72 | **0** | Không dùng |
 | Mặc định Tailwind | `text-xl/lg/sm/xs` | nhiều | Tiêu đề modal `text-lg/xl font-bold`, tiêu đề trang "Quản lý tài khoản" `text-xl font-bold` (`screens/UserManagementScreen.tsx:196`) |
@@ -116,9 +116,9 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 | `ThemeToggleButton` | `components/common/ThemeToggleButton.tsx` | — | Nút tròn 44px viền |
 | `UserDropdown`, `NotificationDropdown` | `components/header/` | — | Avatar chữ cái đầu `h-11 w-11 bg-brand-500` (`UserDropdown.tsx:40`) |
 | `ProtectedRoute`, `RoleGuard`, `AuthInitializer` | `components/auth/` | `allowedRoles`, `fallback` | Spinner toàn trang `border-4 border-t-brand-500` |
-| `GoogleDriveStatusBadge`, `ExportButton` | `components/google-drive/` | — | Riêng tính năng phân tích thị trường |
+| `GoogleDriveStatusBadge`, `ExportButton` | `modules/news/components/google-drive/` | — | Riêng tính năng phân tích thị trường |
 | `PageMeta` / `AppWrapper` | `components/common/PageMeta.tsx` | `title`, `description` | Chỉ `AppWrapper` (HelmetProvider) được dùng; chưa màn nào đặt `<PageMeta>` |
-| Hook | `hooks/useDebouncedValue.ts` (mặc định 400ms; CRM dùng wrapper `modules/crm/hooks/useDebouncedValue.ts` mặc định 250ms), `hooks/useAuth.ts`, `hooks/useHeaderStatusReset.ts` | | |
+| Hook | `hooks/useDebouncedValue.ts` (mặc định 400ms; CRM dùng wrapper `modules/crm/hooks/useDebouncedValue.ts` mặc định 250ms), `hooks/useAuth.ts`, `modules/news/hooks/useHeaderStatusReset.ts` | | |
 
 ### 4.2 Component thừa từ TailAdmin: đã xóa
 
@@ -130,8 +130,8 @@ Các component và hook mẫu của TailAdmin mà không màn nào dùng (nút, 
 
 | Mẫu | Lớp | Bằng chứng |
 |---|---|---|
-| **Đầu trang** | `<header class="flex flex-col gap-2 pb-6 border-b border-gray-200 dark:border-white/[0.05]">` + `h2.text-title-sm.font-semibold.text-gray-800.dark:text-white/90` + `p.text-theme-sm.text-gray-500.dark:text-gray-400.max-w-2xl.leading-relaxed`; bao màn: `w-full flex flex-col gap-6` | `screens/CronjobScreen.tsx:51-55`, `ExternalLogsScreen.tsx:186-192` |
-| Đầu trang có nút | thêm `md:flex-row md:justify-between md:items-end gap-6` | `screens/RawArticlesScreen.tsx:435-491` |
+| **Đầu trang** | `<header class="flex flex-col gap-2 pb-6 border-b border-gray-200 dark:border-white/[0.05]">` + `h2.text-title-sm.font-semibold.text-gray-800.dark:text-white/90` + `p.text-theme-sm.text-gray-500.dark:text-gray-400.max-w-2xl.leading-relaxed`; bao màn: `w-full flex flex-col gap-6` | `modules/news/screens/CronjobScreen.tsx:51-55`, `ExternalLogsScreen.tsx:186-192` |
+| Đầu trang có nút | thêm `md:flex-row md:justify-between md:items-end gap-6` | `modules/news/screens/RawArticlesScreen.tsx:435-491` |
 | Nút chính | `inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium|semibold text-white hover:bg-brand-600 disabled:opacity-50` (+ `active:scale-[0.98]` ở nhiều màn) | `UserManagementScreen.tsx:217`, `ExternalLogsScreen.tsx:288` |
 | Nút viền | `rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5` | `UserManagementScreen.tsx:207` |
 | Nút nhạt cùng tông | `bg-brand-50 text-brand-500 border border-brand-100 hover:bg-brand-100 dark:bg-brand-500/15 dark:border-brand-500/25` | `RawArticlesScreen.tsx:479` |
@@ -160,7 +160,7 @@ Các component và hook mẫu của TailAdmin mà không màn nào dùng (nút, 
 | Nhãn nhỏ | "Bạn": `rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-600` | `UserManagementScreen.tsx:278` |
 | Thông báo trong trang | `p-4 rounded-lg border flex items-center gap-3` + `bg-error-50 border-error-100 text-error-500 dark:bg-error-500/15 dark:border-error-500/25` (tương tự success) + icon `AlertCircle` 20px | `ExternalLogsScreen.tsx:194-199`, `RawArticlesScreen.tsx:493-504` |
 | **Hộp thoại tự viết** (phổ biến hơn `Modal`) | lớp phủ `fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4` (± `backdrop-blur-sm`); hộp `bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700|800 w-full max-w-2xl|4xl|5xl max-h-[85vh] overflow-y-auto shadow-xl`; đầu `sticky top-0 px-6 py-4 border-b` + `h3.text-lg.font-semibold`; chân `border-t px-6 py-3 flex justify-end` | `ExternalLogsScreen.tsx:389-485`, `ManageWpScreen.tsx:113-146` |
-| Toast | **Ưu tiên** `toast.success()/toast.error()` (react-hot-toast). Toast tự viết: `fixed top-4 right-4 z-[9999] w-[340px] rounded-xl shadow-2xl` + thanh tiến trình 5s | `screens/CronjobScreen.tsx:40-44`; `ManageWpScreen.tsx:77-97` |
+| Toast | **Ưu tiên** `toast.success()/toast.error()` (react-hot-toast). Toast tự viết: `fixed top-4 right-4 z-[9999] w-[340px] rounded-xl shadow-2xl` + thanh tiến trình 5s | `modules/news/screens/CronjobScreen.tsx:40-44`; `ManageWpScreen.tsx:77-97` |
 | Tab | gạch chân: `nav.flex.gap-1` trong `border-b`; nút `inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2`, chọn `border-brand-500 text-brand-600 dark:text-brand-400`, thường `border-transparent text-gray-500 hover:text-gray-700` | `KnowledgeConfigScreen.tsx:672-689` |
 | Trạng thái rỗng | đơn giản: `td colSpan px-5 py-20 text-center text-gray-500`; đầy đủ: vòng `w-16 h-16 rounded-full bg-gray-100` + icon 32px + `text-base font-medium text-gray-700` + gợi ý `text-theme-sm` | `ExternalLogsScreen.tsx:322-327`, `ManageWpScreen.tsx:830-850` |
 | Lỗi tải + thử lại | ô bảng `py-10 text-center text-sm text-gray-500` + nút `text-brand-500 underline` "Thử lại" | `UserManagementScreen.tsx:251-259` |

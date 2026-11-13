@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flags = vi.hoisted(() => ({ isPrototypeEnabled: false }));
 vi.mock('@crm/config/featureFlags', () => ({ CRM_FEATURE_FLAGS: flags }));
-vi.mock('../../screens/RawArticlesScreen', () => ({ default: () => <p>RAW ARTICLES</p> }));
+vi.mock('@news/screens/RawArticlesScreen', () => ({ default: () => <p>RAW ARTICLES</p> }));
 
 import { useAuthStore } from '../../stores/auth.store';
 import { UserRole } from '../../types/user';

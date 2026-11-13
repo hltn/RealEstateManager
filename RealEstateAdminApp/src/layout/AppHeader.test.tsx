@@ -17,8 +17,8 @@ vi.mock('@crm/api/http/schedulingApi', async () => {
 
 // Các context/khối con không liên quan tới chấm đỏ: thay bằng bản rỗng để test chỉ tập trung vào AppHeader.
 vi.mock('../context/SidebarContext', () => ({ useSidebar: () => ({ isMobileOpen: false, toggleSidebar: vi.fn(), toggleMobileSidebar: vi.fn() }) }));
-vi.mock('../context/AnalyzeJobContext', () => ({ useAnalyzeJob: () => ({ status: 'idle', errorMessage: null, clearResult: vi.fn() }) }));
-vi.mock('../context/ManageWpStatusContext', () => ({
+vi.mock('@news/context/AnalyzeJobContext', () => ({ useAnalyzeJob: () => ({ status: 'idle', errorMessage: null, clearResult: vi.fn() }) }));
+vi.mock('@news/context/ManageWpStatusContext', () => ({
   useManageWpStatus: () => ({
     crawlStatus: 'idle',
     crawlError: null,

@@ -16,9 +16,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Alias module CRM (TS 6: `paths` tự tính tương đối theo file tsconfig, không cần `baseUrl` đã deprecated) */
+    /* Alias module CRM và news (TS 6: `paths` tự tính tương đối theo file tsconfig, không cần `baseUrl` đã deprecated) */
     "paths": {
-      "@crm/*": ["./src/modules/crm/*"]
+      "@crm/*": ["./src/modules/crm/*"],
+      "@news/*": ["./src/modules/news/*"]
     },
 
     /* Linting */

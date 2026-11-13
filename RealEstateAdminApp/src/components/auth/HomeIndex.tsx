@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CRM_DEFAULT_PATH } from '@crm/routes';
-import RawArticlesScreen from '../../screens/RawArticlesScreen';
+import RawArticlesScreen from '@news/screens/RawArticlesScreen';
 import { useAuth } from '../../hooks/useAuth';
 import { isCrmOnlyAccount } from '../../utils/userRoles';
 

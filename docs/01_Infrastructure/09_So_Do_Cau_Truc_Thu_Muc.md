@@ -331,28 +331,28 @@ RealEstateAdminApp/
 │   ├── queryClient.ts           # Cấu hình React Query dùng chung
 │   ├── index.css                # Tailwind (@import "tailwindcss") + kiểu chung
 │   ├── svg.d.ts, vite-env.d.ts  # Khai báo kiểu
-│   ├── api/                     # Gọi backend phần chung + tin tức (mục 3.3)
+│   ├── api/                     # Gọi backend phần chung: axios, auth, users (API tin tức ở modules/news/api)
 │   ├── components/
 │   │   ├── auth/                #   ProtectedRoute, RoleGuard, AuthInitializer, HomeIndex
 │   │   ├── common/              #   PageMeta, Pagination, TableSkeletonRows, ThemeToggleButton, ...
-│   │   ├── google-drive/        #   ExportButton, GoogleDriveStatusBadge, ...
 │   │   ├── header/              #   NotificationDropdown, UserDropdown, ...
 │   │   ├── ui/                  #   Thành phần nền: DatePicker, dropdown/, modal/, ...
 │   │   └── users/               #   EditUserModal, userFormSchemas
-│   ├── context/                 # React Context: Theme, Sidebar, các Provider job tin tức, GoogleDriveAuth
+│   ├── context/                 # React Context dùng chung: Theme, Sidebar (Provider tin tức ở modules/news/context)
 │   ├── hooks/                   # Hook dùng chung: useAuth, useDebouncedValue, ...
 │   ├── icons/                   # *.svg + index.ts (xuất icon dạng component qua `?react`)
 │   ├── images/logo/             # Logo ảnh tĩnh
 │   ├── assets/                  # Ảnh mẫu Vite (không dùng)
 │   ├── layout/                  # AppLayout, AppHeader, AppSidebar, Backdrop
 │   ├── pwa/                     # Service worker + đăng ký + toast cập nhật + push
-│   ├── screens/                 # Màn hình phần tin tức/quản trị + Login + UserManagement
+│   ├── screens/                 # LoginScreen, UserManagementScreen (màn tin tức ở modules/news/screens)
 │   ├── stores/                  # Zustand: auth.store.ts
 │   ├── test/setup.ts            # Thiết lập Vitest (jsdom)
 │   ├── types/                   # pagination.ts, user.ts
 │   ├── utils/                   # fetchPaginated.ts, userRoles.ts
 │   └── modules/
-│       └── crm/                 # Module CRM (mục 3.4), alias @crm
+│       ├── crm/                 # Module CRM (mục 3.4), alias @crm
+│       └── news/                # Module tin tức/crawl, alias @news: screens/ api/ context/ hooks/ components/google-drive/
 ├── public/                      # Tài nguyên tĩnh copy nguyên vào bản build
 │   ├── offline.html             #   Trang hiện khi mất mạng (service worker dùng)
 │   ├── favicon-*.png, apple-touch-icon.png
@@ -360,9 +360,9 @@ RealEstateAdminApp/
 ├── e2e/                         # Playwright (mục 3.6)
 ├── scripts/generate-pwa-icons.mjs   # Sinh icon PWA từ ảnh gốc
 ├── index.html                   # Khung HTML, nạp /src/main.tsx
-├── vite.config.ts               # Plugin: react, tailwind, svgr, PWA (injectManifest); alias @crm; proxy /api; cấu hình Vitest
+├── vite.config.ts               # Plugin: react, tailwind, svgr, PWA (injectManifest); alias @crm, @news; proxy /api; cấu hình Vitest
 ├── tsconfig.json                # Chỉ tham chiếu 3 file dưới
-│   ├── tsconfig.app.json        #   Kiểm kiểu mã trình duyệt (paths @crm/*)
+│   ├── tsconfig.app.json        #   Kiểm kiểu mã trình duyệt (paths @crm/*, @news/*)
 │   ├── tsconfig.node.json       #   Kiểm kiểu file cấu hình
 │   └── tsconfig.sw.json         #   Kiểm kiểu service worker (WebWorker, không DOM)
 ├── Dockerfile                   # 2 stage: build Vite, rồi nginx phục vụ file tĩnh
@@ -377,13 +377,14 @@ RealEstateAdminApp/
 
 | Thư mục | Lưu file gì | Quy ước |
 |---|---|---|
-| `src/api/` | `axios.ts` (instance dùng chung: gắn Bearer token, `X-Request-ID`, tự refresh khi 401), `auth.api.ts`, `users.api.ts`, và các `*.api.ts` của tin tức (`news-manager`, `knowledge-articles`, `settings`, `google-drive`) | Một file một nhóm endpoint, đặt tên `<nhóm>.api.ts`; chỉ hàm gọi HTTP, không chứa JSX |
+| `src/api/` | `axios.ts` (instance dùng chung: gắn Bearer token, `X-Request-ID`, tự refresh khi 401), `auth.api.ts`, `users.api.ts`; các `*.api.ts` của tin tức (`news-manager`, `knowledge-articles`, `settings`, `google-drive`) nằm ở `src/modules/news/api/` | Một file một nhóm endpoint, đặt tên `<nhóm>.api.ts`; chỉ hàm gọi HTTP, không chứa JSX |
 | `src/components/` | Component dùng chung nhiều màn, chia thư mục theo vùng (`auth`, `common`, `header`, `ui`, ...) | File `PascalCase.tsx`; component thuần hiển thị, nhận dữ liệu qua props |
 | `src/components/ui/` | Thành phần nền (modal, dropdown, date picker) | Không biết nghiệp vụ |
-| `src/context/` | `XxxContext.tsx`: Context + Provider + hook `useXxx` trong cùng file | Chỉ cho state "môi trường" (theme, sidebar, job đang chạy), không dùng cho dữ liệu máy chủ |
+| `src/context/` | `ThemeContext.tsx`, `SidebarContext.tsx` (Context + Provider + hook `useXxx` trong cùng file); Provider job tin tức và GoogleDriveAuth nằm ở `src/modules/news/context/` | Chỉ cho state "môi trường" (theme, sidebar, job đang chạy), không dùng cho dữ liệu máy chủ |
 | `src/hooks/` | `useXxx.ts` dùng chung | Tên bắt đầu bằng `use`, boolean đặt `is/has/should` |
 | `src/stores/` | `xxx.store.ts` (Zustand) | State toàn cục thật sự; hiện chỉ `auth.store.ts` (access token lưu RAM, refresh token ở cookie httpOnly) |
-| `src/screens/` | `XxxScreen.tsx`: một file một màn phần tin tức/quản trị | Màn gọi `api/*.api.ts` qua React Query, ghép component |
+| `src/screens/` | `LoginScreen.tsx`, `UserManagementScreen.tsx` (+ test); 12 màn tin tức/quản trị nằm ở `src/modules/news/screens/` | Màn gọi `api/*.api.ts` qua React Query, ghép component |
+| `src/modules/news/` | Module tin tức/crawl (alias `@news`): `screens/` (12 màn + test), `api/` (4 file `*.api.ts`), `context/` (7 Context/Provider), `hooks/useHeaderStatusReset.ts`, `components/google-drive/` | `news` không bao giờ import `layout`; shell (`App.tsx`, `layout/AppLayout`, `AppHeader`) được import `@news/*` |
 | `src/layout/` | Khung trang: `AppLayout` (bọc các Provider), header, sidebar | |
 | `src/pwa/` | `sw.ts` (service worker), `registerServiceWorker.ts`, `pushClient.ts`, `PwaUpdatePrompt.tsx`, `IosInstallHint.tsx`, `RouteErrorBoundary.tsx`, ... | `sw.ts` kiểm kiểu bằng `tsconfig.sw.json` (loại khỏi `tsconfig.app.json`) |
 | `src/types/` | Kiểu dùng chéo: `user.ts`, `pagination.ts` | Chỉ `type`/`interface`, không logic |
@@ -575,7 +576,7 @@ Kèm FR-10: thay README Vite mẫu bằng README thật; đổi comment/alias c�
 
 ### 4.3 Frontend: tách module tin tức (FR-11, FR-12)
 
-Hiện phần tin tức nằm lẫn ở gốc `src/` (screens, api, context, components). Đích: ngang hàng `modules/crm`, có alias `@news`.
+**Đã thực hiện ở v1.0.6 (T-11, T-12); sơ đồ TRƯỚC/SAU dưới đây giữ làm lịch sử thiết kế, hiện trạng ở mục 3.2/3.3.** Hiện phần tin tức nằm lẫn ở gốc `src/` (screens, api, context, components). Đích: ngang hàng `modules/crm`, có alias `@news`.
 
 ```text
 TRƯỚC                                                   SAU (ĐÍCH)
@@ -669,9 +670,9 @@ Nếu tính năng chỉ cần util dùng chung nhiều module: đặt `common/ut
 - [ ] Test `*.test.tsx` cạnh file (Coder); luồng người dùng thêm vào `e2e/specs/` (QA).
 - [ ] Đổi giao diện thì đồng bộ sang `stnd-crm-unified/` (FR-13).
 
-**Màn tin tức/quản trị** (hiện ở gốc `src/`, đích `src/modules/news/` sau FR-11):
+**Màn tin tức/quản trị** (nằm ở `src/modules/news/`, alias `@news`):
 
-- [ ] `api/<nhóm>.api.ts` (dùng `api/axios.ts`), `screens/<Tên>Screen.tsx`, thêm route trong `App.tsx` với `RoleGuard` đúng vai trò.
+- [ ] `modules/news/api/<nhóm>.api.ts` (dùng `api/axios.ts` gốc), `modules/news/screens/<Tên>Screen.tsx`, thêm route trong `App.tsx` với `RoleGuard` đúng vai trò.
 - [ ] Component dùng chung: `components/<vùng>/`; thành phần nền: `components/ui/`.
 
 **Quy tắc chung FE:** component `PascalCase.tsx`, hook `useXxx.ts`, hàm thuần `camelCase.ts`; props khai báo `interface` và destructure; state boolean đặt `is/has/should`; state toàn cục thật sự mới dùng Zustand (`stores/xxx.store.ts`); icon mới đặt `src/icons/` rồi khai báo trong `src/icons/index.ts`; file tĩnh cần URL cố định đặt `public/`; cấu hình chạy đọc qua module cấu hình tập trung (đích FR-15), không rải `import.meta.env` thêm.
