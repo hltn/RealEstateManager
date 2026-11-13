@@ -1,6 +1,6 @@
 /**
  * Bản MOCK còn lại của lớp truy cập dữ liệu CRM — CHỈ cho phần giai đoạn 2 (M8) chưa có API: nhập file và xuất file,
- * chạy trên store Zustand trong trình duyệt với DỮ LIỆU MẪU (bật bằng cờ `VITE_CRM_MOCK_IMPORT_EXPORT`, xem `config/featureFlags.ts`).
+ * chạy trên store Zustand trong trình duyệt với DỮ LIỆU MẪU (bật bằng cờ `CRM_MOCK_IMPORT_EXPORT`, xem `config/featureFlags.ts`).
  * Mọi thao tác nghiệp vụ khác (khách, chăm sóc, lịch hẹn, danh mục...) đã chuyển sang API thật ở `httpCrmApi.ts`.
  * Quy ước kết quả: `{ ok: true, data }` hoặc `{ ok: false, error: { statusCode, errorCode, message } }`. Gỡ file này khi M8 xong.
  */

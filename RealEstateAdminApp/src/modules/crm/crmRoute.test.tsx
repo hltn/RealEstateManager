@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCrmRoute, buildNotificationSettingsRoute } from './crmRoute';
 import { withCrmMenu } from './navigation';
 
-describe('Th9 cờ VITE_CRM_PROTOTYPE tắt -> không có route /crm', () => {
+describe('Th9 cờ CRM_ENABLED tắt -> không có route /crm', () => {
   it('cờ tắt: buildCrmRoute trả null và /crm/today rơi vào route "*" của ứng dụng', () => {
     expect(buildCrmRoute(false)).toBeNull();
     render(

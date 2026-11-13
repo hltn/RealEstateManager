@@ -3,14 +3,15 @@ import axios, {
   type AxiosRequestConfig,
   type InternalAxiosRequestConfig,
 } from 'axios';
+import { runtimeConfig } from '../config/runtimeConfig';
 import { useAuthStore } from '../stores/auth.store';
 
 /**
- * Base URL của backend. Lấy từ `VITE_API_URL` (mặc định `http://localhost:3000/api/v1`).
+ * Base URL của backend. Lấy từ `runtimeConfig.API_URL` (đọc lúc chạy từ `/env.js`, mặc định `/api/v1`).
  * `withCredentials: true` để browser tự gửi refresh token cookie (httpOnly) cho mọi request.
  */
 const apiAxios = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1',
+  baseURL: runtimeConfig.API_URL,
   withCredentials: true,
   timeout: 30_000,
 });

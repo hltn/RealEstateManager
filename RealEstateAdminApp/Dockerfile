@@ -20,7 +20,19 @@ RUN npm run build
 
 # ── Stage 2: Nginx để serve static files ──────────────────────────────────────
 FROM nginx:1.27-alpine AS production
+# nginx.conf là TEMPLATE: entrypoint của image nginx chính thức (20-envsubst-on-templates.sh) thay biến rồi ghi ra
+# /etc/nginx/conf.d/default.conf mỗi lần container khởi động (FR-16). NGINX_ENVSUBST_FILTER là regex theo TÊN biến:
+# chỉ thay đúng 3 biến dưới đây, mọi `$uri`, `$host`, `$remote_addr`... của nginx được giữ nguyên.
+# Giá trị mặc định cho chạy image đơn lẻ; docker-compose.yml truyền giá trị thật (IP cloudflared tĩnh, v.v.).
+#   BACKEND_UPSTREAM : origin backend, KHÔNG có dấu `/` cuối và không có path (nginx ghép `/api/`)
+#   TRUSTED_PROXY_IP : đúng MỘT IP được tin CF-Connecting-IP (set_real_ip_from); mặc định loopback = không tin ai ngoài
+#   CLIENT_MAX_BODY  : giới hạn body cho /api/ (>= giới hạn upload của backend, 5 MB + dư multipart)
+# (mỗi ENV một dòng, không dùng "\" nối dòng: Dockerfile CRLF của repo làm BuildKit hiểu sai "\" + CR)
+ENV BACKEND_UPSTREAM=http://backend:3000
+ENV TRUSTED_PROXY_IP=127.0.0.1
+ENV CLIENT_MAX_BODY=6m
+ENV NGINX_ENVSUBST_FILTER='^(BACKEND_UPSTREAM|TRUSTED_PROXY_IP|CLIENT_MAX_BODY)$'
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

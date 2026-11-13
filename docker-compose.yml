@@ -13,7 +13,7 @@
 # nằm trong .env.docker (env_file của backend); xem .env.docker.example.
 #
 # CẢNH BÁO DỮ LIỆU:
-#   - Dữ liệu nằm ở named volume: mongo_data, redis_data, minio_data, nine_router_data.
+#   - Dữ liệu nằm ở named volume: mongo_data, redis_data, minio_data, nine_router_data, backend_state.
 #   - `docker compose down` GIỮ dữ liệu; `docker compose down -v` hoặc `docker volume rm`
 #     XÓA VĨNH VIỄN. Named volume KHÔNG phải backup: phải sao lưu ra ngoài máy (xem tài liệu).
 #   - KHÔNG thêm `name:` ở đầu file và KHÔNG đổi tên thư mục dự án: tên volume thật có
@@ -263,7 +263,7 @@ services:
       - NODE_ENV=production
       # Số hop proxy tin cậy để backend lấy IP client (rate limit đăng nhập đếm theo IP thật). Nginx là proxy duy nhất
       # được tin: nó ghi ĐÈ X-Forwarded-For bằng IP thật (CF-Connecting-IP chỉ được tin khi đến từ cloudflared tĩnh
-      # 10.213.77.250, xem RealEstateAdminApp/nginx.conf). Backend KHÔNG publish cổng nên chỉ nginx gọi vào được.
+      # TRUSTED_PROXY_IP, mặc định 10.213.77.250, xem RealEstateAdminApp/nginx.conf). Backend KHÔNG publish cổng nên chỉ nginx gọi vào được.
       - TRUST_PROXY=1
       - PORT=3000
       # URL công khai của web admin (https://<domain-admin>): dùng cho CORS và chuyển hướng sau Google Drive OAuth.
@@ -271,9 +271,13 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
       # Cron chạy theo giờ Việt Nam (UTC+7), không dùng UTC mặc định của container.
       - TZ=Asia/Ho_Chi_Minh
-      # Daily News Crawler: giữ config trong file bind-mount để backend có thể
-      # cập nhật và phục hồi cấu hình sau khi container restart/redeploy.
-      - CRON_CONFIG_FILE=/app/.env
+      # Daily News Crawler (FR-19): backend ghi bật/tắt + lịch cron vào file này, nằm trong named volume backend_state
+      # (mount /app/state) nên còn nguyên sau restart/redeploy/tạo lại container. Không còn bind-mount ./.env.
+      # Lần đầu (file chưa có) backend dùng hai biến DAILY_CRAWLER_* dưới đây làm giá trị khởi tạo; sau khi đã có file thì
+      # file thắng, đổi hai biến này KHÔNG còn tác dụng (muốn ép lại: xóa /app/state/cron.env trong volume).
+      - CRON_CONFIG_FILE=/app/state/cron.env
+      - DAILY_CRAWLER_ACTIVE=${DAILY_CRAWLER_ACTIVE:-false}
+      - DAILY_CRAWLER_FREQUENCY=${DAILY_CRAWLER_FREQUENCY:-0 8 * * *}
       # Ghi file log ra /app/logs trong container, bind mount ra host ./logs
       # (xem volumes bên dưới) để log persist khi container bị xoá/rebuild.
       - LOG_DIR=/app/logs
@@ -300,7 +304,8 @@ services:
       retries: 5
       start_period: 40s
     volumes:
-      - ./.env:/app/.env
+      # cron.env của Daily News Crawler (CRON_CONFIG_FILE). Dữ liệu thật: KHÔNG `down -v`.
+      - backend_state:/app/state
       # Log file (daily-rotation) persist ra host tại <repo>/logs/
       - ./logs:/app/logs
     networks:
@@ -323,6 +328,23 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+    # nginx.conf của FE là template envsubst (FR-16): chỉ ba biến này được thay lúc container khởi động. Dockerfile cũng
+    # có mặc định; truyền ở đây để đổi bằng .env.docker (rồi `up -d frontend` tạo lại container), không cần build lại.
+    environment:
+      # Origin backend trong network nội bộ (không dấu `/` cuối, không path).
+      - BACKEND_UPSTREAM=${BACKEND_UPSTREAM:-http://backend:3000}
+      # IP duy nhất được tin CF-Connecting-IP: PHẢI trùng ipv4_address của cloudflared (dưới đây dùng cùng biến) và nằm trong subnet realestate_net.
+      - TRUSTED_PROXY_IP=${TRUSTED_PROXY_IP:-10.213.77.250}
+      # Giới hạn body của /api/ (upload ảnh CRM tối đa 5 MB/file + dư multipart); phải >= giới hạn upload của backend.
+      - CLIENT_MAX_BODY=${CLIENT_MAX_BODY:-6m}
+    # Healthcheck (FR-16): nginx trả 200 ở /healthz (không qua backend). Image nginx:alpine có sẵn busybox wget.
+    # Dùng 127.0.0.1 (nginx chỉ listen IPv4) thay vì localhost để tránh phân giải ra ::1.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       - backend
     networks:
@@ -343,8 +365,9 @@ services:
       - frontend
     networks:
       realestate_net:
-        # IP TĨNH: nginx chỉ tin CF-Connecting-IP từ đúng địa chỉ này (set_real_ip_from trong nginx.conf).
-        ipv4_address: 10.213.77.250
+        # IP TĨNH: nginx chỉ tin CF-Connecting-IP từ đúng địa chỉ này (set_real_ip_from trong nginx.conf, cùng biến
+        # TRUSTED_PROXY_IP truyền cho frontend ở trên: một nguồn duy nhất). Phải nằm trong subnet bên dưới.
+        ipv4_address: ${TRUSTED_PROXY_IP:-10.213.77.250}
 
 networks:
   realestate_net:
@@ -353,11 +376,11 @@ networks:
       config:
         # Subnet riêng, hiếm gặp, để không đụng dải Docker mặc định (172.16-31.x, 192.168.x) và mạng nội bộ.
         # Container thường lấy IP động trong ip_range (/25 = .1-.127); cloudflared ở .250 nằm NGOÀI ip_range
-        # nên không bị cấp trùng. Đổi dải thì sửa cả set_real_ip_from trong RealEstateAdminApp/nginx.conf.
+        # nên không bị cấp trùng. Đổi dải thì đặt lại TRUSTED_PROXY_IP cho khớp (nginx.conf lấy từ biến này).
         - subnet: 10.213.77.0/24
           ip_range: 10.213.77.0/25
 
-# CẢNH BÁO: `docker compose down -v` XÓA CẢ 4 VOLUME (toàn bộ dữ liệu Mongo, Redis, MinIO, 9Router).
+# CẢNH BÁO: `docker compose down -v` XÓA CẢ 5 VOLUME (toàn bộ dữ liệu Mongo, Redis, MinIO, 9Router, cấu hình cron backend).
 volumes:
   mongo_data:
     driver: local
@@ -365,3 +388,5 @@ volumes:
   minio_data:
   nine_router_data:
     driver: local
+  # cron.env của backend (Daily News Crawler); thư mục /app/state thuộc node:node trong image nên volume mới tạo ghi được.
+  backend_state:

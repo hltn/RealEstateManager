@@ -24,7 +24,10 @@ FROM node:24.18.1-slim AS production
 WORKDIR /app
 # Tạo trước thư mục logs owned bởi user node (app chạy USER node, không thể tự
 # tạo /app/logs vì /app thuộc root). daily-rotate-file sẽ ghi vào đây.
-RUN mkdir -p logs tmp && chown -R node:node logs tmp
+# Thêm state/: thư mục chứa cron.env (CRON_CONFIG_FILE=/app/state/cron.env, FR-19). Docker named volume
+# `backend_state` mount vào đây sẽ thừa hưởng chủ sở hữu node:node của thư mục này khi volume còn RỖNG
+# (lần tạo đầu), nên USER node ghi được; không có dòng mkdir/chown này thì volume sinh ra thuộc root và ghi lỗi.
+RUN mkdir -p logs tmp state && chown -R node:node logs tmp state
 COPY --from=deps    --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist         ./dist
 USER node

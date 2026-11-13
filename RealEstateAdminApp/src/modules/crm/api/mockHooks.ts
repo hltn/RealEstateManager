@@ -1,6 +1,6 @@
 /**
  * Hook chạy trên store MOCK cho phần của giai đoạn 2 (M8) chưa có API: Báo cáo (dashboard), xuất file, nhập file.
- * Chỉ dùng khi bật cờ `VITE_CRM_MOCK_REPORTS` / `VITE_CRM_MOCK_IMPORT_EXPORT` (xem `config/featureFlags.ts`);
+ * Chỉ dùng khi bật cờ `CRM_MOCK_REPORTS` / `CRM_MOCK_IMPORT_EXPORT` (xem `config/featureFlags.ts`);
  * dữ liệu là DỮ LIỆU MẪU trong trình duyệt, KHÔNG phải dữ liệu thật của hệ thống. Gỡ file này khi M8 xong.
  */
 import { useCallback, useMemo } from 'react';

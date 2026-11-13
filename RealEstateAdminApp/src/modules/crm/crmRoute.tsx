@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- file khai báo route (hàm dựng route + các màn nạp lười), không phải component dùng lại */
 /**
- * Khai báo route `/crm/*` của module CRM prototype, nạp LƯỜI (React.lazy): khi cờ `VITE_CRM_PROTOTYPE` tắt,
+ * Khai báo route `/crm/*` của module CRM prototype, nạp LƯỜI (React.lazy): khi cờ `CRM_ENABLED` (runtimeConfig) tắt,
  * không tạo route và không có mã module CRM trong bundle khởi động (mỗi màn là một chunk riêng, chỉ tải khi vào route).
  * Trả `null` khi tắt -> `/crm/*` rơi vào route `*` của ứng dụng (không lộ prototype có vai trò giả ở production).
  */

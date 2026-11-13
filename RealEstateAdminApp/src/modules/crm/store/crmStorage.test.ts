@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSeedDataState } from './crmStore';
 import { CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData, saveCrmData } from './crmStorage';
 import { createCrmStore } from './crmStore';
+
+// Các test này dựng store từ dữ liệu mẫu: cờ mock mặc định TẮT (FR-15, không còn bật theo DEV) nên bật tường minh trước khi nạp module.
+vi.hoisted(() => {
+  window.__APP_CONFIG__ = { CRM_MOCK_REPORTS: true };
+});
 
 afterEach(() => window.localStorage.clear());
 

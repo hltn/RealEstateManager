@@ -84,7 +84,7 @@ beforeEach(() => {
   updateCareLog.mockResolvedValue({ ok: true, data: {} });
 });
 
-describe('G1: khung tải ảnh trong form ghi nhật ký theo cờ VITE_FEATURE_CRM_ATTACHMENTS', () => {
+describe('G1: khung tải ảnh trong form ghi nhật ký theo cờ CRM_ATTACHMENTS_ENABLED', () => {
   it('cờ bật: thấy nút "Thêm ảnh" (ô chọn file chỉ nhận jpeg/png/webp) và dòng giới hạn 5 MB / 5 ảnh', () => {
     flags.isAttachmentsEnabled = true;
     renderForm();

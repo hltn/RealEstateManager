@@ -74,7 +74,7 @@ export const useCrmSidebarSubItems = (): { name: string; path: string }[] => {
 /** Tên mục CRM trong menu chính của AppSidebar. */
 export const CRM_MENU_NAME = 'Quản lý khách hàng';
 
-/** Menu chính: ẩn hẳn mục CRM khi module tắt (`VITE_CRM_PROTOTYPE`); bật thì gắn submenu theo vai trò. */
+/** Menu chính: ẩn hẳn mục CRM khi module tắt (`CRM_ENABLED`); bật thì gắn submenu theo vai trò. */
 export const withCrmMenu = <T extends { name: string }>(items: readonly T[], crmSubItems: { name: string; path: string }[], isEnabled: boolean): (T | (T & { subItems: { name: string; path: string }[] }))[] =>
   items.filter((item) => item.name !== CRM_MENU_NAME || isEnabled).map((item) => (item.name === CRM_MENU_NAME ? { ...item, subItems: crmSubItems } : item));
 

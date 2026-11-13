@@ -226,7 +226,7 @@ const ImportCustomersModal = ({ onClose }: { onClose: () => void }) => {
 
 /**
  * Nút "Nhập CSV" ở đầu danh sách khách — M8 chưa có API: nhập vào DỮ LIỆU MẪU trong trình duyệt (chỉ hiện khi bật cờ
- * `VITE_CRM_MOCK_IMPORT_EXPORT`, màn danh sách đã kiểm cờ), KHÔNG ghi vào hệ thống thật.
+ * `CRM_MOCK_IMPORT_EXPORT`, màn danh sách đã kiểm cờ), KHÔNG ghi vào hệ thống thật.
  */
 export const ImportCustomersButton = () => {
   const actor = useMockActor();
