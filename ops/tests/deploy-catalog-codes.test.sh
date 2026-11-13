@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/deploy-catalog-codes.test.sh — test shell KHÔNG cần Docker/Mongo thật cho bước 8c (nay là scripts/post-migrate/10-catalog-codes.sh,
+# ops/tests/deploy-catalog-codes.test.sh — test shell KHÔNG cần Docker/Mongo thật cho bước 8c (nay là scripts/post-migrate/10-catalog-codes.sh,
 # gọi qua run_post_migrate_steps của deploy.sh; T-03/FR-23, trước đó T-17 v1.0.4):
 #   - bước bù `node dist/migrations/crm-catalog-codes.cli.js --apply` chạy SAU `up` và SAU wait_backend_liveness (thứ tự gọi trong main)
 #   - lệnh bù thoát mã khác 0 => cảnh báo đỏ ở stderr, deploy exit khác 0 (không chạy tiếp `compose ps`/"Deploy xong")
@@ -13,7 +13,7 @@
 # Chỉ kiểm lớp shell (thứ tự, mã thoát, log, cách gọi). Chạy bước bù với Mongo thật là việc của T-18 (bản sao dữ liệu).
 # Thêm (T-03): điểm gọi chung chạy các tệp [0-9][0-9]-*.sh theo thứ tự tên, bước lỗi dừng các bước sau, deploy.sh không còn logic bù mã.
 #
-# Chạy:  bash scripts/tests/deploy-catalog-codes.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
+# Chạy:  bash ops/tests/deploy-catalog-codes.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2329,SC2016  # biến/hàm dùng qua eval các hàm trích từ deploy.sh; nháy đơn có chủ ý
 set -uo pipefail
@@ -32,8 +32,8 @@ expect_contains() { if [[ "$3" == *"$2"* ]]; then ok; else fail "$1: không th�
 expect_not_contains() { if [[ "$3" != *"$2"* ]]; then ok; else fail "$1: không được có [$2] trong [$3]"; fi; }
 
 LOG_PREFIX="test"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 extract_fn() { sed -n "/^$1() {/,/^}/p" "$ROOT_DIR/deploy.sh"; }
 # run_catalog_codes_cli và compose là hàm một dòng: sed trên `^name() {` ... `^}` không bắt được khi đóng `}` nằm cùng dòng.

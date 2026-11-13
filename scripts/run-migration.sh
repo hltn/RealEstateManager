@@ -33,8 +33,8 @@ LOG_PREFIX="migrate"
 _self="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || true)"
 [[ -n "$_self" && -f "$_self" ]] || { echo "[migrate] LỖI: không resolve được đường dẫn thật của script (cần readlink -f)." >&2; exit 1; }
 ROOT_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 readonly ENV_FILE=".env.docker"
 readonly MONGO_CONTAINER="${MONGO_CONTAINER:-realestate_mongo}"

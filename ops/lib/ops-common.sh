@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/lib/ops-common.sh — hàm dùng chung cho deploy.sh, scripts/backup.sh, scripts/restore.sh, scripts/run-migration.sh,
-# scripts/check-disk.sh và scripts/staging.sh (DRY).
+# ops/lib/ops-common.sh — hàm dùng chung cho deploy.sh, backup.sh, restore.sh, scripts/run-migration.sh,
+# ops/check-disk.sh và ops/staging.sh (DRY).
 # File này chỉ được `source`, không chạy trực tiếp. Caller đặt LOG_PREFIX (vd "deploy") TRƯỚC khi source và
 # bật `set -euo pipefail`. Không chứa bí mật, không in giá trị biến trong .env.docker.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ JSEOF
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phần dùng chung cho deploy.sh, scripts/backup.sh và scripts/restore.sh (tách từ deploy.sh, hành vi giữ nguyên). Caller định nghĩa trước khi gọi:
+# Phần dùng chung cho deploy.sh, backup.sh và restore.sh (tách từ deploy.sh, hành vi giữ nguyên). Caller định nghĩa trước khi gọi:
 # ENV_FILE, RUNTIME_ENV_FILE, LOGS_DIR, BACKUP_DIR, NINE_ROUTER_CONTAINER (check_staging_vars); MONGO_CONTAINER, MONGO_TIMEOUT
 # (wait_mongo_healthy); BACKEND_CONTAINER, HEALTH_URL, HEALTH_TIMEOUT (wait_backend_liveness).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ JSEOF
 OPS_APP_PKG="${OPS_APP_PKG:-RealEstateBackendApp/package.json}"
 
 # Kiểm các biến chỉ dành cho staging NGAY khi nạp script (trước mọi lệnh): đường dẫn phải là đường dẫn TƯƠNG ĐỐI trong repo (một dòng
-# DEPLOY_LOGS_DIR=/ sẽ thành `chown -R 1000:1000 /`); và bất kỳ biến nào khác mặc định chỉ hợp lệ khi chạy qua scripts/staging.sh
+# DEPLOY_LOGS_DIR=/ sẽ thành `chown -R 1000:1000 /`); và bất kỳ biến nào khác mặc định chỉ hợp lệ khi chạy qua ops/staging.sh
 # (project compose = realestate-staging VÀ COMPOSE_FILE có docker-compose.staging.yml), chiều ngược lại cũng chặn. Không đặt biến nào
 # (production) thì mọi giá trị là mặc định cũ và hàm này không làm gì.
 valid_rel_path() {
@@ -220,14 +220,14 @@ check_staging_vars() {
   local has_stg_file=0
   [[ "${COMPOSE_FILE:-}" != *docker-compose.staging.yml* ]] || has_stg_file=1
   if [[ -n "$staged" ]] && { [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]] || (( has_stg_file == 0 )); }; then
-    die "Biến staging đặt ngoài wrapper:${staged}. Chúng chỉ hợp lệ khi chạy qua scripts/staging.sh (COMPOSE_PROJECT_NAME=realestate-staging và COMPOSE_FILE có docker-compose.staging.yml). Bỏ các biến này để deploy production."
+    die "Biến staging đặt ngoài wrapper:${staged}. Chúng chỉ hợp lệ khi chạy qua ops/staging.sh (COMPOSE_PROJECT_NAME=realestate-staging và COMPOSE_FILE có docker-compose.staging.yml). Bỏ các biến này để deploy production."
   fi
   if (( has_stg_file == 1 )) && [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]]; then
-    die "COMPOSE_FILE có docker-compose.staging.yml nhưng COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-}' khác realestate-staging: dễ chạm nhầm stack khác. Chạy qua scripts/staging.sh hoặc bỏ COMPOSE_FILE."
+    die "COMPOSE_FILE có docker-compose.staging.yml nhưng COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-}' khác realestate-staging: dễ chạm nhầm stack khác. Chạy qua ops/staging.sh hoặc bỏ COMPOSE_FILE."
   fi
 }
 
-# Khóa chống hai lần deploy/restore chạy chồng nhau (CÙNG một khóa cho cả deploy.sh và scripts/restore.sh). Đặt trong .git (không hiện ở
+# Khóa chống hai lần deploy/restore chạy chồng nhau (CÙNG một khóa cho cả deploy.sh và restore.sh). Đặt trong .git (không hiện ở
 # git status, không phải file repo). Giữ bằng fd 9 đến hết tiến trình.
 acquire_lock() {
   in_git_repo || return 0
@@ -243,7 +243,7 @@ in_git_repo() {
   command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1
 }
 
-# Tên nhánh hợp lệ để ghi vào manifest/dùng trong `git switch`. DÙNG CHUNG cho deploy.sh (khi ghi) và scripts/restore.sh (khi đọc),
+# Tên nhánh hợp lệ để ghi vào manifest/dùng trong `git switch`. DÙNG CHUNG cho deploy.sh (khi ghi) và restore.sh (khi đọc),
 # để deploy.sh không tạo manifest mà restore.sh sẽ từ chối. Chặn: rỗng, ký tự lạ, bắt đầu bằng '-' hoặc '/', kết thúc '/', '..', '//', '.lock'.
 valid_branch_name() {
   local b="${1:-}"
@@ -320,7 +320,7 @@ JSEOF
 manifest_write() {
   local f="$1" tmp="${1}.tmp"
   shift
-  ( umask 077; { printf '%s\n' "# Manifest backup trước deploy/restore (KEY=VALUE, KHÔNG chứa bí mật). Đọc bằng: bash scripts/restore.sh --list"; printf '%s\n' "$@"; } > "$tmp" ) \
+  ( umask 077; { printf '%s\n' "# Manifest backup trước deploy/restore (KEY=VALUE, KHÔNG chứa bí mật). Đọc bằng: bash restore.sh --list"; printf '%s\n' "$@"; } > "$tmp" ) \
     || { rm -f "$tmp"; return 1; }
   mv -f "$tmp" "$f"
 }

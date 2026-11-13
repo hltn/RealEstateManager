@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/print-image-digests.sh — CHỈ ĐỌC (không pull, không đổi gì): in digest của image mà các container production
+# ops/print-image-digests.sh — CHỈ ĐỌC (không pull, không đổi gì): in digest của image mà các container production
 # ĐANG CHẠY thật, theo dạng dòng sẵn để dán vào .env.docker (PT-009, tài liệu 06_Production_Deploy.md mục 12).
 #
-#   bash scripts/print-image-digests.sh
+#   bash ops/print-image-digests.sh
 #
 # Vì sao lấy từ container đang chạy mà không lấy từ registry: tag trôi (`:latest`, `mongo:7`, `redis:7-alpine`), digest
 # trên registry hôm nay có thể KHÁC bản đã pull lúc dựng stack. Ghim digest registry hiện tại nghĩa là đổi phiên bản âm

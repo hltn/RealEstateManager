@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/staging.test.sh — test rào chắn của staging local, KHÔNG cần Docker thật:
-#   - scripts/staging.sh: guard_environment (cổng, tên, DOCKER_HOST/DOCKER_CONTEXT/endpoint context), confirm (ASSUME_YES), prepare_env
+# ops/tests/staging.test.sh — test rào chắn của staging local, KHÔNG cần Docker thật:
+#   - ops/staging.sh: guard_environment (cổng, tên, DOCKER_HOST/DOCKER_CONTEXT/endpoint context), confirm (ASSUME_YES), prepare_env
 #     (gỡ biến shell trùng khóa trong .env.staging.example)
-#   - scripts/staging.sh restore-dump/snapshot (T-18, FR-21): chỉ nhắm rhstg_mongo, bắt buộc --yes, archive chỉ trong .staging/, bị từ chối thì
+#   - ops/staging.sh restore-dump/snapshot (T-18, FR-21): chỉ nhắm rhstg_mongo, bắt buộc --yes, archive chỉ trong .staging/, bị từ chối thì
 #     KHÔNG gọi Docker (docker stub ghi nhật ký); tĩnh: mongorestore --drop kèm --nsInclude realestate.*, không nhắc container dev/prod
 #   - deploy.sh: check_staging_vars (đường dẫn DEPLOY_* tương đối trong repo; biến staging chỉ hợp lệ qua wrapper) và mặc định y hệt cũ
-#   - scripts/staging/shims/docker: chỉ đổi đường dẫn host sau cờ đường dẫn (cần cygpath, bỏ qua nếu không có)
-# Hàm được TRÍCH từ file thật (sed), docker thay bằng stub. Chạy:  bash scripts/tests/staging.test.sh  (thoát 0 nếu đạt)
+#   - ops/staging/shims/docker: chỉ đổi đường dẫn host sau cờ đường dẫn (cần cygpath, bỏ qua nếu không có)
+# Hàm được TRÍCH từ file thật (sed), docker thay bằng stub. Chạy:  bash ops/tests/staging.test.sh  (thoát 0 nếu đạt)
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2329,SC2016,SC2032,SC2033  # biến/hàm dùng qua eval các hàm trích từ staging.sh; nháy đơn có chủ ý
 set -uo pipefail
@@ -26,17 +26,17 @@ expect_eq() { if [[ "$2" == "$3" ]]; then ok; else fail "$1: mong đợi [$2], n
 expect_contains() { if [[ "$3" == *"$2"* ]]; then ok; else fail "$1: không thấy [$2] trong [$3]"; fi; }
 
 LOG_PREFIX="test"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 extract_fn() { sed -n "/^$1() {/,/^}/p" "$2"; }
 for fn in assert_staging_name guard_environment confirm prepare_env is_windows resolve_dump_archive; do
-  src="$(extract_fn "$fn" "$ROOT_DIR/scripts/staging.sh")"
-  [[ -n "$src" ]] || { echo "Không trích được $fn từ scripts/staging.sh" >&2; exit 2; }
+  src="$(extract_fn "$fn" "$ROOT_DIR/ops/staging.sh")"
+  [[ -n "$src" ]] || { echo "Không trích được $fn từ ops/staging.sh" >&2; exit 2; }
   eval "$src"
 done
 # Hằng số của staging.sh (lấy nguyên dòng readonly từ file thật).
-eval "$(grep -E '^readonly STG_(PROJECT|DIR|ENV|MONGO|BACKEND|IMAGE_PREFIX|ALLOWED_PORTS_RE|BLOCKED_PORTS)=' "$ROOT_DIR/scripts/staging.sh")"
+eval "$(grep -E '^readonly STG_(PROJECT|DIR|ENV|MONGO|BACKEND|IMAGE_PREFIX|ALLOWED_PORTS_RE|BLOCKED_PORTS)=' "$ROOT_DIR/ops/staging.sh")"
 STG_YES=0
 
 # ── guard_environment ────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ expect_eq "confirm: ASSUME_YES trong môi trường KHÔNG được tính" "rc=1
 expect_contains "confirm: thông báo cần xác nhận" "Cần xác nhận" "$res"
 expect_eq "confirm: STAGING_ASSUME_YES=1 bỏ hỏi" "rc=0" "$(confirm_rc 'export STAGING_ASSUME_YES=1; STG_YES=0' | cut -d' ' -f1)"
 expect_eq "confirm: cờ --yes (STG_YES=1) bỏ hỏi"  "rc=0" "$(confirm_rc 'unset STAGING_ASSUME_YES; STG_YES=1' | cut -d' ' -f1)"
-expect_eq "staging.sh không đọc \${ASSUME_YES}" "0" "$(grep -c '[$]{ASSUME_YES' "$ROOT_DIR/scripts/staging.sh" || true)"
+expect_eq "staging.sh không đọc \${ASSUME_YES}" "0" "$(grep -c '[$]{ASSUME_YES' "$ROOT_DIR/ops/staging.sh" || true)"
 
 # ── M-e: prepare_env gỡ biến shell trùng khóa của .env.staging.example ───────
 pe="$( (
@@ -147,9 +147,9 @@ check_dep "COMPOSE_FILE staging, không đặt project" 1 "dễ chạm nhầm" "
 check_dep "project staging + file staging, không biến DEPLOY_*" 0 "" "$STG_COMPOSE"
 
 # Mặc định (không đặt biến) phải y hệt bản cũ: in giá trị đã giải của các hằng số trong môi trường sạch.
-mkdir -p "$TMP/dep/scripts/lib"
+mkdir -p "$TMP/dep/ops/lib"
 cp "$ROOT_DIR/deploy.sh" "$TMP/dep/deploy.sh"
-cp "$ROOT_DIR/scripts/lib/ops-common.sh" "$TMP/dep/scripts/lib/ops-common.sh"
+cp "$ROOT_DIR/ops/lib/ops-common.sh" "$TMP/dep/ops/lib/ops-common.sh"
 sed -i 's/^main "\$@"$/printf "%s|%s|%s|%s|[%s]|%s|%s" "$ENV_FILE" "$RUNTIME_ENV_FILE" "$LOGS_DIR" "$BACKUP_DIR" "$NINE_ROUTER_CONTAINER" "$MONGO_CONTAINER" "$BACKEND_CONTAINER"; exit 0/' "$TMP/dep/deploy.sh"
 defaults="$(env -i PATH="$PATH" HOME="${HOME:-/}" bash "$TMP/dep/deploy.sh" 2>&1)"
 expect_eq "deploy.sh mặc định (env -i) y hệt bản cũ" ".env.docker|.env|logs|backups|[realestate_9router]|realestate_mongo|realestate_backend" "$defaults"
@@ -170,7 +170,7 @@ rd_rc() { # "<VAR=giá trị ...>" <đối số staging.sh ...>: môi trường 
   shift
   rm -f "$TMP/docker.calls"
   # shellcheck disable=SC2086  # tách từ có chủ ý: mỗi phần tử là VAR=giá-trị không chứa khoảng trắng
-  out="$(env -i PATH="$TMP/stubbin:$PATH" HOME="${HOME:-/}" DOCKER_CALLS="$TMP/docker.calls" STAGING_ALLOW_DOCKER_HOST=1 $envs bash "$ROOT_DIR/scripts/staging.sh" "$@" 2>&1 </dev/null)" || rc=$?
+  out="$(env -i PATH="$TMP/stubbin:$PATH" HOME="${HOME:-/}" DOCKER_CALLS="$TMP/docker.calls" STAGING_ALLOW_DOCKER_HOST=1 $envs bash "$ROOT_DIR/ops/staging.sh" "$@" 2>&1 </dev/null)" || rc=$?
   printf 'rc=%s | %s' "$rc" "$out"
 }
 check_rd() { # mô tả rc chuỗi_phải_có "<VAR=...>" đối_số...
@@ -224,7 +224,7 @@ res="$(rda "")";                                     expect_contains "resolve: �
 
 # Tĩnh (đọc mã nguồn thật): restore-dump chỉ nhắm $STG_MONGO, mongorestore luôn --drop + --nsInclude "realestate.*", không nhắc tên container
 # dev/prod, chỉ MỘT dropDatabase (realestate); .staging/ nằm trong .gitignore và không có dump nào được git theo dõi.
-rd_src="$(sed -n '/^cmd_restore_dump() {/,/^}/p' "$ROOT_DIR/scripts/staging.sh")"
+rd_src="$(sed -n '/^cmd_restore_dump() {/,/^}/p' "$ROOT_DIR/ops/staging.sh")"
 expect_contains "tĩnh: mongorestore có --drop"            '--drop'                                    "$rd_src"
 expect_contains "tĩnh: mongorestore giới hạn --nsInclude" '--nsInclude "realestate.*"'                "$rd_src"
 expect_contains "tĩnh: chạy trong container staging"      'docker exec -i "$STG_MONGO"'               "$rd_src"
@@ -238,14 +238,14 @@ if git -C "$ROOT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   expect_eq "git: không có file nào dưới .staging/ được theo dõi" "0" "$(git -C "$ROOT_DIR" ls-files -- .staging | wc -l | tr -d ' ')"
 fi
 # Snapshot chỉ đọc: script mongosh không có lệnh ghi/xóa.
-expect_eq "snapshot.js không có lệnh ghi/xóa" "0" "$(grep -cE '\.(insert|update|delete|drop|remove|createIndex|dropIndex|save|replace|bulkWrite|renameCollection)[A-Za-z]*\(|dropDatabase' "$ROOT_DIR/scripts/staging/rehearsal-snapshot.js" || true)"
+expect_eq "snapshot.js không có lệnh ghi/xóa" "0" "$(grep -cE '\.(insert|update|delete|drop|remove|createIndex|dropIndex|save|replace|bulkWrite|renameCollection)[A-Za-z]*\(|dropDatabase' "$ROOT_DIR/ops/staging/rehearsal-snapshot.js" || true)"
 
 # ── shim docker: chỉ đổi đường dẫn host sau cờ đường dẫn ────────────────────
 if command -v cygpath >/dev/null 2>&1; then
   mkdir -p "$TMP/bin" "$TMP/shimdir"
   printf '#!/bin/bash\nprintf "%%s\\n" "$@"\n' > "$TMP/bin/docker"
   chmod +x "$TMP/bin/docker"
-  cp "$ROOT_DIR/scripts/staging/shims/docker" "$TMP/shimdir/docker"
+  cp "$ROOT_DIR/ops/staging/shims/docker" "$TMP/shimdir/docker"
   chmod +x "$TMP/shimdir/docker"
   printf 'x' > "$TMP/hostfile"
   winpath="$(cygpath -w "$TMP/hostfile")"

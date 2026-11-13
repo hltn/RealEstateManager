@@ -263,7 +263,7 @@ Mỗi mục có nhãn nguồn: **[Phát hiện lúc nâng cấp]** (`PT-001` đ�
 | Ảnh hưởng | Nâng cấp bất ngờ khi pull lại; khó tái hiện sự cố |
 | Đề xuất | Lấy digest đang chạy của cả năm image, ghim vào `.env.docker` hoặc compose; ghi quy trình nâng cấp image có chủ đích vào tài liệu |
 | Người phụ trách | `devops-agent` |
-| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Đã xong trong repo: cơ chế biến `MONGO_IMAGE`, `REDIS_IMAGE`, `NINE_ROUTER_IMAGE`, `CLOUDFLARED_IMAGE`, `MINIO_IMAGE` trong compose và script `scripts/print-image-digests.sh`. Lúc 2026-11-02 chưa ghim digest nào. **Việc còn lại trước đây của Oniichan (đã hoàn tất, Oniichan xác nhận 2026-11-04):** chạy script trên VPS, dán các dòng `*_IMAGE=` vào `.env.docker`, rồi `up -d --no-deps` từng service |
+| Trạng thái | Xong (Oniichan xác nhận 2026-11-04; trước đó `Xong một phần`, 2026-11-02). Đã xong trong repo: cơ chế biến `MONGO_IMAGE`, `REDIS_IMAGE`, `NINE_ROUTER_IMAGE`, `CLOUDFLARED_IMAGE`, `MINIO_IMAGE` trong compose và script `ops/print-image-digests.sh`. Lúc 2026-11-02 chưa ghim digest nào. **Việc còn lại trước đây của Oniichan (đã hoàn tất, Oniichan xác nhận 2026-11-04):** chạy script trên VPS, dán các dòng `*_IMAGE=` vào `.env.docker`, rồi `up -d --no-deps` từng service |
 
 #### PT-010 — Dọn dẹp sau vài ngày (mục 5.7)
 

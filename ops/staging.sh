@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/staging.sh — "STAGING LOCAL": chạy stack giống production (docker-compose.yml + deploy.sh THẬT) trên máy dev
+# ops/staging.sh — "STAGING LOCAL": chạy stack giống production (docker-compose.yml + deploy.sh THẬT) trên máy dev
 # để diễn tập deploy/migration trước khi lên VPS. Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md mục 11.3.
 #
-#   bash scripts/staging.sh init [--force]          sinh .staging/env (secret GIẢ ngẫu nhiên), kiểm tiền đề
-#   bash scripts/staging.sh seed-prod102 [--yes]    nạp DB giả "production 1.0.2" (XÓA DB realestate của staging trước)
-#   bash scripts/staging.sh deploy [args...]        chạy ĐÚNG deploy.sh của repo với biến môi trường staging (mặc định --no-pull;
+#   bash ops/staging.sh init [--force]          sinh .staging/env (secret GIẢ ngẫu nhiên), kiểm tiền đề
+#   bash ops/staging.sh seed-prod102 [--yes]    nạp DB giả "production 1.0.2" (XÓA DB realestate của staging trước)
+#   bash ops/staging.sh deploy [args...]        chạy ĐÚNG deploy.sh của repo với biến môi trường staging (mặc định --no-pull;
 #                                                   thêm --pull của wrapper nếu muốn git pull; --plan-only, --no-migrate... chuyển nguyên)
-#   bash scripts/staging.sh status                  docker compose ps + `status` của runner migration
-#   bash scripts/staging.sh down                    dừng và gỡ container (GIỮ dữ liệu/volume)
-#   bash scripts/staging.sh reset [--images] [--yes]  XÓA DỮ LIỆU staging về trống (container + volume; --images: cả image staging)
-#   bash scripts/staging.sh restore-dump <archive> --yes  XÓA DB realestate của staging rồi nạp bản sao dump (mongodump --archive --gzip);
-#                                                   <archive> BẮT BUỘC nằm trong .staging/ (gitignore), BẮT BUỘC --yes. Quy trình: scripts/staging/REHEARSAL.md
-#   bash scripts/staging.sh runner <lệnh...>        chạy runner migration (node dist/migrations/cli.js ...) trên staging, vd: runner reconcile --apply --skip-version --phase pre-up
-#   bash scripts/staging.sh step3                   diễn tập bước 3: chèn 2 khách không mã (phải được) + 1 khách trùng SĐT (phải lỗi) trên staging
-#   bash scripts/staging.sh snapshot [nhãn]         chụp CHỈ ĐỌC số đếm/index/sổ system của staging -> .staging/snapshots/<nhãn>-<giờ>.json
+#   bash ops/staging.sh status                  docker compose ps + `status` của runner migration
+#   bash ops/staging.sh down                    dừng và gỡ container (GIỮ dữ liệu/volume)
+#   bash ops/staging.sh reset [--images] [--yes]  XÓA DỮ LIỆU staging về trống (container + volume; --images: cả image staging)
+#   bash ops/staging.sh restore-dump <archive> --yes  XÓA DB realestate của staging rồi nạp bản sao dump (mongodump --archive --gzip);
+#                                                   <archive> BẮT BUỘC nằm trong .staging/ (gitignore), BẮT BUỘC --yes. Quy trình: ops/staging/REHEARSAL.md
+#   bash ops/staging.sh runner <lệnh...>        chạy runner migration (node dist/migrations/cli.js ...) trên staging, vd: runner reconcile --apply --skip-version --phase pre-up
+#   bash ops/staging.sh step3                   diễn tập bước 3: chèn 2 khách không mã (phải được) + 1 khách trùng SĐT (phải lỗi) trên staging
+#   bash ops/staging.sh snapshot [nhãn]         chụp CHỈ ĐỌC số đếm/index/sổ system của staging -> .staging/snapshots/<nhãn>-<giờ>.json
 #
 # AN TOÀN: chỉ nhắm project `realestate-staging` và container `rhstg_*`. Từ chối chạy nếu tên project/container (kể cả biến môi
 # trường MONGO_CONTAINER/BACKEND_CONTAINER/COMPOSE_PROJECT_NAME đặt sẵn) trùng `realestate_*`, `realestate-dev*` hay stack production,
 # và kiểm lại cấu hình compose đã phủ (tên container, tên volume/mạng, cổng chỉ 127.0.0.1) trước mọi lệnh đụng Docker.
-# Windows/Git Bash: wrapper tự bật các shim trong scripts/staging/shims (stat/chown/install/docker); VPS Ubuntu không dùng chúng.
+# Windows/Git Bash: wrapper tự bật các shim trong ops/staging/shims (stat/chown/install/docker); VPS Ubuntu không dùng chúng.
 # Biến tùy chọn: STAGING_BACKEND_PORT (mặc định 13100), STAGING_FRONTEND=1 (bật frontend, cổng STAGING_FRONTEND_PORT, mặc định 18080),
 #   STAGING_ASSUME_YES=1 (bỏ hỏi xác nhận; KHÔNG áp dụng cho restore-dump, lệnh đó chỉ nhận cờ --yes), STAGING_ALLOW_DOCKER_HOST=1 (cho phép DOCKER_HOST/DOCKER_CONTEXT từ xa).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -29,8 +29,8 @@ LOG_PREFIX="staging"
 _self="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || true)"
 [[ -n "$_self" && -f "$_self" ]] || { echo "[staging] LỖI: không resolve được đường dẫn thật của staging.sh." >&2; exit 1; }
 ROOT_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 cd "$ROOT_DIR"
 
 readonly STG_PROJECT="realestate-staging"
@@ -118,7 +118,7 @@ prepare_env() {
   export NINE_ROUTER_CONTAINER=""
   export DEPLOY_MIN_FREE_GB="${DEPLOY_MIN_FREE_GB:-1}"
   if is_windows; then
-    export STAGING_SHIM_DIR="$ROOT_DIR/scripts/staging/shims"
+    export STAGING_SHIM_DIR="$ROOT_DIR/ops/staging/shims"
     export STAGING_ENV_FILE="$STG_ENV"
     export PATH="$STAGING_SHIM_DIR:$PATH"
   fi
@@ -132,13 +132,13 @@ need_docker() {
   docker info >/dev/null 2>&1 || die "Không nói chuyện được với Docker daemon (Docker Desktop đã chạy chưa?)."
 }
 
-need_env_file() { [[ -f "$STG_ENV" ]] || die "Chưa có $STG_ENV. Chạy trước: bash scripts/staging.sh init"; }
+need_env_file() { [[ -f "$STG_ENV" ]] || die "Chưa có $STG_ENV. Chạy trước: bash ops/staging.sh init"; }
 
 # Kiểm cấu hình compose ĐÃ PHỦ trước khi đụng Docker: tên project/container/volume/mạng đúng staging, cổng chỉ 127.0.0.1.
 preflight_config() {
   need_env_file
   local cfg bad
-  cfg="$(compose config 2>&1)" || { printf '%s\n' "$cfg" >&2; die "docker compose config lỗi (xem trên). Thiếu biến trong $STG_ENV? Thử: bash scripts/staging.sh init --force (chỉ khi chưa có dữ liệu staging)."; }
+  cfg="$(compose config 2>&1)" || { printf '%s\n' "$cfg" >&2; die "docker compose config lỗi (xem trên). Thiếu biến trong $STG_ENV? Thử: bash ops/staging.sh init --force (chỉ khi chưa có dữ liệu staging)."; }
   cfg="${cfg//$'\r'/}"
   grep -qxF "name: $STG_PROJECT" <<<"$cfg" || die "Cấu hình compose không có 'name: $STG_PROJECT' (docker-compose.staging.yml chưa được phủ?). Từ chối chạy."
   bad="$(grep -E '^\s+container_name:' <<<"$cfg" | grep -vE 'container_name: rhstg_[a-z0-9_]+$' || true)"
@@ -170,7 +170,7 @@ cmd_init() {
   # CRLF trong script chạy bằng bash làm hỏng (`\r`): git trên Windows (autocrlf) có thể tạo ra. .gitattributes ép LF cho *.sh.
   # (Đếm ký tự CR bằng tr: grep GNU trên Git Bash bỏ CR trước khi so khớp nên không dùng được.)
   local crlf="" f
-  for f in deploy.sh scripts/lib/ops-common.sh scripts/staging.sh scripts/staging/shims/*; do
+  for f in deploy.sh ops/lib/ops-common.sh ops/staging.sh ops/staging/shims/*; do
     [[ "$(tr -d -c '\r' < "$f" | wc -c)" -eq 0 ]] || crlf+="$f "
   done
   [[ -z "$crlf" ]] || die "Các file sau có CRLF (bash không chạy được): $crlf. Sửa: sed -i 's/\r\$//' <file> (hoặc git add --renormalize rồi checkout lại)."
@@ -207,7 +207,7 @@ cmd_init() {
   for img in "${MONGO_IMAGE:-mongo:7}" "${REDIS_IMAGE:-redis:7-alpine}" "${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}"; do
     docker image inspect "$img" >/dev/null 2>&1 || warn "Chưa có image '$img' trên máy: docker compose sẽ phải TẢI nó khi up (wrapper không tự pull)."
   done
-  is_windows && log "Windows/Git Bash: sẽ dùng shim trong scripts/staging/shims (stat/chown/install/docker). Không có flock: khóa chống chạy chồng của deploy.sh bị bỏ qua."
+  is_windows && log "Windows/Git Bash: sẽ dùng shim trong ops/staging/shims (stat/chown/install/docker). Không có flock: khóa chống chạy chồng của deploy.sh bị bỏ qua."
   preflight_config
   log "init xong. Tiếp: seed-prod102 (hoặc deploy thẳng để thử cài mới), rồi deploy --plan-only / deploy."
 }
@@ -231,7 +231,7 @@ cmd_seed() {
   log "Khởi động $STG_MONGO (nếu chưa chạy) ..."
   compose up -d mongo
   wait_mongo_healthy
-  docker exec -i "$STG_MONGO" mongosh --quiet --norc --file /dev/stdin < scripts/staging/seed-prod102.js
+  docker exec -i "$STG_MONGO" mongosh --quiet --norc --file /dev/stdin < ops/staging/seed-prod102.js
   log "Đã nạp DB giả production 1.0.2 (system trống). Tiếp: deploy --plan-only."
 }
 
@@ -264,7 +264,7 @@ cmd_restore_dump() {
       *) [[ -z "$archive" ]] || die "Chỉ nhận MỘT đường dẫn archive."; archive="$a" ;;
     esac
   done
-  [[ -n "$archive" ]] || die "Thiếu đường dẫn archive. Dùng: bash scripts/staging.sh restore-dump <archive trong $STG_DIR/> --yes"
+  [[ -n "$archive" ]] || die "Thiếu đường dẫn archive. Dùng: bash ops/staging.sh restore-dump <archive trong $STG_DIR/> --yes"
   # Lệnh phá hủy DB: KHÔNG hỏi tương tác, chỉ chấp nhận cờ --yes tường minh (không nhận biến môi trường STAGING_ASSUME_YES) để tránh chạy nhầm.
   [[ "$STG_YES" == "1" ]] \
     || die "restore-dump XÓA DB 'realestate' của $STG_MONGO (staging) rồi nạp lại từ dump: bắt buộc thêm --yes."
@@ -294,7 +294,7 @@ JS
   # shellcheck disable=SC2016  # biến phải được mở rộng BÊN TRONG container, nên dùng nháy đơn có chủ ý
   local restore_cmd='mongorestore --config <(printf "password: %s\n" "$MONGO_INITDB_ROOT_PASSWORD") -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin --drop --gzip --archive --nsInclude "realestate.*"'
   docker exec -i "$STG_MONGO" bash -c "$restore_cmd" < "$archive"
-  log "Đã nạp dump vào $STG_MONGO. Tiếp: bash scripts/staging.sh snapshot truoc  (rồi theo scripts/staging/REHEARSAL.md bước 2 trở đi)."
+  log "Đã nạp dump vào $STG_MONGO. Tiếp: bash ops/staging.sh snapshot truoc  (rồi theo ops/staging/REHEARSAL.md bước 2 trở đi)."
 }
 
 # ── snapshot (CHỈ ĐỌC) ───────────────────────────────────────────────────────
@@ -307,14 +307,14 @@ cmd_snapshot() {
   ts="$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$STG_DIR/snapshots"
   out="$STG_DIR/snapshots/${label}-${ts}.json"
-  ( umask 077; stg_mongosh_stdin < scripts/staging/rehearsal-snapshot.js > "$out" ) || { rm -f "$out"; die "Chụp snapshot thất bại."; }
+  ( umask 077; stg_mongosh_stdin < ops/staging/rehearsal-snapshot.js > "$out" ) || { rm -f "$out"; die "Chụp snapshot thất bại."; }
   cat "$out"
   log "Đã lưu $out (chỉ số đếm/index/sổ system, không có dữ liệu cá nhân). So sánh: diff <trước> <sau>."
 }
 
-# ── runner / step3 (phục vụ diễn tập thủ công, scripts/staging/REHEARSAL.md) ──
+# ── runner / step3 (phục vụ diễn tập thủ công, ops/staging/REHEARSAL.md) ──
 cmd_runner() {
-  [[ $# -gt 0 ]] || die "Thiếu lệnh runner. Vd: bash scripts/staging.sh runner status"
+  [[ $# -gt 0 ]] || die "Thiếu lệnh runner. Vd: bash ops/staging.sh runner status"
   prepare_env; need_docker; preflight_config
   compose run --rm --no-deps -T backend node dist/migrations/cli.js "$@"
 }
@@ -322,7 +322,7 @@ cmd_runner() {
 cmd_step3() {
   prepare_env; need_docker; preflight_config
   [[ "$(inspect_field "$STG_MONGO" '{{.State.Running}}' false)" == "true" ]] || die "$STG_MONGO chưa chạy (chạy restore-dump trước)."
-  stg_mongosh_stdin < scripts/staging/rehearsal-step3.js
+  stg_mongosh_stdin < ops/staging/rehearsal-step3.js
 }
 
 # ── deploy ───────────────────────────────────────────────────────────────────

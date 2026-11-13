@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/deploy-post-migrate.test.sh — test shell KHÔNG cần Docker/Mongo thật cho điểm gọi hậu-migrate v1.0.5 (T-17, FR-21/FR-23):
+# ops/tests/deploy-post-migrate.test.sh — test shell KHÔNG cần Docker/Mongo thật cho điểm gọi hậu-migrate v1.0.5 (T-17, FR-21/FR-23):
 #   - thứ tự 10 -> 20 -> 90 (tệp bước THẬT chạy bằng `bash`, `docker` giả export -f), bước lỗi dừng các bước sau, downgrade bỏ qua toàn bộ
 #   - mỗi bước đúng đối số lệnh và đúng tên log: deploy-customer-codes-<TS>.log, deploy-post-up-<TS>.log
 #   - bước 90: cổng chặn đọc `status --json`, TỪ CHỐI (thoát 1, KHÔNG gọi reconcile) khi còn migration pre-up chờ (gồm 010), khi status lỗi
@@ -10,7 +10,7 @@
 #   - deploy.sh không còn logic bù mã ngoài điểm gọi chung; print_recovery/usage nêu "sau bước 90 chỉ sửa tiến" và cách kiểm 011
 # Chỉ kiểm lớp shell (thứ tự, mã thoát, log, đối số, cổng chặn). Chạy với Mongo thật là việc của T-34/T-36.
 #
-# Chạy:  bash scripts/tests/deploy-post-migrate.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
+# Chạy:  bash ops/tests/deploy-post-migrate.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2329,SC2016  # biến/hàm dùng qua eval các hàm trích từ deploy.sh; nháy đơn có chủ ý
 set -uo pipefail
@@ -29,8 +29,8 @@ expect_contains() { if [[ "$3" == *"$2"* ]]; then ok; else fail "$1: không th�
 expect_not_contains() { if [[ "$3" != *"$2"* ]]; then ok; else fail "$1: không được có [$2] trong [$3]"; fi; }
 
 LOG_PREFIX="test"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 extract_fn() { sed -n "/^$1() {/,/^}/p" "$ROOT_DIR/deploy.sh"; }
 extract_oneliner() { grep -E "^$1\(\) \{.*\}$" "$ROOT_DIR/deploy.sh"; }

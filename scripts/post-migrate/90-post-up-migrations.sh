@@ -22,8 +22,8 @@ set -euo pipefail
 
 STEP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_PREFIX="${LOG_PREFIX:-deploy}"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$STEP_DIR/../lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$STEP_DIR/../../ops/lib/ops-common.sh"
 
 : "${ENV_FILE:?Thiếu ENV_FILE (do deploy.sh truyền sang)}"
 : "${LOGS_DIR:?Thiếu LOGS_DIR (do deploy.sh truyền sang)}"

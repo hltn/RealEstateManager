@@ -1,5 +1,5 @@
 // Bước 3 của diễn tập (Architecture 5.10, FR-21): giả lập khoảng giữa 6b và `up`, khi image CŨ v1.0.3 còn phục vụ. CHỈ chạy trên staging:
-//   docker exec -i rhstg_mongo mongosh --quiet --norc --file /dev/stdin < scripts/staging/rehearsal-step3.js   (hoặc: staging.sh step3)
+//   docker exec -i rhstg_mongo mongosh --quiet --norc --file /dev/stdin < ops/staging/rehearsal-step3.js   (hoặc: staging.sh step3)
 // Sau migration 010 (pre-up) và TRƯỚC 011: (a) chèn khách KHÔNG có `customerCode` phải THÀNH CÔNG (unique mã là partial); (b) chèn khách thứ hai
 // trùng SĐT với một khách có sẵn phải LỖI E11000 (unique phone_1 còn, tức 011 chưa chạy). Doc chèn mang `rehearsalMarker: 'T-18'` để nhận ra và
 // dọn sau diễn tập. Chỉ đụng DB `realestate` của container nơi script chạy. In MỘT dòng JSON kết quả; thoát mã 1 (quit(1)) nếu kết quả sai.

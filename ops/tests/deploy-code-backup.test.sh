@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/deploy-code-backup.test.sh — test shell KHÔNG cần Docker/Mongo thật cho phần backup CODE của deploy.sh (bước 2b):
+# ops/tests/deploy-code-backup.test.sh — test shell KHÔNG cần Docker/Mongo thật cho phần backup CODE của deploy.sh (bước 2b):
 #   - hàm THẬT backup_code/manifest_set/manifest_record_deploy_state/manifest_finish trích từ deploy.sh bằng sed, chạy trong repo git TẠM
 #   - tạo bundle (qua `git bundle verify`, chứa đúng nhánh/commit), tag CỤC BỘ pre-deploy-<TS>, manifest (đủ khóa, đúng giá trị, không bí mật)
 #   - KHÔNG giả định tên nhánh (dùng nhánh release-x); HEAD detached vẫn backup (DETACHED=1)
 #   - --plan-only không tạo gì; --no-pull vẫn backup; không có .git thì cảnh báo, không tạo gì
 #   - bundle hỏng (tạo lỗi / verify lỗi) => die, KHÔNG để lại bundle/.partial/tag/manifest; đã có bundle/tag cùng TS => die, không ghi đè
 #   - manifest_finish chốt succeeded/failed + commit mới; manifest_record_deploy_state ghi DB version/image dự phòng
-#   - hợp đồng với scripts/restore.sh: manifest do backup_code ghi qua được read_manifest/validate_manifest THẬT của restore.sh
+#   - hợp đồng với restore.sh: manifest do backup_code ghi qua được read_manifest/validate_manifest THẬT của restore.sh
 #   - thứ tự trong git_update: backup_code chạy TRƯỚC `git pull`
 #   - git_update KHÔNG ép nhánh `production`: pull trên nhánh đang checkout theo upstream; detached/không upstream thì từ chối, gợi ý --no-pull
 #   - tên nhánh ngoài quy tắc (valid_branch_name) => die trước khi tạo bất cứ thứ gì
@@ -16,7 +16,7 @@
 #   - git worktree (.git là FILE) vẫn backup được
 # `docker` giả đặt đầu PATH (docker thật không chạy). Mode 600 của bundle chỉ kiểm trên Linux (Windows không giữ chmod).
 #
-# Chạy:  bash scripts/tests/deploy-code-backup.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
+# Chạy:  bash ops/tests/deploy-code-backup.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2329,SC2016  # biến/hàm dùng qua eval các hàm trích từ deploy.sh
 set -uo pipefail
@@ -42,8 +42,8 @@ export GIT_CONFIG_GLOBAL="$TMP/gitconfig-global" GIT_CONFIG_NOSYSTEM=1
 printf '[core]\n\tautocrlf = false\n[commit]\n\tgpgsign = false\n' > "$GIT_CONFIG_GLOBAL"
 
 LOG_PREFIX="test"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 extract_fn() { sed -n "/^$1() {/,/^}/p" "$2"; }
 for fn in manifest_set backup_code manifest_record_deploy_state manifest_finish git_update; do
@@ -52,13 +52,13 @@ for fn in manifest_set backup_code manifest_record_deploy_state manifest_finish 
   eval "$src"
 done
 # Hàm đọc manifest THẬT của restore.sh (hợp đồng deploy.sh -> restore.sh)
-eval "$(grep -m1 '^readonly MANIFEST_KEYS=' "$ROOT_DIR/scripts/restore.sh")"
+eval "$(grep -m1 '^readonly MANIFEST_KEYS=' "$ROOT_DIR/restore.sh")"
 for fn in resolve_in_backup_dir read_manifest validate_manifest; do
-  src="$(extract_fn "$fn" "$ROOT_DIR/scripts/restore.sh")"
+  src="$(extract_fn "$fn" "$ROOT_DIR/restore.sh")"
   [[ -n "$src" ]] || { echo "Không trích được $fn từ restore.sh" >&2; exit 2; }
   eval "$src"
 done
-eval "$(grep -E '^manifest_path_abs\(\) \{.*\}$' "$ROOT_DIR/scripts/restore.sh")"
+eval "$(grep -E '^manifest_path_abs\(\) \{.*\}$' "$ROOT_DIR/restore.sh")"
 declare -A MF=()
 DB_ARCHIVE=""; BUNDLE_PATH=""
 
@@ -284,7 +284,7 @@ expect_lt "git_update: backup_code TRƯỚC git pull" "$L_BC" "$L_PULL"
 expect_eq "git_update: backup_code gọi ở cả nhánh --no-pull và nhánh pull" "2" "$(grep -cE '^[[:space:]]*backup_code( |$)' <<<"$GU")"
 BC="$(extract_fn backup_code "$ROOT_DIR/deploy.sh")"
 expect_contains "backup_code: plan-only thoát đầu hàm" "(( PLAN_ONLY == 0 )) || return 0" "$(sed -n '2p' <<<"$BC")"
-expect_eq "deploy.sh/restore.sh không có lệnh git push" "0" "$(cat "$ROOT_DIR/deploy.sh" "$ROOT_DIR/scripts/restore.sh" | grep -c 'git push' || true)"
+expect_eq "deploy.sh/restore.sh không có lệnh git push" "0" "$(cat "$ROOT_DIR/deploy.sh" "$ROOT_DIR/restore.sh" | grep -c 'git push' || true)"
 expect_eq "deploy.sh không còn PROD_BRANCH/ép nhánh production" "0" "$(grep -cE 'PROD_BRANCH|origin production' "$ROOT_DIR/deploy.sh" || true)"
 expect_eq "git_update: pull không hardcode remote/nhánh" "0" "$(grep -cE '^[[:space:]]*git pull --ff-only +[A-Za-z]' <<<"$GU" || true)"
 DS="$(cat "$ROOT_DIR/deploy.sh")"
@@ -389,7 +389,7 @@ cat > "$CHILD" <<'EOS'
 # Script con: nạp hàm THẬT từ deploy.sh (backup_code, manifest_*, on_exit, các dòng trap) rồi mô phỏng bị ngắt.
 set -uo pipefail   # KHÔNG -e: `install -m 700` báo lỗi chmod trên Windows (Linux không); hành vi trap không phụ thuộc -e
 source "$CHILD_VARS"
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 for fn in manifest_set backup_code manifest_finish on_exit; do
   eval "$(sed -n "/^$fn() {/,/^}/p" "$ROOT_DIR/deploy.sh")"
 done

@@ -445,7 +445,7 @@ Không có migration. Xóa vĩnh viễn là thao tác dữ liệu có transactio
 | 4 | Bỏ hẳn luồng xin tham gia (X2); chia sẻ khách chỉ bằng **mời** thành viên phụ, tối đa 10, mời được cả người ngoài nhóm; thông báo `CUSTOMER_ASSIGNED` cho người được mời | Xong (code), chờ nghiệm thu |
 | 5 | Bỏ tra trùng SĐT khi nhập form (`phone-lookups`) | Xong (code), chờ nghiệm thu |
 | 6 | Việc hằng ngày và nhắc lịch gửi cho mọi thành viên `careTeam` ACTIVE; tài khoản bị khóa không nhận thông báo/push | Xong (code), chờ nghiệm thu |
-| 7 | Migration 010 (pre-up) và 011 (post-up, một chiều); CLI bù mã khách; thư mục `scripts/post-migrate/` (bước 10, 20, 90); `scripts/staging.sh restore-dump` | Xong (code); diễn tập staging (T-36) đã đạt 2026-11-11, chờ Oniichan xác nhận lên production |
+| 7 | Migration 010 (pre-up) và 011 (post-up, một chiều); CLI bù mã khách; thư mục `scripts/post-migrate/` (bước 10, 20, 90); `ops/staging.sh restore-dump` | Xong (code); diễn tập staging (T-36) đã đạt 2026-11-11, chờ Oniichan xác nhận lên production |
 
 ### 2. Quyết định (đã chốt, chi tiết ở 10 mục 8 và 11 mục 1.1)
 
@@ -532,7 +532,7 @@ Tổng số endpoint: **115** (10 dùng lại từ module cũ, 105 mới; v1.0.4
 | Runner migration | Thuộc tính `phase` (`pre-up` mặc định, `post-up`); `--phase pre-up\|post-up\|all`; từ chối chạy `pre-up` khi còn `post-up` chờ có số nhỏ hơn một `pre-up` chờ |
 | CLI bù mã khách | `crm-customer-codes.cli`: bù mã cho khách cũ (kể cả đã xóa mềm) theo `createdAt, _id`; idempotent, không đổi mã đã cấp; `--dry-run`; không làm gì khi migration 010 chưa áp dụng |
 | `scripts/post-migrate/` | `10-catalog-codes.sh` (bước 8c cũ tách ra), `20-customer-codes.sh`, `90-post-up-migrations.sh`; `deploy.sh` chỉ giữ một hàm `run_post_migrate_steps`; bước nào thoát khác 0 thì deploy thất bại, các bước sau không chạy |
-| `scripts/staging.sh restore-dump` | Nạp bản sao dump production **chỉ vào staging** (T-36); không động production |
+| `ops/staging.sh restore-dump` | Nạp bản sao dump production **chỉ vào staging** (T-36); không động production |
 
 **Thứ tự deploy gộp:** `mongodump` → 007, 008, 009, 010 (pre-up) → `up` → bước 10 → bước 20 → bước 90 (011).
 

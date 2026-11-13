@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/restore.test.sh — test shell KHÔNG cần Docker/Mongo thật cho scripts/restore.sh:
-#   - CHẠY script THẬT (bash scripts/restore.sh ...) trong repo git TẠM, với `docker`/`curl`/`stat` giả đặt ĐẦU PATH (docker thật KHÔNG bao giờ được gọi)
+# ops/tests/restore.test.sh — test shell KHÔNG cần Docker/Mongo thật cho restore.sh:
+#   - CHẠY script THẬT (bash restore.sh ...) trong repo git TẠM, với `docker`/`curl`/`stat` giả đặt ĐẦU PATH (docker thật KHÔNG bao giờ được gọi)
 #   - cách dùng: không tham số, tham số lạ, --db-only + --code-only, --apply thiếu --yes (kể cả đặt biến môi trường: không thay được --yes)
 #   - --list: đúng nội dung, manifest hỏng chỉ báo hỏng, không gọi Docker, không ghi gì
 #   - manifest: thiếu file, thiếu khóa, sai phiên bản/TS/SHA, đường dẫn NGOÀI thư mục backups bị từ chối
@@ -12,7 +12,7 @@
 # Chỉ kiểm lớp shell (thứ tự, mã thoát, đối số, kiểm trước). Chạy với Mongo/Docker thật là việc diễn tập staging.
 # Cần: bash >= 4, git (có `git bundle`), gzip, timeout. Không cần flock (không có thì khóa bị bỏ qua, như deploy.sh).
 #
-# Chạy:  bash scripts/tests/restore.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
+# Chạy:  bash ops/tests/restore.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2016  # biến dùng gián tiếp; nháy đơn có chủ ý (stub nhận lệnh chứa $ chưa mở rộng)
 set -uo pipefail
@@ -34,8 +34,8 @@ expect_rc() { if [[ "$2" == "$3" ]]; then ok; else fail "$1: mã thoát mong đ�
 expect_nonzero() { if [[ "$2" != "0" ]]; then ok; else fail "$1: mong đợi mã thoát khác 0"; fi; }
 
 LOG_PREFIX="test"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.test GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.test
 export GIT_CONFIG_GLOBAL="$TMP/gitconfig-global" GIT_CONFIG_NOSYSTEM=1
@@ -137,9 +137,9 @@ mf() { # <tên file trong backups> [KEY=VAL...]
 mk() {
   N=$((N + 1))
   W="$TMP/w$N"
-  mkdir -p "$W/scripts/lib" "$W/RealEstateBackendApp" "$W/backups"
-  cp "$ROOT_DIR/scripts/restore.sh" "$W/scripts/restore.sh"
-  cp "$ROOT_DIR/scripts/lib/ops-common.sh" "$W/scripts/lib/ops-common.sh"
+  mkdir -p "$W/ops/lib" "$W/RealEstateBackendApp" "$W/backups"
+  cp "$ROOT_DIR/restore.sh" "$W/restore.sh"
+  cp "$ROOT_DIR/ops/lib/ops-common.sh" "$W/ops/lib/ops-common.sh"
   printf 'services: {}\n' > "$W/docker-compose.yml"
   printf 'MONGO_INITDB_ROOT_USERNAME=root\n' > "$W/.env.docker"
   : > "$W/.env"
@@ -165,7 +165,7 @@ EXTRA_ENV=()
 run_r() {
   : > "$CALLS"; rm -f "$CALLS.sig"
   OUT="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" \
-    "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/scripts/restore.sh" "$@" 2>&1)"
+    "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/restore.sh" "$@" 2>&1)"
   RC=$?
 }
 calls() { cat "$CALLS"; }
@@ -540,7 +540,7 @@ run_r --latest --apply --yes
 expect_rc "SIGTERM giữa chừng: mã 143" 143 "$RC"; expect_contains "SIGTERM giữa chừng: hướng dẫn" "RESTORE DỪNG GIỮA CHỪNG" "$OUT"
 EXTRA_ENV=()
 # trap có đủ ba tín hiệu (INT không test động được: tiến trình nền bị bỏ qua SIGINT từ lúc khởi động nên không đặt trap được)
-RT="$(cat "$ROOT_DIR/scripts/restore.sh")"
+RT="$(cat "$ROOT_DIR/restore.sh")"
 expect_contains "restore.sh: trap TERM" "trap 'exit 143' TERM" "$RT"
 expect_contains "restore.sh: trap INT" "trap 'exit 130' INT" "$RT"
 expect_contains "restore.sh: trap HUP" "trap 'exit 129' HUP" "$RT"
@@ -612,19 +612,19 @@ expect_nonzero "mọi manifest đều không có backup Mongo" "$RC"; expect_con
 
 echo "== 21) Chạy từ bản sao ngoài repo: RESTORE_REPO_DIR (B8) =="
 mk
-RT_DIR="$TMP/rt$N"; mkdir -p "$RT_DIR/scripts"
-cp "$ROOT_DIR/scripts/restore.sh" "$RT_DIR/scripts/restore.sh"; cp -r "$ROOT_DIR/scripts/lib" "$RT_DIR/scripts/lib"
+RT_DIR="$TMP/rt$N"; mkdir -p "$RT_DIR/ops"
+cp "$ROOT_DIR/restore.sh" "$RT_DIR/restore.sh"; cp -r "$ROOT_DIR/ops/lib" "$RT_DIR/ops/lib"
 : > "$CALLS"; rm -f "$CALLS.sig"
-OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" RESTORE_REPO_DIR="$W" bash "$RT_DIR/scripts/restore.sh" --latest 2>&1)"; RC=$?
+OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" RESTORE_REPO_DIR="$W" bash "$RT_DIR/restore.sh" --latest 2>&1)"; RC=$?
 expect_rc "bản sao + RESTORE_REPO_DIR: dry-run" 0 "$RC"; expect_contains "bản sao: dry-run đạt" "DRY-RUN: mọi kiểm ĐẠT" "$OUT"
-OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" RESTORE_REPO_DIR="$W" bash "$RT_DIR/scripts/restore.sh" --latest --apply --yes 2>&1)"; RC=$?
+OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" RESTORE_REPO_DIR="$W" bash "$RT_DIR/restore.sh" --latest --apply --yes 2>&1)"; RC=$?
 expect_rc "bản sao + RESTORE_REPO_DIR: apply" 0 "$RC"
 expect_eq "bản sao: code của REPO về commit cũ" "$OLD" "$(git -C "$W" rev-parse HEAD)"
-expect_eq "bản sao: bản sao ngoài repo không bị đụng" "yes" "$([[ -f "$RT_DIR/scripts/restore.sh" ]] && echo yes || echo no)"
-OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" RESTORE_REPO_DIR="$TMP/khong-co-thu-muc" bash "$RT_DIR/scripts/restore.sh" --latest 2>&1)"; RC=$?
+expect_eq "bản sao: bản sao ngoài repo không bị đụng" "yes" "$([[ -f "$RT_DIR/restore.sh" ]] && echo yes || echo no)"
+OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" RESTORE_REPO_DIR="$TMP/khong-co-thu-muc" bash "$RT_DIR/restore.sh" --latest 2>&1)"; RC=$?
 expect_nonzero "RESTORE_REPO_DIR sai thư mục" "$RC"; expect_contains "RESTORE_REPO_DIR sai: báo" "không phải thư mục" "$OUT"
-rm -rf "$RT_DIR/scripts/lib"
-OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" RESTORE_REPO_DIR="$W" bash "$RT_DIR/scripts/restore.sh" --latest 2>&1)"; RC=$?
+rm -rf "$RT_DIR/ops/lib"
+OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" RESTORE_REPO_DIR="$W" bash "$RT_DIR/restore.sh" --latest 2>&1)"; RC=$?
 expect_nonzero "bản sao thiếu lib/" "$RC"; expect_contains "bản sao thiếu lib/: báo" "lib/" "$OUT"
 
 echo "== 22) Nạp commit từ bundle TRƯỚC mọi bước phá hủy (B9) =="
@@ -730,7 +730,7 @@ exit 0
 run_closed() {
   : > "$CALLS"; rm -f "$CALLS.sig"
   OUT="$(cd "$W" && env PATH="$TMP/stubflock:$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" \
-    "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/scripts/restore.sh" "$@" 2>/dev/full)"
+    "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/restore.sh" "$@" 2>/dev/full)"
   RC=$?
 }
 # (a) dump an toàn lỗi: die() in ra stderr đã đóng (printf lỗi) rồi thoát; on_exit vẫn phải bật lại backend
@@ -746,7 +746,7 @@ expect_rc "stderr hỏng + SIGTERM: mã 143" 143 "$RC"
 expect_contains "stderr hỏng + SIGTERM: backend VẪN được bật lại" "up -d --no-build --no-deps backend" "$(calls)"
 expect_lt "stderr hỏng + SIGTERM: stop < bật lại" "$(line_of 'stop backend')" "$(line_of 'up -d --no-build --no-deps backend')"
 # (c) bật lại backend chạy TRƯỚC các lệnh in (kiểm tĩnh trên on_exit thật)
-OE="$(sed -n '/^on_exit() {/,/^}/p' "$ROOT_DIR/scripts/restore.sh")"
+OE="$(sed -n '/^on_exit() {/,/^}/p' "$ROOT_DIR/restore.sh")"
 L_SET="$(grep -n 'set +e' <<<"$OE" | head -n 1 | cut -d: -f1)"
 L_UP="$(grep -n 'compose up -d --no-build --no-deps backend' <<<"$OE" | head -n 1 | cut -d: -f1)"
 L_RED="$(grep -n 'red "' <<<"$OE" | head -n 1 | cut -d: -f1)"
@@ -821,12 +821,12 @@ expect_contains "một chiều: apply in cảnh báo ĐỎ" "CẢNH BÁO MỘT C
 expect_contains "một chiều: nêu mất dữ liệu sau backup" "SẼ MẤT" "$OUT"
 
 echo "== 28) Vòng 3: --list hiện loại backup thủ công; latest_safety_file chặt tên; --skip-safety-db khi Mongo tắt; DB trống không có file an toàn =="
-# (a) --list hiện BACKUP_KIND=manual (backup do scripts/backup.sh tạo); bản deploy thường không có nhãn này
+# (a) --list hiện BACKUP_KIND=manual (backup do backup.sh tạo); bản deploy thường không có nhãn này
 mk; mf "deploy-pre-$TS.manifest" "BACKUP_KIND=manual"
 MF_TS=20260102-080000 mf "deploy-pre-20260102-080000.manifest"
 run_r --list
-expect_rc "--list có BACKUP_KIND" 0 "$RC"; expect_contains "--list: nhãn backup thủ công" "backup thủ công bằng scripts/backup.sh" "$OUT"
-expect_eq "--list: chỉ MỘT manifest mang nhãn thủ công" "1" "$(grep -c 'backup thủ công bằng scripts/backup.sh' <<<"$OUT")"
+expect_rc "--list có BACKUP_KIND" 0 "$RC"; expect_contains "--list: nhãn backup thủ công" "backup thủ công bằng backup.sh" "$OUT"
+expect_eq "--list: chỉ MỘT manifest mang nhãn thủ công" "1" "$(grep -c 'backup thủ công bằng backup.sh' <<<"$OUT")"
 # (b) latest_safety_file chỉ nhận restore-safety-YYYYMMDD-HHMMSS.archive.gz: file lạ tên "lớn hơn" KHÔNG được chọn làm file an toàn mới nhất
 mk; good_gz "$SAFE_NEW"; : > "$W/backups/restore-safety-zzz.archive.gz"; : > "$W/backups/restore-safety-20260101-130000.archive.gz.bak"
 EXTRA_ENV=(STUB_USERS_EXIST=0 STUB_NONEMPTY=orders)
@@ -834,7 +834,7 @@ run_r --latest --skip-safety-db
 expect_rc "safety: file lạ không đè file an toàn thật" 0 "$RC"; expect_contains "safety: dùng đúng file thật" "$SAFE_NEW" "$OUT"
 expect_not_contains "safety: không chọn file lạ" "restore-safety-zzz" "$OUT"
 # đối chứng đột biến: nới lại thành glob cũ thì file lạ bị chọn và ca trên phải hỏng
-sed -i 's/^\( *\)\[\[ "\$b" =~ .* \]\] && last=/\1last=/' "$W/scripts/restore.sh"
+sed -i 's/^\( *\)\[\[ "\$b" =~ .* \]\] && last=/\1last=/' "$W/restore.sh"
 run_r --latest --skip-safety-db
 expect_nonzero "đối chứng: nới tên về glob cũ thì file lạ bị chọn (test bắt được)" "$RC"
 # (c) --skip-safety-db khi container Mongo dừng: chính chốt trong check_skip_safety_db từ chối (thông báo riêng, khác kiểm backup chính)
@@ -844,7 +844,7 @@ expect_nonzero "skip-safety: mongo dừng" "$RC"; expect_contains "skip-safety m
 expect_eq "skip-safety mongo dừng: không đổi gì" "0" "$(mutating_calls)"
 # đối chứng đột biến: bỏ chốt "Mongo đang chạy" của check_skip_safety_db thì thông báo trên biến mất (test bắt được)
 mk; good_gz "$SAFE_NEW"; EXTRA_ENV=(STUB_MONGO_STATE=exited)
-sed -i 's/^  if \[\[ "\$(mongo_state)" != "running" \]\]; then$/  if false; then/' "$W/scripts/restore.sh"
+sed -i 's/^  if \[\[ "\$(mongo_state)" != "running" \]\]; then$/  if false; then/' "$W/restore.sh"
 run_r --latest --apply --yes --skip-safety-db
 expect_not_contains "đối chứng: bỏ chốt Mongo-chạy thì không còn thông báo riêng" "chưa kiểm được backup an toàn và tình trạng DB" "$OUT"
 # (d) DB trống + không có file an toàn: thông báo "không cần thiết", không đổ lỗi "thiếu file"
@@ -929,7 +929,7 @@ run_r --manifest "$W/backups/deploy-pre-20260102-080000.manifest"
 expect_nonzero "--manifest có ký tự điều khiển bị từ chối" "$RC"; [[ "$OUT" != *"$ESC"* ]] && ok || fail "--manifest: đầu ra KHÔNG được chứa ESC"
 expect_eq "--manifest ESC: không gọi lệnh đổi trạng thái" "0" "$(mutating_calls)"
 # đối chứng đột biến: bỏ kiểm ký tự điều khiển thì ESC lọt ra màn hình (test trên bắt được)
-sed -i '/\[\[ ! "\$val" =~ \[\[:cntrl:\]\] \]\]/d' "$W/scripts/restore.sh"
+sed -i '/\[\[ ! "\$val" =~ \[\[:cntrl:\]\] \]\]/d' "$W/restore.sh"
 run_r --list
 [[ "$OUT" == *"$ESC"* ]] && ok || fail "đối chứng: bỏ kiểm ký tự điều khiển mà ESC vẫn không ra => test không phân biệt được"
 EXTRA_ENV=()

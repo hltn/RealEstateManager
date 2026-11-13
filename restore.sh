@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/restore.sh — khôi phục DB Mongo + CODE về phiên bản TRƯỚC một lần deploy (dùng backup do deploy.sh tạo).
+# restore.sh — khôi phục DB Mongo + CODE về phiên bản TRƯỚC một lần deploy (dùng backup do deploy.sh tạo).
 #
-# Chạy ở máy chủ (Ubuntu 24.04), trong repo:   bash scripts/restore.sh <chế-độ> [tùy chọn]
-# (Dùng `bash scripts/restore.sh`, không phụ thuộc bit thực thi.) Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md (mục 6 và 11).
+# Chạy ở máy chủ (Ubuntu 24.04), trong repo:   bash restore.sh <chế-độ> [tùy chọn]
+# (Dùng `bash restore.sh`, không phụ thuộc bit thực thi.) Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md (mục 6 và 11).
 #
 # Chọn bản backup (đúng MỘT trong):
 #   --list              liệt kê các manifest trong backups/ (chỉ đọc, không cần Docker)
@@ -12,7 +12,7 @@
 #   --manifest <file>   dùng manifest cụ thể (phải nằm trong thư mục backups)
 # Tùy chọn:
 #   --apply --yes       CHẠY THẬT. Mặc định là DRY-RUN: chỉ kiểm tra + in kế hoạch, KHÔNG đổi gì. `--yes` là cờ tường minh duy nhất
-#                       (KHÔNG có biến môi trường thay thế, giống `restore-dump` của scripts/staging.sh); thiếu --yes thì từ chối, không đổi gì.
+#                       (KHÔNG có biến môi trường thay thế, giống `restore-dump` của ops/staging.sh); thiếu --yes thì từ chối, không đổi gì.
 #   --db-only           chỉ khôi phục DB (không đụng code/image)
 #   --code-only         chỉ khôi phục code + image (không đụng DB)
 #   --use-image-tag     dùng image backend dự phòng pre-<TS> trong manifest (--no-build) thay vì build lại từ code đã khôi phục; chưa có image đó thì DỪNG
@@ -41,8 +41,8 @@
 #   8) kiểm sau: `system.version` của DB khớp manifest, và code (commit + version) khớp manifest; in số liệu
 # Lỗi từ bước 4 trở đi (hoặc SIGTERM/SIGINT/SIGHUP): IN hướng dẫn, KHÔNG tự rollback tiếp, thoát mã khác 0 (143/130/129 khi bị tín hiệu).
 #
-# Chạy từ BẢN SAO ngoài repo (khi bản code đã khôi phục không còn scripts/restore.sh): chép restore.sh + thư mục lib/ ra chỗ khác rồi đặt
-# RESTORE_REPO_DIR=<repo>. Thư viện lấy từ lib/ cạnh script, repo lấy từ RESTORE_REPO_DIR (mặc định: thư mục cha của scripts/).
+# Chạy từ BẢN SAO ngoài repo (khi bản code đã khôi phục không còn restore.sh): chép restore.sh + thư mục ops/lib/ ra chỗ khác (giữ cấu trúc <bản-sao>/restore.sh và <bản-sao>/ops/lib/) rồi đặt
+# RESTORE_REPO_DIR=<repo>. Thư viện lấy từ ops/lib/ cạnh script, repo lấy từ RESTORE_REPO_DIR (mặc định: thư mục chứa restore.sh).
 #
 # CẢNH BÁO MỘT CHIỀU: nếu deploy đã qua điểm hậu-migrate (manifest POST_UP_REACHED=1: bước 90 = migration 011 một chiều có thể đã chạy) thì khôi phục DB
 # là đường quay lại DUY NHẤT, và MỌI dữ liệu phát sinh sau thời điểm backup Mongo sẽ MẤT. Script in cảnh báo ĐỎ (và vẫn chỉ chạy thật khi có --yes).
@@ -61,15 +61,15 @@ set -euo pipefail
 LOG_PREFIX="restore"
 _self="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || true)"
 [[ -n "$_self" && -f "$_self" ]] || { echo "[restore] LỖI: không resolve được đường dẫn thật của restore.sh (cần readlink -f)." >&2; exit 1; }
-# Thư viện nằm cạnh script (scripts/lib), KHÔNG phụ thuộc repo: nhờ vậy chạy được từ BẢN SAO ngoài repo (xem RESTORE_REPO_DIR). Repo đích:
-# RESTORE_REPO_DIR nếu đặt (dùng khi bản code đã khôi phục không còn scripts/restore.sh), mặc định là thư mục cha của scripts/.
-LIB_DIR="$(cd "$(dirname "$_self")/lib" 2>/dev/null && pwd)" || { echo "[restore] LỖI: không thấy thư mục lib/ cạnh restore.sh (cần scripts/lib/ops-common.sh)." >&2; exit 1; }
-# shellcheck source=scripts/lib/ops-common.sh
+# Thư viện nằm cạnh script (ops/lib), KHÔNG phụ thuộc repo: nhờ vậy chạy được từ BẢN SAO ngoài repo (xem RESTORE_REPO_DIR). Repo đích:
+# RESTORE_REPO_DIR nếu đặt (dùng khi bản code đã khôi phục không còn restore.sh), mặc định là thư mục chứa restore.sh.
+LIB_DIR="$(cd "$(dirname "$_self")/ops/lib" 2>/dev/null && pwd)" || { echo "[restore] LỖI: không thấy thư mục ops/lib/ cạnh restore.sh (cần ops/lib/ops-common.sh)." >&2; exit 1; }
+# shellcheck source=ops/lib/ops-common.sh
 source "$LIB_DIR/ops-common.sh"
 if [[ -n "${RESTORE_REPO_DIR:-}" ]]; then
   ROOT_DIR="$(cd "$RESTORE_REPO_DIR" 2>/dev/null && pwd)" || die "RESTORE_REPO_DIR='$RESTORE_REPO_DIR' không phải thư mục."
 else
-  ROOT_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
+  ROOT_DIR="$(cd "$(dirname "$_self")" && pwd)"
 fi
 
 # Hợp đồng biến giống deploy.sh (staging dùng đường dẫn tương đối riêng; production giữ mặc định).
@@ -117,7 +117,7 @@ readonly MANIFEST_KEYS="MANIFEST_VERSION BACKUP_KIND TS CREATED_AT HOST COMPOSE_
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash scripts/restore.sh (--list | --latest | --manifest <file>) [--apply --yes] [--db-only | --code-only] [--use-image-tag] [--skip-safety-db] [--allow-infra-change] [--help]
+Cách dùng: bash restore.sh (--list | --latest | --manifest <file>) [--apply --yes] [--db-only | --code-only] [--use-image-tag] [--skip-safety-db] [--allow-infra-change] [--help]
 
 Khôi phục DB Mongo + code về phiên bản TRƯỚC một lần deploy, theo manifest/bundle/backup do deploy.sh tạo trong backups/.
 
@@ -136,7 +136,7 @@ Khi chạy thật: (1) chuẩn bị, chưa đổi gì (nạp commit từ bundle 
 restore-safety-<TS> + tag git pre-restore-<TS>; lỗi ở bước 2-3 thì tự bật lại backend) -> (4) khôi phục DB (xóa DB realestate rồi mongorestore --drop
 --nsInclude 'realestate.*') -> (5) git switch <nhánh> + git reset --hard <commit> -> (6) up -d --build (hoặc --use-image-tag: up --no-build)
 -> (7) chờ mongo healthy + backend liveness -> (8) kiểm DB version + code version khớp manifest.
-Chạy từ bản sao ngoài repo: RESTORE_REPO_DIR=<repo> bash <bản-sao>/scripts/restore.sh ... (cần kèm thư mục lib/).
+Chạy từ bản sao ngoài repo: RESTORE_REPO_DIR=<repo> bash <bản-sao>/restore.sh ... (cần kèm thư mục ops/lib/).
 Lỗi từ bước 4 (hoặc bị tín hiệu): in hướng dẫn, KHÔNG tự rollback tiếp. Deploy đã qua bước 90 (migration 011 một chiều): khôi phục DB là đường quay lại DUY NHẤT và mất dữ liệu
 phát sinh sau backup (cảnh báo đỏ). Chi tiết: tài liệu mục 6 và 11.
 EOF
@@ -238,7 +238,7 @@ list_manifests() {
     n=$(( n + 1 ))
     ( list_one "$f" "$n" ) || printf '  %s) %s  [MANIFEST HỎNG: không đọc/kiểm được, xem lỗi ở trên]\n' "$n" "$(strip_ctl "$(basename "$f")")"
   done
-  log "Xem kế hoạch (dry-run):  bash scripts/restore.sh --manifest $BACKUP_DIR/<tên manifest>   |   mới nhất: --latest"
+  log "Xem kế hoạch (dry-run):  bash restore.sh --manifest $BACKUP_DIR/<tên manifest>   |   mới nhất: --latest"
 }
 list_one() { # <file> <số thứ tự> (chạy trong subshell)
   local f="$1" i="$2" db="THIẾU" bu="THIẾU" dbn=""
@@ -252,8 +252,8 @@ list_one() { # <file> <số thứ tự> (chạy trong subshell)
   dbn="${MF[DB_VERSION_BEFORE]:-}"
   [[ "${MF[DB_VERSION_READ]:-0}" == "1" ]] || dbn="(không đọc được)"
   [[ -n "$dbn" ]] || dbn="(chưa có version)"
-  # Nhãn chỉ khi BACKUP_KIND đúng `manual` (khóa này chỉ scripts/backup.sh ghi); giá trị khác không được hiện lại ra màn hình.
-  printf '  %s) %s%s\n' "$i" "$(strip_ctl "$(basename "$f")")" "$([[ "${MF[BACKUP_KIND]:-}" == "manual" ]] && printf '  [loại: manual (backup thủ công bằng scripts/backup.sh)]')"
+  # Nhãn chỉ khi BACKUP_KIND đúng `manual` (khóa này chỉ backup.sh ghi); giá trị khác không được hiện lại ra màn hình.
+  printf '  %s) %s%s\n' "$i" "$(strip_ctl "$(basename "$f")")" "$([[ "${MF[BACKUP_KIND]:-}" == "manual" ]] && printf '  [loại: manual (backup thủ công bằng backup.sh)]')"
   printf '       thời gian: %s | trạng thái deploy: %s | nhánh: %s | commit trước: %s -> sau: %s\n' \
     "${MF[CREATED_AT]:-${MF[TS]}}" "${MF[DEPLOY_STATUS]}" "${MF[BRANCH]:-(detached)}" "${MF[OLD_COMMIT]:0:12}" "${MF[NEW_COMMIT]:+${MF[NEW_COMMIT]:0:12}}"
   printf '       version app: %s -> %s | version DB trước deploy: %s\n' "${MF[APP_VERSION_OLD]:-?}" "${MF[APP_VERSION_NEW]:-?}" "$dbn"
@@ -271,7 +271,7 @@ latest_manifest() {
   for f in "$base"/deploy-pre-*.manifest; do
     [[ -f "$f" ]] && files+=("$f")    # glob đã sắp theo tên; TS dạng YYYYMMDD-HHMMSS nên tên lớn nhất = mới nhất
   done
-  (( ${#files[@]} > 0 )) || die "Không có manifest nào trong $BACKUP_DIR/ (bản deploy cũ chưa tạo manifest). Dùng: bash scripts/restore.sh --list"
+  (( ${#files[@]} > 0 )) || die "Không có manifest nào trong $BACKUP_DIR/ (bản deploy cũ chưa tạo manifest). Dùng: bash restore.sh --list"
   for (( i=${#files[@]}-1; i>=0; i-- )); do
     f="${files[i]}"
     if (( CODE_ONLY == 0 )) && ! grep -q '^MONGO_BACKUP_FILE=.' "$f" 2>/dev/null; then
@@ -475,7 +475,7 @@ run_prechecks() {
   if ( require_free_disk_gb "$DEPLOY_MIN_FREE_GB" ) >/dev/null 2>&1; then
     pass "đủ dung lượng đĩa (>= ${DEPLOY_MIN_FREE_GB} GB)"
   else
-    bad "không đủ dung lượng đĩa (< ${DEPLOY_MIN_FREE_GB} GB ở repo hoặc thư mục dữ liệu Docker): chạy lại 'bash scripts/check-disk.sh' để xem chi tiết"
+    bad "không đủ dung lượng đĩa (< ${DEPLOY_MIN_FREE_GB} GB ở repo hoặc thư mục dữ liệu Docker): chạy lại 'bash ops/check-disk.sh' để xem chi tiết"
   fi
 }
 
@@ -692,7 +692,7 @@ print_guidance() {
     echo "   (luôn kèm --nsInclude 'realestate.*'). Không dùng 'docker compose down -v' (xóa vĩnh viễn dữ liệu)."
     echo "   LƯU Ý khi chạy lại: DB lúc này dở dang nên backup an toàn mới sẽ KHÔNG hợp lệ (thiếu users) và làm restore từ chối. Thêm --skip-safety-db"
     echo "   (vẫn cần --apply --yes): bỏ qua bước dump lại, dùng backup an toàn ĐÃ CÓ ở trên; lệnh đầy đủ:"
-    echo "     bash scripts/restore.sh --manifest ${MANIFEST_PATH#"$ROOT_DIR"/} --apply --yes --skip-safety-db"
+    echo "     bash restore.sh --manifest ${MANIFEST_PATH#"$ROOT_DIR"/} --apply --yes --skip-safety-db"
     echo "   (nếu lần chạy trước dùng thêm --db-only/--code-only/--use-image-tag thì giữ nguyên các cờ đó)"
     (( DB_ONLY == 1 )) || { echo; echo "4) $(lag_warning_text)"; }
   } >&2
@@ -802,7 +802,7 @@ apply_restore() {
   [[ -z "$SAFETY_TAG" ]]  || log "Tag an toàn của code trước restore: $SAFETY_TAG"
   if (( DB_ONLY == 0 )); then red "$(lag_warning_text)"; fi
   log "Đưa lại bản trước restore nếu cần: DB từ $SAFETY_FILE (tài liệu mục 6, --nsInclude 'realestate.*'); code: git switch <nhánh> && git reset --hard ${SAFETY_TAG:-<tag>}."
-  log "Nhắc: bản code cũ có thể không có scripts/restore.sh (hoặc có bản cũ hơn). Khi cần chạy lại: (a) đưa code về bản mới (git reset --hard $( [[ -n "$SAFETY_TAG" ]] && echo "$SAFETY_TAG" || echo '<commit mới>')) rồi chạy scripts/restore.sh; hoặc (b) chạy từ BẢN SAO ngoài repo đã chép từ trước: RESTORE_REPO_DIR=$ROOT_DIR bash <bản-sao>/scripts/restore.sh ... (bản sao gồm restore.sh + thư mục lib/; xem $DOC mục 6.1)."
+  log "Nhắc: bản code cũ có thể không có restore.sh (hoặc có bản cũ hơn). Khi cần chạy lại: (a) đưa code về bản mới (git reset --hard $( [[ -n "$SAFETY_TAG" ]] && echo "$SAFETY_TAG" || echo '<commit mới>')) rồi chạy restore.sh; hoặc (b) chạy từ BẢN SAO ngoài repo đã chép từ trước: RESTORE_REPO_DIR=$ROOT_DIR bash <bản-sao>/restore.sh ... (bản sao gồm restore.sh + thư mục ops/lib/; xem $DOC mục 6.1)."
 }
 
 # ── Chạy ─────────────────────────────────────────────────────────────────────
@@ -856,7 +856,7 @@ main() {
   [[ "$DUMP_TIMEOUT" =~ ^[0-9]+$ && "$RESTORE_TIMEOUT" =~ ^[0-9]+$ && "$OPS_EXEC_TIMEOUT" =~ ^[0-9]+$ ]] || die "DUMP_TIMEOUT/RESTORE_TIMEOUT/OPS_EXEC_TIMEOUT phải là số nguyên (giây)."
 
   cd "$ROOT_DIR"
-  [[ -f docker-compose.yml ]] || die "Không thấy docker-compose.yml: chạy script từ repo (scripts/restore.sh nằm trong repo)."
+  [[ -f docker-compose.yml ]] || die "Không thấy docker-compose.yml: chạy script từ repo (restore.sh nằm trong repo)."
 
   if [[ "$ACTION" == "list" ]]; then list_manifests; return 0; fi
 
@@ -883,7 +883,7 @@ main() {
   if (( APPLY == 0 )); then
     echo
     log "DRY-RUN: mọi kiểm ĐẠT, CHƯA đổi gì. Chạy thật (nhớ đọc kỹ cảnh báo ở trên):"
-    log "  bash scripts/restore.sh --manifest ${MANIFEST_PATH#"$ROOT_DIR"/}$( (( DB_ONLY == 1 )) && printf ' --db-only'; (( CODE_ONLY == 1 )) && printf ' --code-only'; (( USE_IMAGE_TAG == 1 )) && printf ' --use-image-tag'; (( SKIP_SAFETY_DB == 1 )) && printf ' --skip-safety-db'; (( ALLOW_INFRA_CHANGE == 1 )) && printf ' --allow-infra-change' ) --apply --yes"
+    log "  bash restore.sh --manifest ${MANIFEST_PATH#"$ROOT_DIR"/}$( (( DB_ONLY == 1 )) && printf ' --db-only'; (( CODE_ONLY == 1 )) && printf ' --code-only'; (( USE_IMAGE_TAG == 1 )) && printf ' --use-image-tag'; (( SKIP_SAFETY_DB == 1 )) && printf ' --skip-safety-db'; (( ALLOW_INFRA_CHANGE == 1 )) && printf ' --allow-infra-change' ) --apply --yes"
     return 0
   fi
 

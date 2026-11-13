@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/tests/ops-common.test.sh — test shell KHÔNG cần Docker/Mongo thật cho:
-#   - inspect_field, nonempty_collections, existing_collections (scripts/lib/ops-common.sh)
+# ops/tests/ops-common.test.sh — test shell KHÔNG cần Docker/Mongo thật cho:
+#   - inspect_field, nonempty_collections, existing_collections (ops/lib/ops-common.sh)
 #   - classify_db, auto_reconcile (deploy.sh)
 # Hàm được lấy từ file thật (source ops-common.sh; trích classify_db/auto_reconcile/runner_cmd_hint từ deploy.sh bằng sed),
 # KHÔNG chép tay. `docker` được thay bằng stub trong thư mục tạm (đưa lên đầu PATH, xóa khi xong): stub giả lập đầu ra của
@@ -9,7 +9,7 @@
 # (phân tích đầu ra, fail-closed, bảng quyết định backup), KHÔNG kiểm đoạn JS chạy trong mongosh: phần đó cần Mongo thật
 # (xem tài liệu docs/01_Infrastructure/06_Production_Deploy.md mục 11.2).
 #
-# Chạy:  bash scripts/tests/ops-common.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
+# Chạy:  bash ops/tests/ops-common.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2329,SC2016,SC2032,SC2033  # biến/hàm được dùng qua eval các hàm trích từ deploy.sh; nháy đơn có chủ ý
 set -uo pipefail
@@ -75,9 +75,9 @@ STUB
 chmod +x "$TMP/bin/docker"
 export PATH="$TMP/bin:$PATH"
 
-# shellcheck source=scripts/lib/ops-common.sh
+# shellcheck source=ops/lib/ops-common.sh
 LOG_PREFIX="test"
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 OPS_EXEC_TIMEOUT=20
 
 # Trích hàm từ deploy.sh (không source cả file: nó chạy main khi được source).
@@ -194,7 +194,7 @@ check_auto "không backup, cờ 0, classify EMPTY (không được tin)" 0 1 "" 
 
 # ── m4: JS của nonempty_collections phải dùng findOne và KHÔNG dùng estimatedDocumentCount ───────────────────────────────
 # (estimatedDocumentCount đọc số đếm trong metadata, có thể về 0 sau kill -9 mongod => coi DB có dữ liệu là trống => bỏ qua backup oan.)
-nonempty_src="$(sed -n '/^nonempty_collections() {/,/^}/p' "$ROOT_DIR/scripts/lib/ops-common.sh")"
+nonempty_src="$(sed -n '/^nonempty_collections() {/,/^}/p' "$ROOT_DIR/ops/lib/ops-common.sh")"
 [[ -n "$nonempty_src" ]] || fail "không trích được nonempty_collections từ ops-common.sh"
 expect_contains "nonempty_collections dùng findOne" "findOne(" "$nonempty_src"
 expect_eq "nonempty_collections không dùng estimatedDocumentCount" "0" "$([[ "$nonempty_src" == *estimatedDocumentCount* ]] && echo 1 || echo 0)"

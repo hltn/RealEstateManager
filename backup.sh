@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# scripts/backup.sh — backup THỦ CÔNG DB + code của nhánh đang checkout (tách từ deploy.sh: backup_mongo + backup_code + tag image).
+# backup.sh — backup THỦ CÔNG DB + code của nhánh đang checkout (tách từ deploy.sh: backup_mongo + backup_code + tag image).
 #
 # Chạy ở máy chủ, trong thư mục repo:
-#   bash scripts/backup.sh [--db-only | --code-only] [--no-image] [--help]
-# (Dùng `bash scripts/backup.sh`, không phụ thuộc bit thực thi.) Không git pull, không build, không up, không migrate, KHÔNG đụng stack đang chạy:
+#   bash backup.sh [--db-only | --code-only] [--no-image] [--help]
+# (Dùng `bash backup.sh`, không phụ thuộc bit thực thi.) Không git pull, không build, không up, không migrate, KHÔNG đụng stack đang chạy:
 # chỉ ĐỌC từ Mongo (mongodump) và git (bundle), ghi file vào ./backups (quyền 600/700) và gắn thẻ image/tag.
 #
-# Mặc định tạo ĐỦ BỘ, cùng định dạng với deploy.sh nên scripts/restore.sh dùng được ngay (--list / --manifest / --latest):
+# Mặc định tạo ĐỦ BỘ, cùng định dạng với deploy.sh nên restore.sh dùng được ngay (--list / --manifest / --latest):
 #   backups/deploy-pre-<TS>.archive.gz        mongodump DB realestate (kiểm cả nội dung: > 0 byte, gzip hợp lệ, có realestate.users)
 #   backups/deploy-code-pre-<TS>.bundle       git bundle của nhánh/HEAD hiện tại (đã `git bundle verify`)
 #   tag cục bộ  pre-deploy-<TS>               tại commit hiện tại (KHÔNG push)
@@ -29,7 +29,7 @@
 # Backup nằm cùng ổ đĩa không phải backup thật: chép ra NGOÀI máy chủ (scp/rclone).
 #
 # Biến môi trường tùy chọn (không bí mật): DUMP_TIMEOUT (giây, mặc định 900), OPS_EXEC_TIMEOUT (mặc định 300), BACKUP_MIN_FREE_GB (mặc định 2),
-#   MONGO_CONTAINER, BACKEND_CONTAINER, và các biến staging DEPLOY_* (do scripts/staging.sh đặt, như deploy.sh).
+#   MONGO_CONTAINER, BACKEND_CONTAINER, và các biến staging DEPLOY_* (do ops/staging.sh đặt, như deploy.sh).
 # Mã thoát: 0 ok | 1 lỗi (kể cả --db-only khi DB trống) | 2 sai tham số. Bị ngắt: 143 (TERM) / 130 (INT) / 129 (HUP), có dọn file/tag đã tạo.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -37,9 +37,9 @@ set -euo pipefail
 LOG_PREFIX="backup"
 _self="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || true)"
 [[ -n "$_self" && -f "$_self" ]] || { echo "[backup] LỖI: không resolve được đường dẫn thật của backup.sh (cần readlink -f)." >&2; exit 1; }
-ROOT_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+ROOT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 # Hợp đồng môi trường giống deploy.sh (staging.sh đặt các biến DEPLOY_*; production không đặt gì). Cả 4 biến + NINE_ROUTER_CONTAINER đều được
 # check_staging_vars (ops-common) đọc để chặn biến staging đặt ngoài wrapper, nên KHÔNG xóa dù backup.sh không dùng trực tiếp.
@@ -63,7 +63,7 @@ DONE=0   # =1 khi manifest (hoặc archive ở --db-only) đã ghi xong: lúc đ
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash scripts/backup.sh [--db-only | --code-only] [--no-image] [--help]
+Cách dùng: bash backup.sh [--db-only | --code-only] [--no-image] [--help]
 
 Backup THỦ CÔNG (không pull/build/up/migrate, không đụng stack đang chạy). Mặc định tạo đủ bộ trong ./backups, cùng định dạng với deploy.sh:
   deploy-pre-<TS>.archive.gz   mongodump DB realestate (đã kiểm nội dung)
@@ -76,7 +76,7 @@ Backup THỦ CÔNG (không pull/build/up/migrate, không đụng stack đang ch�
   --no-image   không gắn thẻ image backend.
   -h, --help   Hiện trợ giúp này.
 
-Khôi phục: bash scripts/restore.sh --list ; bash scripts/restore.sh --latest   (mặc định dry-run; chạy thật cần --apply --yes).
+Khôi phục: bash restore.sh --list ; bash restore.sh --latest   (mặc định dry-run; chạy thật cần --apply --yes).
 Biến tùy chọn: DUMP_TIMEOUT (900), OPS_EXEC_TIMEOUT (300), BACKUP_MIN_FREE_GB (2). Chi tiết: tài liệu mục 6.2.
 EOF
 }
@@ -186,7 +186,7 @@ precheck() {
     warn "HEAD đang detached tại ${commit:0:12}: bundle/tag vẫn tạo theo commit này, manifest ghi DETACHED=1."
   fi
   if (( P_DETACHED == 0 )) && ! valid_branch_name "$P_BRANCH"; then
-    die "Tên nhánh '$P_BRANCH' có ký tự/dạng mà scripts/restore.sh không chấp nhận (chỉ A-Z a-z 0-9 . _ - /, không bắt đầu bằng - hoặc /, không chứa '..', '//', không kết thúc bằng '.lock' hay '/'). Đổi tên nhánh (git branch -m) rồi chạy lại. Chưa tạo gì."
+    die "Tên nhánh '$P_BRANCH' có ký tự/dạng mà restore.sh không chấp nhận (chỉ A-Z a-z 0-9 . _ - /, không bắt đầu bằng - hoặc /, không chứa '..', '//', không kết thúc bằng '.lock' hay '/'). Đổi tên nhánh (git branch -m) rồi chạy lại. Chưa tạo gì."
   fi
   if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     P_DIRTY=1
@@ -249,7 +249,7 @@ backup_code() {
   # Đã kiểm ở precheck rằng manifest chưa tồn tại; đặt MANIFEST_FILE ngay trước khi ghi để on_exit dọn được cả manifest "mồ côi" nếu bị ngắt sát lúc này.
   MANIFEST_FILE="${BACKUP_DIR}/deploy-pre-${TS}.manifest"
   manifest_write "$MANIFEST_FILE" \
-    "# Backup THỦ CÔNG bằng scripts/backup.sh (không phải lần deploy). Khôi phục: bash scripts/restore.sh --manifest ${MANIFEST_FILE}" \
+    "# Backup THỦ CÔNG bằng backup.sh (không phải lần deploy). Khôi phục: bash restore.sh --manifest ${MANIFEST_FILE}" \
     "MANIFEST_VERSION=1" \
     "BACKUP_KIND=manual" \
     "TS=${TS}" \
@@ -281,7 +281,7 @@ backup_code() {
     "FINISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     || die "Không ghi được manifest $MANIFEST_FILE."
   DONE=1
-  log "Manifest: $MANIFEST_FILE (khôi phục: bash scripts/restore.sh --manifest $MANIFEST_FILE)"
+  log "Manifest: $MANIFEST_FILE (khôi phục: bash restore.sh --manifest $MANIFEST_FILE)"
 }
 
 main() {

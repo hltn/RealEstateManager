@@ -1,5 +1,5 @@
 // Chụp "ảnh" CHỈ ĐỌC của DB `realestate` để so TRƯỚC/SAU khi diễn tập deploy bằng bản sao dump production (FR-21, Architecture 5.10).
-// Chạy bằng mongosh TRONG container staging (rhstg_mongo) qua `bash scripts/staging.sh snapshot <nhãn>`; xác thực root từ biến môi trường
+// Chạy bằng mongosh TRONG container staging (rhstg_mongo) qua `bash ops/staging.sh snapshot <nhãn>`; xác thực root từ biến môi trường
 // của container (mật khẩu không lên dòng lệnh). KHÔNG ghi gì vào DB. KHÔNG in dữ liệu cá nhân: chỉ SỐ ĐẾM, spec index, và _id/trường vô hướng
 // của doc `system` (version/sổ migration). Đầu ra stdout là ĐÚNG MỘT khối JSON (khóa sắp xếp ổn định) để `diff` được.
 db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);

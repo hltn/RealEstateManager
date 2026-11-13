@@ -115,7 +115,7 @@ services:
   # Docker Hub/quay.io không còn pull được. Chainguard free chỉ có tag `latest` => KHUYẾN NGHỊ production:
   # pin digest qua MINIO_IMAGE=cgr.dev/chainguard/minio@sha256:<digest> để deploy tái lập được và
   # không bị đổi phiên bản âm thầm khi `pull`. Digest phải là của bản ĐANG CHẠY: lấy bằng
-  # `bash scripts/print-image-digests.sh` (tài liệu mục 12).
+  # `bash ops/print-image-digests.sh` (tài liệu mục 12).
   # Credential BẮT BUỘC từ env (không có mặc định). Không publish cổng 9000/9001; backend vào qua
   # http://minio:9000. Trình duyệt tải ảnh/export qua S3_PUBLIC_ENDPOINT (hostname công khai Cloudflare
   # Tunnel trỏ tới http://minio:9000), xem tài liệu mục "S3_PUBLIC_ENDPOINT".
