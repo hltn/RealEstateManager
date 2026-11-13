@@ -6,7 +6,7 @@ Công nghệ: React 19, TypeScript, Vite, Tailwind CSS 4, React Router, TanStack
 
 ## Chạy thử cục bộ
 
-Yêu cầu: Node.js 20 trở lên, đã chạy `npm install` trong thư mục này.
+Yêu cầu: Node.js 24.18.1 (khớp `.nvmrc` và Dockerfile), đã chạy `npm install` trong thư mục này.
 
 ```bash
 cd RealEstateAdminApp

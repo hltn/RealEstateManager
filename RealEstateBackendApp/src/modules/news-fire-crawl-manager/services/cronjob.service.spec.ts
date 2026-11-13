@@ -19,6 +19,7 @@ jest.mock('fs', () => ({
   existsSync: jest.fn(),
   readFileSync: jest.fn(),
   writeFileSync: jest.fn(),
+  mkdirSync: jest.fn(),
 }));
 
 describe('CronjobService', () => {

@@ -45,15 +45,19 @@ export class CronjobService implements OnApplicationBootstrap {
     return this.configService.get<string>('CRON_CONFIG_FILE') || path.resolve(process.cwd(), '.env');
   }
 
-  /** Đọc trực tiếp file bind-mount vì process.env không đổi sau khi runtime sửa .env. */
+  /**
+   * Đọc trực tiếp file cấu hình cron (CRON_CONFIG_FILE, thường nằm trong volume /app/state)
+   * vì process.env không đổi sau khi runtime ghi file.
+   * File thiếu (lần chạy đầu) hoặc khóa rỗng/hỏng => trả undefined để caller rơi về biến env.
+   */
   private loadConfigFromEnvFile(): { isActive?: string; frequency?: string } {
     try {
       const envPath = this.getCronConfigFilePath();
       if (!fs.existsSync(envPath)) return {};
       const content = fs.readFileSync(envPath, 'utf8');
       return {
-        isActive: content.match(/^DAILY_CRAWLER_ACTIVE=(.*)$/m)?.[1]?.trim(),
-        frequency: content.match(/^DAILY_CRAWLER_FREQUENCY=(.*)$/m)?.[1]?.trim(),
+        isActive: content.match(/^DAILY_CRAWLER_ACTIVE=(.*)$/m)?.[1]?.trim() || undefined,
+        frequency: content.match(/^DAILY_CRAWLER_FREQUENCY=(.*)$/m)?.[1]?.trim() || undefined,
       };
     } catch (error: any) {
       this.logger.error('Failed to load persistent cron configuration', error?.stack);
@@ -115,12 +119,14 @@ export class CronjobService implements OnApplicationBootstrap {
   }
 
   /**
-   * Lưu cấu hình ra file .env ở thư mục gốc của project (nơi được Docker mount).
+   * Lưu cấu hình ra file CRON_CONFIG_FILE (volume /app/state/cron.env khi chạy Docker;
+   * mặc định cwd/.env khi dev). Tạo thư mục cha nếu thiếu.
    * Dùng regex để replace (nếu có) hoặc append (nếu chưa có).
    */
   private saveConfigToEnv(isActive: boolean, frequency: string) {
     try {
       const envPath = this.getCronConfigFilePath();
+      fs.mkdirSync(path.dirname(envPath), { recursive: true });
       let envContent = '';
 
       if (fs.existsSync(envPath)) {
@@ -134,19 +140,19 @@ export class CronjobService implements OnApplicationBootstrap {
       if (activeRegex.test(envContent)) {
         envContent = envContent.replace(activeRegex, `DAILY_CRAWLER_ACTIVE=${isActive}`);
       } else {
-        envContent += `\nDAILY_CRAWLER_ACTIVE=${isActive}`;
+        envContent = `${envContent.trimEnd()}\nDAILY_CRAWLER_ACTIVE=${isActive}`;
       }
 
       if (freqRegex.test(envContent)) {
         envContent = envContent.replace(freqRegex, `DAILY_CRAWLER_FREQUENCY=${frequency}`);
       } else {
-        envContent += `\nDAILY_CRAWLER_FREQUENCY=${frequency}`;
+        envContent = `${envContent.trimEnd()}\nDAILY_CRAWLER_FREQUENCY=${frequency}`;
       }
 
       fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
-      this.logger.log(`Saved cron configuration to .env`);
+      this.logger.log(`Saved cron configuration to ${envPath}`);
     } catch (error: any) {
-      this.logger.error('Failed to save cron configuration to .env', error?.stack);
+      this.logger.error('Failed to save cron configuration file', error?.stack);
     }
   }
 
