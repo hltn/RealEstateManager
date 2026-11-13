@@ -52,7 +52,7 @@ for p in ops/lib/ops-common.sh ops/check-disk.sh ops/print-image-digests.sh ops/
          ops/staging/shims/chown ops/staging/shims/docker ops/staging/shims/install ops/staging/shims/stat \
          ops/tests/backup.test.sh ops/tests/deploy-catalog-codes.test.sh ops/tests/deploy-code-backup.test.sh \
          ops/tests/deploy-post-migrate.test.sh ops/tests/ops-common.test.sh ops/tests/restore.test.sh ops/tests/staging.test.sh \
-         ops/tests/layout.test.sh; do
+         ops/tests/layout.test.sh ops/verify-env.sh ops/tests/verify-env.test.sh; do
   expect_file "[FR-02] $p" "$p"
 done
 
@@ -84,11 +84,11 @@ for s in "$ROOT_DIR"/scripts/post-migrate/*.sh; do
 done
 
 echo "== 7) [FR-03] cú pháp bash hợp lệ + --help chạy được từ cwd khác =="
-for f in deploy.sh backup.sh restore.sh ops/check-disk.sh ops/print-image-digests.sh ops/staging.sh scripts/run-migration.sh \
+for f in deploy.sh backup.sh restore.sh ops/check-disk.sh ops/print-image-digests.sh ops/staging.sh ops/verify-env.sh scripts/run-migration.sh \
          ops/lib/ops-common.sh scripts/post-migrate/10-catalog-codes.sh scripts/post-migrate/20-customer-codes.sh scripts/post-migrate/90-post-up-migrations.sh; do
   if bash -n "$ROOT_DIR/$f" 2>/dev/null; then ok; else fail "[FR-03] bash -n $f lỗi cú pháp"; fi
 done
-for f in deploy.sh backup.sh restore.sh scripts/run-migration.sh ops/check-disk.sh; do
+for f in deploy.sh backup.sh restore.sh scripts/run-migration.sh ops/check-disk.sh ops/verify-env.sh; do
   out="$(cd "$TMP" && env -i PATH="$PATH" HOME="${HOME:-/}" bash "$ROOT_DIR/$f" --help 2>&1)"; rc=$?
   expect_eq "[FR-03] bash $f --help thoát 0 (nạp được lib ở đường dẫn mới)" "0" "$rc"
   [[ -n "$out" ]] && ok || fail "[FR-03] $f --help không in gì"

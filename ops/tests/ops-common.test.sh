@@ -250,5 +250,24 @@ expect_eq "in_git_repo: thư mục thường" "no" "$(cd "$IGR/plain" && if in_g
 expect_eq "in_git_repo: repo" "yes" "$(cd "$IGR/repo" && if in_git_repo; then echo yes; else echo no; fi)"
 expect_eq "in_git_repo: worktree (.git là file)" "yes" "$(cd "$IGR/wt" && if in_git_repo; then echo yes; else echo no; fi)"
 
+# ── list_placeholder_vars (T-27): bắt placeholder kể cả BÊN TRONG URL; không báo nhầm mật khẩu/fragment/comment ──────────
+PHF="$TMP/ph.env"
+ph() { printf '%s\n' "$1" > "$PHF"; list_placeholder_vars "$PHF" | paste -sd ' ' -; }
+expect_eq "placeholder: toàn bộ giá trị <...>"                      "K"  "$(ph 'K=<openssl rand -hex 16>')"
+expect_eq "placeholder: host mẫu https://<...>"                     "K"  "$(ph 'K=https://<domain>')"
+expect_eq "placeholder: cụm có khoảng trắng"                        "K"  "$(ph 'K=abc<openssl rand -hex 8>')"
+expect_eq "placeholder: <REDIS_PASSWORD> trong authority của URL"   "K"  "$(ph 'K=redis://:<REDIS_PASSWORD>@redis:6379')"
+expect_eq "placeholder: user và pass mẫu trong URL Mongo"           "K"  "$(ph 'K=mongodb://<U>:<P>@mongo:27017/realestate?authSource=admin')"
+expect_eq "placeholder: <...> ở một đoạn đường dẫn URL"             "K"  "$(ph 'K=mongodb://u:p@mongo:27017/<db>?x=1')"
+expect_eq "placeholder: bọc nháy vẫn bắt"                           "K"  "$(ph 'K="redis://:<REDIS_PASSWORD>@redis:6379"')"
+expect_eq "placeholder: URL thật không bị báo"                      ""   "$(ph 'K=redis://:abc123@redis:6379')"
+expect_eq "placeholder: mật khẩu lạ Ab<c>d9 (không URL) không bị báo" ""   "$(ph 'K=Ab<c>d9')"
+expect_eq "placeholder: fragment URL không bị báo"                  ""   "$(ph 'K=https://x.test/cb#frag<z>')"
+expect_eq "placeholder: query URL không bị báo"                     ""   "$(ph 'K=https://x.test/cb?a=<z>')"
+expect_eq "placeholder: dòng comment bị bỏ qua"                     ""   "$(ph '# K=redis://:<REDIS_PASSWORD>@redis:6379')"
+expect_eq "placeholder: chú thích cuối dòng không tính"             ""   "$(ph 'K=abc   # xem <openssl rand -hex 8>')"
+expect_eq "placeholder: khoảng trắng hai đầu được trim"             "K"  "$(ph 'K=   <abc>   ')"
+expect_eq "placeholder: CRLF"                                       "K"  "$(printf 'K=<abc>\r\n' > "$PHF"; list_placeholder_vars "$PHF" | paste -sd ' ' -)"
+
 printf '\nKết quả: %d đạt, %d hỏng.\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

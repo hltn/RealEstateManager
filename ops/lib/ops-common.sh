@@ -47,19 +47,26 @@ require_private_file() {
 #   - bỏ khoảng trắng hai đầu và cặp nháy bao quanh giá trị;
 #   - giá trị là placeholder khi: (1) TOÀN BỘ giá trị là `<...>` (vd `<openssl rand -hex 16>`, `<email-admin>`), hoặc
 #     (2) có dạng URL với host mẫu `://<...>` (vd `https://<hostname-file-cong-khai>`), hoặc
-#     (3) chứa một cụm `<...>` có khoảng trắng bên trong (vd `abc<openssl rand -hex 8>`).
+#     (3) chứa một cụm `<...>` có khoảng trắng bên trong (vd `abc<openssl rand -hex 8>`), hoặc
+#     (4) có dạng URL và cụm `<tên>` (không khoảng trắng) nằm trong phần authority `user:pass@host:port` hoặc là một đoạn đường dẫn
+#         (vd `redis://:<REDIS_PASSWORD>@redis:6379`, `mongodb://<MONGO_ROOT_USERNAME>:<MONGO_ROOT_PASSWORD>@mongo:27017/realestate`).
+#         Phần fragment/query (`https://x/#frag<z>`) KHÔNG bị tính.
 #   Mật khẩu hex theo tài liệu không chứa < >; mật khẩu lạ như `Ab<c>d9` không khớp quy tắc nào nên không bị chặn.
 list_placeholder_vars() {
   local f="$1" line key val
   local re_whole='^[<][^<>]+[>]$' re_url='://[<][^<>]+[>]' re_space='[<][^<>]*[[:space:]][^<>]*[>]'
+  local re_url_auth='^[A-Za-z][A-Za-z0-9+.-]*://[^/?#]*[<][^<>[:space:]]+[>]'
+  local re_url_path='^[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]*/[<][^<>[:space:]]+[>]'
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
     key="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"
-    val="$(sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' <<<"$val")"
+    # Bỏ chú thích cuối dòng (khoảng trắng + `#...`), rồi trim hai đầu; thuần bash (không fork sed cho từng dòng, nhanh trên Windows/CI).
+    val="${val%%[[:space:]]#*}"
+    val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
     if [[ "$val" =~ ^\"(.*)\"$ || "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
     # Dùng [<] [>] (không dùng \< \>: trong regex GNU đó là neo biên từ, không phải ký tự).
-    if [[ "$val" =~ $re_whole || "$val" =~ $re_url || "$val" =~ $re_space ]]; then
+    if [[ "$val" =~ $re_whole || "$val" =~ $re_url || "$val" =~ $re_space || "$val" =~ $re_url_auth || "$val" =~ $re_url_path ]]; then
       printf '%s\n' "$key"
     fi
   done < "$f"
