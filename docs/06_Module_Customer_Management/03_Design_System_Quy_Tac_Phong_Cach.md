@@ -252,3 +252,13 @@ Chép **nguyên tệp** `src/index.css` (đã gồm đủ token, `menu-item*`, f
 | Thanh trượt khoảng (ngân sách) | Không | Làm mới |
 | Toast | Có `react-hot-toast` | Dùng `toast.*`, bỏ `Toast` của Stitch |
 | Bảng, phân trang, skeleton, trạng thái rỗng, công tắc | Có (mục 4–5) | Dùng lại |
+
+## 11. Quy ước đồng bộ giao diện sang prototype `stnd-crm-unified`
+
+> Thuộc FR-13 (v1.0.6). `stnd-crm-unified/` là prototype giao diện, **giữ nguyên làm nơi thiết kế**; không thuộc build, deploy hay CI.
+
+- **Quy tắc:** mọi thay đổi giao diện của `RealEstateAdminApp/` (màn, component, token, lớp Tailwind) phải đồng bộ sang `stnd-crm-unified/` để hai bản thống nhất. Đổi một nơi mà không đồng bộ nơi kia là lệch giao diện.
+- **Ngoại lệ (không đồng bộ):** phần PWA, thông báo đẩy (push) và chế độ standalone vì prototype không có. Ví dụ hộp thoại mời bật thông báo (FR-28) chỉ làm ở Admin App. Phần cài app như FR-27 (nút cài trên Android/iOS) vẫn đồng bộ sang prototype khi prototype có màn tương ứng.
+- **Không đồng bộ:** logic gọi API thật; prototype giữ bề mặt `@crm/api` nhưng chạy trên dữ liệu mock (xem `stnd-crm-unified/README.md`).
+- **Kiểm tra:** `qa-agent` kiểm mục này ở mỗi lượt có đổi giao diện (checklist trong `.claude/agents/qa-agent.md`). Lượt không đổi giao diện thì `git diff --stat -- stnd-crm-unified/` rỗng.
+- **Nơi nhắc:** `README.md` ở gốc repo (mục 6) và `docs/01_Infrastructure/09_So_Do_Cau_Truc_Thu_Muc.md` (checklist cuối).
