@@ -9,6 +9,10 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './queryClient'
 import PwaUpdatePrompt from './pwa/PwaUpdatePrompt.tsx'
 import ChunkLoadErrorNotifier from './pwa/ChunkLoadErrorNotifier.tsx'
+import { startInstallPromptCapture } from './pwa/installPromptCapture'
+
+// Bắt `beforeinstallprompt` TRƯỚC khi React render: sự kiện chỉ bắn một lần và có thể tới trước màn đăng nhập (FR-27)
+startInstallPromptCapture()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
