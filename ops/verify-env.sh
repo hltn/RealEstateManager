@@ -7,12 +7,12 @@
 #
 # Kiểm (lỗi => thoát 1):
 #   1. đủ khóa bắt buộc và không rỗng; có điều kiện: CRM_PII_ENCRYPTION_KEY khi CRM_ENABLED=true,
-#      VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY khi CRM_PUSH_ENABLED=true;
+#      VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY/VAPID_SUBJECT khi CRM_PUSH_ENABLED=true (compose để VAPID_* tùy chọn, nên cùng một quy tắc);
 #   2. không còn khóa cũ: FEATURE_CRM_*, VITE_*, WP_API_URL, WP_USERNAME, WP_APP_PASSWORD, GEMINI_API_KEY, CRAWL_TARGET_URL;
 #   3. không placeholder `<...>` (kể cả BÊN TRONG URL: redis://:<REDIS_PASSWORD>@redis:6379) và digest mẫu của `*_IMAGE`;
 #   4. FRONTEND_URL là origin (scheme://host[:port]) không có `/` cuối; NODE_ENV=production;
 #   5. cờ boolean chỉ nhận đúng `true` hoặc `false` (chữ thường; không 1/yes/on);
-#   6. TRUSTED_PROXY_IP (nếu có) là MỘT IPv4 đơn, không CIDR;
+#   6. TRUSTED_PROXY_IP (nếu có) là MỘT IPv4 đơn, không CIDR, không phải 0.0.0.0; các khóa cổng (FRONTEND_PORT, DEV_*_PORT) là số nguyên 1..65535;
 #   7. MONGODB_URI/REDIS_URL khớp MONGO_ROOT_USERNAME/MONGO_ROOT_PASSWORD/REDIS_PASSWORD (xử lý URL-encode);
 #   8. không khai báo trùng khóa với hai giá trị khác nhau;
 #   9. quyền file 600 (group/other không được đọc). Trên Windows (git-bash/msys) không có quyền POSIX nên chỉ cảnh báo.
@@ -56,10 +56,10 @@ REQUIRED_KEYS=(
   REDIS_PASSWORD REDIS_URL
   S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_BUCKET_ATTACHMENTS S3_BUCKET_EXPORTS
   JWT_SECRET COOKIE_SECRET FRONTEND_URL ADMIN_EMAIL ADMIN_PASSWORD
-  VAPID_SUBJECT CLOUDFLARE_TUNNEL_TOKEN NINE_ROUTER_INITIAL_PASSWORD
+  CLOUDFLARE_TUNNEL_TOKEN NINE_ROUTER_INITIAL_PASSWORD
 )
 # Có mặt trong mẫu nhưng được phép rỗng (bắt buộc có điều kiện, hoặc rỗng = tắt).
-CONDITIONAL_KEYS=(CRM_PII_ENCRYPTION_KEY VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY)
+CONDITIONAL_KEYS=(CRM_PII_ENCRYPTION_KEY VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT)
 # Tùy chọn (có dòng `# optional` trong mẫu, kể cả khi bị comment).
 OPTIONAL_KEYS=(
   REDIS_KEY_PREFIX
@@ -70,15 +70,17 @@ OPTIONAL_KEYS=(
   CRM_FEATURE_ZALO_ZNS CRM_FEATURE_IN_APP_CALL CRM_FEATURE_APPOINTMENT_SYNC CRM_MOCK_REPORTS CRM_MOCK_IMPORT_EXPORT CRM_SWAGGER_ENABLED
   CRM_PII_KEY_VERSION PUSH_ENDPOINT_HOST_ALLOWLIST
   BACKEND_UPSTREAM TRUSTED_PROXY_IP CLIENT_MAX_BODY FRONTEND_PORT API_URL
-  NINE_ROUTER_BIND_ADDR DEV_MONGO_PORT DEV_REDIS_PORT DEV_MINIO_CONSOLE_PORT
+  NINE_ROUTER_BIND_ADDR DEV_MONGO_PORT DEV_REDIS_PORT DEV_MINIO_CONSOLE_PORT DEV_BACKEND_PORT DEV_NODE_ENV
   BACKEND_IMAGE FRONTEND_IMAGE MINIO_IMAGE MONGO_IMAGE REDIS_IMAGE NINE_ROUTER_IMAGE CLOUDFLARED_IMAGE
   DAILY_CRAWLER_ACTIVE DAILY_CRAWLER_FREQUENCY CRON_CONFIG_FILE SETTINGS_CONFIG_FILE
   ACTIVE_AI_PLATFORM OPENROUTER_API_KEY OPENROUTER_AI_PROVIDER OPENROUTER_AI_MODEL MUST1C_API_KEY MUST1C_API_URL MUST1C_MODEL
   NINEROUTER_BASE_URL NINEROUTER_API_KEY NINEROUTER_MODEL COMFYUI_URL FIRECRAWL_API_KEY
   GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REDIRECT_URI GOOGLE_OAUTH_STATE_SECRET
-  DEDUP_THRESHOLD DEDUP_WINDOW_DAYS
+  DEDUP_THRESHOLD DEDUP_WINDOW_DAYS EMBEDDING_MODEL EMBEDDING_DIMENSIONS
   LOG_LEVEL LOG_DIR LOG_RETENTION_DAYS ENABLE_EXTERNAL_LOGGING MAX_LOG_BODY_BYTES
 )
+# Khóa cổng host: số nguyên 1..65535.
+PORT_KEYS=(FRONTEND_PORT DEV_MONGO_PORT DEV_REDIS_PORT DEV_MINIO_CONSOLE_PORT DEV_BACKEND_PORT)
 # Khóa xoay PII theo phiên bản: CRM_PII_ENCRYPTION_KEY_V<n> (không liệt kê hết được).
 PII_VERSIONED_RE='^CRM_PII_ENCRYPTION_KEY_V[0-9]+$'
 # Cờ boolean: chỉ nhận đúng true|false (frontend/entrypoint kiểm chặt; backend nhận thêm 1/yes/on nhưng KHÔNG được dùng).
@@ -214,7 +216,7 @@ if [[ "$(get CRM_ENABLED)" == "true" ]] && ! nonempty CRM_PII_ENCRYPTION_KEY; th
 fi
 if [[ "$(get CRM_PUSH_ENABLED)" == "true" ]]; then
   PUSH_MISSING=""
-  for k in VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY; do nonempty "$k" || PUSH_MISSING+="${PUSH_MISSING:+ }$k"; done
+  for k in VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT; do nonempty "$k" || PUSH_MISSING+="${PUSH_MISSING:+ }$k"; done
   [[ -z "$PUSH_MISSING" ]] || err "CRM_PUSH_ENABLED=true nhưng thiếu hoặc rỗng: $PUSH_MISSING"
 fi
 
@@ -259,8 +261,18 @@ if has TRUSTED_PROXY_IP && [[ -z "${PLACEHOLDER[TRUSTED_PROXY_IP]:-}" ]]; then
   octet='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
   if [[ ! "$ip" =~ ^$octet\.$octet\.$octet\.$octet$ ]]; then
     err "TRUSTED_PROXY_IP phải là MỘT địa chỉ IPv4 đơn (vd 10.213.77.250), không CIDR/dải/hostname."
+  elif [[ "$ip" == "0.0.0.0" ]]; then
+    err "TRUSTED_PROXY_IP không được là 0.0.0.0 (địa chỉ không xác định; phải là IP tĩnh của cloudflared trong subnet realestate_net)."
   fi
 fi
+
+# Cổng host: số nguyên 1..65535 (chuỗi rỗng bỏ qua: compose rơi về mặc định).
+BAD_PORT=""
+for k in "${PORT_KEYS[@]}"; do
+  nonempty "$k" || continue
+  [[ "${VAL[$k]}" =~ ^[0-9]{1,5}$ ]] && (( 10#${VAL[$k]} >= 1 && 10#${VAL[$k]} <= 65535 )) || BAD_PORT+="${BAD_PORT:+ }$k"
+done
+[[ -z "$BAD_PORT" ]] || err "khóa cổng phải là số nguyên 1..65535, sai ở: $BAD_PORT"
 
 # ── 8) MONGODB_URI/REDIS_URL khớp biến thành phần ────────────────────────────
 # Tách userinfo của URI: authority = phần sau `://` đến `/`, `?` hoặc hết; userinfo = phần trước `@` CUỐI của authority.

@@ -296,11 +296,25 @@ echo "== 9) TRUSTED_PROXY_IP: một IPv4 đơn =="
 for v in '10.213.77.0/24' '10.213.77.250/32' '300.1.1.1' '10.0.0' '10.0.0.1.5' 'proxy.local' '::1' '10.0.0.1,10.0.0.2' ''; do
   make_env "$F" "TRUSTED_PROXY_IP=$v"; case_rc "[9] TRUSTED_PROXY_IP=[$v]" 1 "$F"; expect_line_word "[9] [$v]" "TRUSTED_PROXY_IP phải là" "TRUSTED_PROXY_IP"
 done
-for v in 10.213.77.250 1.2.3.4 255.255.255.255 0.0.0.0 192.168.1.1; do
+for v in 10.213.77.250 1.2.3.4 255.255.255.255 192.168.1.1; do
   make_env "$F" "TRUSTED_PROXY_IP=$v"; case_rc "[9] TRUSTED_PROXY_IP=$v hợp lệ" 0 "$F"
 done
 make_env "$F" "-TRUSTED_PROXY_IP"
 case_rc "[9] không đặt TRUSTED_PROXY_IP (tùy chọn) => đạt" 0 "$F"
+# 0.0.0.0 là IPv4 hợp lệ về cú pháp nhưng vô nghĩa làm IP của cloudflared / nguồn tin cậy của nginx.
+make_env "$F" "TRUSTED_PROXY_IP=0.0.0.0"; case_rc "[9] TRUSTED_PROXY_IP=0.0.0.0" 1 "$F"
+expect_line_word "[9] 0.0.0.0" "TRUSTED_PROXY_IP không được là 0.0.0.0" "TRUSTED_PROXY_IP"
+
+# Khóa cổng host: số nguyên 1..65535 (chuỗi rỗng bỏ qua: compose rơi về mặc định).
+for k in FRONTEND_PORT DEV_MONGO_PORT DEV_REDIS_PORT DEV_MINIO_CONSOLE_PORT DEV_BACKEND_PORT; do
+  for v in abc 0 65536 -1 80.5 99999999 '8 0'; do
+    make_env "$F" "$k=$v"; case_rc "[9] $k=[$v]" 1 "$F"; expect_line_word "[9] cổng sai $k=[$v]" "khóa cổng phải là số nguyên" "$k"
+  done
+  for v in 1 80 8080 65535 08080; do
+    make_env "$F" "$k=$v"; case_rc "[9] $k=$v hợp lệ" 0 "$F"
+  done
+  make_env "$F" "$k="; case_rc "[9] $k rỗng (compose dùng mặc định) => đạt" 0 "$F"
+done
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo "== 10) khóa có điều kiện: CRM_PII_ENCRYPTION_KEY, VAPID_* =="
@@ -321,6 +335,15 @@ expect_line_word "[10] thiếu private" "CRM_PUSH_ENABLED=true nhưng" "VAPID_PR
 expect_not_contains "[10] public đã có không bị nêu" "VAPID_PUBLIC_KEY" "$(grep -F 'CRM_PUSH_ENABLED=true nhưng' <<<"$OUT")"
 make_env "$F" "CRM_PUSH_ENABLED=true" "VAPID_PUBLIC_KEY=zq7pub" "VAPID_PRIVATE_KEY=zq7priv"
 case_rc "[10] Push bật, đủ VAPID" 0 "$F"
+# VAPID_SUBJECT: bắt buộc CÓ ĐIỀU KIỆN như hai khóa kia (compose để VAPID_* tùy chọn).
+make_env "$F" "CRM_PUSH_ENABLED=true" "VAPID_PUBLIC_KEY=zq7pub" "VAPID_PRIVATE_KEY=zq7priv" "VAPID_SUBJECT="
+case_rc "[10] Push bật, VAPID_SUBJECT rỗng" 1 "$F"; expect_line_word "[10] thiếu subject" "CRM_PUSH_ENABLED=true nhưng" "VAPID_SUBJECT"
+make_env "$F" "CRM_PUSH_ENABLED=true" "VAPID_PUBLIC_KEY=zq7pub" "VAPID_PRIVATE_KEY=zq7priv" "-VAPID_SUBJECT"
+case_rc "[10] Push bật, không có dòng VAPID_SUBJECT" 1 "$F"
+make_env "$F" "CRM_PUSH_ENABLED=false" "VAPID_SUBJECT="
+case_rc "[10] Push tắt, VAPID_SUBJECT rỗng" 0 "$F"
+make_env "$F" "CRM_PUSH_ENABLED=false" "-VAPID_SUBJECT"
+case_rc "[10] Push tắt, không có dòng VAPID_SUBJECT" 0 "$F"
 make_env "$F" "CRM_PUSH_ENABLED=false"
 case_rc "[10] Push tắt, VAPID rỗng" 0 "$F"
 make_env "$F" "CRM_ENABLED=true" "CRM_PII_ENCRYPTION_KEY=$PII_KEY" "CRM_PUSH_ENABLED=true" "VAPID_PUBLIC_KEY=zq7pub" "VAPID_PRIVATE_KEY=zq7priv" "CRM_ATTACHMENTS_ENABLED=true"
@@ -335,6 +358,7 @@ expect_line_word "[11] gọi tên FOO_BAR" "khóa lạ" "FOO_BAR"; expect_line_w
 make_env "$F" "CRM_PII_ENCRYPTION_KEY_V1=zq7a" "CRM_PII_ENCRYPTION_KEY_V12=zq7b"
 case_rc "[11] CRM_PII_ENCRYPTION_KEY_V<n> hợp lệ" 0 "$F"; expect_not_contains "[11] V<n> không bị coi là lạ" "khóa lạ" "$OUT"
 KNOWN_OPT=(SETTINGS_CONFIG_FILE=/app/state/ai.env CRON_CONFIG_FILE=/app/state/cron.env DEV_MONGO_PORT=27017 DEV_REDIS_PORT=6379 DEV_MINIO_CONSOLE_PORT=9001
+  DEV_BACKEND_PORT=3000 DEV_NODE_ENV=development EMBEDDING_MODEL=openai/text-embedding-3-small EMBEDDING_DIMENSIONS=512
   S3_APP_ACCESS_KEY_ID=app S3_APP_SECRET_ACCESS_KEY=zq7s3app MINIO_IMAGE=cgr.dev/chainguard/minio@sha256:abc MONGO_IMAGE=mongo@sha256:abc
   REDIS_IMAGE=redis@sha256:abc NINE_ROUTER_IMAGE=x@sha256:abc CLOUDFLARED_IMAGE=y@sha256:abc BACKEND_IMAGE=realestatemanager-backend:current
   FRONTEND_IMAGE=realestatemanager-frontend:current FRONTEND_PORT=8080 TRUST_PROXY=1 AUTH_LOGIN_THROTTLE_LIMIT=100 NINE_ROUTER_BIND_ADDR=127.0.0.1 S3_ENDPOINT=http://minio:9000)
@@ -416,7 +440,7 @@ done
 # ─────────────────────────────────────────────────────────────────────────────
 echo "== 15) đồng bộ danh sách khóa của script với .env.example (chống lệch) =="
 # Phân loại theo quy ước của mẫu: khóa có dòng `# optional` ở khối chú thích NGAY TRƯỚC (kể cả khóa bị comment `# KEY=`) là tùy chọn;
-# khóa không comment, không có `# optional` là bắt buộc (gồm 3 khóa có điều kiện CRM_PII_ENCRYPTION_KEY, VAPID_PUBLIC/PRIVATE_KEY).
+# khóa không comment, không có `# optional` là bắt buộc (gồm 4 khóa có điều kiện CRM_PII_ENCRYPTION_KEY, VAPID_PUBLIC/PRIVATE_KEY, VAPID_SUBJECT).
 EX_REQ=(); EX_OPT=(); opt=0
 while IFS= read -r line || [[ -n "$line" ]]; do
   line="${line%$'\r'}"
@@ -435,7 +459,7 @@ srt() { printf '%s\n' "$@" | LC_ALL=C sort -u | paste -sd ' ' -; }
 SC_REQ="$(srt "${REQUIRED_KEYS[@]}" "${CONDITIONAL_KEYS[@]}")"; MZ_REQ="$(srt "${EX_REQ[@]}")"
 expect_eq "[15] khóa bắt buộc của script (gồm có điều kiện) = khóa không-optional của .env.example" "$MZ_REQ" "$SC_REQ"
 expect_eq "[15] khóa tùy chọn của script = khóa optional của .env.example" "$(srt "${EX_OPT[@]}")" "$(srt "${OPTIONAL_KEYS[@]}")"
-expect_eq "[15] 3 khóa có điều kiện" "CRM_PII_ENCRYPTION_KEY VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY" "$(srt "${CONDITIONAL_KEYS[@]}")"
+expect_eq "[15] 4 khóa có điều kiện" "CRM_PII_ENCRYPTION_KEY VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_SUBJECT" "$(srt "${CONDITIONAL_KEYS[@]}")"
 for k in "${BOOLEAN_KEYS[@]}"; do
   printf '%s\n' "${OPTIONAL_KEYS[@]}" | grep -qx -- "$k" && ok || fail "[15] BOOLEAN_KEYS có $k nhưng không phải khóa tùy chọn của mẫu"
 done

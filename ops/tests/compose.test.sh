@@ -6,13 +6,13 @@
 #   [2]  image app `realestatemanager-{backend,frontend}:current`; `container_name: realestate_*` đủ 7 service.
 #   [3]  volume: đúng 5 tên cũ, đều được mount; không volume lạ.
 #   [4]  khóa bắt buộc dạng ${KEY:?...}; MONGODB_URI/REDIS_URL từ `.env`; hai khóa S3 có fallback S3_APP_* và vẫn bắt buộc.
-#   [5]  sáu khóa chuỗi-rỗng-không-fallback có ${KEY:-mặc định}; LOG_DIR cố định /app/logs; CRON/SETTINGS_CONFIG_FILE ở /app/state.
+#   [5]  các khóa chuỗi-rỗng-không-fallback (gồm EMBEDDING_MODEL/EMBEDDING_DIMENSIONS) có ${KEY:-mặc định}; LOG_DIR cố định /app/logs; CRON/SETTINGS_CONFIG_FILE ở /app/state.
 #   [6]  cờ CRM: BE và FE cùng tên (CRM_ENABLED, CRM_ATTACHMENTS_ENABLED, CRM_PUSH_ENABLED, CRM_IMPORT_ENABLED); FE có đủ khóa mà
 #        entrypoint 40-runtime-config.sh đọc.
 #   [7]  TRUSTED_PROXY_IP: cùng một nguồn cho nginx (FE) và ipv4_address của cloudflared; cổng host FE đặt được (FRONTEND_PORT, mặc định 80).
 #   [8]  đồng bộ với .env.example: mọi ${VAR} của compose có trong .env.example; mọi khóa .env.example hoặc có trong `environment:` hoặc
 #        thuộc danh sách "chỉ để nội suy/dev"; mặc định ${KEY:-D} khớp giá trị mẫu của .env.example.
-#   [9]  mọi khóa backend đọc trong RealEstateBackendApp/src (nếu có thư mục) đều có trong `environment:` của backend.
+#   [9]  mọi khóa backend đọc trong RealEstateBackendApp/src (nếu có thư mục; quét NHIỀU DÒNG, bắt cả lời gọi config.get bị ngắt dòng) đều có trong `environment:` của backend.
 #   [10] `docker compose config` (nếu có docker): hợp lệ với env điền từ .env.example; thiếu khóa bắt buộc thì báo lỗi nêu tên khóa;
 #        cờ CRM truyền sang cả BE lẫn FE; mặc định áp khi khóa rỗng; S3_APP_* ghi đè; FRONTEND_PORT đổi được cổng publish.
 #
@@ -128,12 +128,14 @@ expect_contains "[4] cloudflared token bắt buộc" '${CLOUDFLARE_TUNNEL_TOKEN:
 # Thông báo lỗi chỉ về .env.example.
 expect_empty "[4] thông báo của khóa bắt buộc đều trỏ .env.example" "$(code_lines | grep -E '\$\{[A-Z_0-9]+:\?' | grep -v '\.env\.example')"
 
-echo "== 5) sáu khóa chuỗi-rỗng-không-fallback + file trạng thái + log =="
+echo "== 5) bảy khóa chuỗi-rỗng-không-fallback + file trạng thái + log =="
 expect_eq "[5] REDIS_KEY_PREFIX" 'REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-rem:}' "$(env_item backend REDIS_KEY_PREFIX)"
 expect_eq "[5] CRM_PII_KEY_VERSION" 'CRM_PII_KEY_VERSION=${CRM_PII_KEY_VERSION:-1}' "$(env_item backend CRM_PII_KEY_VERSION)"
 expect_eq "[5] LOG_LEVEL" 'LOG_LEVEL=${LOG_LEVEL:-info}' "$(env_item backend LOG_LEVEL)"
 expect_eq "[5] DEDUP_THRESHOLD" 'DEDUP_THRESHOLD=${DEDUP_THRESHOLD:-0.90}' "$(env_item backend DEDUP_THRESHOLD)"
 expect_eq "[5] DEDUP_WINDOW_DAYS" 'DEDUP_WINDOW_DAYS=${DEDUP_WINDOW_DAYS:-30}' "$(env_item backend DEDUP_WINDOW_DAYS)"
+expect_eq "[5] EMBEDDING_MODEL" 'EMBEDDING_MODEL=${EMBEDDING_MODEL:-openai/text-embedding-3-small}' "$(env_item backend EMBEDDING_MODEL)"
+expect_eq "[5] EMBEDDING_DIMENSIONS" 'EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-512}' "$(env_item backend EMBEDDING_DIMENSIONS)"
 expect_eq "[5] LOG_DIR cố định cho container" 'LOG_DIR=/app/logs' "$(env_item backend LOG_DIR)"
 expect_eq "[5] CRON_CONFIG_FILE" 'CRON_CONFIG_FILE=/app/state/cron.env' "$(env_item backend CRON_CONFIG_FILE)"
 expect_eq "[5] SETTINGS_CONFIG_FILE" 'SETTINGS_CONFIG_FILE=/app/state/ai.env' "$(env_item backend SETTINGS_CONFIG_FILE)"
@@ -180,14 +182,21 @@ UNKNOWN_VARS="$(comm -23 <(printf '%s\n' "$COMPOSE_VARS") <(printf '%s\n' "$EXAM
 expect_empty "[8] \${VAR} trong compose không có trong .env.example" "$UNKNOWN_VARS"
 # Khóa .env.example không xuất hiện ở đâu trong compose: chỉ được thuộc nhóm "chỉ dành cho host/dev/ops".
 #   - PORT, LOG_DIR: compose đặt cứng (có trong environment); AUTH_LOGIN_THROTTLE_LIMIT: bị bỏ qua khi NODE_ENV=production.
-#   - DEV_*: docker-compose.dev.yml (T-29). TRUST_PROXY, S3_ENDPOINT, CRON_CONFIG_FILE, SETTINGS_CONFIG_FILE, NODE_ENV: compose đặt cứng.
+#   - DEV_*: docker-compose.dev.yml / docker-compose.dev-watch.yml (T-29; xem DEV_VARS bên dưới). TRUST_PROXY, S3_ENDPOINT, CRON_CONFIG_FILE, SETTINGS_CONFIG_FILE, NODE_ENV: compose đặt cứng.
 ALL_ENV_KEYS="$( { for s in $SERVICES; do env_keys "$s"; done; } | sort -u)"
-ALLOWED_NOT_PASSED="AUTH_LOGIN_THROTTLE_LIMIT DEV_MONGO_PORT DEV_REDIS_PORT DEV_MINIO_CONSOLE_PORT"
+ALLOWED_NOT_PASSED="AUTH_LOGIN_THROTTLE_LIMIT"
+# ${VAR} của hai override dev (docker-compose.dev.yml, docker-compose.dev-watch.yml; T-29) cũng tính là "được compose dùng" (DEV_*_PORT, DEV_NODE_ENV...);
+# ops/tests/compose-dev.test.sh kiểm chi tiết hai file đó, ở đây chỉ để khóa của chúng không bị coi là mồ côi trong .env.example.
+DEV_VARS=""
+for f in "$ROOT_DIR/docker-compose.dev.yml" "$ROOT_DIR/docker-compose.dev-watch.yml"; do
+  [[ -f "$f" ]] && DEV_VARS+="$(tr -d '\r' < "$f" | grep -vE '^[[:space:]]*#' | grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' | sed 's/^\${//')"$'\n'
+done
 MISSING_FROM_COMPOSE=""
 while IFS= read -r k; do
   [[ -z "$k" ]] && continue
   grep -qxF "$k" <<<"$COMPOSE_VARS" && continue
   grep -qxF "$k" <<<"$ALL_ENV_KEYS" && continue
+  grep -qxF "$k" <<<"$DEV_VARS" && continue
   case " $ALLOWED_NOT_PASSED " in *" $k "*) continue ;; esac
   MISSING_FROM_COMPOSE="$MISSING_FROM_COMPOSE$k"$'\n'
 done <<<"$EXAMPLE_KEYS"
@@ -211,9 +220,18 @@ done
 
 echo "== 9) khóa backend đọc trong source đều được truyền =="
 if [[ -d "$BE_SRC" ]]; then
-  BE_KEYS="$(grep -rhoE "(configService|config|this\.config|cfg)\.(get|getOrThrow)(<[^>]*>)?\(\s*['\"][A-Z][A-Z0-9_]+['\"]|process\.env\.[A-Z][A-Z0-9_]+|process\.env\[['\"][A-Z][A-Z0-9_]+['\"]\]" "$BE_SRC" --include=*.ts --exclude='*.spec.ts' --exclude='*.fixture.ts' 2>/dev/null \
+  # Gộp mọi file nguồn thành MỘT dòng (xuống dòng -> khoảng trắng) để bắt cả lời gọi `config.get<T>(\n  'KEY',\n  mặc định)` bị Prettier
+  # ngắt nhiều dòng (vd EMBEDDING_MODEL/EMBEDDING_DIMENSIONS ở embedding.service.ts); regex theo dòng sẽ sót chúng. `awk 1` bảo đảm mỗi file
+  # kết thúc bằng xuống dòng để token cuối file này không dính token đầu file kế.
+  BE_TEXT="$(find "$BE_SRC" -type f -name '*.ts' ! -name '*.spec.ts' ! -name '*.fixture.ts' -print0 2>/dev/null | xargs -0 awk '1' 2>/dev/null | tr '\r\n' '  ')"
+  BE_KEYS="$(printf '%s' "$BE_TEXT" | grep -oE "(configService|config|this\.config|cfg)\.(get|getOrThrow)(<[^>]*>)?\([[:space:]]*['\"][A-Z][A-Z0-9_]+['\"]|process\.env\.[A-Z][A-Z0-9_]+|process\.env\[['\"][A-Z][A-Z0-9_]+['\"]\]" 2>/dev/null \
     | sed -E "s/.*['\"]([A-Z][A-Z0-9_]+)['\"].*/\1/; s/^process\.env\.//" | sort -u)"
   [[ -n "$BE_KEYS" ]] && ok || fail "[9] không quét được khóa nào từ RealEstateBackendApp/src"
+  # Khóa mẫu bị ngắt nhiều dòng: chứng minh bộ quét không còn sót (regress về regex theo dòng thì ca này hỏng).
+  if [[ -f "$BE_SRC/modules/news-fire-crawl-manager/services/embedding.service.ts" ]]; then
+    expect_contains "[9] bộ quét nhiều dòng bắt EMBEDDING_MODEL" "EMBEDDING_MODEL" "$BE_KEYS"
+    expect_contains "[9] bộ quét nhiều dòng bắt EMBEDDING_DIMENSIONS" "EMBEDDING_DIMENSIONS" "$BE_KEYS"
+  fi
   # Khóa chỉ dùng trong test/công cụ hoặc bị bỏ qua có chủ đích khi chạy trong container production.
   # LOG_ là phần dư của comment `process.env.LOG_*` trong main.ts (không phải khóa).
   BE_IGNORED="DOTENV_CONFIG_QUIET LOADENV_TEST_MONGO PERF_ASSERT_FACTOR AUTH_LOGIN_THROTTLE_LIMIT GIT_COMMIT LOG_"
@@ -266,14 +284,16 @@ else
     if [[ "$OUT_E" == *"$k"* && "$OUT_E" != *"services:"* ]]; then ok; else fail "[10] $k rỗng phải báo lỗi (nhận: ${OUT_E:0:160})"; fi
   done
 
-  # Mặc định áp khi khóa rỗng (sáu khóa chuỗi-rỗng-không-fallback + cờ).
-  sed -E 's/^(REDIS_KEY_PREFIX|CRM_PII_KEY_VERSION|LOG_LEVEL|DEDUP_THRESHOLD|DEDUP_WINDOW_DAYS|CRM_ENABLED|CRM_PUSH_ENABLED)=.*/\1=/' "$FILLED" > "$WORK/blank.env"
+  # Mặc định áp khi khóa rỗng (bảy khóa chuỗi-rỗng-không-fallback + cờ).
+  sed -E 's/^(REDIS_KEY_PREFIX|CRM_PII_KEY_VERSION|LOG_LEVEL|DEDUP_THRESHOLD|DEDUP_WINDOW_DAYS|EMBEDDING_MODEL|EMBEDDING_DIMENSIONS|CRM_ENABLED|CRM_PUSH_ENABLED)=.*/\1=/' "$FILLED" > "$WORK/blank.env"
   OUT_B="$(compose_cfg "$WORK/blank.env")"
   if printf '%s\n' "$OUT_B" | grep -qE '^      REDIS_KEY_PREFIX: ["'"'"']?rem:["'"'"']?$'; then ok; else fail "[10] REDIS_KEY_PREFIX rỗng phải về rem:"; fi
   expect_contains "[10] CRM_PII_KEY_VERSION rỗng -> 1" 'CRM_PII_KEY_VERSION: "1"' "$OUT_B"
   expect_contains "[10] LOG_LEVEL rỗng -> info" "LOG_LEVEL: info" "$OUT_B"
   expect_contains "[10] DEDUP_THRESHOLD rỗng -> 0.90" 'DEDUP_THRESHOLD: "0.90"' "$OUT_B"
   expect_contains "[10] DEDUP_WINDOW_DAYS rỗng -> 30" 'DEDUP_WINDOW_DAYS: "30"' "$OUT_B"
+  expect_contains "[10] EMBEDDING_MODEL rỗng -> openai/text-embedding-3-small" "EMBEDDING_MODEL: openai/text-embedding-3-small" "$OUT_B"
+  expect_contains "[10] EMBEDDING_DIMENSIONS rỗng -> 512" 'EMBEDDING_DIMENSIONS: "512"' "$OUT_B"
   expect_contains "[10] LOG_DIR cố định" "LOG_DIR: /app/logs" "$OUT_B"
 
   # Cờ CRM bật -> cả BE lẫn FE nhận true (không còn tên FEATURE_CRM_* làm CRM luôn tắt).

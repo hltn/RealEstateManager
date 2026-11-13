@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.dev.yml: OVERRIDE MỎNG cho máy dev (v1.0.6, T-29, FR-17). KHÔNG chạy một mình, luôn kèm compose gốc:
+#
+#   ./release.sh build --local                                             # dựng image app (compose gốc không build)
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # compose tự đọc `.env` ở thư mục gốc
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+#
+# Dev dùng ĐÚNG stack của staging/production (cùng image, cùng Mongo có xác thực + keyFile + replica set `rs0`, DB `realestate`,
+# cùng Redis có mật khẩu, MinIO): file này CHỈ publish thêm ba cổng ra máy host, chỉ bind loopback 127.0.0.1 (không lộ ra mạng LAN)
+# để chạy backend/test/công cụ GUI trên host:
+#   - MongoDB 27017  (DEV_MONGO_PORT)          URI trên host: mongodb://<MONGO_ROOT_USERNAME>:<MONGO_ROOT_PASSWORD>@127.0.0.1:<cổng>/realestate?authSource=admin&replicaSet=rs0&directConnection=true
+#                                              (member của replica set tên `mongo:27017`, chỉ phân giải trong network Docker, nên host PHẢI thêm directConnection=true)
+#   - Redis 6379     (DEV_REDIS_PORT)          redis://:<REDIS_PASSWORD>@127.0.0.1:<cổng>
+#   - MinIO console 9001 (DEV_MINIO_CONSOLE_PORT)  http://127.0.0.1:<cổng>, đăng nhập bằng S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY
+# Cổng 9000 (API S3) KHÔNG publish: backend vào qua http://minio:9000 trong network nội bộ.
+#
+# ĐỤNG CỔNG: máy dev có thể còn container/stack dev CŨ (`mongodb`, hoặc RealEstateBackendApp/docker-compose.dev.yml, project realestate-dev)
+# đang giữ 27017/6379/9001. KHÔNG xóa/dừng chúng vì file này. Đặt cổng khác trong `.env` (DEV_MONGO_PORT=27018 ...) rồi `up -d`; khi tạo lại
+# container chạy lệnh up lần nữa. Cổng host đã bận thì docker báo "port is already allocated" ngay lúc up.
+#
+# NODE_ENV: compose gốc đặt CỨNG backend NODE_ENV=production ở mọi môi trường (kể cả dev); file này KHÔNG đổi, để dev giống production nhất.
+# Hệ quả khi chạy dev bằng image: (1) backend KHÔNG khởi động nếu thiếu ADMIN_EMAIL/ADMIN_PASSWORD khi DB chưa có user (compose gốc đã bắt buộc hai khóa
+# này); (2) login luôn giới hạn 5 lần/phút/IP (AUTH_LOGIN_THROTTLE_LIMIT bị bỏ qua), nên chạy test E2E lặp đăng nhập sẽ dính 429; (3) ẩn stack trace;
+# (4) cookie refresh có cờ Secure: trình duyệt chỉ giữ qua HTTPS hoặc http://localhost (Chrome/Firefox), KHÔNG giữ qua http://<IP-LAN>:<cổng>
+# hoặc Safari, đăng nhập sẽ không duy trì được. Cần nới (2)/(4) khi dev: dùng docker-compose.dev-watch.yml với DEV_NODE_ENV=development.
+#
+# Dừng: `docker compose -f docker-compose.yml -f docker-compose.dev.yml down` GIỮ dữ liệu; thêm `-v` XÓA VĨNH VIỄN named volume (mongo_data...).
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  mongo:
+    ports:
+      - "127.0.0.1:${DEV_MONGO_PORT:-27017}:27017"
+  redis:
+    ports:
+      - "127.0.0.1:${DEV_REDIS_PORT:-6379}:6379"
+  minio:
+    ports:
+      - "127.0.0.1:${DEV_MINIO_CONSOLE_PORT:-9001}:9001"

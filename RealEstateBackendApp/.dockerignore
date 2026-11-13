@@ -9,3 +9,5 @@ dist
 coverage/
 .nyc_output/
 README.md
+.settings.env
+docker-compose*.yml

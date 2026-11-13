@@ -324,6 +324,9 @@ services:
       # Chống trùng bài viết: backend KHÔNG rơi về mặc định khi chuỗi rỗng nên mặc định đặt ở đây.
       - DEDUP_THRESHOLD=${DEDUP_THRESHOLD:-0.90}
       - DEDUP_WINDOW_DAYS=${DEDUP_WINDOW_DAYS:-30}
+      # Embedding (chống trùng bài): backend chỉ rơi về mặc định khi khóa KHÔNG tồn tại, chuỗi rỗng thì thành model/chiều rỗng, nên mặc định đặt ở đây.
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-512}
       # ── Logging ──
       # LOG_DIR cố định /app/logs trong container (bind mount ra host ./logs, xem volumes bên dưới) để log persist khi container bị xoá/tạo lại;
       # LOG_DIR trong `.env` chỉ dành cho chạy backend trên host.
