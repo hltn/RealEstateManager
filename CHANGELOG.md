@@ -4,6 +4,20 @@ Bản tóm tắt thay đổi theo phiên bản, theo kiểu [Keep a Changelog](h
 
 Nguồn chính và đầy đủ: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md). Mã `PT-NNN` là mã mục trong file kế hoạch v1.0.3.
 
+## [1.0.6] - chưa phát hành
+
+Thống nhất môi trường và dọn cấu trúc (không thêm tính năng nghiệp vụ): build một lần chạy mọi nơi, dev/staging/production chỉ khác file `.env`. Chưa có thẻ git; số phiên bản Backend và Web admin đã nâng lên 1.0.6 (ứng dụng mobile `RealEstateApp/` không đổi trong đợt này).
+
+### Hạ tầng
+- Một image Backend và một image Frontend có tag cho mọi môi trường (`release.sh build`); frontend đọc cấu hình lúc chạy (`/env.js`) thay vì `VITE_*` lúc build; một `docker-compose.yml` gốc cùng override mỏng cho dev; một `.env.example` gốc và cổng kiểm `ops/verify-env.sh`.
+- `deploy.sh`, `backup.sh`, `restore.sh` ở gốc repo; phần phụ trợ gom vào `ops/`, `scripts/` chỉ giữ migration.
+- Đồng bộ Node 24.18.1; cron lưu qua `CRON_CONFIG_FILE`; đổi tên cờ thành `CRM_*_ENABLED` (VPS cập nhật `.env` theo `.env.example` trước khi deploy).
+
+### Sửa
+- Dọn file thừa ở Backend, tách `modules/news` ngang `modules/crm` ở Frontend.
+
+Chi tiết: `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ, không đưa lên repo); mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
+
 ## [1.0.3] - 2026-11-04
 
 Sửa và bổ sung sau khi test web trên production (chủ yếu giao diện mobile), thêm PWA, tự chạy migration khi deploy.

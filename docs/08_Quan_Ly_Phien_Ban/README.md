@@ -54,12 +54,12 @@ Thẻ git (**đã quyết**, Oniichan, 2026-11-04):
 
 | Thành phần | Thư mục | Tệp chứa số phiên bản | Phiên bản | Ghi chú |
 |---|---|---|---|---|
-| Backend | `RealEstateBackendApp/` | `package.json` + `package-lock.json` | 1.0.5 (nâng 2026-11-11 cho T-36: deploy ghi giá trị này vào `system.version`) | Đi theo bản phát hành |
-| Web admin | `RealEstateAdminApp/` | `package.json` + `package-lock.json` | 1.0.5 (nâng 2026-11-11, đồng bộ với backend) | Đi theo bản phát hành |
-| Mobile | `RealEstateApp/` | `package.json` + `package-lock.json` + `app.json` (`expo.version`) | 1.0.5 (nâng 2026-11-11, đồng bộ với backend) | Đi theo bản phát hành |
+| Backend | `RealEstateBackendApp/` | `package.json` + `package-lock.json` | 1.0.6 (nâng 2026-11-14, v1.0.6 T-33; trước đó 1.0.5 nâng 2026-11-11 cho T-36: deploy ghi giá trị này vào `system.version`) | Đi theo bản phát hành |
+| Web admin | `RealEstateAdminApp/` | `package.json` + `package-lock.json` | 1.0.6 (nâng 2026-11-14, đồng bộ với backend) | Đi theo bản phát hành |
+| Mobile | `RealEstateApp/` | `package.json` + `package-lock.json` + `app.json` (`expo.version`) | 1.0.5 (nâng 2026-11-11; v1.0.6 **không đụng `RealEstateApp/`**, Oniichan chốt 2026-11-13, nên mobile giữ 1.0.5) | Đi theo bản phát hành, ngoại lệ v1.0.6 |
 | Prototype CRM | `stnd-crm-unified/` | `package.json` | 0.2.0 | **Độc lập, không đi theo bản phát hành**; dùng dữ liệu mock thay API thật, giữ số riêng |
 
-Manifest: cả ba thành phần (backend, web admin, mobile) đều **1.0.5** (nâng 2026-11-11; admin và mobile trước đó là 1.0.4 tại commit `b40b851`, 2026-11-03). Số **1.0.2** là số tại `d0037f2` (commit mang thẻ `v1.0.2`).
+Manifest: backend và web admin **1.0.6** (nâng 2026-11-14, v1.0.6 T-33); mobile giữ **1.0.5** (nâng 2026-11-11, cùng lúc với backend và web admin; admin và mobile trước đó là 1.0.4 tại commit `b40b851`, 2026-11-03; v1.0.6 không đụng mobile). Số **1.0.2** là số tại `d0037f2` (commit mang thẻ `v1.0.2`).
 
 ## 4. Phiên bản từng tài liệu
 
@@ -109,7 +109,7 @@ Cột "Phiên bản tài liệu" khớp với dòng `> **Phiên bản tài liệ
 | [`06_Module_Customer_Management/10_Dinh_Danh_Khach_Hang_Plan.md`](../06_Module_Customer_Management/10_Dinh_Danh_Khach_Hang_Plan.md) | v1.0.5 | Plan v1.0.5 "Định danh khách hàng" (`Approved`, 2026-11-10), chưa phát hành |
 | [`06_Module_Customer_Management/11_Dinh_Danh_Khach_Hang_Architecture.md`](../06_Module_Customer_Management/11_Dinh_Danh_Khach_Hang_Architecture.md) | v1.0.5 | Architecture v1.0.5 "Định danh khách hàng" (`Approved`, 2026-11-10), chưa phát hành |
 | [`06_Module_Customer_Management/12_Dinh_Danh_Khach_Hang_Tasks.md`](../06_Module_Customer_Management/12_Dinh_Danh_Khach_Hang_Tasks.md) | v1.0.5 | Tasks v1.0.5 "Định danh khách hàng" (`Approved`, 2026-11-10, 38 task), chưa phát hành |
-| [`06_Module_Customer_Management/README.md`](../06_Module_Customer_Management/README.md) | v1.0.5 | Cập nhật dòng 09 và con trỏ sang `08_Quan_Ly_Phien_Ban`; v1.0.5: thêm dòng 10 (Plan Định danh khách hàng), dòng 11 (Architecture), dòng 12 (Tasks) |
+| [`06_Module_Customer_Management/README.md`](../06_Module_Customer_Management/README.md) | v1.0.6 | Cập nhật dòng 09 và con trỏ sang `08_Quan_Ly_Phien_Ban`; v1.0.5: thêm dòng 10 (Plan Định danh khách hàng), dòng 11 (Architecture), dòng 12 (Tasks); v1.0.6: ghi chú đợt Thống nhất môi trường không đổi nghiệp vụ CRM, số phiên bản hệ thống 1.0.6 |
 | [`07_Frontend_Mobile/01_React_Native_Plan.md`](../07_Frontend_Mobile/01_React_Native_Plan.md) | v1.0.1 |  |
 | [`07_Frontend_Mobile/02_UI_Design_Plan.md`](../07_Frontend_Mobile/02_UI_Design_Plan.md) | v1.0.1 |  |
 | [`07_Frontend_Mobile/README.md`](../07_Frontend_Mobile/README.md) | v1.0.1 |  |
@@ -117,7 +117,7 @@ Cột "Phiên bản tài liệu" khớp với dòng `> **Phiên bản tài liệ
 | [`08_Quan_Ly_Phien_Ban/03_Ke_Hoach_v1.0.4.md`](03_Ke_Hoach_v1.0.4.md) | v1.0.4 | Kế hoạch v1.0.4 (`Approved` 2026-11-04), chưa phát hành |
 | [`08_Quan_Ly_Phien_Ban/04_Ke_Hoach_v1.0.4_Architecture.md`](04_Ke_Hoach_v1.0.4_Architecture.md) | v1.0.4 | Thiết kế kiến trúc v1.0.4 (`Approved`, Oniichan ủy quyền Neptune duyệt 2026-11-04 sau khi qa-agent rà), chưa phát hành |
 | [`08_Quan_Ly_Phien_Ban/05_Ke_Hoach_v1.0.4_Tasks.md`](05_Ke_Hoach_v1.0.4_Tasks.md) | v1.0.4 | Danh sách 71 task v1.0.4 (`Approved`, Oniichan ủy quyền Neptune duyệt 2026-11-04), chưa phát hành |
-| [`08_Quan_Ly_Phien_Ban/README.md`](README.md) | v1.0.6 | File này; v1.0.3: cập nhật hàng `docs/README.md`, ngoại lệ tick `[x]` không đổi phiên bản; v1.0.4: thêm dòng v1.0.4 ở mục 2 và hàng file kế hoạch, file kiến trúc ở mục 4; cập nhật dòng v1.0.3 thành Xong (đã lên production 2026-11-04), phiên bản hiện tại v1.0.3, thẻ `v1.0.3` đã đặt và push; v1.0.5: thêm dòng v1.0.5 ở mục 2 và hàng Plan `10_Dinh_Danh_Khach_Hang_Plan.md` ở mục 4; hàng Architecture `11_Dinh_Danh_Khach_Hang_Architecture.md` và hàng Tasks `12_Dinh_Danh_Khach_Hang_Tasks.md` ở mục 4; v1.0.6: thêm dòng v1.0.6 ở mục 2, hàng Plan `07_Thong_Nhat_Moi_Truong_Plan.md` và hàng `01_Infrastructure/README.md` đổi lên v1.0.6 ở mục 4, hàng sơ đồ `08_So_Do_CICD.md` ở mục 4 |
+| [`08_Quan_Ly_Phien_Ban/README.md`](README.md) | v1.0.6 | File này; v1.0.3: cập nhật hàng `docs/README.md`, ngoại lệ tick `[x]` không đổi phiên bản; v1.0.4: thêm dòng v1.0.4 ở mục 2 và hàng file kế hoạch, file kiến trúc ở mục 4; cập nhật dòng v1.0.3 thành Xong (đã lên production 2026-11-04), phiên bản hiện tại v1.0.3, thẻ `v1.0.3` đã đặt và push; v1.0.5: thêm dòng v1.0.5 ở mục 2 và hàng Plan `10_Dinh_Danh_Khach_Hang_Plan.md` ở mục 4; hàng Architecture `11_Dinh_Danh_Khach_Hang_Architecture.md` và hàng Tasks `12_Dinh_Danh_Khach_Hang_Tasks.md` ở mục 4; v1.0.6: thêm dòng v1.0.6 ở mục 2, hàng Plan `07_Thong_Nhat_Moi_Truong_Plan.md` và hàng `01_Infrastructure/README.md` đổi lên v1.0.6 ở mục 4, hàng sơ đồ `08_So_Do_CICD.md` ở mục 4; T-33: mục 3 nâng Backend và Web admin lên 1.0.6 (Mobile giữ 1.0.5), hàng `06_Module_Customer_Management/README.md` ở mục 4 lên v1.0.6 |
 | [`README.md`](../README.md) | v1.0.4 | Thêm thư mục 08, phiên bản hiện tại, quy ước phiên bản tài liệu; v1.0.3: vòng đời Plan → Architecture → Tasks (tên file `NN_<Ten>_…`, `NN` = max + 1), bộ lệnh `/spec-*`, ngoại lệ tick `[x]` ; v1.0.4: dòng "Phiên bản hiện tại" = v1.0.3 (production từ 2026-11-04) |
 
 Cách xếp: file nào đổi nội dung trong đợt v1.0.2 (theo lịch sử git từ 2026-10-29 và nội dung) mang `v1.0.2`; các file còn lại là `v1.0.1`. File `01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md` là kế hoạch và hồ sơ của v1.0.3, phiên bản đã phát hành (2026-11-04). Từ khi v1.0.3 phát hành, phiên bản đang phát triển là v1.0.4: tài liệu mới tạo hoặc sửa bằng bộ `/spec-*` mang số `v1.0.4`. File `03_Ke_Hoach_v1.0.4.md` là kế hoạch (`Approved`) của v1.0.4 (chưa phát hành) nên mang `v1.0.4` theo ngoại lệ ở mục 1.

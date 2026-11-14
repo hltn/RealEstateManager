@@ -41,6 +41,9 @@ WORKDIR /app
 RUN mkdir -p logs tmp state && chown -R node:node logs tmp state
 COPY --from=deps    --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist         ./dist
+# Truy vết image về commit (release.sh build truyền --build-arg GIT_COMMIT; không có thì 'unknown'). Chỉ là metadata: không đổi cache các lớp trước.
+ARG GIT_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main"]

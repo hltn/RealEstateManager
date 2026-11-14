@@ -60,3 +60,9 @@ skills-lock.json
 # Tài liệu nội bộ v1.0.6 (thông tin hạ tầng/CI-CD): không đưa lên repo public
 /docs/01_Infrastructure/*_Thong_Nhat_Moi_Truong_*.md
 /docs/01_Infrastructure/08_So_Do_CICD.md
+
+# Đầu ra của `release.sh build` (release.env chứa image ID, gói release + checksum): sinh ra mỗi lần build, không commit.
+/release.env
+/release.tgz
+/release.tgz.sha256
+/.install-release.*

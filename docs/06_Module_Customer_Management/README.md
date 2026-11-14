@@ -1,6 +1,6 @@
 # 06 — Module Quản lý khách hàng
 
-> **Phiên bản tài liệu:** v1.0.5
+> **Phiên bản tài liệu:** v1.0.6
 
 Module mới thay cho Google Sheets (DSKH, DSKH_DROP, DSKH_NET): quản lý và chăm sóc khách, nhiều người cùng chăm sóc, chân dung khách hàng, nhắc lịch, ứng dụng di động có thông báo đẩy.
 
@@ -19,6 +19,6 @@ Module mới thay cho Google Sheets (DSKH, DSKH_DROP, DSKH_NET): quản lý và 
 
 > `03_Design_System_Quy_Tac_Phong_Cach.md` mô tả phong cách của **toàn bộ web admin**, không riêng module này. Nếu sau này có module khác dùng, có thể chuyển lên `00_Project_Overview/`.
 
-> **Phiên bản:** đợt sửa đổi v1.0.2 (mục 09) đã lên production ngày 2026-11-02. Mục lục phiên bản của cả hệ thống và danh sách việc cần sửa sau test production (v1.0.3, kế hoạch). Đợt v1.0.5 "Định danh khách hàng" (tài liệu 09 mục v1.0.5 và 10–12) đang triển khai, deploy gộp cùng v1.0.3 → v1.0.4 nằm ở [`../08_Quan_Ly_Phien_Ban/`](../08_Quan_Ly_Phien_Ban/README.md).
+> **Phiên bản:** đợt sửa đổi v1.0.2 (mục 09) đã lên production ngày 2026-11-02. Mục lục phiên bản của cả hệ thống và danh sách việc cần sửa sau test production (v1.0.3, kế hoạch). Đợt v1.0.5 "Định danh khách hàng" (tài liệu 09 mục v1.0.5 và 10–12) đang triển khai, deploy gộp cùng v1.0.3 → v1.0.4 nằm ở [`../08_Quan_Ly_Phien_Ban/`](../08_Quan_Ly_Phien_Ban/README.md). Đợt v1.0.6 "Thống nhất môi trường và dọn cấu trúc" (`../01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md`) không đổi nghiệp vụ CRM; số phiên bản hệ thống (Backend, Web admin) nâng lên 1.0.6.
 
 [← Về chỉ mục tài liệu](../README.md)

@@ -31,5 +31,8 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 # CRM_FEATURE_APPOINTMENT_SYNC, CRM_MOCK_REPORTS, CRM_MOCK_IMPORT_EXPORT và FRONTEND_URL (thành appUrl). Mặc định mọi cờ false, API_URL=/api/v1.
 COPY docker-entrypoint.d/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
 RUN chmod 755 /docker-entrypoint.d/40-runtime-config.sh
+# Truy vết image về commit (release.sh build truyền --build-arg GIT_COMMIT; không có thì 'unknown'). Chỉ là metadata: không đổi cache các lớp trước.
+ARG GIT_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

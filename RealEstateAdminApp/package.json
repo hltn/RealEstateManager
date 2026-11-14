@@ -1,7 +1,7 @@
 {
   "name": "client",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "dev": "concurrently -c \"cyan,magenta\" -n \"FRONT,BACK\" \"vite\" \"npm run start:dev --prefix ../RealEstateBackendApp\"",
