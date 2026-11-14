@@ -3,7 +3,7 @@
 # Dùng THÊM sau docker-compose.dev.yml (ba file, đúng thứ tự); KHÔNG dùng ở staging/production:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.dev-watch.yml up -d --build backend
-#   cd RealEstateAdminApp && npm run dev      # FE chạy `vite dev` trên host (http://localhost:5173), gọi API qua API_URL trong `.env`
+#   cd RealEstateAdminApp && npx vite         # FE chạy Vite trên host (http://localhost:5173); proxy `/api` -> localhost:3000 (container). KHÔNG dùng `npm run dev`: nó chạy thêm backend host tranh cổng 3000, không có Mongo/Redis
 #
 # Khác compose gốc (đây là NGOẠI LỆ DUY NHẤT có `build:`; chỉ build stage `dev` của RealEstateBackendApp/Dockerfile):
 #   - backend dựng từ mã nguồn (`target: dev`), mount ./RealEstateBackendApp/src vào /app/src, chạy `nest start --watch`.

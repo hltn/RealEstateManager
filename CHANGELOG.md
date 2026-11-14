@@ -11,6 +11,9 @@ Thống nhất môi trường và dọn cấu trúc (không thêm tính năng ng
 ### Hạ tầng
 - Một image Backend và một image Frontend có tag cho mọi môi trường (`release.sh build`); frontend đọc cấu hình lúc chạy (`/env.js`) thay vì `VITE_*` lúc build; một `docker-compose.yml` gốc cùng override mỏng cho dev; một `.env.example` gốc và cổng kiểm `ops/verify-env.sh`.
 - `deploy.sh`, `backup.sh`, `restore.sh` ở gốc repo; phần phụ trợ gom vào `ops/`, `scripts/` chỉ giữ migration.
+- Đưa bản lên máy chủ bằng `release.sh send` (gói `release.tgz` kèm sha256, rồi `docker save | gzip | ssh | docker load`, rồi `deploy.sh`); máy chủ **không build và không dùng git**. `deploy.sh` chỉ còn các cờ `--no-migrate`, `--migrate`, `--plan-only`, `--help` (cờ `--no-pull` bị từ chối), promote thẻ `<version>-<commit>` thành `current`, tự trả `current` về image cũ khi lỗi trước `up`.
+- Backup/restore theo thẻ image `pre-<TS>` và manifest v2 (không còn bundle/thẻ git `pre-deploy-<TS>`): `restore.sh` khôi phục DB và image về bản trước deploy, luôn kèm backup an toàn và thẻ `pre-restore-<RTS>` trước khi ghi; bỏ các cờ `--code-only`, `--use-image-tag`, `--allow-infra-change`; từ chối manifest v1. `.env.docker` đổi thành `.env` (một file, một mẫu `.env.example`).
+- Tài liệu: viết lại `docs/01_Infrastructure/06_Production_Deploy.md` (quy trình phát hành, bảng cờ cũ sang mới, rollback, chính sách dọn thẻ `pre-*`, kế hoạch CI/CD) và `README.md` gốc. Quy trình CI/CD GitHub Actions (kiểm thử khi có PR, deploy staging tự động, production cần người duyệt) đang triển khai, chưa có workflow.
 - Đồng bộ Node 24.18.1; cron lưu qua `CRON_CONFIG_FILE`; đổi tên cờ thành `CRM_*_ENABLED` (VPS cập nhật `.env` theo `.env.example` trước khi deploy).
 
 ### Sửa

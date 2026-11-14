@@ -40,15 +40,17 @@ RealEstateManager/
 │   └── post-migrate/          #   10-catalog-codes.sh, 20-customer-codes.sh, 90-post-up-migrations.sh
 ├── ops/                       # Công cụ vận hành phụ (sau FR-02, v1.0.6)
 │   ├── lib/                   #   ops-common.sh: hàm dùng chung cho các script
-│   ├── staging/               #   tài liệu + script diễn tập staging local
+│   ├── staging/               #   tài liệu + script diễn tập staging local (đã lỗi thời, gỡ ở T-46)
 │   ├── tests/                 #   *.test.sh: test cho các script bash
-│   └── check-disk.sh, print-image-digests.sh, staging.sh
-├── deploy.sh, backup.sh, restore.sh  # Script vận hành ở gốc (sau FR-01, v1.0.6)
-├── docker-compose.yml         # Stack chạy thật: backend, frontend, mongo, redis, minio, ...
-├── docker-compose.staging.yml # Staging local
-├── .env.docker.example        # Mẫu biến môi trường (file .env.docker thật không commit)
-├── .env.staging.example       # Mẫu biến môi trường staging local
-├── README.md                  # (FR-13, sẽ tạo) giới thiệu, chạy dev, build/deploy, quy ước đồng bộ prototype
+│   └── check-disk.sh, print-image-digests.sh, verify-env.sh, install-release.sh, staging.sh
+├── release.sh                 # Dựng image một lần (build) và gửi gói + image lên VPS (send) (FR-14, v1.0.6)
+├── deploy.sh, backup.sh, restore.sh  # Script vận hành ở gốc (sau FR-01, v1.0.6); chạy trên VPS, không build, không dùng git
+├── docker-compose.yml         # Stack chạy thật: backend, frontend, mongo, redis, minio, ...; dùng image dựng sẵn (FR-17)
+├── docker-compose.dev.yml, docker-compose.dev-watch.yml  # Lớp phủ cho máy dev (FR-17); luôn dùng kèm docker-compose.yml
+├── docker-compose.staging.yml # Staging local (đã lỗi thời, gỡ ở T-46)
+├── .env.example               # Mẫu duy nhất của file `.env` (không commit); thay `.env.docker.example` (FR-18)
+├── .env.staging.example       # Mẫu biến môi trường staging local (đã lỗi thời, gỡ ở T-46)
+├── README.md                  # Điểm vào repo (FR-13): giới thiệu, chạy dev, build/deploy (`release.sh`), quy ước đồng bộ prototype
 ├── CHANGELOG.md               # Lịch sử phiên bản
 ├── .gitignore, .gitattributes
 ├── skills-lock.json           # File công cụ AI, đang bị git theo dõi (FR-05 sẽ gỡ khỏi index)
@@ -120,8 +122,7 @@ RealEstateBackendApp/
 │   ├── main.ts                  # Khởi động: Fastify, prefix api/v1, helmet, cookie, CORS, ValidationPipe, Swagger
 │   ├── app.module.ts            # Module gốc: gom mọi module + cấu hình Mongoose/Config
 │   ├── app.controller.ts, app.service.ts (+ .spec)   # Mẫu "Hello World" (FR-05 sẽ xóa)
-│   ├── health.controller.ts, health.module.ts (+ .spec)  # Probe /health/liveness, /health/readiness
-│   ├── health-indicators/       # redis.health-indicator.ts, storage.health-indicator.ts
+│   ├── health/                  # health.controller.ts, health.module.ts (+ .spec), redis.health-indicator.ts, storage.health-indicator.ts; probe /health/liveness, /health/readiness (thực tế là `/api/v1/health/...`, mục 7 của doc 06)
 │   ├── common/                  # Cắt ngang (mục 2.3)
 │   │   ├── decorators/  dto/  enums/  exceptions/  filters/
 │   │   ├── guards/  logger/  middleware/  pipes/
@@ -168,7 +169,7 @@ Ngoài ra ở gốc BE còn một số file chết sẽ bị xóa (FR-05): `add_
 | Thư mục | Lưu file gì | Ghi chú quy hoạch |
 |---|---|---|
 | `src/main.ts`, `src/app.module.ts` | Điểm khởi động và module gốc | Chỉ lắp ráp, không viết nghiệp vụ |
-| `src/health*` | `health.controller.ts`, `health.module.ts`, `health-indicators/*.health-indicator.ts` | Dùng `@nestjs/terminus`; hiện nằm rời ở gốc `src/` (FR-08 sẽ gom vào `src/health/`) |
+| `src/health*` | `health.controller.ts`, `health.module.ts`, `health-indicators/*.health-indicator.ts` | Dùng `@nestjs/terminus`; FR-08 đã gom vào `src/health/` (file phẳng, không còn `health-indicators/`) |
 | `common/decorators/` | `*.decorator.ts`: `@Public`, `@Roles`, `@CurrentUser`, decorator validate (`trim`, `to-boolean`, ...) | Dùng cho mọi module |
 | `common/dto/` | `pagination-query.dto.ts`, `paginated-response.dto.ts`, `ref.dto.ts` | Chuẩn `{ data, meta }` cho danh sách |
 | `common/enums/` | `user-role.enum.ts`, `user-status.enum.ts` | Enum dùng chéo module |

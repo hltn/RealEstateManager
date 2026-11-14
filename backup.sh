@@ -88,7 +88,7 @@ on_exit() {
   local code=$?
   trap - EXIT
   set +e
-  trap '' PIPE
+  trap '' PIPE TERM INT HUP   # dọn dẹp không bị ngắt giữa chừng (tín hiệu thứ hai không được bỏ dở việc dọn); như deploy.sh
   if (( code != 0 && DONE == 0 )); then
     [[ -z "$ARCHIVE_FILE" ]] || rm -f -- "${ARCHIVE_FILE}.partial" "$ARCHIVE_FILE"
     [[ -z "$MANIFEST_FILE" ]] || rm -f -- "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"   # MANIFEST_FILE chỉ được đặt SAU khi đã kiểm nó chưa tồn tại => không xóa nhầm file cũ

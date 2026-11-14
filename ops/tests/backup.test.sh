@@ -52,6 +52,9 @@ echo "docker $*" >> "$STUB_CALLS"
 if [[ -n "${STUB_SIGNAL_ON:-}" && " $* " == *"${STUB_SIGNAL_ON%%=*}"* && ! -e "$STUB_CALLS.sig" ]]; then
   : > "$STUB_CALLS.sig"; kill "-${STUB_SIGNAL_ON##*=}" "$PPID"
 fi
+if [[ -n "${STUB_SIGNAL2_ON:-}" && " $* " == *"${STUB_SIGNAL2_ON%%=*}"* && ! -e "$STUB_CALLS.sig2" ]]; then
+  : > "$STUB_CALLS.sig2"; kill "-${STUB_SIGNAL2_ON##*=}" "$PPID"
+fi
 case "${1:-}" in
   info) [[ "$*" == *DockerRootDir* ]] && echo "/"; exit 0 ;;
   inspect)
@@ -138,14 +141,14 @@ mk() {
 EXTRA_ENV=()
 # Chạy backup.sh THẬT trong thư mục tạm; OUT = stdout+stderr, RC = mã thoát; CALLS = các lệnh docker giả đã gọi.
 run_b() {
-  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.flock"
+  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.sig2" "$CALLS.flock"
   OUT="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" BACKUP_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" \
     "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/backup.sh" "$@" 2>&1)"
   RC=$?
 }
 # Như run_b nhưng MỌI ghi ra stderr đều thất bại (/dev/full, giống SSH rớt giữa chừng); chỉ stdout được thu.
 run_b_dead() {
-  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.flock"
+  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.sig2" "$CALLS.flock"
   OUT="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" BACKUP_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" \
     "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/backup.sh" "$@" 2>/dev/full)"
   RC=$?
@@ -404,6 +407,13 @@ mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256:fe=HUP"); run_b
 expect_rc "SIGHUP lúc gắn thẻ FE" 129 "$RC"; expect_eq "SIGHUP: dọn sạch file" "" "$(files)"
 expect_contains "SIGHUP: gỡ thẻ FE" "docker rmi realestatemanager-frontend:pre-$TS" "$(calls)"; expect_contains "SIGHUP: gỡ cả thẻ BE đã gắn" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
 else echo "  (bỏ qua ca SIGHUP: SIGHUP bị bỏ qua từ lúc khởi động, vd chạy bằng nohup)"; fi
+# Tín hiệu THỨ HAI đến đúng lúc on_exit đang dọn (docker rmi): on_exit bỏ qua TERM/INT/HUP nên vẫn dọn xong + báo, mã gốc 143 (như deploy.sh).
+mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256:be=TERM" "STUB_SIGNAL2_ON=rmi realestatemanager-backend:pre-$TS=TERM"); run_b
+expect_rc "TERM thứ hai khi đang dọn: mã gốc 143" 143 "$RC"; expect_eq "TERM thứ hai: vẫn dọn sạch file" "" "$(files)"
+expect_contains "TERM thứ hai: đã gỡ thẻ BE" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"; expect_contains "TERM thứ hai: dọn xong vẫn báo THẤT BẠI" "THẤT BẠI" "$OUT"
+# Đối chứng: bỏ TERM INT HUP khỏi on_exit => tín hiệu thứ hai cắt ngang việc dọn (không còn tới được dòng báo).
+mk; sed -i "/^on_exit() {/,/^}/s/trap '' PIPE TERM INT HUP/trap '' PIPE/" "$W/backup.sh"; run_b
+expect_not_contains "đối chứng: không bỏ qua TERM thì dọn bị cắt ngang (test bắt được)" "THẤT BẠI" "$OUT"
 mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256:be=TERM"); run_b_dead
 expect_rc "SIGTERM + stderr chết (/dev/full)" 143 "$RC"; expect_eq "SIGTERM + stderr chết: vẫn dọn sạch file" "" "$(files)"
 expect_contains "SIGTERM + stderr chết: vẫn gỡ thẻ image" "docker rmi" "$(calls)"
@@ -416,6 +426,7 @@ OE="$(sed -n '/^on_exit() {/,/^}/p' "$ROOT_DIR/backup.sh")"
 L_SET="$(grep -n 'set +e' <<<"$OE" | head -n 1 | cut -d: -f1)"; L_RM="$(grep -n 'rm -f' <<<"$OE" | head -n 1 | cut -d: -f1)"; L_WARN="$(grep -n 'warn "' <<<"$OE" | head -n 1 | cut -d: -f1)"
 (( ${L_SET:-0} > 0 && ${L_SET:-0} < ${L_RM:-0} && ${L_RM:-0} < ${L_WARN:-0} )) && ok || fail "on_exit: thứ tự set +e ($L_SET) < dọn dẹp ($L_RM) < in ($L_WARN)"
 expect_contains "on_exit: bỏ SIGPIPE" "trap '' PIPE" "$OE"
+expect_contains "on_exit: bỏ cả TERM INT HUP khi dọn (như deploy.sh)" "trap '' PIPE TERM INT HUP" "$OE"
 expect_contains "on_exit xóa cả manifest chưa chốt" '"$MANIFEST_FILE"' "$OE"
 # MANIFEST_FILE chỉ được đặt MỘT chỗ (trong write_manifest, sau khi main đã kiểm manifest chưa tồn tại): đặt sớm hơn thì on_exit xóa nhầm manifest cũ trùng TS.
 expect_eq "MANIFEST_FILE chỉ gán giá trị đường dẫn một lần" "1" "$(grep -c 'MANIFEST_FILE="${BACKUP_DIR}' "$ROOT_DIR/backup.sh")"

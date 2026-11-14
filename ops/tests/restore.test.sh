@@ -67,6 +67,9 @@ idof() { # <ref>
 if [[ -n "${STUB_SIGNAL_ON:-}" && " $* " == *"${STUB_SIGNAL_ON%%=*}"* && ! -e "$STUB_CALLS.sig" ]]; then
   : > "$STUB_CALLS.sig"; kill "-${STUB_SIGNAL_ON##*=}" "$PPID"
 fi
+if [[ -n "${STUB_SIGNAL2_ON:-}" && " $* " == *"${STUB_SIGNAL2_ON%%=*}"* && ! -e "$STUB_CALLS.sig2" ]]; then
+  : > "$STUB_CALLS.sig2"; kill "-${STUB_SIGNAL2_ON##*=}" "$PPID"
+fi
 case "${1:-}" in
   compose)
     [[ "${2:-}" == "version" ]] && exit 0
@@ -174,7 +177,7 @@ mk() {
 EXTRA_ENV=()
 # Chạy restore.sh THẬT trong thư mục tạm; OUT = stdout+stderr, RC = mã thoát; CALLS = các lệnh docker giả đã gọi.
 run_r() {
-  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.tags" "$CALLS.flock"
+  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.sig2" "$CALLS.tags" "$CALLS.flock"
   OUT="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" \
     "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$W/restore.sh" "$@" 2>&1)"
   RC=$?
@@ -184,7 +187,7 @@ run_copy() {
   local c="$TMP/cp$N"
   mkdir -p "$c/ops/lib"; cp "$ROOT_DIR/restore.sh" "$c/restore.sh"; cp "$ROOT_DIR/ops/lib/ops-common.sh" "$c/ops/lib/ops-common.sh"
   rm -rf "$W/restore.sh" "$W/ops"
-  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.tags" "$CALLS.flock"
+  : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.sig2" "$CALLS.tags" "$CALLS.flock"
   OUT="$(cd "$TMP" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" RESTORE_REPO_DIR="$W" \
     "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" bash "$c/restore.sh" "$@" 2>&1)"
   RC=$?
@@ -481,6 +484,14 @@ mk; EXTRA_ENV=("STUB_SIGNAL_ON=stop backend=TERM")
 run_r --latest --apply --yes
 expect_rc "SIGTERM lúc dừng backend (vùng an toàn)" 143 "$RC"; expect_contains "SIGTERM an toàn: bật lại backend" "Đã bật lại backend" "$OUT"
 expect_not_contains "SIGTERM an toàn: không xóa DB" "#DROP" "$(calls)"; expect_not_contains "SIGTERM an toàn: không hướng dẫn giữa chừng" "RESTORE DỪNG GIỮA CHỪNG" "$OUT"
+# Tín hiệu THỨ HAI đến đúng lúc on_exit đang bật lại backend: on_exit bỏ qua TERM/INT/HUP nên vẫn bật xong + báo, mã gốc 143 (như deploy.sh).
+mk; EXTRA_ENV=("STUB_SIGNAL_ON=stop backend=TERM" "STUB_SIGNAL2_ON=up -d --no-build --no-deps backend=TERM")
+run_r --latest --apply --yes
+expect_rc "TERM thứ hai khi on_exit đang bật lại backend: mã gốc 143" 143 "$RC"; expect_contains "TERM thứ hai: vẫn báo đã bật lại backend" "Đã bật lại backend" "$OUT"
+# Đối chứng: bỏ TERM INT HUP khỏi on_exit => tín hiệu thứ hai cắt ngang (không tới được dòng báo).
+mk; sed -i "/^on_exit() {/,/^}/s/trap '' PIPE TERM INT HUP/trap '' PIPE/" "$W/restore.sh"
+run_r --latest --apply --yes
+expect_not_contains "đối chứng: không bỏ qua TERM thì on_exit bị cắt ngang (test bắt được)" "Đã bật lại backend" "$OUT"
 if (( HUP_OK == 1 )); then
 mk; EXTRA_ENV=("STUB_SIGNAL_ON=backend frontend=HUP")
 run_r --latest --apply --yes
@@ -524,6 +535,7 @@ expect_eq "restore.sh không còn nhắc .env.docker" "0" "$(grep -c '\.env\.doc
 expect_eq "restore.sh: không gọi lệnh git" "" "$(grep -vE '^[[:space:]]*#' "$ROOT_DIR/restore.sh" | grep -E "^[[:space:]]*git[[:space:]]|[;&|(\`][[:space:]]*git[[:space:]]" || true)"
 expect_contains "restore.sh dùng up -d --no-build --no-deps" "up -d --no-build --no-deps backend frontend" "$(cat "$ROOT_DIR/restore.sh")"
 expect_contains "restore.sh gọi acquire_dir_lock chung" 'acquire_dir_lock "$ROOT_DIR"' "$(cat "$ROOT_DIR/restore.sh")"
+expect_contains "restore.sh on_exit bỏ TERM INT HUP khi dọn (như deploy.sh)" "trap '' PIPE TERM INT HUP" "$(sed -n '/^on_exit() {/,/^}/p' "$ROOT_DIR/restore.sh")"
 for pat in 'git bundle verify x' 'git reset --hard HEAD' 'docker compose up --build -d' 'case --code-only) :;;'; do
   cp "$ROOT_DIR/restore.sh" "$TMP/mut.sh"; printf '%s\n' "$pat" >> "$TMP/mut.sh"
   [[ -n "$(static_hits "$TMP/mut.sh")" ]] && ok || fail "đối chứng: thêm '$pat' mà kiểm tĩnh không bắt được"
@@ -544,6 +556,34 @@ mk; sed -i '/^    acquire_dir_lock "\$ROOT_DIR"$/d' "$W/restore.sh"
 run_r --latest --apply --yes --db-only
 expect_eq "(đột biến c) bỏ acquire_dir_lock thì không gọi flock" "0" "$(cat "$CALLS.flock" 2>/dev/null | grep -c flock || true)"
 
+
+echo "== 17) PROMOTE_REVERT (deploy.sh ghi khi trả thẻ current): whitelist, kiểm giá trị, cảnh báo khi =failed =="
+MP="backups/deploy-pre-$TS.manifest"
+mk; mf "deploy-pre-$TS.manifest" "PROMOTE_REVERT=failed" "DEPLOY_STATUS=failed" "STACK_TOUCHED=0"
+run_r --manifest "$MP"
+expect_rc "dry-run manifest PROMOTE_REVERT=failed vẫn đọc được" 0 "$RC"
+expect_contains "failed: cảnh báo nêu khóa" "PROMOTE_REVERT=failed" "$OUT"
+expect_contains "failed: nói thẻ current có thể vẫn là image mới" "VẪN là image MỚI" "$OUT"
+expect_contains "failed: không --db-only thì restore tự đặt lại current" "sẽ đặt lại thẻ current = pre-$TS" "$OUT"
+run_r --manifest "$MP" --db-only
+expect_rc "dry-run --db-only với PROMOTE_REVERT=failed" 0 "$RC"
+expect_contains "failed + --db-only: cảnh báo không đổi thẻ + lệnh tay" "docker tag <tên image>:pre-$TS <tên image>:current" "$OUT"
+run_r --list
+expect_rc "--list với PROMOTE_REVERT=failed" 0 "$RC"; expect_contains "--list: nhắc PROMOTE_REVERT=failed" "PROMOTE_REVERT=failed" "$OUT"
+for v in reverted none ""; do
+  mk; mf "deploy-pre-$TS.manifest" "PROMOTE_REVERT=$v"
+  run_r --manifest "$MP"
+  expect_rc "PROMOTE_REVERT='$v' đọc được" 0 "$RC"; expect_not_contains "PROMOTE_REVERT='$v': không cảnh báo thẻ" "VẪN là image MỚI" "$OUT"
+  run_r --list; expect_not_contains "--list PROMOTE_REVERT='$v': không nhắc thẻ" "PROMOTE_REVERT" "$OUT"
+done
+mk; mf "deploy-pre-$TS.manifest" "PROMOTE_REVERT=bậy"
+run_r --manifest "$MP"
+expect_nonzero "PROMOTE_REVERT sai giá trị bị từ chối" "$RC"; expect_contains "PROMOTE_REVERT sai: báo khóa" "PROMOTE_REVERT phải là" "$OUT"
+# Whitelist: khóa nằm trong MANIFEST_KEYS; đối chứng: bỏ nó khỏi whitelist thì khóa bị bỏ qua (không cảnh báo) => test cảnh báo ở trên bắt được.
+expect_contains "MANIFEST_KEYS có PROMOTE_REVERT" " PROMOTE_REVERT " "$(sed -n 's/^readonly MANIFEST_KEYS="\(.*\)"$/ \1 /p' "$ROOT_DIR/restore.sh")"
+mk; mf "deploy-pre-$TS.manifest" "PROMOTE_REVERT=failed"; sed -i '/^readonly MANIFEST_KEYS=/s/ PROMOTE_REVERT / /' "$W/restore.sh"
+run_r --manifest "$MP"
+expect_not_contains "(đột biến d) bỏ PROMOTE_REVERT khỏi whitelist thì không còn cảnh báo (test bắt được)" "VẪN là image MỚI" "$OUT"
 echo
 echo "Kết quả: $PASS đạt, $FAIL hỏng."
 (( FAIL == 0 ))

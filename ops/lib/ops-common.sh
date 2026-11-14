@@ -235,19 +235,9 @@ check_staging_vars() {
   fi
 }
 
-# Khóa chống hai lần deploy/restore chạy chồng nhau (CÙNG một khóa cho cả deploy.sh và restore.sh). Đặt trong .git (không hiện ở
-# git status, không phải file repo). Giữ bằng fd 9 đến hết tiến trình.
-acquire_lock() {
-  in_git_repo || return 0
-  command -v flock >/dev/null 2>&1 || { warn "Không có 'flock': bỏ qua khóa chống chạy chồng."; return 0; }
-  # `git rev-parse --git-dir` (không cố định `.git/`): đúng cả với git worktree, nơi `.git` là FILE trỏ tới thư mục git thật.
-  local gd; gd="$(git rev-parse --git-dir)"
-  exec 9>"$gd/realestate-deploy.lock"
-  flock -n 9 || die "Một lần deploy/restore khác đang chạy (khóa $gd/realestate-deploy.lock)."
-}
-
-# Khóa chống chạy chồng DÙNG CHUNG với deploy.sh (T-36): `flock -n` trên file `<dir>/.deploy.lock` (cùng đường dẫn deploy.sh khóa: $ROOT_DIR/.deploy.lock),
-# giữ bằng fd 8 đến hết tiến trình. Dùng cho backup.sh/restore.sh (không dùng git nên không dùng khóa trong .git). Thiếu `flock` = DỪNG.
+# Khóa chống chạy chồng DÙNG CHUNG cho deploy.sh, backup.sh và restore.sh (T-36): `flock -n` trên file `<dir>/.deploy.lock` (cùng đường dẫn deploy.sh khóa:
+# $ROOT_DIR/.deploy.lock), giữ bằng fd 8 đến hết tiến trình. Không dùng git (VPS không có git) nên không dùng khóa trong .git. Thiếu `flock` = DỪNG.
+# (Khóa cũ trong .git, hàm acquire_lock/fd 9, đã gỡ: không còn script nào dùng.)
 # KHÔNG đặt biến DEPLOY_LOCK_FILE ở đây (deploy.sh khai báo readonly biến đó).
 acquire_dir_lock() {
   local dir="${1:-.}" lock

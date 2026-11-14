@@ -94,7 +94,7 @@ readonly DEPLOY_LOCK_FILE=".deploy.lock"
 readonly DOC="docs/01_Infrastructure/06_Production_Deploy.md"
 
 # Kiểm các biến chỉ dành cho staging NGAY khi nạp script (valid_rel_path/check_staging_vars nằm ở ops/lib/ops-common.sh, dùng chung với restore.sh).
-# File env mặc định của deploy là `.env` (restore.sh/backup.sh còn dùng mặc định cũ `.env.docker` tới T-36).
+# File env mặc định của deploy.sh, backup.sh và restore.sh đều là `.env` (T-34, T-36).
 OPS_DEFAULT_ENV_FILE=".env"
 check_staging_vars
 
@@ -380,15 +380,11 @@ run_verify_env() {
 }
 
 # ── 1b) Khóa chống chạy chồng ──────────────────────────────────────────────────────────────────────────────
-# `flock -n` trên file `.deploy.lock` ở thư mục deploy (VPS không có git nên không dùng khóa trong .git). Giữ bằng fd 8 đến hết tiến trình.
-# Thiếu `flock` (Ubuntu luôn có) = DỪNG: deploy chồng nhau có thể làm hỏng dữ liệu. Thêm khóa cũ trong .git (nếu chạy trong git repo, vd máy dev) để vẫn loại trừ
-# với backup.sh/restore.sh tới khi T-36 chuyển chúng sang `.deploy.lock`.
+# `flock -n` trên file `.deploy.lock` ở thư mục deploy ($ROOT_DIR/$DEPLOY_LOCK_FILE; VPS không có git nên không dùng khóa trong .git), giữ bằng fd 8 đến hết tiến trình.
+# Dùng acquire_dir_lock (ops/lib/ops-common.sh): CÙNG khóa với backup.sh/restore.sh nên ba script không chạy chồng nhau. Thiếu `flock` (Ubuntu luôn có) = DỪNG.
+# Khóa cũ trong .git (fd 9, acquire_lock) đã gỡ vì backup.sh/restore.sh đã chuyển sang `.deploy.lock` (T-36).
 acquire_deploy_lock() {
-  command -v flock >/dev/null 2>&1 || die "Thiếu lệnh 'flock' (gói util-linux): không có khóa thì hai lần deploy có thể chạy chồng nhau. Cài util-linux rồi chạy lại. Chưa đổi gì."
-  local lock="$ROOT_DIR/$DEPLOY_LOCK_FILE"
-  exec 8>"$lock" || die "Không mở được file khóa $lock (thư mục deploy không ghi được?)."
-  flock -n 8 || die "Một lần deploy khác đang chạy (khóa $lock). Chờ nó xong; nếu chắc chắn không có, kiểm tiến trình: ps aux | grep deploy.sh. Chưa đổi gì."
-  acquire_lock
+  acquire_dir_lock "$ROOT_DIR"
 }
 
 # ── 1c) Manifest backup (MANIFEST_VERSION=2) ───────────────────────────────────────────────────────────────

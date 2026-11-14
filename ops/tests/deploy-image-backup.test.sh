@@ -45,6 +45,9 @@ expect_rc() { if [[ "$2" == "$3" ]]; then ok; else fail "$1: mã thoát mong đ�
 expect_nonzero() { if [[ "$2" != "0" ]]; then ok; else fail "$1: mong đợi mã thoát khác 0 (output: ${OUT:0:500})"; fi; }
 expect_lt() { if [[ "$2" =~ ^[0-9]+$ && "$3" =~ ^[0-9]+$ ]] && (( $2 < $3 )); then ok; else fail "$1: thứ tự sai (dòng $2 phải < dòng $3)"; fi; }
 
+# SIGHUP bị bỏ qua từ lúc khởi động (vd chạy bằng nohup) thì bash không bắt được: bỏ các ca SIGHUP thay vì báo hỏng giả.
+HUP_OK=1; [[ "$(bash -c 'kill -HUP $$; echo survived' 2>/dev/null)" == "survived" ]] && HUP_OK=0
+
 # ── Stub ────────────────────────────────────────────────────────────────────
 STUB="$TMP/stub"; STUBFL="$TMP/stubfl"; mkdir -p "$STUB" "$STUBFL"
 cat > "$STUB/docker" <<'EOS'
@@ -371,7 +374,7 @@ expect_nonzero "verify-env lỗi cả khi --plan-only" "$RC"
 
 echo "== 6) Khóa flock: bận = dừng trước mọi thay đổi (stub) =="
 mkdeploy; rd "STUB_FLOCK_BUSY=1"
-expect_nonzero "khóa bận" "$RC"; expect_contains "báo deploy khác đang chạy" "Một lần deploy khác đang chạy" "$OUT"
+expect_nonzero "khóa bận" "$RC"; expect_contains "báo deploy khác đang chạy" "Một lần deploy/backup/restore khác đang chạy" "$OUT"
 expect_lt "verify-env chạy trước khi giành khóa" "$(ln 'verify-env')" "$(ln 'flock -n 8')"
 has "config -q" && fail "khóa bận: không được chạm compose" || ok; no_change_calls "khóa bận"
 mkdeploy; rd "STUB_FLOCK_BUSY=1" -- --plan-only
@@ -386,7 +389,7 @@ if command -v flock >/dev/null 2>&1 && [[ "$(uname -s)" == "Linux" ]]; then
   sleep 1.5
   OUT="$(cd "$D" && env CALLS="$CALLS" PATH="$STUB:$PATH" DEPLOY_MIN_FREE_GB=0 MONGO_TIMEOUT=5 HEALTH_TIMEOUT=5 HEALTH_URL=http://stub/live bash deploy.sh 2>&1)"; RC=$?
   expect_nonzero "deploy thứ hai bị chặn bởi flock thật" "$RC"
-  expect_contains "thông báo khóa" "Một lần deploy khác đang chạy" "$OUT"
+  expect_contains "thông báo khóa" "Một lần deploy/backup/restore khác đang chạy" "$OUT"
   wait "$BG"; expect_rc "deploy đầu vẫn hoàn tất" 0 "$?"
 else
   echo "   (bỏ qua: không có flock thật trên nền tảng này ($(uname -s)); ca khóa ở mục 6 dùng stub)"
@@ -578,9 +581,11 @@ expect_contains "TERM trong lúc up: in hướng dẫn khôi phục" "KHÔNG t�
 expect_contains "TERM trong lúc up: có lệnh restore" "bash restore.sh --manifest" "$OUT"
 expect_not_contains "TERM sau khi đụng stack: KHÔNG tự trả thẻ" "docker tag" "$(calls_after 'up -d --no-build')"
 expect_eq "TERM trong lúc up: không có PROMOTE_REVERT" "" "$(mval PROMOTE_REVERT)"
+if (( HUP_OK == 1 )); then
 mkdeploy; rd "$VOL" "STUB_UP_SIGNAL=HUP"
 expect_rc "HUP trong lúc up: mã 129" 129 "$RC"; expect_eq "HUP trong lúc up: manifest failed" "failed" "$(mval DEPLOY_STATUS)"
 expect_eq "HUP trong lúc up: STACK_TOUCHED=1" "1" "$(mval STACK_TOUCHED)"
+else echo "  (bỏ qua ca SIGHUP lúc up: SIGHUP bị bỏ qua từ lúc khởi động, vd chạy bằng nohup)"; fi
 mkdeploy; rd "$VOL" "STUB_DRY_SIGNAL=TERM"; TSV="$(mval TS)"
 expect_rc "TERM trước up: mã 143" 143 "$RC"; expect_eq "TERM trước up: manifest failed" "failed" "$(mval DEPLOY_STATUS)"
 expect_eq "TERM trước up: STACK_TOUCHED=0" "0" "$(mval STACK_TOUCHED)"
@@ -588,9 +593,11 @@ expect_not_contains "TERM trước up: không in khung khôi phục" "DEPLOY TH�
 expect_eq "TERM trước up: tự trả thẻ" "reverted" "$(mval PROMOTE_REVERT)"
 has "$(REV_BE "$TSV")" && ok || fail "TERM trước up: phải trả thẻ BE"
 has "up -d" && fail "TERM trước up: không được up" || ok
+if (( HUP_OK == 1 )); then
 mkdeploy; rd "$VOL" "STUB_DRY_SIGNAL=HUP"
 expect_rc "HUP trước up: mã 129" 129 "$RC"; expect_eq "HUP trước up: tự trả thẻ" "reverted" "$(mval PROMOTE_REVERT)"
 expect_eq "HUP trước up: manifest failed" "failed" "$(mval DEPLOY_STATUS)"
+else echo "  (bỏ qua ca SIGHUP trước up: SIGHUP bị bỏ qua từ lúc khởi động, vd chạy bằng nohup)"; fi
 # SIGKILL giữa chừng (trước up): không ai chốt được manifest nhưng nó ĐÃ có, kèm image dự phòng + version DB (ghi trước các bước dài)
 mkdeploy; rd "$VOL" "STUB_DRY_SIGNAL=KILL"; TSV="$(mval TS)"
 expect_nonzero "SIGKILL trước up: mã khác 0" "$RC"
@@ -704,6 +711,92 @@ expect_nonzero "manifest_init: manifest cùng TS đã có" "$RC"; expect_contain
 expect_eq "manifest_init: manifest cũ KHÔNG bị on_exit sửa" "SENTINEL-MANIFEST" "$(cat "$D/backups/deploy-pre-$TS_FIX.manifest")"
 has "docker tag " && fail "manifest_init die: không được gắn thẻ/promote" || ok
 has "up -d" && fail "manifest_init die: không được up" || ok
+
+echo "== 17b) Manifest do deploy.sh THẬT sinh -> restore.sh THẬT đọc lại đúng (--list, dry-run, whitelist khóa) =="
+# restore.sh THẬT chạy trong cùng thư mục deploy $D (nơi deploy.sh vừa ghi manifest), với docker/stat/flock GIẢ riêng cho restore (không dùng stub của deploy.sh).
+STUBR="$TMP/stubr"; mkdir -p "$STUBR"
+cat > "$STUBR/docker" <<'EOS'
+#!/usr/bin/env bash
+echo "docker $*" >> "$RCALLS"
+case "${1:-}" in
+  info) [[ "$*" == *DockerRootDir* ]] && echo "/"; exit 0 ;;
+  inspect) case "$*" in *Health*) echo healthy ;; *State.Status*) echo running ;; esac; exit 0 ;;
+  exec) case "$*" in *--dryRun*) cat > /dev/null; echo 'archive prelude `realestate.users`' ;; esac; exit 0 ;;
+esac
+exit 0
+EOS
+printf '#!/usr/bin/env bash\nexit 0\n' > "$STUBR/flock"
+cat > "$STUBR/stat" <<'EOS'
+#!/usr/bin/env bash
+if [[ "$1" == "-c" && "$2" == "%a" ]]; then echo 600; exit 0; fi
+exec /usr/bin/stat "$@"
+EOS
+chmod +x "$STUBR/docker" "$STUBR/flock" "$STUBR/stat"
+RCALLS="$TMP/rcalls.log"
+restore_run() { # <đối số restore.sh...> -> ROUT, RRC  (chạy trong $D hiện tại)
+  cp "$ROOT_DIR/restore.sh" "$D/restore.sh"; : > "$RCALLS"
+  ROUT="$(cd "$D" && env PATH="$STUBR:$PATH" RCALLS="$RCALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD=x bash restore.sh "$@" 2>&1)"
+  RRC=$?
+}
+RS_KEYS=" $(sed -n 's/^readonly MANIFEST_KEYS="\(.*\)"$/\1/p' "$ROOT_DIR/restore.sh") "
+manifest_keys_whitelisted() { # <manifest>: mọi khóa deploy.sh ghi đều nằm trong whitelist của restore.sh (khóa thiếu bị restore.sh lặng lẽ bỏ qua)
+  local k bad=""
+  for k in $(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$1"); do [[ "$RS_KEYS" == *" $k "* ]] || bad+=" $k"; done
+  printf '%s' "$bad"
+}
+# (a) deploy thành công, đã qua hậu-migrate
+mkdeploy; rd "$VOL" "DEPLOY_CD_RUN_ID=run-4242"; TSV="$(mval TS)"
+expect_rc "17b(a): deploy thành công" 0 "$RC"
+expect_eq "17b(a): restore.sh whitelist đủ khóa deploy.sh ghi" "" "$(manifest_keys_whitelisted "$(manifest)")"
+restore_run --list
+expect_rc "17b(a): restore --list đọc manifest của deploy.sh" 0 "$RRC"
+expect_not_contains "17b(a): --list không báo manifest hỏng" "MANIFEST HỎNG" "$ROUT"
+expect_contains "17b(a): --list thấy tên manifest" "deploy-pre-$TSV.manifest" "$ROUT"
+expect_contains "17b(a): --list đọc DEPLOY_STATUS" "trạng thái deploy: succeeded" "$ROUT"
+expect_contains "17b(a): --list đọc RELEASE_VERSION" "bản phát hành: 1.0.6" "$ROUT"
+expect_contains "17b(a): --list đọc CD_RUN_ID" "CD run: run-4242" "$ROUT"
+expect_contains "17b(a): --list đọc DB_VERSION_BEFORE" "version DB trước deploy: 1.0.5" "$ROUT"
+expect_contains "17b(a): --list thấy backup Mongo" "backup Mongo: có" "$ROUT"
+expect_contains "17b(a): --list đọc image dự phòng" "realestatemanager-backend:pre-$TSV + realestatemanager-frontend:pre-$TSV" "$ROUT"
+expect_contains "17b(a): --list đọc POST_UP_REACHED (cảnh báo một chiều)" "đã qua điểm hậu-migrate" "$ROUT"
+restore_run --manifest "backups/deploy-pre-$TSV.manifest"
+expect_rc "17b(a): restore dry-run đọc manifest của deploy.sh" 0 "$RRC"
+expect_contains "17b(a): dry-run qua kiểm backup Mongo" "[ĐẠT]  backup Mongo" "$ROUT"
+expect_contains "17b(a): dry-run: hai image dự phòng còn" "hai image dự phòng realestatemanager-backend:pre-$TSV và realestatemanager-frontend:pre-$TSV còn trên máy" "$ROUT"
+expect_contains "17b(a): dry-run: kế hoạch gắn thẻ current từ pre-<TS>" "gắn thẻ realestatemanager-backend:pre-$TSV -> realestatemanager-backend:current" "$ROUT"
+expect_not_contains "17b(a): dry-run: không cảnh báo PROMOTE_REVERT (deploy thành công)" "PROMOTE_REVERT" "$ROUT"
+restore_run --latest
+expect_rc "17b(a): restore --latest chọn manifest của deploy.sh" 0 "$RRC"; expect_contains "17b(a): --latest dùng đúng manifest" "backups/deploy-pre-$TSV.manifest" "$ROUT"
+# (b) lỗi trước up, trả thẻ THẤT BẠI: manifest có PROMOTE_REVERT=failed => restore.sh đọc được khóa và cảnh báo
+mkdeploy; rd "$VOL" "STUB_DRY_RC=4" "STUB_TAG_REVERT_RC=1"; TSV="$(mval TS)"
+expect_eq "17b(b): deploy ghi PROMOTE_REVERT=failed" "failed" "$(mval PROMOTE_REVERT)"
+expect_eq "17b(b): restore.sh whitelist đủ khóa (gồm PROMOTE_REVERT)" "" "$(manifest_keys_whitelisted "$(manifest)")"
+restore_run --manifest "backups/deploy-pre-$TSV.manifest"
+expect_rc "17b(b): restore dry-run đọc manifest failed" 0 "$RRC"
+expect_contains "17b(b): đọc DEPLOY_STATUS=failed" "DEPLOY_STATUS=failed" "$ROUT"
+expect_contains "17b(b): đọc PROMOTE_REVERT=failed và cảnh báo" "PROMOTE_REVERT=failed" "$ROUT"
+restore_run --list
+expect_contains "17b(b): --list nhắc PROMOTE_REVERT=failed" "PROMOTE_REVERT=failed" "$ROUT"
+# (c) lỗi trước up, trả thẻ THÀNH CÔNG (reverted): đọc được, không cảnh báo thẻ
+mkdeploy; rd "$VOL" "STUB_DRY_RC=4"; TSV="$(mval TS)"
+expect_eq "17b(c): deploy ghi PROMOTE_REVERT=reverted" "reverted" "$(mval PROMOTE_REVERT)"
+restore_run --manifest "backups/deploy-pre-$TSV.manifest"
+expect_rc "17b(c): restore dry-run đọc manifest reverted" 0 "$RRC"; expect_not_contains "17b(c): reverted: không cảnh báo thẻ" "VẪN là image MỚI" "$ROUT"
+# (d) lần đầu (không có image cũ) và dừng dở: PROMOTE_REVERT=none; manifest rỗng khóa vẫn đọc được (--list không báo hỏng)
+mkdeploy; rd "STUB_NO_CONTAINERS=1" "STUB_TAG_PROMOTE_FE_RC=1"
+expect_eq "17b(d): deploy ghi PROMOTE_REVERT=none" "none" "$(mval PROMOTE_REVERT)"
+restore_run --list
+expect_rc "17b(d): --list đọc manifest lần đầu" 0 "$RRC"; expect_not_contains "17b(d): không báo manifest hỏng" "MANIFEST HỎNG" "$ROUT"
+# (e) bị SIGKILL giữa up: manifest ở trạng thái started vẫn đọc được
+mkdeploy; rd "$VOL" "STUB_UP_SIGNAL=KILL" -- --no-migrate
+expect_eq "17b(e): manifest started" "started" "$(mval DEPLOY_STATUS)"
+restore_run --list
+expect_rc "17b(e): --list đọc manifest started" 0 "$RRC"; expect_not_contains "17b(e): không báo manifest hỏng" "MANIFEST HỎNG" "$ROUT"; expect_contains "17b(e): thấy trạng thái started" "trạng thái deploy: started" "$ROUT"
+# Đối chứng: bỏ PROMOTE_REVERT khỏi whitelist của restore.sh => kiểm whitelist phải BÁO THIẾU (test không rỗng nghĩa).
+RS_KEYS_SAVE="$RS_KEYS"; RS_KEYS="${RS_KEYS/ PROMOTE_REVERT / }"
+mkdeploy; rd "$VOL" "STUB_DRY_RC=4" "STUB_TAG_REVERT_RC=1"
+expect_eq "17b(đối chứng): whitelist thiếu PROMOTE_REVERT bị báo" " PROMOTE_REVERT" "$(manifest_keys_whitelisted "$(manifest)")"
+RS_KEYS="$RS_KEYS_SAVE"
 
 echo "== 18) Mutation tự kiểm: bản đột biến PHẢI bị bắt =="
 prop_revert "$ROOT_DIR/deploy.sh"; expect_eq "bản thật: tự trả thẻ" "1" "$PROP_OK"

@@ -1,10 +1,10 @@
 # Tài liệu dự án Real Estate Manager
 
-> **Phiên bản tài liệu:** v1.0.4
+> **Phiên bản tài liệu:** v1.0.6
 
 Đây là chỉ mục tổng của toàn bộ tài liệu dự án. Tài liệu được tổ chức theo **Tổng thể → Hạ tầng → Từng module → Frontend**, mỗi thư mục và mỗi file đều đánh số để đọc theo thứ tự.
 
-**Phiên bản hiện tại: v1.0.3** (đang chạy production từ 2026-11-04; trước đó v1.0.2 từ 2026-11-02). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
+**Phiên bản hiện tại: v1.0.3** (đang chạy production từ 2026-11-04; trước đó v1.0.2 từ 2026-11-02). **Đang phát triển: v1.0.6** (thống nhất môi trường và dọn cấu trúc, mã nguồn đã nâng số 1.0.6, chưa phát hành; v1.0.4 và v1.0.5 cũng chưa lên production). Điểm vào của repo: [`../README.md`](../README.md). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
 
 ## Dự án gồm những gì
 
@@ -19,7 +19,7 @@
 | Thư mục | Nội dung |
 |---|---|
 | 📘 [`00_Project_Overview/`](00_Project_Overview/README.md) | Kế hoạch và thiết kế kỹ thuật tổng thể |
-| 🏗️ [`01_Infrastructure/`](01_Infrastructure/README.md) | Hạ tầng dùng chung: backend, database, logging |
+| 🏗️ [`01_Infrastructure/`](01_Infrastructure/README.md) | Hạ tầng dùng chung: backend, database, logging, triển khai và vận hành (`release.sh`, `deploy.sh`, backup/restore) |
 | 🔐 [`02_Module_Auth/`](02_Module_Auth/README.md) | Xác thực, phân quyền (JWT) |
 | 📰 [`03_Module_News/`](03_Module_News/README.md) | Thu thập tin tức (NewsFireCrawlManager), chống trùng nội dung |
 | ✍️ [`04_Module_Knowledge_Articles/`](04_Module_Knowledge_Articles/README.md) | Tự viết và đăng bài chuyên gia lên WordPress |

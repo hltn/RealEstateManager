@@ -269,5 +269,54 @@ expect_eq "placeholder: chú thích cuối dòng không tính"             ""   
 expect_eq "placeholder: khoảng trắng hai đầu được trim"             "K"  "$(ph 'K=   <abc>   ')"
 expect_eq "placeholder: CRLF"                                       "K"  "$(printf 'K=<abc>\r\n' > "$PHF"; list_placeholder_vars "$PHF" | paste -sd ' ' -)"
 
+# ── acquire_dir_lock (T-36): khóa chung deploy.sh/backup.sh/restore.sh trên <thư mục>/.deploy.lock, giữ bằng fd 8 ─────────────────────────────────
+# Chạy trong subshell (die = exit 1): in "mã|output". `flock` là stub đặt riêng từng thư mục (Git Bash không có flock thật); PATH=<thư mục stub> để kiểm "thiếu flock".
+ADL="$TMP/adl"; mkdir -p "$ADL/busy" "$ADL/ok" "$ADL/none" "$ADL/dir"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$ADL/busy/flock"
+printf '#!/usr/bin/env bash\necho "flock $*" >> "$ADL_LOG"\nexit 0\n' > "$ADL/ok/flock"
+chmod +x "$ADL/busy/flock" "$ADL/ok/flock"
+adl() { # <thư mục khóa> <thư mục stub flock> -> "mã|output"
+  local out rc=0
+  out="$( ( PATH="$2:/usr/bin:/bin"; [[ "$2" != "$ADL/none" ]] || PATH="$2"; acquire_dir_lock "$1" ) 2>&1)" || rc=$?
+  printf '%s|%s' "$rc" "$out"
+}
+export ADL_LOG="$ADL/flock.log"; : > "$ADL_LOG"
+R="$(adl "$ADL/dir" "$ADL/ok")"
+expect_eq "acquire_dir_lock: giành được khóa => mã 0, không in gì" "0|" "$R"
+[[ -f "$ADL/dir/.deploy.lock" ]] && ok || fail "acquire_dir_lock: phải tạo file khóa <dir>/.deploy.lock"
+expect_eq "acquire_dir_lock: gọi flock -n trên fd 8" "flock -n 8" "$(cat "$ADL_LOG")"
+R="$(adl "$ADL/dir" "$ADL/busy")"
+expect_eq "acquire_dir_lock: khóa bận => mã 1" "1" "${R%%|*}"
+expect_contains "acquire_dir_lock: khóa bận báo rõ đang chạy" "Một lần deploy/backup/restore khác đang chạy" "$R"
+expect_contains "acquire_dir_lock: khóa bận nêu đường dẫn khóa" "$ADL/dir/.deploy.lock" "$R"
+expect_contains "acquire_dir_lock: khóa bận nói chưa đổi gì" "Chưa đổi gì" "$R"
+R="$(adl "$ADL/khong-co-thu-muc" "$ADL/ok")"
+expect_eq "acquire_dir_lock: không mở được file khóa => mã 1" "1" "${R%%|*}"
+expect_contains "acquire_dir_lock: không mở được file khóa báo rõ" "Không mở được file khóa" "$R"
+expect_contains "acquire_dir_lock: không mở được file khóa nêu đường dẫn" "$ADL/khong-co-thu-muc/.deploy.lock" "$R"
+expect_contains "acquire_dir_lock: không mở được file khóa nói chưa đổi gì" "Chưa đổi gì" "$R"
+[[ ! -e "$ADL/khong-co-thu-muc" ]] && ok || fail "acquire_dir_lock: không được tự tạo thư mục thiếu"
+R="$(adl "$ADL/dir" "$ADL/none")"
+expect_eq "acquire_dir_lock: thiếu flock => DỪNG (mã 1)" "1" "${R%%|*}"
+expect_contains "acquire_dir_lock: thiếu flock báo rõ" "Thiếu lệnh 'flock'" "$R"
+expect_contains "acquire_dir_lock: thiếu flock nói chưa đổi gì" "Chưa đổi gì" "$R"
+# Mặc định thư mục là "." khi không truyền tham số.
+( cd "$ADL/dir" && rm -f .deploy.lock && PATH="$ADL/ok:$PATH" acquire_dir_lock ) >/dev/null 2>&1
+[[ -f "$ADL/dir/.deploy.lock" ]] && ok || fail "acquire_dir_lock: không tham số phải dùng thư mục hiện tại"
+# Khóa THẬT (chỉ khi máy có flock thật, vd Linux/CI): tiến trình thứ hai bị chặn khi tiến trình đầu còn giữ, giành được sau khi nó thoát.
+if command -v flock >/dev/null 2>&1; then
+  mkdir -p "$ADL/real"
+  ( exec 8>"$ADL/real/.deploy.lock"; flock -n 8 && sleep 3 ) &
+  HOLD=$!; sleep 1
+  R="$(adl "$ADL/real" "$(dirname "$(command -v flock)")")"
+  expect_eq "acquire_dir_lock (flock thật): bị chặn khi có tiến trình khác giữ" "1" "${R%%|*}"
+  expect_contains "acquire_dir_lock (flock thật): báo đang chạy" "khác đang chạy" "$R"
+  wait "$HOLD" 2>/dev/null
+  R="$(adl "$ADL/real" "$(dirname "$(command -v flock)")")"
+  expect_eq "acquire_dir_lock (flock thật): giành được khi khóa đã nhả" "0|" "$R"
+else
+  echo "   (bỏ qua ca khóa thật: máy không có flock thật; các ca khóa ở trên dùng stub)"
+fi
+
 printf '\nKết quả: %d đạt, %d hỏng.\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

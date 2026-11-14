@@ -113,7 +113,7 @@ PRE_FAIL=0
 declare -A MF=()
 
 # Khóa manifest được chấp nhận (whitelist; khóa lạ bị bỏ qua, KHÔNG `source` manifest).
-readonly MANIFEST_KEYS="MANIFEST_VERSION BACKUP_KIND TS CREATED_AT HOST COMPOSE_PROJECT RELEASE_VERSION RELEASE_COMMIT CD_RUN_ID BACKEND_IMAGE_NAME BACKEND_IMAGE_TAG FRONTEND_IMAGE_NAME FRONTEND_IMAGE_TAG PRE_TAG BACKEND_PRE_IMAGE FRONTEND_PRE_IMAGE DB_VERSION_BEFORE DB_VERSION_READ MONGO_BACKUP_FILE ENV_BACKUP_FILE MONGO_CONTAINER BACKEND_CONTAINER FRONTEND_CONTAINER STACK_TOUCHED POST_UP_REACHED DEPLOY_STATUS FINISHED_AT"
+readonly MANIFEST_KEYS="MANIFEST_VERSION BACKUP_KIND TS CREATED_AT HOST COMPOSE_PROJECT RELEASE_VERSION RELEASE_COMMIT CD_RUN_ID BACKEND_IMAGE_NAME BACKEND_IMAGE_TAG FRONTEND_IMAGE_NAME FRONTEND_IMAGE_TAG PRE_TAG BACKEND_PRE_IMAGE FRONTEND_PRE_IMAGE DB_VERSION_BEFORE DB_VERSION_READ MONGO_BACKUP_FILE ENV_BACKUP_FILE MONGO_CONTAINER BACKEND_CONTAINER FRONTEND_CONTAINER STACK_TOUCHED POST_UP_REACHED DEPLOY_STATUS PROMOTE_REVERT FINISHED_AT"
 
 usage() {
   cat <<'EOF'
@@ -203,6 +203,7 @@ validate_manifest() { # <file>
   [[ "${MF[DB_VERSION_READ]:-0}" =~ ^[01]$ ]] || die "Manifest '$f': DB_VERSION_READ phải là 0 hoặc 1."
   [[ "${MF[POST_UP_REACHED]:-0}" =~ ^[01]$ ]] || die "Manifest '$f': POST_UP_REACHED phải là 0 hoặc 1."
   [[ "${MF[STACK_TOUCHED]:-0}" =~ ^[01]$ ]] || die "Manifest '$f': STACK_TOUCHED phải là 0 hoặc 1."
+  [[ "${MF[PROMOTE_REVERT]:-}" =~ ^(reverted|failed|none)?$ ]] || die "Manifest '$f': PROMOTE_REVERT phải là reverted|failed|none (hoặc rỗng)."
   [[ "${MF[RELEASE_VERSION]:-}" =~ ^[0-9A-Za-z.+-]*$ ]] || die "Manifest '$f': RELEASE_VERSION có ký tự lạ."
   [[ "${MF[RELEASE_COMMIT]:-}" =~ ^[0-9a-f]{0,40}$ ]] || die "Manifest '$f': RELEASE_COMMIT không phải SHA thường (tối đa 40 ký tự hex)."
   [[ "${MF[CD_RUN_ID]:-}" =~ ^[A-Za-z0-9._-]{0,64}$ ]] || die "Manifest '$f': CD_RUN_ID sai dạng."
@@ -261,6 +262,9 @@ list_one() { # <file> <số thứ tự> (chạy trong subshell)
     "${MF[CREATED_AT]:-${MF[TS]}}" "${MF[DEPLOY_STATUS]}" "${MF[RELEASE_VERSION]:-?}" "${MF[CD_RUN_ID]:+ | CD run: ${MF[CD_RUN_ID]}}"
   printf '       version DB trước deploy: %s | backup Mongo: %s | thẻ: %s\n' "$dbn" "$db" "${MF[PRE_TAG]}"
   printf '       image dự phòng: %s\n' "$img"
+  if [[ "${MF[PROMOTE_REVERT]:-}" == "failed" ]]; then
+    printf '       LƯU Ý: deploy đó không tự trả được thẻ image current về bản cũ (PROMOTE_REVERT=failed): thẻ current có thể vẫn là image MỚI.\n'
+  fi
   if one_way_risk; then
     printf '       LƯU Ý: đã qua điểm hậu-migrate (bước 90, migration 011 một chiều): restore DB là đường quay lại duy nhất, mất dữ liệu sau backup.\n'
   fi
@@ -425,6 +429,18 @@ run_prechecks() {
   fi
 }
 
+# PROMOTE_REVERT=failed (deploy.sh không tự trả được thẻ `current` về image cũ sau lỗi trước `up`): thẻ current có thể VẪN là image mới.
+# Khôi phục đủ (không --db-only) đặt lại current = pre-<TS> ở bước 4; --db-only KHÔNG đổi thẻ nên phải làm tay. Các giá trị khác không cần cảnh báo.
+print_promote_revert_warning() {
+  [[ "${MF[PROMOTE_REVERT]:-}" == "failed" ]] || return 0
+  warn "Manifest ghi PROMOTE_REVERT=failed: lần deploy đó KHÔNG tự trả được thẻ image current về bản cũ, nên <tên image>:current có thể VẪN là image MỚI (một lần restart/up bất kỳ sẽ chạy bản mới)."
+  if (( DB_ONLY == 1 )); then
+    warn "Đang dùng --db-only: restore này KHÔNG đổi thẻ image. Kiểm tra thẻ current và đặt lại tay nếu cần: docker tag <tên image>:${MF[PRE_TAG]} <tên image>:current rồi docker compose --env-file $ENV_FILE up -d --no-build --no-deps backend frontend."
+  else
+    warn "Khôi phục đủ (không --db-only) sẽ đặt lại thẻ current = ${MF[PRE_TAG]} ở bước 4, nên thẻ lệch sẽ được sửa; chỉ cần kiểm kết quả ở bước 7."
+  fi
+}
+
 # Cảnh báo/ghi chú rút ra từ manifest (không phải lỗi kiểm).
 print_warnings() {
   if one_way_risk; then
@@ -436,6 +452,7 @@ print_warnings() {
     failed)  warn "Lần deploy đó đã THẤT BẠI (DEPLOY_STATUS=failed): khôi phục sẽ đưa về đúng trạng thái trước khi deploy bắt đầu." ;;
     *) : ;;
   esac
+  print_promote_revert_warning
   if [[ "${MF[STACK_TOUCHED]:-0}" == "0" ]]; then
     warn "Manifest ghi STACK_TOUCHED=0: lần deploy đó dừng TRƯỚC khi đụng stack/DB, nên DB và image thường chưa bị đổi; có thể không cần khôi phục."
   fi
@@ -634,10 +651,10 @@ print_guidance() {
 on_exit() {
   local code=$?
   trap - EXIT
-  # Handler PHẢI chạy hết dù `set -e` đang bật và stderr/stdout đã chết (SSH rớt, SIGHUP): tắt -e, bỏ qua SIGPIPE, và mọi lệnh IN đều `|| true`.
+  # Handler PHẢI chạy hết dù `set -e` đang bật và stderr/stdout đã chết (SSH rớt, SIGHUP): tắt -e, bỏ qua SIGPIPE/TERM/INT/HUP, và mọi lệnh IN đều `|| true`.
   # Việc quan trọng (bật lại backend) chạy TRƯỚC các lệnh in và có output ra /dev/null: `>&2` vào fd đã đóng làm docker KHÔNG được chạy.
   set +e
-  trap '' PIPE
+  trap '' PIPE TERM INT HUP   # việc dọn/bật lại backend không bị tín hiệu thứ hai ngắt giữa chừng; như deploy.sh
   if (( code != 0 )); then
     if (( SAFE_PHASE == 1 )); then
       local restarted=0
