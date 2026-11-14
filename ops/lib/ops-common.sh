@@ -3,7 +3,7 @@
 # ops/lib/ops-common.sh — hàm dùng chung cho deploy.sh, backup.sh, restore.sh, scripts/run-migration.sh,
 # ops/check-disk.sh và ops/staging.sh (DRY).
 # File này chỉ được `source`, không chạy trực tiếp. Caller đặt LOG_PREFIX (vd "deploy") TRƯỚC khi source và
-# bật `set -euo pipefail`. Không chứa bí mật, không in giá trị biến trong .env.docker.
+# bật `set -euo pipefail`. Không chứa bí mật, không in giá trị biến trong file env (.env).
 # ─────────────────────────────────────────────────────────────────────────────
 
 LOG_PREFIX="${LOG_PREFIX:-ops}"
@@ -72,7 +72,7 @@ list_placeholder_vars() {
   done < "$f"
 }
 
-# Dừng nếu .env.docker còn giá trị mẫu (chưa điền). CHỈ in tên biến, không in giá trị.
+# Dừng nếu file env còn giá trị mẫu (chưa điền). CHỈ in tên biến, không in giá trị.
 require_no_placeholders() {
   local names
   names="$(list_placeholder_vars "$1" | sort -u | paste -sd ' ' -)"
@@ -213,13 +213,14 @@ valid_rel_path() {
   [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || return 1
   [[ "/$1/" != *"/./"* && "/$1/" != *"/../"* ]]
 }
+# File env mặc định = ${OPS_DEFAULT_ENV_FILE:-.env.docker}: deploy.sh, backup.sh, restore.sh đều đặt OPS_DEFAULT_ENV_FILE=.env (T-34, T-36) trước khi gọi hàm này.
 check_staging_vars() {
   local pair name val staged=""
   for pair in "DEPLOY_ENV_FILE=$ENV_FILE" "DEPLOY_RUNTIME_ENV_FILE=$RUNTIME_ENV_FILE" "DEPLOY_LOGS_DIR=$LOGS_DIR" "DEPLOY_BACKUP_DIR=$BACKUP_DIR"; do
     name="${pair%%=*}"; val="${pair#*=}"
     valid_rel_path "$val" || die "$name='$val' không hợp lệ: phải là đường dẫn TƯƠNG ĐỐI trong repo (chỉ A-Z a-z 0-9 . _ - và dấu /, không bắt đầu bằng /, không chứa '..' hoặc '.', không rỗng)."
   done
-  [[ "$ENV_FILE" == ".env.docker" ]] || staged+=" DEPLOY_ENV_FILE"
+  [[ "$ENV_FILE" == "${OPS_DEFAULT_ENV_FILE:-.env.docker}" ]] || staged+=" DEPLOY_ENV_FILE"
   [[ "$RUNTIME_ENV_FILE" == ".env" ]] || staged+=" DEPLOY_RUNTIME_ENV_FILE"
   [[ "$LOGS_DIR" == "logs" ]] || staged+=" DEPLOY_LOGS_DIR"
   [[ "$BACKUP_DIR" == "backups" ]] || staged+=" DEPLOY_BACKUP_DIR"
@@ -243,6 +244,17 @@ acquire_lock() {
   local gd; gd="$(git rev-parse --git-dir)"
   exec 9>"$gd/realestate-deploy.lock"
   flock -n 9 || die "Một lần deploy/restore khác đang chạy (khóa $gd/realestate-deploy.lock)."
+}
+
+# Khóa chống chạy chồng DÙNG CHUNG với deploy.sh (T-36): `flock -n` trên file `<dir>/.deploy.lock` (cùng đường dẫn deploy.sh khóa: $ROOT_DIR/.deploy.lock),
+# giữ bằng fd 8 đến hết tiến trình. Dùng cho backup.sh/restore.sh (không dùng git nên không dùng khóa trong .git). Thiếu `flock` = DỪNG.
+# KHÔNG đặt biến DEPLOY_LOCK_FILE ở đây (deploy.sh khai báo readonly biến đó).
+acquire_dir_lock() {
+  local dir="${1:-.}" lock
+  lock="$dir/.deploy.lock"
+  command -v flock >/dev/null 2>&1 || die "Thiếu lệnh 'flock' (gói util-linux): không có khóa thì deploy/backup/restore có thể chạy chồng nhau. Cài util-linux rồi chạy lại. Chưa đổi gì."
+  { exec 8>"$lock"; } 2>/dev/null || die "Không mở được file khóa $lock (thư mục deploy không ghi được?). Chưa đổi gì."
+  flock -n 8 || die "Một lần deploy/backup/restore khác đang chạy (khóa $lock). Chờ nó xong; nếu chắc chắn không có, kiểm tiến trình: ps aux | grep -E 'deploy|backup|restore'. Chưa đổi gì."
 }
 
 # Thư mục hiện tại có nằm trong git repo không (đúng cả worktree/submodule, nơi `.git` là FILE chứ không phải thư mục).

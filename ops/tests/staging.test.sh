@@ -152,7 +152,7 @@ cp "$ROOT_DIR/deploy.sh" "$TMP/dep/deploy.sh"
 cp "$ROOT_DIR/ops/lib/ops-common.sh" "$TMP/dep/ops/lib/ops-common.sh"
 sed -i 's/^main "\$@"$/printf "%s|%s|%s|%s|[%s]|%s|%s" "$ENV_FILE" "$RUNTIME_ENV_FILE" "$LOGS_DIR" "$BACKUP_DIR" "$NINE_ROUTER_CONTAINER" "$MONGO_CONTAINER" "$BACKEND_CONTAINER"; exit 0/' "$TMP/dep/deploy.sh"
 defaults="$(env -i PATH="$PATH" HOME="${HOME:-/}" bash "$TMP/dep/deploy.sh" 2>&1)"
-expect_eq "deploy.sh mặc định (env -i) y hệt bản cũ" ".env.docker|.env|logs|backups|[realestate_9router]|realestate_mongo|realestate_backend" "$defaults"
+expect_eq "deploy.sh mặc định (env -i) y hệt bản cũ" ".env|.env|logs|backups|[realestate_9router]|realestate_mongo|realestate_backend" "$defaults"
 
 # ── T-18: restore-dump / snapshot (FR-21) ────────────────────────────────────
 # Chạy staging.sh THẬT với `docker` stub đứng đầu PATH: stub ghi mọi lệnh gọi vào $DOCKER_CALLS rồi thoát 1. Các trường hợp bị từ chối

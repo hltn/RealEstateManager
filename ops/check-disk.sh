@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# ops/check-disk.sh — kiểm tra dung lượng đĩa trống TRƯỚC khi build image (vd `docker compose up -d --build`).
+# ops/check-disk.sh — kiểm tra dung lượng đĩa trống TRƯỚC khi build image (vd khi nạp image mới và `docker compose up -d`).
 #
 #   bash ops/check-disk.sh [GB]      # mặc định 5 GB; thoát mã 1 nếu thiếu
 #
 # Kiểm cả thư mục repo và thư mục dữ liệu Docker (cùng hàm với deploy.sh/run-migration.sh, ops/lib/ops-common.sh).
 # Không đổi gì trên hệ thống; thiếu dung lượng thì in `docker system df` và gợi ý dọn (docker builder prune -f...).
-# Dùng ở tài liệu mục 5.4b trước khi `up --build` (build backend + frontend để lại image + build cache vài GB).
+# Dùng ở tài liệu mục 5.4b trước khi nạp image mới (image BE + FE và bản dự phòng pre-<TS> chiếm vài GB).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 

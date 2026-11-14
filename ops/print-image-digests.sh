@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # ops/print-image-digests.sh — CHỈ ĐỌC (không pull, không đổi gì): in digest của image mà các container production
-# ĐANG CHẠY thật, theo dạng dòng sẵn để dán vào .env.docker (PT-009, tài liệu 06_Production_Deploy.md mục 12).
+# ĐANG CHẠY thật, theo dạng dòng sẵn để dán vào .env (PT-009, tài liệu 06_Production_Deploy.md mục 12).
 #
 #   bash ops/print-image-digests.sh
 #
@@ -9,8 +9,8 @@
 # trên registry hôm nay có thể KHÁC bản đã pull lúc dựng stack. Ghim digest registry hiện tại nghĩa là đổi phiên bản âm
 # thầm. Ở đây lấy RepoDigest của ĐÚNG image ID mà container đang dùng.
 #
-# Mỗi dòng in ra có dạng  NAME_IMAGE=<repo>@sha256:<digest>  (không bí mật). Dán vào .env.docker (quyền 600), rồi
-# `docker compose --env-file .env.docker config | grep image:` để kiểm, và `up -d` có chủ đích theo mục 12.
+# Mỗi dòng in ra có dạng  NAME_IMAGE=<repo>@sha256:<digest>  (không bí mật). Dán vào .env (quyền 600), rồi
+# `docker compose --env-file .env config | grep image:` để kiểm, và `up -d` có chủ đích theo mục 12.
 # Container nào không có RepoDigest (image dựng/nạp cục bộ, hoặc chưa từng pull theo digest) thì in dòng chú thích `#`
 # và KHÔNG đoán digest.
 # ─────────────────────────────────────────────────────────────────────────────

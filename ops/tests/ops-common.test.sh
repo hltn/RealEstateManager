@@ -188,7 +188,7 @@ check_auto "không backup, cờ 0 (bước 5 không xác nhận trống)" 0 1 ""
 check_auto "không backup, cờ 1, EMPTY"                1 0 ""   1 "EMPTY"              0 "ghi baseline/version không cần backup"
 check_auto "không backup, cờ 1, chỉ-system"           1 0 ""   1 "EMPTY_SYSTEM_ONLY"  0 "EMPTY_SYSTEM_ONLY"
 check_auto "không backup, cờ 1, HAS_USERS (đổi giữa chừng)" 0 1 "" 1 "HAS_USERS"      0 "KHÔNG còn trống"
-check_auto "không backup, cờ 1, AMBIGUOUS"            0 1 ""   1 "AMBIGUOUS:areas"    0 "bash deploy.sh --no-pull"
+check_auto "không backup, cờ 1, AMBIGUOUS"            0 1 ""   1 "AMBIGUOUS:areas"    0 "bash deploy.sh"
 check_auto "không backup, cờ 1, không hỏi được Mongo" 0 1 ""   1 ""                   1 "Không hỏi lại được Mongo"
 check_auto "không backup, cờ 0, classify EMPTY (không được tin)" 0 1 "" 0 "EMPTY"      0 "không xác nhận DB trống"
 

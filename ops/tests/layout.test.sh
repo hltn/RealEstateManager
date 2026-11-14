@@ -50,7 +50,7 @@ echo "== 3) [FR-02] ops/ chứa đúng phần phụ trợ; không file nào bị
 for p in ops/lib/ops-common.sh ops/check-disk.sh ops/print-image-digests.sh ops/staging.sh \
          ops/staging/REHEARSAL.md ops/staging/rehearsal-snapshot.js ops/staging/rehearsal-step3.js ops/staging/seed-prod102.js \
          ops/staging/shims/chown ops/staging/shims/docker ops/staging/shims/install ops/staging/shims/stat \
-         ops/tests/backup.test.sh ops/tests/deploy-catalog-codes.test.sh ops/tests/deploy-code-backup.test.sh \
+         ops/tests/backup.test.sh ops/tests/deploy-catalog-codes.test.sh ops/tests/deploy-image-backup.test.sh \
          ops/tests/deploy-post-migrate.test.sh ops/tests/ops-common.test.sh ops/tests/restore.test.sh ops/tests/staging.test.sh \
          ops/tests/layout.test.sh ops/verify-env.sh ops/tests/verify-env.test.sh; do
   expect_file "[FR-02] $p" "$p"

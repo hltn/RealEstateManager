@@ -1,36 +1,33 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# backup.sh — backup THỦ CÔNG DB + code của nhánh đang checkout (tách từ deploy.sh: backup_mongo + backup_code + tag image).
+# backup.sh — backup THỦ CÔNG DB + thẻ image dự phòng (tách từ deploy.sh: backup Mongo + gắn thẻ image pre-<TS>). KHÔNG dùng git.
 #
-# Chạy ở máy chủ, trong thư mục repo:
-#   bash backup.sh [--db-only | --code-only] [--no-image] [--help]
-# (Dùng `bash backup.sh`, không phụ thuộc bit thực thi.) Không git pull, không build, không up, không migrate, KHÔNG đụng stack đang chạy:
-# chỉ ĐỌC từ Mongo (mongodump) và git (bundle), ghi file vào ./backups (quyền 600/700) và gắn thẻ image/tag.
+# Chạy ở máy chủ, trong thư mục deploy (nơi có docker-compose.yml, .env):
+#   bash backup.sh [--db-only] [--no-image] [--help]
+# (Dùng `bash backup.sh`, không phụ thuộc bit thực thi.) Không pull, không build, không up, không migrate, KHÔNG đụng stack đang chạy:
+# chỉ ĐỌC từ Mongo (mongodump) và Docker (inspect/tag), ghi file vào ./backups (quyền 600/700) và gắn thẻ image.
 #
-# Mặc định tạo ĐỦ BỘ, cùng định dạng với deploy.sh nên restore.sh dùng được ngay (--list / --manifest / --latest):
+# Mặc định tạo ĐỦ BỘ, cùng định dạng (manifest bản 2) với deploy.sh nên restore.sh dùng được ngay (--list / --manifest / --latest):
 #   backups/deploy-pre-<TS>.archive.gz        mongodump DB realestate (kiểm cả nội dung: > 0 byte, gzip hợp lệ, có realestate.users)
-#   backups/deploy-code-pre-<TS>.bundle       git bundle của nhánh/HEAD hiện tại (đã `git bundle verify`)
-#   tag cục bộ  pre-deploy-<TS>               tại commit hiện tại (KHÔNG push)
-#   image       <project>-backend:pre-<TS>    gắn thẻ image backend đang chạy (bỏ bằng --no-image)
+#   image  <tên>-backend:pre-<TS>, <tên>-frontend:pre-<TS>   thẻ gắn vào image ĐANG CHẠY của hai container (bỏ bằng --no-image)
 #   backups/deploy-pre-<TS>.manifest          KEY=VALUE, không bí mật (ghi CUỐI CÙNG: có manifest = backup đã đủ)
 #
-#   --db-only    chỉ mongodump. KHÔNG ghi manifest/bundle/tag (quyết định có chủ ý) => bản này KHÔNG hiện trong `restore.sh --list` và restore.sh
+#   --db-only    chỉ mongodump. KHÔNG ghi manifest/thẻ image (quyết định có chủ ý) => bản này KHÔNG hiện trong `restore.sh --list` và restore.sh
 #                không dùng được; khôi phục TAY bằng mongorestore (lệnh mẫu: tài liệu mục 6.2).
-#   --code-only  chỉ bundle + tag + manifest (MONGO_BACKUP_FILE rỗng => chỉ dùng với restore.sh --code-only).
-#   --no-image   không gắn thẻ image backend.
+#   --no-image   không gắn thẻ image (manifest có BACKEND_PRE_IMAGE/FRONTEND_PRE_IMAGE rỗng => restore.sh chỉ dùng được với --db-only).
+#   (Các cờ khôi phục code bằng git của bản cũ đã BỎ ở v1.0.6: không còn bản sao code git, code nay là image; tham số lạ thoát mã 2.)
 #
-# Manifest do script này tạo ghi DEPLOY_STATUS=succeeded, STACK_TOUCHED=1 (để restore.sh không gợi ý "DB chưa bị đổi, bỏ qua"), POST_UP_REACHED=0,
-# NEW_COMMIT = OLD_COMMIT, cùng khóa BACKUP_KIND=manual (restore.sh bỏ qua khóa lạ). Lỗi giữa chừng: xóa các file/tag vừa tạo ở lần chạy này.
-# Thứ tự: mọi kiểm tiền điều kiện phía code (commit, tên nhánh, bundle/tag/manifest chưa tồn tại) chạy TRƯỚC khi đọc Mongo/ghi/dump, để lỗi phía code
-# không làm dump DB (vừa tốn thời gian) bị dọn bỏ.
-# Dùng chung khóa với deploy.sh/restore.sh (không chạy chồng). Thay đổi chưa commit ở file đã theo dõi KHÔNG nằm trong bundle (chỉ ghi TRACKED_DIRTY=1).
+# Manifest ghi: MANIFEST_VERSION=2, BACKUP_KIND=manual, PRE_TAG=pre-<TS>, BACKEND_/FRONTEND_PRE_IMAGE, RELEASE_VERSION/RELEASE_COMMIT (đọc từ release.env nếu có;
+# CHỈ để tham khảo, có thể khác image đang chạy), CD_RUN_ID (từ DEPLOY_CD_RUN_ID/GITHUB_RUN_ID nếu có), DEPLOY_STATUS=succeeded, STACK_TOUCHED=1 (để restore.sh
+# không gợi ý "DB chưa bị đổi, bỏ qua"), POST_UP_REACHED=0. Lỗi/ngắt giữa chừng: xóa các file và thẻ image vừa tạo ở lần chạy này.
+# Dùng CHUNG khóa `.deploy.lock` (flock) với deploy.sh/restore.sh: không chạy chồng.
 #
 # Bí mật: script KHÔNG chứa bí mật. Mật khẩu root Mongo chỉ được đọc từ biến môi trường BÊN TRONG container và đưa cho mongodump qua pipe.
 # Backup nằm cùng ổ đĩa không phải backup thật: chép ra NGOÀI máy chủ (scp/rclone).
 #
 # Biến môi trường tùy chọn (không bí mật): DUMP_TIMEOUT (giây, mặc định 900), OPS_EXEC_TIMEOUT (mặc định 300), BACKUP_MIN_FREE_GB (mặc định 2),
-#   MONGO_CONTAINER, BACKEND_CONTAINER, và các biến staging DEPLOY_* (do ops/staging.sh đặt, như deploy.sh).
-# Mã thoát: 0 ok | 1 lỗi (kể cả --db-only khi DB trống) | 2 sai tham số. Bị ngắt: 143 (TERM) / 130 (INT) / 129 (HUP), có dọn file/tag đã tạo.
+#   MONGO_CONTAINER, BACKEND_CONTAINER, FRONTEND_CONTAINER, DEPLOY_ENV_FILE (mặc định .env) và các biến staging DEPLOY_* (do ops/staging.sh đặt, như deploy.sh).
+# Mã thoát: 0 ok | 1 lỗi (kể cả --db-only khi DB trống) | 2 sai tham số. Bị ngắt: 143 (TERM) / 130 (INT) / 129 (HUP), có dọn file/thẻ đã tạo.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -43,45 +40,50 @@ source "$ROOT_DIR/ops/lib/ops-common.sh"
 
 # Hợp đồng môi trường giống deploy.sh (staging.sh đặt các biến DEPLOY_*; production không đặt gì). Cả 4 biến + NINE_ROUTER_CONTAINER đều được
 # check_staging_vars (ops-common) đọc để chặn biến staging đặt ngoài wrapper, nên KHÔNG xóa dù backup.sh không dùng trực tiếp.
-readonly ENV_FILE="${DEPLOY_ENV_FILE:-.env.docker}"
+readonly ENV_FILE="${DEPLOY_ENV_FILE:-.env}"
 readonly RUNTIME_ENV_FILE="${DEPLOY_RUNTIME_ENV_FILE:-.env}"
 readonly LOGS_DIR="${DEPLOY_LOGS_DIR:-logs}"
 readonly BACKUP_DIR="${DEPLOY_BACKUP_DIR:-backups}"
 readonly NINE_ROUTER_CONTAINER="${NINE_ROUTER_CONTAINER-realestate_9router}"
 readonly MONGO_CONTAINER="${MONGO_CONTAINER:-realestate_mongo}"
 readonly BACKEND_CONTAINER="${BACKEND_CONTAINER:-realestate_backend}"
+readonly FRONTEND_CONTAINER="${FRONTEND_CONTAINER:-realestate_frontend}"
 readonly DEFAULT_PROJECT="realestatemanager"
+readonly DEFAULT_BE_IMAGE="realestatemanager-backend"    # trùng mặc định ${BACKEND_IMAGE:-...:current} trong docker-compose.yml
+readonly DEFAULT_FE_IMAGE="realestatemanager-frontend"
+readonly RELEASE_ENV_FILE="release.env"
 readonly DOC="docs/01_Infrastructure/06_Production_Deploy.md"
+OPS_DEFAULT_ENV_FILE=".env"   # check_staging_vars so ENV_FILE với giá trị này (file env cũ khác tên đã bỏ ở v1.0.6)
 check_staging_vars
 
 DUMP_TIMEOUT="${DUMP_TIMEOUT:-900}"
 BACKUP_MIN_FREE_GB="${BACKUP_MIN_FREE_GB:-2}"
 TS="$(date +%Y%m%d-%H%M%S)"
-DO_DB=1; DO_CODE=1; DO_IMAGE=1
-ARCHIVE_FILE=""; BUNDLE_FILE=""; TAG_NAME=""; MANIFEST_FILE=""; PREV_IMAGE_REPO=""; PREV_IMAGE_TAG=""
+DB_ONLY=0; DO_IMAGE=1
+ARCHIVE_FILE=""; MANIFEST_FILE=""
+BE_PRE=""; FE_PRE=""   # thẻ image đã gắn ở lần chạy này (để on_exit gỡ khi lỗi)
 DONE=0   # =1 khi manifest (hoặc archive ở --db-only) đã ghi xong: lúc đó on_exit KHÔNG dọn
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash backup.sh [--db-only | --code-only] [--no-image] [--help]
+Cách dùng: bash backup.sh [--db-only] [--no-image] [--help]
 
-Backup THỦ CÔNG (không pull/build/up/migrate, không đụng stack đang chạy). Mặc định tạo đủ bộ trong ./backups, cùng định dạng với deploy.sh:
+Backup THỦ CÔNG (không pull/build/up/migrate, không đụng stack đang chạy, không dùng git). Mặc định tạo đủ bộ trong ./backups, cùng định dạng với deploy.sh:
   deploy-pre-<TS>.archive.gz   mongodump DB realestate (đã kiểm nội dung)
-  deploy-code-pre-<TS>.bundle  git bundle của nhánh đang checkout (đã verify) + tag cục bộ pre-deploy-<TS> (không push)
-  deploy-pre-<TS>.manifest     KEY=VALUE, không bí mật; ghi cuối cùng
-  image <project>-backend:pre-<TS> (gắn thẻ image backend đang chạy)
+  image <tên>-backend:pre-<TS> và <tên>-frontend:pre-<TS>  (gắn thẻ vào image đang chạy của hai container)
+  deploy-pre-<TS>.manifest     KEY=VALUE (bản 2), không bí mật; ghi cuối cùng
 
-  --db-only    chỉ mongodump. KHÔNG ghi manifest/bundle/tag: bản này không hiện trong `restore.sh --list`, khôi phục TAY bằng mongorestore (lệnh mẫu: mục 6.2).
-  --code-only  chỉ bundle + tag + manifest (dùng với restore.sh --code-only).
-  --no-image   không gắn thẻ image backend.
+  --db-only    chỉ mongodump. KHÔNG ghi manifest/thẻ image: bản này không hiện trong `restore.sh --list`, khôi phục TAY bằng mongorestore (mục 6.2).
+  --no-image   không gắn thẻ image (restore.sh sau đó chỉ dùng được với --db-only).
   -h, --help   Hiện trợ giúp này.
+(Các cờ code bằng git của bản cũ đã bỏ ở v1.0.6; tham số lạ thoát mã 2.)
 
 Khôi phục: bash restore.sh --list ; bash restore.sh --latest   (mặc định dry-run; chạy thật cần --apply --yes).
 Biến tùy chọn: DUMP_TIMEOUT (900), OPS_EXEC_TIMEOUT (300), BACKUP_MIN_FREE_GB (2). Chi tiết: tài liệu mục 6.2.
 EOF
 }
 
-# Lỗi/ngắt giữa chừng: xóa những gì lần chạy NÀY đã tạo (file .partial, archive, bundle, tag) khi chưa chốt manifest. Không đụng file cũ.
+# Lỗi/ngắt giữa chừng: xóa những gì lần chạy NÀY đã tạo (file .partial, archive, manifest, thẻ image) khi chưa chốt manifest. Không đụng file cũ.
 on_exit() {
   local code=$?
   trap - EXIT
@@ -89,11 +91,11 @@ on_exit() {
   trap '' PIPE
   if (( code != 0 && DONE == 0 )); then
     [[ -z "$ARCHIVE_FILE" ]] || rm -f -- "${ARCHIVE_FILE}.partial" "$ARCHIVE_FILE"
-    [[ -z "$BUNDLE_FILE" ]]  || rm -f -- "${BUNDLE_FILE}.partial" "$BUNDLE_FILE"
     [[ -z "$MANIFEST_FILE" ]] || rm -f -- "${MANIFEST_FILE}.tmp" "$MANIFEST_FILE"   # MANIFEST_FILE chỉ được đặt SAU khi đã kiểm nó chưa tồn tại => không xóa nhầm file cũ
-    if [[ -n "$TAG_NAME" ]]; then git tag -d "$TAG_NAME" >/dev/null 2>&1; fi
-    if [[ -n "$PREV_IMAGE_TAG" ]]; then docker rmi "$PREV_IMAGE_TAG" >/dev/null 2>&1; fi
-    warn "Backup THẤT BẠI (mã $code): đã dọn các file/tag vừa tạo ở lần chạy này. Không có gì bị đổi ở stack/DB."
+    # rmi một thẻ (không xóa layer nếu còn thẻ khác/container dùng); thẻ chưa gắn thì rmi chỉ báo lỗi, đã bỏ qua.
+    if [[ -n "$BE_PRE" ]]; then docker rmi "$BE_PRE" >/dev/null 2>&1; fi
+    if [[ -n "$FE_PRE" ]]; then docker rmi "$FE_PRE" >/dev/null 2>&1; fi
+    warn "Backup THẤT BẠI (mã $code): đã dọn các file/thẻ image vừa tạo ở lần chạy này. Không có gì bị đổi ở stack/DB."
   fi
   exit "$code"
 }
@@ -103,16 +105,9 @@ trap 'exit 130' INT
 trap 'exit 129' HUP
 
 check_prereqs() {
-  local cmd
   command -v gzip >/dev/null 2>&1 || die "Thiếu lệnh 'gzip'."
-  if (( DO_DB == 1 || DO_IMAGE == 1 )); then
-    command -v docker >/dev/null 2>&1 || die "Thiếu lệnh 'docker'."
-    docker info >/dev/null 2>&1 || die "Không nói chuyện được với Docker daemon (daemon chưa chạy, hoặc user thiếu quyền: thêm vào nhóm 'docker')."
-  fi
-  if (( DO_CODE == 1 )); then
-    command -v git >/dev/null 2>&1 || die "Thiếu lệnh 'git'."
-    in_git_repo || die "Không phải git repo: không backup được code (dùng --db-only nếu chỉ cần DB)."
-  fi
+  command -v docker >/dev/null 2>&1 || die "Thiếu lệnh 'docker'."
+  docker info >/dev/null 2>&1 || die "Không nói chuyện được với Docker daemon (daemon chưa chạy, hoặc user thiếu quyền: thêm vào nhóm 'docker')."
 }
 
 # Phân loại DB `realestate` (CHỈ ĐỌC), giống deploy.sh: HAS_USERS | EMPTY | EMPTY_SYSTEM_ONLY | AMBIGUOUS:<tên...>; trả 1 nếu không hỏi được Mongo.
@@ -132,7 +127,7 @@ classify_db() {
 backup_mongo() {
   local state
   state="$(inspect_field "$MONGO_CONTAINER" '{{.State.Status}}')"
-  [[ "$state" == "running" ]] || die "Container $MONGO_CONTAINER ở trạng thái '$state'. Khởi động Mongo trước (hoặc dùng --code-only nếu chỉ cần code)."
+  [[ "$state" == "running" ]] || die "Container $MONGO_CONTAINER ở trạng thái '$state'. Khởi động Mongo trước."
   docker exec "$MONGO_CONTAINER" sh -c 'test -n "$MONGO_INITDB_ROOT_USERNAME" && test -n "$MONGO_INITDB_ROOT_PASSWORD"' \
     || die "Mongo đang chạy cấu hình cũ (không có user root/xác thực): backup.sh không hỗ trợ. Làm theo $DOC mục 5/6."
 
@@ -167,114 +162,75 @@ backup_mongo() {
   log "Backup DB OK (đã kiểm nội dung)."
 }
 
-# Kiểm TIỀN ĐIỀU KIỆN phía code (chỉ ĐỌC, không ghi gì): chạy TRƯỚC mọi thao tác đọc Mongo/dump/ghi file, để lỗi phía code (tên nhánh lạ, tag/bundle
-# trùng...) dừng sớm, không làm dump DB đã tốn thời gian bị dọn bỏ. Đặt P_COMMIT/P_BRANCH/P_REF/P_DETACHED/P_DIRTY cho backup_code.
-P_COMMIT=""; P_BRANCH=""; P_REF=""; P_DETACHED=0; P_DIRTY=0
-precheck() {
-  if (( DO_DB == 1 )); then
-    [[ ! -e "${BACKUP_DIR}/deploy-pre-${TS}.archive.gz" ]] || die "Đã có ${BACKUP_DIR}/deploy-pre-${TS}.archive.gz (chạy chồng cùng giây?). Không ghi đè backup: chạy lại sau."
-  fi
-  (( DO_CODE == 1 )) || return 0
-  local commit branch=""
-  commit="$(git rev-parse HEAD)" || die "Không đọc được commit hiện tại (git rev-parse HEAD)."
-  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "Commit hiện tại không phải SHA-1 40 ký tự ('$commit'); backup code chưa hỗ trợ."
-  P_COMMIT="$commit"
-  if branch="$(git symbolic-ref --short -q HEAD)" && [[ -n "$branch" ]]; then
-    P_BRANCH="$branch"; P_REF="refs/heads/$branch"
-  else
-    P_BRANCH=""; P_DETACHED=1; P_REF="HEAD"
-    warn "HEAD đang detached tại ${commit:0:12}: bundle/tag vẫn tạo theo commit này, manifest ghi DETACHED=1."
-  fi
-  if (( P_DETACHED == 0 )) && ! valid_branch_name "$P_BRANCH"; then
-    die "Tên nhánh '$P_BRANCH' có ký tự/dạng mà restore.sh không chấp nhận (chỉ A-Z a-z 0-9 . _ - /, không bắt đầu bằng - hoặc /, không chứa '..', '//', không kết thúc bằng '.lock' hay '/'). Đổi tên nhánh (git branch -m) rồi chạy lại. Chưa tạo gì."
-  fi
-  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-    P_DIRTY=1
-    warn "Working tree có thay đổi chưa commit ở file đã theo dõi: bundle/tag chỉ chứa commit ${commit:0:12}, KHÔNG chứa các thay đổi đó."
-  fi
-  [[ ! -e "${BACKUP_DIR}/deploy-code-pre-${TS}.bundle" ]] || die "Đã có ${BACKUP_DIR}/deploy-code-pre-${TS}.bundle (chạy chồng cùng giây?). Không ghi đè backup: chạy lại sau."
-  [[ ! -e "${BACKUP_DIR}/deploy-pre-${TS}.manifest" ]] || die "Đã có ${BACKUP_DIR}/deploy-pre-${TS}.manifest. Không ghi đè: chạy lại sau."
-  if git rev-parse -q --verify "refs/tags/pre-deploy-${TS}" >/dev/null 2>&1; then die "Đã có tag pre-deploy-${TS}. Không ghi đè: chạy lại sau."; fi
+# Đọc một khóa từ release.env (chỉ để tham khảo; KHÔNG `source`). Rỗng nếu không có file/khóa.
+release_get() { { grep -m1 "^$1=" "$RELEASE_ENV_FILE" 2>/dev/null || true; } | cut -d= -f2- | tr -d '\r'; }
+
+# Tên image: lấy từ release.env nếu hợp lệ (cùng dạng deploy.sh/restore.sh chấp nhận), không thì tên mặc định của docker-compose.yml.
+pick_image_name() { # <KEY trong release.env> <tên mặc định>
+  local n; n="$(release_get "$1")"
+  if [[ "$n" =~ ^[a-z0-9][a-z0-9._/-]*$ && "$n" != *..* ]]; then printf '%s' "$n"; else printf '%s' "$2"; fi
 }
 
-# Tạo bundle + tag cục bộ + ghi manifest (đã qua precheck). Đặt BUNDLE_FILE/TAG_NAME/MANIFEST_FILE.
-backup_code() {
-  local commit="$P_COMMIT" branch="$P_BRANCH" detached="$P_DETACHED" dirty="$P_DIRTY" ref="$P_REF" part tag host
-  local bundle="${BACKUP_DIR}/deploy-code-pre-${TS}.bundle"
-  part="${bundle}.partial"
-  tag="pre-deploy-${TS}"
-
-  BUNDLE_FILE="$bundle"
-  log "Backup code: nhánh '${branch:-(detached)}' commit ${commit:0:12} -> $bundle ..."
-  if ! ( umask 077; git bundle create "$part" "$ref" ) >/dev/null 2>&1; then
-    rm -f "$part"
-    die "git bundle create thất bại (repo shallow? hết đĩa?). Thử tay: git bundle create /tmp/x.bundle HEAD"
+# Gắn thẻ <tên>:pre-<TS> vào image ĐANG CHẠY của container $1 (cùng cách deploy.sh làm). In tên đầy đủ ra stdout nếu đã gắn, rỗng nếu container chưa có.
+# Đặt BE_PRE/FE_PRE TRƯỚC `docker tag` (qua tham số $3: tên biến): bị ngắt ngay lúc tag thì on_exit vẫn gỡ được thẻ.
+tag_running_image() { # <container> <tên image> <tên biến lưu ref>
+  local container="$1" name="$2" var="$3" id ref="${2}:pre-${TS}"
+  id="$(docker inspect -f '{{.Image}}' "$container" 2>/dev/null || true)"
+  if [[ -z "$id" ]]; then
+    log "Chưa có container $container: không có image để dự phòng (manifest sẽ ghi rỗng; restore.sh chỉ dùng được --db-only)."
+    return 0
   fi
-  git bundle verify "$part" >/dev/null 2>&1 || { rm -f "$part"; die "Bundle vừa tạo không qua 'git bundle verify'."; }
-  chmod 600 "$part"
-  mv "$part" "$bundle" || die "Không đổi tên được $part."
-  git tag "$tag" "$commit" || die "Không tạo được tag cục bộ $tag."
-  TAG_NAME="$tag"
-  log "Đã tạo bundle (đã verify) và tag cục bộ $tag (KHÔNG push tag này)."
-
-  # Image dự phòng (cùng quy ước đặt tên với deploy.sh: <project>-backend:pre-<TS>).
-  if (( DO_IMAGE == 1 )); then
-    local image_id project
-    image_id="$(docker inspect -f '{{.Image}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
-    if [[ -z "$image_id" ]]; then
-      log "Chưa có container $BACKEND_CONTAINER: không có image để dự phòng."
-    else
-      project="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
-      [[ -n "$project" ]] || project="$DEFAULT_PROJECT"
-      PREV_IMAGE_REPO="${project}-backend"
-      # Đặt PREV_IMAGE_TAG TRƯỚC `docker tag`: bị ngắt (TERM/HUP) ngay lúc tag thì on_exit vẫn gỡ được thẻ vừa gắn (rmi thẻ chưa có chỉ báo lỗi, đã bỏ qua).
-      PREV_IMAGE_TAG="${PREV_IMAGE_REPO}:pre-${TS}"
-      docker tag "$image_id" "$PREV_IMAGE_TAG"
-      log "Đã gắn thẻ image backend hiện tại: $PREV_IMAGE_TAG"
-    fi
+  if docker image inspect "$ref" >/dev/null 2>&1; then
+    die "Đã có thẻ image $ref (chạy chồng cùng giây?). Không ghi đè: chạy lại sau."
   fi
+  printf -v "$var" '%s' "$ref"
+  docker tag "$id" "$ref" || die "Không gắn được thẻ $ref."
+  log "Đã gắn thẻ image $container hiện tại: $ref"
+}
 
-  # Phiên bản DB (chỉ đọc; không đọc được thì DB_VERSION_READ=0).
-  local dbv="" got=0
-  if (( DO_DB == 1 )) && [[ "$(inspect_field "$MONGO_CONTAINER" '{{.State.Status}}')" == "running" ]] && dbv="$(read_system_version "$MONGO_CONTAINER")"; then
+# Ghi manifest bản 2 (cuối cùng) và chốt DONE.
+write_manifest() {
+  local dbv="" got=0 host proj be_name fe_name rel_ver rel_commit cd_run
+  be_name="$(pick_image_name BACKEND_IMAGE_NAME "$DEFAULT_BE_IMAGE")"
+  fe_name="$(pick_image_name FRONTEND_IMAGE_NAME "$DEFAULT_FE_IMAGE")"
+  if [[ "$(inspect_field "$MONGO_CONTAINER" '{{.State.Status}}')" == "running" ]] && dbv="$(read_system_version "$MONGO_CONTAINER")"; then
     got=1
   else
     dbv=""
   fi
-
-  local app_ver proj
-  app_ver="$(read_pkg_version || true)"
-  proj="${PREV_IMAGE_REPO%-backend}"; [[ -n "$proj" ]] || proj="${COMPOSE_PROJECT_NAME:-$DEFAULT_PROJECT}"
+  rel_ver="$(release_get RELEASE_VERSION)"; [[ "$rel_ver" =~ ^[0-9A-Za-z.+-]*$ ]] || rel_ver=""
+  rel_commit="$(release_get GIT_COMMIT)";   [[ "$rel_commit" =~ ^[0-9a-f]{0,40}$ ]] || rel_commit=""
+  cd_run="${DEPLOY_CD_RUN_ID:-${GITHUB_RUN_ID:-}}"
+  [[ "$cd_run" =~ ^[A-Za-z0-9._-]{0,64}$ ]] || die "DEPLOY_CD_RUN_ID/GITHUB_RUN_ID sai dạng (chỉ A-Z a-z 0-9 . _ -, tối đa 64 ký tự)."
+  proj="$(compose_label_project)"
   host="$(hostname 2>/dev/null || true)"
-  # Đã kiểm ở precheck rằng manifest chưa tồn tại; đặt MANIFEST_FILE ngay trước khi ghi để on_exit dọn được cả manifest "mồ côi" nếu bị ngắt sát lúc này.
+  # Đã kiểm ở main rằng manifest chưa tồn tại; đặt MANIFEST_FILE ngay trước khi ghi để on_exit dọn được cả manifest "mồ côi" nếu bị ngắt sát lúc này.
   MANIFEST_FILE="${BACKUP_DIR}/deploy-pre-${TS}.manifest"
   manifest_write "$MANIFEST_FILE" \
     "# Backup THỦ CÔNG bằng backup.sh (không phải lần deploy). Khôi phục: bash restore.sh --manifest ${MANIFEST_FILE}" \
-    "MANIFEST_VERSION=1" \
+    "MANIFEST_VERSION=2" \
     "BACKUP_KIND=manual" \
     "TS=${TS}" \
     "CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "HOST=${host:-unknown}" \
     "COMPOSE_PROJECT=${proj}" \
-    "BRANCH=${branch}" \
-    "DETACHED=${detached}" \
-    "OLD_COMMIT=${commit}" \
-    "OLD_COMMIT_SHORT=${commit:0:7}" \
-    "NEW_COMMIT=${commit}" \
-    "APP_VERSION_OLD=${app_ver}" \
-    "APP_VERSION_NEW=${app_ver}" \
+    "RELEASE_VERSION=${rel_ver}" \
+    "RELEASE_COMMIT=${rel_commit}" \
+    "CD_RUN_ID=${cd_run}" \
+    "BACKEND_IMAGE_NAME=${be_name}" \
+    "BACKEND_IMAGE_TAG=" \
+    "FRONTEND_IMAGE_NAME=${fe_name}" \
+    "FRONTEND_IMAGE_TAG=" \
+    "PRE_TAG=pre-${TS}" \
+    "BACKEND_PRE_IMAGE=${BE_PRE}" \
+    "FRONTEND_PRE_IMAGE=${FE_PRE}" \
     "DB_VERSION_BEFORE=${dbv}" \
     "DB_VERSION_READ=${got}" \
     "MONGO_BACKUP_FILE=${ARCHIVE_FILE}" \
+    "ENV_BACKUP_FILE=" \
     "MONGO_CONTAINER=${MONGO_CONTAINER}" \
     "BACKEND_CONTAINER=${BACKEND_CONTAINER}" \
-    "CODE_BUNDLE=${bundle}" \
-    "CODE_BUNDLE_REF=${ref}" \
-    "CODE_TAG=${tag}" \
-    "PREV_IMAGE_REPO=${PREV_IMAGE_REPO}" \
-    "PREV_IMAGE_TAG=${PREV_IMAGE_TAG}" \
-    "TRACKED_DIRTY=${dirty}" \
-    "NO_PULL=1" \
+    "FRONTEND_CONTAINER=${FRONTEND_CONTAINER}" \
     "STACK_TOUCHED=1" \
     "POST_UP_REACHED=0" \
     "DEPLOY_STATUS=succeeded" \
@@ -284,50 +240,57 @@ backup_code() {
   log "Manifest: $MANIFEST_FILE (khôi phục: bash restore.sh --manifest $MANIFEST_FILE)"
 }
 
+# Project compose của container backend (nhãn compose), không có thì COMPOSE_PROJECT_NAME rồi mặc định. Chỉ để ghi thông tin vào manifest.
+compose_label_project() {
+  local p
+  p="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
+  [[ -n "$p" ]] || p="${COMPOSE_PROJECT_NAME:-$DEFAULT_PROJECT}"
+  printf '%s' "$p"
+}
+
 main() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      --db-only)   DO_CODE=0 ;;
-      --code-only) DO_DB=0 ;;
+      --db-only)   DB_ONLY=1 ;;
       --no-image)  DO_IMAGE=0 ;;
       -h|--help)   trap - EXIT; usage; exit 0 ;;
-      *) trap - EXIT; printf '[backup] Tham số không hợp lệ: %s\n\n' "$arg" >&2; usage >&2; exit 2 ;;
+      *) trap - EXIT; printf '[backup] Tham số không hợp lệ: %s\n(Các cờ code bằng git của bản cũ đã bỏ ở v1.0.6: code nay là image pre-<TS>; chỉ DB thì dùng --db-only.)\n\n' "$arg" >&2; usage >&2; exit 2 ;;
     esac
   done
-  if (( DO_DB == 0 && DO_CODE == 0 )); then
-    trap - EXIT; echo "[backup] --db-only và --code-only loại trừ nhau." >&2; exit 2
-  fi
   [[ "$DUMP_TIMEOUT" =~ ^[0-9]+$ && "$OPS_EXEC_TIMEOUT" =~ ^[0-9]+$ ]] || die "DUMP_TIMEOUT/OPS_EXEC_TIMEOUT phải là số nguyên (giây)."
   [[ "$BACKUP_MIN_FREE_GB" =~ ^[0-9]+$ ]] || die "BACKUP_MIN_FREE_GB phải là số nguyên (GB)."
 
   cd "$ROOT_DIR"
   check_prereqs
   require_free_disk_gb "$BACKUP_MIN_FREE_GB"
-  acquire_lock
-  precheck   # TRƯỚC mọi thao tác đọc Mongo/ghi/dump: lỗi phía code dừng ở đây, chưa có gì để dọn
+  acquire_dir_lock "$ROOT_DIR"
+  [[ ! -e "${BACKUP_DIR}/deploy-pre-${TS}.archive.gz" ]] || die "Đã có ${BACKUP_DIR}/deploy-pre-${TS}.archive.gz (chạy chồng cùng giây?). Không ghi đè backup: chạy lại sau."
+  [[ ! -e "${BACKUP_DIR}/deploy-pre-${TS}.manifest" ]] || die "Đã có ${BACKUP_DIR}/deploy-pre-${TS}.manifest. Không ghi đè: chạy lại sau."
   # Thư mục backup 700: ưu tiên `install -d -m 700` (như deploy.sh); Git Bash/NTFS báo lỗi chmod nên fallback mkdir + chmod có chịu lỗi.
   install -d -m 700 "$BACKUP_DIR" 2>/dev/null || { mkdir -p "$BACKUP_DIR" || die "Không tạo được thư mục $BACKUP_DIR."; chmod 700 "$BACKUP_DIR" 2>/dev/null || warn "Không đặt được quyền 700 cho $BACKUP_DIR (hệ file không hỗ trợ chmod?). Kiểm tay: ls -ld $BACKUP_DIR (backup chứa dữ liệu khách hàng)." || true; }
   [[ -d "$BACKUP_DIR" ]] || die "Không tạo được thư mục $BACKUP_DIR."
 
   local rc=0
-  if (( DO_DB == 1 )); then
-    backup_mongo || rc=$?
-    if (( rc == 3 )); then
-      (( DO_CODE == 1 )) || die "DB trống nên không có gì để backup (--db-only)."
-      rc=0
-    elif (( rc != 0 )); then
-      exit "$rc"
-    fi
+  backup_mongo || rc=$?
+  if (( rc == 3 )); then
+    (( DB_ONLY == 0 )) || die "DB trống nên không có gì để backup (--db-only)."
+  elif (( rc != 0 )); then
+    exit "$rc"
   fi
-  if (( DO_CODE == 1 )); then
-    backup_code
+
+  if (( DB_ONLY == 1 )); then
+    DONE=1   # --db-only: archive đã nằm đúng chỗ, không manifest, không dọn
   else
-    DONE=1   # --db-only: archive đã nằm đúng chỗ, không dọn
+    if (( DO_IMAGE == 1 )); then
+      tag_running_image "$BACKEND_CONTAINER" "$(pick_image_name BACKEND_IMAGE_NAME "$DEFAULT_BE_IMAGE")" BE_PRE
+      tag_running_image "$FRONTEND_CONTAINER" "$(pick_image_name FRONTEND_IMAGE_NAME "$DEFAULT_FE_IMAGE")" FE_PRE
+    fi
+    write_manifest
   fi
 
   echo
-  log "Backup xong. ${ARCHIVE_FILE:+DB: $ARCHIVE_FILE. }${BUNDLE_FILE:+Code: $BUNDLE_FILE (tag $TAG_NAME). }${MANIFEST_FILE:+Manifest: $MANIFEST_FILE.}"
+  log "Backup xong. ${ARCHIVE_FILE:+DB: $ARCHIVE_FILE. }${BE_PRE:+Image: $BE_PRE${FE_PRE:+ + $FE_PRE}. }${MANIFEST_FILE:+Manifest: $MANIFEST_FILE.}"
   log "Hãy chép ./$BACKUP_DIR ra NGOÀI máy chủ (scp/rclone); backup cùng ổ đĩa không phải backup thật."
 }
 

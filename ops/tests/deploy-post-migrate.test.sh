@@ -76,7 +76,7 @@ export DEFAULT_STATUS
 mongo_is_healthy() { return 0; }
 inspect_field() { printf 'running'; }
 
-ENV_FILE=".env.docker"
+ENV_FILE=".env"
 TS="20260101-000000"
 DOC="docs/01_Infrastructure/06_Production_Deploy.md"
 ORDER_FILE="$TMP/order"; export ORDER_FILE
@@ -95,7 +95,7 @@ calls() { grep -c "$1" "$ORDER_FILE" || true; }
 rc="$(run_step 20-customer-codes.sh)"
 expect_eq "20 thành công: exit 0" "0" "$rc"
 expect_eq "20: gọi đúng một lệnh qua compose run vào service backend" \
-  "docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/crm-customer-codes.cli.js --apply" "$(cat "$ORDER_FILE")"
+  "docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/crm-customer-codes.cli.js --apply" "$(cat "$ORDER_FILE")"
 expect_contains "20: log chứa đầu ra lệnh bù" "FAKE: bù mã khách (rc=0)" "$(cat "$TMP/logs/deploy-customer-codes-$TS.log" 2>/dev/null)"
 expect_contains "20: stdout có dòng xong" "Bù mã khách xong" "$(cat "$TMP/out")"
 rc="$(FAKE_CU_RC=1 run_step 20-customer-codes.sh)"
@@ -109,8 +109,8 @@ rc="$(FAKE_CU_RC=2 run_step 20-customer-codes.sh)"
 expect_eq "20 lỗi mã 2: exit 1" "1" "$rc"
 
 # ── Bước 90: cổng chặn + migration post-up ───────────────────────────────────
-POSTUP_CMD="docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --skip-version --phase post-up"
-STATUS_CMD="docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js status --json"
+POSTUP_CMD="docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --skip-version --phase post-up"
+STATUS_CMD="docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js status --json"
 rc="$(run_step 90-post-up-migrations.sh)"
 expect_eq "90 thành công (không còn pre-up chờ): exit 0" "0" "$rc"
 mapfile -t order < "$ORDER_FILE"
@@ -213,7 +213,7 @@ expect_contains "downgrade có chủ ý: cảnh báo bỏ qua" "bỏ qua toàn b
 run_steps_readonly() { # -> in rc; stdout+stderr vào $TMP/out
   local rc=0
   : > "$ORDER_FILE"; rm -rf "$TMP/logs"
-  ( set -euo pipefail; readonly ENV_FILE=".env.docker" LOGS_DIR="$TMP/logs" DOC="$DOC"; DOWNGRADE_ACTIVE=0; run_post_migrate_steps ) > "$TMP/out" 2>&1 || rc=$?
+  ( set -euo pipefail; readonly ENV_FILE=".env" LOGS_DIR="$TMP/logs" DOC="$DOC"; DOWNGRADE_ACTIVE=0; run_post_migrate_steps ) > "$TMP/out" 2>&1 || rc=$?
   echo "$rc"
 }
 rc="$(run_steps_readonly)"
@@ -229,21 +229,21 @@ expect_eq "6b auto_reconcile: exit 0" "0" "$rc"
 mapfile -t order < "$ORDER_FILE"
 expect_eq "6b: đúng 2 lệnh (dry-run, apply)" "2" "${#order[@]}"
 expect_eq "6b: dry-run có --skip-version --phase pre-up" \
-  "docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --by deploy --skip-version --phase pre-up" "${order[0]:-}"
+  "docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --by deploy --skip-version --phase pre-up" "${order[0]:-}"
 expect_eq "6b: apply có --skip-version --phase pre-up" \
-  "docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --skip-version --phase pre-up" "${order[1]:-}"
+  "docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --skip-version --phase pre-up" "${order[1]:-}"
 # 8a: cài mới.
 : > "$ORDER_FILE"
 ( set -euo pipefail; FRESH_INSTALL=1; fresh_install_reconcile ) > "$TMP/out" 2>&1; rc=$?
 expect_eq "8a: exit 0" "0" "$rc"
 expect_eq "8a: reconcile --apply --by deploy --phase pre-up" \
-  "docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --phase pre-up" "$(cat "$ORDER_FILE")"
+  "docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --phase pre-up" "$(cat "$ORDER_FILE")"
 # 8b: ghi version.
 : > "$ORDER_FILE"
 ( set -euo pipefail; FRESH_INSTALL=0; MIGRATION_GATE_RAN=1; DOWNGRADE_ACTIVE=0; sync_system_version ) > "$TMP/out" 2>&1; rc=$?
 expect_eq "8b: exit 0" "0" "$rc"
 expect_eq "8b: reconcile --apply --by deploy --phase pre-up" \
-  "docker compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --phase pre-up" "$(cat "$ORDER_FILE")"
+  "docker compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy --phase pre-up" "$(cat "$ORDER_FILE")"
 # --plan-only dùng reconcile_dry_run KHÔNG --phase (mọi pha) để kế hoạch thấy cả 011.
 : > "$ORDER_FILE"
 ( set -euo pipefail; DOWNGRADE_ACTIVE=0; ALLOW_DOWNGRADE=0; reconcile_dry_run ) > "$TMP/out" 2>&1
@@ -265,7 +265,7 @@ for f in 10-catalog-codes.sh 20-customer-codes.sh 90-post-up-migrations.sh; do
 done
 
 # ── print_recovery và usage ──────────────────────────────────────────────────────────────────────────────────
-rec="$(OLD_COMMIT=a NEW_COMMIT=b BACKUP_FILE=backups/deploy-pre-X.archive.gz PREV_IMAGE_TAG=img:pre-X PREV_IMAGE_REPO=img ENV_FILE=.env.docker DOC="$DOC" LOGS_DIR=logs TS="$TS" print_recovery 2>&1)"
+rec="$(RELEASE_VERSION=1.0.6 RELEASE_COMMIT=b BACKUP_FILE=backups/deploy-pre-X.archive.gz ENV_BACKUP_FILE=backups/deploy-pre-X.env BACKEND_PRE_IMAGE=img:pre-X FRONTEND_PRE_IMAGE=fe:pre-X BE_NAME=img FE_NAME=fe MANIFEST_FILE=backups/deploy-pre-X.manifest POST_UP_REACHED=0 ENV_FILE=.env DOC="$DOC" LOGS_DIR=logs TS="$TS" print_recovery 2>&1)"
 expect_contains "print_recovery: câu sau bước 90 chỉ sửa tiến" "sau bước 90 chỉ sửa tiến" "$rec"
 expect_contains "print_recovery: không lùi image v1.0.3 sau bước 90" "KHÔNG lùi image v1.0.3" "$rec"
 expect_contains "print_recovery: trước bước 90 lùi được" "TRƯỚC bước 90" "$rec"
@@ -278,6 +278,9 @@ expect_contains "print_recovery: có file log KHÔNG có nghĩa 011 đã chạy"
 expect_not_contains "print_recovery: không dùng file log làm bằng chứng 011 đã chạy" "(hoặc có file" "$rec"
 expect_contains "print_recovery: khôi phục từ backup do Oniichan quyết" "backups/deploy-pre-X.archive.gz" "$rec"
 expect_contains "print_recovery: vẫn nhắc ngoại lệ 007/008" "NGOẠI LỆ migration 007/008" "$rec"
+expect_contains "print_recovery: in lệnh restore.sh theo manifest" "bash restore.sh --manifest backups/deploy-pre-X.manifest --apply --yes" "$rec"
+expect_contains "print_recovery: nhắc thẻ image dự phòng pre-<TS>" "docker tag img:pre-X img:current" "$rec"
+expect_not_contains "print_recovery: không còn gợi ý git/build" "up -d --build" "$rec"
 use="$(usage 2>&1)"
 expect_contains "usage: nêu bước 20" "20-customer-codes" "$use"
 expect_contains "usage: nêu bước 90 và --phase post-up" "--phase post-up" "$use"

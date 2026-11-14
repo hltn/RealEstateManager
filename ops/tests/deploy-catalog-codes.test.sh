@@ -9,7 +9,7 @@
 #   - downgrade có chủ ý => bỏ qua bước bù
 # Hàm (main, compose, run_post_migrate_steps...) được TRÍCH từ deploy.sh thật bằng sed, KHÔNG chép tay; tệp bước 10-catalog-codes.sh chạy THẬT
 # (subprocess `bash`, `docker` giả được export -f). Các bước khác
-# của main (git, backup, build, migration...) và `docker` được thay bằng stub ghi thứ tự gọi vào file; không chạm Docker thật.
+# của main (release.env, backup, tag, migration...) và `docker` được thay bằng stub ghi thứ tự gọi vào file; không chạm Docker thật.
 # Chỉ kiểm lớp shell (thứ tự, mã thoát, log, cách gọi). Chạy bước bù với Mongo thật là việc của T-18 (bản sao dữ liệu).
 # Thêm (T-03): điểm gọi chung chạy các tệp [0-9][0-9]-*.sh theo thứ tự tên, bước lỗi dừng các bước sau, deploy.sh không còn logic bù mã.
 #
@@ -39,6 +39,7 @@ extract_fn() { sed -n "/^$1() {/,/^}/p" "$ROOT_DIR/deploy.sh"; }
 # run_catalog_codes_cli và compose là hàm một dòng: sed trên `^name() {` ... `^}` không bắt được khi đóng `}` nằm cùng dòng.
 extract_oneliner() { grep -E "^$1\(\) \{.*\}$" "$ROOT_DIR/deploy.sh"; }
 eval "$(extract_fn migration_gate | sed '1s/^migration_gate()/real_migration_gate()/')"
+eval "$(extract_fn compose_project)"
 eval "$(extract_fn mongo_volume_exists)"
 for fn in run_post_migrate_steps fresh_install_reconcile sync_system_version main; do
   src="$(extract_fn "$fn")"
@@ -79,11 +80,13 @@ docker() {
 }
 # Bước hậu-migrate chạy bằng `bash` (subprocess): cần export hàm docker giả và ORDER_FILE.
 export -f docker
-for stub in check_prereqs acquire_lock git_update check_compose check_users_migrated ensure_runtime_dirs backup_mongo \
-            tag_current_backend_image build_backend wait_mongo_healthy wait_backend_liveness; do
+for stub in check_prereqs read_release_env check_release_images run_verify_env acquire_deploy_lock check_compose check_project_volumes \
+            check_users_migrated ensure_runtime_dirs backup_mongo backup_env manifest_init tag_running_images promote_release_images \
+            note_crawler_state wait_mongo_healthy wait_backend_liveness; do
   eval "$stub() { printf '%s\n' '$stub' >> \"\$ORDER_FILE\"; return 0; }"
 done
-manifest_record_deploy_state() { :; }   # ghi manifest backup code (T backup code): ngoài phạm vi test này, nên giả im lặng
+manifest_record_deploy_state() { :; }   # ghi manifest (ngoài phạm vi test này): giả im lặng
+manifest_set() { :; }
 # migration_gate giả (mặc định) hoặc THẬT (FAKE_REAL_GATE=1, trích từ deploy.sh, đổi tên real_migration_gate). Gate thật gọi
 # mongo_is_healthy / docker inspect / docker volume ls giả điều khiển bằng FAKE_MONGO_HEALTHY, FAKE_CONTAINER, FAKE_VOLUME.
 migration_gate() {
@@ -102,13 +105,11 @@ legacy_status_gate() { printf 'legacy_status_gate
 require_free_disk_gb() { printf 'require_free_disk_gb\n' >> "$ORDER_FILE"; return 0; }
 inspect_field() { printf 'running'; }
 
-ENV_FILE=".env.docker"
+ENV_FILE=".env"
 MONGO_CONTAINER="realestate_mongo"; BACKEND_CONTAINER="realestate_backend"; DEFAULT_PROJECT="realestatemanager"
 NINE_ROUTER_CONTAINER=""
 TS="20260101-000000"
-NEW_COMMIT="abc1234"
-PREV_IMAGE_TAG=""
-BACKUP_FILE=""
+BACKUP_FILE=""; RELEASE_VERSION="1.0.6"; RELEASE_COMMIT="abc1234"; BE_NAME="realestatemanager-backend"; BE_TAG="1.0.6-abc1234"
 DOC="docs/01_Infrastructure/06_Production_Deploy.md"
 DEPLOY_MIN_FREE_GB=5
 
@@ -124,8 +125,8 @@ run_main() { # <FAKE_CC_RC> [DOWNGRADE_ACTIVE]  (đặt FAKE_FRESH / FAKE_RECONC
     FRESH_INSTALL=0; MIGRATION_GATE_RAN=0
     LOGS_DIR="$TMP/logs"
     AUTO_MIGRATE="${FAKE_AUTO:-1}"; ALLOW_DOWNGRADE=0; MONGO_TIMEOUT=120; HEALTH_TIMEOUT=120; DUMP_TIMEOUT=900; OPS_EXEC_TIMEOUT=300
-    NO_PULL=0; PLAN_ONLY="${FAKE_PLAN:-0}"; STACK_TOUCHED=0; DOWNGRADE_ACTIVE="${2:-0}"
-    main --no-pull
+    PLAN_ONLY="${FAKE_PLAN:-0}"; STACK_TOUCHED=0; POST_UP_REACHED=0; PROMOTED=0; ENFORCE_IMAGE_ID=0; ALLOW_NEW_MONGO_VOLUME=0; DOWNGRADE_ACTIVE="${2:-0}"
+    main
   ) > "$TMP/out" 2>&1 || rc=$?
   echo "$rc"
 }
@@ -137,7 +138,7 @@ out="$(cat "$TMP/order")"
 expect_eq "thành công: exit 0" "0" "$rc"
 mapfile -t order < "$TMP/order"
 idx() { local i; for i in "${!order[@]}"; do [[ "${order[$i]}" == *"$1"* ]] && { echo "$i"; return; }; done; echo -1; }
-i_up="$(idx 'up -d --build')"
+i_up="$(idx 'up -d --no-build')"
 i_live="$(idx wait_backend_liveness)"
 i_sync="$(idx sync_system_version)"
 i_cc="$(idx crm-catalog-codes.cli.js)"
@@ -148,7 +149,7 @@ i_ps="$(idx ' ps')"
 (( i_cc > i_sync )) && ok || fail "lệnh bù phải chạy SAU sync_system_version (sync=$i_sync, bù=$i_cc)"
 (( i_ps > i_cc )) && ok || fail "compose ps phải chạy SAU lệnh bù (bù=$i_cc, ps=$i_ps)"
 cc_line="$(grep 'crm-catalog-codes.cli.js' "$TMP/order")"
-expect_contains "gọi qua compose run vào service backend" "compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/crm-catalog-codes.cli.js --apply" "$cc_line"
+expect_contains "gọi qua compose run vào service backend" "compose --env-file .env run --rm --no-deps -T backend node dist/migrations/crm-catalog-codes.cli.js --apply" "$cc_line"
 expect_eq "đúng một lần gọi lệnh bù" "1" "$(grep -c 'crm-catalog-codes.cli.js' "$TMP/order")"
 logfile="$TMP/logs/deploy-catalog-codes-20260101-000000.log"
 [[ -f "$logfile" ]] && ok || fail "không thấy file log $logfile"
@@ -180,11 +181,11 @@ expect_eq "downgrade: không gọi lệnh bù" "0" "$(grep -c 'crm-catalog-codes
 
 # ── Nhánh DB TRỐNG / cài mới (T-19): 6b bỏ qua nên reconcile --apply chạy SAU up + liveness, trước 8c ──────────
 pre_recon_lines() { grep 'migrations/cli.js reconcile' "$TMP/order" | grep -v -- '--phase post-up' || true; }
-RECON='compose --env-file .env.docker run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy'
+RECON='compose --env-file .env run --rm --no-deps -T backend node dist/migrations/cli.js reconcile --apply --by deploy'
 rc="$(FAKE_FRESH=1 run_main 0)"
 expect_eq "cài mới: exit 0" "0" "$rc"
 mapfile -t order < "$TMP/order"
-i_up="$(idx 'up -d --build')"; i_live="$(idx wait_backend_liveness)"; i_rc="$(idx 'migrations/cli.js reconcile')"; i_cc="$(idx crm-catalog-codes.cli.js)"
+i_up="$(idx 'up -d --no-build')"; i_live="$(idx wait_backend_liveness)"; i_rc="$(idx 'migrations/cli.js reconcile')"; i_cc="$(idx crm-catalog-codes.cli.js)"
 (( i_rc > i_live && i_live > i_up )) && ok || fail "cài mới: reconcile phải SAU up và liveness (up=$i_up live=$i_live reconcile=$i_rc)"
 (( i_cc > i_rc )) && ok || fail "cài mới: bước bù 8c phải SAU reconcile (reconcile=$i_rc, bù=$i_cc)"
 expect_eq "cài mới: reconcile pre-up gọi đúng 1 lần (sync 8b không gọi thêm)" "1" "$(pre_recon_lines | wc -l | tr -d ' ')"
@@ -229,7 +230,7 @@ expect_eq "--no-migrate + có volume: không reconcile" "0" "$(RECON_N)"
 # --plan-only + cài mới: thoát trước up, không reconcile, không 8a.
 rc="$(FAKE_PLAN=1 FAKE_REAL_GATE=1 FAKE_MONGO_HEALTHY=0 FAKE_CONTAINER=0 FAKE_VOLUME= run_main 0)"
 expect_eq "--plan-only + cài mới: exit 0" "0" "$rc"
-expect_eq "--plan-only + cài mới: không up" "0" "$(grep -c 'up -d --build' "$TMP/order")"
+expect_eq "--plan-only + cài mới: không up" "0" "$(grep -c 'up -d --no-build' "$TMP/order")"
 expect_eq "--plan-only + cài mới: không reconcile" "0" "$(RECON_N)"
 # Container tồn tại nhưng chưa healthy: gate thật dừng (không coi là cài mới).
 rc="$(FAKE_REAL_GATE=1 FAKE_MONGO_HEALTHY=0 FAKE_CONTAINER=1 run_main 0)"
@@ -254,7 +255,7 @@ mkstep 90-z.sh 0; mkstep 10-a.sh 0; mkstep 20-b.sh 0; mkstep not-a-step.sh 0; mk
 rc="$(run_steps)"
 expect_eq "điểm gọi chung: exit 0" "0" "$rc"
 expect_eq "điểm gọi chung: đúng thứ tự tên, bỏ tệp không khớp [0-9][0-9]-*.sh" "10-a.sh 20-b.sh 90-z.sh" "$(awk '{print $1}' "$TMP/steps" | paste -sd ' ' -)"
-expect_contains "điểm gọi chung: truyền ENV_FILE/LOGS_DIR/TS/DOC/LOG_PREFIX" "ENV=.env.docker LOGS=logs-x TS=20260101-000000 DOC=docs/01_Infrastructure/06_Production_Deploy.md PFX=test" "$(head -n 1 "$TMP/steps")"
+expect_contains "điểm gọi chung: truyền ENV_FILE/LOGS_DIR/TS/DOC/LOG_PREFIX" "ENV=.env LOGS=logs-x TS=20260101-000000 DOC=docs/01_Infrastructure/06_Production_Deploy.md PFX=test" "$(head -n 1 "$TMP/steps")"
 mkstep 20-b.sh 7
 rc="$(run_steps)"
 expect_eq "bước 20 lỗi: deploy exit 1" "1" "$rc"

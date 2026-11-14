@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────
-# ops/tests/backup.test.sh — test shell KHÔNG cần Docker/Mongo thật cho backup.sh:
-#   - CHẠY script THẬT (bash backup.sh ...) trong repo git TẠM, với `docker`/`flock`/`date` giả đặt ĐẦU PATH (docker thật KHÔNG bao giờ được gọi)
-#   - mặc định đủ bộ (archive + bundle + tag + manifest + thẻ image), --db-only (không manifest/bundle/tag), --code-only, --no-image
-#   - DB trống (bỏ qua DB, vẫn backup code; --db-only thì lỗi), DB dở dang, Mongo tắt, dump hỏng, verify hỏng (dọn sạch)
-#   - kiểm tiền điều kiện phía code TRƯỚC khi dump: tên nhánh lạ (feat#1), bundle/tag/manifest/archive trùng (file cũ không bị xóa)
-#   - tham số sai (rc 2), HEAD detached, SIGTERM/SIGHUP (143/129, dọn file/tag/thẻ image), stderr chết, khóa chung (flock), mật khẩu root không lộ
-#   - manifest do backup.sh sinh ra qua được restore.sh --list/--latest (dry-run); đối chứng đột biến (đổi thứ tự kiểm-trước-dump; bỏ dọn tag)
+# ops/tests/backup.test.sh — test shell KHÔNG cần Docker/Mongo thật cho backup.sh (v1.0.6, T-36: không còn git):
+#   - CHẠY script THẬT (bash backup.sh ...) trong thư mục deploy TẠM (không phải git repo), với `docker`/`flock`/`date` giả đặt ĐẦU PATH
+#   - mặc định đủ bộ (archive + thẻ image pre-<TS> BE/FE + manifest bản 2), --db-only (không manifest/thẻ), --no-image, cờ cũ (--code-only...) bị từ chối
+#   - manifest ghi RELEASE_VERSION (release.env), CD_RUN_ID, PRE_TAG/PRE_IMAGE; không có khóa của bản git (BRANCH, CODE_BUNDLE...)
+#   - DB trống, DB dở dang, Mongo tắt, dump hỏng, verify hỏng, thẻ trùng, lỗi ghi manifest (dọn sạch file + thẻ image)
+#   - khóa chung `<thư mục deploy>/.deploy.lock` (flock -n 8, cùng deploy.sh), SIGTERM/SIGHUP, stderr chết, mật khẩu root không lộ
+#   - manifest do backup.sh sinh ra qua được restore.sh --list/--latest (dry-run); kiểm tĩnh không còn git; đối chứng đột biến
 # Chỉ kiểm lớp shell (thứ tự, mã thoát, đối số, dọn dẹp). Chạy với Mongo/Docker thật là việc diễn tập staging.
-# Cần: bash >= 4, git (có `git bundle`), gzip, timeout.
+# Cần: bash >= 4, gzip, timeout.
 #
 # Chạy:  bash ops/tests/backup.test.sh      (thoát 0 nếu mọi ca đạt, 1 nếu có ca hỏng)
 # ──────────────────────────────────────────────────────────────────
@@ -32,22 +32,20 @@ expect_nonzero() { if [[ "$2" != "0" ]]; then ok; else fail "$1: mong đợi mã
 expect_file() { if [[ -f "$2" ]]; then ok; else fail "$1: thiếu file $2"; fi; }
 expect_nofile() { if [[ ! -e "$2" ]]; then ok; else fail "$1: không được có $2"; fi; }
 
-export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.test GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.test
-export GIT_CONFIG_GLOBAL="$TMP/gitconfig-global" GIT_CONFIG_NOSYSTEM=1
-printf '[core]\n\tautocrlf = false\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n' > "$GIT_CONFIG_GLOBAL"
-
 SECRET="S3cr3t-Pass-XYZ-12345"
 STUB="$TMP/stub"
 CALLS="$TMP/calls.log"
 mkdir -p "$STUB"
 TS="20260101-120000"
-IMG="sha256:0123456789abcdef"
+BE_ID="sha256:be0123456789abcdef"
+FE_ID="sha256:fe0123456789abcdef"
 
-# ── Stub: docker, flock, date (đặt ĐẦU PATH) ──────────────────────────────────────────────────────────────────────────
+# ── Stub: docker, flock, date, stat (đặt ĐẦU PATH) ─────────────────────────────────────────────────────────────────────
 # STUB_CALLS ghi mọi lệnh docker (một dòng/lệnh). Điều khiển bằng biến môi trường: STUB_MONGO_STATE, STUB_NO_ROOT(1: mongo cấu hình cũ),
-# STUB_USERS_EXIST, STUB_NONEMPTY, STUB_DRYRUN_USERS(1/0), STUB_DUMP_RC, STUB_SYSTEM_VERSION, STUB_BACKEND_PRESENT(1/0), STUB_FAIL_TAG,
-# STUB_FLOCK_RC (khóa bị giữ), STUB_SIGNAL_ON='<chuỗi lệnh>=<TÍN HIỆU>' (gửi tín hiệu cho TIẾN TRÌNH backup.sh qua $PPID: chỉ dùng cho lệnh docker
-# gọi TRỰC TIẾP từ backup.sh, vd `docker tag`).
+# STUB_USERS_EXIST, STUB_NONEMPTY, STUB_DRYRUN_USERS(1/0), STUB_DUMP_RC, STUB_SYSTEM_VERSION, STUB_BACKEND_PRESENT/STUB_FRONTEND_PRESENT(1/0),
+# STUB_TAG_EXISTS (chuỗi con: thẻ image nào chứa nó thì "đã tồn tại"), STUB_IMAGES_ALL(1: mọi image đều có; dùng cho restore.sh dry-run),
+# STUB_FAIL_TAG, STUB_FLOCK_RC (khóa bị giữ), STUB_SIGNAL_ON='<chuỗi lệnh>=<TÍN HIỆU>' (gửi tín hiệu cho TIẾN TRÌNH backup.sh qua $PPID: chỉ dùng cho
+# lệnh docker gọi TRỰC TIẾP từ backup.sh, vd `docker tag`).
 cat > "$STUB/docker" <<'EOS'
 #!/usr/bin/env bash
 echo "docker $*" >> "$STUB_CALLS"
@@ -59,11 +57,20 @@ case "${1:-}" in
   inspect)
     case "$*" in
       *State.Status*) echo "${STUB_MONGO_STATE:-running}" ;;
-      *"{{.Image}}"*) [[ "${STUB_BACKEND_PRESENT:-1}" == "1" ]] && echo "sha256:0123456789abcdef" || exit 1 ;;
+      *"{{.Image}}"*)
+        case "$*" in
+          *realestate_backend*)  [[ "${STUB_BACKEND_PRESENT:-1}" == "1" ]] && echo "sha256:be0123456789abcdef" || exit 1 ;;
+          *realestate_frontend*) [[ "${STUB_FRONTEND_PRESENT:-1}" == "1" ]] && echo "sha256:fe0123456789abcdef" || exit 1 ;;
+          *) exit 1 ;;
+        esac ;;
       *compose.project*) echo "${STUB_PROJECT:-realestatemanager}" ;;
       *) echo "" ;;
     esac
     exit 0 ;;
+  image)   # docker image inspect [-f ...] <ref>
+    if [[ -n "${STUB_TAG_EXISTS:-}" && "$*" == *"$STUB_TAG_EXISTS"* ]]; then echo "sha256:exists"; exit 0; fi
+    if [[ "${STUB_IMAGES_ALL:-0}" == "1" ]]; then echo "sha256:img"; exit 0; fi
+    exit 1 ;;
   tag) [[ "${STUB_FAIL_TAG:-0}" == "1" ]] && exit 1; exit 0 ;;
   rmi) exit 0 ;;
   exec)
@@ -90,7 +97,7 @@ exit 0
 EOS
 # flock giả: ghi lại lời gọi, STUB_FLOCK_RC=1 giả lập "khóa đang bị giữ"; (Git Bash/Windows không có flock thật).
 printf '#!/usr/bin/env bash\necho "flock $*" >> "$STUB_CALLS.flock"\nexit "${STUB_FLOCK_RC:-0}"\n' > "$STUB/flock"
-# date giả: đóng băng mã thời gian TS (để dựng trước file/tag trùng); mọi dạng gọi khác chuyển cho date thật.
+# date giả: đóng băng mã thời gian TS (để dựng trước file/thẻ trùng); mọi dạng gọi khác chuyển cho date thật.
 cat > "$STUB/date" <<'EOS'
 #!/usr/bin/env bash
 if [[ "$*" == "+%Y%m%d-%H%M%S" ]]; then echo "20260101-120000"; exit 0; fi
@@ -102,15 +109,8 @@ cat > "$STUB/stat" <<'EOS'
 if [[ "$1" == "-c" && "$2" == "%a" ]]; then echo 600; exit 0; fi
 exec /usr/bin/stat "$@"
 EOS
-# git giả: chỉ chen vào `git bundle create`/`git bundle verify` khi STUB_GIT_BUNDLE_CREATE_FAIL / STUB_GIT_BUNDLE_VERIFY_FAIL=1; mọi lệnh khác chạy git thật.
-REAL_GIT="$(command -v git)"; REAL_INSTALL="$(command -v install)"; REAL_CHMOD="$(command -v chmod)"
-cat > "$STUB/git" <<EOS
-#!/usr/bin/env bash
-if [[ "\${1:-}" == "bundle" && "\${2:-}" == "create" && "\${STUB_GIT_BUNDLE_CREATE_FAIL:-0}" == "1" ]]; then echo "git bundle create (giả lập lỗi)" >&2; exit 1; fi
-if [[ "\${1:-}" == "bundle" && "\${2:-}" == "verify" && "\${STUB_GIT_BUNDLE_VERIFY_FAIL:-0}" == "1" ]]; then echo "git bundle verify (giả lập lỗi)" >&2; exit 1; fi
-exec "$REAL_GIT" "\$@"
-EOS
 # install/chmod giả: STUB_INSTALL_FAIL=1 làm `install` luôn lỗi (như Git Bash/NTFS); STUB_CHMOD700_FAIL=1 làm `chmod 700 ...` lỗi (chmod khác chạy thật).
+REAL_INSTALL="$(command -v install)"; REAL_CHMOD="$(command -v chmod)"
 cat > "$STUB/install" <<EOS
 #!/usr/bin/env bash
 if [[ "\${STUB_INSTALL_FAIL:-0}" == "1" ]]; then echo "install: giả lập lỗi" >&2; exit 1; fi
@@ -121,31 +121,22 @@ cat > "$STUB/chmod" <<EOS
 if [[ "\${STUB_CHMOD700_FAIL:-0}" == "1" && "\${1:-}" == "700" ]]; then exit 1; fi
 exec "$REAL_CHMOD" "\$@"
 EOS
-chmod +x "$STUB/docker" "$STUB/flock" "$STUB/date" "$STUB/stat" "$STUB/git" "$STUB/install" "$STUB/chmod"
+chmod +x "$STUB/docker" "$STUB/flock" "$STUB/date" "$STUB/stat" "$STUB/install" "$STUB/chmod"
 
-# ── Dựng repo "máy chủ" giả mỗi ca (chưa có thư mục backups/: backup.sh tự tạo) ───────────────────────────────────────
+# ── Dựng thư mục deploy "máy chủ" giả mỗi ca (KHÔNG phải git repo; chưa có thư mục backups/: backup.sh tự tạo) ────────────
 N=0; W=""
 mk() {
   N=$((N + 1))
   W="$TMP/w$N"
-  mkdir -p "$W/ops/lib" "$W/RealEstateBackendApp"
+  mkdir -p "$W/ops/lib"
   cp "$ROOT_DIR/backup.sh" "$W/backup.sh"
   cp "$ROOT_DIR/restore.sh" "$W/restore.sh"
   cp "$ROOT_DIR/ops/lib/ops-common.sh" "$W/ops/lib/ops-common.sh"
   printf 'services: {}\n' > "$W/docker-compose.yml"
-  printf 'MONGO_INITDB_ROOT_USERNAME=root\n' > "$W/.env.docker"
-  : > "$W/.env"
-  printf '.env\n.env.docker\nbackups/\n' > "$W/.gitignore"
-  printf '{\n  "name": "backend",\n  "version": "2.3.4"\n}\n' > "$W/RealEstateBackendApp/package.json"
-  (
-    cd "$W" || exit 1
-    git init -q && git symbolic-ref HEAD refs/heads/release-x
-    git add -A && git commit -qm "C1"
-  ) || { echo "Không dựng được repo tạm" >&2; exit 2; }
-  HEAD_SHA="$(git -C "$W" rev-parse HEAD)"
+  printf 'MONGO_INITDB_ROOT_USERNAME=root\n' > "$W/.env"
 }
 EXTRA_ENV=()
-# Chạy backup.sh THẬT trong repo tạm; OUT = stdout+stderr, RC = mã thoát; CALLS = các lệnh docker giả đã gọi.
+# Chạy backup.sh THẬT trong thư mục tạm; OUT = stdout+stderr, RC = mã thoát; CALLS = các lệnh docker giả đã gọi.
 run_b() {
   : > "$CALLS"; rm -f "$CALLS.sig" "$CALLS.flock"
   OUT="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" BACKUP_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" \
@@ -161,9 +152,7 @@ run_b_dead() {
 }
 calls() { cat "$CALLS"; }
 files() { ( cd "$W" && { [[ -d backups ]] && find backups -type f | sort; true; } | tr '\n' ' ' ); }
-tags() { git -C "$W" tag | tr '\n' ' '; }
 ARCH() { printf '%s/backups/deploy-pre-%s.archive.gz' "$W" "$TS"; }
-BUND() { printf '%s/backups/deploy-code-pre-%s.bundle' "$W" "$TS"; }
 MANI() { printf '%s/backups/deploy-pre-%s.manifest' "$W" "$TS"; }
 mval() { sed -n "s/^$1=//p" "$(MANI)" | head -n 1; }
 n_calls() { grep -c -- "$1" "$CALLS" || true; }
@@ -171,202 +160,252 @@ n_calls() { grep -c -- "$1" "$CALLS" || true; }
 # Quyền file chỉ kiểm được khi hệ file giữ chmod (Linux có; NTFS/Git Bash thì không).
 touch "$TMP/permprobe"; chmod 600 "$TMP/permprobe"
 PERM_OK=0; [[ "$(stat -c %a "$TMP/permprobe" 2>/dev/null)" == "600" ]] && PERM_OK=1
+# SIGHUP bị bỏ qua từ lúc khởi động (vd chạy bằng nohup) thì bash không bắt được: bỏ ca SIGHUP thay vì báo hỏng giả.
+HUP_OK=1; [[ "$(bash -c 'kill -HUP $$; echo survived' 2>/dev/null)" == "survived" ]] && HUP_OK=0
 
 # ═════════════════════════════════════════════════════════════════════════════
-echo "== 1) Mặc định: đủ bộ archive + bundle + tag + manifest + thẻ image =="
+echo "== 1) Mặc định: đủ bộ archive + thẻ image pre-<TS> (BE+FE) + manifest bản 2, không git =="
 mk; run_b
 expect_rc "backup mặc định" 0 "$RC"
-expect_file "archive" "$(ARCH)"; expect_file "bundle" "$(BUND)"; expect_file "manifest" "$(MANI)"
+expect_file "archive" "$(ARCH)"; expect_file "manifest" "$(MANI)"
 expect_eq "archive là gzip hợp lệ" "0" "$(gzip -t "$(ARCH)" 2>/dev/null; echo $?)"
-expect_eq "bundle qua git bundle verify" "0" "$(git -C "$W" bundle verify "$(BUND)" >/dev/null 2>&1; echo $?)"
-expect_contains "tag cục bộ pre-deploy-<TS>" "pre-deploy-$TS" "$(tags)"
-expect_eq "tag trỏ đúng HEAD" "$HEAD_SHA" "$(git -C "$W" rev-parse "pre-deploy-$TS^{commit}")"
-expect_contains "gắn thẻ image backend" "docker tag $IMG realestatemanager-backend:pre-$TS" "$(calls)"
+expect_contains "gắn thẻ image backend vào image đang chạy" "docker tag $BE_ID realestatemanager-backend:pre-$TS" "$(calls)"
+expect_contains "gắn thẻ image frontend vào image đang chạy" "docker tag $FE_ID realestatemanager-frontend:pre-$TS" "$(calls)"
+expect_eq "đúng 2 lệnh docker tag" "2" "$(n_calls '^docker tag ')"
+expect_eq "chỉ có 2 file: archive + manifest (không bundle)" "2" "$(find "$W/backups" -type f | wc -l | tr -d ' ')"
 expect_eq "không file rác (.partial/.tmp)" "" "$(find "$W/backups" -name '*.partial' -o -name '*.tmp' | tr '\n' ' ')"
+expect_eq "manifest: MANIFEST_VERSION=2" "2" "$(mval MANIFEST_VERSION)"
 expect_eq "manifest: BACKUP_KIND" "manual" "$(mval BACKUP_KIND)"
-expect_eq "manifest: BRANCH" "release-x" "$(mval BRANCH)"
-expect_eq "manifest: DETACHED" "0" "$(mval DETACHED)"
-expect_eq "manifest: OLD_COMMIT" "$HEAD_SHA" "$(mval OLD_COMMIT)"
-expect_eq "manifest: NEW_COMMIT = OLD_COMMIT" "$HEAD_SHA" "$(mval NEW_COMMIT)"
+expect_eq "manifest: TS" "$TS" "$(mval TS)"
+expect_eq "manifest: PRE_TAG" "pre-$TS" "$(mval PRE_TAG)"
+expect_eq "manifest: BACKEND_IMAGE_NAME" "realestatemanager-backend" "$(mval BACKEND_IMAGE_NAME)"
+expect_eq "manifest: FRONTEND_IMAGE_NAME" "realestatemanager-frontend" "$(mval FRONTEND_IMAGE_NAME)"
+expect_eq "manifest: BACKEND_PRE_IMAGE" "realestatemanager-backend:pre-$TS" "$(mval BACKEND_PRE_IMAGE)"
+expect_eq "manifest: FRONTEND_PRE_IMAGE" "realestatemanager-frontend:pre-$TS" "$(mval FRONTEND_PRE_IMAGE)"
 expect_eq "manifest: MONGO_BACKUP_FILE" "backups/deploy-pre-$TS.archive.gz" "$(mval MONGO_BACKUP_FILE)"
-expect_eq "manifest: CODE_BUNDLE" "backups/deploy-code-pre-$TS.bundle" "$(mval CODE_BUNDLE)"
-expect_eq "manifest: CODE_TAG" "pre-deploy-$TS" "$(mval CODE_TAG)"
-expect_eq "manifest: PREV_IMAGE_TAG" "realestatemanager-backend:pre-$TS" "$(mval PREV_IMAGE_TAG)"
-expect_eq "manifest: APP_VERSION" "2.3.4" "$(mval APP_VERSION_OLD)"
 expect_eq "manifest: DB_VERSION_BEFORE" "010" "$(mval DB_VERSION_BEFORE)"
 expect_eq "manifest: DB_VERSION_READ" "1" "$(mval DB_VERSION_READ)"
+expect_eq "manifest: COMPOSE_PROJECT" "realestatemanager" "$(mval COMPOSE_PROJECT)"
 expect_eq "manifest: STACK_TOUCHED=1 (restore không gợi ý bỏ qua DB)" "1" "$(mval STACK_TOUCHED)"
 expect_eq "manifest: POST_UP_REACHED=0" "0" "$(mval POST_UP_REACHED)"
 expect_eq "manifest: DEPLOY_STATUS" "succeeded" "$(mval DEPLOY_STATUS)"
-expect_eq "manifest: NO_PULL" "1" "$(mval NO_PULL)"
-expect_eq "manifest: TRACKED_DIRTY" "0" "$(mval TRACKED_DIRTY)"
-expect_eq "khóa chung: có gọi flock -n 9" "1" "$(grep -c 'flock -n 9' "$CALLS.flock")"
-[[ -f "$W/.git/realestate-deploy.lock" ]] && ok || fail "khóa chung: file .git/realestate-deploy.lock (cùng khóa với deploy.sh/restore.sh)"
+expect_eq "manifest: RELEASE_VERSION rỗng khi không có release.env" "" "$(mval RELEASE_VERSION)"
+expect_eq "manifest: CD_RUN_ID rỗng khi không có" "" "$(mval CD_RUN_ID)"
+expect_eq "manifest: ENV_BACKUP_FILE rỗng (backup thủ công không chép .env)" "" "$(mval ENV_BACKUP_FILE)"
+expect_eq "manifest: MONGO_CONTAINER" "realestate_mongo" "$(mval MONGO_CONTAINER)"
+expect_eq "manifest: FRONTEND_CONTAINER" "realestate_frontend" "$(mval FRONTEND_CONTAINER)"
+for k in BRANCH DETACHED OLD_COMMIT NEW_COMMIT CODE_BUNDLE CODE_BUNDLE_REF CODE_TAG PREV_IMAGE_REPO PREV_IMAGE_TAG TRACKED_DIRTY NO_PULL APP_VERSION_OLD; do
+  expect_eq "manifest không còn khóa của bản git: $k" "0" "$(grep -c "^$k=" "$(MANI)" || true)"
+done
+expect_eq "khóa chung: gọi flock -n 8 đúng 1 lần" "1" "$(grep -c 'flock -n 8' "$CALLS.flock")"
+expect_file "khóa chung: file <thư mục deploy>/.deploy.lock (cùng khóa deploy.sh)" "$W/.deploy.lock"
+expect_nofile "không dùng khóa trong .git" "$W/.git"
 expect_not_contains "mật khẩu root không có trong lệnh docker" "$SECRET" "$(calls)"
 expect_not_contains "mật khẩu root không có trong đầu ra" "$SECRET" "$OUT"
 expect_not_contains "mật khẩu root không có trong manifest" "$SECRET" "$(cat "$(MANI)")"
 expect_eq "mongodump chạy đúng 1 lần" "1" "$(n_calls 'mongodump')"
 expect_not_contains "không đụng stack (không up/stop/down/build)" " up " "$(calls)"
 expect_not_contains "không dừng container" " stop " "$(calls)"
+expect_not_contains "không dùng git (đầu ra không nhắc bundle)" "bundle" "$OUT"
 if (( PERM_OK == 1 )); then
-  expect_eq "quyền archive 600" "600" "$(stat -c %a "$(ARCH)")"; expect_eq "quyền bundle 600" "600" "$(stat -c %a "$(BUND)")"
+  expect_eq "quyền archive 600" "600" "$(stat -c %a "$(ARCH)")"
   expect_eq "quyền manifest 600" "600" "$(stat -c %a "$(MANI)")"; expect_eq "quyền thư mục backups 700" "700" "$(stat -c %a "$W/backups")"
 fi
 
-echo "== 2) Manifest do backup.sh sinh ra qua được restore.sh --list / --latest (dry-run) =="
-RUN_R() { : > "$CALLS"; OUT2="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" bash "$W/restore.sh" "$@" 2>&1)"; RC2=$?; }
+echo "== 2) Manifest do backup.sh sinh ra qua được restore.sh --list / --latest / --manifest (dry-run) =="
+RUN_R() { : > "$CALLS"; OUT2="$(cd "$W" && env PATH="$STUB:$PATH" STUB_CALLS="$CALLS" STUB_IMAGES_ALL=1 DEPLOY_MIN_FREE_GB=0 MONGO_INITDB_ROOT_PASSWORD="$SECRET" bash "$W/restore.sh" "$@" 2>&1)"; RC2=$?; }
 RUN_R --list
 expect_rc "restore.sh --list" 0 "$RC2"; expect_contains "--list thấy manifest" "deploy-pre-$TS.manifest" "$OUT2"
 expect_contains "--list hiện loại backup thủ công" "manual" "$OUT2"
+expect_contains "--list hiện hai thẻ image" "realestatemanager-backend:pre-$TS" "$OUT2"
 expect_not_contains "--list không hiện MANIFEST HỎNG" "MANIFEST HỎNG" "$OUT2"
 RUN_R --latest
 expect_rc "restore.sh --latest (dry-run)" 0 "$RC2"; expect_not_contains "dry-run không có [HỎNG]" "[HỎNG]" "$OUT2"
 expect_contains "dry-run dùng đúng manifest vừa tạo" "deploy-pre-$TS.manifest" "$OUT2"
+RUN_R --manifest "backups/deploy-pre-$TS.manifest"
+expect_rc "restore.sh --manifest (dry-run)" 0 "$RC2"; expect_not_contains "--manifest không có [HỎNG]" "[HỎNG]" "$OUT2"
 
-echo "== 3) --db-only: chỉ archive, KHÔNG manifest/bundle/tag/thẻ image =="
+echo "== 3) --db-only: chỉ archive, KHÔNG manifest và KHÔNG thẻ image =="
 mk; run_b --db-only
 expect_rc "--db-only" 0 "$RC"; expect_file "--db-only: archive" "$(ARCH)"
-expect_nofile "--db-only: không manifest" "$(MANI)"; expect_nofile "--db-only: không bundle" "$(BUND)"
-expect_eq "--db-only: không tag" "" "$(tags)"; expect_not_contains "--db-only: không docker tag" "docker tag" "$(calls)"
+expect_nofile "--db-only: không manifest" "$(MANI)"
+expect_not_contains "--db-only: không docker tag" "docker tag" "$(calls)"
 expect_eq "--db-only: chỉ 1 file" "1" "$(find "$W/backups" -type f | wc -l | tr -d ' ')"
 RUN_R --list
 expect_rc "--db-only: restore.sh --list không lỗi" 0 "$RC2"; expect_not_contains "--db-only: không hiện trong --list" "deploy-pre-$TS" "$OUT2"
 mk; EXTRA_ENV=(STUB_MONGO_STATE=exited); run_b --db-only
 expect_nonzero "--db-only + mongo tắt" "$RC"; expect_eq "--db-only + mongo tắt: không tạo gì" "" "$(files)"; EXTRA_ENV=()
 
-echo "== 4) --code-only: bundle + tag + manifest, MONGO_BACKUP_FILE rỗng, KHÔNG đụng Mongo =="
-mk; run_b --code-only
-expect_rc "--code-only" 0 "$RC"; expect_file "--code-only: bundle" "$(BUND)"; expect_file "--code-only: manifest" "$(MANI)"
-expect_nofile "--code-only: không archive" "$(ARCH)"
-expect_eq "--code-only: MONGO_BACKUP_FILE rỗng" "" "$(mval MONGO_BACKUP_FILE)"
-expect_eq "--code-only: DB_VERSION_READ=0" "0" "$(mval DB_VERSION_READ)"
-expect_eq "--code-only: không mongodump/mongosh/exec" "0" "$(n_calls ' exec ')"
-RUN_R --latest --code-only
-expect_rc "--code-only: restore.sh --latest --code-only chấp nhận" 0 "$RC2"; expect_not_contains "--code-only: dry-run không có [HỎNG]" "[HỎNG]" "$OUT2"
-RUN_R --latest
-expect_nonzero "--code-only: restore.sh --latest (khôi phục DB) không dùng được bản này" "$RC2"
-EXTRA_ENV=(STUB_MONGO_STATE=exited); mk; run_b --code-only
-expect_rc "--code-only chạy được cả khi mongo tắt" 0 "$RC"; EXTRA_ENV=()
-
-echo "== 5) --no-image =="
+echo "== 4) --no-image / thiếu container: pre-image rỗng, restore.sh chỉ dùng được --db-only =="
 mk; run_b --no-image
 expect_rc "--no-image" 0 "$RC"; expect_not_contains "--no-image: không docker tag" "docker tag" "$(calls)"
-expect_eq "--no-image: PREV_IMAGE_TAG rỗng" "" "$(mval PREV_IMAGE_TAG)"
+expect_eq "--no-image: BACKEND_PRE_IMAGE rỗng" "" "$(mval BACKEND_PRE_IMAGE)"; expect_eq "--no-image: FRONTEND_PRE_IMAGE rỗng" "" "$(mval FRONTEND_PRE_IMAGE)"
+expect_eq "--no-image: PRE_TAG vẫn ghi" "pre-$TS" "$(mval PRE_TAG)"
+RUN_R --latest
+expect_nonzero "--no-image: restore.sh --latest (cần image) không dùng được" "$RC2"; expect_contains "--no-image: restore báo [HỎNG]" "HỎNG" "$OUT2"
+RUN_R --latest --db-only
+expect_rc "--no-image: restore.sh --latest --db-only dùng được" 0 "$RC2"
 mk; EXTRA_ENV=(STUB_BACKEND_PRESENT=0); run_b
-expect_rc "chưa có container backend: vẫn backup được" 0 "$RC"; expect_not_contains "chưa có backend: không docker tag" "docker tag" "$(calls)"
-expect_eq "chưa có backend: PREV_IMAGE_TAG rỗng" "" "$(mval PREV_IMAGE_TAG)"; EXTRA_ENV=()
+expect_rc "chưa có container backend: vẫn backup được" 0 "$RC"
+expect_eq "chưa có backend: BACKEND_PRE_IMAGE rỗng" "" "$(mval BACKEND_PRE_IMAGE)"
+expect_eq "chưa có backend: FRONTEND_PRE_IMAGE vẫn có" "realestatemanager-frontend:pre-$TS" "$(mval FRONTEND_PRE_IMAGE)"
+expect_eq "chưa có backend: chỉ 1 docker tag" "1" "$(n_calls '^docker tag ')"
+mk; EXTRA_ENV=(STUB_FRONTEND_PRESENT=0); run_b
+expect_rc "chưa có container frontend: vẫn backup được" 0 "$RC"
+expect_eq "chưa có frontend: FRONTEND_PRE_IMAGE rỗng" "" "$(mval FRONTEND_PRE_IMAGE)"
+expect_eq "chưa có frontend: BACKEND_PRE_IMAGE vẫn có" "realestatemanager-backend:pre-$TS" "$(mval BACKEND_PRE_IMAGE)"
+mk; EXTRA_ENV=(STUB_PROJECT=myproj); run_b
+expect_eq "COMPOSE_PROJECT lấy từ nhãn compose của backend" "myproj" "$(mval COMPOSE_PROJECT)"
+expect_eq "tên image KHÔNG đổi theo project (mặc định docker-compose.yml)" "realestatemanager-backend:pre-$TS" "$(mval BACKEND_PRE_IMAGE)"
+EXTRA_ENV=()
 
-echo "== 6) DB trống: bỏ qua DB, vẫn backup code; --db-only thì lỗi =="
+echo "== 5) release.env + mã chạy CD: RELEASE_VERSION/RELEASE_COMMIT/CD_RUN_ID, tên image từ release.env =="
+mk; printf 'RELEASE_VERSION=1.0.6\nGIT_COMMIT=abc1234\nBACKEND_IMAGE_NAME=acme-be\nFRONTEND_IMAGE_NAME=acme-fe\n' > "$W/release.env"
+EXTRA_ENV=(DEPLOY_CD_RUN_ID=run-123); run_b
+expect_rc "có release.env + CD run" 0 "$RC"
+expect_eq "RELEASE_VERSION từ release.env" "1.0.6" "$(mval RELEASE_VERSION)"; expect_eq "RELEASE_COMMIT từ release.env" "abc1234" "$(mval RELEASE_COMMIT)"
+expect_eq "CD_RUN_ID từ DEPLOY_CD_RUN_ID" "run-123" "$(mval CD_RUN_ID)"
+expect_eq "tên image BE từ release.env" "acme-be:pre-$TS" "$(mval BACKEND_PRE_IMAGE)"; expect_eq "tên image FE từ release.env" "acme-fe:pre-$TS" "$(mval FRONTEND_PRE_IMAGE)"
+expect_contains "docker tag dùng tên từ release.env" "docker tag $BE_ID acme-be:pre-$TS" "$(calls)"
+mk; printf 'RELEASE_VERSION=1.0.6\n' > "$W/release.env"; EXTRA_ENV=(GITHUB_RUN_ID=987654); run_b
+expect_eq "CD_RUN_ID rơi về GITHUB_RUN_ID" "987654" "$(mval CD_RUN_ID)"
+mk; printf 'RELEASE_VERSION=1.0.6\n' > "$W/release.env"; EXTRA_ENV=(DEPLOY_CD_RUN_ID=first GITHUB_RUN_ID=second); run_b
+expect_eq "DEPLOY_CD_RUN_ID ưu tiên hơn GITHUB_RUN_ID" "first" "$(mval CD_RUN_ID)"
+mk; printf 'BACKEND_IMAGE_NAME=Bad Name;rm\nFRONTEND_IMAGE_NAME=../x\nRELEASE_VERSION=a b c\nGIT_COMMIT=ZZZ\n' > "$W/release.env"; EXTRA_ENV=(); run_b
+expect_rc "release.env có giá trị xấu: vẫn chạy" 0 "$RC"
+expect_eq "tên BE xấu: rơi về mặc định" "realestatemanager-backend:pre-$TS" "$(mval BACKEND_PRE_IMAGE)"
+expect_eq "tên FE xấu (..): rơi về mặc định" "realestatemanager-frontend:pre-$TS" "$(mval FRONTEND_PRE_IMAGE)"
+expect_eq "RELEASE_VERSION xấu: bỏ trống" "" "$(mval RELEASE_VERSION)"; expect_eq "RELEASE_COMMIT xấu: bỏ trống" "" "$(mval RELEASE_COMMIT)"
+RUN_R --latest
+expect_rc "manifest từ release.env xấu vẫn qua restore.sh" 0 "$RC2"
+# CD_RUN_ID sai dạng: dừng SAU khi đã gắn thẻ => on_exit phải dọn archive + gỡ cả hai thẻ.
+mk; EXTRA_ENV=(DEPLOY_CD_RUN_ID='a b;c'); run_b
+expect_rc "CD_RUN_ID sai dạng" 1 "$RC"; expect_contains "CD_RUN_ID sai: báo" "CD_RUN_ID" "$OUT"
+expect_eq "CD_RUN_ID sai: dọn sạch file" "" "$(files)"
+expect_contains "CD_RUN_ID sai: gỡ thẻ BE" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
+expect_contains "CD_RUN_ID sai: gỡ thẻ FE" "docker rmi realestatemanager-frontend:pre-$TS" "$(calls)"
+EXTRA_ENV=()
+
+echo "== 6) DB trống: bỏ qua DB, vẫn thẻ image + manifest; --db-only thì lỗi =="
 mk; EXTRA_ENV=(STUB_USERS_EXIST=0 STUB_NONEMPTY=); run_b
-expect_rc "DB trống (mặc định)" 0 "$RC"; expect_nofile "DB trống: không archive" "$(ARCH)"; expect_file "DB trống: vẫn có bundle" "$(BUND)"; expect_file "DB trống: vẫn có manifest" "$(MANI)"
+expect_rc "DB trống (mặc định)" 0 "$RC"; expect_nofile "DB trống: không archive" "$(ARCH)"; expect_file "DB trống: vẫn có manifest" "$(MANI)"
 expect_eq "DB trống: MONGO_BACKUP_FILE rỗng" "" "$(mval MONGO_BACKUP_FILE)"; expect_eq "DB trống: không mongodump" "0" "$(n_calls 'mongodump')"
+expect_eq "DB trống: vẫn gắn 2 thẻ image" "2" "$(n_calls '^docker tag ')"
+RUN_R --latest
+expect_nonzero "DB trống: restore.sh --latest không có bản nào dùng được" "$RC2"
 mk; EXTRA_ENV=(STUB_USERS_EXIST=0 STUB_NONEMPTY=system); run_b
 expect_rc "DB chỉ có system.*" 0 "$RC"; expect_nofile "DB chỉ system: không archive" "$(ARCH)"
 mk; EXTRA_ENV=(STUB_USERS_EXIST=0 STUB_NONEMPTY=); run_b --db-only
 expect_rc "--db-only + DB trống" 1 "$RC"; expect_contains "--db-only + DB trống: lý do" "DB trống" "$OUT"; expect_eq "--db-only + DB trống: không tạo gì" "" "$(files)"
 mk; EXTRA_ENV=(STUB_USERS_EXIST=0 STUB_NONEMPTY=orders); run_b
-expect_nonzero "DB dở dang (không users, có dữ liệu)" "$RC"; expect_eq "DB dở dang: không tạo gì" "" "$(files)"; expect_eq "DB dở dang: không tag" "" "$(tags)"
+expect_nonzero "DB dở dang (không users, có dữ liệu)" "$RC"; expect_eq "DB dở dang: không tạo gì" "" "$(files)"; expect_not_contains "DB dở dang: không gắn thẻ" "docker tag" "$(calls)"
 EXTRA_ENV=()
 
-echo "== 7) Mongo tắt / cấu hình cũ / dump hỏng / verify hỏng: dọn sạch =="
+echo "== 7) Mongo tắt / cấu hình cũ / dump hỏng / verify hỏng / quá hạn: dọn sạch, chưa gắn thẻ =="
 mk; EXTRA_ENV=(STUB_MONGO_STATE=exited); run_b
-expect_nonzero "mongo tắt" "$RC"; expect_contains "mongo tắt: gợi ý" "--code-only" "$OUT"; expect_eq "mongo tắt: không tạo gì" "" "$(files)"; expect_eq "mongo tắt: không tag" "" "$(tags)"
+expect_nonzero "mongo tắt" "$RC"; expect_eq "mongo tắt: không tạo gì" "" "$(files)"; expect_not_contains "mongo tắt: không gắn thẻ" "docker tag" "$(calls)"
 mk; EXTRA_ENV=(STUB_NO_ROOT=1); run_b
 expect_nonzero "mongo cấu hình cũ (không user root)" "$RC"; expect_eq "mongo cấu hình cũ: không tạo gì" "" "$(files)"
 mk; EXTRA_ENV=(STUB_DUMP_RC=1); run_b
 expect_nonzero "mongodump lỗi" "$RC"; expect_contains "mongodump lỗi: báo" "mongodump thất bại" "$OUT"
-expect_eq "mongodump lỗi: dọn sạch (không archive/.partial/bundle/manifest)" "" "$(files)"; expect_eq "mongodump lỗi: không tag" "" "$(tags)"
+expect_eq "mongodump lỗi: dọn sạch (không archive/.partial/manifest)" "" "$(files)"; expect_not_contains "mongodump lỗi: không gắn thẻ" "docker tag" "$(calls)"
+mk; EXTRA_ENV=(STUB_DUMP_RC=124); run_b
+expect_rc "mongodump quá hạn (124)" 1 "$RC"; expect_contains "quá hạn: thông báo timeout" "mongodump quá" "$OUT"; expect_contains "quá hạn: gợi ý DUMP_TIMEOUT" "DUMP_TIMEOUT" "$OUT"
+expect_eq "quá hạn: dọn .partial và mọi file" "" "$(files)"
 mk; EXTRA_ENV=(STUB_DRYRUN_USERS=0); run_b
 expect_nonzero "verify hỏng (dump không có realestate.users)" "$RC"; expect_contains "verify hỏng: báo" "không đạt kiểm tra nội dung" "$OUT"
-expect_eq "verify hỏng: dọn sạch file" "" "$(files)"; expect_eq "verify hỏng: không tag" "" "$(tags)"
-expect_not_contains "verify hỏng: không gắn thẻ image" "docker tag" "$(calls)"; expect_not_contains "verify hỏng: không đụng stack" " up " "$(calls)"
+expect_eq "verify hỏng: dọn sạch file" "" "$(files)"; expect_not_contains "verify hỏng: không gắn thẻ image" "docker tag" "$(calls)"; expect_not_contains "verify hỏng: không đụng stack" " up " "$(calls)"
 EXTRA_ENV=()
 
-echo "== 8) Lỗi SAU khi đã tạo bundle/tag/thẻ image: on_exit dọn tất cả (và đối chứng đột biến) =="
-# Ép lỗi ghi manifest: thư mục trùng tên file .tmp làm manifest_write thất bại, sau khi archive + bundle + tag + thẻ image đã có.
+echo "== 8) Lỗi SAU khi đã gắn thẻ: on_exit dọn tất cả (file + thẻ) và đối chứng đột biến =="
+# Ép lỗi ghi manifest: thư mục trùng tên file .tmp làm manifest_write thất bại, sau khi archive + hai thẻ image đã có.
 fail_manifest() { mkdir -p "$W/backups/deploy-pre-$TS.manifest.tmp"; }
 mk; fail_manifest; run_b
 expect_nonzero "ghi manifest lỗi" "$RC"; expect_contains "ghi manifest lỗi: báo" "Không ghi được manifest" "$OUT"
-expect_eq "ghi manifest lỗi: không còn archive/bundle/manifest" "" "$(files)"
-expect_eq "ghi manifest lỗi: tag đã bị xóa" "" "$(tags)"
-expect_contains "ghi manifest lỗi: gỡ thẻ image đã gắn" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
+expect_eq "ghi manifest lỗi: không còn archive/manifest" "" "$(find "$W/backups" -maxdepth 1 -type f | tr '\n' ' ')"
+expect_contains "ghi manifest lỗi: gỡ thẻ BE" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
+expect_contains "ghi manifest lỗi: gỡ thẻ FE" "docker rmi realestatemanager-frontend:pre-$TS" "$(calls)"
 expect_contains "ghi manifest lỗi: báo đã dọn" "đã dọn" "$OUT"
-# Đối chứng: bỏ dòng `git tag -d` khỏi on_exit thì test trên phải bắt được (tag còn sót).
-mk; fail_manifest; sed -i '/git tag -d "\$TAG_NAME"/d' "$W/backup.sh"; run_b
-[[ -n "$(tags)" ]] && ok || fail "đối chứng: bỏ 'git tag -d' mà tag vẫn bị xóa => test dọn tag không phân biệt được"
+# Đối chứng: bỏ các dòng `docker rmi` khỏi on_exit => không còn lệnh rmi (test dọn thẻ bắt được).
 mk; fail_manifest; sed -i '/docker rmi/d' "$W/backup.sh"; run_b
-expect_eq "đối chứng: bỏ 'docker rmi' thì không còn lệnh rmi (test dọn thẻ image bắt được)" "0" "$(n_calls 'docker rmi')"
-mk; fail_manifest; sed -i '/rm -f -- "\${BUNDLE_FILE}.partial" "\$BUNDLE_FILE"/d' "$W/backup.sh"; run_b
-[[ -f "$(BUND)" ]] && ok || fail "đối chứng: bỏ dòng xóa bundle mà bundle vẫn mất => test dọn file không phân biệt được"
+expect_eq "đối chứng: bỏ 'docker rmi' thì không còn lệnh rmi" "0" "$(n_calls 'docker rmi')"
+# Đối chứng: bỏ dòng xóa archive => archive còn sót (test dọn file bắt được).
+mk; fail_manifest; sed -i '/rm -f -- "\${ARCHIVE_FILE}.partial" "\$ARCHIVE_FILE"/d' "$W/backup.sh"; run_b
+[[ -f "$(ARCH)" ]] && ok || fail "đối chứng: bỏ dòng xóa archive mà archive vẫn mất => test dọn file không phân biệt được"
+# Thẻ FE đã có (chạy chồng): BE vừa gắn phải được gỡ, thẻ FE CÓ SẴN thì KHÔNG bị gỡ nhầm.
+mk; EXTRA_ENV=(STUB_TAG_EXISTS="frontend:pre-$TS"); run_b
+expect_rc "thẻ FE đã có" 1 "$RC"; expect_contains "thẻ FE đã có: báo" "Đã có thẻ image" "$OUT"
+expect_contains "thẻ FE đã có: gỡ thẻ BE vừa gắn" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
+expect_not_contains "thẻ FE đã có: KHÔNG gỡ thẻ có sẵn" "docker rmi realestatemanager-frontend" "$(calls)"
+expect_eq "thẻ FE đã có: dọn sạch file" "" "$(files)"
+mk; EXTRA_ENV=(STUB_TAG_EXISTS="backend:pre-$TS"); run_b
+expect_rc "thẻ BE đã có" 1 "$RC"; expect_eq "thẻ BE đã có: KHÔNG docker rmi nào (không xóa nhầm thẻ có sẵn)" "0" "$(n_calls 'docker rmi')"
+expect_eq "thẻ BE đã có: không docker tag nào" "0" "$(n_calls '^docker tag ')"; expect_eq "thẻ BE đã có: dọn sạch file" "" "$(files)"
+# docker tag lỗi.
+mk; EXTRA_ENV=(STUB_FAIL_TAG=1); run_b
+expect_nonzero "docker tag lỗi" "$RC"; expect_contains "docker tag lỗi: báo" "Không gắn được thẻ" "$OUT"; expect_eq "docker tag lỗi: dọn sạch file" "" "$(files)"
+EXTRA_ENV=()
 
-echo "== 9) Kiểm tiền điều kiện phía code chạy TRƯỚC khi dump (5.3) =="
-mk; git -C "$W" branch -m 'feat#1'; run_b
-expect_rc "tên nhánh feat#1" 1 "$RC"; expect_contains "feat#1: báo tên nhánh" "feat#1" "$OUT"
-expect_eq "feat#1: KHÔNG có mongodump (dừng trước khi dump)" "0" "$(n_calls 'mongodump')"
-expect_eq "feat#1: không gọi docker exec nào" "0" "$(n_calls ' exec ')"
-expect_eq "feat#1: không tạo file nào" "" "$(files)"; expect_eq "feat#1: không tag" "" "$(tags)"
-mk; git -C "$W" branch -m 'feat#1'; run_b --db-only
-expect_eq "feat#1 + --db-only: vẫn chạy (không cần tên nhánh), có archive" "0" "$RC"; expect_file "feat#1 --db-only: archive" "$(ARCH)"
-mk; git -C "$W" tag "pre-deploy-$TS"; run_b
-expect_rc "tag pre-deploy-<TS> đã có" 1 "$RC"; expect_contains "tag trùng: báo" "Đã có tag" "$OUT"
-expect_eq "tag trùng: KHÔNG mongodump" "0" "$(n_calls 'mongodump')"; expect_eq "tag trùng: không tạo file" "" "$(files)"
-expect_contains "tag trùng: tag cũ còn nguyên" "pre-deploy-$TS" "$(tags)"
-mk; mkdir -p "$W/backups"; printf 'cu' > "$(BUND)"; run_b
-expect_rc "bundle <TS> đã có" 1 "$RC"; expect_eq "bundle trùng: KHÔNG mongodump" "0" "$(n_calls 'mongodump')"
-expect_eq "bundle trùng: file cũ nguyên vẹn (không bị dọn nhầm)" "cu" "$(cat "$(BUND)")"; expect_eq "bundle trùng: chỉ còn file cũ" "$(BUND)" "$(find "$W/backups" -type f | tr '\n' ' ' | sed 's/ $//')"
+echo "== 9) File trùng mã thời gian: không ghi đè, file cũ không bị dọn nhầm =="
 mk; mkdir -p "$W/backups"; printf 'manifest-cu' > "$(MANI)"; run_b
 expect_rc "manifest <TS> đã có" 1 "$RC"; expect_eq "manifest trùng: KHÔNG mongodump" "0" "$(n_calls 'mongodump')"
 expect_eq "manifest trùng: file cũ nguyên vẹn (on_exit không xóa nhầm)" "manifest-cu" "$(cat "$(MANI)")"
 mk; mkdir -p "$W/backups"; printf 'archive-cu' > "$(ARCH)"; run_b
 expect_rc "archive <TS> đã có" 1 "$RC"; expect_eq "archive trùng: KHÔNG mongodump" "0" "$(n_calls 'mongodump')"; expect_eq "archive trùng: file cũ nguyên vẹn" "archive-cu" "$(cat "$(ARCH)")"
+expect_not_contains "archive trùng: không gắn thẻ" "docker tag" "$(calls)"
 mk; mkdir -p "$W/backups"; printf 'archive-cu' > "$(ARCH)"; run_b --db-only
 expect_rc "--db-only: archive <TS> đã có" 1 "$RC"; expect_eq "--db-only: archive cũ nguyên vẹn" "archive-cu" "$(cat "$(ARCH)")"
-# Đối chứng đột biến: dời precheck xuống SAU dump thì feat#1 phải làm mongodump chạy và dump hợp lệ bị xóa (đúng lỗi 5.3 ban đầu).
-mk; git -C "$W" branch -m 'feat#1'
-sed -i '/^  precheck   #/d; s/^  local commit="\$P_COMMIT"/  precheck; local commit="$P_COMMIT"/' "$W/backup.sh"
-run_b
-(( $(n_calls 'mongodump') >= 1 )) && ok || fail "đối chứng: dời precheck xuống sau dump mà mongodump vẫn không chạy => test thứ tự không phân biệt được"
-expect_eq "đối chứng: thứ tự cũ làm mất dump hợp lệ (đúng lỗi 5.3)" "" "$(files)"
-# Kiểm tĩnh: precheck được gọi trước backup_mongo trong main.
-L_PRE="$(grep -n '^  precheck' "$ROOT_DIR/backup.sh" | head -n 1 | cut -d: -f1)"; L_DB="$(grep -n 'backup_mongo || rc' "$ROOT_DIR/backup.sh" | head -n 1 | cut -d: -f1)"
-(( ${L_PRE:-0} > 0 && ${L_PRE:-0} < ${L_DB:-0} )) && ok || fail "main: precheck phải đứng TRƯỚC backup_mongo (dòng $L_PRE / $L_DB)"
 
-echo "== 10) HEAD detached =="
-mk; git -C "$W" checkout -q --detach; run_b
-expect_rc "HEAD detached" 0 "$RC"; expect_contains "detached: cảnh báo" "detached" "$OUT"
-expect_eq "detached: DETACHED=1" "1" "$(mval DETACHED)"; expect_eq "detached: BRANCH rỗng" "" "$(mval BRANCH)"; expect_eq "detached: CODE_BUNDLE_REF" "HEAD" "$(mval CODE_BUNDLE_REF)"
-expect_eq "detached: bundle verify" "0" "$(git -C "$W" bundle verify "$(BUND)" >/dev/null 2>&1; echo $?)"
-mk; printf '\n' >> "$W/RealEstateBackendApp/package.json"; run_b
-expect_rc "file đã theo dõi bị sửa tay" 0 "$RC"; expect_eq "sửa tay: TRACKED_DIRTY=1" "1" "$(mval TRACKED_DIRTY)"; expect_contains "sửa tay: cảnh báo" "chưa commit" "$OUT"
-
-echo "== 11) Tham số sai / trợ giúp / biến môi trường sai =="
-mk; run_b --bi-an
-expect_rc "tham số lạ" 2 "$RC"; expect_contains "tham số lạ: nêu tham số" "--bi-an" "$OUT"; expect_eq "tham số lạ: không tạo gì" "" "$(files)"; expect_eq "tham số lạ: không gọi docker" "0" "$(wc -l < "$CALLS" | tr -d ' ')"
+echo "== 10) Tham số: cờ cũ bị từ chối (rc 2), tham số lạ, trợ giúp, biến môi trường sai =="
+mk; run_b --code-only
+expect_rc "cờ cũ --code-only bị từ chối" 2 "$RC"; expect_contains "cờ cũ: nêu tham số" "--code-only" "$OUT"; expect_contains "cờ cũ: giải thích đã bỏ" "đã bỏ ở v1.0.6" "$OUT"
+expect_eq "cờ cũ: không tạo gì" "" "$(files)"; expect_eq "cờ cũ: không gọi docker" "0" "$(wc -l < "$CALLS" | tr -d ' ')"
 run_b --db-only --code-only
-expect_rc "--db-only kèm --code-only" 2 "$RC"; expect_contains "loại trừ nhau" "loại trừ nhau" "$OUT"; expect_eq "loại trừ nhau: không tạo gì" "" "$(files)"
+expect_rc "--db-only kèm cờ cũ" 2 "$RC"
+run_b --bi-an
+expect_rc "tham số lạ" 2 "$RC"; expect_contains "tham số lạ: nêu tham số" "--bi-an" "$OUT"; expect_eq "tham số lạ: không tạo gì" "" "$(files)"; expect_eq "tham số lạ: không gọi docker" "0" "$(wc -l < "$CALLS" | tr -d ' ')"
 run_b --help
 expect_rc "--help" 0 "$RC"; expect_contains "--help: có cách dùng" "Cách dùng" "$OUT"; expect_contains "--help: nói rõ --db-only không có manifest" "KHÔNG ghi manifest" "$OUT"
-expect_contains "--help: nêu mongorestore" "mongorestore" "$OUT"
+expect_contains "--help: nêu mongorestore" "mongorestore" "$OUT"; expect_not_contains "--help: không còn nhắc --code-only như tùy chọn" "--code-only" "$OUT"
 EXTRA_ENV=(DUMP_TIMEOUT=abc); run_b
 expect_rc "DUMP_TIMEOUT không phải số" 1 "$RC"; expect_eq "DUMP_TIMEOUT sai: không tạo gì" "" "$(files)"; EXTRA_ENV=()
 EXTRA_ENV=(BACKUP_MIN_FREE_GB=x); run_b
 expect_rc "BACKUP_MIN_FREE_GB không phải số" 1 "$RC"; EXTRA_ENV=()
 
-echo "== 12) Khóa chung với deploy.sh/restore.sh (flock) =="
+echo "== 11) File env mặc định là .env (không còn .env.docker) =="
+mk; EXTRA_ENV=(DEPLOY_ENV_FILE=.env.docker); run_b
+expect_rc "DEPLOY_ENV_FILE=.env.docker ngoài wrapper staging" 1 "$RC"; expect_contains "báo biến staging đặt ngoài wrapper" "DEPLOY_ENV_FILE" "$OUT"
+expect_eq "không tạo gì" "" "$(files)"; EXTRA_ENV=()
+mk; run_b
+expect_rc "không đặt DEPLOY_ENV_FILE: mặc định .env chạy bình thường" 0 "$RC"
+expect_eq "backup.sh không còn nhắc .env.docker" "0" "$(grep -c '\.env\.docker' "$ROOT_DIR/backup.sh" || true)"
+expect_eq "restore.sh không còn nhắc .env.docker" "0" "$(grep -c '\.env\.docker' "$ROOT_DIR/restore.sh" || true)"
+
+echo "== 12) Khóa chung <thư mục deploy>/.deploy.lock với deploy.sh/restore.sh =="
 mk; EXTRA_ENV=(STUB_FLOCK_RC=1); run_b
 expect_rc "khóa đang bị giữ" 1 "$RC"; expect_contains "khóa bị giữ: báo" "đang chạy" "$OUT"
-expect_eq "khóa bị giữ: không mongodump" "0" "$(n_calls 'mongodump')"; expect_eq "khóa bị giữ: không tạo file" "" "$(files)"; expect_eq "khóa bị giữ: không tag" "" "$(tags)"
+expect_eq "khóa bị giữ: không mongodump" "0" "$(n_calls 'mongodump')"; expect_eq "khóa bị giữ: không tạo file" "" "$(files)"; expect_not_contains "khóa bị giữ: không gắn thẻ" "docker tag" "$(calls)"
 EXTRA_ENV=()
+# Cùng đường dẫn khóa với deploy.sh: ops-common dựng "$dir/.deploy.lock", deploy.sh khai báo DEPLOY_LOCK_FILE=".deploy.lock" và khóa "$ROOT_DIR/$DEPLOY_LOCK_FILE".
+expect_contains "deploy.sh khóa file .deploy.lock" 'DEPLOY_LOCK_FILE=".deploy.lock"' "$(cat "$ROOT_DIR/deploy.sh")"
+expect_contains "ops-common: acquire_dir_lock dùng .deploy.lock" '/.deploy.lock' "$(sed -n '/^acquire_dir_lock() {/,/^}/p' "$ROOT_DIR/ops/lib/ops-common.sh")"
+expect_contains "backup.sh gọi acquire_dir_lock" 'acquire_dir_lock "$ROOT_DIR"' "$(cat "$ROOT_DIR/backup.sh")"
+expect_contains "restore.sh gọi acquire_dir_lock" 'acquire_dir_lock "$ROOT_DIR"' "$(cat "$ROOT_DIR/restore.sh")"
+# Đối chứng: bỏ lời gọi khóa => không còn flock nào được gọi (test khóa bắt được).
+mk; sed -i '/acquire_dir_lock "\$ROOT_DIR"/d' "$W/backup.sh"; run_b
+expect_eq "đối chứng: bỏ acquire_dir_lock thì không gọi flock" "0" "$(cat "$CALLS.flock" 2>/dev/null | grep -c flock || true)"
 
 echo "== 13) SIGTERM / SIGHUP giữa chừng (ngay lúc gắn thẻ image): mã 143/129 và dọn sạch =="
-mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256=TERM"); run_b
-expect_rc "SIGTERM" 143 "$RC"; expect_eq "SIGTERM: dọn sạch file" "" "$(files)"; expect_eq "SIGTERM: xóa tag" "" "$(tags)"
-expect_contains "SIGTERM: gỡ thẻ image vừa gắn" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"; expect_contains "SIGTERM: báo đã dọn" "THẤT BẠI" "$OUT"
-mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256=HUP"); run_b
-expect_rc "SIGHUP" 129 "$RC"; expect_eq "SIGHUP: dọn sạch file" "" "$(files)"; expect_eq "SIGHUP: xóa tag" "" "$(tags)"
-expect_contains "SIGHUP: gỡ thẻ image vừa gắn" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
-mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256=TERM"); run_b_dead
-expect_rc "SIGTERM + stderr chết (/dev/full)" 143 "$RC"; expect_eq "SIGTERM + stderr chết: vẫn dọn sạch file" "" "$(files)"; expect_eq "SIGTERM + stderr chết: vẫn xóa tag" "" "$(tags)"
+mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256:be=TERM"); run_b
+expect_rc "SIGTERM lúc gắn thẻ BE" 143 "$RC"; expect_eq "SIGTERM: dọn sạch file" "" "$(files)"
+expect_contains "SIGTERM: gỡ thẻ BE (đặt trước docker tag)" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"; expect_contains "SIGTERM: báo đã dọn" "THẤT BẠI" "$OUT"
+if (( HUP_OK == 1 )); then
+mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256:fe=HUP"); run_b
+expect_rc "SIGHUP lúc gắn thẻ FE" 129 "$RC"; expect_eq "SIGHUP: dọn sạch file" "" "$(files)"
+expect_contains "SIGHUP: gỡ thẻ FE" "docker rmi realestatemanager-frontend:pre-$TS" "$(calls)"; expect_contains "SIGHUP: gỡ cả thẻ BE đã gắn" "docker rmi realestatemanager-backend:pre-$TS" "$(calls)"
+else echo "  (bỏ qua ca SIGHUP: SIGHUP bị bỏ qua từ lúc khởi động, vd chạy bằng nohup)"; fi
+mk; EXTRA_ENV=("STUB_SIGNAL_ON=tag sha256:be=TERM"); run_b_dead
+expect_rc "SIGTERM + stderr chết (/dev/full)" 143 "$RC"; expect_eq "SIGTERM + stderr chết: vẫn dọn sạch file" "" "$(files)"
 expect_contains "SIGTERM + stderr chết: vẫn gỡ thẻ image" "docker rmi" "$(calls)"
 mk; EXTRA_ENV=(STUB_DUMP_RC=1); run_b_dead
 expect_rc "dump lỗi + stderr chết" 1 "$RC"; expect_eq "dump lỗi + stderr chết: vẫn dọn sạch" "" "$(files)"
@@ -377,48 +416,13 @@ OE="$(sed -n '/^on_exit() {/,/^}/p' "$ROOT_DIR/backup.sh")"
 L_SET="$(grep -n 'set +e' <<<"$OE" | head -n 1 | cut -d: -f1)"; L_RM="$(grep -n 'rm -f' <<<"$OE" | head -n 1 | cut -d: -f1)"; L_WARN="$(grep -n 'warn "' <<<"$OE" | head -n 1 | cut -d: -f1)"
 (( ${L_SET:-0} > 0 && ${L_SET:-0} < ${L_RM:-0} && ${L_RM:-0} < ${L_WARN:-0} )) && ok || fail "on_exit: thứ tự set +e ($L_SET) < dọn dẹp ($L_RM) < in ($L_WARN)"
 expect_contains "on_exit: bỏ SIGPIPE" "trap '' PIPE" "$OE"
-EXTRA_ENV=()
-
-echo "== 14) Manifest không mồ côi: bị ngắt sát lúc ghi manifest thì manifest cũng bị xóa (5.9) =="
-OE="$(sed -n '/^on_exit() {/,/^}/p' "$ROOT_DIR/backup.sh")"
 expect_contains "on_exit xóa cả manifest chưa chốt" '"$MANIFEST_FILE"' "$OE"
-L_SETM="$(grep -n 'MANIFEST_FILE="\${BACKUP_DIR}' "$ROOT_DIR/backup.sh" | head -n 1 | cut -d: -f1)"; L_CHK="$(grep -n 'deploy-pre-\${TS}.manifest" \]\]' "$ROOT_DIR/backup.sh" | head -n 1 | cut -d: -f1)"
-(( ${L_CHK:-0} > 0 && ${L_CHK:-0} < ${L_SETM:-0} )) && ok || fail "MANIFEST_FILE phải được đặt SAU khi đã kiểm manifest chưa tồn tại (kiểm dòng $L_CHK, đặt dòng $L_SETM)"
-
-echo "== 15) Tên backup.sh không đổi hành vi deploy.sh: deploy.sh vẫn tự backup, không gọi backup.sh =="
-# Chỉ được NHẮC backup.sh trong chú thích (#) hoặc dòng trợ giúp "Backup thủ công ..."; mọi dòng khác nhắc tới nó là bị gọi/nạp => hỏng.
-expect_eq "deploy.sh không gọi/nạp backup.sh (chỉ nhắc trong chú thích/usage)" "0" "$(grep 'backup\.sh' "$ROOT_DIR/deploy.sh" | grep -vcE '^[[:space:]]*#|^Backup thủ công' || true)"
-expect_contains "deploy.sh vẫn có backup_mongo" "backup_mongo()" "$(cat "$ROOT_DIR/deploy.sh")"
-expect_contains "deploy.sh vẫn có backup_code" "backup_code()" "$(cat "$ROOT_DIR/deploy.sh")"
-
-echo "== 16) git bundle create/verify lỗi, mongodump quá hạn (rc 124): dọn sạch, mã 1 (QA vòng 4, M1) =="
-# (a) `git bundle create` lỗi. Hành vi thực tế: on_exit dọn MỌI thứ lần chạy này đã tạo, KỂ CẢ dump DB tốt đã xong trước đó (tất cả hoặc không gì).
-mk; EXTRA_ENV=(STUB_GIT_BUNDLE_CREATE_FAIL=1); run_b
-expect_rc "bundle create lỗi" 1 "$RC"; expect_contains "bundle create lỗi: báo" "git bundle create thất bại" "$OUT"
-expect_eq "bundle create lỗi: dọn sạch (cả dump DB đã xong, không .partial, không manifest)" "" "$(files)"
-expect_eq "bundle create lỗi: không tag" "" "$(tags)"; expect_not_contains "bundle create lỗi: chưa gắn thẻ image" "docker tag" "$(calls)"
-expect_eq "bundle create lỗi: dump DB ĐÃ chạy trước đó (đúng thứ tự mặc định)" "1" "$(n_calls 'mongodump')"
-expect_contains "bundle create lỗi: báo đã dọn" "đã dọn" "$OUT"
-mk; EXTRA_ENV=(STUB_GIT_BUNDLE_CREATE_FAIL=1); run_b --code-only
-expect_rc "bundle create lỗi (--code-only)" 1 "$RC"; expect_eq "bundle create lỗi --code-only: không còn gì" "" "$(files)"; expect_eq "bundle create lỗi --code-only: không tag" "" "$(tags)"
-# (b) `git bundle verify` lỗi: .partial bị xóa, không tag, không thẻ image, không manifest, mã 1.
-mk; EXTRA_ENV=(STUB_GIT_BUNDLE_VERIFY_FAIL=1); run_b
-expect_rc "bundle verify lỗi" 1 "$RC"; expect_contains "bundle verify lỗi: báo" "không qua 'git bundle verify'" "$OUT"
-expect_eq "bundle verify lỗi: dọn sạch (bundle .partial, archive, manifest)" "" "$(files)"; expect_eq "bundle verify lỗi: không tag" "" "$(tags)"
-expect_not_contains "bundle verify lỗi: không gắn thẻ image" "docker tag" "$(calls)"
-mk; EXTRA_ENV=(STUB_GIT_BUNDLE_VERIFY_FAIL=1); run_b --code-only
-expect_rc "bundle verify lỗi (--code-only)" 1 "$RC"; expect_eq "bundle verify lỗi --code-only: không còn gì" "" "$(files)"; expect_eq "bundle verify lỗi --code-only: không tag" "" "$(tags)"
-# đối chứng đột biến: bỏ dòng `git bundle verify` thì bundle hỏng lọt qua (rc 0) => test (b) ở trên sẽ HỎNG, tức là bắt được.
-mk; sed -i '/^  git bundle verify "\$part"/d' "$W/backup.sh"; EXTRA_ENV=(STUB_GIT_BUNDLE_VERIFY_FAIL=1); run_b
-expect_eq "đối chứng: bỏ 'git bundle verify' thì bundle không được kiểm (rc 0: test (b) bắt được)" "0" "$RC"
-# (c) mongodump quá hạn (timeout trả 124): thông báo timeout, dọn .partial và mọi file
-mk; EXTRA_ENV=(STUB_DUMP_RC=124); run_b
-expect_rc "mongodump quá hạn (124)" 1 "$RC"; expect_contains "mongodump quá hạn: thông báo timeout" "mongodump quá" "$OUT"
-expect_contains "mongodump quá hạn: gợi ý DUMP_TIMEOUT" "DUMP_TIMEOUT" "$OUT"
-expect_eq "mongodump quá hạn: dọn .partial và mọi file" "" "$(files)"; expect_eq "mongodump quá hạn: không tag" "" "$(tags)"
+# MANIFEST_FILE chỉ được đặt MỘT chỗ (trong write_manifest, sau khi main đã kiểm manifest chưa tồn tại): đặt sớm hơn thì on_exit xóa nhầm manifest cũ trùng TS.
+expect_eq "MANIFEST_FILE chỉ gán giá trị đường dẫn một lần" "1" "$(grep -c 'MANIFEST_FILE="${BACKUP_DIR}' "$ROOT_DIR/backup.sh")"
+expect_contains "phép gán nằm trong write_manifest" 'MANIFEST_FILE="${BACKUP_DIR}' "$(sed -n '/^write_manifest() {/,/^}/p' "$ROOT_DIR/backup.sh")"
 EXTRA_ENV=()
 
-echo "== 17) install lỗi (Git Bash/NTFS): fallback mkdir + chmod; chmod 700 lỗi thì CẢNH BÁO (L1) =="
+echo "== 14) install lỗi (Git Bash/NTFS): fallback mkdir + chmod; chmod 700 lỗi thì CẢNH BÁO =="
 mk; EXTRA_ENV=(STUB_INSTALL_FAIL=1); run_b
 expect_rc "install lỗi: fallback mkdir" 0 "$RC"; [[ -d "$W/backups" ]] && ok || fail "install lỗi: thiếu thư mục backups"
 expect_file "install lỗi: vẫn đủ bộ (manifest)" "$(MANI)"; expect_file "install lỗi: archive" "$(ARCH)"
@@ -428,16 +432,40 @@ expect_rc "install + chmod 700 đều lỗi: vẫn chạy tiếp" 0 "$RC"; expec
 expect_file "chmod 700 lỗi: vẫn tạo manifest" "$(MANI)"
 mk; EXTRA_ENV=(STUB_INSTALL_FAIL=1 STUB_CHMOD700_FAIL=1); run_b_dead
 expect_rc "install + chmod 700 lỗi + stderr chết" 0 "$RC"
-# đối chứng đột biến: bỏ cảnh báo (về `|| true`) thì test trên phải hỏng.
 mk; sed -i 's/chmod 700 "\$BACKUP_DIR" 2>\/dev\/null || warn "[^;]*" || true; }/chmod 700 "$BACKUP_DIR" 2>\/dev\/null || true; }/' "$W/backup.sh"; EXTRA_ENV=(STUB_INSTALL_FAIL=1 STUB_CHMOD700_FAIL=1); run_b
 expect_not_contains "đối chứng: về '|| true' thì không còn cảnh báo (test bắt được)" "Không đặt được quyền 700" "$OUT"
 EXTRA_ENV=()
 
-echo "== 18) Canh lệch: classify_db của backup.sh phải giống deploy.sh (mỗi bên giữ một bản, cố ý không dùng chung) =="
+echo "== 15) Kiểm tĩnh: backup.sh/restore.sh không còn git, bundle, --code-only, up --build (và đối chứng đột biến) =="
+# Mẫu bị cấm: cờ cũ, bundle, git reset/switch/tag/clone/checkout, `up --build`, hàm cũ của bản git.
+BAD_RE='--code-only|bundle|git (reset|switch|checkout|tag|clone|rev-parse|status|fetch|pull)|up .*--build|in_git_repo|acquire_lock|valid_branch_name|--use-image-tag|--allow-infra-change'
+static_hits() { grep -nE -- "$BAD_RE" "$1" || true; }
+expect_eq "backup.sh sạch (không --code-only/bundle/git/up --build)" "" "$(static_hits "$ROOT_DIR/backup.sh")"
+expect_eq "restore.sh sạch (không --code-only/bundle/git reset/up --build)" "" "$(static_hits "$ROOT_DIR/restore.sh")"
+for pat in 'git bundle create x' 'git reset --hard HEAD' 'docker compose up --build -d' 'DO_CODE=1 # --code-only'; do
+  cp "$ROOT_DIR/backup.sh" "$TMP/mut.sh"; printf '%s\n' "$pat" >> "$TMP/mut.sh"
+  [[ -n "$(static_hits "$TMP/mut.sh")" ]] && ok || fail "đối chứng: thêm '$pat' mà kiểm tĩnh không bắt được"
+done
+GIT_CALL_RE='(^|[;&|(`]|[[:space:]])git[[:space:]]+[a-z-]+'
+expect_eq "backup.sh: không gọi lệnh git" "" "$(grep -vE '^[[:space:]]*#' "$ROOT_DIR/backup.sh" | grep -E "^[[:space:]]*git[[:space:]]|[;&|(\`][[:space:]]*git[[:space:]]" || true)"
+expect_eq "restore.sh: không gọi lệnh git" "" "$(grep -vE '^[[:space:]]*#' "$ROOT_DIR/restore.sh" | grep -E "^[[:space:]]*git[[:space:]]|[;&|(\`][[:space:]]*git[[:space:]]" || true)"
+
+echo "== 16) deploy.sh vẫn tự backup, không gọi backup.sh; classify_db đồng bộ =="
+expect_eq "deploy.sh không gọi/nạp backup.sh (chỉ nhắc trong chú thích/usage)" "0" "$(grep 'backup\.sh' "$ROOT_DIR/deploy.sh" | grep -vcE '^[[:space:]]*#|^Backup thủ công' || true)"
+expect_contains "deploy.sh vẫn có backup_mongo" "backup_mongo()" "$(cat "$ROOT_DIR/deploy.sh")"
 fn_body() { sed -n '/^classify_db() {/,/^}/p' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$'; }
 D_FN="$(fn_body "$ROOT_DIR/deploy.sh")"; B_FN="$(fn_body "$ROOT_DIR/backup.sh")"
 [[ -n "$D_FN" && -n "$B_FN" ]] && ok || fail "không tìm thấy classify_db trong deploy.sh hoặc backup.sh"
 expect_eq "classify_db: deploy.sh == backup.sh (đã chuẩn hóa khoảng trắng)" "$D_FN" "$B_FN"
+
+echo "== 17) Đối chứng: manifest sai thì restore.sh phải từ chối =="
+mk; sed -i 's/"PRE_TAG=pre-\${TS}"/"PRE_TAG=pre"/' "$W/backup.sh"; run_b
+expect_rc "(đột biến) backup với PRE_TAG sai vẫn ghi được" 0 "$RC"
+RUN_R --latest
+expect_nonzero "(đột biến) restore.sh từ chối manifest PRE_TAG sai" "$RC2"
+mk; sed -i 's/"MANIFEST_VERSION=2"/"MANIFEST_VERSION=1"/' "$W/backup.sh"; run_b
+RUN_R --latest
+expect_nonzero "(đột biến) restore.sh từ chối manifest bản 1" "$RC2"; expect_contains "bản 1: thông báo rõ" "bản 1" "$OUT2"
 
 echo
 echo "Kết quả: $PASS đạt, $FAIL hỏng."
