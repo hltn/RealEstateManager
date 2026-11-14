@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# ops/tests/release-build.test.sh — test shell KHÔNG cần Docker/ssh thật cho `release.sh build` và khung `send` (v1.0.6, T-30, FR-14).
+# ops/tests/release-build.test.sh — test shell KHÔNG cần Docker/ssh thật cho `release.sh build` và bước 0 của `send` (v1.0.6, T-30, FR-14).
 #
 # Mỗi ca dựng một repo git TẠM (kèm remote bare) chứa bản sao release.sh + ops/lib thật, các file whitelist giả và vài file "bẫy"
 # (.env, backups/, logs/, docs/, RealEstateApp/ ...). `docker` và `ssh`/`scp` là bản giả đặt đầu PATH: docker ghi lại mọi lệnh và giữ
-# "image" trong một thư mục trạng thái (ID suy ra từ tên + build-arg), ssh/scp chỉ ghi nhật ký để chứng minh `send` không chạm mạng.
+# "image" trong một thư mục trạng thái (ID suy ra từ tên + build-arg), ssh/scp chỉ ghi nhật ký để chứng minh `send` bị từ chối/--dry-run không chạm mạng.
 #
 # Phủ: build đạt (lệnh docker, release.env đúng khóa/giá trị, tag current), gói whitelist (danh sách file CHÍNH XÁC, quyền 755/644,
 # không lọt .env/backups/logs/docs/RealEstateApp, chặn file bí mật đang được theo dõi), .sha256 (khớp và phát hiện gói bị sửa),
@@ -332,13 +332,14 @@ sed -i '/^RELEASE_LOCAL=/d' "$RE"
 run_release "$R" "$S" -- send --to some-vps
 expect_contains "[8] thiếu cờ RELEASE_LOCAL nhưng tag -local vẫn bị từ chối" "TỪ CHỐI" "$OUT"
 expect_no_file "[8] vẫn không chạm ssh/scp" "$S/net.log"
-# Bản thường: khung send báo chưa hỗ trợ (T-32), vẫn không chạm mạng
+# Bản thường: send --dry-run qua bước 0 (gói/ảnh khớp) và chỉ in kế hoạch, không chạm mạng (luồng đầy đủ: release-send.test.sh)
 make_repo c8b; R="$REPO"; S="$STATE"
 run_release "$R" "$S" -- build
-run_release "$R" "$S" -- send --to some-vps
-expect_nonzero "[8] send bản thường: khung chưa hỗ trợ" "$RC"
-expect_contains "[8] báo chưa hỗ trợ (T-32)" "T-32" "$OUT"
-expect_no_file "[8] khung send không chạm ssh/scp" "$S/net.log"
+run_release "$R" "$S" -- send --to some-vps --dry-run
+expect_rc "[8] send --dry-run bản thường đạt" 0 "$RC"
+expect_contains "[8] dry-run in kế hoạch" "dry-run" "$OUT"
+expect_not_contains "[8] không còn khung 'chưa hỗ trợ'" "chưa được hỗ trợ" "$OUT"
+expect_no_file "[8] dry-run không chạm ssh/scp" "$S/net.log"
 run_release "$R" "$S" -- send
 expect_nonzero "[8] send thiếu --to" "$RC"
 make_repo c8c; R="$REPO"; S="$STATE"
