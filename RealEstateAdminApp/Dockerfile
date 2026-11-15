@@ -24,6 +24,9 @@ ENV CLIENT_MAX_BODY=6m
 ENV NGINX_ENVSUBST_FILTER='^(BACKEND_UPSTREAM|TRUSTED_PROXY_IP|CLIENT_MAX_BODY)$'
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
+# Header bảo mật (T-41 D-1): file thường, KHÔNG phải template (không qua envsubst), được default.conf `include` ở cấp server và ở từng
+# location có add_header riêng. Đặt ngoài /etc/nginx/conf.d để không bị nạp thành một cấu hình server độc lập.
+COPY nginx-security-headers.conf /etc/nginx/snippets/security-headers.conf
 # Entrypoint sinh /usr/share/nginx/html/env.js (window.__APP_CONFIG__) từ allowlist khóa env mỗi lần container khởi động.
 # Image nginx chạy mọi /docker-entrypoint.d/*.sh có quyền thực thi theo thứ tự tên (sau 20-envsubst); giá trị sai thì
 # script thoát khác 0 và container dừng, log chỉ nêu TÊN khóa. Khóa env (đặt ở compose/`docker run -e`): API_URL, CRM_ENABLED,

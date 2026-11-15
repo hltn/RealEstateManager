@@ -368,6 +368,7 @@ RealEstateAdminApp/
 │   └── tsconfig.sw.json         #   Kiểm kiểu service worker (WebWorker, không DOM)
 ├── Dockerfile                   # 2 stage: build Vite, rồi nginx phục vụ file tĩnh
 ├── nginx.conf                   # Cấu hình nginx: phục vụ SPA + proxy /api/ về backend
+├── nginx-security-headers.conf  # Snippet header bảo mật (include ở server và từng location có add_header; image chép vào /etc/nginx/snippets/)
 ├── .oxlintrc.json, .nvmrc, .dockerignore
 ├── .env, .env.example           # Biến VITE_* (build-time; .env thật không commit)
 ├── package.json, package-lock.json, README.md
