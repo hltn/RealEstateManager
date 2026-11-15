@@ -621,7 +621,7 @@ api/axios.ts          đọc import.meta.env.VITE_API_URL ┐
 modules/crm/config/featureFlags.ts  đọc VITE_CRM_*     ├─ một module runtimeConfig duy nhất (vị trí chốt sau)
                        (+ mặc định theo env.DEV)       ┘   đọc window.__APP_CONFIG__
 (không có)                                             /env.js sinh bởi entrypoint của container từ env
-                                                       (header no-cache; loại khỏi precache service worker)
+                                                       (header no-store; loại khỏi precache service worker)
 nginx.conf (giá trị cố định: IP proxy, backend:3000,   nginx dạng template: BACKEND_UPSTREAM, TRUSTED_PROXY_IP,
             giới hạn body 6m)                          CLIENT_MAX_BODY; thêm healthcheck cho container FE
 .env, .env.example trong RealEstateAdminApp/           (bỏ; FE không còn .env riêng, FR-18)

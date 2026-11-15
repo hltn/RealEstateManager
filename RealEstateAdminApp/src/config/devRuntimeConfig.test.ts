@@ -105,7 +105,7 @@ describe('FR-15 createRuntimeConfigMiddleware (/env.js của Vite dev)', () => {
     return { res, headers };
   };
 
-  it('GET /env.js: 200, JavaScript, no-cache, nội dung từ readEnv', () => {
+  it('GET /env.js: 200, JavaScript, no-store, nội dung từ readEnv', () => {
     const readEnv = vi.fn(() => ({ CRM_ENABLED: 'true', JWT_SECRET: 'bi-mat' }));
     const next = vi.fn();
     const { res, headers } = makeResponse();
@@ -113,7 +113,7 @@ describe('FR-15 createRuntimeConfigMiddleware (/env.js của Vite dev)', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(200);
     expect(headers['Content-Type']).toMatch(/^application\/javascript/);
-    expect(headers['Cache-Control']).toBe('no-cache');
+    expect(headers['Cache-Control']).toBe('no-store');
     expect(res.body).toBe('window.__APP_CONFIG__ = {"CRM_ENABLED":true};\n');
     expect(res.body).not.toContain('bi-mat');
   });
@@ -134,7 +134,7 @@ describe('FR-15 createRuntimeConfigMiddleware (/env.js của Vite dev)', () => {
     const { res, headers } = makeResponse();
     createRuntimeConfigMiddleware(() => ({ CRM_ENABLED: 'true' }))({ method: 'HEAD', url: '/env.js' }, res, vi.fn());
     expect(res.statusCode).toBe(200);
-    expect(headers['Cache-Control']).toBe('no-cache');
+    expect(headers['Cache-Control']).toBe('no-store');
     expect(res.body).toBeUndefined();
   });
 

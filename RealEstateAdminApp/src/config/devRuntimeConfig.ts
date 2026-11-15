@@ -48,7 +48,7 @@ export interface RuntimeConfigResponse {
 
 /**
  * Middleware Connect: GET/HEAD `/env.js` (bỏ qua query) trả cấu hình; mọi request khác chuyển tiếp `next()`.
- * `readEnv` được gọi MỖI request nên sửa `.env` có hiệu lực ngay khi tải lại trang. `Cache-Control: no-cache` như nginx.
+ * `readEnv` được gọi MỖI request nên sửa `.env` có hiệu lực ngay khi tải lại trang. `Cache-Control: no-store` như nginx (cấu hình theo env, không cần cache).
  */
 export const createRuntimeConfigMiddleware =
   (readEnv: () => EnvSource) =>
@@ -61,6 +61,6 @@ export const createRuntimeConfigMiddleware =
     }
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-store');
     res.end(req.method === 'HEAD' ? undefined : buildRuntimeConfigScript(readEnv()));
   };

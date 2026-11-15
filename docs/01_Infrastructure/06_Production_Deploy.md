@@ -1638,7 +1638,8 @@ Web admin là PWA (service worker `sw.js` ở gốc `/`, scope `/`; chỉ precac
 | Đường dẫn | Cache-Control | Vì sao |
 |---|---|---|
 | `/index.html`, `/`, mọi route SPA (`/customers/123`...) | `no-cache` | File không băm tên và trỏ tới các `/assets/<tên-băm>` của bản build hiện tại. Nếu trình duyệt giữ bản cũ thì sau deploy nó tải JS/CSS cũ (đã bị xóa khỏi image mới) và vỡ trang |
-| `/sw.js`, `/workbox-*.js`, `/registerSW.js` (nếu có) | `no-cache` | Service worker không băm tên: trình duyệt phải kiểm được bản mới thì app mới cập nhật. Dùng `no-cache` thay vì `no-store`: vẫn lưu và hỏi lại bằng ETag (trả 304, nhẹ), `no-store` không thêm lợi ích |
+| `/env.js` (cấu hình chạy của FE, sinh lúc container khởi động) | `no-store` | Nội dung phụ thuộc cấu hình: đổi cờ rồi tạo lại container phải có hiệu lực ngay (không build lại). File nhỏ nên không cần cache. Dùng `no-store` thay `no-cache` vì Cloudflare đã ghi đè `no-cache` của `/env.js` thành `max-age=3600` ở staging; dự kiến `no-store` thì Cloudflare không ghi đè (chưa kiểm trên Cloudflare thật, xem 14.4) |
+| `/sw.js`, `/workbox-*.js`, `/registerSW.js` (nếu có) | `no-cache` | Service worker không băm tên: trình duyệt phải kiểm được bản mới thì app mới cập nhật. Dùng `no-cache` thay vì `no-store`: vẫn lưu và hỏi lại bằng ETag (trả 304, nhẹ); trình duyệt vốn bỏ qua cache HTTP khi kiểm cập nhật service worker nên `no-store` không thêm lợi ích (khác `/env.js` ở dòng trên) |
 | `/manifest.webmanifest`, `/offline.html` | `no-cache` | Không băm tên, nhỏ. `offline.html` còn nằm trong precache của service worker nên phải cập nhật cùng bản build |
 | `/assets/*` (JS/CSS băm tên) | `public, max-age=31536000, immutable` | Đổi nội dung thì đổi tên file nên cache vĩnh viễn an toàn |
 | `/pwa-*.png`, `/apple-touch-icon*.png`, `/maskable-icon*.png`, `/favicon.*` | `public, max-age=86400` | Không băm tên nhưng ít đổi; cache 1 ngày. Regex neo ở gốc và chỉ khớp các tên này (không đụng `/api/...`) |
@@ -1660,6 +1661,8 @@ Quy tắc bổ sung trong cấu hình:
 | URL | Status | Content-Type | Cache-Control |
 |---|---|---|---|
 | `/` | 200 | text/html | no-cache |
+| `/env.js` | 200 | application/javascript | no-store |
+| `/healthz` | 200 | text/plain | no-store |
 | `/customers/123` (route SPA) | 200 | text/html | no-cache |
 | `/index.html` | 200 | text/html | no-cache |
 | `/sw.js` | 200 | application/javascript | no-cache |
@@ -1676,13 +1679,15 @@ Quy tắc bổ sung trong cấu hình:
 | `/favicon.ico`, `/pwa-512x512.png` (không có file) | **404** | text/html | (không có) |
 | `/api/`, `/api/v1/x.png` (backend không chạy) | 502 | text/html | (không có), như trước |
 
+Bổ sung (T-41 B-1, đo lại bằng nginx cô lập cùng cách, mount `nginx.conf` mới, `dist` giả có `env.js`): hai dòng `/env.js` và `/healthz` ở bảng trên; `nginx -t` vẫn đạt; `If-None-Match` với ETag của `/env.js` trả **304**. Phần kiểm tĩnh (không cần nginx) nằm ở `ops/tests/nginx-cache-headers.test.sh`.
+
 Thêm: `If-None-Match` với ETag của `/sw.js` và `/customers/123` trả **304**; `manifest.webmanifest`, `favicon.svg`, JS lớn hơn ngưỡng được gzip; POST 7 MB vào `/api/` trả 413, 1 KB trả 502 (giới hạn 6 MB còn nguyên).
 
 ### 14.3. Kiểm sau mỗi lần deploy (Oniichan chạy, chỉ đọc)
 
 ```bash
 D=https://<domain-admin>
-for p in / /index.html /sw.js /manifest.webmanifest /offline.html; do
+for p in / /index.html /env.js /sw.js /manifest.webmanifest /offline.html; do
   echo "== $p"; curl -sI "$D$p" | grep -iE '^(HTTP|content-type|cache-control|cf-cache-status|etag)'
 done
 # Một file băm tên bất kỳ của bản build hiện tại (lấy tên từ index.html):
@@ -1691,7 +1696,7 @@ A=$(curl -s "$D/" | grep -oE '/assets/[^"]+\.js' | head -n 1); curl -sI "$D$A" |
 curl -s -o /dev/null -w '%{http_code}\n' "$D/assets/khong-co.js"        # 404
 ```
 
-Kỳ vọng: `/`, `/index.html`, `/sw.js`, `/manifest.webmanifest`, `/offline.html` đều `cache-control: no-cache` và `cf-cache-status` thuộc `DYNAMIC`/`BYPASS`/`EXPIRED`/`REVALIDATED` (**không** `HIT`); `/manifest.webmanifest` có `content-type: application/manifest+json`; `/assets/...` có `immutable`.
+Kỳ vọng (việc Oniichan kiểm sau mỗi deploy; riêng dòng `/env.js` là bước `curl -sI "$D/env.js"` của T-41 B-1, chưa kiểm trên Cloudflare thật): `/env.js` có `cache-control: no-store`; `/`, `/index.html`, `/sw.js`, `/manifest.webmanifest`, `/offline.html` đều `cache-control: no-cache` và `cf-cache-status` thuộc `DYNAMIC`/`BYPASS`/`EXPIRED`/`REVALIDATED` (**không** `HIT`); `/manifest.webmanifest` có `content-type: application/manifest+json`; `/assets/...` có `immutable`.
 
 ### 14.4. Cloudflare: không để edge giữ bản `sw.js`/`index.html` cũ
 
@@ -1700,7 +1705,8 @@ Cloudflare mặc định cache theo **phần mở rộng** (`.js`, `.css`, ảnh
 1. Chạy lệnh ở 14.3, **gọi hai lần liên tiếp** cho `/sw.js` và `/index.html`, đọc `cf-cache-status`. Mong đợi `DYNAMIC`/`BYPASS`/`EXPIRED`/`REVALIDATED`, không phải `HIT`. Đồng thời xem `cache-control` mà trình duyệt nhận có đúng `no-cache` (không bị Cloudflare đổi thành `max-age=...`).
 2. Nếu `HIT` hoặc header bị đổi: Cloudflare > Caching > Cache Rules > tạo rule **Bypass cache** cho đường dẫn `/sw.js`, `/index.html`, `/manifest.webmanifest`, `/offline.html` (và `/workbox-*`, `/registerSW.js` nếu có; cũng nên thêm đường dẫn `/` chính xác). Sau khi tạo: Purge các URL này một lần (Caching > Configuration > Purge Cache > Custom Purge) rồi chạy lại bước 1.
 3. Kiểm thủ công sau deploy đầu tiên có PWA: mở web, DevTools > Application > Service Workers, bấm Update, xác nhận nhận được bản `sw.js` mới sau khi deploy bản kế tiếp (không cần xóa cache trình duyệt).
-4. Nên để tắt các tính năng sửa JS/HTML ở edge cho hostname admin (Rocket Loader, và Auto Minify nếu tài khoản còn tùy chọn này): chúng đổi nội dung file mà precache của service worker đã ghi nhận theo bản build.
+4. **`/env.js` bị Cloudflare ghi đè TTL (đã gặp ở staging, T-41 B-1):** Cloudflare từng đổi `Cache-Control` của `/env.js` (và `/sw.js`) từ `no-cache` thành `max-age=3600` dù origin gửi `no-cache`, nên trình duyệt có thể giữ `/env.js` cũ tới 1 giờ sau khi đổi cờ (trái Q-20: đổi cờ chỉ cần tạo lại container). nginx nay gửi `Cache-Control: no-store` cho `/env.js`; **dự kiến** Cloudflare sẽ không cache và không ghi đè TTL khi origin gửi `no-store`, nhưng đây là kỳ vọng **chưa kiểm trên Cloudflare thật** (phần origin đã đo bằng nginx thật, bảng 14.2). Việc của Oniichan sau deploy: `curl -sI "$D/env.js" | grep -iE '^(cache-control|cf-cache-status)'` phải thấy `cache-control: no-store`. **Rủi ro cần biết:** nếu Cloudflare ghi đè TTL ở cấp zone (Caching > Configuration > **Browser Cache TTL**, đặt giá trị cố định) thì không riêng `/env.js` mà cả `index.html`, `sw.js`, `manifest.webmanifest` cũng có thể bị giữ bản cũ ở trình duyệt, dù origin đã gửi `no-cache`. Cách xử lý: đặt Browser Cache TTL = **"Respect Existing Headers"** (việc của Oniichan trên dashboard; không cần đổi code), rồi chạy lại bước 1 và lệnh `curl` ở trên. `sw.js` ít nghiêm trọng hơn: trình duyệt luôn bỏ qua cache HTTP khi kiểm cập nhật service worker.
+5. Nên để tắt các tính năng sửa JS/HTML ở edge cho hostname admin (Rocket Loader, và Auto Minify nếu tài khoản còn tùy chọn này): chúng đổi nội dung file mà precache của service worker đã ghi nhận theo bản build.
 
 > Trạng thái: **chưa kiểm chứng trên Cloudflare thật** (không có quyền/không thể thử từ repo): hành vi `cf-cache-status` của `sw.js`/`index.html`, Cache Rule bypass và Purge là việc của Oniichan. Cũng **chưa kiểm** với bản build frontend thật có `sw.js`/`workbox-*.js` thật (bảng 14.2 dùng `dist` giả); tên file thật do `vite-plugin-pwa` sinh ra cần đối chiếu với các location ở 14.1 khi có bản build đầu tiên (nếu có file mới không băm tên như `registerSW.js` thì đã có sẵn, tên khác thì phải thêm location). Luồng cập nhật/offline của service worker trên trình duyệt thật cũng thuộc phần frontend, chưa phải phạm vi tài liệu này.
 
