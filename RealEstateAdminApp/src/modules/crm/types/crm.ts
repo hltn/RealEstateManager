@@ -406,7 +406,7 @@ export interface Appointment {
   endAt: string | null;
   location: string;
   note: string;
-  /** Người thực hiện (phải thuộc nhóm chăm sóc). */
+  /** Người thực hiện (thuộc careTeam ACTIVE, Manager nhóm chủ hoặc người tạo khách; FR-30). */
   assigneeId: string;
   remindBeforeMinutes: number[];
   status: AppointmentStatus;

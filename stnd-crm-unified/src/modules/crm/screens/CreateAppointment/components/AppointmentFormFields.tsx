@@ -6,13 +6,15 @@ import { BellRing, Clock, Info, Type, UserRound } from 'lucide-react';
 import { useCatalogs } from '@crm/api';
 import { DatePicker } from '../../../../../components/ui/DatePicker';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
-import { getFieldA11yProps } from '@crm/components/form/FieldError';
+import { FieldError, getFieldA11yProps } from '@crm/components/form/FieldError';
 import { FormField, getErrorId } from '@crm/components/form/FormField';
+import { SearchableMultiSelect } from '@crm/components/form/SearchableMultiSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { ToggleSwitch } from '@crm/components/form/ToggleSwitch';
 import { REMINDER_OPTIONS } from '@crm/lib/appointmentAdapters';
-import { getDatePickerInputClass, getTextareaClass } from '@crm/lib/uiClasses';
+import { MAX_APPOINTMENT_ASSIGNEES } from '@crm/lib/appointmentAssignees';
+import { FORM_HINT_CLASS, getDatePickerInputClass, getTextareaClass } from '@crm/lib/uiClasses';
 import { formatLongDateVi, getFieldId, getProjectOfficeLocation, NOTE_MAX_LENGTH } from '../createAppointmentForm';
 import type { CreateAppointmentForm } from '../useCreateAppointmentForm';
 import { CustomerPicker } from './CustomerPicker';
@@ -143,29 +145,41 @@ export const NoteField = ({ form }: FieldGroupProps) => {
   );
 };
 
-/** Người thực hiện: chọn trong nhóm chăm sóc của khách (04 §3.5 `assigneeId`). */
+/**
+ * Người thực hiện (FR-30): CHỌN NHIỀU 1..20 người trong danh sách của khách (careTeam ∪ Manager nhóm chủ ∪ người tạo khách).
+ * Danh sách do `listAssignableAssignees` dựng — cùng nguồn với mặc định và kiểm hợp lệ của form.
+ */
 export const AssigneeField = ({ form }: FieldGroupProps) => {
-  const { values, errors, setField, selectedCustomer } = form;
-  const assigneeId = getFieldId('assigneeId');
-  const members = selectedCustomer?.careTeam ?? [];
+  const { values, errors, setField, assigneeOptions } = form;
+  const assigneeId = getFieldId('assigneeIds');
+  const toggleAssignee = (userId: string) =>
+    setField('assigneeIds', values.assigneeIds.includes(userId) ? values.assigneeIds.filter((id) => id !== userId) : [...values.assigneeIds, userId]);
 
   return (
-    <FormField inputId={assigneeId} label="Người thực hiện" isRequired error={errors.assigneeId} hint={members.length === 0 ? 'Khách chưa có nhóm chăm sóc: lịch giao cho bạn.' : 'Chỉ chọn trong nhóm chăm sóc của khách.'}>
-      <SelectInput
+    <div className="min-w-0">
+      <SearchableMultiSelect
         id={assigneeId}
-        value={values.assigneeId}
-        onChange={(event) => setField('assigneeId', event.target.value)}
+        legend="Người thực hiện (chọn được nhiều)"
+        isRequired
         icon={UserRound}
-        disabled={members.length === 0}
-        hasError={Boolean(errors.assigneeId)}
-        options={
-          members.length > 0
-            ? members.map((member) => ({ value: member.user.id, label: `${member.user.fullName}${member.role === 'PRIMARY' ? ' (phụ trách chính)' : ''}` }))
-            : [{ value: values.assigneeId, label: 'Tôi' }]
-        }
-        {...getFieldA11yProps(getErrorId(assigneeId), errors.assigneeId)}
+        listLabel="Danh sách người thực hiện"
+        placeholder={assigneeOptions.length === 0 ? 'Chọn khách trước để có danh sách…' : 'Gõ để tìm người thực hiện…'}
+        emptyMessage="Không có người phù hợp."
+        options={assigneeOptions.map((option) => ({ value: option.userId, label: option.label }))}
+        selected={values.assigneeIds}
+        onToggle={toggleAssignee}
+        disabled={assigneeOptions.length === 0}
+        {...getFieldA11yProps(getErrorId(assigneeId), errors.assigneeIds)}
       />
-    </FormField>
+      <FieldError id={getErrorId(assigneeId)} message={errors.assigneeIds} />
+      {!errors.assigneeIds && (
+        <p className={FORM_HINT_CLASS}>
+          {assigneeOptions.length === 0
+            ? 'Chưa có người nào chọn được cho khách này.'
+            : `Chọn 1 đến ${MAX_APPOINTMENT_ASSIGNEES} người: nhóm chăm sóc, quản lý nhóm chủ hoặc người tạo khách.`}
+        </p>
+      )}
+    </div>
   );
 };
 
@@ -213,11 +227,11 @@ export const ReminderFields = ({ form }: FieldGroupProps) => {
 };
 
 /** Thông báo trong trang về nơi lịch hẹn sẽ xuất hiện sau khi tạo. */
-export const SyncNotice = ({ assigneeName }: { assigneeName: string }) => (
+export const SyncNotice = ({ assigneeNames }: { assigneeNames: readonly string[] }) => (
   <div className="flex items-start gap-3 rounded-lg border border-brand-100 bg-brand-50 p-4 text-brand-600 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400">
     <Info size={20} aria-hidden="true" className="mt-0.5 shrink-0" />
     <p className="text-theme-sm leading-relaxed text-gray-700 dark:text-gray-300">
-      Lịch hẹn sau khi tạo sẽ hiện trong mục <strong className="font-semibold">“Việc hôm nay”</strong> của {assigneeName || 'người thực hiện'} vào đúng ngày hẹn
+      Lịch hẹn sau khi tạo sẽ hiện trong mục <strong className="font-semibold">“Việc hôm nay”</strong> của {assigneeNames.length > 0 ? assigneeNames.join(', ') : 'người thực hiện'} vào đúng ngày hẹn
       và cập nhật cột "Hẹn" của khách.
     </p>
   </div>

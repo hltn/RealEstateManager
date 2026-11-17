@@ -23,6 +23,9 @@ type OpenBox = 'invite' | 'primary' | null;
 
 const SELF_OPTION_LABEL = 'Chính tôi';
 
+/** Thông báo người tạo khách không gỡ được (khớp `CREATOR_LOCKED_MESSAGE` của Admin App). */
+const CREATOR_LOCKED_MESSAGE = 'Người tạo khách luôn ở trong nhóm chăm sóc, không gỡ được.';
+
 const describeAddError = (error: ApiError): string => (error.errorCode === 'CARE_TEAM_LIMIT_EXCEEDED' || error.errorCode === 'ALREADY_IN_CARE_TEAM' ? `Không thêm được: ${describeCareTeamError(error.errorCode)}.` : error.message);
 
 export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
@@ -81,6 +84,8 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
         <ul className="space-y-2">
           {careTeam.map((member) => {
             const isPrimary = member.role === 'PRIMARY';
+            // Nhận người tạo bằng `createdBy` (luôn có): `customer.creator` là null khi người tạo ĐÃ ở careTeam (đúng như backend), nên không dùng được ở đây.
+            const isCreator = customer.createdBy.id === member.user.id;
             return (
               <li key={member.user.id} className={`${INSET_CLASS} flex items-center justify-between gap-2 p-2.5`}>
                 <div className="min-w-0">
@@ -102,10 +107,16 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
                     ) : (
                       <span>Thành viên phụ</span>
                     )}
+                    {isCreator && (
+                      <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`} title={CREATOR_LOCKED_MESSAGE}>
+                        Người tạo khách
+                      </span>
+                    )}
                     {member.user.jobTitle && <span>· {member.user.jobTitle}</span>}
                   </p>
                 </div>
-                {!isPrimary && permissions.canManageCareTeam && (
+                {/* FR-31: người tạo khách không bao giờ bị gỡ (409 PRIMARY_LOCKED + CREATOR_LOCKED) nên không hiện nút gỡ. */}
+                {!isPrimary && !isCreator && permissions.canManageCareTeam && (
                   <button
                     type="button"
                     aria-label={`Gỡ ${member.user.displayName} khỏi nhóm chăm sóc`}

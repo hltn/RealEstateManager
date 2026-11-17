@@ -3,9 +3,8 @@
  * Áp ở LỚP TRUY CẬP DỮ LIỆU (mọi truy vấn khách đi qua `canAccessCustomer`), không chỉ ẩn nút trên UI.
  * Khách ngoài phạm vi được coi như không tồn tại (backend trả 404 `CUSTOMER_NOT_FOUND`).
  */
-import { getPrimaryUserId, isInCareTeam } from '@crm/lib/customerRules';
+import { isInCareTeam } from '@crm/lib/customerRules';
 import type { CrmUser, Customer, Team, UserRole } from '@crm/types/crm';
-import type { CustomerPermissions } from './types';
 
 /** `CrmActor` của 04 §4.3. */
 export interface CrmActor {
@@ -58,21 +57,9 @@ export const canAccessCustomer = (actor: CrmActor, customer: Pick<Customer, 'car
   return false;
 };
 
-/** Quyền thao tác trên 1 khách (ma trận 04 §4.2) — chỉ gọi khi đã `canAccessCustomer`. */
-export const getCustomerPermissions = (actor: CrmActor, customer: Pick<Customer, 'careTeam'>): CustomerPermissions => {
-  const isAdminOrManager = actor.role === 'ADMIN' || actor.role === 'MANAGER';
-  const isPrimary = getPrimaryUserId(customer.careTeam) === actor.userId;
-  return {
-    canEdit: true,
-    canManageCareTeam: isAdminOrManager || isPrimary,
-    // v1.0.5: PRIMARY bị khóa; chỉ Quản trị/Quản lý được đặt PRIMARY một lần cho khách cũ chưa có nhóm chăm sóc.
-    canSetInitialPrimary: isAdminOrManager && customer.careTeam.length === 0,
-    // Khớp backend: Quản trị mọi khách; Nhân viên khi là phụ trách chính (và khách "Bỏ"); Quản lý chỉ khách thuộc NHÓM MÌNH QUẢN LÝ —
-    // dữ liệu này không có ở đây nên màn thật dùng `permissions.canDelete` backend trả ở chi tiết khách (tài khoản MANAGER+STAFF tính như Quản lý).
-    canDelete: actor.role === 'ADMIN' || (actor.role === 'STAFF' && isPrimary),
-    canRevealNationalId: isAdminOrManager || isPrimary,
-  };
-};
+// FR-31 (v1.0.6): Admin App KHÔNG còn tự tính quyền thao tác trên 1 khách (xóa, mời/gỡ nhóm chăm sóc, xem CMND/CCCD). Màn thật dùng cờ
+// backend `permissions.canDelete/canManageCareTeam` + `canRevealNationalId` ở chi tiết khách; hàm `getCustomerPermissions` cũ (theo PRIMARY/khách "Bỏ")
+// không có nơi gọi nên đã xóa để không để lại luật lỗi thời. Bản mô phỏng đủ luật mới nằm ở prototype `stnd-crm-unified`.
 
 /** Menu/màn theo vai trò (tài liệu 02 §3): Báo cáo cho Quản lý/Quản trị; Cài đặt + Dự án cho Quản trị. */
 export const canViewReports = (role: UserRole): boolean => role === 'ADMIN' || role === 'MANAGER';

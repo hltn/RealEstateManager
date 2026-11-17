@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CrmProvider } from '@crm/store/CrmProvider';
+import { useAuthStore } from '../../../../stores/auth.store';
 import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
 import { FIXED_NOW } from '@crm/test/fixtures';
 import { CUSTOMER_PICKER_LIMIT, useCreateAppointmentForm } from './useCreateAppointmentForm';
@@ -33,8 +34,24 @@ vi.mock('@crm/api', async () => {
 const CUSTOMER_ID = '6add87b88f689f6e6cd96833';
 const OTHER_ID = '6add87b88f689f6e6cd96999';
 const NO_DETAIL = { data: null, error: null, isLoading: false };
-const detailOf = (id: string, interestedProjectIds: string[] = []) => ({
-  data: { id, fullName: `Khách ${id.slice(-3)}`, careTeam: [], primaryAssignee: null, projects: interestedProjectIds.map((projectId) => ({ id: projectId, label: projectId })) },
+const careMember = (id: string, role: 'PRIMARY' | 'MEMBER') => ({
+  user: { id, displayName: `TV ${id}`, fullName: `TV ${id}`, jobTitle: '' },
+  role,
+  addedAt: '2026-10-01T00:00:00.000Z',
+  addedBy: { id: 'sys', displayName: 'Hệ thống' },
+});
+/** Mặc định khách có phụ trách chính `p1` (người dùng hiện tại là `admin`, ngoài danh sách) để mọi ca lưu có sẵn người thực hiện. */
+const detailOf = (id: string, interestedProjectIds: string[] = [], overrides: Record<string, unknown> = {}) => ({
+  data: {
+    id,
+    fullName: `Khách ${id.slice(-3)}`,
+    careTeam: [careMember('p1', 'PRIMARY')],
+    ownerManagers: [],
+    creator: null,
+    primaryAssignee: null,
+    projects: interestedProjectIds.map((projectId) => ({ id: projectId, label: projectId })),
+    ...overrides,
+  },
   error: null,
   isLoading: false,
 });
@@ -53,7 +70,10 @@ beforeEach(() => {
   // CrmProvider.goBack đọc `history.state.idx` của trình duyệt để biết còn lịch sử trong app hay không.
   window.history.replaceState(null, '');
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  useAuthStore.setState({ accessToken: null, user: null, isInitialized: true });
+});
 
 /** Ghi lại URL hiện tại để kiểm tra điều hướng sau lưu/hủy. */
 const currentUrl = { value: '', navigationType: '' };
@@ -378,5 +398,75 @@ describe('G7: dự án của lịch', () => {
     act(() => result.current.changeCustomer(OTHER_ID));
     expect(result.current.values.projectId).toBe(PROJECT_B);
     expect(result.current.errors.projectId).toBeUndefined();
+  });
+});
+
+describe('người thực hiện (FR-30, T-59)', () => {
+  const fillValidForm = (result: { current: ReturnType<typeof useCreateAppointmentForm> }) =>
+    act(() => {
+      result.current.setField('time', '15:00');
+      result.current.setField('location', 'Văn phòng bán hàng');
+    });
+  const owner = (userId: string, role: string) => ({ userId, fullName: `Chủ ${userId}`, role });
+
+  it('người dùng hiện tại (admin) ngoài danh sách: mặc định là phụ trách chính, KHÔNG tự chọn mình', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    expect(result.current.values.assigneeIds).toEqual(['p1']);
+  });
+
+  it('người dùng hiện tại là người tạo khách ngoài careTeam: mặc định chọn chính mình', () => {
+    useAuthStore.setState({ accessToken: 't', user: { _id: 'admin', email: 'a@b.vn', displayName: 'Admin', role: 'ADMIN', roles: ['ADMIN'] } as never, isInitialized: true });
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [], { creator: owner('admin', 'ADMIN') }) : NO_DETAIL));
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    expect(result.current.values.assigneeIds).toEqual(['admin']);
+    expect(result.current.assigneeOptions.map((option) => option.userId)).toEqual(['p1', 'admin']);
+  });
+
+  it('chưa có phụ trách chính và người dùng ngoài danh sách: để trống, lưu bị chặn bằng lỗi ô người thực hiện', async () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [], { careTeam: [careMember('m1', 'MEMBER')] }) : NO_DETAIL));
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    expect(result.current.values.assigneeIds).toEqual([]);
+    fillValidForm(result);
+    await act(() => result.current.handleSubmit());
+    expect(createAppointment).not.toHaveBeenCalled();
+    expect(result.current.errors.assigneeIds).toBe('Chọn ít nhất 1 người thực hiện.');
+  });
+
+  it('chọn nhiều người (kể cả Manager nhóm chủ): body gửi assigneeIds đúng thứ tự, không còn assigneeId', async () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id, [], { ownerManagers: [owner('mg', 'MANAGER')] }) : NO_DETAIL));
+    createAppointment.mockResolvedValue({ ok: true, data: {} });
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    fillValidForm(result);
+    act(() => result.current.setField('assigneeIds', ['p1', 'mg']));
+    await act(() => result.current.handleSubmit());
+    const body = createAppointment.mock.calls[0][0];
+    expect(body.assigneeIds).toEqual(['p1', 'mg']);
+    expect(body).not.toHaveProperty('assigneeId');
+  });
+
+  it('USER_NOT_ASSIGNABLE: hiện đúng nguyên văn thông điệp của backend ở ô người thực hiện và toast, hết khi đổi lựa chọn', async () => {
+    const message = 'Người được chọn không còn hoạt động (tài khoản bị khóa).';
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    createAppointment.mockResolvedValue({ ok: false, error: { statusCode: 400, errorCode: 'USER_NOT_ASSIGNABLE', message, details: { userIds: ['p1'], reason: 'NOT_ACTIVE' } } });
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}`);
+    fillValidForm(result);
+    await act(() => result.current.handleSubmit());
+    expect(result.current.errors.assigneeIds).toBe(message);
+    act(() => result.current.setField('assigneeIds', []));
+    expect(result.current.errors.assigneeIds).not.toBe(message);
+  });
+
+  it('đổi khách: lựa chọn tay bị bỏ, quay về mặc định của khách mới', () => {
+    useCustomerDetail.mockImplementation((id: string | null) => {
+      if (id === OTHER_ID) return detailOf(id, [], { careTeam: [careMember('p2', 'PRIMARY')] });
+      return id ? detailOf(id, [], { careTeam: [careMember('p1', 'PRIMARY'), careMember('m1', 'MEMBER')] }) : NO_DETAIL;
+    });
+    const { result } = setup();
+    act(() => result.current.changeCustomer(CUSTOMER_ID));
+    act(() => result.current.setField('assigneeIds', ['m1']));
+    expect(result.current.values.assigneeIds).toEqual(['m1']);
+    act(() => result.current.changeCustomer(OTHER_ID));
+    expect(result.current.values.assigneeIds).toEqual(['p2']);
   });
 });

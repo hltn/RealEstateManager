@@ -1,35 +1,14 @@
 /**
- * Quy tắc thuần cho xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" (Sửa đổi D, tài liệu 09 mục 7): quyền HIỂN THỊ nút xóa, kiểm lý do,
- * thông báo tiếng Việt theo mã lỗi. Backend vẫn là nguồn sự thật về quyền (kiểm từng khách).
+ * Quy tắc thuần cho xóa / khôi phục / xóa vĩnh viễn khách (FR-31, v1.0.6): kiểm lý do, thông báo tiếng Việt theo mã lỗi.
+ * Quyền xóa = Quản trị hoặc NGƯỜI TẠO khách, KHÔNG phụ thuộc tình trạng khách (đã bỏ điều kiện khách "Bỏ"); backend là nguồn sự thật
+ * (cờ `permissions.canDelete` ở chi tiết, `failed[]` INSUFFICIENT_ROLE ở xóa hàng loạt) nên FE không tự suy quyền.
  */
-import type { ApiError, CustomerListItem } from '@crm/api';
-import type { UserRole } from '@crm/types/crm';
+import type { ApiError } from '@crm/api';
 
 /** Giới hạn khách mỗi lần xóa hàng loạt của backend. */
 export const BULK_DELETE_LIMIT = 200;
 /** Độ dài tối đa của lý do xóa. */
 export const DELETE_REASON_MAX_LENGTH = 500;
-
-type DeleteCandidate = Pick<CustomerListItem, 'status' | 'primaryAssignee'>;
-type DeleteActor = { role: UserRole; userId: string; managedTeamIds: readonly string[] };
-
-/**
- * Có hiện option "Xóa" cho tập khách đang chọn không: mọi khách phải thuộc nhóm "Bỏ" và người dùng có thể xóa.
- * - Quản trị: xóa mọi khách "Bỏ".
- * - Nhân viên: chỉ khi mình là phụ trách chính của TỪNG khách (danh sách đủ dữ liệu `primaryAssignee` nên tính chính xác).
- * - Quản lý: được xóa khách thuộc nhóm mình quản lý, nhưng danh sách khách không trả nhóm của khách nên FE không tính được
- *   chính xác -> hiện option khi mình quản lý ÍT NHẤT MỘT nhóm (không quản lý nhóm nào thì chắc chắn không xóa được: ẩn) và để backend
- *   từ chối từng khách ngoài nhóm (INSUFFICIENT_ROLE, có lý do rõ trong kết quả). Tài khoản MANAGER+STAFF tính như Quản lý.
- * Khách chưa có dữ liệu (`undefined`) hoặc danh sách rỗng -> không hiện.
- */
-export const canOfferBulkDelete = (actor: DeleteActor, customers: readonly (DeleteCandidate | undefined)[]): boolean => {
-  if (customers.length === 0) return false;
-  const loaded = customers.filter((customer): customer is DeleteCandidate => customer !== undefined);
-  if (loaded.length !== customers.length || loaded.some((customer) => customer.status.listGroup !== 'DROPPED')) return false;
-  if (actor.role === 'STAFF') return loaded.every((customer) => customer.primaryAssignee?.id === actor.userId);
-  if (actor.role === 'MANAGER') return actor.managedTeamIds.length > 0;
-  return true;
-};
 
 /**
  * Ký tự "trống nhìn như trống" nhưng thuộc nhóm chữ/ký hiệu: Hangul filler (U+115F, U+1160, U+3164, U+FFA0) và Braille blank (U+2800).
@@ -51,10 +30,12 @@ export const validateDeleteReason = (reason: string): string | null => {
   return null;
 };
 
+/** Lý do khách không xóa được vì thiếu quyền (xóa đơn và hàng loạt dùng chung). */
+const INSUFFICIENT_DELETE_ROLE_NOTE = 'bạn không có quyền xóa khách này (chỉ Quản trị hoặc người tạo khách mới xóa được)';
+
 const BULK_DELETE_ERROR_NOTES: Record<string, string> = {
   CUSTOMER_NOT_FOUND: 'không còn trong phạm vi của bạn hoặc không tồn tại',
-  INSUFFICIENT_ROLE: 'bạn không có quyền xóa khách này (Quản lý chỉ xóa khách thuộc nhóm mình quản lý; Nhân viên chỉ xóa khách mình phụ trách chính)',
-  CUSTOMER_NOT_DROPPED: 'khách chưa thuộc danh sách Bỏ',
+  INSUFFICIENT_ROLE: INSUFFICIENT_DELETE_ROLE_NOTE,
   INTERNAL_ERROR: 'lỗi hệ thống, vui lòng thử lại sau',
 };
 
@@ -66,7 +47,7 @@ export const describeDeleteBatchError = (error: ApiError): string => (/ký tự 
 
 /** Thông báo cho xóa đơn (một khách). */
 export const describeDeleteError = (error: ApiError): string => {
-  if (error.errorCode === 'CUSTOMER_NOT_DROPPED') return 'Khách chưa thuộc danh sách Bỏ nên chưa thể xóa.';
+  if (error.errorCode === 'INSUFFICIENT_ROLE') return 'Bạn không có quyền xóa khách này (chỉ Quản trị hoặc người tạo khách mới xóa được).';
   if (error.errorCode === 'CUSTOMER_NOT_FOUND') return 'Khách không còn trong phạm vi của bạn hoặc không tồn tại.';
   return describeDeleteBatchError(error);
 };

@@ -4,6 +4,7 @@
 import type { DailyTask } from '@crm/api';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { TableContactActions } from '@crm/components/TableContactActions';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
@@ -59,7 +60,7 @@ export const TaskListTable = ({ tasks }: { tasks: DailyTask[] }) => {
                   <p className="line-clamp-2 text-theme-sm text-gray-700 dark:text-gray-300">{task.title}</p>
                   <TaskDoneButton task={task} />
                 </td>
-                <td className="hidden whitespace-nowrap px-5 py-4 text-theme-sm text-gray-700 xl:table-cell dark:text-gray-300">{task.assignee?.displayName ?? '—'}</td>
+                <td className="hidden whitespace-nowrap px-5 py-4 text-theme-sm text-gray-700 xl:table-cell dark:text-gray-300">{formatAssigneeNames(task.assignees)}</td>
                 <td className="px-5 py-4">
                   <TableContactActions customerId={task.customer.id} customerName={task.customer.fullName} hasPhone={hasPhone(task.customer.phoneMasked)} />
                 </td>

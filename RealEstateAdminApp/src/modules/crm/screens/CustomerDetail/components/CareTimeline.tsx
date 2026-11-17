@@ -1,6 +1,6 @@
 // Dòng thời gian nhật ký chăm sóc (C2, 02 §5 "Mục dòng thời gian"): ngày giờ đầy đủ (giờ VN), người viết,
 // dấu "Chính" chỉ khi tác giả là phụ trách chính của khách, kênh + kết quả liên hệ, bước tiếp theo, ảnh đính kèm.
-// PT-022: nút "Sửa" hiện theo `log.canEdit` do BE tính (tác giả / Quản trị / Quản lý trong phạm vi) — FE KHÔNG tự kiểm giờ hay vai trò.
+// PT-022: nút "Sửa" hiện theo `log.canEdit` do BE tính (tác giả hoặc Quản trị; FR-32, Manager không còn sửa nhật ký của người khác) — FE KHÔNG tự kiểm giờ hay vai trò.
 // PT-028: truyền `onAddNote` thì đầu thẻ (cùng hàng tiêu đề, căn phải) có nút "Ghi chú" cỡ nhỏ kiểu nút phụ (desktop); không truyền = không có nút (mobile dùng thanh đáy).
 import { Activity, CalendarClock, Images, NotebookPen, Pencil, X } from 'lucide-react';
 import { useRef, useState } from 'react';

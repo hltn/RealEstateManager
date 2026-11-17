@@ -392,8 +392,10 @@ export interface Appointment {
   endAt: string | null;
   location: string;
   note: string;
-  /** Người thực hiện (phải thuộc nhóm chăm sóc). */
+  /** Người thực hiện đầu tiên (deprecated, = `assigneeIds[0]`); dữ liệu cũ chỉ có trường này. */
   assigneeId: string;
+  /** Mọi người thực hiện (thuộc careTeam ACTIVE, Manager nhóm chủ hoặc người tạo khách; 1..20, theo thứ tự chọn; FR-30). Dữ liệu cũ thiếu -> suy từ `assigneeId`. */
+  assigneeIds?: string[];
   remindBeforeMinutes: number[];
   status: AppointmentStatus;
   completedAt: string | null;

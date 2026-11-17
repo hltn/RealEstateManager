@@ -48,3 +48,28 @@ describe('Menu "Thao tác khác" của lịch hẹn (desktop)', () => {
     expect(screen.queryByText('Nhắn Zalo')).not.toBeInTheDocument();
   });
 });
+
+/** Dựng thẻ từ MỘT lịch hẹn mẫu nhưng đổi loại + cờ `canEdit` (cờ do backend/mock trả; thẻ không được tự suy từ vai trò). */
+const OverriddenCard = ({ variant, type, canEdit }: { variant: 'desktop' | 'mobile'; type: 'DEPOSIT_CONTRACT' | 'CALLBACK'; canEdit: boolean }) => {
+  const { data } = useAppointments();
+  const base = data[0];
+  if (!base) return null;
+  const appointment = { ...base, type, canEdit, canDelete: canEdit, status: 'SCHEDULED' as const };
+  return variant === 'desktop' ? <AppointmentCardDesktop appointment={appointment} /> : <AppointmentCardMobile appointment={appointment} />;
+};
+
+describe.each([
+  ['desktop', 'DEPOSIT_CONTRACT', /Xác nhận hoàn thành/],
+  ['desktop', 'CALLBACK', /Đã liên hệ xong/],
+  ['mobile', 'DEPOSIT_CONTRACT', /Xác nhận hoàn thành/],
+] as const)('Nút hoàn thành lịch hẹn theo canEdit (FR-32): %s, %s', (variant, type, name) => {
+  it('canEdit=false (không phải người tạo lịch, không phải Quản trị): KHÔNG có nút hoàn thành', () => {
+    renderCrm(<OverriddenCard variant={variant} type={type} canEdit={false} />, { actAs: 'hanh' });
+    expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  });
+
+  it('canEdit=true (người tạo lịch / Quản trị): có nút hoàn thành', () => {
+    renderCrm(<OverriddenCard variant={variant} type={type} canEdit />, { actAs: 'hanh' });
+    expect(screen.getByRole('button', { name })).toBeInTheDocument();
+  });
+});

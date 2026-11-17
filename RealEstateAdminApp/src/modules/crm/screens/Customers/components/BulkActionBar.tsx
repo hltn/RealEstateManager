@@ -1,10 +1,10 @@
 /**
  * "Hành động hàng loạt" của bảng khách (02 §4.2, `POST /crm/customer-bulk-operations`):
- * đổi tình trạng, gắn thẻ, thêm thành viên phụ vào nhóm chăm sóc (Quản lý/Quản trị; không còn đặt PRIMARY hàng loạt), XÓA khách "Bỏ" (Sửa đổi D: chỉ hiện khi mọi khách chọn thuộc "Bỏ" và có thể xóa),
+ * đổi tình trạng, gắn thẻ, thêm thành viên phụ vào nhóm chăm sóc (Quản lý/Quản trị; không còn đặt PRIMARY hàng loạt), XÓA khách (FR-31: hiện khi có khách được chọn; danh sách không có người tạo nên FE không tự suy quyền, backend trả khách không đủ quyền trong `failed[]` INSUFFICIENT_ROLE),
  * xuất CSV các dòng đã chọn (chỉ khi bật mock xuất file, M8).
  * Backend xử lý đồng bộ, mỗi khách một transaction: khách lỗi không kéo khách khác (trả `succeeded` + `failed`).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { CheckSquare, X } from 'lucide-react';
 import { canBulkAssign, canExportCustomers, useCatalogs, useCrmActor, useCrmApi, type BulkResult, type CareTeamInvitee, type CustomerListItem } from '@crm/api';
 import { useCustomerExport } from '@crm/api/mockHooks';
@@ -13,7 +13,7 @@ import { ConfirmDialog } from '@crm/components/ConfirmDialog';
 import { DeleteReasonDialog } from '@crm/components/DeleteReasonDialog';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { describeBulkAssignError, MAX_CARE_TEAM_MEMBERS } from '@crm/lib/careTeamRules';
-import { BULK_DELETE_LIMIT, canOfferBulkDelete, describeDeleteBatchError } from '@crm/lib/customerDeletion';
+import { BULK_DELETE_LIMIT, describeDeleteBatchError } from '@crm/lib/customerDeletion';
 import { isDroppedStatus } from '@crm/lib/customerRules';
 import { groupTagsByCategory } from '@crm/lib/tagCategories';
 import { downloadCsv } from '@crm/lib/csv';
@@ -62,13 +62,7 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
   const [isRunning, setIsRunning] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const canDelete = canOfferBulkDelete(actor, selectedIds.map(getCustomer));
-  // Đổi lựa chọn khách làm mất quyền xóa thì hành động Xóa tự về "chưa chọn" (không để select trỏ vào option đã biến mất).
-  const kind: BulkKind = selectedKind === 'DELETE' && !canDelete ? '' : selectedKind;
-  // Option Xóa biến mất thì xóa luôn lựa chọn đã lưu: không để "Xóa" tự bật lại im lặng khi tập khách chọn đủ điều kiện trở lại.
-  useEffect(() => {
-    if (selectedKind === 'DELETE' && !canDelete) setSelectedKind('');
-  }, [selectedKind, canDelete]);
+  const kind: BulkKind = selectedKind;
   const isOverDeleteLimit = kind === 'DELETE' && selectedIds.length > BULK_DELETE_LIMIT;
   const needsValue = kind === 'CHANGE_STATUS' || kind === 'ADD_TAGS';
   const isMissingValue = kind === 'ASSIGN' ? assignees.length === 0 : needsValue && !value;
@@ -221,7 +215,7 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
         <option value="CHANGE_STATUS">Đổi tình trạng</option>
         <option value="ADD_TAGS">Gắn thẻ</option>
         {canBulkAssign(actor.role) && <option value="ASSIGN">Thêm thành viên</option>}
-        {canDelete && <option value="DELETE">Xóa</option>}
+        <option value="DELETE">Xóa</option>
         {canExport && <option value="EXPORT">Xuất CSV các dòng đã chọn</option>}
       </select>
       {needsValue && (
@@ -279,9 +273,9 @@ export const BulkActionBar = ({ selectedIds, onClear, onDeselect, onDeleteResult
         description={
           <>
             <p>
-              <strong>{selectedIds.length} khách</strong> thuộc danh sách Bỏ sẽ bị xóa khỏi mọi danh sách (xóa mềm). Quản trị có thể khôi phục hoặc xóa vĩnh viễn ở màn "Khách đã xóa".
+              <strong>{selectedIds.length} khách</strong> sẽ bị xóa khỏi mọi danh sách (xóa mềm). Quản trị có thể khôi phục hoặc xóa vĩnh viễn ở màn "Khách đã xóa".
             </p>
-            <p className="mt-2">Hệ thống kiểm quyền từng khách: khách nào bạn không được xóa sẽ được báo riêng, các khách còn lại vẫn được xóa.</p>
+            <p className="mt-2">Hệ thống kiểm quyền từng khách: chỉ Quản trị hoặc người tạo khách mới xóa được. Khách do người khác tạo sẽ bị từ chối và được báo riêng, các khách còn lại vẫn được xóa.</p>
           </>
         }
         confirmLabel={`Xóa ${selectedIds.length} khách`}

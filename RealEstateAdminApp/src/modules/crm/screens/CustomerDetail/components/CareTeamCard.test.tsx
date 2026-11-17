@@ -29,10 +29,15 @@ const member = (id: string, role: 'PRIMARY' | 'MEMBER', extra: Partial<CareTeamM
   addedBy: { id: 'admin', displayName: 'Admin' },
 });
 
+/** Người tạo mặc định KHÔNG nằm trong careTeam của các ca thường (đúng dữ liệu BE: `creator` có giá trị khi người tạo ngoài careTeam). */
+const OUTSIDE_CREATOR = { id: 'u-outside', displayName: 'Người ngoài nhóm' };
+
 const customerOf = (careTeam: CareTeamMemberView[], permissions: Partial<CustomerDetail['permissions']> = {}): CustomerDetail =>
   ({
     id: 'c1',
     careTeam,
+    createdBy: OUTSIDE_CREATOR,
+    creator: { userId: OUTSIDE_CREATOR.id, fullName: 'Người ngoài nhóm', role: 'STAFF' },
     permissions: { canEdit: true, canManageCareTeam: true, canSetInitialPrimary: false, canDelete: false, canRevealNationalId: false, ...permissions },
   }) as unknown as CustomerDetail;
 
@@ -364,5 +369,65 @@ describe('CareTeamCard - đặt người chăm sóc chính lần đầu', () => 
     fireEvent.click(screen.getByRole('radio', { name: /Lan/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Đặt làm người chăm sóc chính' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('cố định');
+  });
+});
+
+describe('CareTeamCard - người tạo khách không bị gỡ, lỗi theo backend (FR-31, FR-33, T-59)', () => {
+  /**
+   * Dữ liệu ĐÚNG như backend (`buildOwnerRefs`): người tạo đã nằm trong careTeam thì `creator = null` còn `createdBy` vẫn có giá trị.
+   * Nhận người tạo bằng `creator?.userId` sẽ KHÔNG bao giờ khớp thành viên careTeam, nên các ca dưới đây fail nếu quay lại cách cũ.
+   */
+  const withCreator = (careTeam: CareTeamMemberView[], creatorId: string) =>
+    ({ ...customerOf(careTeam), createdBy: { id: creatorId, displayName: `Tên ${creatorId}` }, creator: null }) as CustomerDetail;
+
+  it('người tạo là thành viên phụ: có nhãn "Người tạo khách", KHÓA nút gỡ; thành viên khác vẫn có nút gỡ', () => {
+    render(<CareTeamCard customer={withCreator([member('p', 'PRIMARY'), member('cr', 'MEMBER'), member('m1', 'MEMBER')], 'cr')} />);
+    expect(screen.getByText('Người tạo khách')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gỡ Tên cr khỏi nhóm chăm sóc' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Gỡ Tên m1 khỏi nhóm chăm sóc' })).toBeInTheDocument();
+  });
+
+  it('người tạo cũng là phụ trách chính: hiện cả hai nhãn, không có nút gỡ', () => {
+    render(<CareTeamCard customer={withCreator([member('cr', 'PRIMARY'), member('m1', 'MEMBER')], 'cr')} />);
+    expect(screen.getByText('Chủ khách')).toBeInTheDocument();
+    expect(screen.getByText('Người tạo khách')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Gỡ Tên cr/ })).toBeNull();
+  });
+
+  it('người tạo ngoài careTeam (creator có giá trị): không thành viên nào có nhãn "Người tạo khách", nút gỡ thành viên phụ vẫn như cũ', () => {
+    render(<CareTeamCard customer={customerOf([member('p', 'PRIMARY'), member('m1', 'MEMBER')])} />);
+    expect(screen.queryByText('Người tạo khách')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Gỡ Tên m1 khỏi nhóm chăm sóc' })).toBeInTheDocument();
+  });
+
+  it('khách cũ không rõ người tạo (createdBy là người "Hệ thống"): không nhãn, không khóa nút gỡ nhầm', () => {
+    const legacy = { ...customerOf([member('p', 'PRIMARY'), member('m1', 'MEMBER')]), createdBy: { id: '', displayName: 'Hệ thống' }, creator: null } as CustomerDetail;
+    render(<CareTeamCard customer={legacy} />);
+    expect(screen.queryByText('Người tạo khách')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Gỡ Tên m1 khỏi nhóm chăm sóc' })).toBeInTheDocument();
+  });
+
+  it('chỉ đúng người tạo bị khóa gỡ: thành viên phụ khác người tạo vẫn có nút gỡ (không khóa theo vị trí hay theo creator)', () => {
+    render(<CareTeamCard customer={withCreator([member('p', 'PRIMARY'), member('m1', 'MEMBER'), member('cr', 'MEMBER')], 'cr')} />);
+    expect(screen.getAllByText('Người tạo khách')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Gỡ Tên m1 khỏi nhóm chăm sóc' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gỡ Tên cr khỏi nhóm chăm sóc' })).toBeNull();
+  });
+
+  it('backend vẫn trả 409 PRIMARY_LOCKED + CREATOR_LOCKED khi gỡ (vd dữ liệu lệch): toast câu riêng cho người tạo', async () => {
+    removeCareTeamMember.mockResolvedValue({ ok: false, error: { statusCode: 409, errorCode: 'PRIMARY_LOCKED', message: 'raw', details: { reason: 'CREATOR_LOCKED' } } });
+    render(<CareTeamCard customer={customerOf([member('p', 'PRIMARY'), member('m1', 'MEMBER')])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Gỡ Tên m1 khỏi nhóm chăm sóc' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith({ type: 'error', title: 'Người tạo khách luôn ở trong nhóm chăm sóc, không gỡ được.' }));
+  });
+
+  it('mời bị USER_NOT_ASSIGNABLE: hiện nguyên văn thông báo của backend trong khung mời', async () => {
+    const message = 'Có người được phân không hợp lệ (không tồn tại, không hoạt động hoặc không phải Quản lý/Nhân viên)';
+    addCareTeamMembers.mockResolvedValue({ ok: false, error: { statusCode: 400, errorCode: 'USER_NOT_ASSIGNABLE', message, details: { userIds: ['u-new'] } } });
+    render(<CareTeamCard customer={customerOf([member('p', 'PRIMARY')])} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mời người' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Lan/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mời 1 người' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message));
   });
 });

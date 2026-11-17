@@ -41,7 +41,8 @@ const SideCard = ({ title, icon: Icon, children }: SideCardProps) => (
 export const CreateAppointmentDesktop = () => {
   const form = useCreateAppointmentForm();
   const { values, setField, handleSubmit, cancel, pendingRequiredCount, isSubmitting } = form;
-  const leadName = form.selectedCustomer?.careTeam.find((member) => member.user.id === values.assigneeId)?.user.displayName ?? '';
+  // Tên người thực hiện tra theo danh sách của khách (careTeam ∪ Manager nhóm chủ ∪ người tạo), không chỉ careTeam (FR-30).
+  const assigneeNames = values.assigneeIds.flatMap((userId) => form.assigneeOptions.find((option) => option.userId === userId)?.fullName ?? []);
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex w-full flex-col gap-6">
@@ -97,7 +98,7 @@ export const CreateAppointmentDesktop = () => {
           </SideCard>
 
           <div className="md:col-span-2 xl:col-span-1">
-            <SyncNotice assigneeName={leadName} />
+            <SyncNotice assigneeNames={assigneeNames} />
           </div>
         </div>
       </div>

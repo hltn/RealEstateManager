@@ -23,6 +23,7 @@ import { useAppointmentActions } from '../useAppointmentActions';
 import type { AppointmentView as Appointment } from '@crm/api';
 import { APPOINTMENT_TYPE_STYLES, getAppointmentActionVariant } from '../appointmentTypeStyles';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { CARD_CLASS, CHIP_CLASS } from '@crm/lib/uiClasses';
 import { AppointmentMoreMenu } from './AppointmentMoreMenu';
 
@@ -68,6 +69,8 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
   const openProfile = () => selectCustomer(appointment.customer.id);
   const handleToggleCompleted = () => toggleCompleted(appointment);
+  // FR-32: nút đổi trạng thái hoàn thành chỉ hiện khi backend báo `canEdit` (người tạo lịch hoặc Quản trị); người khác vẫn gọi/xem hồ sơ được.
+  const canToggleCompleted = appointment.canEdit;
 
   return (
     <article
@@ -130,7 +133,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
                 </InfoRow>
                 <InfoRow icon={<IdCard size={16} />}>
                   <span className="truncate">
-                    Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{appointment.assignee.displayName}</strong>
+                    Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{formatAssigneeNames(appointment.assignees)}</strong>
                   </span>
                 </InfoRow>
               </>
@@ -158,10 +161,12 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           {actionVariant === 'deposit' && (
             <>
-              <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={isCompleted ? ACTION_OUTLINE_CLASS : ACTION_SUCCESS_CLASS}>
-                {isCompleted ? <Undo2 size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}
-                {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
-              </button>
+              {canToggleCompleted && (
+                <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={isCompleted ? ACTION_OUTLINE_CLASS : ACTION_SUCCESS_CLASS}>
+                  {isCompleted ? <Undo2 size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}
+                  {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
+                </button>
+              )}
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => openQuickNote(appointment.customer.id)} className={ACTION_OUTLINE_CLASS}>
                   <NotebookPen size={14} aria-hidden="true" />
@@ -181,9 +186,11 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
                 </button>
               )}
               <div className="flex items-center gap-1.5">
-                <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
-                  {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}
-                </button>
+                {canToggleCompleted && (
+                  <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
+                    {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}
+                  </button>
+                )}
                 <AppointmentMoreMenu appointment={appointment} />
               </div>
             </>

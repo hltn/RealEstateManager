@@ -2,6 +2,7 @@
 // Chỉ đọc: đổi giờ/hủy lịch làm ở màn Lịch hẹn. Dữ liệu: `GET /crm/appointments?customerId=&status=SCHEDULED` (60 ngày tới).
 import { CalendarClock, MapPin } from 'lucide-react';
 import { useAppointments } from '@crm/api';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { APPOINTMENT_TYPE_LABELS, getAppointmentDateKey, getAppointmentTime } from '@crm/lib/appointmentAdapters';
 import { addDaysToDateKey, getVnTodayKey } from '@crm/lib/dateTime';
 import { CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, INSET_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
@@ -51,7 +52,7 @@ export const UpcomingAppointmentsSection = ({ customerId }: UpcomingAppointments
                   <span className="truncate">{appointment.location}</span>
                 </p>
               )}
-              <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">Phụ trách: {appointment.assignee.displayName}</p>
+              <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">Phụ trách: {formatAssigneeNames(appointment.assignees)}</p>
             </li>
           ))}
           {hiddenCount > 0 && <li className={MUTED_TEXT_CLASS}>và {hiddenCount} lịch hẹn khác</li>}

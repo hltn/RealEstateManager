@@ -112,48 +112,25 @@ describe('BulkActionBar gọi API hàng loạt', () => {
 
 const optionLabels = () => Array.from(screen.getByLabelText('Hành động hàng loạt').querySelectorAll('option')).map((option) => option.textContent);
 
-describe('BulkActionBar - xóa khách "Bỏ" hàng loạt', () => {
+describe('BulkActionBar - xóa khách hàng loạt (FR-31)', () => {
   const droppedOf = (primaryUserId: string | null = null) => () => customerOf('DROPPED', 'DROPPED', primaryUserId);
 
-  it('option "Xóa" chỉ hiện khi MỌI khách chọn thuộc "Bỏ"', () => {
+  it.each([
+    ['ADMIN', { userId: 'admin', role: 'ADMIN', teamId: null, managedTeamIds: [] }],
+    ['MANAGER không quản lý nhóm nào', { userId: 'mgr', role: 'MANAGER', teamId: null, managedTeamIds: [] }],
+    ['STAFF không phải phụ trách chính', { userId: 'staff-1', role: 'STAFF', teamId: 't-1', managedTeamIds: [] }],
+  ] as const)('FR-31: %s vẫn thấy "Xóa" với khách ở mọi tình trạng (không còn điều kiện khách "Bỏ"; backend kiểm từng khách: Quản trị hoặc người tạo)', (_name, actor) => {
+    actorRef.current = { ...actor, managedTeamIds: [...actor.managedTeamIds] };
+    setup(() => customerOf('INTERESTED', 'INTERESTED', 'khac'));
+    expect(optionLabels()).toContain('Xóa');
+  });
+
+  it('không giải thích "khách Bỏ" trong hộp xác nhận; nói rõ chỉ Quản trị hoặc người tạo xóa được', () => {
     setup(() => customerOf('INTERESTED', 'INTERESTED'));
-    expect(optionLabels()).not.toContain('Xóa');
-  });
-
-  it('Nhân viên chỉ thấy "Xóa" khi là phụ trách chính của mọi khách chọn', () => {
-    actorRef.current = { userId: 'staff-1', role: 'STAFF', teamId: 't-1', managedTeamIds: [] };
-    setup(droppedOf('khac'));
-    expect(optionLabels()).not.toContain('Xóa');
-  });
-
-  it('Quản lý có quản lý nhóm thì thấy "Xóa" (backend kiểm nhóm từng khách)', () => {
-    actorRef.current = { userId: 'mgr', role: 'MANAGER', teamId: 't-1', managedTeamIds: ['t-1'] };
-    setup(droppedOf('khac'));
-    expect(optionLabels()).toContain('Xóa');
-  });
-
-  it('Quản lý không quản lý nhóm nào thì không thấy "Xóa"', () => {
-    actorRef.current = { userId: 'mgr', role: 'MANAGER', teamId: null, managedTeamIds: [] };
-    setup(droppedOf('mgr'));
-    expect(optionLabels()).not.toContain('Xóa');
-  });
-
-  it('đã chọn "Xóa" rồi mất quyền (bỏ chọn khách không Bỏ...) thì về "chưa chọn" và KHÔNG tự bật lại khi đủ điều kiện trở lại', async () => {
-    const { rerenderWith } = setup(droppedOf());
     fireEvent.change(screen.getByLabelText('Hành động hàng loạt'), { target: { value: 'DELETE' } });
-    expect(screen.getByRole('button', { name: 'Xóa' })).toBeEnabled();
-
-    rerenderWith(() => customerOf('INTERESTED', 'INTERESTED'));
-    await waitFor(() => expect(screen.getByLabelText('Hành động hàng loạt')).toHaveValue(''));
-    rerenderWith(droppedOf());
-    expect(screen.getByLabelText('Hành động hàng loạt')).toHaveValue('');
-    expect(screen.queryByRole('button', { name: 'Xóa' })).not.toBeInTheDocument();
-  });
-
-  it('Nhân viên là phụ trách chính của khách Bỏ thì thấy "Xóa"', () => {
-    actorRef.current = { userId: 'staff-1', role: 'STAFF', teamId: 't-1', managedTeamIds: [] };
-    setup(droppedOf('staff-1'));
-    expect(optionLabels()).toContain('Xóa');
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa' }));
+    expect(screen.queryByText(/danh sách Bỏ/)).not.toBeInTheDocument();
+    expect(screen.getByText(/chỉ Quản trị hoặc người tạo khách mới xóa được/)).toBeInTheDocument();
   });
 
   it('chọn Xóa -> nút "Xóa" -> hộp bắt buộc lý do; chỉ gọi API sau khi nhập lý do; xóa trọn lô thì bỏ chọn và báo thành công', async () => {

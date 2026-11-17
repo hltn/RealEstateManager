@@ -27,7 +27,7 @@ export const fetchAppointments = async (query: AppointmentListQuery, signal?: Ab
 };
 
 export const postAppointment = async (input: CreateAppointmentInput): Promise<AppointmentView> => {
-  const { customerId, type, startAt, endAt, title, location, note, assigneeId, remindBeforeMinutes, projectId } = input;
+  const { customerId, type, startAt, endAt, title, location, note, assigneeIds, remindBeforeMinutes, projectId } = input;
   const body = {
     customerId,
     type,
@@ -36,7 +36,7 @@ export const postAppointment = async (input: CreateAppointmentInput): Promise<Ap
     ...(title?.trim() ? { title: title.trim() } : {}),
     ...(location?.trim() ? { location: location.trim() } : {}),
     ...(note?.trim() ? { note: note.trim() } : {}),
-    ...(assigneeId ? { assigneeId } : {}),
+    ...(assigneeIds && assigneeIds.length > 0 ? { assigneeIds } : {}),
     ...(remindBeforeMinutes ? { remindBeforeMinutes } : {}),
     // null = không gắn dự án (gửi tường minh); bỏ trống thì không gửi. FR-40: id của UI = code -> `projectCode`.
     ...refParam('projectCode', 'projectId', projectId),

@@ -20,7 +20,6 @@ const LOCKED_HINT = 'Đặt lịch cho khách đang xem, không đổi được 
 
 const customerCard = (page: Page) => page.getByRole('group', { name: /^Khách hàng/ });
 const locationInput = (page: Page) => page.getByRole('textbox', { name: /^Địa điểm/ });
-const assigneeSelect = (page: Page) => page.getByRole('combobox', { name: /^Người thực hiện/ });
 const projectSelect = (page: Page) => page.getByLabel('Dự án', { exact: true });
 
 test.describe('f4b-appointment-context', () => {
@@ -44,9 +43,9 @@ test.describe('f4b-appointment-context', () => {
       await expect(page.getByRole('button', { name: /Thay đổi khách|Chọn khách/ })).toHaveCount(0);
       // 3. Dự án duy nhất khách quan tâm được gợi ý sẵn.
       await expect(projectSelect(page)).toHaveValue(A.name);
-      // 4. Người thực hiện mặc định theo nhóm chăm sóc, chỉ có người trong nhóm.
-      await expect(assigneeSelect(page)).toHaveValue(seed.users.staff1.id);
-      await expect(assigneeSelect(page).locator('option')).toHaveCount(1);
+      // 4. Người thực hiện (chọn nhiều, FR-30): mặc định là người đang đặt lịch (staff1 thuộc danh sách), hiện dạng thẻ "Đã chọn".
+      //    (Chưa chạy E2E sau khi đổi sang ô chọn nhiều: cần chạy lại bằng `npm run e2e` khi có môi trường.)
+      await expect(page.getByRole('list', { name: 'Đã chọn' }).getByRole('button', { name: /^Bỏ chọn / })).toHaveCount(1);
     };
     await assertContext();
 
@@ -167,7 +166,7 @@ test.describe('f4b-appointment-context', () => {
     const appt = rows[0];
     expect(String(appt.projectId)).toBe(A.id);
     expect(appt.startAt.toISOString()).toBe(slot.iso);
-    expect(String(appt.assigneeId)).toBe(seed.users.staff1.id);
+    expect((appt.assigneeIds as unknown[]).map(String)).toEqual([seed.users.staff1.id]);
     expect(appt.type).toBe('SITE_VISIT');
     expect(appt.remindBeforeMinutes).toEqual([60]);
     const reminders = (await backstage.find('reminders')).filter((r) => String(r.refId) === String(appt._id));

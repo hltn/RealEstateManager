@@ -15,6 +15,7 @@ import type {
   DailyTask,
   HistoryEntry,
   NationalIdViewEntry,
+  OwnerRef,
 } from '../types';
 import type {
   AppointmentDto,
@@ -27,6 +28,7 @@ import type {
   DeletedCustomerDto,
   DailyTaskDto,
   HistoryEntryDto,
+  OwnerRefDto,
   PersonaValueDto,
   UserRefDto,
 } from './dto';
@@ -90,6 +92,8 @@ export const toCareTeamMember = (dto: CareTeamMemberDto): CareTeamMemberView => 
   };
 };
 
+const toOwnerRef = (dto: OwnerRefDto): OwnerRef => ({ userId: dto.userId, fullName: dto.fullName, role: dto.role });
+
 export const toCustomerDetail = (dto: CustomerDetailDto): CustomerDetail => {
   return {
     ...toCustomerListItem(dto),
@@ -107,6 +111,8 @@ export const toCustomerDetail = (dto: CustomerDetailDto): CustomerDetail => {
     lastUpdatedBy: toUserRef(dto.lastUpdatedBy),
     createdBy: toUserRef(dto.createdBy),
     createdVia: dto.createdVia,
+    ownerManagers: (dto.ownerManagers ?? []).map(toOwnerRef),
+    creator: dto.creator ? toOwnerRef(dto.creator) : null,
     nextActionSuggestions: dto.nextActionSuggestions ?? [],
     permissions: {
       canEdit: dto.permissions.canEdit,
@@ -149,12 +155,14 @@ export const toAppointment = (dto: AppointmentDto): AppointmentView => ({
   note: dto.note,
   project: toNullableCatalogRef('projects', dto.project),
   assignee: toUserRef(dto.assignee),
+  assignees: (dto.assignees ?? [dto.assignee]).map(toUserRef),
   remindBeforeMinutes: dto.remindBeforeMinutes,
   status: dto.status,
   completedAt: dto.completedAt,
   outcome: dto.outcome,
   createdBy: toUserRef(dto.createdBy),
   version: dto.version,
+  canEdit: dto.canEdit ?? dto.canDelete,
   canDelete: dto.canDelete,
 });
 
@@ -171,6 +179,9 @@ export const toDailyTask = (dto: DailyTaskDto): DailyTask => ({
   appointmentId: dto.appointmentId,
   careLogId: dto.careLogId,
   assignee: dto.assignee ? toUserRef(dto.assignee) : null,
+  assignees: (dto.assignees ?? (dto.assignee ? [dto.assignee] : [])).map(toUserRef),
+  ...(dto.canEdit !== undefined ? { canEdit: dto.canEdit } : {}),
+  ...(dto.canDelete !== undefined ? { canDelete: dto.canDelete } : {}),
   isPrimary: dto.isPrimary,
 });
 

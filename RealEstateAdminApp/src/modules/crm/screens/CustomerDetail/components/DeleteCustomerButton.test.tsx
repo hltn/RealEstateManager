@@ -12,8 +12,7 @@ vi.mock('@crm/api', async () => {
 });
 vi.mock('@crm/store', () => ({ useCrmActions: () => ({ navigate, showToast }) }));
 
-const customer = (listGroup: 'DROPPED' | 'INTERESTED', canDelete: boolean) =>
-  ({ id: 'c1', fullName: 'Nguyễn Văn An', status: { listGroup }, permissions: { canDelete } }) as Parameters<typeof DeleteCustomerButton>[0]['customer'];
+const customer = (canDelete: boolean) => ({ id: 'c1', fullName: 'Nguyễn Văn An', permissions: { canDelete } }) as Parameters<typeof DeleteCustomerButton>[0]['customer'];
 
 beforeEach(() => {
   api.deleteCustomer.mockReset();
@@ -22,18 +21,19 @@ beforeEach(() => {
 });
 
 describe('DeleteCustomerButton', () => {
-  it('chỉ hiện khi khách thuộc "Bỏ" VÀ backend cho phép xóa (permissions.canDelete)', () => {
-    const { rerender } = render(<DeleteCustomerButton customer={customer('INTERESTED', true)} variant="desktop" />);
+  it('FR-31: chỉ theo cờ backend permissions.canDelete (Quản trị hoặc người tạo), KHÔNG phụ thuộc tình trạng khách "Bỏ"', () => {
+    const { rerender } = render(<DeleteCustomerButton customer={customer(false)} variant="desktop" />);
     expect(screen.queryByRole('button', { name: 'Xóa khách' })).not.toBeInTheDocument();
-    rerender(<DeleteCustomerButton customer={customer('DROPPED', false)} variant="desktop" />);
-    expect(screen.queryByRole('button', { name: 'Xóa khách' })).not.toBeInTheDocument();
-    rerender(<DeleteCustomerButton customer={customer('DROPPED', true)} variant="desktop" />);
+    rerender(<DeleteCustomerButton customer={customer(true)} variant="desktop" />);
     expect(screen.getByRole('button', { name: 'Xóa khách' })).toBeInTheDocument();
+    rerender(<DeleteCustomerButton customer={{ ...customer(true), status: { listGroup: 'INTERESTED' } } as never} variant="mobile" />);
+    expect(screen.getByRole('button', { name: 'Xóa khách' })).toBeInTheDocument();
+    expect(screen.queryByText(/danh sách Bỏ/)).not.toBeInTheDocument();
   });
 
   it('hủy hộp rồi mở lại thì không còn thấy lỗi của lần trước', async () => {
-    api.deleteCustomer.mockResolvedValueOnce({ ok: false, error: { statusCode: 409, errorCode: 'CUSTOMER_NOT_DROPPED', message: 'x' } });
-    render(<DeleteCustomerButton customer={customer('DROPPED', true)} variant="desktop" />);
+    api.deleteCustomer.mockResolvedValueOnce({ ok: false, error: { statusCode: 403, errorCode: 'INSUFFICIENT_ROLE', message: 'x' } });
+    render(<DeleteCustomerButton customer={customer(true)} variant="desktop" />);
     fireEvent.click(screen.getByRole('button', { name: 'Xóa khách' }));
     fireEvent.change(screen.getByLabelText(/Lý do xóa/), { target: { value: 'Khách trùng' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Xóa khách' }).at(-1) as HTMLElement);
@@ -44,13 +44,13 @@ describe('DeleteCustomerButton', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('xóa cần lý do; 409 CUSTOMER_NOT_DROPPED hiện trong hộp; thành công thì báo và quay về danh sách khách', async () => {
-    api.deleteCustomer.mockResolvedValueOnce({ ok: false, error: { statusCode: 409, errorCode: 'CUSTOMER_NOT_DROPPED', message: 'x' } });
-    render(<DeleteCustomerButton customer={customer('DROPPED', true)} variant="mobile" />);
+  it('xóa cần lý do; 403 INSUFFICIENT_ROLE nói chỉ Quản trị hoặc người tạo; thành công thì báo và quay về danh sách khách', async () => {
+    api.deleteCustomer.mockResolvedValueOnce({ ok: false, error: { statusCode: 403, errorCode: 'INSUFFICIENT_ROLE', message: 'x' } });
+    render(<DeleteCustomerButton customer={customer(true)} variant="mobile" />);
     fireEvent.click(screen.getByRole('button', { name: 'Xóa khách' }));
     fireEvent.change(screen.getByLabelText(/Lý do xóa/), { target: { value: 'Khách trùng' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Xóa khách' }).at(-1) as HTMLElement);
-    expect(await screen.findByRole('alert')).toHaveTextContent('chưa thuộc danh sách Bỏ');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Quản trị hoặc người tạo khách');
     expect(navigate).not.toHaveBeenCalled();
 
     api.deleteCustomer.mockResolvedValueOnce({ ok: true, data: undefined });

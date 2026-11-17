@@ -15,6 +15,7 @@ const task = (overrides: Partial<DailyTask>): DailyTask => ({
   lastCareLog: null,
   suggestion: '',
   assignee: { id: 'hanh', displayName: 'Hạnh' },
+  assignees: [{ id: 'hanh', displayName: 'Hạnh' }],
   isPrimary: true,
   ...overrides,
 });

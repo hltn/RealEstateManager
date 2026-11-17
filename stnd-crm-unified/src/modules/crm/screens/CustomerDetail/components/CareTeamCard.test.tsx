@@ -3,6 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderCrm, signOut } from '../../../../../test/renderCrm';
+import type { CrmDataState } from '@crm/store';
 import { withCareTeamMembers, withEmptyCareTeam, withLockedUser, type CrmHarness } from '../../../../../test/crmHarness';
 import { useCrmApi, useCustomerDetail } from '@crm/api';
 import { CareTeamCard } from './CareTeamCard';
@@ -40,6 +41,38 @@ describe('CareTeamCard: người chăm sóc chính bị khóa', () => {
   it('tài khoản thành viên bị khóa: hiện "(đã khóa)" cạnh tên', () => {
     renderCrm(<Host customerId="CUST-001" />, { actAs: 'admin', mutate: withLockedUser('thao') });
     expect(screen.getByText('(đã khóa)')).toBeInTheDocument();
+  });
+});
+
+/** Đổi người tạo khách (`createdBy`) sang một người khác; nhóm chăm sóc giữ nguyên. */
+const withCreatorOf =
+  (customerId: string, userId: string) =>
+  (data: CrmDataState): CrmDataState => ({
+    ...data,
+    customers: data.customers.map((customer) => (customer.id === customerId ? { ...customer, createdBy: userId } : customer)),
+  });
+
+const CreatorProbe = ({ customerId }: { customerId: string }) => {
+  const { data } = useCustomerDetail(customerId);
+  return <p data-testid="creator-probe">{data ? `${data.createdBy.id}|${data.creator?.userId ?? 'null'}` : 'chưa có'}</p>;
+};
+
+describe('CareTeamCard: người tạo khách nằm trong nhóm chăm sóc (FR-31, T-59)', () => {
+  it('mock trả đúng hình dạng backend: người tạo trong careTeam thì creator = null còn createdBy có giá trị', () => {
+    renderCrm(<CreatorProbe customerId="CUST-001" />, { actAs: 'admin', mutate: withCreatorOf('CUST-001', 'thao') });
+    expect(screen.getByTestId('creator-probe')).toHaveTextContent('thao|null');
+  });
+
+  it('người tạo là thành viên phụ: có nhãn "Người tạo khách" và KHÔNG có nút gỡ (nhận bằng createdBy, vì creator = null)', () => {
+    const { harness } = renderCrm(<Host customerId="CUST-001" />, { actAs: 'hanh', mutate: withCreatorOf('CUST-001', 'thao') });
+    expect(screen.getByText('Người tạo khách')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Gỡ ${nameOf(harness, 'thao')} khỏi nhóm chăm sóc` })).not.toBeInTheDocument();
+  });
+
+  it('người tạo là phụ trách chính (mặc định của dữ liệu mẫu): hàng PRIMARY có nhãn "Người tạo khách"', () => {
+    renderCrm(<Host customerId="CUST-001" />, { actAs: 'hanh' });
+    const primaryRow = screen.getByText('Người chăm sóc chính').closest('li') as HTMLElement;
+    expect(within(primaryRow).getByText('Người tạo khách')).toBeInTheDocument();
   });
 });
 

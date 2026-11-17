@@ -36,7 +36,7 @@ const matchesTaskProject = (task: DailyTask, projectId: string): boolean =>
  */
 export const matchesTaskFilter = (task: DailyTask, filters: TaskFilterState): boolean => {
   if (filters.projectId !== 'all' && !matchesTaskProject(task, filters.projectId)) return false;
-  if (filters.assigneeId !== 'all' && task.assignee?.id !== filters.assigneeId) return false;
+  if (filters.assigneeId !== 'all' && !task.assignees.some((assignee) => assignee.id === filters.assigneeId)) return false;
   if (filters.kind !== 'all' && task.kind !== filters.kind) return false;
   return true;
 };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getSuggestedProjectId, hasUnsavedChanges, isProjectEmphasizedType, listSelectableProjects, toCreateAppointmentInput, validateAppointmentForm } from './createAppointmentForm';
 import type { AppointmentFormValues } from './createAppointmentForm';
+import type { CustomerDetail } from '@crm/api';
 
 const values = (date: string): AppointmentFormValues => ({
   customerId: 'CUST-001',
@@ -11,7 +12,7 @@ const values = (date: string): AppointmentFormValues => ({
   location: '',
   note: '',
   projectId: '',
-  assigneeId: 'hanh',
+  assigneeIds: ['hanh'],
   remindBeforeMinutes: 60,
   smsZnsAuto: false,
   calendarSync: false,
@@ -65,5 +66,47 @@ describe('thay đổi chưa lưu của form lịch hẹn (U-F4-03)', () => {
     expect(hasUnsavedChanges({ ...initial }, initial, false)).toBe(false);
     expect(hasUnsavedChanges({ ...initial, location: 'Văn phòng' }, initial, false)).toBe(true);
     expect(hasUnsavedChanges({ ...initial }, initial, true)).toBe(true);
+  });
+
+  it('chọn người thực hiện tay (FR-30) cũng tính là có thay đổi', () => {
+    expect(hasUnsavedChanges({ ...initial }, initial, false, true)).toBe(true);
+    expect(hasUnsavedChanges({ ...initial }, initial, false, false)).toBe(false);
+  });
+});
+
+describe('người thực hiện của form lịch hẹn (FR-30, T-59)', () => {
+  const careMember = (id: string, role: 'PRIMARY' | 'MEMBER') => ({ user: { id, displayName: id, fullName: id, jobTitle: '' }, role, addedAt: 't', addedBy: { id: 'sys', displayName: 'Hệ thống' } });
+  // careTeam KHÔNG chứa người tạo khách: người tạo (Nhân viên) nằm ở `creator`.
+  const customer = {
+    careTeam: [careMember('p', 'PRIMARY')],
+    ownerManagers: [{ userId: 'mg', fullName: 'Quản lý nhóm', role: 'MANAGER' }],
+    creator: { userId: 'cr', fullName: 'Người tạo', role: 'STAFF' },
+  } as unknown as CustomerDetail;
+  const withAssignees = (assigneeIds: string[]) => ({ ...values('2026-10-23'), assigneeIds });
+  const errorsOf = (assigneeIds: string[]) => validateAppointmentForm(withAssignees(assigneeIds), customer, '2026-10-22').assigneeIds;
+
+  it('người tạo khách ngoài careTeam và Manager nhóm chủ đều hợp lệ (đã bỏ chặn cứng "phải thuộc nhóm chăm sóc")', () => {
+    expect(errorsOf(['cr'])).toBeUndefined();
+    expect(errorsOf(['mg'])).toBeUndefined();
+    expect(errorsOf(['p', 'cr', 'mg'])).toBeUndefined();
+  });
+
+  it('0 người bị chặn; người ngoài mọi nguồn bị chặn bằng câu mới, không còn câu "phải thuộc nhóm chăm sóc"', () => {
+    expect(errorsOf([])).toBe('Chọn ít nhất 1 người thực hiện.');
+    const outsider = errorsOf(['la']);
+    expect(outsider).toMatch(/không còn thuộc danh sách/);
+    expect(outsider).not.toContain('phải thuộc nhóm chăm sóc');
+  });
+
+  it('chưa chọn khách thì chỉ báo lỗi khách, không báo lỗi người thực hiện', () => {
+    const errors = validateAppointmentForm({ ...withAssignees([]), customerId: '' }, null, '2026-10-22');
+    expect(errors.customerId).toBeDefined();
+    expect(errors.assigneeIds).toBeUndefined();
+  });
+
+  it('body gửi `assigneeIds` (mảng, đúng thứ tự) và KHÔNG gửi `assigneeId` cũ', () => {
+    const body = toCreateAppointmentInput(withAssignees(['cr', 'p']));
+    expect(body.assigneeIds).toEqual(['cr', 'p']);
+    expect('assigneeId' in body).toBe(false);
   });
 });

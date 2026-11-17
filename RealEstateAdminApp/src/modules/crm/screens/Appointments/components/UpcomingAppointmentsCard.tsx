@@ -5,6 +5,7 @@
 import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { useAppointments } from '@crm/api';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { getAppointmentDateKey, getAppointmentTime } from '@crm/lib/appointmentAdapters';
 import { useCrmActions } from '@crm/store';
 import { formatShortWeekdayDate, getUpcomingAppointments, getWeekDates } from '../appointmentSchedule';
@@ -55,7 +56,7 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
                   </div>
                   <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</p>
                   <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">
-                    {projectLabel && `Dự án ${projectLabel} • `}Phụ trách: {appointment.assignee.displayName}
+                    {projectLabel && `Dự án ${projectLabel} • `}Phụ trách: {formatAssigneeNames(appointment.assignees)}
                   </p>
                 </div>
                 <button

@@ -5,6 +5,7 @@
  */
 import { Building2, CircleCheck, Eye, IdCard, MapPin, NotebookPen, Phone, PhoneCall, Undo2, UserRound } from 'lucide-react';
 import { useContactActions } from '@crm/hooks/useContactActions';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { APPOINTMENT_TYPE_LABELS, getAppointmentTitle } from '@crm/lib/appointmentAdapters';
 import { useCrmActions } from '@crm/store';
 import { useAppointmentActions } from '../useAppointmentActions';
@@ -101,7 +102,7 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
           <div className="flex min-w-0 items-center gap-2">
             <IdCard size={16} aria-hidden="true" className="shrink-0 text-gray-400 dark:text-gray-500" />
             <span className="truncate">
-              Phụ trách: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.assignee.displayName}</strong>
+              Phụ trách: <strong className="font-medium text-gray-800 dark:text-white/90">{formatAssigneeNames(appointment.assignees)}</strong>
             </span>
           </div>
         )}
@@ -133,15 +134,18 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
 
         {actionVariant === 'deposit' && (
           <>
-            <button
-              type="button"
-              aria-pressed={isCompleted}
-              onClick={() => toggleCompleted(appointment)}
-              className={isCompleted ? ACTION_GRAY_CLASS : ACTION_SUCCESS_CLASS}
-            >
-              {isCompleted ? <Undo2 size={16} aria-hidden="true" /> : <CircleCheck size={16} aria-hidden="true" />}
-              {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
-            </button>
+            {/* FR-32: chỉ hiện khi backend báo `canEdit` (người tạo lịch hoặc Quản trị). */}
+            {appointment.canEdit && (
+              <button
+                type="button"
+                aria-pressed={isCompleted}
+                onClick={() => toggleCompleted(appointment)}
+                className={isCompleted ? ACTION_GRAY_CLASS : ACTION_SUCCESS_CLASS}
+              >
+                {isCompleted ? <Undo2 size={16} aria-hidden="true" /> : <CircleCheck size={16} aria-hidden="true" />}
+                {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
+              </button>
+            )}
             <button type="button" onClick={() => selectCustomer(appointment.customer.id)} className={ACTION_SOFT_CLASS}>
               <Eye size={16} aria-hidden="true" />
               Xem chi tiết

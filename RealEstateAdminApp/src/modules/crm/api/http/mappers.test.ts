@@ -80,6 +80,30 @@ describe('toCustomerDetail', () => {
     expect(toCustomerDetail(detailDto()).permissions.canSetInitialPrimary).toBe(false);
   });
 
+  it('FR-30/FR-31: `ownerManagers`, `creator` đi từ response; backend cũ thiếu thì rỗng/null; cờ quyền chủ khách không bị suy lại', () => {
+    const detail = toCustomerDetail(
+      detailDto({
+        ownerManagers: [{ userId: 'mg1', fullName: 'Quản lý A', role: 'MANAGER' }],
+        creator: { userId: 'cr1', fullName: 'Người tạo', role: 'STAFF' },
+        canRevealNationalId: true,
+        permissions: { canEdit: true, canManageCareTeam: true, canSetInitialPrimary: false, canDelete: true },
+      }),
+    );
+    expect(detail.ownerManagers).toEqual([{ userId: 'mg1', fullName: 'Quản lý A', role: 'MANAGER' }]);
+    expect(detail.creator).toEqual({ userId: 'cr1', fullName: 'Người tạo', role: 'STAFF' });
+    expect(detail.permissions).toMatchObject({ canManageCareTeam: true, canDelete: true, canRevealNationalId: true });
+    const legacy = toCustomerDetail(detailDto());
+    expect(legacy.ownerManagers).toEqual([]);
+    expect(legacy.creator).toBeNull();
+  });
+
+  it('FR-31 (T-59): người tạo trong careTeam thì backend trả `creator = null` nhưng `createdBy` có giá trị; mapper giữ cả hai (FE nhận người tạo bằng createdBy.id)', () => {
+    const detail = toCustomerDetail(detailDto({ createdBy: { id: 'u2', displayName: 'Minh' }, creator: null }));
+    expect(detail.createdBy).toEqual({ id: 'u2', displayName: 'Minh' });
+    expect(detail.creator).toBeNull();
+    expect(detail.careTeam.map((member) => member.user.id)).toContain(detail.createdBy.id);
+  });
+
   it('chức danh thành viên lấy từ careTeam[].user.role; isLocked giữ nguyên', () => {
     const detail = toCustomerDetail(detailDto());
     expect(detail.careTeam[0].user).toMatchObject({ jobTitle: 'Nhân viên kinh doanh', isLocked: false });
@@ -158,6 +182,67 @@ describe('toCareLog / toAppointment / toHistoryEntry', () => {
     });
     expect(appointment).toMatchObject({ version: 4, canDelete: true, type: 'DEPOSIT_CONTRACT' });
     expect(appointment.customer.phoneMasked).toBe('0912 ••• 678');
+  });
+
+  describe('FR-30/FR-32: nhiều người thực hiện + cờ canEdit do backend trả', () => {
+    const base = {
+      id: 'p1',
+      customer: { id: 'c1', fullName: 'An', phoneMasked: '0912 ••• 678', status: STATUS },
+      type: 'SITE_VISIT' as const,
+      title: '',
+      startAt: 't',
+      endAt: null,
+      location: '',
+      note: '',
+      assignee: { id: 'u1', displayName: 'Hạnh' },
+      remindBeforeMinutes: [60],
+      status: 'SCHEDULED' as const,
+      completedAt: null,
+      outcome: null,
+      createdBy: { id: 'u1', displayName: 'Hạnh' },
+      version: 1,
+    };
+
+    it('lịch hẹn giữ nguyên `assignees` đủ thứ tự và cờ canEdit/canDelete độc lập nhau', () => {
+      const appointment = toAppointment({
+        ...base,
+        assignees: [{ id: 'u1', displayName: 'Hạnh' }, { id: 'u2', displayName: 'Bình' }],
+        canEdit: false,
+        canDelete: true,
+      });
+      expect(appointment.assignees.map((user) => user.id)).toEqual(['u1', 'u2']);
+      expect(appointment.canEdit).toBe(false);
+      expect(appointment.canDelete).toBe(true);
+    });
+
+    it('backend cũ (thiếu `assignees`/`canEdit`): suy `assignees` từ `assignee`, canEdit theo canDelete', () => {
+      const appointment = toAppointment({ ...base, canDelete: false });
+      expect(appointment.assignees.map((user) => user.id)).toEqual(['u1']);
+      expect(appointment.canEdit).toBe(false);
+    });
+
+    it('việc hôm nay: `assignees` và cờ canEdit/canDelete giữ nguyên; việc không phải lịch hẹn không có cờ', () => {
+      const task = {
+        id: 't1',
+        kind: 'APPOINTMENT' as const,
+        dueAt: 't',
+        group: 'TODAY' as const,
+        customer: { id: 'c1', fullName: 'An', phoneMasked: null, status: STATUS, projects: [] },
+        title: '',
+        lastCareLog: null,
+        suggestion: '',
+        assignee: { id: 'u1', displayName: 'Hạnh' },
+        assignees: [{ id: 'u1', displayName: 'Hạnh' }, { id: 'u2', displayName: 'Bình' }],
+        isPrimary: false,
+      };
+      const withFlags = toDailyTask({ ...task, canEdit: false, canDelete: false });
+      expect(withFlags.assignees).toHaveLength(2);
+      expect(withFlags.canEdit).toBe(false);
+      expect(withFlags.canDelete).toBe(false);
+      const followUp = toDailyTask({ ...task, kind: 'FOLLOW_UP' as const, assignees: undefined });
+      expect(followUp.assignees.map((user) => user.id)).toEqual(['u1']);
+      expect('canEdit' in followUp).toBe(false);
+    });
   });
 
   it('dự án của lịch (G7): response `label` thành tên hiển thị; null hoặc thiếu (lịch cũ) thành null', () => {

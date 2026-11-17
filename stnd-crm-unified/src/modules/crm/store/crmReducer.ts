@@ -6,6 +6,7 @@
  * - Bất biến được chặn ngay ở reducer (giống ràng buộc DB): SĐT duy nhất (QT4), nhóm chăm sóc đúng 1 PRIMARY (QT7).
  */
 import { PERSONA_FIELDS } from '@crm/data/personaFields';
+import { getAppointmentAssigneeIds } from '@crm/lib/appointmentAssignees';
 import { diffCustomer } from '@crm/lib/changeTracking';
 import {
   buildSearchText,
@@ -221,9 +222,14 @@ const reassignWorkOfRemovedMembers = (state: CrmDataState, before: Customer, aft
   const nameOf = (userId: string) => findUser(state, userId)?.displayName ?? userId;
   const changes: FieldChange[] = [];
   const appointments = state.appointments.map((appointment) => {
-    if (appointment.customerId !== before.id || appointment.status !== 'SCHEDULED' || !removedIds.includes(appointment.assigneeId)) return appointment;
-    changes.push({ field: `Lịch hẹn "${appointment.title}" chuyển người thực hiện`, from: nameOf(appointment.assigneeId), to: nameOf(primaryId) });
-    return { ...appointment, assigneeId: primaryId };
+    if (appointment.customerId !== before.id || appointment.status !== 'SCHEDULED') return appointment;
+    const currentIds = getAppointmentAssigneeIds(appointment);
+    const removedAssigneeIds = currentIds.filter((userId) => removedIds.includes(userId));
+    if (removedAssigneeIds.length === 0) return appointment;
+    changes.push({ field: `Lịch hẹn "${appointment.title}" chuyển người thực hiện`, from: removedAssigneeIds.map(nameOf).join(', '), to: nameOf(primaryId) });
+    // Người bị gỡ được thay bằng PRIMARY tại đúng vị trí; người còn lại giữ nguyên, bỏ trùng.
+    const assigneeIds = [...new Set(currentIds.map((userId) => (removedIds.includes(userId) ? primaryId : userId)))];
+    return { ...appointment, assigneeId: assigneeIds[0], assigneeIds };
   });
   const careLogs = state.careLogs.map((log) => {
     const next = log.nextAction;

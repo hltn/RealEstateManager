@@ -241,6 +241,12 @@ export interface CareTeamMemberDto {
   addedBy: UserRefDto | null;
 }
 
+export interface OwnerRefDto {
+  userId: string;
+  fullName: string;
+  role: string;
+}
+
 export interface CustomerDetailDto extends CustomerListItemDto {
   email: string | null;
   canViewPhone: boolean;
@@ -255,6 +261,10 @@ export interface CustomerDetailDto extends CustomerListItemDto {
   createdBy: UserRefDto | null;
   createdVia: 'WEB' | 'MOBILE' | 'IMPORT';
   nextActionSuggestions: string[];
+  /** Manager ACTIVE nhóm chủ chưa ở careTeam (FR-30); backend cũ chưa có thì coi là rỗng. */
+  ownerManagers?: OwnerRefDto[];
+  /** Người tạo khách ACTIVE chưa ở careTeam/ownerManagers; null/vắng = không có. */
+  creator?: OwnerRefDto | null;
   permissions: { canEdit: boolean; canManageCareTeam: boolean; canSetInitialPrimary: boolean; canDelete: boolean };
   version: number;
 }
@@ -313,12 +323,16 @@ export interface AppointmentDto {
   /** Có ở mọi response lịch hẹn; thiếu (backend cũ) hoặc null = không gắn dự án. */
   project?: CatalogRefDto | null;
   assignee: UserRefDto;
+  /** Mọi người thực hiện (FR-30); thiếu thì mapper suy từ `assignee`. */
+  assignees?: UserRefDto[];
   remindBeforeMinutes: number[];
   status: AppointmentStatus;
   completedAt: string | null;
   outcome: string | null;
   createdBy: UserRefDto;
   version: number;
+  /** Thiếu thì mapper dùng `canDelete` (cùng luật, FR-32). */
+  canEdit?: boolean;
   canDelete: boolean;
   careLog?: CareLogDto;
 }
@@ -337,6 +351,10 @@ export interface DailyTaskDto {
   appointmentId?: string;
   careLogId?: string;
   assignee: UserRefDto | null;
+  assignees?: UserRefDto[];
+  /** Chỉ việc kiểu APPOINTMENT (FR-32). */
+  canEdit?: boolean;
+  canDelete?: boolean;
   isPrimary: boolean;
 }
 

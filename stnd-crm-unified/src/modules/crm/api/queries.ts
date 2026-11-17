@@ -17,6 +17,7 @@ import {
   isInCareTeam,
   maskNationalId,
 } from '@crm/lib/customerRules';
+import { getAppointmentAssigneeIds } from '@crm/lib/appointmentAssignees';
 import { toVnDateKey } from '@crm/lib/dateTime';
 import { toProjectLabel } from '@crm/lib/projectRules';
 import { getPhoneSearchVariants, maskPhoneDisplay, normalizePhone } from '@crm/lib/phone';
@@ -25,7 +26,7 @@ import { normalizeVietnamese } from '@crm/lib/text';
 import type { CrmDataState } from '@crm/store/crmReducer';
 import type { CustomerFilters } from '@crm/types/app';
 import type { AdminUser, Appointment, CareLog, CriterionKey, CrmCatalogs, CrmUser, Customer, PersonaGroupCode, Ref, StatusRef, TeamMember, UserRef } from '@crm/types/crm';
-import { canAccessCustomer, getCustomerPermissions, teamIdsOfUser, type CrmActor } from './access';
+import { canAccessCustomer, buildAssigneeSource, getCustomerPermissions, teamIdsOfUser, type CrmActor } from './access';
 import type {
   AppointmentListQuery,
   AppointmentView,
@@ -263,6 +264,7 @@ export const getCustomer = (state: CrmDataState, actor: CrmActor, customerId: st
   const customer = findAccessibleCustomer(state, actor, customerId);
   if (!customer) return null;
   const { users } = state;
+  const assigneeSource = buildAssigneeSource(customer, users, state.teams);
   return {
     ...toListItem(state, customer),
     createdAt: customer.createdAt,
@@ -293,7 +295,9 @@ export const getCustomer = (state: CrmDataState, actor: CrmActor, customerId: st
     createdBy: requireUserRef(users, customer.createdBy),
     createdVia: customer.createdVia,
     nextActionSuggestions: getNextActionSuggestions(state, customer.id),
-    permissions: getCustomerPermissions(actor, customer, { users, isDropped: getListGroupOfStatus(state.catalogs.statuses, customer.statusId) === 'DROPPED' }),
+    ownerManagers: assigneeSource.ownerManagers,
+    creator: assigneeSource.creator,
+    permissions: getCustomerPermissions(actor, customer, users),
     version: customer.version,
   };
 };
@@ -377,7 +381,8 @@ export const listCareLogs = (state: CrmDataState, actor: CrmActor, customerId: s
 /**
  * Người gọi được xóa lịch: Quản trị/Quản lý (lịch của khách trong phạm vi xem) hoặc người tạo lịch (Nhân viên: lịch do mình tạo).
  */
-const canDeleteAppointment = (actor: CrmActor, appointment: Appointment): boolean => actor.role === 'ADMIN' || actor.role === 'MANAGER' || appointment.createdBy === actor.userId;
+/** FR-32: sửa/đổi trạng thái/xóa lịch hẹn chỉ cho Quản trị hoặc người TẠO LỊCH (Quản lý không còn quyền riêng; khớp cờ `canEdit`/`canDelete` của backend). */
+const canEditAppointment = (actor: CrmActor, appointment: Appointment): boolean => actor.role === 'ADMIN' || appointment.createdBy === actor.userId;
 
 export const toAppointmentView = (state: CrmDataState, actor: CrmActor, appointment: Appointment, customer: Customer): AppointmentView => ({
   id: appointment.id,
@@ -395,14 +400,16 @@ export const toAppointmentView = (state: CrmDataState, actor: CrmActor, appointm
   location: appointment.location,
   note: appointment.note,
   project: appointment.projectId ? { id: appointment.projectId, label: toProjectLabel(state.catalogs.projects, appointment.projectId) } : null,
-  assignee: requireUserRef(state.users, appointment.assigneeId),
+  assignee: requireUserRef(state.users, getAppointmentAssigneeIds(appointment)[0]),
+  assignees: getAppointmentAssigneeIds(appointment).map((userId) => requireUserRef(state.users, userId)),
   remindBeforeMinutes: appointment.remindBeforeMinutes,
   status: appointment.status,
   completedAt: appointment.completedAt,
   outcome: appointment.outcome ?? null,
   createdBy: requireUserRef(state.users, appointment.createdBy),
   version: appointment.version ?? 1,
-  canDelete: canDeleteAppointment(actor, appointment),
+  canEdit: canEditAppointment(actor, appointment),
+  canDelete: canEditAppointment(actor, appointment),
 });
 
 /**
@@ -418,7 +425,7 @@ export const listAppointments = (state: CrmDataState, actor: CrmActor, query: Ap
       if (query.customerId && appointment.customerId !== query.customerId) return false;
       if (query.status && appointment.status !== query.status) return false;
       if (query.projectId && appointment.projectId !== query.projectId) return false;
-      if (query.assigneeIds && query.assigneeIds.length > 0 && !query.assigneeIds.includes(appointment.assigneeId)) return false;
+      if (query.assigneeIds && query.assigneeIds.length > 0 && !getAppointmentAssigneeIds(appointment).some((userId) => query.assigneeIds?.includes(userId))) return false;
       if (query.types && query.types.length > 0 && !query.types.includes(appointment.type)) return false;
       const dateKey = toVnDateKey(appointment.startAt);
       if (query.from && dateKey < query.from) return false;

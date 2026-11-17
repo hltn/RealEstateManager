@@ -15,7 +15,6 @@ import {
   CRITERIA_KEYS,
   createEmptyCriteria,
   getDefaultStatus,
-  getListGroupOfStatus,
   getPrimaryUserId,
   getProgressPercent,
   isInCareTeam,
@@ -59,8 +58,9 @@ import type {
   Team,
   TeamMember,
 } from '@crm/types/crm';
-import { assertAssignableUsers } from './assignable';
-import { buildActor, canBulkAssign, canManageProjects, getCustomerPermissions, getDeleteDenial, teamIdsOfUser, type CrmActor } from './access';
+import { MAX_APPOINTMENT_ASSIGNEES } from '@crm/lib/appointmentAssignees';
+import { assertAssignableAssignees, assertAssignableUsers } from './assignable';
+import { buildActor, buildAssigneeSource, canBulkAssign, canManageProjects, getCustomerPermissions, getDefaultAssigneeIds, getDeleteDenial, hasOwnerRights, listAssignableAssignees, teamIdsOfUser, type CrmActor } from './access';
 import { countCatalogUsage, validateCatalogItem, validateSettings } from './catalogAdmin';
 import {
   countTeamMembers,
@@ -158,8 +158,14 @@ const parseOptionalPhone = (input: string | null | undefined): string | null | u
   return normalizePhone(input) || undefined;
 };
 
-/** Lỗi `assertAssignableUsers` -> ApiResult thất bại. */
-const rejectAssignment = <T>(error: NonNullable<ReturnType<typeof assertAssignableUsers>>): ApiResult<T> => fail(error.statusCode, error.errorCode, error.message, error.details);
+/** Trường người thực hiện của `Appointment`: `assigneeIds` (nguồn chính, ghi theo thứ tự) + `assigneeId` = người đầu (deprecated, như backend ghi kép). */
+const toAssigneeFields = (assigneeIds: readonly string[], fallbackId: string): Pick<Appointment, 'assigneeId' | 'assigneeIds'> => {
+  const ids = assigneeIds.length > 0 ? [...assigneeIds] : [fallbackId];
+  return { assigneeId: ids[0], assigneeIds: ids };
+};
+
+/** Lỗi `assertAssignableUsers` / `assertAssignableAssignees` -> ApiResult thất bại. */
+const rejectAssignment = <T>(error: NonNullable<ReturnType<typeof assertAssignableUsers> | ReturnType<typeof assertAssignableAssignees>>): ApiResult<T> => fail(error.statusCode, error.errorCode, error.message, error.details);
 
 /**
  * Nguồn/khu vực/dự án/thẻ phải tồn tại và ĐANG DÙNG. `existing` = khách đang sửa: giá trị đã gắn từ trước (kể cả đã ẩn)
@@ -880,7 +886,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
   const createNationalIdView = (customerId: string): ApiResult<{ nationalId: string; viewedAt: string }> => {
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
-    if (!getCustomerPermissions(getActor(), loaded.data).canRevealNationalId) {
+    if (!getCustomerPermissions(getActor(), loaded.data, stateOf().users).canRevealNationalId) {
       return fail(403, 'NATIONAL_ID_FORBIDDEN', 'Bạn không có quyền xem CCCD đầy đủ của khách này.');
     }
     const nationalId = revealNationalId(customerId);
@@ -895,7 +901,6 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
   /** Thông báo lỗi từ chối xóa theo `getDeleteDenial`. */
   const rejectDelete = <T,>(denial: ReturnType<typeof getDeleteDenial>): ApiResult<T> | null => {
     if (denial === 'FORBIDDEN') return fail(403, 'INSUFFICIENT_ROLE', FORBIDDEN_MESSAGE);
-    if (denial === 'NOT_DROPPED') return fail(409, 'CUSTOMER_NOT_DROPPED', 'Khách chưa thuộc danh sách Bỏ nên chưa thể xóa.');
     return null;
   };
 
@@ -905,14 +910,13 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     return null;
   };
 
-  /** Xóa mềm 1 khách (đơn hoặc trong lô). `requireDropped`: lô luôn đòi khách "Bỏ". Trả mã lỗi nếu bị từ chối. */
-  const applyDelete = (customerId: string, reason: string, requireDropped: boolean): ApiResult<void> => {
+  /** Xóa mềm 1 khách (đơn hoặc trong lô): chỉ Quản trị hoặc người tạo khách, mọi tình trạng (FR-31). Trả mã lỗi nếu bị từ chối. */
+  const applyDelete = (customerId: string, reason: string): ApiResult<void> => {
     const state = stateOf();
     const actor = getActor();
     const customer = findAccessibleCustomer(state, actor, customerId);
     if (!customer) return fail(404, 'CUSTOMER_NOT_FOUND', NOT_FOUND);
-    const isDropped = getListGroupOfStatus(state.catalogs.statuses, customer.statusId) === 'DROPPED';
-    const rejected = rejectDelete<void>(getDeleteDenial(actor, customer, state.users, { isDropped, requireDropped }));
+    const rejected = rejectDelete<void>(getDeleteDenial(actor, customer));
     if (rejected) return rejected;
     dispatch({ type: 'customers/softDelete', customerId, reason: reason.trim(), meta: meta(reason.trim()) });
     return ok(undefined);
@@ -921,7 +925,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
   const deleteCustomer = (customerId: string, reason: string): ApiResult<void> => {
     const invalidReason = validateReason(reason);
     if (invalidReason) return invalidReason;
-    return applyDelete(customerId, reason, false);
+    return applyDelete(customerId, reason);
   };
 
   const restoreCustomer = (customerId: string): ApiResult<{ id: string }> => {
@@ -983,7 +987,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     if (!loaded.ok) return loaded;
     const customer = loaded.data;
     const actor = getActor();
-    const permissions = getCustomerPermissions(actor, customer);
+    const permissions = getCustomerPermissions(actor, customer, stateOf().users);
     if (!permissions.canManageCareTeam) {
       return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý, Quản trị hoặc phụ trách chính được thêm người chăm sóc.');
     }
@@ -1020,8 +1024,12 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     const loaded = loadForUpdate(customerId);
     if (!loaded.ok) return loaded;
     const customer = loaded.data;
-    if (!getCustomerPermissions(getActor(), customer).canManageCareTeam) {
+    if (!getCustomerPermissions(getActor(), customer, stateOf().users).canManageCareTeam) {
       return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Bạn không có quyền gỡ người chăm sóc.');
+    }
+    // FR-31: người tạo khách KHÔNG BAO GIỜ bị gỡ (mọi vai trò người gỡ); kiểm TRƯỚC nhánh PRIMARY, `details.reason` để giao diện phân biệt.
+    if (customer.createdBy === userId && isInCareTeam(customer.careTeam, userId)) {
+      return fail(409, 'PRIMARY_LOCKED', 'Người tạo khách không thể bị gỡ khỏi nhóm chăm sóc', { reason: 'CREATOR_LOCKED' });
     }
     if (getPrimaryUserId(customer.careTeam) === userId) {
       return fail(409, 'PRIMARY_LOCKED', 'Không thể gỡ hay đổi người phụ trách chính.');
@@ -1038,7 +1046,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     if (!loaded.ok) return loaded;
     const customer = loaded.data;
     if (customer.careTeam.length > 0) return fail(409, 'PRIMARY_LOCKED', 'Không thể gỡ hay đổi người phụ trách chính.');
-    if (!getCustomerPermissions(getActor(), customer).canSetInitialPrimary) {
+    if (!getCustomerPermissions(getActor(), customer, stateOf().users).canSetInitialPrimary) {
       return fail(403, 'CARE_TEAM_ACTION_FORBIDDEN', 'Chỉ Quản lý/Quản trị được chọn người phụ trách chính ban đầu.');
     }
     const notAssignable = assertAssignableUsers(stateOf(), [userId]);
@@ -1077,7 +1085,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
         endAt: null,
         location: appointmentInput.location?.trim() ?? '',
         note: content.length > 200 ? `${content.slice(0, 200)}…` : content,
-        assigneeId: isInCareTeam(loaded.data.careTeam, actor.userId) ? actor.userId : (getPrimaryUserId(loaded.data.careTeam) ?? actor.userId),
+        ...toAssigneeFields(getDefaultAssigneeIds(listAssignableAssignees(buildAssigneeSource(loaded.data, stateOf().users, stateOf().teams)), actor.userId), actor.userId),
         remindBeforeMinutes: appointmentInput.remindBeforeMinutes ?? [60],
         status: 'SCHEDULED',
         completedAt: null,
@@ -1178,17 +1186,17 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     return ok(appointment);
   };
 
-  /** `POST /crm/appointments` — người thực hiện phải thuộc nhóm chăm sóc; cập nhật `nextAppointmentAt` của khách. */
+  /** `POST /crm/appointments` — 1..20 người thực hiện thuộc tập hợp lệ của khách (FR-30); cập nhật `nextAppointmentAt` của khách. */
   const createAppointment = (input: CreateAppointmentInput): ApiResult<AppointmentView> => {
     const loaded = loadForUpdate(input.customerId);
     if (!loaded.ok) return loaded;
     const actor = getActor();
-    const careTeam = loaded.data.careTeam;
-    const assigneeId = input.assigneeId ?? (isInCareTeam(careTeam, actor.userId) ? actor.userId : getPrimaryUserId(careTeam)) ?? actor.userId;
-    // Người thực hiện phải tồn tại, đang hoạt động, có role Quản lý/Nhân viên (khách chưa có nhóm thì KHÔNG tự gán Quản trị).
-    const notAssignable = assertAssignableUsers(stateOf(), [assigneeId]);
+    // FR-30: tập hợp lệ = nhóm chăm sóc ACTIVE ∪ Quản lý nhóm chủ ∪ người tạo khách; bỏ trống `assigneeIds` = mặc định (người tạo lịch nếu thuộc tập, không thì PRIMARY).
+    // Dùng CHUNG `listAssignableAssignees` / `getDefaultAssigneeIds` với form; thông báo lỗi theo `details.reason` nguyên văn backend.
+    const assigneeIds = [...new Set(input.assigneeIds ?? getDefaultAssigneeIds(listAssignableAssignees(buildAssigneeSource(loaded.data, stateOf().users, stateOf().teams)), actor.userId))];
+    if (assigneeIds.length > MAX_APPOINTMENT_ASSIGNEES) return fail(400, 'VALIDATION_FAILED', `Tối đa ${MAX_APPOINTMENT_ASSIGNEES} người thực hiện mỗi lịch hẹn.`);
+    const notAssignable = assertAssignableAssignees(stateOf(), loaded.data, assigneeIds);
     if (notAssignable) return rejectAssignment(notAssignable);
-    if (careTeam.length > 0 && !isInCareTeam(careTeam, assigneeId)) return fail(400, 'USER_NOT_ASSIGNABLE', 'Người thực hiện phải thuộc nhóm chăm sóc của khách.', { userIds: [assigneeId] });
     if (Number.isNaN(new Date(input.startAt).getTime())) return fail(400, 'VALIDATION_FAILED', 'Thời gian hẹn không hợp lệ.');
     if (toVnDateKey(input.startAt) < getVnTodayKey(now())) return fail(400, 'APPOINTMENT_IN_PAST', 'Ngày hẹn không được ở quá khứ.');
     if (input.projectId && !stateOf().catalogs.projects.some((project) => project.id === input.projectId && project.isActive && !project.deletedAt)) {
@@ -1204,7 +1212,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
       endAt: input.endAt ?? null,
       location: input.location?.trim() ?? '',
       note: input.note?.trim() ?? '',
-      assigneeId,
+      ...toAssigneeFields(assigneeIds, actor.userId),
       remindBeforeMinutes: input.remindBeforeMinutes ?? [60],
       status: 'SCHEDULED',
       completedAt: null,
@@ -1217,7 +1225,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
       version: 1,
     };
     dispatch({ type: 'appointments/add', appointment, meta: meta() });
-    notify(assigneeId, { type: 'APPOINTMENT_DUE', title: 'Bạn có lịch hẹn mới', body: `${appointment.title || 'Lịch hẹn'} với khách ${loaded.data.fullName}.`, customerId: input.customerId, appointmentId: id, deepLink: '/crm/appointments' });
+    assigneeIds.forEach((userId) => notify(userId, { type: 'APPOINTMENT_DUE', title: 'Bạn có lịch hẹn mới', body: `${appointment.title || 'Lịch hẹn'} với khách ${loaded.data.fullName}.`, customerId: input.customerId, appointmentId: id, deepLink: '/crm/appointments' }));
     const view = appointmentViewOf(id);
     return view ? ok(view) : fail(500, 'INTERNAL_ERROR', 'Không tạo được lịch hẹn.');
   };
@@ -1291,7 +1299,7 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
     const failed: { customerId: string; errorCode: string }[] = [];
     operation.customerIds.forEach((customerId) => {
       if (operation.type === 'DELETE') {
-        const result = applyDelete(customerId, operation.reason, true);
+        const result = applyDelete(customerId, operation.reason);
         if (result.ok) succeeded.push(customerId);
         else failed.push({ customerId, errorCode: result.error.errorCode });
         return;
@@ -1302,6 +1310,11 @@ const createCore = ({ getState, dispatch, getActor, now = () => new Date(), gene
         return;
       }
       const versionBefore = customer.version;
+      // FR-31: mời thành viên hàng loạt kiểm RIÊNG từng khách; không phải chủ khách (Quản trị, người tạo, Quản lý nhóm chủ) -> `INSUFFICIENT_ROLE`.
+      if (operation.type === 'ASSIGN' && !hasOwnerRights(actor, customer, stateOf().users)) {
+        failed.push({ customerId, errorCode: 'INSUFFICIENT_ROLE' });
+        return;
+      }
       if (operation.type === 'CHANGE_STATUS') {
         if (customer.statusId === operation.statusId) {
           succeeded.push(customerId);

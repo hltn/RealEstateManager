@@ -1,5 +1,6 @@
 /**
- * Nút "Xóa khách" ở chi tiết khách (Sửa đổi D): chỉ hiện khi khách thuộc nhóm "Bỏ" VÀ backend cho phép (`permissions.canDelete`).
+ * Nút "Xóa khách" ở chi tiết khách (FR-31): chỉ hiện theo cờ `permissions.canDelete` của backend (Quản trị hoặc người tạo khách,
+ * mọi tình trạng khách; không còn điều kiện khách "Bỏ"). FE không tự suy quyền từ vai trò.
  * Bấm -> hộp xác nhận có ô lý do bắt buộc (dùng chung với xóa hàng loạt) -> `DELETE /crm/customers/:id?reason=`; xong quay về danh sách khách.
  */
 import { useState } from 'react';
@@ -11,7 +12,7 @@ import { DANGER_OUTLINE_BUTTON_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 
 interface DeleteCustomerButtonProps {
-  customer: Pick<CustomerDetail, 'id' | 'fullName' | 'status' | 'permissions'>;
+  customer: Pick<CustomerDetail, 'id' | 'fullName' | 'permissions'>;
   variant: 'desktop' | 'mobile';
 }
 
@@ -22,7 +23,7 @@ export const DeleteCustomerButton = ({ customer, variant }: DeleteCustomerButton
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (customer.status.listGroup !== 'DROPPED' || !customer.permissions.canDelete) return null;
+  if (!customer.permissions.canDelete) return null;
 
   const openDialog = () => {
     setError(null);
@@ -58,7 +59,7 @@ export const DeleteCustomerButton = ({ customer, variant }: DeleteCustomerButton
       <DeleteReasonDialog
         isOpen={isOpen}
         title={`Xóa khách ${customer.fullName}?`}
-        description="Khách thuộc danh sách Bỏ sẽ bị xóa khỏi mọi danh sách (xóa mềm). Quản trị có thể khôi phục hoặc xóa vĩnh viễn ở màn “Khách đã xóa”."
+        description="Khách sẽ bị xóa khỏi mọi danh sách (xóa mềm). Quản trị có thể khôi phục hoặc xóa vĩnh viễn ở màn “Khách đã xóa”."
         confirmLabel="Xóa khách"
         isSubmitting={isDeleting}
         error={error}

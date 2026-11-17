@@ -98,3 +98,21 @@ describe('PT-017/PT-018: đường xem/gọi số vẫn còn ở đầu hồ sơ
     expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull();
   });
 });
+
+describe('FR-31 (T-59): người được mời chéo nhóm (ngoài nhóm chủ, không phải chủ khách) không bị ẩn nút thao tác', () => {
+  const crossTeam = { ...customer, careTeam: [], ownerManagers: [], creator: { userId: 'nguoi-tao', fullName: 'Người tạo', role: 'STAFF' }, permissions: { canEdit: true, canManageCareTeam: false, canSetInitialPrimary: false, canDelete: false, canRevealNationalId: false } } as unknown as CustomerDetail;
+
+  it.each(['desktop', 'mobile'] as const)('%s: vẫn có "Ghi chú" (viết nhật ký), desktop còn "Đặt lịch hẹn"; không có nút xóa khách vì canDelete=false', (variant) => {
+    const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
+    render(
+      <MemoryRouter>
+        <CrmProvider store={store}>
+          <CustomerHeader customer={crossTeam} variant={variant} onAddNote={vi.fn()} />
+        </CrmProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Ghi chú' })).toBeInTheDocument();
+    if (variant === 'desktop') expect(screen.getByRole('button', { name: 'Đặt lịch hẹn' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Xóa khách' })).toBeNull();
+  });
+});

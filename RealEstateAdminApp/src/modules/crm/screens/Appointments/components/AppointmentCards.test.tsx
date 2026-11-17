@@ -27,12 +27,14 @@ const makeAppointment = (project: AppointmentView['project']): AppointmentView =
   note: '',
   project,
   assignee: { id: 'u1', displayName: 'Hạnh' },
+  assignees: [{ id: 'u1', displayName: 'Hạnh' }],
   remindBeforeMinutes: [60],
   status: 'SCHEDULED',
   completedAt: null,
   outcome: null,
   createdBy: { id: 'u1', displayName: 'Hạnh' },
   version: 1,
+  canEdit: true,
   canDelete: true,
 });
 
@@ -71,6 +73,55 @@ describe('thẻ lịch hẹn hiện dự án của lịch (G7)', () => {
 
     renderCard(<Card appointment={makeAppointment(null)} />);
     expect(screen.queryByText(/Dự án:/)).toBeNull();
+  });
+});
+
+describe('thẻ lịch hẹn: nút đổi trạng thái hoàn thành theo cờ canEdit (FR-32)', () => {
+  const COMPLETE_BUTTON_NAME = /Xác nhận hoàn thành|Hoàn tác xác nhận|Đã liên hệ xong|Hoàn tác liên hệ/;
+  const withEdit = (type: AppointmentView['type'], canEdit: boolean, status: AppointmentView['status'] = 'SCHEDULED'): AppointmentView => ({
+    ...makeAppointment(null),
+    type,
+    status,
+    canEdit,
+    canDelete: canEdit,
+    // Người tạo lịch KHÔNG liên quan tới việc hiện nút: nút chỉ theo cờ BE (kiểm bằng cùng createdBy ở cả hai ca).
+    createdBy: { id: 'u1', displayName: 'Hạnh' },
+  });
+
+  it.each([
+    ['desktop', AppointmentCardDesktop, 'DEPOSIT_CONTRACT', 'Xác nhận hoàn thành'],
+    ['desktop', AppointmentCardDesktop, 'CALLBACK', 'Đã liên hệ xong'],
+    ['mobile', AppointmentCardMobile, 'DEPOSIT_CONTRACT', 'Xác nhận hoàn thành'],
+  ] as const)('%s, loại %s: canEdit=false thì KHÔNG có nút "%s"; canEdit=true thì có', (_name, Card, type, label) => {
+    const denied = renderCard(<Card appointment={withEdit(type, false)} />);
+    expect(screen.queryByRole('button', { name: COMPLETE_BUTTON_NAME })).toBeNull();
+    denied.unmount();
+
+    renderCard(<Card appointment={withEdit(type, true)} />);
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['desktop', AppointmentCardDesktop, 'DEPOSIT_CONTRACT', 'Hoàn tác xác nhận'],
+    ['desktop', AppointmentCardDesktop, 'CALLBACK', 'Hoàn tác liên hệ'],
+    ['mobile', AppointmentCardMobile, 'DEPOSIT_CONTRACT', 'Hoàn tác xác nhận'],
+  ] as const)('%s, loại %s đã hoàn thành: nút "%s" cũng theo canEdit', (_name, Card, type, label) => {
+    const denied = renderCard(<Card appointment={withEdit(type, false, 'DONE')} />);
+    expect(screen.queryByRole('button', { name: COMPLETE_BUTTON_NAME })).toBeNull();
+    denied.unmount();
+
+    renderCard(<Card appointment={withEdit(type, true, 'DONE')} />);
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['desktop', AppointmentCardDesktop, 'DEPOSIT_CONTRACT', /Ghi chú cọc/],
+    ['desktop', AppointmentCardDesktop, 'CALLBACK', /Gọi ngay cho khách/],
+    ['mobile', AppointmentCardMobile, 'DEPOSIT_CONTRACT', /Xem chi tiết/],
+    ['mobile', AppointmentCardMobile, 'CALLBACK', /Gọi ngay cho khách/],
+  ] as const)('%s, loại %s: người không có quyền sửa vẫn thấy nút xem/gọi %s', (_name, Card, type, label) => {
+    renderCard(<Card appointment={withEdit(type, false)} />);
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
   });
 });
 

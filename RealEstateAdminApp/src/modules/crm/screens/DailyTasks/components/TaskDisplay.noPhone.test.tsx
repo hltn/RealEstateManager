@@ -30,6 +30,7 @@ const makeTask = (phoneMasked: string | null): DailyTask => ({
   suggestion: '',
   appointmentId: 'a1',
   assignee: { id: 'u1', displayName: 'Hạnh' },
+  assignees: [{ id: 'u1', displayName: 'Hạnh' }],
   isPrimary: true,
 });
 
@@ -44,12 +45,14 @@ const makeAppointment = (phoneMasked: string | null): AppointmentView => ({
   note: '',
   project: null,
   assignee: { id: 'u1', displayName: 'Hạnh' },
+  assignees: [{ id: 'u1', displayName: 'Hạnh' }],
   remindBeforeMinutes: [60],
   status: 'SCHEDULED',
   completedAt: null,
   outcome: null,
   createdBy: { id: 'u1', displayName: 'Hạnh' },
   version: 1,
+  canEdit: true,
   canDelete: true,
 });
 

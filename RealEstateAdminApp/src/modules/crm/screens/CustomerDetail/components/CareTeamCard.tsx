@@ -7,7 +7,7 @@ import { useAuthStore } from '../../../../../stores/auth.store';
 import { hasTeamRole, rolesOf } from '../../../../../utils/userRoles';
 import { useCrmActor, useCrmApi, type ApiResult, type CareTeamInvitee, type CareTeamMemberView, type CustomerDetail } from '@crm/api';
 import { CareTeamInvitePicker } from '@crm/components/CareTeamInvitePicker';
-import { countCareTeamMembers, describeCareTeamError, getRemainingMemberSlots, MAX_CARE_TEAM_MEMBERS } from '@crm/lib/careTeamRules';
+import { CREATOR_LOCKED_MESSAGE, countCareTeamMembers, describeCareTeamError, getRemainingMemberSlots, MAX_CARE_TEAM_MEMBERS } from '@crm/lib/careTeamRules';
 import { BUTTON_DASHED_CLASS, BUTTON_PRIMARY_CLASS, CARD_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS, INSET_CLASS, MUTED_TEXT_CLASS } from '@crm/lib/uiClasses';
 import { useCrmActions } from '@crm/store';
 import { CardHeading, CareTeamAvatars } from './DetailParts';
@@ -23,7 +23,7 @@ type FocusTarget = PanelMode | 'afterPrimarySet';
 
 const SELF_LABEL = 'Chính tôi';
 
-const MemberRow = ({ member, canRemove, onRemove }: { member: CareTeamMemberView; canRemove: boolean; onRemove: () => void }) => {
+const MemberRow = ({ member, canRemove, isCreator, onRemove }: { member: CareTeamMemberView; canRemove: boolean; isCreator: boolean; onRemove: () => void }) => {
   const isPrimary = member.role === 'PRIMARY';
   return (
     <li className={`${INSET_CLASS} flex items-center justify-between gap-2 p-2.5`}>
@@ -36,6 +36,7 @@ const MemberRow = ({ member, canRemove, onRemove }: { member: CareTeamMemberView
           <span>{isPrimary ? 'Phụ trách chính' : 'Cùng chăm sóc'}</span>
           {member.user.jobTitle && <span>· {member.user.jobTitle}</span>}
           {isPrimary && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.brand}`}>Chủ khách</span>}
+          {isCreator && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`} title={CREATOR_LOCKED_MESSAGE}>Người tạo khách</span>}
           {member.user.isLocked && <span className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`}>đã khóa</span>}
         </p>
       </div>
@@ -144,7 +145,10 @@ export const CareTeamCard = ({ customer }: CareTeamCardProps) => {
             <MemberRow
               key={member.user.id}
               member={member}
-              canRemove={member.role === 'MEMBER' && permissions.canManageCareTeam}
+              // FR-31: người tạo khách không bao giờ bị gỡ (backend 409 PRIMARY_LOCKED + CREATOR_LOCKED) nên khóa luôn nút gỡ; phụ trách chính cũng cố định.
+              // Nhận người tạo bằng `createdBy` (luôn có): `customer.creator` của backend là null khi người tạo ĐÃ ở careTeam, nên không dùng được ở đây.
+              isCreator={customer.createdBy.id === member.user.id}
+              canRemove={member.role === 'MEMBER' && permissions.canManageCareTeam && customer.createdBy.id !== member.user.id}
               onRemove={() => {
                 void handle(api.removeCareTeamMember(customer.id, member.user.id), `Đã gỡ ${member.user.displayName} khỏi nhóm chăm sóc`);
               }}

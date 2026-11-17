@@ -25,6 +25,7 @@ const makeTask = (project: DailyTask['project']): DailyTask => ({
   suggestion: '',
   appointmentId: 'a1',
   assignee: { id: 'u1', displayName: 'Hạnh' },
+  assignees: [{ id: 'u1', displayName: 'Hạnh' }],
   isPrimary: true,
 });
 
@@ -67,5 +68,30 @@ describe('Việc hôm nay hiện SĐT đã che (G4)', () => {
 
     renderWithProviders(<TaskListTable tasks={[makeTask(null)]} />);
     expect(screen.getByText('0912 ••• 678')).toBeInTheDocument();
+  });
+});
+
+describe('Việc lịch hẹn theo cờ backend (FR-30/FR-32, T-59)', () => {
+  it('nhiều người thực hiện: thẻ và bảng hiện đủ tên, cách nhau dấu phẩy', () => {
+    const task = { ...makeTask(null), assignees: [{ id: 'u1', displayName: 'Hạnh' }, { id: 'u2', displayName: 'Bình' }] };
+    const { unmount } = renderWithProviders(<TaskCard task={task} />);
+    expect(screen.getByText(/Hạnh, Bình/)).toBeInTheDocument();
+    unmount();
+    renderWithProviders(<TaskListTable tasks={[task]} />);
+    expect(screen.getByText(/Hạnh, Bình/)).toBeInTheDocument();
+  });
+
+  it.each([
+    [false, 0],
+    [true, 1],
+    [undefined, 1],
+  ])('canEdit=%s: số nút "Hoàn thành" là %i (không suy từ vai trò Quản lý)', (canEdit, expectedCount) => {
+    renderWithProviders(<TaskCard task={{ ...makeTask(null), ...(canEdit === undefined ? {} : { canEdit }) }} />);
+    expect(screen.queryAllByRole('button', { name: 'Hoàn thành' })).toHaveLength(expectedCount);
+  });
+
+  it('việc "Bước tiếp theo" (không có cờ) vẫn có nút "Ghi nhật ký" dù canEdit=false được gán nhầm', () => {
+    renderWithProviders(<TaskCard task={{ ...makeTask(null), kind: 'FOLLOW_UP', appointmentId: undefined, canEdit: false }} />);
+    expect(screen.getByRole('button', { name: 'Ghi nhật ký' })).toBeInTheDocument();
   });
 });

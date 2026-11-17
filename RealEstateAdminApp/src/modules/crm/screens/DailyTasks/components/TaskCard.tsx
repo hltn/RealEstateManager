@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useCrmApi, type DailyTask } from '@crm/api';
 import { ContactActionGrid } from '@crm/components/ContactActionGrid';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
 import { formatVnRelative } from '@crm/lib/dateTime';
 import { NEXT_STEP_HINT_CLASS, CHIP_SMALL_CLASS, CHIP_TONE_CLASS } from '@crm/lib/uiClasses';
@@ -34,6 +35,8 @@ export const TaskDoneButton = ({ task }: { task: DailyTask }) => {
   const { showToast, openQuickNote } = useCrmActions();
   const [isBusy, setIsBusy] = useState(false);
   if (task.kind !== 'FOLLOW_UP' && task.kind !== 'APPOINTMENT') return null;
+  // FR-32: việc lịch hẹn chỉ hoàn thành được khi backend báo `canEdit` (người tạo lịch hoặc Quản trị); vắng cờ (việc khác) = không chặn.
+  if (task.kind === 'APPOINTMENT' && task.canEdit === false) return null;
   const complete = async () => {
     if (task.kind === 'FOLLOW_UP') {
       openQuickNote(task.customer.id);
@@ -125,7 +128,7 @@ export const TaskCard = ({ task }: TaskCardProps) => {
 
       <div className="flex items-center justify-between gap-2 text-theme-xs text-gray-500 dark:text-gray-400">
         <span>
-          Thực hiện: <span className="font-medium text-gray-700 dark:text-gray-300">{task.assignee?.displayName ?? '—'}</span>
+          Thực hiện: <span className="font-medium text-gray-700 dark:text-gray-300">{formatAssigneeNames(task.assignees)}</span>
           {task.isPrimary && ' (phụ trách chính)'}
         </span>
         <TaskDoneButton task={task} />
