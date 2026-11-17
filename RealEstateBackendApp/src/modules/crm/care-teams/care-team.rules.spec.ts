@@ -6,7 +6,7 @@ import { CareTeamEntry } from '../customers/schemas/customer.schema';
 import {
   assertCareTeamInvariant,
   buildBulkPushGroupKey,
-  canManageMembers,
+  assertCreatorKept,
   canSetInitialPrimary,
   findPrimary,
   MAX_PUSH_GROUP_REQUEST_ID_LENGTH,
@@ -117,13 +117,13 @@ describe('care-team.rules', () => {
 
   describe('planRemoveMember', () => {
     it('gỡ MEMBER giữ nguyên PRIMARY; gỡ người không có trong nhóm ⇒ 404', () => {
-      const result = planRemoveMember(team(a, b), b);
+      const result = planRemoveMember(team(a, b), b, null);
       expect(result.careTeam).toHaveLength(1);
       expect(findPrimary(result.careTeam)?.userId).toEqual(a);
       expect(result.removedUserIds).toEqual([b]);
       expect(result.primaryChanged).toBe(false);
 
-      expect(() => planRemoveMember(team(a, b), c)).toThrow(
+      expect(() => planRemoveMember(team(a, b), c, null)).toThrow(
         expect.objectContaining({
           errorCode: 'RESOURCE_NOT_FOUND',
           status: 404,
@@ -133,7 +133,7 @@ describe('care-team.rules', () => {
 
     it('FR-11: gỡ PRIMARY ⇒ 409 PRIMARY_LOCKED dù nhóm chỉ có một mình PRIMARY hay còn thành viên phụ', () => {
       for (const current of [team(a), team(a, b, c)]) {
-        expect(() => planRemoveMember(current, a)).toThrow(
+        expect(() => planRemoveMember(current, a, null)).toThrow(
           expect.objectContaining({ errorCode: 'PRIMARY_LOCKED', status: 409 }),
         );
       }
@@ -142,17 +142,131 @@ describe('care-team.rules', () => {
     it('FR-11: gỡ PRIMARY bị chặn không làm đổi nhóm đầu vào (không đột biến)', () => {
       const current = team(a, b);
       const snapshot = roles(current);
-      expect(() => planRemoveMember(current, a)).toThrow();
+      expect(() => planRemoveMember(current, a, null)).toThrow();
       expect(roles(current)).toEqual(snapshot);
     });
 
     it('FR-11: gỡ lần lượt mọi MEMBER vẫn được, PRIMARY còn lại đúng một và bất biến giữ', () => {
       let current = team(a, b, c, d);
       for (const user of [b, c, d]) {
-        current = planRemoveMember(current, user).careTeam;
+        current = planRemoveMember(current, user, null).careTeam;
         expect(() => assertCareTeamInvariant(current)).not.toThrow();
       }
       expect(roles(current)).toEqual([[String(a), CareRole.PRIMARY]]);
+    });
+
+    describe('FR-31: người tạo không bao giờ bị gỡ (createdBy)', () => {
+      const creatorAsMember = () => team(a, b, c);
+      const creatorAsPrimary = () => team(a, b);
+
+      it('gỡ người tạo là MEMBER (khách cũ) => 409 PRIMARY_LOCKED kèm details.reason = CREATOR_LOCKED', () => {
+        expect(() => planRemoveMember(creatorAsMember(), b, b)).toThrow(
+          expect.objectContaining({
+            errorCode: 'PRIMARY_LOCKED',
+            status: 409,
+            details: { reason: 'CREATOR_LOCKED' },
+          }),
+        );
+      });
+
+      it('gỡ người tạo là PRIMARY (khách mới) => cùng lỗi, cùng reason CREATOR_LOCKED (kiểm người tạo TRƯỚC nhánh PRIMARY)', () => {
+        expect(() => planRemoveMember(creatorAsPrimary(), a, a)).toThrow(
+          expect.objectContaining({
+            errorCode: 'PRIMARY_LOCKED',
+            status: 409,
+            details: { reason: 'CREATOR_LOCKED' },
+          }),
+        );
+      });
+
+      it('gỡ PRIMARY KHÔNG phải người tạo giữ PRIMARY_LOCKED KHÔNG có reason', () => {
+        let thrown: unknown;
+        try {
+          planRemoveMember(creatorAsPrimary(), a, d);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toMatchObject({
+          errorCode: 'PRIMARY_LOCKED',
+          status: 409,
+        });
+        expect((thrown as { details?: unknown }).details).toBeUndefined();
+      });
+
+      it('gỡ MEMBER không phải người tạo vẫn được; người tạo không có trong nhóm => 404 (không có gì để gỡ)', () => {
+        const result = planRemoveMember(creatorAsMember(), c, b);
+        expect(result.removedUserIds).toEqual([c]);
+        expect(() => planRemoveMember(creatorAsMember(), d, d)).toThrow(
+          expect.objectContaining({
+            errorCode: 'RESOURCE_NOT_FOUND',
+            status: 404,
+          }),
+        );
+      });
+
+      it('khách thiếu createdBy (null/undefined): không ai được coi là người tạo, MEMBER gỡ được', () => {
+        for (const createdBy of [null, undefined]) {
+          expect(
+            planRemoveMember(creatorAsMember(), b, createdBy).removedUserIds,
+          ).toEqual([b]);
+        }
+      });
+
+      it('gỡ người tạo bị chặn không làm đổi nhóm đầu vào', () => {
+        const current = creatorAsMember();
+        const snapshot = roles(current);
+        expect(() => planRemoveMember(current, b, b)).toThrow();
+        expect(roles(current)).toEqual(snapshot);
+      });
+    });
+  });
+
+  describe('assertCreatorKept (FR-31: backstop mọi đường đổi careTeam)', () => {
+    const creatorLocked = expect.objectContaining({
+      errorCode: 'PRIMARY_LOCKED',
+      status: 409,
+      details: { reason: 'CREATOR_LOCKED' },
+    });
+
+    it('người tạo (MEMBER hoặc PRIMARY) có trước mà không còn sau (gỡ) => 409 CREATOR_LOCKED', () => {
+      expect(() => assertCreatorKept(team(a, b), team(a), b)).toThrow(
+        creatorLocked,
+      );
+      expect(() => assertCreatorKept(team(a, b), team(b), a)).toThrow(
+        creatorLocked,
+      );
+    });
+
+    it('thay PRIMARY bằng người khác làm mất người tạo => 409 CREATOR_LOCKED (mức hàm thuần, hiện không có đường đổi PRIMARY)', () => {
+      expect(() => assertCreatorKept(team(a, b), team(c, b), a)).toThrow(
+        creatorLocked,
+      );
+    });
+
+    it('thay cả nhóm => 409 CREATOR_LOCKED; nhóm mới rỗng cũng vậy', () => {
+      expect(() => assertCreatorKept(team(a, b), team(c, d), b)).toThrow(
+        creatorLocked,
+      );
+      expect(() => assertCreatorKept(team(a, b), [], a)).toThrow(creatorLocked);
+    });
+
+    it('người tạo vẫn còn sau (kể cả đổi vai trò hay thêm người) => không ném', () => {
+      expect(() =>
+        assertCreatorKept(team(a, b), team(a, b, c), b),
+      ).not.toThrow();
+      expect(() => assertCreatorKept(team(a, b), team(b, a), b)).not.toThrow();
+    });
+
+    it('người tạo KHÔNG có trong nhóm trước (khách cũ) => không có gì để mất, không ném dù nhóm sau thế nào', () => {
+      expect(() => assertCreatorKept(team(a, b), team(a), c)).not.toThrow();
+      expect(() => assertCreatorKept([], team(a), c)).not.toThrow();
+    });
+
+    it('khách thiếu createdBy (null/undefined) => không ném', () => {
+      expect(() => assertCreatorKept(team(a, b), team(a), null)).not.toThrow();
+      expect(() =>
+        assertCreatorKept(team(a, b), team(a), undefined),
+      ).not.toThrow();
     });
   });
 
@@ -181,7 +295,7 @@ describe('care-team.rules', () => {
             : operation === 0
               ? planAddMembers(current, { userIds: [user] }, ACTOR, NOW)
               : operation === 1
-                ? planRemoveMember(current, user)
+                ? planRemoveMember(current, user, null)
                 : planAddMembers(
                     current,
                     { userIds: [user], primaryUserId: other },
@@ -212,14 +326,6 @@ describe('care-team.rules', () => {
       teamId: null,
       teamIds: [],
       managedTeamIds: [],
-    });
-
-    it('thêm/gỡ thành viên: Quản trị, Quản lý, hoặc phụ trách chính; thành viên thường thì không', () => {
-      const current = team(a, b);
-      expect(canManageMembers(actorOf(UserRole.ADMIN), current)).toBe(true);
-      expect(canManageMembers(actorOf(UserRole.MANAGER), current)).toBe(true);
-      expect(canManageMembers(actorOf(UserRole.STAFF, a), current)).toBe(true);
-      expect(canManageMembers(actorOf(UserRole.STAFF, b), current)).toBe(false);
     });
 
     it('FR-11: đặt PRIMARY lần đầu chỉ Quản trị/Quản lý và chỉ khi nhóm rỗng; Staff (kể cả PRIMARY) và nhóm đã có người thì không', () => {

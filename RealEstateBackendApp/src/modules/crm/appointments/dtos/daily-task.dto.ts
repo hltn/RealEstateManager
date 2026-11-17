@@ -127,6 +127,16 @@ export class DailyTaskResponseDto {
   lastCareLog: DailyTaskLastCareLogDto | null;
   @ApiProperty() suggestion: string;
   @ApiPropertyOptional() appointmentId?: string;
+  @ApiPropertyOptional({
+    description:
+      'Chỉ việc kiểu APPOINTMENT: người gọi có được sửa/đổi trạng thái lịch không (người tạo lịch hoặc Quản trị; FR-32)',
+  })
+  canEdit?: boolean;
+  @ApiPropertyOptional({
+    description:
+      'Chỉ việc kiểu APPOINTMENT: người gọi có được xóa lịch không (cùng luật với canEdit)',
+  })
+  canDelete?: boolean;
   @ApiPropertyOptional() careLogId?: string;
   @ApiProperty({ nullable: true, type: UserRefDto })
   assignee: UserRefDto | null;

@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { UserStatus } from '../../../common/enums/user-status.enum';
+import { CrmActor } from '../common/access/crm-actor';
 import { CustomerOwnerTeamService } from './customer-owner-team.service';
 
 const id = () => new Types.ObjectId();
@@ -173,6 +174,142 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
         session,
       );
       expect(teamFind.mock.results[0].value.session).toHaveBeenCalledWith(
+        session,
+      );
+    });
+  });
+
+  describe('hasOwnerRights (FR-31): Admin, người tạo, Manager nhóm chủ', () => {
+    const actorOf = (role: UserRole, userId = id()): CrmActor => ({
+      userId,
+      role,
+      roles: [role],
+      displayName: 'x',
+      teamId: null,
+      teamIds: [],
+      managedTeamIds: [],
+    });
+
+    it('FR-31: Admin và người tạo được ngay, KHÔNG đọc DB', async () => {
+      const { service, userFindOne, teamFind } = build([], []);
+      const admin = actorOf(UserRole.ADMIN);
+      const staffCreator = actorOf(UserRole.STAFF);
+      expect(await service.hasOwnerRights(admin, { createdBy: id() })).toBe(
+        true,
+      );
+      expect(
+        await service.hasOwnerRights(staffCreator, {
+          createdBy: staffCreator.userId,
+        }),
+      ).toBe(true);
+      expect(userFindOne).not.toHaveBeenCalled();
+      expect(teamFind).not.toHaveBeenCalled();
+    });
+
+    it('FR-31: Staff không phải người tạo bị từ chối, KHÔNG đọc DB', async () => {
+      const { service, userFindOne, teamFind } = build([], []);
+      const staff = actorOf(UserRole.STAFF);
+      expect(await service.hasOwnerRights(staff, { createdBy: id() })).toBe(
+        false,
+      );
+      expect(userFindOne).not.toHaveBeenCalled();
+      expect(teamFind).not.toHaveBeenCalled();
+    });
+
+    it('FR-31: Manager của nhóm chủ (nhóm của người tạo) được, dù chưa trong careTeam', async () => {
+      const manager = actorOf(UserRole.MANAGER);
+      const team: FakeTeam = {
+        _id: id(),
+        managerIds: [manager.userId],
+        deletedAt: null,
+      };
+      const creator = user({
+        fullName: 'Tạo',
+        teamId: team._id,
+        teamIds: [team._id],
+      });
+      const { service } = build([creator], [team]);
+      expect(
+        await service.hasOwnerRights(manager, { createdBy: creator._id }),
+      ).toBe(true);
+    });
+
+    it('FR-31: Manager của nhóm KHÁC (không phải nhóm của người tạo) bị từ chối dù khách có teamIds của nhóm mình', async () => {
+      const manager = actorOf(UserRole.MANAGER);
+      const ownerTeam: FakeTeam = {
+        _id: id(),
+        managerIds: [id()],
+        deletedAt: null,
+      };
+      const otherTeam: FakeTeam = {
+        _id: id(),
+        managerIds: [manager.userId],
+        deletedAt: null,
+      };
+      const creator = user({
+        fullName: 'Tạo',
+        teamId: ownerTeam._id,
+        teamIds: [ownerTeam._id],
+      });
+      const { service } = build([creator], [ownerTeam, otherTeam]);
+      expect(
+        await service.hasOwnerRights(manager, {
+          createdBy: creator._id,
+          teamIds: [ownerTeam._id, otherTeam._id],
+        }),
+      ).toBe(false);
+    });
+
+    it('FR-31: nhóm chủ đã xóa mềm không tính; người tạo không nhóm thì không có Manager nhóm chủ', async () => {
+      const manager = actorOf(UserRole.MANAGER);
+      const deletedTeam: FakeTeam = {
+        _id: id(),
+        managerIds: [manager.userId],
+        deletedAt: new Date(),
+      };
+      const creatorInDeleted = user({
+        fullName: 'Tạo',
+        teamId: deletedTeam._id,
+        teamIds: [deletedTeam._id],
+      });
+      const adminCreator = user({ fullName: 'Admin', roles: [UserRole.ADMIN] });
+      const { service } = build(
+        [creatorInDeleted, adminCreator],
+        [deletedTeam],
+      );
+      expect(
+        await service.hasOwnerRights(manager, {
+          createdBy: creatorInDeleted._id,
+        }),
+      ).toBe(false);
+      expect(
+        await service.hasOwnerRights(manager, {
+          createdBy: adminCreator._id,
+          teamIds: [deletedTeam._id],
+        }),
+      ).toBe(false);
+    });
+
+    it('FR-31: truyền session xuống truy vấn (đọc trong transaction của bên gọi)', async () => {
+      const manager = actorOf(UserRole.MANAGER);
+      const team: FakeTeam = {
+        _id: id(),
+        managerIds: [manager.userId],
+        deletedAt: null,
+      };
+      const creator = user({
+        fullName: 'Tạo',
+        teamId: team._id,
+        teamIds: [team._id],
+      });
+      const { service, userFindOne } = build([creator], [team]);
+      const session = { id: 'session' } as never;
+      await service.hasOwnerRights(
+        manager,
+        { createdBy: creator._id },
+        session,
+      );
+      expect(userFindOne.mock.results[0].value.session).toHaveBeenCalledWith(
         session,
       );
     });

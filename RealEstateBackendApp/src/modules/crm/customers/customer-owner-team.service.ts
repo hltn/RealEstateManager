@@ -7,7 +7,9 @@ import { uniqueObjectIds } from '../../../common/utils/object-id.util';
 import { hasCrmRole, highestRole } from '../../../common/utils/user-roles.util';
 import { Team, TeamDocument } from '../../teams/schemas/team.schema';
 import { User, UserDocument } from '../../users/schemas/user.schema';
+import { CrmActor } from '../common/access/crm-actor';
 import {
+  hasOwnerRights as hasOwnerRightsPure,
   OwnerTeamCustomer,
   ownerTeamIdsOf,
 } from './access/customer-owner-team';
@@ -36,6 +38,11 @@ export interface OwnerTeamCandidates {
 export interface OwnerRefs {
   ownerManagers: OwnerRefDto[];
   creator: OwnerRefDto | null;
+  /**
+   * `managerIds` thô của các nhóm chủ chưa xóa mềm (chưa lọc `careTeam`/trạng thái), đã nạp sẵn bởi `loadCandidates`.
+   * KHÔNG đưa vào DTO; dùng để `toDetail` tính cờ quyền chủ khách (FR-31) bằng hàm thuần, không truy vấn đôi.
+   */
+  managerIds: Types.ObjectId[];
 }
 
 const CREATOR_SELECT = 'teamId teamIds fullName roles status deletedAt';
@@ -97,6 +104,22 @@ export class CustomerOwnerTeamService {
   }
 
   /**
+   * Quyền chủ khách (FR-31): Admin, người tạo, Manager nhóm chủ (xem `hasOwnerRights` thuần). Admin và người tạo
+   * trả ngay, KHÔNG đọc DB; chỉ Manager mới nạp `managerIds` của nhóm chủ (2 truy vấn). Nhận `session` để chạy trong
+   * transaction của bên gọi. Nguồn quyết định DUY NHẤT cho xem CMND/CCCD và mời/gỡ thành viên.
+   */
+  async hasOwnerRights(
+    actor: Pick<CrmActor, 'userId' | 'role'>,
+    customer: OwnerTeamCustomer,
+    session?: ClientSession,
+  ): Promise<boolean> {
+    if (hasOwnerRightsPure(actor, customer, [])) return true;
+    if (actor.role !== UserRole.MANAGER) return false;
+    const { managerIds } = await this.loadCandidates(customer, session);
+    return hasOwnerRightsPure(actor, customer, managerIds);
+  }
+
+  /**
    * Trường cộng thêm của chi tiết khách (FR-30). `ownerManagers`: Manager `ACTIVE` chưa xóa của nhóm chủ (gồm người
    * tạo nếu là Manager), CHƯA trong `careTeam`, sắp theo `fullName`. `creator`: người tạo `ACTIVE`, chưa xóa, có vai
    * trò CRM, KHÔNG trong `careTeam` và chưa nằm ở `ownerManagers`; ngược lại `null`. Chỉ gọi cho khách người gọi đã qua
@@ -152,6 +175,6 @@ export class CustomerOwnerTeamService {
       !ownerManagers.some((manager) => manager.userId === String(creator._id))
         ? toOwnerRef(creator)
         : null;
-    return { ownerManagers, creator: creatorRef };
+    return { ownerManagers, creator: creatorRef, managerIds };
   }
 }

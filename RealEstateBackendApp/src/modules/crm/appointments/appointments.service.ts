@@ -28,7 +28,6 @@ import {
 import {
   AppointmentCustomerLean,
   AppointmentLean,
-  canDeleteAppointment,
   toAppointmentResponse,
 } from './appointment.mapper';
 import {
@@ -265,14 +264,7 @@ export class AppointmentsService {
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
     await withTransaction(this.connection, (session) =>
-      this.writer.deleteInSession(
-        ctx,
-        id,
-        null,
-        auditSource,
-        session,
-        (appointment) => canDeleteAppointment(ctx.actor, appointment),
-      ),
+      this.writer.deleteInSession(ctx, id, null, auditSource, session),
     );
   }
 

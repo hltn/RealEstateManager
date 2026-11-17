@@ -1,5 +1,5 @@
 /**
- * Fixture dùng chung cho các test "khóa hiện trạng quyền CRM" (T-54, FR-31). KHÔNG đi vào bản build
+ * Fixture dùng chung cho các test quyền CRM (T-54 khóa hiện trạng, T-56 đảo theo luật FR-31 mới). KHÔNG đi vào bản build
  * (`tsconfig.build` loại `*.fixture.ts`).
  *
  * Ý tưởng: dựng `CustomersRepository` THẬT trên một model Mongoose giả tự đánh giá bộ lọc trong bộ nhớ và dùng
@@ -19,6 +19,7 @@ import { CareRole } from '../customer.constants';
 import { CustomerOwnerTeamService } from '../customer-owner-team.service';
 import { CustomersRepository } from '../customers.repository';
 import type { AccessContext } from './customer-access.service';
+import { hasOwnerRights as hasOwnerRightsPure } from './customer-owner-team';
 import { buildCustomerScope } from './customer-scope';
 
 type Doc = Record<string, unknown>;
@@ -121,7 +122,8 @@ const makeActor = (
 
 /**
  * Các vai trong bài toán. Quan hệ với khách `buildCustomer()`:
- * - `STAFF_PRIMARY`: người tạo, PRIMARY (người tạo LUÔN nằm trong careTeam, không dùng "người tạo ngoài careTeam").
+ * - `STAFF_PRIMARY`: người tạo, PRIMARY của khách mặc định. Dùng `buildCustomerCreatorOutsideCareTeam` cho khách CŨ mà
+ *   người tạo không còn/không bao giờ trong careTeam (vẫn là người tạo theo `createdBy`, FR-31).
  * - `STAFF_MEMBER`, `STAFF_INVITED`, `MANAGER_INCARE`: MEMBER trong careTeam (INVITED/INCARE thuộc nhóm khác).
  * - `MANAGER_OWNER`: Quản lý nhóm chủ (TEAM_A), thấy khách qua `teamIds`, KHÔNG trong careTeam, KHÔNG phải người tạo.
  * - `MANAGER_R8`: Quản lý nhóm của người được mời (TEAM_B), thấy khách qua `teamIds` (ô R8 của ma trận), không trong careTeam.
@@ -209,6 +211,26 @@ export const buildCustomer = (
 });
 
 /**
+ * Khách cũ: người tạo (`STAFF_PRIMARY`) KHÔNG nằm trong careTeam (PRIMARY là `STAFF_MEMBER`), nhưng vẫn là người tạo theo
+ * `createdBy` (FR-31: thấy khách, xóa, xem CMND, mời/gỡ không phụ thuộc careTeam).
+ */
+export const buildCustomerCreatorOutsideCareTeam = (
+  overrides: Doc = {},
+): Doc & { _id: Types.ObjectId } =>
+  buildCustomer({
+    careTeam: defaultCareTeam()
+      .filter((member) => !member.userId.equals(USERS.STAFF_PRIMARY.userId))
+      .map((member) => ({
+        ...member,
+        role: member.userId.equals(USERS.STAFF_MEMBER.userId)
+          ? CareRole.PRIMARY
+          : CareRole.MEMBER,
+      })),
+    primaryAssigneeId: USERS.STAFF_MEMBER.userId,
+    ...overrides,
+  });
+
+/**
  * Khách cũ: người tạo (`STAFF_PRIMARY`) chỉ là MEMBER còn PRIMARY là `STAFF_MEMBER` (PRIMARY KHÁC người tạo).
  * Dùng cho các ô "PRIMARY không phải người tạo" và "gỡ người tạo là MEMBER".
  */
@@ -294,10 +316,6 @@ export const REJECTS = {
   CUSTOMER_NOT_FOUND: { errorCode: ErrorCode.CUSTOMER_NOT_FOUND, status: 404 },
   RESOURCE_NOT_FOUND: { errorCode: ErrorCode.RESOURCE_NOT_FOUND, status: 404 },
   INSUFFICIENT_ROLE: { status: 403, message: 'Insufficient role' },
-  CUSTOMER_NOT_DROPPED: {
-    errorCode: ErrorCode.CUSTOMER_NOT_DROPPED,
-    status: 409,
-  },
   NATIONAL_ID_FORBIDDEN: {
     errorCode: ErrorCode.NATIONAL_ID_FORBIDDEN,
     status: 403,
@@ -307,6 +325,12 @@ export const REJECTS = {
     status: 403,
   },
   PRIMARY_LOCKED: { errorCode: ErrorCode.PRIMARY_LOCKED, status: 409 },
+  /** FR-31: gỡ người tạo là 409 PRIMARY_LOCKED kèm `details.reason = CREATOR_LOCKED`. */
+  CREATOR_LOCKED: {
+    errorCode: ErrorCode.PRIMARY_LOCKED,
+    status: 409,
+    details: { reason: 'CREATOR_LOCKED' },
+  },
   USER_NOT_ASSIGNABLE: {
     errorCode: ErrorCode.USER_NOT_ASSIGNABLE,
     status: 400,
@@ -405,3 +429,17 @@ export const buildUserDirectory = (options: UserDirectoryOptions = {}) => {
   );
   return { users, userModel, teamModel, ownerTeam };
 };
+
+/**
+ * `CustomerOwnerTeamService` giả cho test không cần dựng users/teams: `hasOwnerRights` dùng HÀM THUẦN THẬT
+ * (`hasOwnerRights` của `customer-owner-team.ts`) với danh sách Manager nhóm chủ do test đưa vào, nên đổi luật quyền
+ * chủ khách là test đổi màu.
+ */
+export const fakeOwnerTeam = (ownerManagerIds: Types.ObjectId[] = []) => ({
+  hasOwnerRights: jest.fn(
+    (
+      actor: Pick<CrmActor, 'userId' | 'role'>,
+      customer: { createdBy?: Types.ObjectId | null },
+    ) => Promise.resolve(hasOwnerRightsPure(actor, customer, ownerManagerIds)),
+  ),
+});

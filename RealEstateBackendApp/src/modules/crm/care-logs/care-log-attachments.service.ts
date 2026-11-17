@@ -226,8 +226,8 @@ export class CareLogAttachmentsService {
   }
 
   /**
-   * Gỡ một ảnh (04 mục 4.2): chưa gắn => người tải lên hoặc Quản trị/Quản lý (trong phạm vi); đã gắn => tác giả
-   * nhật ký hoặc Quản trị/Quản lý (không giới hạn thời gian). Ảnh đã gắn cũng bị rút khỏi nhật ký.
+   * Gỡ một ảnh (FR-32, bản ghi chỉ của mình): chưa gắn => người tải lên hoặc Quản trị (người khác 404); đã gắn =>
+   * tác giả nhật ký hoặc Quản trị (người khác 403, không giới hạn thời gian). Ảnh đã gắn cũng bị rút khỏi nhật ký.
    */
   async remove(
     jwt: JwtPayload,
@@ -258,9 +258,7 @@ export class CareLogAttachmentsService {
       if (!attachment) throw resourceNotFound();
 
       const now = new Date();
-      const isPrivileged =
-        ctx.actor.role === UserRole.ADMIN ||
-        ctx.actor.role === UserRole.MANAGER;
+      const isAdmin = ctx.actor.role === UserRole.ADMIN;
       if (attachment.status === AttachmentStatus.ATTACHED) {
         const log = await this.careLogModel
           .findOne({ _id: attachment.careLogId, deletedAt: null })
@@ -279,10 +277,7 @@ export class CareLogAttachmentsService {
             { session },
           )
           .exec();
-      } else if (
-        !isPrivileged &&
-        !attachment.uploaderId.equals(ctx.actor.userId)
-      ) {
+      } else if (!isAdmin && !attachment.uploaderId.equals(ctx.actor.userId)) {
         throw resourceNotFound();
       }
 

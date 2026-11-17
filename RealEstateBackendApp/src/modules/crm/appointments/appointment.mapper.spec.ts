@@ -199,3 +199,43 @@ describe('toAppointmentResponse: assignees và assignee (FR-30)', () => {
     expect(response.assignee.id).toBe(String(userId));
   });
 });
+
+describe('toAppointmentResponse: canEdit và canDelete (FR-32) cùng hàm với kiểm quyền', () => {
+  const build = (actorOverride: Partial<typeof actor>) =>
+    toAppointmentResponse(
+      row,
+      customer({}),
+      maps,
+      { ...actor, ...actorOverride },
+      noProjects,
+    );
+
+  it('người tạo lịch: cả hai cờ true', () => {
+    const response = build({});
+    expect(response.canEdit).toBe(true);
+    expect(response.canDelete).toBe(true);
+  });
+
+  it('Quản trị (không phải người tạo): cả hai cờ true', () => {
+    const response = build({
+      userId: new Types.ObjectId(),
+      role: UserRole.ADMIN,
+      roles: [UserRole.ADMIN],
+    });
+    expect(response.canEdit).toBe(true);
+    expect(response.canDelete).toBe(true);
+  });
+
+  it.each([UserRole.MANAGER, UserRole.STAFF])(
+    '%s không phải người tạo lịch: cả hai cờ false (Manager không còn xóa được)',
+    (role) => {
+      const response = build({
+        userId: new Types.ObjectId(),
+        role,
+        roles: [role],
+      });
+      expect(response.canEdit).toBe(false);
+      expect(response.canDelete).toBe(false);
+    },
+  );
+});

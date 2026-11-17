@@ -15,10 +15,14 @@ import { User, UserDocument } from '../../users/schemas/user.schema';
 import { teamObjectIdsOf } from '../../users/user-public-profile';
 import { CrmActorService } from '../common/access/crm-actor.service';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
-import { buildCustomerScope } from '../customers/access/customer-scope';
+import {
+  buildCustomerScope,
+  isAdminOrManager,
+} from '../customers/access/customer-scope';
 import { customerNotFound } from '../customers/customer.errors';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { CustomersRepository } from '../customers/customers.repository';
-import { canManageMembers, careTeamActionForbidden } from './care-team.rules';
+import { careTeamActionForbidden } from './care-team.rules';
 import {
   CareTeamInviteeResponseDto,
   ListCareTeamInviteesQueryDto,
@@ -30,8 +34,8 @@ const VIETNAMESE_COLLATION = { locale: 'vi' } as const;
  * Danh sách người có thể được mời vào nhóm chăm sóc (`GET /crm/care-team-invitees`, Architecture mục 4, FR-13/FR-14);
  * thay phần "mời/gán" của module danh sách người phân chăm sóc cũ (đã xóa hẳn ở v1.0.5). Toàn hệ thống, KHÔNG giới hạn theo nhóm của người gọi.
  *
- * Quyền: Quản trị/Quản lý, hoặc phụ trách chính (PRIMARY) của khách `customerId`. Không có `customerId` (thao tác hàng
- * loạt) chỉ Quản trị/Quản lý. Chỉ trả `id`, `displayName`, `teamNames` — không email/SĐT/CCCD/vai trò/id nhóm.
+ * Quyền (FR-31): có `customerId` => chủ khách (`hasOwnerRights`: Quản trị, người tạo khách, Quản lý nhóm chủ), PRIMARY/MEMBER
+ * không tự có quyền. Không có `customerId` (thao tác hàng loạt) chỉ Quản trị/Quản lý. Chỉ trả `id`, `displayName`, `teamNames` — không email/SĐT/CCCD/vai trò/id nhóm.
  */
 @Injectable()
 export class CareTeamInviteesService {
@@ -41,12 +45,13 @@ export class CareTeamInviteesService {
     private readonly actors: CrmActorService,
     private readonly customers: CustomersRepository,
     private readonly rateLimit: CrmRateLimitService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   /**
    * Luồng: (1) rate-limit `INVITEE_SEARCH` (60/phút/người; Redis lỗi ⇒ 503) trước mọi truy vấn DB; (2) dựng actor từ
    * DB; (3) kiểm quyền (có `customerId` ⇒ 404 nếu khách ngoài phạm vi/không tồn tại, 403 nếu không phải
-   * Admin/Manager/PRIMARY); (4) lọc user ACTIVE, chưa xóa mềm, role Manager/Staff, trừ người gọi và người đã trong nhóm;
+   * Admin/người tạo/Manager nhóm chủ); (4) lọc user ACTIVE, chưa xóa mềm, role Manager/Staff, trừ người gọi và người đã trong nhóm;
    * (5) gom tên nhóm của cả trang bằng ĐÚNG MỘT truy vấn `teams` (không N+1).
    */
   async list(
@@ -65,17 +70,18 @@ export class CareTeamInviteesService {
       const customer = await this.customers.findOne(
         buildCustomerScope(actor),
         query.customerId,
-        { projection: { careTeam: 1 } },
+        { projection: { careTeam: 1, createdBy: 1, teamIds: 1 } },
       );
       if (!customer) throw customerNotFound();
       const careTeam = customer.careTeam ?? [];
-      if (!canManageMembers(actor, careTeam)) {
+      if (!(await this.ownerTeam.hasOwnerRights(actor, customer))) {
         throw careTeamActionForbidden(
-          'Chỉ Quản trị, Quản lý hoặc phụ trách chính được xem danh sách người có thể mời',
+          'Chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ được xem danh sách người có thể mời',
         );
       }
       excludedIds.push(...careTeam.map((member) => member.userId));
-    } else if (!canManageMembers(actor, [])) {
+    } else if (!isAdminOrManager(actor)) {
+      // Không có khách cụ thể (mời hàng loạt): chưa có "chủ khách" để xét nên giữ Quản trị hoặc Quản lý (kiểm vai trò thuần).
       throw careTeamActionForbidden(
         'Chỉ Quản trị hoặc Quản lý được xem danh sách người có thể mời khi không chỉ định khách',
       );

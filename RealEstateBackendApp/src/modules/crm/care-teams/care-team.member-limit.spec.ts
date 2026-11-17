@@ -4,6 +4,7 @@ import { UserStatus } from '../../../common/enums/user-status.enum';
 import { BulkOperationsService } from '../bulk-operations/bulk-operations.service';
 import { BulkOperationType } from '../bulk-operations/dtos/bulk-operation.dto';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
+import { fakeOwnerTeam } from '../customers/access/customer-rights.fixture';
 import { CareRole } from '../customers/customer.constants';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
@@ -117,7 +118,7 @@ describe('assertMemberLimit (FR-17)', () => {
         details: { limit: 10, membersAfter: 12 },
       }),
     );
-    const removal = planRemoveMember(legacy, legacy[1].userId);
+    const removal = planRemoveMember(legacy, legacy[1].userId, null);
     expect(
       removal.careTeam.filter((m) => m.role === CareRole.MEMBER),
     ).toHaveLength(10);
@@ -163,6 +164,8 @@ const user = (over: Partial<FakeUser> = {}): FakeUser => ({
 
 interface FakeCustomer {
   careTeam: CareTeamEntry[];
+  /** Người tạo (FR-31): mặc định PRIMARY; chỉ người tạo/Admin/Manager nhóm chủ mới mời được. */
+  createdBy: Types.ObjectId;
   teamIds: Types.ObjectId[];
   __v: number;
 }
@@ -199,6 +202,7 @@ const build = (
       const stored = customers[id];
       const snapshot = stored && {
         careTeam: [...stored.careTeam],
+        createdBy: stored.createdBy,
         teamIds: stored.teamIds,
         fullName: 'Anh Minh',
         __v: stored.__v,
@@ -288,6 +292,10 @@ const build = (
     audit as never,
     { dispatch } as never,
     rateLimit as never,
+    // Quyền chủ khách (FR-31) dùng hàm thuần THẬT; Manager người gọi coi là Manager nhóm chủ để các test bulk tiếp tục kiểm trần.
+    fakeOwnerTeam(
+      actor.role === UserRole.MANAGER ? [actor.userId] : [],
+    ) as never,
   );
   return {
     service,
@@ -319,6 +327,7 @@ const CUSTOMER = String(oid());
 const JWT = { sub: String(PRIMARY) } as never;
 const customerWith = (careTeam: CareTeamEntry[]): FakeCustomer => ({
   careTeam,
+  createdBy: PRIMARY,
   teamIds: [TEAM_A],
   __v: 1,
 });
@@ -671,6 +680,9 @@ describe('BulkOperationsService ASSIGN + giới hạn 10 MEMBER (FR-17, FR-13)',
       {} as never,
       {} as never,
       bulkRateLimit as never,
+      {
+        hasOwnerRights: jest.fn().mockResolvedValue(true),
+      } as never,
     );
     return { bulk, store, careCtx, bulkRateLimit, manager };
   };

@@ -52,6 +52,8 @@ const doc = {
   dataConsent: {},
   __v: 3,
 } as unknown as CustomerLean;
+/** Khách do chính `me` tạo (FR-31: người tạo có quyền chủ khách). */
+const ownDoc = { ...doc, createdBy: me } as unknown as CustomerLean;
 const actor = (role: UserRole) => ({
   userId: me,
   role,
@@ -75,33 +77,80 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
     expect(json).toContain('••••8901');
   });
 
-  it('quyền hiển thị: phụ trách chính được xem CCCD/quản lý nhóm; thành viên thường thì không', () => {
-    const asPrimary = toDetail(doc, refs, actor(UserRole.STAFF));
-    expect(asPrimary.canRevealNationalId).toBe(true);
-    expect(asPrimary.permissions).toMatchObject({
+  it('FR-31: người tạo được xem CCCD/quản lý nhóm/xóa; MEMBER không phải người tạo thì không có cờ nào', () => {
+    const asCreator = toDetail(ownDoc, refs, actor(UserRole.STAFF));
+    expect(asCreator.canRevealNationalId).toBe(true);
+    expect(asCreator.permissions).toMatchObject({
       canManageCareTeam: true,
+      canSetInitialPrimary: false,
+      canDelete: true,
+    });
+    const notCreator = {
+      ...ownDoc,
+      createdBy: new Types.ObjectId(),
+      careTeam: [{ ...doc.careTeam[0], role: CareRole.MEMBER }],
+    } as unknown as CustomerLean;
+    const asMember = toDetail(notCreator, refs, actor(UserRole.STAFF));
+    expect(asMember.canRevealNationalId).toBe(false);
+    expect(asMember.permissions.canManageCareTeam).toBe(false);
+    expect(asMember.permissions.canDelete).toBe(false);
+    expect(
+      toDetail(notCreator, refs, actor(UserRole.ADMIN)).permissions.canDelete,
+    ).toBe(true);
+  });
+
+  it('FR-31: PRIMARY không phải người tạo không có quyền chủ khách (CCCD, quản lý nhóm, xóa)', () => {
+    const otherPrimary = {
+      ...ownDoc,
+      createdBy: new Types.ObjectId(),
+    } as unknown as CustomerLean; // `me` là PRIMARY nhưng không phải người tạo
+    const detail = toDetail(otherPrimary, refs, actor(UserRole.STAFF));
+    expect(detail.canRevealNationalId).toBe(false);
+    expect(detail.permissions).toMatchObject({
+      canManageCareTeam: false,
+      canDelete: false,
+    });
+  });
+
+  it('FR-31: Manager thuộc nhóm chủ (managerIds do buildOwnerRefs nạp) có quyền chủ khách nhưng KHÔNG xóa được khách của nhân viên; Manager khác nhóm thì không có gì', () => {
+    const foreign = {
+      ...doc,
+      createdBy: new Types.ObjectId(),
+      careTeam: [],
+    } as unknown as CustomerLean;
+    const asOwnerManager = toDetail(foreign, refs, actor(UserRole.MANAGER), {
+      ownerManagers: [],
+      creator: null,
+      managerIds: [me],
+    });
+    expect(asOwnerManager.canRevealNationalId).toBe(true);
+    expect(asOwnerManager.permissions).toMatchObject({
+      canManageCareTeam: true,
+      canSetInitialPrimary: true,
+      canDelete: false,
+    });
+    const asOtherManager = toDetail(foreign, refs, actor(UserRole.MANAGER), {
+      ownerManagers: [],
+      creator: null,
+      managerIds: [new Types.ObjectId()],
+    });
+    expect(asOtherManager.canRevealNationalId).toBe(false);
+    expect(asOtherManager.permissions).toMatchObject({
+      canManageCareTeam: false,
       canSetInitialPrimary: false,
       canDelete: false,
     });
-    const asMember = toDetail(
-      {
-        ...doc,
-        careTeam: [{ ...doc.careTeam[0], role: CareRole.MEMBER }],
-      },
-      refs,
-      actor(UserRole.STAFF),
-    );
-    expect(asMember.canRevealNationalId).toBe(false);
-    expect(asMember.permissions.canManageCareTeam).toBe(false);
-    expect(
-      toDetail(doc, refs, actor(UserRole.ADMIN)).permissions.canDelete,
-    ).toBe(true);
   });
 
   it('FR-11: permissions.canSetInitialPrimary chỉ true khi Admin/Manager và careTeam rỗng; không còn canChangePrimary', () => {
     const empty = { ...doc, careTeam: [] } as unknown as CustomerLean;
+    // FR-31: Manager cần là Manager nhóm chủ (`managerIds`) mới đặt được PRIMARY đầu tiên.
     const flag = (role: UserRole, d: CustomerLean) =>
-      toDetail(d, refs, actor(role)).permissions.canSetInitialPrimary;
+      toDetail(d, refs, actor(role), {
+        ownerManagers: [],
+        creator: null,
+        managerIds: [me],
+      }).permissions.canSetInitialPrimary;
 
     expect(flag(UserRole.ADMIN, empty)).toBe(true);
     expect(flag(UserRole.MANAGER, empty)).toBe(true);
@@ -114,8 +163,7 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
     ).not.toHaveProperty('canChangePrimary');
   });
 
-  it('permissions.canDelete theo quyền xóa thật: STAFF phụ trách chính chỉ khi khách "Bỏ"; Manager chỉ khi khách thuộc nhóm mình quản lý', () => {
-    const team = new Types.ObjectId();
+  it('FR-31: permissions.canDelete theo đúng luật xóa thật: chỉ Admin hoặc người tạo, KHÔNG phụ thuộc tình trạng khách và không mở cho Manager nhóm chủ', () => {
     const withStatus = (listGroup: ListGroup): RefMaps => ({
       ...refs,
       statuses: new Map([
@@ -131,19 +179,27 @@ describe('response không lộ dữ liệu nhạy cảm (Quality Gates 04 mục 
         ],
       ]),
     });
-    const canDelete = (role: UserRole, group: ListGroup, d = doc, a = {}) =>
+    const canDelete = (role: UserRole, group: ListGroup, d = ownDoc, a = {}) =>
       toDetail(d, withStatus(group), { ...actor(role), ...a }).permissions
         .canDelete;
+    // Người tạo xóa được ở mọi tình trạng (D9).
     expect(canDelete(UserRole.STAFF, ListGroup.DROPPED)).toBe(true);
-    expect(canDelete(UserRole.STAFF, ListGroup.INTERESTED)).toBe(false);
-    const inTeam = { ...doc, teamIds: [team] } as unknown as CustomerLean;
+    expect(canDelete(UserRole.STAFF, ListGroup.INTERESTED)).toBe(true);
+    // Manager nhóm chủ mà không phải người tạo: không xóa được, kể cả khách "Bỏ".
+    const team = new Types.ObjectId();
+    const staffCustomer = {
+      ...ownDoc,
+      createdBy: new Types.ObjectId(),
+      teamIds: [team],
+    } as unknown as CustomerLean;
     expect(
-      canDelete(UserRole.MANAGER, ListGroup.INTERESTED, inTeam, {
+      canDelete(UserRole.MANAGER, ListGroup.DROPPED, staffCustomer, {
         managedTeamIds: [team],
       }),
-    ).toBe(true);
-    // Manager là phụ trách chính nhưng khách không thuộc nhóm mình quản lý: không xóa được.
-    expect(canDelete(UserRole.MANAGER, ListGroup.DROPPED)).toBe(false);
+    ).toBe(false);
+    expect(canDelete(UserRole.ADMIN, ListGroup.INTERESTED, staffCustomer)).toBe(
+      true,
+    );
   });
 
   it('FR-04/FR-06: khách đã ẩn danh (phone null): list item và detail trả phoneMasked null, không dựa trên số giả', () => {
@@ -428,6 +484,7 @@ describe('toDetail: ownerManagers và creator (FR-30)', () => {
     const detail = toDetail(doc, refs, actor(UserRole.STAFF), {
       ownerManagers: [owner],
       creator,
+      managerIds: [],
     });
     expect(detail.ownerManagers).toEqual([owner]);
     expect(detail.creator).toEqual(creator);
@@ -446,6 +503,7 @@ describe('toDetail: ownerManagers và creator (FR-30)', () => {
     const withOwners = toDetail(doc, refs, actor(UserRole.STAFF), {
       ownerManagers: [owner],
       creator,
+      managerIds: [],
     }).permissions;
     expect(withOwners).toEqual(plain);
   });

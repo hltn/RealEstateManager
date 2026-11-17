@@ -23,7 +23,6 @@ import {
 } from '../customers/access/customer-owner-team';
 import {
   customerNotFound,
-  insufficientRole,
   versionConflict,
 } from '../customers/customer.errors';
 import {
@@ -48,6 +47,7 @@ import {
 } from './appointment.constants';
 import { AppointmentCustomerLean, AppointmentLean } from './appointment.mapper';
 import {
+  assertCanModifyAppointment,
   assertEndAfterStart,
   assertProjectInputConsistent,
   assertStartNotInPast,
@@ -293,6 +293,8 @@ export class AppointmentsWriteService {
   ): Promise<{ appointment: AppointmentLean; customer: ScopedCustomer }> {
     const now = new Date();
     const { appointment, customer } = await this.loadInScope(ctx, id, session);
+    // Bản ghi chỉ của mình (FR-32): kiểm quyền trước khi xét phiên bản và trạng thái để người ngoài luôn nhận 403.
+    assertCanModifyAppointment(ctx.actor, appointment);
     if (dto.version !== undefined && dto.version !== appointment.__v) {
       throw versionConflict(appointment.__v);
     }
@@ -423,6 +425,8 @@ export class AppointmentsWriteService {
   }> {
     const now = new Date();
     const { appointment, customer } = await this.loadInScope(ctx, id, session);
+    // Bản ghi chỉ của mình (FR-32): kiểm quyền trước khi xét phiên bản và trạng thái để người ngoài luôn nhận 403.
+    assertCanModifyAppointment(ctx.actor, appointment);
     if (dto.version !== undefined && dto.version !== appointment.__v) {
       throw versionConflict(appointment.__v);
     }
@@ -483,13 +487,10 @@ export class AppointmentsWriteService {
     reason: string | null,
     source: CrmAuditSource,
     session: ClientSession,
-    isAllowed: (appointment: AppointmentLean) => boolean,
   ): Promise<void> {
     const now = new Date();
     const { appointment } = await this.loadInScope(ctx, id, session);
-    if (!isAllowed(appointment)) {
-      throw insufficientRole();
-    }
+    assertCanModifyAppointment(ctx.actor, appointment);
     const deleted = await this.writeWithVersion(
       appointment,
       {

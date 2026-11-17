@@ -111,4 +111,13 @@ describe('Customer schema (T-04, FR-01, FR-02, FR-07)', () => {
       expect(options.index).toBeUndefined();
     });
   });
+  describe('index createdBy (FR-31)', () => {
+    it('FR-31: có index { createdBy, deletedAt, lastUpdatedAt } cho nhánh createdBy của phạm vi khách, không unique', () => {
+      const found = indexes().filter(([key]) => 'createdBy' in key);
+      expect(found).toHaveLength(1);
+      const [key, options] = found[0];
+      expect(key).toEqual({ createdBy: 1, deletedAt: 1, lastUpdatedAt: -1 });
+      expect(options.unique).toBeUndefined();
+    });
+  });
 });

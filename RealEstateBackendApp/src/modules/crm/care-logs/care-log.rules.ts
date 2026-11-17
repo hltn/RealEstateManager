@@ -14,18 +14,18 @@ export interface CareLogOwnership {
   authorId: Types.ObjectId;
 }
 
-/** Quản trị và Quản lý (trong phạm vi) sửa/xóa mọi lúc; Nhân viên chỉ khi là tác giả (không giới hạn thời gian, PT-022). */
+/**
+ * Bản ghi chỉ của mình (FR-32): chỉ Quản trị hoặc chính tác giả nhật ký sửa/xóa (không giới hạn thời gian, PT-022).
+ * Quản lý (kể cả nhóm chủ), người tạo khách, phụ trách chính và người được mời KHÔNG sửa/xóa nhật ký người khác.
+ * Chỉ xét người gọi và tác giả nên chữ ký không nhận thêm quan hệ với khách.
+ */
 export const canModifyCareLog = (
   actor: CrmActor,
   log: CareLogOwnership,
-): boolean => {
-  if (actor.role === UserRole.ADMIN || actor.role === UserRole.MANAGER) {
-    return true;
-  }
-  return log.authorId.equals(actor.userId);
-};
+): boolean =>
+  actor.role === UserRole.ADMIN || log.authorId.equals(actor.userId);
 
-/** Như `canModifyCareLog` nhưng ném lỗi: không phải tác giả (và không phải Quản trị/Quản lý) => 403. */
+/** Như `canModifyCareLog` nhưng ném lỗi: không phải tác giả (và không phải Quản trị) => 403 `INSUFFICIENT_ROLE`. */
 export const assertCanModifyCareLog = (
   actor: CrmActor,
   log: CareLogOwnership,

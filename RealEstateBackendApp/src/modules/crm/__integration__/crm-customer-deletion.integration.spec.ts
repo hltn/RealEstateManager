@@ -1,7 +1,8 @@
 /**
  * INTEGRATION — xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" (tài liệu 09 mục 7). HTTP thật (Fastify + guard toàn cục +
  * MongoDB Replica Set in-memory + kho file giả trong bộ nhớ). Kiểm điều unit test mock không chứng minh được:
- * - ma trận quyền xóa đơn và hàng loạt (Admin/Manager/STAFF × khách "Bỏ"/không × trong/ngoài phạm vi × phụ trách chính);
+ * - ma trận quyền xóa đơn và hàng loạt (FR-31: chỉ Admin hoặc NGƯỜI TẠO, không điều kiện tình trạng khách; Manager nhóm chủ,
+ *   PRIMARY không phải người tạo, MEMBER đều bị 403);
  * - xóa mềm giữ hành vi cũ: audit, SĐT vẫn bị giữ; màn "Khách đã xóa" đủ dữ liệu, không lộ SĐT đầy đủ;
  * - xóa vĩnh viễn: chỉ Admin, chỉ khách đã xóa mềm, dữ liệu con + file biến mất, còn đúng MỘT dòng audit không PII,
  *   SĐT dùng lại được; lỗi kho file không để lại dữ liệu mồ côi (chưa xóa gì ở DB, thử lại được).
@@ -377,12 +378,19 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect(await isSoftDeleted(interested.id)).toBe(true);
     });
 
-    it('MANAGER: khách thuộc nhóm mình quản lý xóa được; khách ở nhóm khác 404 (không thấy)', async () => {
-      const own = await createCustomer('staffA');
+    it('MANAGER (FR-31): khách của nhân viên nhóm mình quản lý THẤY nhưng 403 (không phải người tạo); khách nhóm khác 404; khách do chính Manager tạo xóa được, có audit', async () => {
+      const staffCustomer = await createCustomer('staffA');
       const other = await createCustomer('staffB');
+      const own = await createCustomer('mgrA');
       expect((await del('mgrA', other.id)).status).toBe(404);
+      const denied = await del('mgrA', staffCustomer.id);
+      expect([denied.status, denied.body.errorCode]).toEqual([
+        403,
+        'INSUFFICIENT_ROLE',
+      ]);
       expect((await del('mgrA', own.id)).status).toBe(204);
       expect(await isSoftDeleted(other.id)).toBe(false);
+      expect(await isSoftDeleted(staffCustomer.id)).toBe(false);
       const [audit] = await auditOf(own.id, 'CUSTOMER_DELETED');
       expect(audit).toMatchObject({
         reason: 'Khách bỏ',
@@ -390,38 +398,34 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       });
     });
 
-    it('MANAGER chỉ có mặt trong careTeam của khách nhóm khác: THẤY khách nhưng 403 và không bị xóa; phụ trách chính cũng vậy', async () => {
+    it('MANAGER chỉ có mặt trong careTeam của khách nhóm khác: THẤY nhưng 403 và không bị xóa; khi chính Manager là người tạo thì xóa được (FR-31)', async () => {
       const asMember = await createCustomer('staffB', ['mgrA']);
-      const asPrimary = await createCustomer('mgrA', ['staffB']);
-      for (const customer of [asMember, asPrimary]) {
-        // Phạm vi XEM cho phép (không phải 404) nhưng quyền XÓA thì không.
-        expect(
-          (await call('GET', `/crm/customers/${customer.id}`, 'mgrA')).status,
-        ).toBe(200);
-        const res = await del('mgrA', customer.id);
-        expect([res.status, res.body.errorCode]).toEqual([
-          403,
-          'INSUFFICIENT_ROLE',
-        ]);
-        expect(await isSoftDeleted(customer.id)).toBe(false);
-      }
+      const asCreator = await createCustomer('mgrA', ['staffB']);
+      // Phạm vi XEM cho phép (không phải 404) nhưng quyền XÓA thì không.
+      expect(
+        (await call('GET', `/crm/customers/${asMember.id}`, 'mgrA')).status,
+      ).toBe(200);
+      const res = await del('mgrA', asMember.id);
+      expect([res.status, res.body.errorCode]).toEqual([
+        403,
+        'INSUFFICIENT_ROLE',
+      ]);
+      expect(await isSoftDeleted(asMember.id)).toBe(false);
+      expect((await del('mgrA', asCreator.id)).status).toBe(204);
     });
 
-    it('MANAGER cũng được xóa khách thuộc nhóm mình quản lý khi mình có mặt trong careTeam (nhóm quản lý vẫn là điều kiện đủ)', async () => {
+    it('MANAGER có mặt trong careTeam của khách do nhân viên nhóm mình tạo: vẫn 403 (nhóm quản lý và careTeam không còn là điều kiện xóa, FR-31)', async () => {
       const customer = await createCustomer('staffA', ['mgrA']);
-      expect((await del('mgrA', customer.id)).status).toBe(204);
+      const res = await del('mgrA', customer.id);
+      expect([res.status, res.body.errorCode]).toEqual([
+        403,
+        'INSUFFICIENT_ROLE',
+      ]);
+      expect(await isSoftDeleted(customer.id)).toBe(false);
     });
 
-    it('STAFF là phụ trách chính nhưng KHÔNG phải người nhập: xóa được khách "Bỏ" (204), có audit, SĐT không còn bị giữ chỗ', async () => {
+    it('STAFF là NGƯỜI TẠO (kiêm PRIMARY): xóa được khách "Bỏ" (204), có audit, SĐT không còn bị giữ chỗ', async () => {
       const customer = await createCustomer('staffA');
-      // T-07: qua API người tạo luôn là PRIMARY; dữ liệu cũ (người nhập khác phụ trách chính) dựng thẳng trong DB.
-      await col('customers').updateOne(
-        { _id: oid(customer.id) },
-        { $set: { createdBy: oid(ids.admin) } },
-      );
-      const doc = await col('customers').findOne({ _id: oid(customer.id) });
-      expect(String(doc!.createdBy)).toBe(ids.admin);
-      expect(String(doc!.primaryAssigneeId)).toBe(ids.staffA);
       expect((await del('staffA', customer.id, 'Khách từ chối')).status).toBe(
         204,
       );
@@ -440,6 +444,38 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect(again.status).toBe(201);
     });
 
+    it('FR-31: PRIMARY nhưng KHÔNG phải người tạo (dữ liệu cũ) => 403 INSUFFICIENT_ROLE; người tạo chỉ còn là MEMBER thì vẫn xóa được', async () => {
+      const notMine = await createCustomer('staffA');
+      // T-07: qua API người tạo luôn là PRIMARY; dữ liệu cũ (người nhập khác phụ trách chính) dựng thẳng trong DB.
+      await col('customers').updateOne(
+        { _id: oid(notMine.id) },
+        { $set: { createdBy: oid(ids.admin) } },
+      );
+      const doc = await col('customers').findOne({ _id: oid(notMine.id) });
+      expect(String(doc!.createdBy)).toBe(ids.admin);
+      expect(String(doc!.primaryAssigneeId)).toBe(ids.staffA);
+      const res = await del('staffA', notMine.id, 'Khách từ chối');
+      expect([res.status, res.body.errorCode]).toEqual([
+        403,
+        'INSUFFICIENT_ROLE',
+      ]);
+      expect(await isSoftDeleted(notMine.id)).toBe(false);
+
+      // Người tạo (staffA) chỉ còn là MEMBER, PRIMARY là staffA2: vẫn xóa được khách của mình.
+      const mine = await createCustomer('staffA', ['staffA2']);
+      await col('customers').updateOne(
+        { _id: oid(mine.id) },
+        {
+          $set: {
+            primaryAssigneeId: oid(ids.staffA2),
+            'careTeam.0.role': 'MEMBER',
+            'careTeam.1.role': 'PRIMARY',
+          },
+        },
+      );
+      expect((await del('staffA', mine.id)).status).toBe(204);
+    });
+
     it('STAFF chỉ là thành viên careTeam (không phải phụ trách chính): 403; không thuộc careTeam: 404', async () => {
       const member = await createCustomer('staffA2', ['staffA']);
       const stranger = await createCustomer('staffB');
@@ -453,17 +489,13 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect(await isSoftDeleted(stranger.id)).toBe(false);
     });
 
-    it('STAFF phụ trách chính nhưng khách KHÔNG "Bỏ": 409 CUSTOMER_NOT_DROPPED, không bị xóa', async () => {
+    it('FR-31 (D9): người tạo xóa được cả khách KHÔNG "Bỏ" (không còn điều kiện tình trạng, không còn CUSTOMER_NOT_DROPPED)', async () => {
       const customer = await createCustomer('staffA', [], false);
-      const res = await del('staffA', customer.id);
-      expect([res.status, res.body.errorCode]).toEqual([
-        409,
-        'CUSTOMER_NOT_DROPPED',
-      ]);
-      expect(await isSoftDeleted(customer.id)).toBe(false);
+      expect((await del('staffA', customer.id)).status).toBe(204);
+      expect(await isSoftDeleted(customer.id)).toBe(true);
     });
 
-    it('FR-11: PRIMARY bị khóa — Quản trị không đổi được phụ trách chính (PUT primary 404), người phụ trách CŨ vẫn có quyền xóa, thành viên phụ không', async () => {
+    it('FR-11: PRIMARY bị khóa — Quản trị không đổi được phụ trách chính (PUT primary 404), người tạo kiêm PRIMARY vẫn có quyền xóa, thành viên phụ không', async () => {
       const customer = await createCustomer('staffA', ['staffA2']);
       const change = await call(
         'PUT',
@@ -479,22 +511,28 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
 
   // ---------------------------------------------------------------------------------------------
   describe('Tài khoản nhiều role (khóa hành vi quyền xóa theo role cao nhất)', () => {
-    it('MANAGER+STAFF: coi như Manager — phụ trách chính khách "Bỏ" của nhóm mình KHÔNG quản lý vẫn bị 403 (đơn và hàng loạt); chỉ có careTeam cũng 403', async () => {
-      const primary = await createCustomer('mgrStaff');
+    it('MANAGER+STAFF: coi như Manager — khách mình tạo xóa được (đơn và hàng loạt); khách của người khác (kể cả chỉ có mặt trong careTeam) vẫn 403', async () => {
+      const own = await createCustomer('mgrStaff');
+      const ownBulk = await createCustomer('mgrStaff');
       const member = await createCustomer('staffB', ['mgrStaff']);
-      const single = await del('mgrStaff', primary.id);
-      expect([single.status, single.body.errorCode]).toEqual([
+      const other = await createCustomer('staffB', ['mgrStaff']);
+      expect((await del('mgrStaff', own.id)).status).toBe(204);
+      const denied = await del('mgrStaff', member.id);
+      expect([denied.status, denied.body.errorCode]).toEqual([
         403,
         'INSUFFICIENT_ROLE',
       ]);
-      expect((await del('mgrStaff', member.id)).status).toBe(403);
-      const bulk = await bulkDelete('mgrStaff', [primary.id, member.id], 'Dọn');
-      expect(bulk.body.data.succeeded).toEqual([]);
+      const bulk = await bulkDelete(
+        'mgrStaff',
+        [ownBulk.id, member.id, other.id],
+        'Dọn',
+      );
+      expect(bulk.body.data.succeeded).toEqual([ownBulk.id]);
       expect(bulk.body.data.failed.map((f: any) => f.errorCode)).toEqual([
         'INSUFFICIENT_ROLE',
         'INSUFFICIENT_ROLE',
       ]);
-      expect(await isSoftDeleted(primary.id)).toBe(false);
+      expect(await isSoftDeleted(member.id)).toBe(false);
     });
 
     it('ADMIN+STAFF: quyền Admin — xóa được khách của người khác, kể cả không "Bỏ"', async () => {
@@ -504,12 +542,12 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect((await del('adminStaff', interested.id)).status).toBe(204);
     });
 
-    it('STAFF+EDITOR: giữ quyền STAFF — phụ trách chính khách "Bỏ" xóa được, chỉ là thành viên thì 403, khách không "Bỏ" 409', async () => {
+    it('STAFF+EDITOR: giữ quyền STAFF — khách mình tạo xóa được (kể cả không "Bỏ"), chỉ là thành viên thì 403', async () => {
       const mine = await createCustomer('staffEditor');
       const memberOnly = await createCustomer('staffB', ['staffEditor']);
       const notDropped = await createCustomer('staffEditor', [], false);
       expect((await del('staffEditor', memberOnly.id)).status).toBe(403);
-      expect((await del('staffEditor', notDropped.id)).status).toBe(409);
+      expect((await del('staffEditor', notDropped.id)).status).toBe(204);
       expect((await del('staffEditor', mine.id)).status).toBe(204);
     });
   });
@@ -569,46 +607,58 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
       expect((await del('admin', customer.id, 'a\u200Bb')).status).toBe(204);
     });
 
-    it('MANAGER lẫn khách lỗi quyền: khách hợp lệ vẫn xóa; mỗi khách báo đúng mã lỗi; khách lỗi không bị đụng', async () => {
-      const ok1 = await createCustomer('staffA');
-      const ok2 = await createCustomer('staffA2', ['mgrA']);
+    it('MANAGER lẫn khách lỗi quyền (FR-31): chỉ khách do mình tạo xóa được (kể cả không "Bỏ"); mỗi khách báo đúng mã lỗi; khách lỗi không bị đụng', async () => {
+      const own1 = await createCustomer('mgrA');
+      const own2 = await createCustomer('mgrA', ['staffA2']);
+      const ownNotDropped = await createCustomer('mgrA', [], false);
+      const teamStaff = await createCustomer('staffA'); // nhóm mình quản lý nhưng không phải người tạo
       const outside = await createCustomer('staffB'); // ngoài phạm vi xem
-      const careTeamOnly = await createCustomer('staffB', ['mgrA']); // thấy nhưng không quản lý nhóm
-      const notDropped = await createCustomer('staffA', [], false);
+      const careTeamOnly = await createCustomer('staffB', ['mgrA']); // thấy nhưng không phải người tạo
       const ghost = String(new Types.ObjectId());
 
       const res = await bulkDelete(
         'mgrA',
-        [ok1.id, outside.id, careTeamOnly.id, ok2.id, notDropped.id, ghost],
+        [
+          own1.id,
+          outside.id,
+          careTeamOnly.id,
+          own2.id,
+          ownNotDropped.id,
+          teamStaff.id,
+          ghost,
+        ],
         'Dọn khách bỏ',
       );
       expect(res.status).toBe(200);
-      expect(res.body.data.succeeded.sort()).toEqual([ok1.id, ok2.id].sort());
+      expect(res.body.data.succeeded.sort()).toEqual(
+        [own1.id, own2.id, ownNotDropped.id].sort(),
+      );
       const failed = Object.fromEntries(
         res.body.data.failed.map((f: any) => [f.customerId, f.errorCode]),
       );
       expect(failed).toEqual({
         [outside.id]: 'CUSTOMER_NOT_FOUND',
         [careTeamOnly.id]: 'INSUFFICIENT_ROLE',
-        [notDropped.id]: 'CUSTOMER_NOT_DROPPED',
+        [teamStaff.id]: 'INSUFFICIENT_ROLE',
         [ghost]: 'CUSTOMER_NOT_FOUND',
       });
-      expect(await isSoftDeleted(ok1.id)).toBe(true);
-      expect(await isSoftDeleted(ok2.id)).toBe(true);
-      for (const kept of [outside, careTeamOnly, notDropped]) {
+      for (const done of [own1, own2, ownNotDropped]) {
+        expect(await isSoftDeleted(done.id)).toBe(true);
+      }
+      for (const kept of [outside, careTeamOnly, teamStaff]) {
         expect(await isSoftDeleted(kept.id)).toBe(false);
         expect(await auditOf(kept.id, 'CUSTOMER_DELETED')).toHaveLength(0);
       }
       // Cùng một lý do chung, mỗi khách một audit.
-      expect(await auditOf(ok1.id, 'CUSTOMER_DELETED')).toHaveLength(1);
-      const [audit] = await auditOf(ok2.id, 'CUSTOMER_DELETED');
+      expect(await auditOf(own1.id, 'CUSTOMER_DELETED')).toHaveLength(1);
+      const [audit] = await auditOf(own2.id, 'CUSTOMER_DELETED');
       expect(audit).toMatchObject({
         reason: 'Dọn khách bỏ',
         actorRole: 'MANAGER',
       });
     });
 
-    it('STAFF: chỉ khách "Bỏ" mình là phụ trách chính; thành viên thường và khách không "Bỏ" bị từ chối từng khách', async () => {
+    it('STAFF (FR-31): chỉ khách mình tạo (kể cả không "Bỏ"); thành viên thường bị từ chối từng khách', async () => {
       const mine = await createCustomer('staffA');
       const memberOnly = await createCustomer('staffA2', ['staffA']);
       const mineNotDropped = await createCustomer('staffA', [], false);
@@ -618,25 +668,22 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
         'Dọn',
       );
       expect(res.status).toBe(200);
-      expect(res.body.data.succeeded).toEqual([mine.id]);
-      expect(
-        Object.fromEntries(
-          res.body.data.failed.map((f: any) => [f.customerId, f.errorCode]),
-        ),
-      ).toEqual({
-        [memberOnly.id]: 'INSUFFICIENT_ROLE',
-        [mineNotDropped.id]: 'CUSTOMER_NOT_DROPPED',
-      });
+      expect(res.body.data.succeeded.sort()).toEqual(
+        [mine.id, mineNotDropped.id].sort(),
+      );
+      expect(res.body.data.failed).toEqual([
+        { customerId: memberOnly.id, errorCode: 'INSUFFICIENT_ROLE' },
+      ]);
     });
 
-    it('ADMIN: khách không "Bỏ" bị từ chối CUSTOMER_NOT_DROPPED (hàng loạt đòi "Bỏ" cho mọi vai); EDITOR 403', async () => {
+    it('ADMIN (FR-31): xóa hàng loạt cả khách "Bỏ" lẫn không "Bỏ" (không còn CUSTOMER_NOT_DROPPED); EDITOR 403', async () => {
       const dropped = await createCustomer('staffA');
       const interested = await createCustomer('staffA', [], false);
       const res = await bulkDelete('admin', [dropped.id, interested.id], 'Dọn');
-      expect(res.body.data.succeeded).toEqual([dropped.id]);
-      expect(res.body.data.failed).toEqual([
-        { customerId: interested.id, errorCode: 'CUSTOMER_NOT_DROPPED' },
-      ]);
+      expect(res.body.data.succeeded.sort()).toEqual(
+        [dropped.id, interested.id].sort(),
+      );
+      expect(res.body.data.failed).toEqual([]);
       expect((await bulkDelete('editor', [dropped.id], 'x')).status).toBe(403);
     });
   });
@@ -644,7 +691,7 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
   // ---------------------------------------------------------------------------------------------
   describe('Khách đã xóa: danh sách và khôi phục (Admin)', () => {
     it('GET /crm/deleted-customers: chỉ Admin; có id, tên, ngày xóa, lý do xóa, người xóa; không lộ SĐT đầy đủ/email', async () => {
-      const customer = await createCustomer('staffA');
+      const customer = await createCustomer('mgrA');
       expect((await del('mgrA', customer.id, 'Trùng khách cũ')).status).toBe(
         204,
       );

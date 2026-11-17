@@ -20,6 +20,7 @@ import {
 } from '../customers/customer.errors';
 import { CustomerStatusChangeService } from '../customers/customer-status-change.service';
 import { CustomerDeletionService } from '../customers/customer-deletion.service';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { BulkTaggingService } from './bulk-tagging.service';
 import {
   BulkOperationDto,
@@ -69,6 +70,7 @@ export class BulkOperationsService {
     private readonly tagging: BulkTaggingService,
     private readonly deletion: CustomerDeletionService,
     private readonly rateLimit: CrmRateLimitService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async run(
@@ -167,8 +169,8 @@ export class BulkOperationsService {
 
   /**
    * DELETE: một `reason` chung (bắt buộc, 400 cho cả lô). Từng khách đi qua `CustomerDeletionService.applyDelete` nên
-   * quyền được kiểm RIÊNG từng khách (ngoài phạm vi xem -> `CUSTOMER_NOT_FOUND`, không thuộc "Bỏ" ->
-   * `CUSTOMER_NOT_DROPPED`, không đủ quyền xóa -> `INSUFFICIENT_ROLE`); một khách lỗi không làm hỏng khách khác.
+   * quyền được kiểm RIÊNG từng khách (ngoài phạm vi xem -> `CUSTOMER_NOT_FOUND`; không phải Admin hoặc người tạo
+   * khách -> `INSUFFICIENT_ROLE`; FR-31, không điều kiện trạng thái "Bỏ"); một khách lỗi không làm hỏng khách khác.
    */
   private buildDelete(
     ctx: AccessContext,
@@ -182,9 +184,7 @@ export class BulkOperationsService {
     }
     const { reason } = payload;
     return (customerId: string, session: ClientSession) =>
-      this.deletion.applyDelete(ctx, customerId, reason, source, session, {
-        requireDropped: true,
-      });
+      this.deletion.applyDelete(ctx, customerId, reason, source, session);
   }
 
   private buildAssign(
@@ -211,8 +211,19 @@ export class BulkOperationsService {
         ctx,
         customerId,
         {
-          // Quản trị/Quản lý đã được chặn ở trên; phạm vi khách do `CustomerScope` bảo đảm.
-          authorize: () => undefined,
+          // FR-31: cổng ngoài (Quản trị/Quản lý) ở trên; RIÊNG TỪNG KHÁCH phải là chủ khách (Admin, người tạo, Quản lý
+          // nhóm chủ). Khách không đủ quyền vào `failed[]` với `INSUFFICIENT_ROLE` (403), khách khác không bị ảnh hưởng.
+          authorize: async (_careTeam, customer, session) => {
+            if (
+              !(await this.ownerTeam.hasOwnerRights(
+                ctx.actor,
+                customer,
+                session,
+              ))
+            ) {
+              throw insufficientRole();
+            }
+          },
           // Khách `careTeam` rỗng: `planAddMembers` báo `PRIMARY_REQUIRED` riêng khách đó (đặt PRIMARY lần đầu dùng POST members).
           plan: (current, now) =>
             planAddMembers(

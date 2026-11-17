@@ -31,6 +31,7 @@ const build = (role = 'ADMIN') => {
     {} as never,
     {} as never,
     rateLimit as never,
+    { hasOwnerRights: jest.fn().mockResolvedValue(true) } as never,
   );
   return { service, careTeam, session };
 };

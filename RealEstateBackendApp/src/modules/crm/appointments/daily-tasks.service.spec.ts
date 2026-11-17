@@ -529,3 +529,76 @@ describe('DailyTasksService: assignees của việc lịch hẹn (FR-30)', () =>
     expect(task.assignee).toBeNull();
   });
 });
+
+describe('DailyTasksService: cờ canEdit/canDelete của việc lịch hẹn (FR-32)', () => {
+  const customerId = oid();
+
+  const setup = (createdBy: Types.ObjectId | undefined, role: UserRole) => {
+    const built = buildService();
+    built.access.resolve.mockResolvedValue({
+      scope: {},
+      actor: { userId, role, roles: [role] },
+    });
+    built.appointmentModel.aggregate.mockReturnValue({
+      exec: () =>
+        Promise.resolve([
+          {
+            rows: [
+              {
+                _id: oid(),
+                customerId,
+                type: AppointmentType.SITE_VISIT,
+                title: 'Xem nhà',
+                note: '',
+                startAt: new Date(),
+                assigneeId: userId,
+                ...(createdBy && { createdBy }),
+              },
+            ],
+            total: [{ count: 1 }],
+          },
+        ]),
+    });
+    built.repo.find.mockResolvedValue([
+      { _id: customerId, fullName: 'Khách A', statusId: oid() },
+    ]);
+    return built;
+  };
+  const first = async (built: ReturnType<typeof setup>) =>
+    (
+      await built.service.list(jwt, {
+        kinds: [DailyTaskKind.APPOINTMENT],
+        scope: 'mine',
+      } as never)
+    ).data[0];
+
+  it('người tạo lịch: canEdit và canDelete true', async () => {
+    const task = await first(setup(userId, UserRole.STAFF));
+    expect(task.canEdit).toBe(true);
+    expect(task.canDelete).toBe(true);
+  });
+
+  it('người thực hiện không phải người tạo lịch (Staff): cả hai cờ false dù lịch nằm trong việc của họ', async () => {
+    const task = await first(setup(oid(), UserRole.STAFF));
+    expect(task.canEdit).toBe(false);
+    expect(task.canDelete).toBe(false);
+  });
+
+  it('Manager không phải người tạo lịch: cả hai cờ false (không còn đặc quyền Manager)', async () => {
+    const task = await first(setup(oid(), UserRole.MANAGER));
+    expect(task.canEdit).toBe(false);
+    expect(task.canDelete).toBe(false);
+  });
+
+  it('Quản trị: cả hai cờ true với lịch của người khác', async () => {
+    const task = await first(setup(oid(), UserRole.ADMIN));
+    expect(task.canEdit).toBe(true);
+    expect(task.canDelete).toBe(true);
+  });
+
+  it('dữ liệu thiếu createdBy: cờ false thay vì ném lỗi (an toàn hơn cho phép)', async () => {
+    const task = await first(setup(undefined, UserRole.STAFF));
+    expect(task.canEdit).toBe(false);
+    expect(task.canDelete).toBe(false);
+  });
+});

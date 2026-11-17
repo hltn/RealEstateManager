@@ -29,7 +29,7 @@ export class CareTeamInviteesController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Người có thể được mời vào nhóm chăm sóc: toàn hệ thống, user ACTIVE vai trò Quản lý/Nhân viên, loại người gọi và người đã trong nhóm (khi có customerId); chỉ trả id, tên, tên nhóm; Quản trị/Quản lý hoặc phụ trách chính (không customerId: chỉ Quản trị/Quản lý); rate-limit 60 lượt/phút/người; limit tối đa 20',
+      'Người có thể được mời vào nhóm chăm sóc: toàn hệ thống, user ACTIVE vai trò Quản lý/Nhân viên, loại người gọi và người đã trong nhóm (khi có customerId); chỉ trả id, tên, tên nhóm; có customerId: chỉ chủ khách (Quản trị, người tạo khách, Quản lý nhóm chủ); không customerId: chỉ Quản trị/Quản lý; rate-limit 60 lượt/phút/người; limit tối đa 20',
   })
   @ApiPaginatedResponse(CareTeamInviteeResponseDto)
   @ApiResponse({ status: 403, description: 'CARE_TEAM_ACTION_FORBIDDEN' })

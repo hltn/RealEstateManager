@@ -193,3 +193,31 @@ describe('toCareLogResponse: URL ảnh và thumbnail (FR-26)', () => {
     ]);
   });
 });
+
+describe('toCareLogResponse: canEdit theo canModifyCareLog (FR-32)', () => {
+  const asActor = (
+    role: UserRole,
+    userId = new Types.ObjectId(),
+  ): CrmActor => ({
+    ...actor,
+    userId,
+    role,
+    roles: [role],
+  });
+  const render = (log: CareLogLean, who: CrmActor) =>
+    toCareLogResponse(log, who, map(new Map()), new Map());
+
+  it('tác giả (Staff hoặc Manager) và Quản trị: canEdit true', () => {
+    const authorId = new Types.ObjectId();
+    const log = logWith({ authorId });
+    expect(render(log, asActor(UserRole.STAFF, authorId)).canEdit).toBe(true);
+    expect(render(log, asActor(UserRole.MANAGER, authorId)).canEdit).toBe(true);
+    expect(render(log, asActor(UserRole.ADMIN)).canEdit).toBe(true);
+  });
+
+  it('Manager hoặc Staff không phải tác giả: canEdit false (Manager không còn đặc quyền)', () => {
+    const log = logWith({});
+    expect(render(log, asActor(UserRole.MANAGER)).canEdit).toBe(false);
+    expect(render(log, asActor(UserRole.STAFF)).canEdit).toBe(false);
+  });
+});

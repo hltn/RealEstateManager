@@ -20,8 +20,10 @@ const brand = (filter: Record<string, unknown>): CustomerScope =>
  * Dựng phạm vi theo vai trò CAO NHẤT HIỆN TẠI trong DB (`actor.role`; tài khoản nhiều role: ADMIN+bất kỳ → tất cả,
  * MANAGER+STAFF → phạm vi MANAGER):
  * - ADMIN: tất cả (`{}`);
- * - MANAGER: khách có `teamIds` giao với nhóm mình quản lý, HOẶC mình nằm trong `careTeam`;
- * - STAFF: chỉ khách có mình trong `careTeam` (PRIMARY hoặc MEMBER);
+ * - MANAGER: khách có `teamIds` giao với nhóm mình quản lý, HOẶC mình nằm trong `careTeam`, HOẶC mình là người tạo;
+ * - STAFF: khách có mình trong `careTeam` (PRIMARY hoặc MEMBER) HOẶC mình là người tạo (`createdBy`);
+ * - FR-31: nhánh `createdBy` để người tạo luôn thấy khách của mình, kể cả khi `careTeam` không còn có họ
+ *   (khách cũ trước khi người tạo được "khóa" trong careTeam);
  * - vai trò khác (EDITOR...): không thấy khách nào.
  */
 export const buildCustomerScope = (actor: CrmActor): CustomerScope => {
@@ -33,10 +35,13 @@ export const buildCustomerScope = (actor: CrmActor): CustomerScope => {
         $or: [
           { teamIds: { $in: actor.managedTeamIds } },
           { 'careTeam.userId': actor.userId },
+          { createdBy: actor.userId },
         ],
       });
     case UserRole.STAFF:
-      return brand({ 'careTeam.userId': actor.userId });
+      return brand({
+        $or: [{ 'careTeam.userId': actor.userId }, { createdBy: actor.userId }],
+      });
     default:
       return brand({ _id: { $in: [] as Types.ObjectId[] } });
   }

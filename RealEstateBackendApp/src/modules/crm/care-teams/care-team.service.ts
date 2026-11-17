@@ -20,6 +20,8 @@ import {
   versionConflict,
 } from '../customers/customer.errors';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
+import { OwnerTeamCustomer } from '../customers/access/customer-owner-team';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { CustomerRefsService } from '../customers/customer-refs.service';
 import { computeTeamIds } from '../customers/customer-team-sync.service';
 import { CustomersRepository } from '../customers/customers.repository';
@@ -38,7 +40,7 @@ import {
   toCareTeamResponse,
 } from './care-team.mapper';
 import {
-  canManageMembers,
+  assertCreatorKept,
   canSetInitialPrimary,
   careTeamActionForbidden,
   CareTeamChange,
@@ -58,9 +60,20 @@ const oid = (id: string): Types.ObjectId => new Types.ObjectId(id);
 
 /** Một thay đổi nhóm chăm sóc: ai được làm, thay đổi ra sao (người được mời không giới hạn theo nhóm của người mời, FR-13). */
 export interface CareTeamMutation {
-  /** Ném 403 `CARE_TEAM_ACTION_FORBIDDEN` nếu người thực hiện không đủ quyền với nhóm hiện tại. */
-  authorize: (careTeam: CareTeamEntry[]) => void;
-  plan: (careTeam: CareTeamEntry[], now: Date) => CareTeamChange;
+  /**
+   * Ném 403 (`CARE_TEAM_ACTION_FORBIDDEN`, hoặc `INSUFFICIENT_ROLE` ở bulk `ASSIGN`) nếu người thực hiện không đủ
+   * quyền với khách. Bất đồng bộ vì quyền chủ khách (FR-31) cần đọc nhóm chủ; chạy trong CHÍNH transaction (`session`).
+   */
+  authorize: (
+    careTeam: CareTeamEntry[],
+    customer: OwnerTeamCustomer,
+    session: ClientSession,
+  ) => Promise<void> | void;
+  plan: (
+    careTeam: CareTeamEntry[],
+    now: Date,
+    customer: OwnerTeamCustomer,
+  ) => CareTeamChange;
   source: CrmAuditSource;
   /** Nguồn của thay đổi: quyết có push `CUSTOMER_ASSIGNED` hay không và khóa gộp đợt hàng loạt (Architecture 5.2). */
   origin: PushOrigin;
@@ -83,6 +96,7 @@ export class CareTeamService {
     private readonly audit: CrmAuditLogService,
     private readonly notifications: NotificationDispatcher,
     private readonly rateLimit: CrmRateLimitService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async get(jwt: JwtPayload, id: string): Promise<CareTeamResponseDto> {
@@ -106,10 +120,13 @@ export class CareTeamService {
   ): Promise<CareTeamResponseDto> {
     await this.rateLimit.consume(jwt.sub, 'CARE_TEAM_INVITE');
     return this.mutate(jwt, id, clientType, (ctx, source) => ({
-      authorize: (careTeam) => {
-        if (!canManageMembers(ctx.actor, careTeam)) {
+      authorize: async (careTeam, customer, session) => {
+        // FR-31: chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ (PRIMARY/MEMBER không tự có quyền mời).
+        if (
+          !(await this.ownerTeam.hasOwnerRights(ctx.actor, customer, session))
+        ) {
           throw careTeamActionForbidden(
-            'Chỉ Quản trị, Quản lý hoặc phụ trách chính được thêm thành viên',
+            'Chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ được thêm thành viên',
           );
         }
         // Đặt PRIMARY lần đầu (nhóm rỗng) chỉ Quản trị/Quản lý; nhóm đã có người thì `planAddMembers` trả 400.
@@ -147,15 +164,18 @@ export class CareTeamService {
     clientType?: string,
   ): Promise<CareTeamResponseDto> {
     return this.mutate(jwt, id, clientType, (ctx, source) => ({
-      authorize: (careTeam) => {
-        if (!canManageMembers(ctx.actor, careTeam)) {
+      authorize: async (_careTeam, customer, session) => {
+        if (
+          !(await this.ownerTeam.hasOwnerRights(ctx.actor, customer, session))
+        ) {
           throw careTeamActionForbidden(
-            'Chỉ Quản trị, Quản lý hoặc phụ trách chính được gỡ thành viên',
+            'Chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ được gỡ thành viên',
           );
         }
       },
-      // Gỡ PRIMARY luôn là 409 `PRIMARY_LOCKED` (kể cả Quản trị/Quản lý), do `planRemoveMember` quyết.
-      plan: (careTeam) => planRemoveMember(careTeam, oid(userId)),
+      // Gỡ người tạo (FR-31) hoặc PRIMARY luôn là 409 `PRIMARY_LOCKED` (kể cả Quản trị), do `planRemoveMember` quyết.
+      plan: (careTeam, _now, customer) =>
+        planRemoveMember(careTeam, oid(userId), customer.createdBy),
       source,
       origin: 'TEAM_ADD',
     }));
@@ -188,14 +208,22 @@ export class CareTeamService {
   ): Promise<CareTeamResponseDto> {
     const before = await this.repo.findOne(ctx.scope, customerId, {
       session,
-      projection: { careTeam: 1, teamIds: 1, fullName: 1, __v: 1 },
+      projection: {
+        careTeam: 1,
+        teamIds: 1,
+        createdBy: 1,
+        fullName: 1,
+        __v: 1,
+      },
     });
     if (!before) throw customerNotFound();
     const currentTeam = before.careTeam ?? [];
-    mutation.authorize(currentTeam);
+    await mutation.authorize(currentTeam, before, session);
 
     const now = new Date();
-    const change = mutation.plan(currentTeam, now);
+    const change = mutation.plan(currentTeam, now, before);
+    // FR-31: MỌI đường đổi `careTeam` đi qua cổng này nên người tạo không bao giờ bị gỡ (kể cả Admin).
+    assertCreatorKept(currentTeam, change.careTeam, before.createdBy);
     const hasChange =
       change.addedUserIds.length > 0 ||
       change.removedUserIds.length > 0 ||

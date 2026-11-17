@@ -340,7 +340,7 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       ).toBe(200);
     });
 
-    it('GET national-id-views (nhật ký xem CCCD): Quản lý ngoài phạm vi 404, Nhân viên 403 (kể cả phụ trách chính), Quản lý trong phạm vi 200', async () => {
+    it('GET national-id-views (nhật ký xem CCCD): Quản lý ngoài phạm vi 404, Nhân viên 403 (kể cả PRIMARY không phải người tạo; FR-31), Quản trị 200', async () => {
       expect(
         (
           await call(
@@ -659,12 +659,20 @@ describe('CRM M2 — QA đối kháng (HTTP + Replica Set + Redis)', () => {
       expect(dup.status).toBe(201);
       expect(dup.body.data.id).not.toBe(c.id);
       const json = JSON.stringify(dup.body);
-      for (const secret of ['Bí Mật', 'bimat@', 'staffC', c.id, 'caredByName']) {
+      for (const secret of [
+        'Bí Mật',
+        'bimat@',
+        'staffC',
+        c.id,
+        'caredByName',
+      ]) {
         expect(json).not.toContain(secret);
       }
       // hai khách cùng SĐT là hợp lệ và độc lập: mỗi khách có mã riêng, chỉ phạm vi của chính mình thấy
       expect(dup.body.data.customerCode).not.toBe(c.res.body.data.customerCode);
-      expect((await call('GET', `/crm/customers/${c.id}`, 'staffA')).status).toBe(404);
+      expect(
+        (await call('GET', `/crm/customers/${c.id}`, 'staffA')).status,
+      ).toBe(404);
     });
   });
 

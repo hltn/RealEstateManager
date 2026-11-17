@@ -4,8 +4,10 @@ import { ListGroup } from '../catalogs/catalog.enums';
 import {
   buildAccess,
   buildCustomer,
+  buildCustomerCreatorOutsideCareTeam,
   buildCustomerWithOtherPrimary,
   buildScopedRepo,
+  buildUserDirectory,
   fakeConnection,
   jwtOf,
   USERS,
@@ -17,12 +19,13 @@ import { BulkOperationsService } from './bulk-operations.service';
 import { BulkOperationType } from './dtos/bulk-operation.dto';
 
 /**
- * T-54 (FR-31): KHÓA HIỆN TRẠNG quyền ở thao tác hàng loạt bằng `buildCustomerScope` + `CustomersRepository` THẬT,
- * qua `BulkOperationsService` + `CustomerDeletionService` + `CareTeamService` THẬT.
- * - Xóa hàng loạt (e): mỗi khách đi qua `applyDelete` với `requireDropped: true`, lỗi báo trong `failed[].errorCode`.
- * - Phân hàng loạt `ASSIGN` (e2): hiện chỉ kiểm "Admin/Manager" MỘT LẦN cho cả lô, KHÔNG kiểm quyền mời trên từng
- *   khách (`authorize: () => undefined`).
- * Hậu tố `[đảo ở T-56]` = hành vi hiện tại sẽ đổi ở T-56; test không hậu tố phải xanh đến hết T-61.
+ * Quyền ở thao tác hàng loạt bằng `buildCustomerScope` + `CustomersRepository` THẬT, qua `BulkOperationsService` +
+ * `CustomerDeletionService` + `CareTeamService` + `CustomerOwnerTeamService` THẬT (T-54 khóa hiện trạng; T-56 đảo theo FR-31).
+ * - Xóa hàng loạt (e): mỗi khách đi qua `applyDelete`; CHỈ Admin hoặc NGƯỜI TẠO xóa được, KHÔNG điều kiện trạng thái
+ *   "Bỏ" (D9); lỗi báo trong `failed[].errorCode` (`INSUFFICIENT_ROLE`).
+ * - Phân hàng loạt `ASSIGN` (e2): chặn Staff cả lô (một lần), rồi KIỂM QUYỀN CHỦ KHÁCH TỪNG KHÁCH (Admin, người tạo,
+ *   Manager nhóm chủ); khách không đủ quyền vào `failed[]` với `INSUFFICIENT_ROLE`.
+ * Hậu tố `[đảo ở T-56]` đã được đảo theo luật mới; test cũ giữ nguyên ý có hậu tố `(giữ ở T-56)`.
  */
 
 const DROPPED_STATUS_ID = new Types.ObjectId();
@@ -78,12 +81,12 @@ const build = (customers: Array<Record<string, unknown>>) => {
     audit as never,
     { dispatch: jest.fn().mockResolvedValue(undefined) } as never,
     { consume: jest.fn().mockResolvedValue(undefined) } as never,
+    buildUserDirectory().ownerTeam,
   );
   const deletion = new CustomerDeletionService(
     fakeConnection() as never,
     repo,
     access as never,
-    refs as never,
     audit as never,
     { cancelForCustomer: jest.fn().mockResolvedValue(undefined) } as never,
   );
@@ -95,6 +98,7 @@ const build = (customers: Array<Record<string, unknown>>) => {
     {} as never,
     deletion,
     { consume: jest.fn().mockResolvedValue(undefined) } as never,
+    buildUserDirectory().ownerTeam,
   );
   return { service, updates };
 };
@@ -136,111 +140,121 @@ const failure = (customer: { _id: Types.ObjectId }, errorCode: string) => ({
 // A4 Xóa khách hàng loạt (e)
 // ============================================================================================
 describe('BulkOperationsService DELETE: xóa khách hàng loạt (FR-31 a, c, e; ô A4)', () => {
-  describe('khách thuộc nhóm "Bỏ"', () => {
-    it.each(['MANAGER_OUT', 'STAFF_OUT'] as UserKey[])(
-      'FR-31 (a, c): %s ngoài phạm vi => failed CUSTOMER_NOT_FOUND, không xóa',
-      async (key) => {
-        const customer = droppedCustomer();
-        const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
-          succeeded: [],
-          failed: [failure(customer, 'CUSTOMER_NOT_FOUND')],
-        });
-        expect(h.updates).toHaveLength(0);
-      },
-    );
+  const statuses: Array<[string, typeof normalCustomer]> = [
+    ['"Bỏ"', droppedCustomer],
+    ['chưa "Bỏ"', normalCustomer],
+  ];
 
-    it.each(['ADMIN', 'STAFF_PRIMARY'] as UserKey[])(
-      'FR-31 (e): %s (Admin; người tạo kiêm PRIMARY) xóa được khách "Bỏ" (giữ ở T-56)',
-      async (key) => {
-        const customer = droppedCustomer();
-        const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
-          succeeded: ids([customer]),
-          failed: [],
-        });
-        expect(h.updates).toHaveLength(1);
-        expect(h.updates[0].update.$set).toMatchObject({
-          deletedBy: USERS[key].userId,
-        });
-      },
-    );
+  describe.each(statuses)(
+    'khách %s (D9: tình trạng không ảnh hưởng quyền xóa)',
+    (_label, make) => {
+      it.each(['MANAGER_OUT', 'STAFF_OUT'] as UserKey[])(
+        'FR-31 (a, c): %s ngoài phạm vi => failed CUSTOMER_NOT_FOUND, không xóa',
+        async (key) => {
+          const customer = make();
+          const h = build([customer]);
+          await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
+            succeeded: [],
+            failed: [failure(customer, 'CUSTOMER_NOT_FOUND')],
+          });
+          expect(h.updates).toHaveLength(0);
+        },
+      );
 
-    it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-31 (e): %s (Manager có nhóm giao với khách, không phải người tạo) hiện xóa được khách "Bỏ" [đảo ở T-56]',
-      async (key) => {
-        const customer = droppedCustomer();
-        const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
-          succeeded: ids([customer]),
-          failed: [],
-        });
-      },
-    );
+      it.each(['ADMIN', 'STAFF_PRIMARY'] as UserKey[])(
+        'FR-31 (e): %s (Admin; người tạo kiêm PRIMARY) xóa được, KHÔNG cần khách "Bỏ"',
+        async (key) => {
+          const customer = make();
+          const h = build([customer]);
+          await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
+            succeeded: ids([customer]),
+            failed: [],
+          });
+          expect(h.updates).toHaveLength(1);
+          expect(h.updates[0].update.$set).toMatchObject({
+            deletedBy: USERS[key].userId,
+          });
+        },
+      );
 
-    it('FR-31 (e): PRIMARY không phải người tạo hiện xóa được khách "Bỏ" [đảo ở T-56]', async () => {
-      const customer = droppedCustomer({
-        ...buildCustomerWithOtherPrimary(),
-        statusId: DROPPED_STATUS_ID,
-      });
-      const h = build([customer]);
-      await expect(bulkDelete(h, 'STAFF_MEMBER', [customer])).resolves.toEqual({
-        succeeded: ids([customer]),
-        failed: [],
-      });
-    });
+      it.each([
+        'MANAGER_OWNER',
+        'MANAGER_R8',
+        'MANAGER_INCARE',
+        'STAFF_MEMBER',
+        'STAFF_INVITED',
+      ] as UserKey[])(
+        'FR-31 (e) [đảo ở T-56]: %s (không phải người tạo, kể cả Manager nhóm chủ) => failed INSUFFICIENT_ROLE, không xóa',
+        async (key) => {
+          const customer = make();
+          const h = build([customer]);
+          await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
+            succeeded: [],
+            failed: [failure(customer, 'INSUFFICIENT_ROLE')],
+          });
+          expect(h.updates).toHaveLength(0);
+        },
+      );
 
-    it.each(['STAFF_MEMBER', 'STAFF_INVITED'] as UserKey[])(
-      'FR-31 (e): %s (MEMBER) => failed INSUFFICIENT_ROLE, không xóa (giữ ở T-56)',
-      async (key) => {
-        const customer = droppedCustomer();
+      it('FR-31 (e) [đảo ở T-56]: PRIMARY không phải người tạo => failed INSUFFICIENT_ROLE', async () => {
+        const customer = make(buildCustomerWithOtherPrimary());
         const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
+        await expect(
+          bulkDelete(h, 'STAFF_MEMBER', [customer]),
+        ).resolves.toEqual({
           succeeded: [],
           failed: [failure(customer, 'INSUFFICIENT_ROLE')],
         });
         expect(h.updates).toHaveLength(0);
-      },
-    );
+      });
+    },
+  );
+
+  it('FR-31: người tạo KHÔNG còn trong careTeam vẫn thấy và xóa được khách của mình (đi qua nhánh createdBy của scope)', async () => {
+    const customer = buildCustomerCreatorOutsideCareTeam();
+    const h = build([customer]);
+    await expect(bulkDelete(h, 'STAFF_PRIMARY', [customer])).resolves.toEqual({
+      succeeded: ids([customer]),
+      failed: [],
+    });
+    expect(h.updates).toHaveLength(1);
   });
 
-  describe('khách KHÔNG thuộc nhóm "Bỏ" (hàng loạt hiện đòi "Bỏ" với mọi người, kể cả Admin)', () => {
-    it.each(['ADMIN', 'STAFF_PRIMARY', 'MANAGER_OWNER'] as UserKey[])(
-      'FR-31 (e): %s có quyền xóa nhưng khách chưa "Bỏ" => failed CUSTOMER_NOT_DROPPED [đảo ở T-56]',
-      async (key) => {
-        const customer = normalCustomer();
-        const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
-          succeeded: [],
-          failed: [failure(customer, 'CUSTOMER_NOT_DROPPED')],
-        });
-        expect(h.updates).toHaveLength(0);
-      },
-    );
+  it('FR-31: Manager là người tạo xóa được khách của mình dù không trong careTeam; Manager nhóm chủ khác thì không', async () => {
+    const customer = buildCustomer({
+      createdBy: USERS.MANAGER_R8.userId,
+      careTeam: [],
+      teamIds: [USERS.MANAGER_R8.teamId, USERS.MANAGER_OWNER.teamId],
+      primaryAssigneeId: null,
+    });
+    const own = build([customer]);
+    await expect(bulkDelete(own, 'MANAGER_R8', [customer])).resolves.toEqual({
+      succeeded: ids([customer]),
+      failed: [],
+    });
+    const other = build([customer]);
+    await expect(
+      bulkDelete(other, 'MANAGER_OWNER', [customer]),
+    ).resolves.toEqual({
+      succeeded: [],
+      failed: [failure(customer, 'INSUFFICIENT_ROLE')],
+    });
+  });
 
-    it.each(['STAFF_MEMBER', 'STAFF_INVITED'] as UserKey[])(
-      'FR-31 (e): %s (MEMBER) => failed INSUFFICIENT_ROLE (quyền được xét trước tình trạng) (giữ ở T-56)',
-      async (key) => {
-        const customer = normalCustomer();
-        const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
-          succeeded: [],
-          failed: [failure(customer, 'INSUFFICIENT_ROLE')],
-        });
-      },
-    );
-
-    it.each(['MANAGER_OUT', 'STAFF_OUT'] as UserKey[])(
-      'FR-31 (a, c): %s ngoài phạm vi => failed CUSTOMER_NOT_FOUND (không lộ tình trạng khách) (giữ ở T-56)',
-      async (key) => {
-        const customer = normalCustomer();
-        const h = build([customer]);
-        await expect(bulkDelete(h, key, [customer])).resolves.toEqual({
-          succeeded: [],
-          failed: [failure(customer, 'CUSTOMER_NOT_FOUND')],
-        });
-      },
-    );
+  it('FR-31: khách cũ thiếu createdBy: chỉ Admin xóa được, PRIMARY bị INSUFFICIENT_ROLE (không ai là người tạo)', async () => {
+    const customer = buildCustomer({ createdBy: null });
+    const denied = build([customer]);
+    await expect(
+      bulkDelete(denied, 'STAFF_PRIMARY', [customer]),
+    ).resolves.toEqual({
+      succeeded: [],
+      failed: [failure(customer, 'INSUFFICIENT_ROLE')],
+    });
+    const allowed = build([customer]);
+    await expect(bulkDelete(allowed, 'ADMIN', [customer])).resolves.toEqual({
+      succeeded: ids([customer]),
+      failed: [],
+    });
   });
 
   it('FR-31 (e): mỗi khách một transaction riêng, báo từng khách (khách lỗi không kéo khách khác rollback) (giữ ở T-56)', async () => {
@@ -251,12 +265,16 @@ describe('BulkOperationsService DELETE: xóa khách hàng loạt (FR-31 a, c, e;
       createdBy: new Types.ObjectId(),
       primaryAssigneeId: null,
     });
-    const h = build([dropped, outOfScope]);
+    const notMine = normalCustomer({ createdBy: USERS.STAFF_MEMBER.userId });
+    const h = build([dropped, outOfScope, notMine]);
     await expect(
-      bulkDelete(h, 'STAFF_PRIMARY', [dropped, outOfScope]),
+      bulkDelete(h, 'STAFF_PRIMARY', [dropped, outOfScope, notMine]),
     ).resolves.toEqual({
       succeeded: ids([dropped]),
-      failed: [failure(outOfScope, 'CUSTOMER_NOT_FOUND')],
+      failed: [
+        failure(outOfScope, 'CUSTOMER_NOT_FOUND'),
+        failure(notMine, 'INSUFFICIENT_ROLE'),
+      ],
     });
     expect(h.updates).toHaveLength(1);
   });
@@ -274,7 +292,7 @@ describe('BulkOperationsService ASSIGN: phân chăm sóc hàng loạt (FR-31 a, 
     ).careTeam;
 
   it.each(['STAFF_PRIMARY', 'STAFF_MEMBER', 'STAFF_OUT'] as UserKey[])(
-    'FR-31 (e2): %s (Staff) bị chặn cả lô => 403 Insufficient role, không đụng khách nào (giữ ở T-56)',
+    'FR-31 (e2): %s (Staff, kể cả người tạo) bị chặn cả lô => 403 Insufficient role, không đụng khách nào (giữ ở T-56)',
     async (key) => {
       const customer = normalCustomer();
       const h = build([customer]);
@@ -316,26 +334,47 @@ describe('BulkOperationsService ASSIGN: phân chăm sóc hàng loạt (FR-31 a, 
   );
 
   it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e2): %s (Manager trong phạm vi, không có quyền mời trên khách này) hiện vẫn phân được vì KHÔNG kiểm từng khách [đảo ở T-56]',
+    'FR-31 (e2) [đảo ở T-56]: %s (Manager trong phạm vi nhưng không phải Manager nhóm chủ/người tạo) => failed INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const customer = normalCustomer();
       const h = build([customer]);
       await expect(bulkAssign(h, key, [customer])).resolves.toEqual({
-        succeeded: ids([customer]),
-        failed: [],
+        succeeded: [],
+        failed: [failure(customer, 'INSUFFICIENT_ROLE')],
       });
-      expect(h.updates).toHaveLength(1);
+      expect(h.updates).toHaveLength(0);
     },
   );
 
-  it('FR-31 (e2): MANAGER_R8 phân cả lô nhiều khách, không khách nào bị từ chối quyền mời (không kiểm từng khách) [đảo ở T-56]', async () => {
-    // MANAGER_R8 không có quyền chủ khách trên cả hai khách; hiện không có khách nào bị từ chối quyền mời.
-    const first = normalCustomer();
-    const second = normalCustomer();
-    const h = build([first, second]);
-    const result = await bulkAssign(h, 'MANAGER_R8', [first, second]);
-    expect(result.succeeded).toEqual(ids([first, second]));
-    expect(result.failed).toEqual([]);
+  it('FR-31 (e2) [đảo ở T-56]: lô hỗn hợp, quyền xét TỪNG khách: Manager nhóm chủ phân khách nhóm mình, bị từ chối khách nhóm khác', async () => {
+    const mine = normalCustomer();
+    // Khách do STAFF_INVITED (nhóm B) tạo: MANAGER_OWNER thấy qua teamIds nhưng KHÔNG là Manager nhóm chủ.
+    const theirs = normalCustomer({
+      createdBy: USERS.STAFF_INVITED.userId,
+      careTeam: [],
+      teamIds: [USERS.MANAGER_OWNER.teamId, USERS.STAFF_INVITED.teamId],
+      primaryAssigneeId: null,
+    });
+    const h = build([mine, theirs]);
+    await expect(
+      bulkAssign(h, 'MANAGER_OWNER', [mine, theirs]),
+    ).resolves.toEqual({
+      succeeded: ids([mine]),
+      failed: [failure(theirs, 'INSUFFICIENT_ROLE')],
+    });
+    expect(h.updates).toHaveLength(1);
+  });
+
+  it('FR-31 (e2): Manager là người tạo phân được khách mình tạo dù không trong careTeam (hasOwnerRights nhánh người tạo)', async () => {
+    const customer = buildCustomerCreatorOutsideCareTeam({
+      createdBy: USERS.MANAGER_R8.userId,
+      teamIds: [USERS.MANAGER_R8.teamId],
+    });
+    const h = build([customer]);
+    await expect(bulkAssign(h, 'MANAGER_R8', [customer])).resolves.toEqual({
+      succeeded: ids([customer]),
+      failed: [],
+    });
   });
 
   it('FR-31 (e2) FR-11: ASSIGN không đặt PRIMARY hàng loạt => 400 VALIDATION_FAILED cho cả lô (giữ ở T-56)', async () => {

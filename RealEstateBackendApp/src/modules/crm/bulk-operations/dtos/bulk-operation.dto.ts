@@ -30,7 +30,7 @@ export enum BulkOperationType {
   /** Gỡ thẻ (M4): bỏ qua khách chưa có thẻ. */
   REMOVE_TAGS = 'REMOVE_TAGS',
   ASSIGN = 'ASSIGN',
-  /** Xóa mềm hàng loạt (v1.0.2 mục D): chỉ khách thuộc nhóm "Bỏ", kiểm quyền từng khách, cần `payload.reason`. */
+  /** Xóa mềm hàng loạt: kiểm quyền từng khách (FR-31: Admin hoặc người tạo, không điều kiện trạng thái), cần `payload.reason`. */
   DELETE = 'DELETE',
 }
 

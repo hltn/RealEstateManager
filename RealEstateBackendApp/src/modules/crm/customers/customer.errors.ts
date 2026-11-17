@@ -26,14 +26,6 @@ export const versionConflict = (currentVersion: number): BusinessException =>
 export const insufficientRole = (): ForbiddenException =>
   new ForbiddenException('Insufficient role');
 
-/** 409: xóa khách không thuộc nhóm "Bỏ" (xóa hàng loạt, hoặc STAFF xóa đơn). */
-export const customerNotDropped = (): BusinessException =>
-  new BusinessException(
-    ErrorCode.CUSTOMER_NOT_DROPPED,
-    'Chỉ xóa được khách thuộc nhóm "Bỏ"',
-    HttpStatus.CONFLICT,
-  );
-
 /** 409: xóa vĩnh viễn khách chưa bị xóa mềm. */
 export const customerNotDeleted = (): BusinessException =>
   new BusinessException(

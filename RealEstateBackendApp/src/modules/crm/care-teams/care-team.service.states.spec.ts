@@ -61,6 +61,7 @@ const build = () => {
     { record: jest.fn().mockResolvedValue(undefined) } as never,
     { dispatch: jest.fn().mockResolvedValue({ created: 0 }) } as never,
     { consume: jest.fn().mockResolvedValue(undefined) } as never,
+    {} as never,
   );
   return { service, refs };
 };

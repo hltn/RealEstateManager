@@ -211,16 +211,13 @@ export class CustomersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Xóa mềm khách; bắt buộc query reason. Quản trị: mọi khách; Quản lý: khách thuộc NHÓM MÌNH QUẢN LÝ (chỉ có mặt trong nhóm chăm sóc thì không đủ); Nhân viên: khách "Bỏ" mà mình là người phụ trách chính hiện tại',
+      'Xóa mềm khách; bắt buộc query reason. Chỉ Quản trị (mọi khách) hoặc NGƯỜI TẠO khách (khách mình tạo); không điều kiện trạng thái. Quản lý (kể cả nhóm chủ), phụ trách chính và thành viên nhóm chăm sóc khác không xóa được',
   })
   @ApiResponse({ status: 204, description: 'Đã xóa mềm' })
   @ApiResponse({
     status: 403,
-    description: 'INSUFFICIENT_ROLE: thấy khách nhưng không đủ quyền xóa',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'CUSTOMER_NOT_DROPPED: Nhân viên xóa khách không thuộc "Bỏ"',
+    description:
+      'INSUFFICIENT_ROLE: thấy khách nhưng không phải Quản trị hoặc người tạo',
   })
   async remove(
     @CurrentUser() user: JwtPayload,

@@ -1,10 +1,16 @@
+import { ForbiddenException } from '@nestjs/common';
+import { Types } from 'mongoose';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
+import { CrmActor } from '../common/access/crm-actor';
 import { AppointmentStatus } from './appointment.constants';
 import {
+  assertCanModifyAppointment,
   assertEndAfterStart,
   assertProjectInputConsistent,
   assertRangeValid,
   assertStartNotInPast,
+  canModifyAppointment,
   canTransitionStatus,
   normalizeRemindOffsets,
   parseRangeBoundary,
@@ -174,6 +180,50 @@ describe('assertProjectInputConsistent (FR-40)', () => {
     (id, code) => {
       expect(failedField(() => assertProjectInputConsistent(id, code))).toBe(
         'projectCode',
+      );
+    },
+  );
+});
+
+describe('canModifyAppointment / assertCanModifyAppointment (FR-32: bản ghi chỉ của mình)', () => {
+  const actorOf = (
+    role: UserRole,
+    userId = new Types.ObjectId(),
+  ): CrmActor => ({
+    userId,
+    role,
+    roles: [role],
+    displayName: 'x',
+    teamId: null,
+    teamIds: [],
+    managedTeamIds: [],
+  });
+
+  it('Quản trị được với mọi lịch, kể cả lịch của người khác', () => {
+    const admin = actorOf(UserRole.ADMIN);
+    const row = { createdBy: new Types.ObjectId() };
+    expect(canModifyAppointment(admin, row)).toBe(true);
+    expect(() => assertCanModifyAppointment(admin, row)).not.toThrow();
+  });
+
+  it.each([UserRole.STAFF, UserRole.MANAGER])(
+    '%s là người tạo lịch => được',
+    (role) => {
+      const actor = actorOf(role);
+      const row = { createdBy: actor.userId };
+      expect(canModifyAppointment(actor, row)).toBe(true);
+      expect(() => assertCanModifyAppointment(actor, row)).not.toThrow();
+    },
+  );
+
+  it.each([UserRole.STAFF, UserRole.MANAGER])(
+    '%s KHÔNG phải người tạo lịch => false và 403 INSUFFICIENT_ROLE (Manager không có đặc quyền)',
+    (role) => {
+      const actor = actorOf(role);
+      const row = { createdBy: new Types.ObjectId() };
+      expect(canModifyAppointment(actor, row)).toBe(false);
+      expect(() => assertCanModifyAppointment(actor, row)).toThrow(
+        ForbiddenException,
       );
     },
   );

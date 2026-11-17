@@ -353,6 +353,9 @@ CustomerSchema.index({
   lastUpdatedAt: -1,
 });
 CustomerSchema.index({ teamIds: 1, deletedAt: 1, lastUpdatedAt: -1 });
+// FR-31: nhánh `createdBy` của `buildCustomerScope` (người tạo luôn thấy khách mình tạo). Index cộng thêm, không
+// unique, tương thích ngược; Mongoose autoIndex tạo khi khởi động nên KHÔNG cần migration.
+CustomerSchema.index({ createdBy: 1, deletedAt: 1, lastUpdatedAt: -1 });
 CustomerSchema.index({ primaryAssigneeId: 1, statusId: 1 });
 CustomerSchema.index({ sourceId: 1 });
 CustomerSchema.index({ interestedProjectIds: 1 });

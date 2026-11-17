@@ -45,6 +45,7 @@ const buildService = (before: { careTeam: any[]; __v: number }) => {
     audit as never,
     { dispatch } as never,
     { consume: jest.fn().mockResolvedValue(undefined) } as never,
+    {} as never,
   );
   return { service, dispatch };
 };

@@ -24,12 +24,13 @@ import { AppointmentsService } from './appointments.service';
 import { AppointmentsWriteService } from './appointments-write.service';
 
 /**
- * T-54 (FR-31): KHÓA HIỆN TRẠNG quyền lịch hẹn bằng `buildCustomerScope` + `CustomersRepository` THẬT.
+ * T-54 (FR-31) khóa hiện trạng, T-56 (FR-32) đảo phần bản ghi chỉ của mình: quyền lịch hẹn bằng `buildCustomerScope` + `CustomersRepository` THẬT.
  * - (a, b, c): ngoài phạm vi bị chặn, trong phạm vi tạo được (cả R8, e3).
  * - (d): người thực hiện ngoài tập hợp lệ (`careTeam` ∪ Manager nhóm chủ ∪ người tạo khách) => 400 USER_NOT_ASSIGNABLE
  *   (T-55, FR-30: đã đảo hai nhánh "Manager nhóm chủ" và "người tạo khách" từ bị chặn sang hợp lệ).
- * - (e, e1): sửa/đổi trạng thái hiện KHÔNG kiểm người sửa (ai trong phạm vi cũng được); xóa: Admin/Manager/người tạo lịch.
- * Hậu tố `[đảo ở T-56]` = hành vi hiện tại sẽ đổi ở task đó; test không hậu tố phải xanh đến hết T-61.
+ * - (e, e1): sửa, đổi trạng thái, xóa lịch CHỈ người tạo lịch hoặc Admin (`canModifyAppointment`, FR-32); Manager
+ *   (kể cả nhóm chủ), người tạo khách, PRIMARY, người được mời bị 403 INSUFFICIENT_ROLE, không ghi gì.
+ * Hậu tố `[đảo ở T-56]` = test đã ĐẢO sang luật mới (không xóa); `(giữ ở T-56)` = ý giữ nguyên.
  */
 
 const SESSION = { id: 'tx-session' } as never;
@@ -409,6 +410,7 @@ describe('AppointmentsWriteService.updateInSession: sửa lịch (FR-31 a, e1)',
     },
   );
 
+  // STAFF_PRIMARY vừa là PRIMARY vừa là NGƯỜI TẠO KHÁCH trong fixture; MANAGER_OWNER là Manager nhóm chủ.
   it.each([
     'STAFF_PRIMARY',
     'STAFF_INVITED',
@@ -416,13 +418,28 @@ describe('AppointmentsWriteService.updateInSession: sửa lịch (FR-31 a, e1)',
     'MANAGER_R8',
     'MANAGER_INCARE',
   ] as UserKey[])(
-    'FR-31 (e1) A7: %s (trong phạm vi, KHÔNG phải người tạo lịch) hiện sửa được lịch của người khác, không kiểm người sửa [đảo ở T-56]',
+    'FR-32 (e1) A7 [đảo ở T-56]: %s (trong phạm vi, KHÔNG phải người tạo lịch) sửa lịch của người khác => 403 INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const h = build();
-      await edit(h, key);
-      expect(h.appointmentModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      await expect(edit(h, key)).rejects.toMatchObject(
+        REJECTS.INSUFFICIENT_ROLE,
+      );
+      expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
     },
   );
+
+  it('FR-32 (e1) A7: quyền kiểm TRƯỚC phiên bản và trạng thái (người ngoài gửi sai version vẫn 403, không lộ 409)', async () => {
+    const h = build();
+    await expect(
+      h.writer.updateInSession(
+        ctxOf('MANAGER_OWNER'),
+        String(h.appointment._id),
+        { version: 99, title: 'x' },
+        'WEB',
+        SESSION,
+      ),
+    ).rejects.toMatchObject(REJECTS.INSUFFICIENT_ROLE);
+  });
 });
 
 describe('AppointmentsWriteService.changeStatusInSession: đổi trạng thái lịch (FR-31 a, e1)', () => {
@@ -462,13 +479,31 @@ describe('AppointmentsWriteService.changeStatusInSession: đổi trạng thái l
     'MANAGER_R8',
     'MANAGER_INCARE',
   ] as UserKey[])(
-    'FR-31 (e1) A7: %s (trong phạm vi, KHÔNG phải người tạo lịch) hiện đổi được trạng thái lịch của người khác [đảo ở T-56]',
+    'FR-32 (e1) A7 [đảo ở T-56]: %s (trong phạm vi, KHÔNG phải người tạo lịch) đổi trạng thái lịch của người khác => 403 INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const h = build();
-      const result = await finish(h, key);
-      expect(result.changed).toBe(true);
+      await expect(finish(h, key)).rejects.toMatchObject(
+        REJECTS.INSUFFICIENT_ROLE,
+      );
+      expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
     },
   );
+
+  // D12: đổi trạng thái tính là "sửa"; người THỰC HIỆN không phải người tạo lịch cũng không tự bấm Hoàn thành.
+  it('FR-32 (e1) D12: người thực hiện (assignee) không phải người tạo lịch KHÔNG đổi được trạng thái => 403', async () => {
+    const customer = buildCustomer();
+    const h = build(
+      customer,
+      makeAppointment(customer._id, {
+        assigneeId: USERS.STAFF_INVITED.userId,
+        assigneeIds: [USERS.STAFF_INVITED.userId],
+      }),
+    );
+    await expect(finish(h, 'STAFF_INVITED')).rejects.toMatchObject(
+      REJECTS.INSUFFICIENT_ROLE,
+    );
+    expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
 });
 
 // ============================================================================================
@@ -516,11 +551,25 @@ describe('AppointmentsService.remove: xóa lịch (FR-31 a, e)', () => {
   );
 
   it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e) A7: %s (Manager trong phạm vi, không phải người tạo lịch) xóa được lịch của người khác [đảo ở T-56]',
+    'FR-32 (e) A7 [đảo ở T-56]: %s (Manager trong phạm vi, không phải người tạo lịch) xóa lịch của người khác => 403 INSUFFICIENT_ROLE, không xóa',
     async (key) => {
       const h = build();
-      await remove(h, key);
-      expect(h.appointmentModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      await expect(remove(h, key)).rejects.toMatchObject(
+        REJECTS.INSUFFICIENT_ROLE,
+      );
+      expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
     },
   );
+
+  it('FR-32 (e) A8: Manager là NGƯỜI TẠO lịch xóa được lịch của chính mình', async () => {
+    const customer = buildCustomer();
+    const h = build(
+      customer,
+      makeAppointment(customer._id, {
+        createdBy: USERS.MANAGER_OWNER.userId,
+      }),
+    );
+    await remove(h, 'MANAGER_OWNER');
+    expect(h.appointmentModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
 });

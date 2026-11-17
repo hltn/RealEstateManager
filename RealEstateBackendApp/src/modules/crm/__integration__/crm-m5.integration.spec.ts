@@ -446,10 +446,12 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect((await createAppointment('editor', cA)).status).toBe(403);
       expect((await createAppointment(null as never, cA)).status).toBe(401);
 
-      // Quản lý nhóm A không nằm trong nhóm chăm sóc => mặc định người thực hiện là phụ trách chính.
+      // FR-30 (T-55): Quản lý nhóm chủ nằm trong tập người thực hiện hợp lệ của khách => không gửi người thực hiện
+      // thì mặc định chính người đặt lịch (không còn rơi về phụ trách chính như trước T-55).
       const byManager = await mustCreate('manager1', cA);
-      expect(byManager.assignee.id).toBe(ids.staffA);
+      expect(byManager.assignee.id).toBe(ids.manager1);
       expect(byManager.createdBy.id).toBe(ids.manager1);
+      // Quản trị KHÔNG thuộc tập hợp lệ (không phải thành viên, người tạo hay Quản lý nhóm chủ) => rơi về phụ trách chính.
       const byAdmin = await mustCreate('admin', cB);
       expect(byAdmin.assignee.id).toBe(ids.staffC);
       // Thành viên (không phải phụ trách chính) cũng tạo được, và mặc định chính họ là người thực hiện.
@@ -663,10 +665,33 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(oldReminders).toHaveLength(2);
 
       const newStart = inDays(8);
-      const moved = await call(
+      // FR-31 (b): chỉ người tạo lịch (hoặc Quản trị) sửa được; thành viên nhóm chăm sóc không phải người tạo bị 403
+      // và không ghi gì (version, nhắc giữ nguyên).
+      const notCreator = await call(
         'PATCH',
         `/crm/appointments/${apptId}`,
         'staffB',
+        { startAt: newStart, version: created.version },
+      );
+      expect([notCreator.status, notCreator.body.message]).toEqual([
+        403,
+        'Bạn không có quyền thực hiện thao tác này',
+      ]);
+      const unchanged = await call(
+        'GET',
+        `/crm/appointments/${apptId}`,
+        'admin',
+      );
+      expect([
+        unchanged.body.data.version,
+        unchanged.body.data.startAt,
+      ]).toEqual([created.version, created.startAt]);
+      expect(await remindersOf(apptId)).toHaveLength(2);
+
+      const moved = await call(
+        'PATCH',
+        `/crm/appointments/${apptId}`,
+        'staffA',
         {
           startAt: newStart,
           version: created.version,
@@ -727,7 +752,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       const t2 = inDays(10);
       const [first, second] = await Promise.all([
         call('PATCH', `/crm/appointments/${apptId}`, 'staffA', { startAt: t1 }),
-        call('PATCH', `/crm/appointments/${apptId}`, 'staffB', { startAt: t2 }),
+        call('PATCH', `/crm/appointments/${apptId}`, 'staffA', { startAt: t2 }),
       ]);
       // Không gửi version nên cả hai đều thành công (ghi tuần tự); trạng thái cuối khớp với một trong hai.
       expect([first.status, second.status]).toEqual([200, 200]);
@@ -807,10 +832,21 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
     });
 
     it('hoàn thành kèm nhật ký (createCareLog): lịch DONE, nhắc bị hủy, nextAppointmentAt về null, nhật ký cùng transaction và cập nhật lastCareLogAt', async () => {
-      const done = await call(
+      // FR-31 (b) + D12: người thực hiện (staffB) không phải người tạo lịch => KHÔNG đổi được trạng thái (403).
+      const assigneeOnly = await call(
         'PATCH',
         `/crm/appointments/${apptId}/status`,
         'staffB',
+        { status: 'DONE', createCareLog: true },
+      );
+      expect(assigneeOnly.status).toBe(403);
+      expect(
+        await col('care_logs').countDocuments({ customerId: oid(c) }),
+      ).toBe(0);
+      const done = await call(
+        'PATCH',
+        `/crm/appointments/${apptId}/status`,
+        'staffA',
         {
           status: 'DONE',
           outcome: 'Khách thích căn 2PN, hẹn quay lại',
@@ -827,7 +863,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(done.body.data.careLog).toMatchObject({
         content: 'Khách thích căn 2PN, hẹn quay lại',
         contactChannel: 'SITE_VISIT',
-        author: { id: ids.staffB },
+        author: { id: ids.staffA },
       });
       expect(
         (await remindersOf(apptId)).every((r) => r.status === 'CANCELED'),
@@ -842,7 +878,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       const again = await call(
         'PATCH',
         `/crm/appointments/${apptId}/status`,
-        'staffB',
+        'staffA',
         {
           status: 'DONE',
           createCareLog: true,
@@ -942,7 +978,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(actions).toEqual(['DONE', 'SCHEDULED', 'CANCELED']);
     });
 
-    it('xóa mềm: Quản trị/Quản lý (trong phạm vi) xóa mọi lịch; NV chỉ xóa lịch mình tạo (403 với lịch của người khác); lịch biến mất khỏi danh sách, nhắc hủy, nextAppointmentAt tính lại', async () => {
+    it('xóa mềm (FR-31 b): chỉ người tạo lịch hoặc Quản trị xóa được; Quản lý nhóm và NV khác bị 403; lịch biến mất khỏi danh sách, nhắc hủy, nextAppointmentAt tính lại', async () => {
       const byA = await mustCreate('staffA', c, { startAt: inDays(11) });
       const byB = await mustCreate('staffB', c, {
         startAt: inDays(12),
@@ -974,13 +1010,19 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(doc!.deletedAt).toEqual(expect.any(Date));
       expect(await auditOf(c, 'APPOINTMENT_DELETED')).toHaveLength(1);
 
+      // Quản lý nhóm chủ (trong phạm vi) KHÔNG xóa được lịch của người khác (FR-31 b): 403, lịch còn nguyên.
       expect(
         (await call('DELETE', `/crm/appointments/${byB.id}`, 'manager1'))
           .status,
+      ).toBe(403);
+      expect((await customerDoc(c))!.nextAppointmentAt!.toISOString()).toBe(
+        byB.startAt,
+      );
+      expect(
+        (await call('DELETE', `/crm/appointments/${byB.id}`, 'staffB')).status,
       ).toBe(204);
       expect(
-        (await call('DELETE', `/crm/appointments/${byB.id}`, 'manager1'))
-          .status,
+        (await call('DELETE', `/crm/appointments/${byB.id}`, 'staffB')).status,
       ).toBe(404);
       expect((await customerDoc(c))!.nextAppointmentAt).toBeNull();
       // Quản lý nhóm khác và người ngoài: 404.

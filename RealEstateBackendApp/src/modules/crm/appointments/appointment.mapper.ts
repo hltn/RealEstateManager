@@ -1,5 +1,4 @@
 import { Types } from 'mongoose';
-import { UserRole } from '../../../common/enums/user-role.enum';
 import { CrmActor } from '../common/access/crm-actor';
 import { toPhoneMasked } from '../customers/customer.mapper';
 import { CatalogRefDto } from '../../../common/dto/ref.dto';
@@ -7,6 +6,7 @@ import { StatusRefDto } from '../customers/dtos/customer-response.dto';
 import type { CatalogRef, RefMaps } from '../customers/customer-refs.service';
 import { toUserRef } from '../customers/customer-refs.service';
 import { getAssigneeIds } from './appointment-assignee';
+import { canModifyAppointment } from './appointment.rules';
 import { AppointmentResponseDto } from './dtos/appointment.dto';
 import { Appointment } from './schemas/appointment.schema';
 
@@ -29,15 +29,6 @@ const emptyStatus = (id: Types.ObjectId): StatusRefDto => ({
   listGroup: undefined as never,
   color: null,
 });
-
-/** Quản trị, Quản lý (trong phạm vi) xóa được mọi lịch; Nhân viên chỉ xóa lịch do mình tạo (ma trận 04 mục 4.2, "TG"). */
-export const canDeleteAppointment = (
-  actor: CrmActor,
-  appointment: Pick<Appointment, 'createdBy'>,
-): boolean =>
-  actor.role === UserRole.ADMIN ||
-  actor.role === UserRole.MANAGER ||
-  appointment.createdBy.equals(actor.userId);
 
 /**
  * `{ id, code, label }` của dự án (FR-40). `code` lấy từ mã đã ghi kép trên bản ghi (`storedCode`); bản ghi cũ chưa
@@ -90,5 +81,7 @@ export const toAppointmentResponse = (
   outcome: row.outcome ?? null,
   createdBy: toUserRef(row.createdBy, maps.users)!,
   version: row.__v,
-  canDelete: canDeleteAppointment(actor, row),
+  // Hai cờ đọc CÙNG hàm với kiểm quyền sửa, đổi trạng thái và xóa (FR-32).
+  canEdit: canModifyAppointment(actor, row),
+  canDelete: canModifyAppointment(actor, row),
 });

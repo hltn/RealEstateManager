@@ -1,12 +1,10 @@
 import { Types } from 'mongoose';
 import { CrmActor } from '../common/access/crm-actor';
 import { maskPhone } from '../common/utils/phone-normalizer.util';
-import { ListGroup } from '../catalogs/catalog.enums';
 import { canSetInitialPrimary } from '../care-teams/care-team.rules';
 import { getDeleteDenial } from './access/customer-delete-policy';
-import { isAdminOrManager } from './access/customer-scope';
+import { hasOwnerRights } from './access/customer-owner-team';
 import {
-  CareRole,
   CRITERIA_KEYS,
   PURCHASE_PURPOSES_FIELD_KEY,
 } from './customer.constants';
@@ -212,20 +210,15 @@ export const toMemberUser = (
   role: maps.userStates?.get(String(userId))?.role ?? null,
 });
 
-const isPrimary = (doc: CustomerLean, actor: CrmActor): boolean =>
-  (doc.careTeam ?? []).some(
-    (member) =>
-      member.role === CareRole.PRIMARY && member.userId.equals(actor.userId),
-  );
-
 export const toDetail = (
   doc: CustomerLean,
   refs: RefMaps,
   actor: CrmActor,
-  ownerTeam: OwnerRefs = { ownerManagers: [], creator: null },
+  ownerTeam: OwnerRefs = { ownerManagers: [], creator: null, managerIds: [] },
 ): CustomerDetailDto => {
-  const privileged = isAdminOrManager(actor);
-  const primary = isPrimary(doc, actor);
+  // FR-31: MỘT nguồn luật quyền chủ khách (Admin, người tạo, Manager nhóm chủ) cho xem CMND và mời/gỡ; không công
+  // thức thứ hai. `managerIds` do `buildOwnerRefs` nạp sẵn nên không truy vấn thêm.
+  const ownerRights = hasOwnerRights(actor, doc, ownerTeam.managerIds);
   const listItem = toListItem(doc, refs);
   const careTeam: CareTeamMemberDto[] = (doc.careTeam ?? []).map((member) => ({
     user: toMemberUser(member.userId, refs),
@@ -241,7 +234,7 @@ export const toDetail = (
     careTeam,
     nationalIdMasked: maskNationalId(doc.nationalIdLast4),
     hasNationalId: doc.hasNationalId === true,
-    canRevealNationalId: privileged || primary,
+    canRevealNationalId: ownerRights,
     dataConsent: toConsentResponse(doc, refs.users),
     lastUpdatedBy: toUserRef(doc.lastUpdatedBy, refs.users),
     createdAt: iso(doc.createdAt)!,
@@ -250,15 +243,13 @@ export const toDetail = (
     nextActionSuggestions: [],
     permissions: {
       canEdit: true,
-      canManageCareTeam: privileged || primary,
-      // Khách cũ chưa có PRIMARY: Admin/Manager được đặt đúng một lần (FR-11); đã có PRIMARY thì khóa.
-      canSetInitialPrimary: canSetInitialPrimary(actor, doc.careTeam ?? []),
-      // Cùng một nguồn luật với route xóa (`getDeleteDenial`); FE chỉ hiện nút Xóa khi khách thuộc nhóm "Bỏ".
-      canDelete:
-        getDeleteDenial(actor, doc, {
-          isDropped: listItem.status.listGroup === ListGroup.DROPPED,
-          requireDropped: false,
-        }) === null,
+      canManageCareTeam: ownerRights,
+      // Khách cũ chưa có PRIMARY: Admin/Manager được đặt đúng một lần (FR-11) và phải có quyền chủ khách vì việc đặt
+      // đi qua cổng mời (FR-31); đã có PRIMARY thì khóa.
+      canSetInitialPrimary:
+        ownerRights && canSetInitialPrimary(actor, doc.careTeam ?? []),
+      // Cùng một nguồn luật với route xóa (`getDeleteDenial`): chỉ Admin hoặc người tạo, không điều kiện trạng thái.
+      canDelete: getDeleteDenial(actor, doc) === null,
     },
     ownerManagers: ownerTeam.ownerManagers,
     creator: ownerTeam.creator,

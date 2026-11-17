@@ -130,10 +130,12 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
   const customerDoc = (id: string) =>
     customers().findOne({ _id: new Types.ObjectId(id) });
   const careTeamOf = async (id: string) =>
-    ((await customerDoc(id))!.careTeam as Array<{
-      userId: Types.ObjectId;
-      role: string;
-    }>).map((member) => ({
+    (
+      (await customerDoc(id))!.careTeam as Array<{
+        userId: Types.ObjectId;
+        role: string;
+      }>
+    ).map((member) => ({
       userId: String(member.userId),
       role: member.role,
     }));
@@ -407,7 +409,9 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
         400,
         'VALIDATION_FAILED',
       ]);
-      for (const who of ['admin', 'manager1', 'staffB']) {
+      // Người có quyền chủ khách (Quản trị, Quản lý nhóm chủ) gỡ PRIMARY (không phải người tạo): 409 PRIMARY_LOCKED,
+      // KHÔNG có reason CREATOR_LOCKED (staffB là PRIMARY chứ không phải người tạo; người tạo là staffA).
+      for (const who of ['admin', 'manager1']) {
         const removed = await call(
           'DELETE',
           `/crm/customers/${id}/care-team/members/${ids.staffB}`,
@@ -418,7 +422,22 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
           409,
           'PRIMARY_LOCKED',
         ]);
+        expect(removed.body.details?.reason).toBeUndefined();
       }
+      // FR-31: PRIMARY (staffB) KHÔNG phải người tạo thì không có quyền chủ khách => 403 CARE_TEAM_ACTION_FORBIDDEN
+      // (kiểm quyền trước kiểm khóa PRIMARY), không ghi gì.
+      const byPrimary = await call(
+        'DELETE',
+        `/crm/customers/${id}/care-team/members/${ids.staffB}`,
+        'staffB',
+      );
+      expect([byPrimary.status, byPrimary.body.errorCode]).toEqual([
+        403,
+        'CARE_TEAM_ACTION_FORBIDDEN',
+      ]);
+      expect(await careTeamOf(id)).toEqual(
+        expect.arrayContaining([{ userId: ids.staffB, role: 'PRIMARY' }]),
+      );
       const put = await call(
         'PUT',
         `/crm/customers/${id}/care-team/primary`,
@@ -435,6 +454,53 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
       expect(primaryAudits[0].changes).toEqual([
         { field: 'primaryAssignee', from: null, to: 'staffB' },
       ]);
+    });
+
+    it('FR-31: KHÔNG ai gỡ được người tạo khỏi nhóm chăm sóc, kể cả Quản trị và Quản lý nhóm chủ: 409 PRIMARY_LOCKED + details.reason = CREATOR_LOCKED, nhóm không đổi', async () => {
+      const id = await createCustomer('staffA'); // người tạo = staffA
+      await makeLegacyWithoutPrimary(id, ['teamA']);
+      const set = await invite(id, 'admin', ['staffC'], {
+        primaryUserId: ids.staffB,
+      });
+      expect(set.status).toBe(201);
+      // Khách cũ: người tạo có thể là MEMBER (người tạo mới luôn là PRIMARY). Dựng tay để có ca "gỡ người tạo là MEMBER".
+      await customers().updateOne(
+        { _id: new Types.ObjectId(id) },
+        {
+          $push: {
+            careTeam: {
+              userId: new Types.ObjectId(ids.staffA),
+              role: 'MEMBER',
+            },
+          } as never,
+        },
+      );
+      const before = await careTeamOf(id);
+      for (const who of ['admin', 'manager1']) {
+        const removed = await call(
+          'DELETE',
+          `/crm/customers/${id}/care-team/members/${ids.staffA}`,
+          who,
+        );
+        expect([
+          who,
+          removed.status,
+          removed.body.errorCode,
+          removed.body.details?.reason,
+        ]).toEqual([who, 409, 'PRIMARY_LOCKED', 'CREATOR_LOCKED']);
+      }
+      // Chính người tạo cũng không tự gỡ được mình.
+      const self = await call(
+        'DELETE',
+        `/crm/customers/${id}/care-team/members/${ids.staffA}`,
+        'staffA',
+      );
+      expect([
+        self.status,
+        self.body.errorCode,
+        self.body.details?.reason,
+      ]).toEqual([409, 'PRIMARY_LOCKED', 'CREATOR_LOCKED']);
+      expect(await careTeamOf(id)).toEqual(before);
     });
 
     it('Quản lý nhóm A (khách thuộc nhóm A) đặt PRIMARY lần đầu => 201; Quản lý nhóm B không thấy khách => 404; Nhân viên không thấy khách chưa có nhóm => 404', async () => {
@@ -497,8 +563,13 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
         (await call('GET', `/crm/customers/${customerId}`, 'manager2')).status,
       ).toBe(200);
       expect(
-        (await call('GET', `/crm/customers/${customerId}/care-team`, 'manager2'))
-          .status,
+        (
+          await call(
+            'GET',
+            `/crm/customers/${customerId}/care-team`,
+            'manager2',
+          )
+        ).status,
       ).toBe(200);
       const list = await call('GET', '/crm/customers?limit=100', 'manager2');
       expect(list.body.data.map((item: any) => item.id)).toContain(customerId);
@@ -535,9 +606,9 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
       expect((await careTeamOf(customerId)).map((m) => m.userId)).toContain(
         ids.staffC,
       );
-      expect(await auditOf(customerId, 'CARE_TEAM_MEMBER_REMOVED')).toHaveLength(
-        0,
-      );
+      expect(
+        await auditOf(customerId, 'CARE_TEAM_MEMBER_REMOVED'),
+      ).toHaveLength(0);
     });
   });
 
@@ -585,11 +656,16 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
     it('bulk ASSIGN cũng từ chối người BLOCKED/chỉ-Quản-trị theo từng khách (USER_NOT_ASSIGNABLE) và không ghi', async () => {
       const id = await createCustomer('staffA');
       for (const key of ['blockedStaff', 'adminOnly']) {
-        const res = await call('POST', '/crm/customer-bulk-operations', 'admin', {
-          type: 'ASSIGN',
-          customerIds: [id],
-          payload: { memberIds: [ids[key]] },
-        });
+        const res = await call(
+          'POST',
+          '/crm/customer-bulk-operations',
+          'admin',
+          {
+            type: 'ASSIGN',
+            customerIds: [id],
+            payload: { memberIds: [ids[key]] },
+          },
+        );
         expect([key, res.status]).toEqual([key, 200]);
         expect(res.body.data.failed).toEqual([
           { customerId: id, errorCode: 'USER_NOT_ASSIGNABLE' },
@@ -611,7 +687,9 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
       expect(ok.status).toBe(201);
       const team = await careTeamOf(id);
       expect(team).toHaveLength(MEMBER_LIMIT + 1);
-      expect(team.filter((member) => member.role === 'PRIMARY')).toHaveLength(1);
+      expect(team.filter((member) => member.role === 'PRIMARY')).toHaveLength(
+        1,
+      );
 
       const over = await invite(id, 'staffA', [extraKeys[MEMBER_LIMIT]]);
       expect([over.status, over.body.errorCode]).toEqual([
@@ -635,7 +713,8 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
     it('lô vượt giới hạn bị từ chối cả lô: nhóm đang 9 MEMBER, mời 2 người => 409 và không ai được thêm', async () => {
       const id = await createCustomer('staffA');
       expect(
-        (await invite(id, 'staffA', extraKeys.slice(0, MEMBER_LIMIT - 1))).status,
+        (await invite(id, 'staffA', extraKeys.slice(0, MEMBER_LIMIT - 1)))
+          .status,
       ).toBe(201);
       const batch = await invite(id, 'staffA', [
         extraKeys[MEMBER_LIMIT - 1],
@@ -785,7 +864,9 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
         as,
       );
       expect(res.status).toBe(200);
-      return res.body.data.filter((task: any) => task.customer.id === customerId);
+      return res.body.data.filter(
+        (task: any) => task.customer.id === customerId,
+      );
     };
 
     it('PRIMARY (staffA) bị BLOCKED: MEMBER (staffB) vẫn thấy lịch hẹn của khách, isPrimary = false', async () => {
@@ -832,7 +913,9 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
         { _id: new Types.ObjectId(id) },
         {
           $set: { primaryAssigneeId: null },
-          $pull: { careTeam: { userId: new Types.ObjectId(ids.staffA) } } as never,
+          $pull: {
+            careTeam: { userId: new Types.ObjectId(ids.staffA) },
+          } as never,
         },
       );
       expect(await careTeamOf(id)).toEqual([

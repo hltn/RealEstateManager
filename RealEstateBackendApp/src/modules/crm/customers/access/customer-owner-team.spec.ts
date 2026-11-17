@@ -1,5 +1,8 @@
 import { Types } from 'mongoose';
+import { UserRole } from '../../../../common/enums/user-role.enum';
+import { CrmActor } from '../../common/access/crm-actor';
 import {
+  hasOwnerRights,
   isCreator,
   isOwnerManager,
   ownerTeamIdsOf,
@@ -76,6 +79,60 @@ describe('customer-owner-team (FR-30, FR-32)', () => {
       expect(isOwnerManager([m1, m2], m2)).toBe(true);
       expect(isOwnerManager([m1, m2], other)).toBe(false);
       expect(isOwnerManager([], m1)).toBe(false);
+    });
+  });
+
+  describe('hasOwnerRights (FR-31: Admin, người tạo, Manager nhóm chủ)', () => {
+    const actorOf = (role: UserRole, userId = id()): CrmActor => ({
+      userId,
+      role,
+      roles: [role],
+      displayName: 'x',
+      teamId: null,
+      teamIds: [],
+      managedTeamIds: [],
+    });
+
+    it('FR-31: Admin luôn có quyền chủ khách, kể cả khách thiếu createdBy và không có Manager nhóm chủ', () => {
+      expect(
+        hasOwnerRights(actorOf(UserRole.ADMIN), { createdBy: null }, []),
+      ).toBe(true);
+    });
+
+    it('FR-31: người tạo có quyền dù vai trò Staff hay Manager (không xét careTeam, không xét nhóm)', () => {
+      const staff = actorOf(UserRole.STAFF);
+      const manager = actorOf(UserRole.MANAGER);
+      expect(hasOwnerRights(staff, { createdBy: staff.userId }, [])).toBe(true);
+      expect(hasOwnerRights(manager, { createdBy: manager.userId }, [])).toBe(
+        true,
+      );
+    });
+
+    it('FR-31: Manager có trong danh sách Manager nhóm chủ thì có quyền; Manager nhóm khác thì không', () => {
+      const inOwner = actorOf(UserRole.MANAGER);
+      const other = actorOf(UserRole.MANAGER);
+      const customer = { createdBy: id() };
+      expect(hasOwnerRights(inOwner, customer, [inOwner.userId])).toBe(true);
+      expect(hasOwnerRights(other, customer, [inOwner.userId])).toBe(false);
+    });
+
+    it('FR-31: Staff không phải người tạo KHÔNG có quyền, kể cả khi id nằm trong managerIds (vai trò không phải Manager)', () => {
+      const staff = actorOf(UserRole.STAFF);
+      expect(hasOwnerRights(staff, { createdBy: id() }, [staff.userId])).toBe(
+        false,
+      );
+    });
+
+    it('FR-31: khách thiếu createdBy thì Staff không phải người tạo của ai', () => {
+      const staff = actorOf(UserRole.STAFF);
+      expect(hasOwnerRights(staff, { createdBy: null }, [])).toBe(false);
+      expect(hasOwnerRights(staff, {}, [])).toBe(false);
+    });
+
+    it('FR-31: vai trò ngoài CRM (EDITOR) không có quyền nếu không phải người tạo', () => {
+      expect(
+        hasOwnerRights(actorOf(UserRole.EDITOR), { createdBy: id() }, []),
+      ).toBe(false);
     });
   });
 });

@@ -9,7 +9,6 @@ import {
   CrmAuditSource,
 } from '../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
-import { ListGroup } from '../catalogs/catalog.enums';
 import { RemindersWriterService } from '../reminders/reminders-writer.service';
 import {
   AccessContext,
@@ -17,7 +16,6 @@ import {
 } from './access/customer-access.service';
 import { assertCanDeleteCustomer } from './access/customer-delete-policy';
 import { customerNotFound, resolveClientSource } from './customer.errors';
-import { CustomerRefsService } from './customer-refs.service';
 import { CustomersRepository } from './customers.repository';
 
 /**
@@ -32,12 +30,11 @@ export class CustomerDeletionService {
     @InjectConnection() private readonly connection: Connection,
     private readonly repo: CustomersRepository,
     private readonly access: CustomerAccessService,
-    private readonly refs: CustomerRefsService,
     private readonly audit: CrmAuditLogService,
     private readonly reminders: RemindersWriterService,
   ) {}
 
-  /** Xóa đơn: ADMIN/MANAGER giữ hành vi cũ về tình trạng (không đòi "Bỏ"); STAFF chỉ khi khách thuộc nhóm "Bỏ". */
+  /** Xóa đơn (FR-31): Admin hoặc người tạo khách, không điều kiện trạng thái (D9). */
   async softDelete(
     jwt: JwtPayload,
     id: string,
@@ -47,15 +44,13 @@ export class CustomerDeletionService {
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
     await withTransaction(this.connection, (session) =>
-      this.applyDelete(ctx, id, reason, auditSource, session, {
-        requireDropped: false,
-      }),
+      this.applyDelete(ctx, id, reason, auditSource, session),
     );
   }
 
   /**
    * Xóa mềm MỘT khách trong transaction có sẵn: phạm vi xem (ngoài phạm vi = 404, không lộ sự tồn tại) -> quyền xóa
-   * (403/409) -> đánh dấu `deletedAt/deletedBy` -> hủy nhắc chưa gửi -> audit `CUSTOMER_DELETED`.
+   * (403, FR-31: Admin hoặc người tạo, không xét trạng thái) -> đánh dấu `deletedAt/deletedBy` -> hủy nhắc chưa gửi -> audit `CUSTOMER_DELETED`.
    * SĐT vẫn bị giữ chỗ (unique index không đổi); khôi phục sẽ dựng lại nhắc cho lịch còn hiệu lực.
    */
   async applyDelete(
@@ -64,21 +59,13 @@ export class CustomerDeletionService {
     reason: string,
     auditSource: CrmAuditSource,
     session: ClientSession,
-    options: { requireDropped: boolean },
   ): Promise<void> {
     const customer = await this.repo.findOne(ctx.scope, id, {
       session,
-      projection: { statusId: 1, teamIds: 1, careTeam: 1 },
+      projection: { createdBy: 1 },
     });
     if (!customer) throw customerNotFound();
-    const maps = await this.refs.resolve({ statusIds: [customer.statusId] });
-    const isDropped =
-      maps.statuses.get(String(customer.statusId))?.listGroup ===
-      ListGroup.DROPPED;
-    assertCanDeleteCustomer(ctx.actor, customer, {
-      isDropped,
-      requireDropped: options.requireDropped,
-    });
+    assertCanDeleteCustomer(ctx.actor, customer);
 
     const now = new Date();
     await this.repo.updateOne(

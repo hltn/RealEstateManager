@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
+import { UserRole } from '../../../../common/enums/user-role.enum';
 import { uniqueObjectIds } from '../../../../common/utils/object-id.util';
+import { CrmActor } from '../../common/access/crm-actor';
 
 /** Phần hồ sơ khách mà việc dựng "nhóm chủ" cần đọc. */
 export interface OwnerTeamCustomer {
@@ -43,3 +45,21 @@ export const isOwnerManager = (
   ownerManagerIds: readonly Types.ObjectId[],
   userId: Types.ObjectId,
 ): boolean => ownerManagerIds.some((managerId) => managerId.equals(userId));
+
+/**
+ * Quyền CHỦ KHÁCH (FR-31): xem CMND/CCCD, mời/gỡ thành viên `careTeam` (hàm thuần; nơi gọi nạp sẵn `ownerManagerIds`
+ * bằng `CustomerOwnerTeamService.loadCandidates`). Chỉ ba đối tượng, KHÔNG xét `careTeam` (PRIMARY/MEMBER không tự có):
+ * - ADMIN;
+ * - người tạo khách (`createdBy`), mọi vai trò;
+ * - MANAGER nằm trong `managerIds` của nhóm chủ (nhóm của người tạo), kể cả khi chưa trong `careTeam`.
+ * Người tạo không có nhóm thì `ownerManagerIds` rỗng nên không có Manager nhóm chủ.
+ */
+export const hasOwnerRights = (
+  actor: Pick<CrmActor, 'userId' | 'role'>,
+  customer: Pick<OwnerTeamCustomer, 'createdBy'>,
+  ownerManagerIds: readonly Types.ObjectId[],
+): boolean =>
+  actor.role === UserRole.ADMIN ||
+  isCreator(customer, actor.userId) ||
+  (actor.role === UserRole.MANAGER &&
+    isOwnerManager(ownerManagerIds, actor.userId));

@@ -23,12 +23,6 @@ export interface CrmActor {
   managedTeamIds: Types.ObjectId[];
 }
 
-/** Hai danh sách nhóm có ít nhất một nhóm chung (so theo giá trị ObjectId). */
-export const sharesAnyTeam = (
-  left: readonly Types.ObjectId[],
-  right: readonly Types.ObjectId[],
-): boolean => left.some((a) => right.some((b) => a.equals(b)));
-
 /**
  * Tập nhóm mà actor được "nhìn thấy" (danh sách nhóm).
  * - ADMIN: `null` = không giới hạn.

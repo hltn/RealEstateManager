@@ -56,7 +56,7 @@ export class CareTeamController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Mời thành viên phụ (Quản trị, Quản lý trong phạm vi, phụ trách chính); người được mời ACTIVE, vai trò Quản lý/Nhân viên, KHÔNG giới hạn theo nhóm; tối đa 10 thành viên phụ mỗi khách; rate-limit 30 lượt/phút/người; primaryUserId chỉ nhận khi nhóm rỗng và người gọi là Quản trị/Quản lý',
+      'Mời thành viên phụ (chỉ chủ khách: Quản trị, người tạo khách, Quản lý nhóm chủ; phụ trách chính hay thành viên khác không tự có quyền); người được mời ACTIVE, vai trò Quản lý/Nhân viên, KHÔNG giới hạn theo nhóm; tối đa 10 thành viên phụ mỗi khách; rate-limit 30 lượt/phút/người; primaryUserId chỉ nhận khi nhóm rỗng và người gọi là Quản trị/Quản lý',
   })
   @ApiDataResponse(CareTeamResponseDto, HttpStatus.CREATED)
   @ApiResponse({
@@ -89,11 +89,15 @@ export class CareTeamController {
   @Roles(...CRM_ROLES)
   @ApiOperation({
     summary:
-      'Gỡ thành viên phụ; phụ trách chính bị khóa nên gỡ PRIMARY là 409 PRIMARY_LOCKED',
+      'Gỡ thành viên phụ (chỉ chủ khách: Quản trị, người tạo khách, Quản lý nhóm chủ); phụ trách chính bị khóa nên gỡ PRIMARY là 409 PRIMARY_LOCKED; người tạo khách không bao giờ bị gỡ (kể cả Quản trị)',
   })
   @ApiDataResponse(CareTeamResponseDto)
   @ApiResponse({ status: 403, description: 'CARE_TEAM_ACTION_FORBIDDEN' })
-  @ApiResponse({ status: 409, description: 'PRIMARY_LOCKED' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRIMARY_LOCKED: gỡ người tạo (PRIMARY hay MEMBER) kèm details.reason = CREATOR_LOCKED; gỡ PRIMARY không phải người tạo không có reason',
+  })
   async removeMember(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

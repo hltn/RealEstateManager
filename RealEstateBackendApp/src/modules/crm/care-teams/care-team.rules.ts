@@ -1,6 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { UserRole } from '../../../common/enums/user-role.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
 import { CrmActor } from '../common/access/crm-actor';
@@ -8,6 +7,9 @@ import { isAdminOrManager } from '../customers/access/customer-scope';
 import { CareRole } from '../customers/customer.constants';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
 import { MAX_CARE_TEAM_MEMBERS } from './care-team.constants';
+
+/** `details.reason` của 409 `PRIMARY_LOCKED` khi gỡ người tạo khách (FE phân biệt với gỡ PRIMARY thường). */
+export const CREATOR_LOCKED_REASON = 'CREATOR_LOCKED';
 
 /** Độ dài tối đa của phần `requestId` trong `pushGroupKey` (header `X-Request-ID` do client gửi, không tin độ dài). */
 export const MAX_PUSH_GROUP_REQUEST_ID_LENGTH = 128;
@@ -91,17 +93,33 @@ export const assertMemberLimit = (change: CareTeamChange): void => {
   }
 };
 
-/** Chỉ Quản trị, Quản lý (trong phạm vi) hoặc phụ trách chính được thêm/gỡ thành viên (ma trận 4.2). */
-export const canManageMembers = (
-  actor: CrmActor,
-  careTeam: CareTeamEntry[],
-): boolean =>
-  actor.role === UserRole.ADMIN ||
-  actor.role === UserRole.MANAGER ||
-  careTeam.some(
-    (member) =>
-      member.role === CareRole.PRIMARY && member.userId.equals(actor.userId),
+/**
+ * Người tạo khách KHÔNG BAO GIỜ bị gỡ khỏi `careTeam` (FR-31, Q-45): mọi lần gỡ (PRIMARY hay MEMBER; người gỡ là Admin,
+ * Manager, PRIMARY hay chính người tạo) là 409 `PRIMARY_LOCKED` kèm `details.reason = CREATOR_LOCKED` (tái dùng mã cũ,
+ * `reason` để FE phân biệt với gỡ PRIMARY thường).
+ */
+const creatorLocked = (): BusinessException =>
+  new BusinessException(
+    ErrorCode.PRIMARY_LOCKED,
+    'Người tạo khách không thể bị gỡ khỏi nhóm chăm sóc',
+    HttpStatus.CONFLICT,
+    { reason: CREATOR_LOCKED_REASON },
   );
+
+/**
+ * Backstop (FR-31): `createdBy` có trong `careTeam` TRƯỚC mà không còn SAU thay đổi => 409 `PRIMARY_LOCKED` +
+ * `CREATOR_LOCKED`, áp cho MỌI vai trò và MỌI đường (gỡ, thay PRIMARY, thay cả nhóm). `applyInSession` gọi ngay sau
+ * `plan` nên đường tương lai cũng đi qua một cổng. Khách thiếu `createdBy`, hoặc người tạo vốn không trong nhóm trước,
+ * thì không có gì để giữ.
+ */
+export const assertCreatorKept = (
+  before: CareTeamEntry[],
+  after: CareTeamEntry[],
+  createdBy: Types.ObjectId | null | undefined,
+): void => {
+  if (!createdBy || !hasUser(before, createdBy)) return;
+  if (!hasUser(after, createdBy)) throw creatorLocked();
+};
 
 /**
  * Đặt phụ trách chính LẦN ĐẦU (FR-11): chỉ Quản trị/Quản lý và chỉ khi nhóm đang rỗng (khách cũ chưa có PRIMARY).
@@ -203,12 +221,14 @@ export const planAddMembers = (
 };
 
 /**
- * Gỡ thành viên. PRIMARY bị khóa: gỡ PRIMARY (kể cả Quản trị/Quản lý, kể cả qua thao tác hàng loạt) luôn là
- * 409 `PRIMARY_LOCKED` (FR-11). Gỡ người không có trong nhóm: 404.
+ * Gỡ thành viên. Gỡ người không có trong nhóm: 404. Gỡ NGƯỜI TẠO (`createdBy`; PRIMARY hay MEMBER) luôn là 409
+ * `PRIMARY_LOCKED` kèm `details.reason = CREATOR_LOCKED` (FR-31), kiểm TRƯỚC nhánh PRIMARY. Gỡ PRIMARY không phải
+ * người tạo (kể cả Quản trị/Quản lý, kể cả qua thao tác hàng loạt) vẫn là 409 `PRIMARY_LOCKED` không `reason` (FR-11).
  */
 export const planRemoveMember = (
   current: CareTeamEntry[],
   userId: Types.ObjectId,
+  createdBy: Types.ObjectId | null | undefined,
 ): CareTeamChange => {
   const target = current.find((member) => member.userId.equals(userId));
   if (!target) {
@@ -218,6 +238,7 @@ export const planRemoveMember = (
       HttpStatus.NOT_FOUND,
     );
   }
+  if (createdBy && target.userId.equals(createdBy)) throw creatorLocked();
   if (target.role === CareRole.PRIMARY) {
     throw new BusinessException(
       ErrorCode.PRIMARY_LOCKED,

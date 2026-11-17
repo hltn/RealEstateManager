@@ -6,6 +6,7 @@ import { UserStatus } from '../../../common/enums/user-status.enum';
 import type { CrmActor } from '../common/access/crm-actor';
 import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
 import { CareRole } from '../customers/customer.constants';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { CareTeamInviteesService } from './care-team-invitees.service';
 import {
   INVITEE_MAX_LIMIT,
@@ -23,7 +24,15 @@ type FakeQuery = Record<string, jest.Mock>;
 
 const chain = <T>(result: T): FakeQuery => {
   const query: FakeQuery = {};
-  for (const step of ['select', 'collation', 'sort', 'skip', 'limit', 'lean']) {
+  for (const step of [
+    'select',
+    'collation',
+    'sort',
+    'skip',
+    'limit',
+    'lean',
+    'session',
+  ]) {
     query[step] = jest.fn(() => query);
   }
   query.exec = jest.fn(() => Promise.resolve(result));
@@ -53,7 +62,14 @@ interface BuildOptions {
   users?: Array<Record<string, unknown>>;
   total?: number;
   teams?: Array<{ _id: Types.ObjectId; name: string }>;
-  customer?: { careTeam: ReturnType<typeof careEntry>[] } | null;
+  /** `createdBy` mặc định là chính người gọi (người tạo); đặt khác/`null` để thử người không phải người tạo. */
+  customer?: {
+    careTeam: ReturnType<typeof careEntry>[];
+    createdBy?: Types.ObjectId | null;
+    teamIds?: Types.ObjectId[];
+  } | null;
+  /** Người tạo khách trong `users` (để tìm nhóm chủ) và Manager của nhóm chủ trong `teams`. */
+  ownerTeam?: { creatorTeamId: Types.ObjectId; managerIds: Types.ObjectId[] };
 }
 
 const build = (options: BuildOptions = {}) => {
@@ -66,10 +82,29 @@ const build = (options: BuildOptions = {}) => {
   };
   const teamModel = { find: jest.fn(() => chain(options.teams ?? [])) };
   const actors = { resolve: jest.fn(() => Promise.resolve(actor)) };
-  const customers = {
+  const customer =
+    options.customer === null
+      ? null
+      : { createdBy: actor.userId, ...(options.customer ?? { careTeam: [] }) };
+  const customers = { findOne: jest.fn(() => Promise.resolve(customer)) };
+  // Dịch vụ nhóm chủ THẬT trên model giả riêng: người tạo thuộc `creatorTeamId`, nhóm đó do `managerIds` quản lý.
+  const ownerUserModel = {
     findOne: jest.fn(() =>
-      Promise.resolve(
-        options.customer === undefined ? { careTeam: [] } : options.customer,
+      chain(
+        customer?.createdBy && options.ownerTeam
+          ? {
+              _id: customer.createdBy,
+              teamId: options.ownerTeam.creatorTeamId,
+              teamIds: [options.ownerTeam.creatorTeamId],
+            }
+          : null,
+      ),
+    ),
+  };
+  const ownerTeamModel = {
+    find: jest.fn(() =>
+      chain(
+        options.ownerTeam ? [{ managerIds: options.ownerTeam.managerIds }] : [],
       ),
     ),
   };
@@ -80,6 +115,10 @@ const build = (options: BuildOptions = {}) => {
     actors as never,
     customers as never,
     rateLimit as never,
+    new CustomerOwnerTeamService(
+      ownerUserModel as never,
+      ownerTeamModel as never,
+    ),
   );
   const jwt = { sub: String(actor.userId) } as never;
   const userFilter = () =>
@@ -92,6 +131,8 @@ const build = (options: BuildOptions = {}) => {
     teamModel,
     actors,
     customers,
+    ownerUserModel,
+    ownerTeamModel,
     rateLimit,
     userFilter,
   };
@@ -124,18 +165,92 @@ describe('CareTeamInviteesService: quyền (FR-13)', () => {
     expect(ctx.userModel.find).not.toHaveBeenCalled();
   });
 
-  it('Staff là PRIMARY của khách được xem', async () => {
+  it('FR-31 [đảo ở T-56]: Staff là PRIMARY nhưng KHÔNG phải người tạo bị 403, không truy vấn users', async () => {
     const staff = makeActor({ role: UserRole.STAFF, roles: [UserRole.STAFF] });
     const ctx = build({
       actor: staff,
-      customer: { careTeam: [careEntry(staff.userId, CareRole.PRIMARY)] },
+      customer: {
+        careTeam: [careEntry(staff.userId, CareRole.PRIMARY)],
+        createdBy: oid(),
+      },
+    });
+    await expect(
+      ctx.service.list(ctx.jwt, query({ customerId: String(oid()) })),
+    ).rejects.toMatchObject({
+      errorCode: 'CARE_TEAM_ACTION_FORBIDDEN',
+      status: 403,
+    });
+    expect(ctx.userModel.find).not.toHaveBeenCalled();
+  });
+
+  it('FR-31 [đảo ở T-56]: Staff là NGƯỜI TẠO được xem dù không trong careTeam; không đọc users/teams của nhóm chủ', async () => {
+    const staff = makeActor({ role: UserRole.STAFF, roles: [UserRole.STAFF] });
+    const ctx = build({
+      actor: staff,
+      customer: { careTeam: [careEntry(oid(), CareRole.PRIMARY)] },
+    });
+    await expect(
+      ctx.service.list(ctx.jwt, query({ customerId: String(oid()) })),
+    ).resolves.toMatchObject({ data: [] });
+    expect(ctx.ownerUserModel.findOne).not.toHaveBeenCalled();
+    expect(ctx.ownerTeamModel.find).not.toHaveBeenCalled();
+  });
+
+  it('FR-31: Staff là người tạo nhưng KHÔNG có customerId (mời hàng loạt) vẫn bị 403 (chỉ Admin/Manager)', async () => {
+    const ctx = build({
+      actor: makeActor({ role: UserRole.STAFF, roles: [UserRole.STAFF] }),
+    });
+    await expect(ctx.service.list(ctx.jwt, query())).rejects.toMatchObject({
+      errorCode: 'CARE_TEAM_ACTION_FORBIDDEN',
+      status: 403,
+    });
+    expect(ctx.customers.findOne).not.toHaveBeenCalled();
+  });
+
+  it('FR-31: Manager của nhóm chủ (không phải người tạo, chưa trong careTeam) được xem', async () => {
+    const manager = makeActor();
+    const ownerTeamId = oid();
+    const ctx = build({
+      actor: manager,
+      customer: { careTeam: [], createdBy: oid() },
+      ownerTeam: { creatorTeamId: ownerTeamId, managerIds: [manager.userId] },
     });
     await expect(
       ctx.service.list(ctx.jwt, query({ customerId: String(oid()) })),
     ).resolves.toMatchObject({ data: [] });
   });
 
-  it('Staff chỉ là MEMBER của khách bị 403', async () => {
+  it('FR-31 [đảo ở T-56]: Manager nhóm khác (kể cả đang trong careTeam) bị 403', async () => {
+    const manager = makeActor();
+    const ctx = build({
+      actor: manager,
+      customer: {
+        careTeam: [careEntry(manager.userId, CareRole.MEMBER)],
+        createdBy: oid(),
+      },
+      ownerTeam: { creatorTeamId: oid(), managerIds: [oid()] },
+    });
+    await expect(
+      ctx.service.list(ctx.jwt, query({ customerId: String(oid()) })),
+    ).rejects.toMatchObject({
+      errorCode: 'CARE_TEAM_ACTION_FORBIDDEN',
+      status: 403,
+    });
+    expect(ctx.userModel.find).not.toHaveBeenCalled();
+  });
+
+  it('FR-31: Admin có customerId được xem khách bất kỳ (không đọc nhóm chủ)', async () => {
+    const ctx = build({
+      actor: makeActor({ role: UserRole.ADMIN, roles: [UserRole.ADMIN] }),
+      customer: { careTeam: [], createdBy: oid() },
+    });
+    await expect(
+      ctx.service.list(ctx.jwt, query({ customerId: String(oid()) })),
+    ).resolves.toMatchObject({ data: [] });
+    expect(ctx.ownerTeamModel.find).not.toHaveBeenCalled();
+  });
+
+  it('Staff chỉ là MEMBER của khách (không phải người tạo) bị 403', async () => {
     const staff = makeActor({ role: UserRole.STAFF, roles: [UserRole.STAFF] });
     const ctx = build({
       actor: staff,
@@ -144,6 +259,7 @@ describe('CareTeamInviteesService: quyền (FR-13)', () => {
           careEntry(oid(), CareRole.PRIMARY),
           careEntry(staff.userId, CareRole.MEMBER),
         ],
+        createdBy: oid(),
       },
     });
     await expect(
@@ -163,14 +279,16 @@ describe('CareTeamInviteesService: quyền (FR-13)', () => {
     expect(ctx.userModel.find).not.toHaveBeenCalled();
   });
 
-  it('tra khách theo phạm vi của người gọi và chỉ lấy trường careTeam', async () => {
+  it('tra khách theo phạm vi của người gọi và chỉ lấy trường cần cho quyền chủ khách (careTeam, createdBy, teamIds)', async () => {
     const ctx = build();
     const customerId = String(oid());
     await ctx.service.list(ctx.jwt, query({ customerId }));
 
     const args = (ctx.customers.findOne.mock.calls as unknown[][])[0];
     expect(args[1]).toBe(customerId);
-    expect(args[2]).toEqual({ projection: { careTeam: 1 } });
+    expect(args[2]).toEqual({
+      projection: { careTeam: 1, createdBy: 1, teamIds: 1 },
+    });
   });
 });
 

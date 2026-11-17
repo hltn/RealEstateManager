@@ -386,7 +386,15 @@ export class AppointmentResponseDto {
   @ApiProperty({ type: UserRefDto }) createdBy: UserRefDto;
   @ApiProperty({ description: 'Dùng làm `version` khi sửa (khóa lạc quan)' })
   version: number;
-  @ApiProperty({ description: 'Người gọi có được xóa lịch này không' })
+  @ApiProperty({
+    description:
+      'Người gọi có được sửa và đổi trạng thái lịch này không (chỉ người tạo lịch hoặc Quản trị; FR-32)',
+  })
+  canEdit: boolean;
+  @ApiProperty({
+    description:
+      'Người gọi có được xóa lịch này không (cùng luật với canEdit: người tạo lịch hoặc Quản trị)',
+  })
   canDelete: boolean;
 }
 

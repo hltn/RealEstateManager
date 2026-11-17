@@ -129,7 +129,7 @@ describe('CustomerAssigneesService: tập người theo phạm vi khách (FR-09)
     },
   );
 
-  it('phạm vi khác nhau theo vai trò: Admin = tất cả, Manager = nhóm quản lý hoặc có mình, Staff = chỉ có mình', async () => {
+  it('phạm vi khác nhau theo vai trò: Admin = tất cả, Manager = nhóm quản lý hoặc có mình hoặc người tạo, Staff = có mình hoặc người tạo', async () => {
     const managed = oid();
     const scopeOf = async (actor: CrmActor) => {
       const ctx = build({ actor });
@@ -148,13 +148,16 @@ describe('CustomerAssigneesService: tập người theo phạm vi khách (FR-09)
       $or: [
         { teamIds: { $in: [managed] } },
         { 'careTeam.userId': manager.userId },
+        { createdBy: manager.userId }, // FR-31: nhánh người tạo
       ],
     });
     const staff = makeActor({
       role: UserRole.STAFF,
       roles: [UserRole.STAFF],
     });
-    expect(await scopeOf(staff)).toEqual({ 'careTeam.userId': staff.userId });
+    expect(await scopeOf(staff)).toEqual({
+      $or: [{ 'careTeam.userId': staff.userId }, { createdBy: staff.userId }],
+    });
   });
 
   it('vai trò ngoài CRM (Editor): phạm vi khách rỗng (_id $in [])', async () => {

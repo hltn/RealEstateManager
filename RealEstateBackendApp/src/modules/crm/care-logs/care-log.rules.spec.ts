@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { CrmActor } from '../common/access/crm-actor';
@@ -50,13 +51,23 @@ describe('care-log.rules', () => {
       }
     });
 
-    it('Quản trị và Quản lý sửa mọi nhật ký, mọi lúc', () => {
+    it('FR-32: Quản trị sửa mọi nhật ký, mọi lúc', () => {
       const old = logBy(new Types.ObjectId(), 90);
-      for (const role of [UserRole.ADMIN, UserRole.MANAGER]) {
-        const actor = actorOf(role);
-        expect(canModifyCareLog(actor, old)).toBe(true);
-        expect(() => assertCanModifyCareLog(actor, old)).not.toThrow();
-      }
+      const admin = actorOf(UserRole.ADMIN);
+      expect(canModifyCareLog(admin, old)).toBe(true);
+      expect(() => assertCanModifyCareLog(admin, old)).not.toThrow();
+    });
+
+    it('FR-32 [đảo ở T-56]: Quản lý KHÔNG phải tác giả bị 403 INSUFFICIENT_ROLE; Quản lý là tác giả thì được', () => {
+      const manager = actorOf(UserRole.MANAGER);
+      const others = logBy(new Types.ObjectId(), 1);
+      expect(canModifyCareLog(manager, others)).toBe(false);
+      expect(() => assertCanModifyCareLog(manager, others)).toThrow(
+        ForbiddenException,
+      );
+      const own = logBy(manager.userId, 1);
+      expect(canModifyCareLog(manager, own)).toBe(true);
+      expect(() => assertCanModifyCareLog(manager, own)).not.toThrow();
     });
   });
 

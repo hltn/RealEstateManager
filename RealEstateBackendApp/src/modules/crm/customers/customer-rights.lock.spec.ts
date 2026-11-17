@@ -3,13 +3,17 @@ import { ListGroup } from '../catalogs/catalog.enums';
 import {
   buildAccess,
   buildCustomer,
+  buildCustomerCreatorOutsideCareTeam,
   buildCustomerWithOtherPrimary,
   buildScopedRepo,
+  buildUserDirectory,
   fakeConnection,
   IN_SCOPE_KEYS,
   jwtOf,
   OUT_OF_SCOPE_KEYS,
   REJECTS,
+  TEAM_A,
+  TEAM_B,
   USERS,
   type UserKey,
 } from './access/customer-rights.fixture';
@@ -23,12 +27,13 @@ import type { CustomerLean } from './customers.repository';
 import { CustomersService } from './customers.service';
 
 /**
- * T-54 (FR-31): KHÓA HIỆN TRẠNG quyền ở cấp khách (xem, sửa, đổi trạng thái, tiêu chí, xóa đơn, xem CMND/CCCD)
- * bằng `buildCustomerScope` + `CustomersRepository` THẬT trên model giả (xem `customer-rights.fixture.ts`).
+ * T-54 (FR-31) khóa quyền ở cấp khách (xem, sửa, đổi trạng thái, tiêu chí, xóa đơn, xem CMND/CCCD) bằng
+ * `buildCustomerScope` + `CustomersRepository` THẬT trên model giả (xem `customer-rights.fixture.ts`).
  * Ma trận đích: docs/06_Module_Customer_Management/13_Ma_Tran_Phan_Quyen_CRM.md.
  *
- * Quy ước tên: test có hậu tố `[đảo ở T-56]` mô tả hành vi HIỆN TẠI mà T-56 sẽ đổi (đảo kỳ vọng ở T-56);
- * test không có hậu tố phải XANH đến hết T-61. Ô ma trận được ghi bằng mã `Rn.Am`.
+ * T-56 đã ĐẢO các test nhãn `[đảo ở T-56]` sang luật mới (xóa chỉ Admin hoặc người tạo; CMND và quản lý nhóm
+ * chỉ người tạo, Admin, Manager nhóm chủ; scope có nhánh `createdBy`). Test không nhãn giữ nguyên (xanh đến hết T-61).
+ * Ô ma trận được ghi bằng mã `Rn.Am`.
  */
 
 const SESSION_STATUS_ID = new Types.ObjectId();
@@ -127,6 +132,29 @@ describe('CustomersService.getById: phạm vi xem (FR-31 a, b, c)', () => {
       ).rejects.toMatchObject(REJECTS.CUSTOMER_NOT_FOUND);
     },
   );
+
+  it('FR-31 (b) [đảo ở T-56, nhánh createdBy]: người tạo không còn trong careTeam vẫn xem được khách của mình', async () => {
+    const { service, customer } = build(buildCustomerCreatorOutsideCareTeam());
+    await expect(
+      service.getById(jwtOf('STAFF_PRIMARY'), String(customer._id)),
+    ).resolves.toMatchObject({ _id: customer._id });
+  });
+
+  it('FR-31 (a, c): nhánh createdBy chỉ mở cho người tạo: Staff ngoài careTeam và không phải người tạo vẫn 404', async () => {
+    const { service, customer } = build(buildCustomerCreatorOutsideCareTeam());
+    await expect(
+      service.getById(jwtOf('STAFF_OUT'), String(customer._id)),
+    ).rejects.toMatchObject(REJECTS.CUSTOMER_NOT_FOUND);
+  });
+
+  it('FR-31: khách cũ thiếu createdBy không khớp ai qua nhánh createdBy (Staff ngoài careTeam vẫn 404)', async () => {
+    const { service, customer } = build(
+      buildCustomerCreatorOutsideCareTeam({ createdBy: null }),
+    );
+    await expect(
+      service.getById(jwtOf('STAFF_PRIMARY'), String(customer._id)),
+    ).rejects.toMatchObject(REJECTS.CUSTOMER_NOT_FOUND);
+  });
 });
 
 // ============================================================================================
@@ -288,7 +316,6 @@ describe('CustomerDeletionService.softDelete: xóa khách đơn (FR-31 a, c, e; 
       fakeConnection() as never,
       repo,
       buildAccess() as never,
-      refsMock() as never,
       audit() as never,
       reminders as never,
     );
@@ -300,96 +327,129 @@ describe('CustomerDeletionService.softDelete: xóa khách đơn (FR-31 a, c, e; 
     customer: Record<string, unknown> & { _id: Types.ObjectId },
   ) => h.service.softDelete(jwtOf(key), String(customer._id), 'Dọn dẹp');
 
-  describe('khách ở tình trạng thường (không "Bỏ")', () => {
-    const customer = () => buildCustomer({ statusId: SESSION_STATUS_ID });
+  const statusCases: Array<[string, Types.ObjectId]> = [
+    ['thường (không "Bỏ")', SESSION_STATUS_ID],
+    ['"Bỏ"', DROPPED_STATUS_ID],
+  ];
 
-    it.each(OUT_OF_SCOPE_KEYS)(
-      'FR-31 (a, c): %s ngoài phạm vi => 404 CUSTOMER_NOT_FOUND, không xóa',
-      async (key) => {
-        const c = customer();
+  describe.each(statusCases)(
+    'khách ở tình trạng %s (D9: tình trạng không ảnh hưởng quyền xóa)',
+    (_label, statusId) => {
+      const make = (over: Record<string, unknown> = {}) =>
+        buildCustomer({ statusId, ...over });
+
+      it.each(OUT_OF_SCOPE_KEYS)(
+        'FR-31 (a, c): %s ngoài phạm vi => 404 CUSTOMER_NOT_FOUND, không xóa',
+        async (key) => {
+          const c = make();
+          const h = build(c);
+          await expect(remove(h, key, c)).rejects.toMatchObject(
+            REJECTS.CUSTOMER_NOT_FOUND,
+          );
+          expect(h.updates).toHaveLength(0);
+        },
+      );
+
+      it('FR-31 (e) R1.A3: Admin xóa được mọi khách (giữ ở T-56)', async () => {
+        const c = make();
         const h = build(c);
-        await expect(remove(h, key, c)).rejects.toMatchObject(
-          REJECTS.CUSTOMER_NOT_FOUND,
-        );
-        expect(h.updates).toHaveLength(0);
-      },
-    );
-
-    it('FR-31 (e) R1.A3: Admin xóa được mọi khách (giữ ở T-56)', async () => {
-      const c = customer();
-      const h = build(c);
-      await remove(h, 'ADMIN', c);
-      expect(h.updates).toHaveLength(1);
-      expect(h.updates[0].update).toMatchObject({
-        $set: { deletedBy: USERS.ADMIN.userId },
-      });
-    });
-
-    it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-31 (e) R4/R8.A3: %s (quản lý nhóm trong teamIds) xóa được khách không phải "Bỏ" [đảo ở T-56]',
-      async (key) => {
-        const c = customer();
-        const h = build(c);
-        await remove(h, key, c);
+        await remove(h, 'ADMIN', c);
         expect(h.updates).toHaveLength(1);
-        expect(h.reminders.cancelForCustomer).toHaveBeenCalled();
-      },
-    );
+        expect(h.updates[0].update).toMatchObject({
+          $set: { deletedBy: USERS.ADMIN.userId },
+        });
+      });
 
-    it.each(['STAFF_MEMBER', 'STAFF_INVITED'] as UserKey[])(
-      'FR-31 (e) R5.A3: %s (MEMBER trong careTeam) xóa khách => 403 INSUFFICIENT_ROLE, không xóa (giữ ở T-56)',
-      async (key) => {
-        const c = customer();
+      it('FR-31 (e) R2.A3 [đảo ở T-56]: người tạo (Staff, kiêm PRIMARY) xóa được khách của mình, KHÔNG cần khách "Bỏ"', async () => {
+        const c = make();
         const h = build(c);
-        await expect(remove(h, key, c)).rejects.toMatchObject(
+        await remove(h, 'STAFF_PRIMARY', c);
+        expect(h.updates).toHaveLength(1);
+        expect(h.updates[0].update).toMatchObject({
+          $set: { deletedBy: USERS.STAFF_PRIMARY.userId },
+        });
+        expect(h.reminders.cancelForCustomer).toHaveBeenCalled();
+      });
+
+      it('FR-31 (e) R2.A3: người tạo chỉ là MEMBER (PRIMARY là người khác) vẫn xóa được khách của mình', async () => {
+        const c = buildCustomerWithOtherPrimary({ statusId });
+        const h = build(c);
+        await remove(h, 'STAFF_PRIMARY', c);
+        expect(h.updates).toHaveLength(1);
+      });
+
+      it('FR-31 (e) R2.A3: người tạo không còn trong careTeam vẫn thấy (nhánh createdBy của scope) và xóa được', async () => {
+        const c = buildCustomerCreatorOutsideCareTeam({ statusId });
+        const h = build(c);
+        await remove(h, 'STAFF_PRIMARY', c);
+        expect(h.updates).toHaveLength(1);
+      });
+
+      it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
+        'FR-31 (e) R4/R8.A3 [đảo ở T-56]: %s (Manager, kể cả nhóm chủ; không phải người tạo) => 403 INSUFFICIENT_ROLE, không xóa',
+        async (key) => {
+          const c = make();
+          const h = build(c);
+          await expect(remove(h, key, c)).rejects.toMatchObject(
+            REJECTS.INSUFFICIENT_ROLE,
+          );
+          expect(h.updates).toHaveLength(0);
+          expect(h.reminders.cancelForCustomer).not.toHaveBeenCalled();
+        },
+      );
+
+      it('FR-31 (e) R5.A3 [đảo ở T-56]: PRIMARY KHÔNG phải người tạo => 403 INSUFFICIENT_ROLE, không xóa', async () => {
+        const c = buildCustomerWithOtherPrimary({ statusId });
+        const h = build(c);
+        await expect(remove(h, 'STAFF_MEMBER', c)).rejects.toMatchObject(
           REJECTS.INSUFFICIENT_ROLE,
         );
         expect(h.updates).toHaveLength(0);
-      },
-    );
+      });
 
-    it('FR-31 (e) R2.A3: người tạo (Staff, đang là PRIMARY) bị chặn 409 CUSTOMER_NOT_DROPPED khi khách chưa "Bỏ" [đảo ở T-56]', async () => {
-      const c = customer();
-      const h = build(c);
-      await expect(remove(h, 'STAFF_PRIMARY', c)).rejects.toMatchObject(
-        REJECTS.CUSTOMER_NOT_DROPPED,
+      it.each(['STAFF_MEMBER', 'STAFF_INVITED'] as UserKey[])(
+        'FR-31 (e) R5.A3: %s (MEMBER trong careTeam) xóa khách => 403 INSUFFICIENT_ROLE, không xóa (giữ ở T-56)',
+        async (key) => {
+          const c = make();
+          const h = build(c);
+          await expect(remove(h, key, c)).rejects.toMatchObject(
+            REJECTS.INSUFFICIENT_ROLE,
+          );
+          expect(h.updates).toHaveLength(0);
+        },
       );
-    });
+    },
+  );
+
+  it('FR-31: Manager là người tạo xóa được khách của mình; Manager nhóm chủ khác thì không', async () => {
+    const make = () =>
+      buildCustomerCreatorOutsideCareTeam({
+        createdBy: USERS.MANAGER_R8.userId,
+        teamIds: [TEAM_A, TEAM_B],
+      });
+    const own = make();
+    const ownHarness = build(own);
+    await remove(ownHarness, 'MANAGER_R8', own);
+    expect(ownHarness.updates).toHaveLength(1);
+
+    const other = make();
+    const otherHarness = build(other);
+    await expect(
+      remove(otherHarness, 'MANAGER_OWNER', other),
+    ).rejects.toMatchObject(REJECTS.INSUFFICIENT_ROLE);
+    expect(otherHarness.updates).toHaveLength(0);
   });
 
-  describe('khách ở tình trạng "Bỏ"', () => {
-    const dropped = () => buildCustomer({ statusId: DROPPED_STATUS_ID });
-
-    it('FR-31 (e) R2.A3: người tạo là PRIMARY xóa được khách "Bỏ" (giữ ở T-56: người tạo xóa ở mọi tình trạng)', async () => {
-      const c = dropped();
-      const h = build(c);
-      await remove(h, 'STAFF_PRIMARY', c);
-      expect(h.updates).toHaveLength(1);
-    });
-
-    it('FR-31 (e) R5.A3: PRIMARY KHÔNG phải người tạo xóa được khách "Bỏ" [đảo ở T-56]', async () => {
-      // Khách cũ: PRIMARY (STAFF_MEMBER) khác người tạo (STAFF_PRIMARY vẫn trong careTeam, là MEMBER).
-      const c = buildCustomerWithOtherPrimary({ statusId: DROPPED_STATUS_ID });
-      const h = build(c);
-      await remove(h, 'STAFF_MEMBER', c);
-      expect(h.updates).toHaveLength(1);
-    });
-
-    it('FR-31 (e) R5.A3: thành viên MEMBER thường không xóa được khách "Bỏ" => 403 INSUFFICIENT_ROLE (giữ ở T-56)', async () => {
-      const c = dropped();
-      const h = build(c);
-      await expect(remove(h, 'STAFF_INVITED', c)).rejects.toMatchObject(
-        REJECTS.INSUFFICIENT_ROLE,
-      );
-      expect(h.updates).toHaveLength(0);
-    });
-
-    it('FR-31 (e) R4.A3: Manager nhóm chủ xóa được khách "Bỏ" [đảo ở T-56]', async () => {
-      const c = dropped();
-      const h = build(c);
-      await remove(h, 'MANAGER_OWNER', c);
-      expect(h.updates).toHaveLength(1);
-    });
+  it('FR-31: khách cũ thiếu createdBy: PRIMARY không xóa được (không ai là người tạo), Admin vẫn xóa được', async () => {
+    const c = buildCustomer({ createdBy: null });
+    const denied = build(c);
+    await expect(remove(denied, 'STAFF_PRIMARY', c)).rejects.toMatchObject(
+      REJECTS.INSUFFICIENT_ROLE,
+    );
+    expect(denied.updates).toHaveLength(0);
+    const allowed = build(c);
+    await remove(allowed, 'ADMIN', c);
+    expect(allowed.updates).toHaveLength(1);
   });
 });
 
@@ -411,8 +471,9 @@ describe('CustomerNationalIdService.view: xem CMND/CCCD (FR-31 a, c, e; ô A11)'
       { consume: jest.fn().mockResolvedValue(undefined) } as never,
       abuse as never,
       audit() as never,
+      buildUserDirectory().ownerTeam,
     );
-    return { service };
+    return { service, abuse };
   };
   const view = (
     h: ReturnType<typeof build>,
@@ -432,7 +493,7 @@ describe('CustomerNationalIdService.view: xem CMND/CCCD (FR-31 a, c, e; ô A11)'
   );
 
   it.each(['ADMIN', 'MANAGER_OWNER'] as UserKey[])(
-    'FR-31 (e) R1/R4.A11: %s (Admin, Manager nhóm chủ) xem được CMND (giữ ở T-56)',
+    'FR-31 (e) R1/R4.A11: %s (Admin, Manager nhóm chủ chưa trong careTeam) xem được CMND (giữ ở T-56)',
     async (key) => {
       const c = buildCustomer();
       await expect(view(build(c), key, c)).resolves.toMatchObject({
@@ -442,39 +503,47 @@ describe('CustomerNationalIdService.view: xem CMND/CCCD (FR-31 a, c, e; ô A11)'
   );
 
   it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e) R5/R8.A11: %s (Manager nhóm khác hoặc Manager được mời, không phải nhóm chủ) xem được CMND [đảo ở T-56]',
+    'FR-31 (e) R5/R8.A11 [đảo ở T-56]: %s (Manager nhóm khác hoặc Manager được mời, không phải nhóm chủ) => 403 NATIONAL_ID_FORBIDDEN',
     async (key) => {
       const c = buildCustomer();
-      await expect(view(build(c), key, c)).resolves.toMatchObject({
-        nationalId: '012345678901',
-      });
+      const h = build(c);
+      await expect(view(h, key, c)).rejects.toMatchObject(
+        REJECTS.NATIONAL_ID_FORBIDDEN,
+      );
+      expect(h.abuse.trackNationalIdView).not.toHaveBeenCalled();
     },
   );
 
-  it('FR-31 (e) R2.A11: người tạo là PRIMARY xem được CMND (giữ ở T-56: người tạo vẫn xem được)', async () => {
+  it('FR-31 (e) R2.A11: người tạo là PRIMARY xem được CMND (giữ ở T-56)', async () => {
     const c = buildCustomer();
     await expect(view(build(c), 'STAFF_PRIMARY', c)).resolves.toMatchObject({
       nationalId: '012345678901',
     });
   });
 
-  it('FR-31 (e) R5.A11: PRIMARY KHÔNG phải người tạo xem được CMND [đảo ở T-56]', async () => {
+  it('FR-31 (e) R5.A11 [đảo ở T-56]: PRIMARY KHÔNG phải người tạo => 403 NATIONAL_ID_FORBIDDEN', async () => {
     const c = buildCustomerWithOtherPrimary();
-    await expect(view(build(c), 'STAFF_MEMBER', c)).resolves.toMatchObject({
-      nationalId: '012345678901',
-    });
-  });
-
-  it('FR-31 (e) M2 R5.A11: người tạo khách chỉ là MEMBER (PRIMARY là người khác) => 403 NATIONAL_ID_FORBIDDEN [đảo ở T-56: người tạo sẽ xem được, đóng D4]', async () => {
-    // `buildCustomerWithOtherPrimary`: STAFF_PRIMARY là NGƯỜI TẠO nhưng chỉ là MEMBER; hiện luật chỉ nhìn PRIMARY.
-    const c = buildCustomerWithOtherPrimary();
-    await expect(view(build(c), 'STAFF_PRIMARY', c)).rejects.toMatchObject(
+    await expect(view(build(c), 'STAFF_MEMBER', c)).rejects.toMatchObject(
       REJECTS.NATIONAL_ID_FORBIDDEN,
     );
   });
 
+  it('FR-31 (e) M2 R5.A11 [đảo ở T-56, đóng D4]: người tạo chỉ là MEMBER (PRIMARY là người khác) xem được CMND', async () => {
+    const c = buildCustomerWithOtherPrimary();
+    await expect(view(build(c), 'STAFF_PRIMARY', c)).resolves.toMatchObject({
+      nationalId: '012345678901',
+    });
+  });
+
+  it('FR-31 (e) R2.A11: người tạo không còn trong careTeam vẫn xem được CMND (nhánh createdBy của scope)', async () => {
+    const c = buildCustomerCreatorOutsideCareTeam();
+    await expect(view(build(c), 'STAFF_PRIMARY', c)).resolves.toMatchObject({
+      nationalId: '012345678901',
+    });
+  });
+
   it.each(['STAFF_MEMBER', 'STAFF_INVITED'] as UserKey[])(
-    'FR-31 (e) R5.A11: %s (MEMBER, không phải PRIMARY) => 403 NATIONAL_ID_FORBIDDEN (giữ ở T-56)',
+    'FR-31 (e) R5.A11: %s (MEMBER, không phải người tạo) => 403 NATIONAL_ID_FORBIDDEN (giữ ở T-56)',
     async (key) => {
       const c = buildCustomer();
       await expect(view(build(c), key, c)).rejects.toMatchObject(
@@ -514,6 +583,7 @@ describe('CustomerNationalIdService.listViews: nhật ký xem CMND/CCCD (FR-31 a
       {} as never,
       {} as never,
       audit() as never,
+      buildUserDirectory().ownerTeam,
     );
     return { service, auditModel };
   };
@@ -539,19 +609,33 @@ describe('CustomerNationalIdService.listViews: nhật ký xem CMND/CCCD (FR-31 a
   );
 
   it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e) M3 R5/R8.A11: %s (Manager nhóm khác hoặc Manager được mời, không phải nhóm chủ) xem được nhật ký xem CMND [đảo ở T-56]',
+    'FR-31 (e) M3 R5/R8.A11 [đảo ở T-56]: %s (Manager nhóm khác hoặc Manager được mời, không phải nhóm chủ) => 403 NATIONAL_ID_FORBIDDEN, không truy vấn nhật ký',
     async (key) => {
       const c = buildCustomer();
       const h = build(c);
-      await expect(list(h, key, c)).resolves.toMatchObject({ data: [] });
+      await expect(list(h, key, c)).rejects.toMatchObject(
+        REJECTS.NATIONAL_ID_FORBIDDEN,
+      );
+      expect(h.auditModel.find).not.toHaveBeenCalled();
     },
   );
 
-  it('FR-31 (e) M3 R2.A11: người tạo khách (Staff, PRIMARY) => 403 INSUFFICIENT_ROLE [đảo ở T-56: người tạo sẽ xem được nhật ký xem CMND]', async () => {
+  it('FR-31 (e) M3 R2.A11 [đảo ở T-56]: người tạo khách (Staff, PRIMARY) xem được nhật ký xem CMND, lọc đúng customerId', async () => {
     const c = buildCustomer();
-    await expect(list(build(c), 'STAFF_PRIMARY', c)).rejects.toMatchObject(
-      REJECTS.INSUFFICIENT_ROLE,
+    const h = build(c);
+    await expect(list(h, 'STAFF_PRIMARY', c)).resolves.toMatchObject({
+      data: [],
+    });
+    expect(h.auditModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: c._id }),
     );
+  });
+
+  it('FR-31 (e) M3 R2.A11: người tạo không còn trong careTeam vẫn xem được nhật ký (nhánh createdBy của scope)', async () => {
+    const c = buildCustomerCreatorOutsideCareTeam();
+    await expect(list(build(c), 'STAFF_PRIMARY', c)).resolves.toMatchObject({
+      data: [],
+    });
   });
 
   it.each([
@@ -563,21 +647,16 @@ describe('CustomerNationalIdService.listViews: nhật ký xem CMND/CCCD (FR-31 a
       buildCustomerWithOtherPrimary,
     ],
   ] as Array<[string, UserKey, Factory]>)(
-    'FR-31 (e) M3 R5.A11: %s => 403 và không truy vấn nhật ký (giữ ở T-56; mã lỗi đổi, xem ca kế)',
+    'FR-31 (e) M3 R5.A11: %s => 403 NATIONAL_ID_FORBIDDEN và không truy vấn nhật ký',
     async (_label, key, factory) => {
       const c = factory();
       const h = build(c);
-      await expect(list(h, key, c)).rejects.toMatchObject({ status: 403 });
+      await expect(list(h, key, c)).rejects.toMatchObject(
+        REJECTS.NATIONAL_ID_FORBIDDEN,
+      );
       expect(h.auditModel.find).not.toHaveBeenCalled();
     },
   );
-
-  it('FR-31 (e) M3 R5.A11: Staff không có quyền chủ khách nhận mã INSUFFICIENT_ROLE [đảo ở T-56: đổi sang NATIONAL_ID_FORBIDDEN]', async () => {
-    const c = buildCustomer();
-    await expect(list(build(c), 'STAFF_MEMBER', c)).rejects.toMatchObject(
-      REJECTS.INSUFFICIENT_ROLE,
-    );
-  });
 
   it('FR-31 (a, c) M3: Manager ngoài phạm vi => 404 CUSTOMER_NOT_FOUND (không lộ sự tồn tại), không truy vấn nhật ký', async () => {
     const c = buildCustomer();
@@ -588,18 +667,20 @@ describe('CustomerNationalIdService.listViews: nhật ký xem CMND/CCCD (FR-31 a
     expect(h.auditModel.find).not.toHaveBeenCalled();
   });
 
-  it('FR-31 (a, c) M3: Staff ngoài careTeam => 403 INSUFFICIENT_ROLE vì hiện kiểm vai trò trước phạm vi [đảo ở T-56]', async () => {
+  it('FR-31 (a, c) M3 [đảo ở T-56]: Staff ngoài careTeam => 404 CUSTOMER_NOT_FOUND (phạm vi xét trước vai trò, không lộ sự tồn tại), không truy vấn nhật ký', async () => {
     const c = buildCustomer();
-    await expect(list(build(c), 'STAFF_OUT', c)).rejects.toMatchObject(
-      REJECTS.INSUFFICIENT_ROLE,
+    const h = build(c);
+    await expect(list(h, 'STAFF_OUT', c)).rejects.toMatchObject(
+      REJECTS.CUSTOMER_NOT_FOUND,
     );
+    expect(h.auditModel.find).not.toHaveBeenCalled();
   });
 });
 
 // ============================================================================================
-// Cờ quyền trả cho FE (customer.mapper) hiện tại
+// Cờ quyền trả cho FE (customer.mapper)
 // ============================================================================================
-describe('toDetail.permissions: cờ quyền hiện tại (FR-31 e)', () => {
+describe('toDetail.permissions: cờ quyền (FR-31 e)', () => {
   const doc = (customer: Record<string, unknown>): CustomerLean =>
     ({
       ...customer,
@@ -608,11 +689,15 @@ describe('toDetail.permissions: cờ quyền hiện tại (FR-31 e)', () => {
       searchText: '',
       createdAt: new Date(),
     }) as unknown as CustomerLean;
-  const flagsOf = (key: UserKey, customer: Record<string, unknown>) => {
-    const detail = toDetail(doc(customer), emptyMaps(), USERS[key]);
+  /** `managerIds` do `CustomerOwnerTeamService` THẬT nạp (nhóm của người tạo) như ở `CustomersService.toDetailDto`. */
+  const flagsOf = async (key: UserKey, customer: Record<string, unknown>) => {
+    const lean = doc(customer);
+    const ownerTeam = await buildUserDirectory().ownerTeam.buildOwnerRefs(lean);
+    const detail = toDetail(lean, emptyMaps(), USERS[key], ownerTeam);
     return {
       canRevealNationalId: detail.canRevealNationalId,
       canManageCareTeam: detail.permissions.canManageCareTeam,
+      canSetInitialPrimary: detail.permissions.canSetInitialPrimary,
       canDelete: detail.permissions.canDelete,
       canEdit: detail.permissions.canEdit,
     };
@@ -620,70 +705,104 @@ describe('toDetail.permissions: cờ quyền hiện tại (FR-31 e)', () => {
 
   const normal = () => buildCustomer({ statusId: SESSION_STATUS_ID });
 
-  it('FR-31 (e) R1: Admin có đủ cờ (giữ ở T-56)', () => {
-    expect(flagsOf('ADMIN', normal())).toEqual({
+  it('FR-31 (e) R1: Admin có đủ cờ (giữ ở T-56); canSetInitialPrimary = false vì khách đã có PRIMARY', async () => {
+    await expect(flagsOf('ADMIN', normal())).resolves.toEqual({
       canRevealNationalId: true,
       canManageCareTeam: true,
+      canSetInitialPrimary: false,
       canDelete: true,
       canEdit: true,
     });
   });
 
-  it('FR-31 (e) R4: Manager nhóm chủ: canRevealNationalId và canManageCareTeam giữ; canDelete = true [đảo ở T-56]', () => {
-    expect(flagsOf('MANAGER_OWNER', normal())).toEqual({
+  it('FR-31 (e) R4 [đảo ở T-56]: Manager nhóm chủ: CMND và quản lý nhóm true; canDelete = false', async () => {
+    await expect(flagsOf('MANAGER_OWNER', normal())).resolves.toEqual({
       canRevealNationalId: true,
       canManageCareTeam: true,
-      canDelete: true,
-      canEdit: true,
-    });
-  });
-
-  it('FR-31 (e) R8: Manager nhóm khác (không trong careTeam): canRevealNationalId, canManageCareTeam, canDelete đều true [đảo ở T-56]', () => {
-    expect(flagsOf('MANAGER_R8', normal())).toEqual({
-      canRevealNationalId: true,
-      canManageCareTeam: true,
-      canDelete: true,
-      canEdit: true,
-    });
-  });
-
-  it('FR-31 (e) R2: người tạo (Staff, PRIMARY) trên khách chưa "Bỏ": canDelete = false [đảo ở T-56]; CMND và quản lý nhóm giữ', () => {
-    expect(flagsOf('STAFF_PRIMARY', normal())).toEqual({
-      canRevealNationalId: true,
-      canManageCareTeam: true,
+      canSetInitialPrimary: false,
       canDelete: false,
       canEdit: true,
     });
   });
 
-  it('FR-31 (e) R5: thành viên MEMBER: không CMND, không quản lý nhóm, không xóa; vẫn sửa được (giữ ở T-56)', () => {
-    expect(flagsOf('STAFF_MEMBER', normal())).toEqual({
+  it('FR-31 (e) R8 [đảo ở T-56]: Manager nhóm khác (không trong careTeam): canRevealNationalId, canManageCareTeam, canDelete đều false', async () => {
+    await expect(flagsOf('MANAGER_R8', normal())).resolves.toEqual({
       canRevealNationalId: false,
       canManageCareTeam: false,
+      canSetInitialPrimary: false,
       canDelete: false,
       canEdit: true,
     });
   });
 
-  it('FR-31 (e) M2 R5: người tạo khách chỉ là MEMBER (PRIMARY là người khác): canRevealNationalId = false, canManageCareTeam = false [đảo ở T-56: người tạo có quyền chủ khách]', () => {
-    const c = buildCustomerWithOtherPrimary({ statusId: SESSION_STATUS_ID });
-    expect(flagsOf('STAFF_PRIMARY', c)).toMatchObject({
-      canRevealNationalId: false,
-      canManageCareTeam: false,
-    });
-  });
-
-  it('FR-31 (e) R5: PRIMARY không phải người tạo: canRevealNationalId và canManageCareTeam = true [đảo ở T-56]', () => {
-    const c = buildCustomerWithOtherPrimary({ statusId: SESSION_STATUS_ID });
-    expect(flagsOf('STAFF_MEMBER', c)).toMatchObject({
+  it('FR-31 (e) R2 [đảo ở T-56]: người tạo (Staff, PRIMARY) trên khách chưa "Bỏ": canDelete = true; CMND và quản lý nhóm giữ', async () => {
+    await expect(flagsOf('STAFF_PRIMARY', normal())).resolves.toEqual({
       canRevealNationalId: true,
       canManageCareTeam: true,
+      canSetInitialPrimary: false,
+      canDelete: true,
+      canEdit: true,
     });
   });
 
-  it('FR-31 (e) R5: PRIMARY không phải người tạo trên khách "Bỏ": canDelete = true [đảo ở T-56]; MEMBER thì false (giữ)', () => {
+  it('FR-31 (e) R5: thành viên MEMBER: không CMND, không quản lý nhóm, không xóa; vẫn sửa được (giữ ở T-56)', async () => {
+    await expect(flagsOf('STAFF_MEMBER', normal())).resolves.toEqual({
+      canRevealNationalId: false,
+      canManageCareTeam: false,
+      canSetInitialPrimary: false,
+      canDelete: false,
+      canEdit: true,
+    });
+  });
+
+  it('FR-31 (e) M2 R5 [đảo ở T-56]: người tạo khách chỉ là MEMBER (PRIMARY là người khác): canRevealNationalId, canManageCareTeam, canDelete đều true', async () => {
+    const c = buildCustomerWithOtherPrimary({ statusId: SESSION_STATUS_ID });
+    await expect(flagsOf('STAFF_PRIMARY', c)).resolves.toMatchObject({
+      canRevealNationalId: true,
+      canManageCareTeam: true,
+      canDelete: true,
+    });
+  });
+
+  it('FR-31 (e) R5 [đảo ở T-56]: PRIMARY không phải người tạo: canRevealNationalId, canManageCareTeam, canDelete đều false', async () => {
+    const c = buildCustomerWithOtherPrimary({ statusId: SESSION_STATUS_ID });
+    await expect(flagsOf('STAFF_MEMBER', c)).resolves.toMatchObject({
+      canRevealNationalId: false,
+      canManageCareTeam: false,
+      canDelete: false,
+    });
+  });
+
+  it('FR-31 (e) R5 [đảo ở T-56]: khách "Bỏ": canDelete chỉ theo người tạo/Admin, PRIMARY không phải người tạo và MEMBER đều false', async () => {
     const c = buildCustomerWithOtherPrimary({ statusId: DROPPED_STATUS_ID });
-    expect(flagsOf('STAFF_MEMBER', c).canDelete).toBe(true);
-    expect(flagsOf('STAFF_INVITED', c).canDelete).toBe(false);
+    expect((await flagsOf('STAFF_MEMBER', c)).canDelete).toBe(false);
+    expect((await flagsOf('STAFF_INVITED', c)).canDelete).toBe(false);
+    expect((await flagsOf('STAFF_PRIMARY', c)).canDelete).toBe(true);
+  });
+
+  it('FR-31: canSetInitialPrimary chỉ true khi khách CHƯA có careTeam VÀ người gọi là Admin/Manager CÓ quyền chủ khách (Manager nhóm chủ true, Manager nhóm khác false)', async () => {
+    const empty = () =>
+      buildCustomer({
+        statusId: SESSION_STATUS_ID,
+        careTeam: [],
+        primaryAssigneeId: null,
+        teamIds: [TEAM_A, TEAM_B],
+      });
+    expect((await flagsOf('ADMIN', empty())).canSetInitialPrimary).toBe(true);
+    expect((await flagsOf('MANAGER_OWNER', empty())).canSetInitialPrimary).toBe(
+      true,
+    );
+    expect((await flagsOf('MANAGER_R8', empty())).canSetInitialPrimary).toBe(
+      false,
+    );
+  });
+
+  it('FR-31: khách thiếu createdBy: chỉ Admin có cờ xóa; không ai khác là người tạo', async () => {
+    const c = buildCustomer({
+      statusId: SESSION_STATUS_ID,
+      createdBy: null,
+    });
+    expect((await flagsOf('ADMIN', c)).canDelete).toBe(true);
+    expect((await flagsOf('STAFF_PRIMARY', c)).canDelete).toBe(false);
   });
 });

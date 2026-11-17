@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
+import { ClientSession, Connection, Model, Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { PaginationMetaDto } from '../../../common/dto/paginated-response.dto';
 import { BusinessException } from '../../../common/exceptions/business.exception';
@@ -26,14 +26,13 @@ import {
   AccessContext,
   CustomerAccessService,
 } from './access/customer-access.service';
-import { isAdminOrManager } from './access/customer-scope';
-import { CareRole } from './customer.constants';
+import { OwnerTeamCustomer } from './access/customer-owner-team';
 import {
   assertValidNationalId,
   customerNotFound,
-  insufficientRole,
   resolveClientSource,
 } from './customer.errors';
+import { CustomerOwnerTeamService } from './customer-owner-team.service';
 import { CustomersRepository } from './customers.repository';
 import {
   NationalIdViewDto,
@@ -69,6 +68,7 @@ export class CustomerNationalIdService {
     private readonly rateLimit: CrmRateLimitService,
     private readonly abuse: CrmAbuseMonitorService,
     private readonly audit: CrmAuditLogService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   /** Nhập/sửa CCCD: Quản trị, Quản lý (trong phạm vi) và Nhân viên trong nhóm chăm sóc. */
@@ -181,7 +181,8 @@ export class CustomerNationalIdService {
   }
 
   /**
-   * Xem CCCD đầy đủ: Quản trị, Quản lý (trong phạm vi) hoặc Nhân viên LÀ phụ trách chính. Ghi audit
+   * Xem CCCD đầy đủ (FR-31): chỉ chủ khách (`hasOwnerRights`: Quản trị, người tạo khách, Quản lý nhóm chủ); PRIMARY
+   * không phải người tạo, thành viên `careTeam` và Quản lý nhóm khác bị 403 `NATIONAL_ID_FORBIDDEN`. Ghi audit
    * `NATIONAL_ID_VIEWED` TRƯỚC khi trả số (cùng transaction). Throttle 10/phút/người.
    */
   async view(
@@ -200,16 +201,15 @@ export class CustomerNationalIdService {
       async (session) => {
         const customer = await this.repo.findOne(ctx.scope, id, {
           session,
-          projection: { careTeam: 1, hasNationalId: 1, nationalId: 1 },
+          projection: {
+            createdBy: 1,
+            teamIds: 1,
+            hasNationalId: 1,
+            nationalId: 1,
+          },
         });
         if (!customer) throw customerNotFound();
-        if (!this.canRevealNationalId(ctx, customer.careTeam)) {
-          throw new BusinessException(
-            ErrorCode.NATIONAL_ID_FORBIDDEN,
-            'Bạn không có quyền xem CCCD đầy đủ của khách này',
-            HttpStatus.FORBIDDEN,
-          );
-        }
+        await this.assertOwnerRights(ctx, customer, session);
         if (!customer.hasNationalId || !customer.nationalId) {
           throw new BusinessException(
             ErrorCode.RESOURCE_NOT_FOUND,
@@ -237,18 +237,21 @@ export class CustomerNationalIdService {
     return { nationalId, viewedAt: viewedAt.toISOString() };
   }
 
-  /** Nhật ký các lần xem CCCD của khách: chỉ Quản trị và Quản lý (trong phạm vi). */
+  /**
+   * Nhật ký các lần xem CCCD của khách (FR-31): cùng điều kiện với `view` (chủ khách). Ngoài phạm vi xem => 404
+   * (không lộ sự tồn tại); thấy khách nhưng không phải chủ khách => 403 `NATIONAL_ID_FORBIDDEN`.
+   */
   async listViews(
     jwt: JwtPayload,
     id: string,
     query: { page?: number; limit?: number },
   ): Promise<{ data: NationalIdViewEntryDto[]; meta: PaginationMetaDto }> {
     const ctx = await this.access.resolve(jwt);
-    if (!isAdminOrManager(ctx.actor)) throw insufficientRole();
     const customer = await this.repo.findOne(ctx.scope, id, {
-      projection: { _id: 1 },
+      projection: { createdBy: 1, teamIds: 1 },
     });
     if (!customer) throw customerNotFound();
+    await this.assertOwnerRights(ctx, customer);
 
     const { page, limit, skip } = normalizePagination(query.page, query.limit);
     const filter = {
@@ -277,15 +280,19 @@ export class CustomerNationalIdService {
     };
   }
 
-  private canRevealNationalId(
+  /** Quyền chủ khách (nguồn duy nhất: `CustomerOwnerTeamService.hasOwnerRights`); không đủ => 403 `NATIONAL_ID_FORBIDDEN`. */
+  private async assertOwnerRights(
     ctx: AccessContext,
-    careTeam: Array<{ userId: Types.ObjectId; role: CareRole }> | undefined,
-  ): boolean {
-    if (isAdminOrManager(ctx.actor)) return true;
-    return (careTeam ?? []).some(
-      (member) =>
-        member.role === CareRole.PRIMARY &&
-        member.userId.equals(ctx.actor.userId),
+    customer: OwnerTeamCustomer,
+    session?: ClientSession,
+  ): Promise<void> {
+    if (await this.ownerTeam.hasOwnerRights(ctx.actor, customer, session)) {
+      return;
+    }
+    throw new BusinessException(
+      ErrorCode.NATIONAL_ID_FORBIDDEN,
+      'Bạn không có quyền xem CCCD đầy đủ của khách này',
+      HttpStatus.FORBIDDEN,
     );
   }
 

@@ -978,10 +978,23 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
     });
 
     it('xóa nhật ký mới nhất => lastCareLogAt lùi về nhật ký còn lại; xóa hết => null; có audit kèm lý do', async () => {
-      const del = await call(
+      // FR-31 (b): Quản lý nhóm chủ KHÔNG xóa được nhật ký của người khác (403, nhật ký còn nguyên); chỉ tác giả hoặc Quản trị.
+      const byManager = await call(
         'DELETE',
         `/crm/customers/${cl}/care-logs/${logA}?reason=Ghi nh%E1%BA%A7m`,
         'manager1',
+      );
+      expect(byManager.status).toBe(403);
+      expect(
+        await careLogs().countDocuments({
+          _id: new Types.ObjectId(logA),
+          deletedAt: null,
+        }),
+      ).toBe(1);
+      const del = await call(
+        'DELETE',
+        `/crm/customers/${cl}/care-logs/${logA}?reason=Ghi nh%E1%BA%A7m`,
+        'staffA',
       );
       expect(del.status).toBe(204);
       const remaining = await careLogs()
@@ -992,7 +1005,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         remaining[0].occurredAt,
       );
       const [audit] = await auditOf(cl, 'CARE_LOG_DELETED');
-      expect(audit).toMatchObject({ reason: 'Ghi nhầm', actorRole: 'MANAGER' });
+      expect(audit).toMatchObject({ reason: 'Ghi nhầm', actorRole: 'STAFF' });
 
       expect(
         (
@@ -1021,7 +1034,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       ).toBe(404);
     });
 
-    it('nhật ký rất cũ (PT-022): canEdit theo từng vai trò; Quản lý/Nhân viên NGOÀI phạm vi 404 (không sửa/xóa được); Quản lý trong phạm vi sửa/xóa được', async () => {
+    it('nhật ký rất cũ (PT-022, FR-31 b): canEdit chỉ cho tác giả và Quản trị; Quản lý/Nhân viên NGOÀI phạm vi 404; Quản lý trong phạm vi nhưng không phải tác giả 403', async () => {
       const { id: cq } = await createCustomer('staffA');
       await call('POST', `/crm/customers/${cq}/care-team/members`, 'staffA', {
         userIds: [ids.staffB],
@@ -1040,11 +1053,11 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       );
       const url = `/crm/customers/${cq}/care-logs/${oldId}`;
 
-      // canEdit trong danh sách: tác giả, Quản lý trong phạm vi, Quản trị => true; thành viên nhóm không phải tác giả => false.
+      // canEdit trong danh sách: chỉ tác giả và Quản trị => true; thành viên nhóm và Quản lý nhóm chủ không phải tác giả => false.
       for (const [who, canEdit] of [
         ['staffA', true],
         ['staffB', false],
-        ['manager1', true],
+        ['manager1', false],
         ['admin', true],
       ] as const) {
         const list = await call('GET', `/crm/customers/${cq}/care-logs`, who);
@@ -1072,13 +1085,26 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         deletedAt: null,
       });
 
-      // Quản lý trong phạm vi sửa/xóa được nhật ký cũ; sau khi xóa mềm, tác giả xóa/sửa lại đều 404.
-      const byManager = await call('PATCH', url, 'manager1', {
-        content: 'Quản lý chỉnh',
+      // Quản lý nhóm chủ (trong phạm vi) KHÔNG sửa/xóa được nhật ký của người khác: 403, nhật ký còn nguyên.
+      expect(
+        (await call('PATCH', url, 'manager1', { content: 'Quản lý chỉnh' }))
+          .status,
+      ).toBe(403);
+      expect((await call('DELETE', url, 'manager1')).status).toBe(403);
+      expect(
+        await careLogs().countDocuments({
+          _id: new Types.ObjectId(oldId),
+          content: 'Nhật ký cũ, nhiều vai trò',
+          deletedAt: null,
+        }),
+      ).toBe(1);
+      // Quản trị sửa được; tác giả xóa được; sau khi xóa mềm, xóa/sửa lại đều 404.
+      const byAdmin = await call('PATCH', url, 'admin', {
+        content: 'Quản trị chỉnh',
       });
-      expect(byManager.status).toBe(200);
-      expect(byManager.body.data.canEdit).toBe(true);
-      expect((await call('DELETE', url, 'manager1')).status).toBe(204);
+      expect(byAdmin.status).toBe(200);
+      expect(byAdmin.body.data.canEdit).toBe(true);
+      expect((await call('DELETE', url, 'staffA')).status).toBe(204);
       expect((await call('DELETE', url, 'staffA')).status).toBe(404);
       expect(
         (await call('PATCH', url, 'staffA', { content: 'Sửa sau khi xóa' }))
@@ -1514,7 +1540,7 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
       expect(await auditOf(cp, 'ATTACHMENT_REMOVED')).toHaveLength(2);
     });
 
-    it('gỡ ảnh đã gắn vào nhật ký rất cũ (PT-022): Quản lý/Nhân viên ngoài phạm vi 404 và ảnh còn nguyên; Quản lý trong phạm vi gỡ được', async () => {
+    it('gỡ ảnh đã gắn vào nhật ký rất cũ (PT-022, FR-31 b): ngoài phạm vi 404; Quản lý trong phạm vi nhưng không phải tác giả 403; tác giả gỡ được', async () => {
       const attachedId = (await upload(cp, 'staffA')).body.data.id as string;
       const log = await call(
         'POST',
@@ -1550,7 +1576,15 @@ describe('CRM M3 — chăm sóc: nhóm chăm sóc, đề nghị tham gia, nhật
         (await careLogs().findOne({ _id: logId }))!.attachments,
       ).toHaveLength(1);
 
-      expect((await call('DELETE', url, 'manager1')).status).toBe(204);
+      // Quản lý nhóm chủ không phải tác giả nhật ký: 403, ảnh còn nguyên.
+      expect((await call('DELETE', url, 'manager1')).status).toBe(403);
+      expect(
+        await attachmentsCol().countDocuments({
+          _id: new Types.ObjectId(attachedId),
+          status: 'ATTACHED',
+        }),
+      ).toBe(1);
+      expect((await call('DELETE', url, 'staffA')).status).toBe(204);
       expect((await careLogs().findOne({ _id: logId }))!.attachments).toEqual(
         [],
       );

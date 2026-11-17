@@ -1,10 +1,14 @@
 import { HttpStatus } from '@nestjs/common';
+import { Types } from 'mongoose';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
 import {
   endOfDayUtc,
   startOfDayUtc,
 } from '../../../common/utils/timezone.util';
+import { CrmActor } from '../common/access/crm-actor';
+import { insufficientRole } from '../customers/customer.errors';
 import {
   APPOINTMENT_MAX_DURATION_MS,
   APPOINTMENT_PAST_TOLERANCE_MS,
@@ -15,6 +19,26 @@ import {
 const MS_PER_MINUTE = 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Bản ghi chỉ của mình (FR-32): chỉ Quản trị hoặc chính người tạo lịch được sửa, đổi trạng thái (Hoàn thành, Hủy, Mở
+ * lại; đổi trạng thái tính là "sửa", D12) và xóa lịch. Quản lý (kể cả nhóm chủ), người tạo khách, phụ trách chính,
+ * người được mời và người thực hiện không phải người tạo lịch đều KHÔNG được. MỘT hàm cho cả ba thao tác và hai cờ
+ * `canEdit`/`canDelete` của phản hồi để không thể lệch nhau.
+ */
+export const canModifyAppointment = (
+  actor: CrmActor,
+  appointment: { createdBy: Types.ObjectId },
+): boolean =>
+  actor.role === UserRole.ADMIN || appointment.createdBy.equals(actor.userId);
+
+/** Như `canModifyAppointment` nhưng ném lỗi: không đủ quyền => 403 `INSUFFICIENT_ROLE`. */
+export const assertCanModifyAppointment = (
+  actor: CrmActor,
+  appointment: { createdBy: Types.ObjectId },
+): void => {
+  if (!canModifyAppointment(actor, appointment)) throw insufficientRole();
+};
 
 export const invalidField = (
   message: string,

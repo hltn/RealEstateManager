@@ -45,7 +45,8 @@ const CLIENT_TYPE_HEADER = 'x-client-type';
 
 /**
  * Lịch hẹn (tài liệu 05 mục 2.9). Quyền: Quản trị, Quản lý (trong phạm vi), Nhân viên trong nhóm chăm sóc của khách;
- * xóa mềm: Quản trị, Quản lý (trong phạm vi) hoặc người tạo lịch — do service kiểm. Lịch của khách ngoài phạm vi
+ * sửa, đổi trạng thái, xóa mềm: CHỈ người tạo lịch hoặc Quản trị (FR-32), người khác 403 `INSUFFICIENT_ROLE` — do
+ * service kiểm. Lịch của khách ngoài phạm vi
  * (hoặc không tồn tại) trả 404 `RESOURCE_NOT_FOUND`.
  */
 @ApiTags('CRM - Appointments')
@@ -122,6 +123,10 @@ export class AppointmentsController {
   })
   @ApiDataResponse(AppointmentResponseDto)
   @ApiResponse({
+    status: 403,
+    description: 'INSUFFICIENT_ROLE: không phải người tạo lịch hoặc Quản trị',
+  })
+  @ApiResponse({
     status: 409,
     description: 'VERSION_CONFLICT, APPOINTMENT_STATUS_INVALID',
   })
@@ -142,6 +147,10 @@ export class AppointmentsController {
   })
   @ApiDataResponse(AppointmentWithCareLogResponseDto)
   @ApiResponse({
+    status: 403,
+    description: 'INSUFFICIENT_ROLE: không phải người tạo lịch hoặc Quản trị',
+  })
+  @ApiResponse({
     status: 409,
     description: 'VERSION_CONFLICT, APPOINTMENT_STATUS_INVALID',
   })
@@ -160,11 +169,13 @@ export class AppointmentsController {
   @Roles(...CRM_ROLES)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary:
-      'Xóa mềm lịch hẹn nhập nhầm (Quản trị, Quản lý trong phạm vi, người tạo lịch)',
+    summary: 'Xóa mềm lịch hẹn nhập nhầm (chỉ người tạo lịch hoặc Quản trị)',
   })
   @ApiResponse({ status: 204, description: 'Đã xóa mềm' })
-  @ApiResponse({ status: 403, description: 'Không phải người tạo lịch' })
+  @ApiResponse({
+    status: 403,
+    description: 'INSUFFICIENT_ROLE: không phải người tạo lịch hoặc Quản trị',
+  })
   async remove(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseObjectIdPipe) id: string,

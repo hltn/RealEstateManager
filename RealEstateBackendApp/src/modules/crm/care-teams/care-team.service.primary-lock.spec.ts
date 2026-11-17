@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { fakeOwnerTeam } from '../customers/access/customer-rights.fixture';
 import { CareRole } from '../customers/customer.constants';
 import { CareTeamService } from './care-team.service';
 
@@ -13,6 +14,8 @@ const PRIMARY = oid();
 const MEMBER = oid();
 const NEW_PRIMARY = oid();
 const NEW_MEMBER = oid();
+/** Người tạo khách cũ, KHÔNG nằm trong careTeam (để tách khóa PRIMARY khỏi khóa người tạo). */
+const CREATOR_OUT = oid();
 const CUSTOMER = String(oid());
 const JWT = { sub: String(ACTOR) } as never;
 
@@ -23,10 +26,17 @@ const entry = (userId: Types.ObjectId, role: CareRole) => ({
   addedAt: new Date(),
 });
 
-const build = (role: UserRole, userId: Types.ObjectId, careTeam: any[]) => {
+/** `createdBy` mặc định là PRIMARY (người tạo kiêm PRIMARY); quyền chủ khách (FR-31) chỉ cho Admin/người tạo/Manager nhóm chủ. */
+const build = (
+  role: UserRole,
+  userId: Types.ObjectId,
+  careTeam: any[],
+  createdBy: Types.ObjectId = PRIMARY,
+) => {
   const repo = {
     findOne: jest.fn().mockResolvedValue({
       careTeam,
+      createdBy,
       teamIds: [],
       fullName: 'Anh Minh',
       __v: 1,
@@ -60,6 +70,8 @@ const build = (role: UserRole, userId: Types.ObjectId, careTeam: any[]) => {
     { record: jest.fn().mockResolvedValue(undefined) } as never,
     { dispatch: jest.fn().mockResolvedValue({ created: 0 }) } as never,
     { consume: jest.fn().mockResolvedValue(undefined) } as never,
+    // Manager người gọi là Manager nhóm chủ của khách (hàm quyền thuần THẬT).
+    fakeOwnerTeam(role === UserRole.MANAGER ? [userId] : []) as never,
   );
   return { service, repo };
 };
@@ -69,22 +81,59 @@ const teamWithMember = () => [
   entry(MEMBER, CareRole.MEMBER),
 ];
 
-describe('CareTeamService.removeMember: PRIMARY bị khóa (FR-11)', () => {
+describe('CareTeamService.removeMember: PRIMARY bị khóa (FR-11) và người tạo bị khóa (FR-31)', () => {
   it.each([
-    ['Quản trị', UserRole.ADMIN, ACTOR],
-    ['Quản lý', UserRole.MANAGER, ACTOR],
-    ['chính PRIMARY tự gỡ mình', UserRole.STAFF, PRIMARY],
+    ['Quản trị', UserRole.ADMIN],
+    ['Quản lý nhóm chủ', UserRole.MANAGER],
   ])(
-    '%s gỡ PRIMARY ⇒ 409 PRIMARY_LOCKED, không ghi DB',
-    async (_n, role, userId) => {
-      const { service, repo } = build(role, userId, teamWithMember());
+    '%s gỡ PRIMARY (không phải người tạo) ⇒ 409 PRIMARY_LOCKED không có reason CREATOR_LOCKED, không ghi DB',
+    async (_n, role) => {
+      const { service, repo } = build(
+        role,
+        ACTOR,
+        teamWithMember(),
+        CREATOR_OUT,
+      );
 
-      await expect(
-        service.removeMember(JWT, CUSTOMER, String(PRIMARY)),
-      ).rejects.toMatchObject({ errorCode: 'PRIMARY_LOCKED' });
+      const error = await service
+        .removeMember(JWT, CUSTOMER, String(PRIMARY))
+        .catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ errorCode: 'PRIMARY_LOCKED', status: 409 });
+      expect((error as { details?: unknown }).details).toBeUndefined();
       expect(repo.updateOne).not.toHaveBeenCalled();
     },
   );
+
+  it('FR-31: PRIMARY KHÔNG phải người tạo tự gỡ mình ⇒ 403 CARE_TEAM_ACTION_FORBIDDEN (không còn quyền gỡ), không ghi DB', async () => {
+    const { service, repo } = build(
+      UserRole.STAFF,
+      PRIMARY,
+      teamWithMember(),
+      CREATOR_OUT,
+    );
+
+    await expect(
+      service.removeMember(JWT, CUSTOMER, String(PRIMARY)),
+    ).rejects.toMatchObject({
+      errorCode: 'CARE_TEAM_ACTION_FORBIDDEN',
+      status: 403,
+    });
+    expect(repo.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('FR-31: người tạo kiêm PRIMARY tự gỡ mình ⇒ 409 PRIMARY_LOCKED kèm reason CREATOR_LOCKED, không ghi DB', async () => {
+    const { service, repo } = build(UserRole.STAFF, PRIMARY, teamWithMember());
+
+    await expect(
+      service.removeMember(JWT, CUSTOMER, String(PRIMARY)),
+    ).rejects.toMatchObject({
+      errorCode: 'PRIMARY_LOCKED',
+      status: 409,
+      details: { reason: 'CREATOR_LOCKED' },
+    });
+    expect(repo.updateOne).not.toHaveBeenCalled();
+  });
 
   it('gỡ MEMBER vẫn được: ghi nhóm còn đúng một PRIMARY', async () => {
     const { service, repo } = build(UserRole.ADMIN, ACTOR, teamWithMember());
@@ -99,8 +148,13 @@ describe('CareTeamService.removeMember: PRIMARY bị khóa (FR-11)', () => {
     expect(response.members).toHaveLength(1);
   });
 
-  it('thành viên phụ (không phải PRIMARY) không được gỡ ai ⇒ 403 CARE_TEAM_ACTION_FORBIDDEN', async () => {
-    const { service, repo } = build(UserRole.STAFF, MEMBER, teamWithMember());
+  it('thành viên phụ (không phải người tạo) không được gỡ ai ⇒ 403 CARE_TEAM_ACTION_FORBIDDEN', async () => {
+    const { service, repo } = build(
+      UserRole.STAFF,
+      MEMBER,
+      teamWithMember(),
+      CREATOR_OUT,
+    );
 
     await expect(
       service.removeMember(JWT, CUSTOMER, String(PRIMARY)),
@@ -148,7 +202,8 @@ describe('CareTeamService.addMembers: primaryUserId chỉ khi nhóm rỗng và A
   });
 
   it('Nhân viên không đặt PRIMARY cho khách chưa có nhóm ⇒ 403', async () => {
-    const { service, repo } = build(UserRole.STAFF, ACTOR, []);
+    // ACTOR là người tạo (qua được quyền chủ khách) nhưng là Nhân viên nên vẫn không đặt được PRIMARY lần đầu.
+    const { service, repo } = build(UserRole.STAFF, ACTOR, [], ACTOR);
 
     await expect(
       service.addMembers(JWT, CUSTOMER, {
@@ -162,7 +217,7 @@ describe('CareTeamService.addMembers: primaryUserId chỉ khi nhóm rỗng và A
   it.each([
     ['Quản trị', UserRole.ADMIN, ACTOR],
     ['Quản lý', UserRole.MANAGER, ACTOR],
-    ['Nhân viên PRIMARY', UserRole.STAFF, PRIMARY],
+    ['Nhân viên người tạo kiêm PRIMARY', UserRole.STAFF, PRIMARY],
   ])(
     '%s truyền primaryUserId khi nhóm đã có người ⇒ 400 VALIDATION_FAILED, PRIMARY giữ nguyên',
     async (_n, role, userId) => {
@@ -178,7 +233,7 @@ describe('CareTeamService.addMembers: primaryUserId chỉ khi nhóm rỗng và A
     },
   );
 
-  it('PRIMARY thêm MEMBER (không truyền primaryUserId) vẫn được', async () => {
+  it('người tạo kiêm PRIMARY thêm MEMBER (không truyền primaryUserId) vẫn được', async () => {
     const { service, repo } = build(UserRole.STAFF, PRIMARY, teamWithMember());
 
     await service.addMembers(JWT, CUSTOMER, { userIds: [String(NEW_MEMBER)] });

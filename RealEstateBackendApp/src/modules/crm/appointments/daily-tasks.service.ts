@@ -54,6 +54,7 @@ import {
 } from './appointment.constants';
 import { assigneeFilter, getAssigneeIds } from './appointment-assignee';
 import { toProjectRef } from './appointment.mapper';
+import { canModifyAppointment } from './appointment.rules';
 import { customerScopeStages } from './customer-scope-stages.util';
 import {
   DailyTaskResponseDto,
@@ -89,6 +90,14 @@ const taskAssigneeIds = (item: {
 }): Types.ObjectId[] =>
   item.assigneeIds ?? (item.assigneeId ? [item.assigneeId] : []);
 
+/** Cờ sửa/đổi trạng thái/xóa lịch của một việc: CÙNG hàm `canModifyAppointment`; thiếu người tạo lịch => false. */
+const canModifyTaskAppointment = (
+  actor: AccessContext['actor'],
+  item: { appointmentCreatedBy?: Types.ObjectId },
+): boolean =>
+  !!item.appointmentCreatedBy &&
+  canModifyAppointment(actor, { createdBy: item.appointmentCreatedBy });
+
 /** Một việc chưa dựng response (chỉ có id tham chiếu), đủ để sắp xếp và phân trang giữa các nguồn. */
 interface TaskCandidate {
   id: string;
@@ -98,6 +107,8 @@ interface TaskCandidate {
   title: string;
   suggestion: string;
   appointmentId?: Types.ObjectId;
+  /** Người tạo lịch hẹn (chỉ việc kiểu lịch hẹn) để tính cờ `canEdit`/`canDelete` (FR-32). */
+  appointmentCreatedBy?: Types.ObjectId;
   /** Dự án của lịch hẹn (chỉ việc kiểu lịch hẹn có gắn dự án). */
   projectId?: Types.ObjectId;
   /** Mã dự án của lịch hẹn (ghi kép với `projectId`; lịch cũ chưa có thì dịch từ id khi dựng response). */
@@ -319,6 +330,7 @@ export class DailyTasksService {
           assigneeIds?: Types.ObjectId[];
           projectId?: Types.ObjectId | null;
           projectCode?: string | null;
+          createdBy?: Types.ObjectId;
         }>;
         total: Array<{ count: number }>;
       }>(pipeline)
@@ -333,6 +345,7 @@ export class DailyTasksService {
         title: row.title || APPOINTMENT_TYPE_LABELS[row.type],
         suggestion: row.note,
         appointmentId: row._id,
+        ...(row.createdBy && { appointmentCreatedBy: row.createdBy }),
         ...(row.projectId && {
           projectId: row.projectId,
           projectCode: row.projectCode ?? null,
@@ -652,6 +665,9 @@ export class DailyTasksService {
           suggestion: item.suggestion,
           ...(item.appointmentId && {
             appointmentId: String(item.appointmentId),
+            // Cờ sửa/đổi trạng thái/xóa lịch từ CÙNG hàm kiểm quyền của lịch hẹn (FR-32); thiếu người tạo => false.
+            canEdit: canModifyTaskAppointment(ctx.actor, item),
+            canDelete: canModifyTaskAppointment(ctx.actor, item),
           }),
           ...(item.careLogId && { careLogId: String(item.careLogId) }),
           assignee: toUserRef(item.assigneeId, maps.users),

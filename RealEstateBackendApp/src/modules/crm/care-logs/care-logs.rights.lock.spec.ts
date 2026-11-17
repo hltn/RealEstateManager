@@ -27,11 +27,12 @@ import { CareLogAttachmentsService } from './care-log-attachments.service';
 import { CareLogsService } from './care-logs.service';
 
 /**
- * T-54 (FR-31): KHÓA HIỆN TRẠNG quyền nhật ký chăm sóc và ảnh đính kèm bằng `buildCustomerScope` +
+ * T-54 (FR-31) khóa hiện trạng, T-56 (FR-32) đảo phần bản ghi chỉ của mình: quyền nhật ký chăm sóc và ảnh đính kèm bằng `buildCustomerScope` +
  * `CustomersRepository` THẬT.
  * - (a, b, c): ngoài phạm vi bị chặn; trong phạm vi (cả R8, e3) tạo được nhật ký kèm `nextAction.appointment`.
- * - (e): sửa/xóa nhật ký và gỡ ảnh: Admin/Manager trong phạm vi hoặc tác giả; Staff không phải tác giả bị chặn.
- * Hậu tố `[đảo ở T-56]` = hành vi hiện tại sẽ đổi ở T-56; test không hậu tố phải xanh đến hết T-61.
+ * - (e): sửa/xóa nhật ký và gỡ ảnh CHỈ tác giả hoặc Admin (ảnh chưa gắn: người tải hoặc Admin); Manager (kể cả
+ *   nhóm chủ), người tạo khách, PRIMARY, người được mời bị 403 (ảnh chưa gắn của người khác: 404).
+ * Hậu tố `[đảo ở T-56]` = test đã ĐẢO sang luật mới (không xóa); `(giữ ở T-56)` = ý giữ nguyên.
  */
 
 const future = (): Date => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -505,11 +506,13 @@ describe('CareLogsService.update: sửa nhật ký (FR-31 a, e)', () => {
   );
 
   it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e): %s (Manager trong phạm vi, không phải tác giả) hiện sửa được nhật ký của người khác [đảo ở T-56]',
+    'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải tác giả) sửa nhật ký của người khác => 403 INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const h = build();
-      await edit(h, key);
-      expect(h.careLogModel.updateOne).toHaveBeenCalledTimes(1);
+      await expect(edit(h, key)).rejects.toMatchObject(
+        REJECTS.INSUFFICIENT_ROLE,
+      );
+      expect(h.careLogModel.updateOne).not.toHaveBeenCalled();
     },
   );
 });
@@ -562,11 +565,13 @@ describe('CareLogsService.remove: xóa nhật ký (FR-31 a, e)', () => {
   );
 
   it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e): %s (Manager trong phạm vi, không phải tác giả) hiện xóa được nhật ký của người khác [đảo ở T-56]',
+    'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải tác giả) xóa nhật ký của người khác => 403 INSUFFICIENT_ROLE, không xóa',
     async (key) => {
       const h = build();
-      await remove(h, key);
-      softDeleted(h, key);
+      await expect(remove(h, key)).rejects.toMatchObject(
+        REJECTS.INSUFFICIENT_ROLE,
+      );
+      expect(h.careLogModel.updateOne).not.toHaveBeenCalled();
     },
   );
 });
@@ -669,11 +674,14 @@ describe('CareLogAttachmentsService.remove: gỡ ảnh đính kèm (FR-31 a, e)'
     );
 
     it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-31 (e): %s (Manager trong phạm vi, không phải tác giả) hiện gỡ được ảnh đã gắn của người khác [đảo ở T-56]',
+      'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải tác giả) gỡ ảnh đã gắn của người khác => 403 INSUFFICIENT_ROLE, không gỡ và không rút khỏi nhật ký',
       async (key) => {
         const h = attached();
-        await removeAttachment(h, key);
-        markedRemoved(h, key);
+        await expect(removeAttachment(h, key)).rejects.toMatchObject(
+          REJECTS.INSUFFICIENT_ROLE,
+        );
+        expect(h.attachmentModel.updateOne).not.toHaveBeenCalled();
+        expect(h.careLogModel.updateOne).not.toHaveBeenCalled();
       },
     );
   });
@@ -713,12 +721,21 @@ describe('CareLogAttachmentsService.remove: gỡ ảnh đính kèm (FR-31 a, e)'
     );
 
     it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-31 (e): %s (Manager trong phạm vi, không phải người tải lên) hiện gỡ được ảnh chưa gắn của người khác [đảo ở T-56]',
+      'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải người tải lên) gỡ ảnh chưa gắn của người khác => 404 RESOURCE_NOT_FOUND (không lộ sự tồn tại)',
       async (key) => {
         const h = unattached();
-        await removeAttachment(h, key);
-        markedRemoved(h, key);
+        await expect(removeAttachment(h, key)).rejects.toMatchObject(
+          REJECTS.RESOURCE_NOT_FOUND,
+        );
+        expect(h.attachmentModel.updateOne).not.toHaveBeenCalled();
       },
     );
+
+    it('FR-32 (e): Manager LÀ người tải lên thì gỡ được ảnh chưa gắn của chính mình', async () => {
+      const h = unattached();
+      h.attachment.uploaderId = USERS.MANAGER_OWNER.userId;
+      await removeAttachment(h, 'MANAGER_OWNER');
+      markedRemoved(h, 'MANAGER_OWNER');
+    });
   });
 });
