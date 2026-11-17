@@ -140,3 +140,62 @@ describe('toProjectRef / toAppointmentResponse.project: CatalogRefDto (FR-40)', 
     });
   });
 });
+
+describe('toAppointmentResponse: assignees và assignee (FR-30)', () => {
+  const second = new Types.ObjectId();
+  const third = new Types.ObjectId();
+  const named = {
+    ...maps,
+    users: new Map([
+      [String(userId), 'Nhân viên A'],
+      [String(second), 'Nhân viên B'],
+      [String(third), 'Quản lý C'],
+    ]),
+  };
+  const build = (extra: Record<string, unknown>) =>
+    toAppointmentResponse(
+      { ...row, ...extra },
+      customer({}),
+      named,
+      actor,
+      noProjects,
+    );
+
+  it('FR-30: lịch đã backfill nhiều người: assignees đủ và đúng thứ tự, assignee = người đầu', () => {
+    const response = build({
+      assigneeIds: [second, userId, third],
+      assigneeId: second,
+    });
+    expect(response.assignees.map((user) => user.displayName)).toEqual([
+      'Nhân viên B',
+      'Nhân viên A',
+      'Quản lý C',
+    ]);
+    expect(response.assignee.id).toBe(String(second));
+  });
+
+  it('FR-30 (chưa backfill): lịch cũ chỉ có assigneeId vẫn ra assignees 1 người và assignee', () => {
+    const response = build({ assigneeIds: undefined, assigneeId: userId });
+    expect(response.assignees).toHaveLength(1);
+    expect(response.assignees[0].id).toBe(String(userId));
+    expect(response.assignee.id).toBe(String(userId));
+  });
+
+  it('FR-30: assigneeIds là nguồn thật, thắng assigneeId lệch (BE cũ chưa ghi kép)', () => {
+    const response = build({ assigneeIds: [third], assigneeId: userId });
+    expect(response.assignees.map((user) => user.id)).toEqual([String(third)]);
+    expect(response.assignee.id).toBe(String(third));
+  });
+
+  it('FR-30: assigneeIds rỗng là rỗng thật: assignee null, assignees rỗng, KHÔNG lùi về assigneeId', () => {
+    const response = build({ assigneeIds: [], assigneeId: userId });
+    expect(response.assignees).toEqual([]);
+    expect(response.assignee).toBeNull();
+  });
+
+  it('FR-30: assigneeIds null (bản ghi cũ) rơi về assigneeId qua getAssigneeIds', () => {
+    const response = build({ assigneeIds: null, assigneeId: userId });
+    expect(response.assignees.map((user) => user.id)).toEqual([String(userId)]);
+    expect(response.assignee.id).toBe(String(userId));
+  });
+});

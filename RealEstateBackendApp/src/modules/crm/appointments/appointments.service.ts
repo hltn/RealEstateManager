@@ -37,6 +37,7 @@ import {
   invalidField,
   parseRangeBoundary,
 } from './appointment.rules';
+import { assigneeFilter, getAssigneeIds } from './appointment-assignee';
 import { AppointmentsWriteService } from './appointments-write.service';
 import { customerScopeStages } from './customer-scope-stages.util';
 import {
@@ -113,10 +114,13 @@ export class AppointmentsService {
       deletedAt: null,
       startAt: { $gte: from, $lte: to },
       ...(query.customerId && { customerId: oid(query.customerId) }),
-      ...projectFilter,
-      ...(query.assigneeIds?.length && {
-        assigneeId: { $in: query.assigneeIds.map(oid) },
-      }),
+      // Cả bộ lọc dự án (`projectCodeCondition`) lẫn `assigneeFilter` đều dùng khóa `$or`: gộp bằng `$and` để không
+      // đè nhau (FR-30). Chỉ dùng `$and` khi lọc người thực hiện; không thì giữ nguyên truy vấn cũ.
+      ...(query.assigneeIds?.length
+        ? {
+            $and: [projectFilter, assigneeFilter(query.assigneeIds.map(oid))],
+          }
+        : projectFilter),
       ...(query.types?.length && { type: { $in: query.types } }),
       ...(query.status && { status: query.status }),
     };
@@ -173,6 +177,7 @@ export class AppointmentsService {
             location: dto.location,
             note: dto.note,
             assigneeId: dto.assigneeId ? oid(dto.assigneeId) : undefined,
+            assigneeIds: dto.assigneeIds?.map(oid),
             remindBeforeMinutes: dto.remindBeforeMinutes,
             projectId: dto.projectId ? oid(dto.projectId) : null,
             projectCode: dto.projectCode ?? null,
@@ -330,7 +335,7 @@ export class AppointmentsService {
     const [maps, projectRefs] = await Promise.all([
       this.refs.resolve({
         statusIds: rows.map((row) => row.customer[0].statusId),
-        userIds: rows.flatMap((row) => [row.assigneeId, row.createdBy]),
+        userIds: rows.flatMap((row) => [...getAssigneeIds(row), row.createdBy]),
       }),
       this.refs.resolveByIds(
         'project',

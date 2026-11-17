@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # scripts/post-migrate/90-post-up-migrations.sh — bước hậu-migrate 90 của deploy.sh (v1.0.5, FR-21/FR-23; T-17).
 #
-# Chạy migration pha `post-up` (hiện là 011_crm_drop_unique_phone: bỏ unique `phone_1`, tạo `phone_1` thường, ẩn danh `anonymized:` -> null)
+# Chạy migration pha `post-up` (hiện là 011_crm_drop_unique_phone: bỏ unique `phone_1`, tạo `phone_1` thường, ẩn danh `anonymized:` -> null, MỘT CHIỀU; rồi 012_crm_appointment_assignee_ids (v1.0.6, FR-30): điền `appointments.assigneeIds` + index, chỉ cộng thêm, chạy lại an toàn, KHÔNG một chiều)
 # bằng `node dist/migrations/cli.js reconcile --apply --by deploy --skip-version --phase post-up`, SAU `up` + liveness + bước 10 và 20
 # (bù mã danh mục/khách xong thì mới làm bước MỘT CHIỀU này). `--skip-version`: version do bước 8b ghi, không ghi lại ở đây.
 #
@@ -71,7 +71,7 @@ require_pre_up_done() {
 
 apply_post_up() {
   local rc=0
-  log "Bước 90: migration post-up (reconcile --apply --phase post-up; 011 bỏ unique SĐT, MỘT CHIỀU) ..."
+  log "Bước 90: migration post-up (reconcile --apply --phase post-up; 011 bỏ unique SĐT, MỘT CHIỀU; 012 assigneeIds chỉ cộng thêm, KHÔNG một chiều) ..."
   mkdir -p "$LOGS_DIR" 2>/dev/null || true
   : >"$LOGFILE"
   require_pre_up_done

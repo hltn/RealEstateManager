@@ -6,6 +6,7 @@ import { CatalogRefDto } from '../../../common/dto/ref.dto';
 import { StatusRefDto } from '../customers/dtos/customer-response.dto';
 import type { CatalogRef, RefMaps } from '../customers/customer-refs.service';
 import { toUserRef } from '../customers/customer-refs.service';
+import { getAssigneeIds } from './appointment-assignee';
 import { AppointmentResponseDto } from './dtos/appointment.dto';
 import { Appointment } from './schemas/appointment.schema';
 
@@ -78,7 +79,10 @@ export const toAppointmentResponse = (
   endAt: row.endAt ? row.endAt.toISOString() : null,
   location: row.location,
   note: row.note,
-  assignee: toUserRef(row.assigneeId, maps.users)!,
+  // `assignee` (deprecated) = người đầu; `assignees` đủ thứ tự. Lịch chưa backfill suy từ `assigneeId` ở
+  // `getAssigneeIds`; `assigneeIds` rỗng là rỗng thật (assignee null), không lùi về `assigneeId` (FR-30).
+  assignee: toUserRef(getAssigneeIds(row)[0], maps.users)!,
+  assignees: getAssigneeIds(row).map((id) => toUserRef(id, maps.users)!),
   project: toProjectRef(row.projectId, row.projectCode, projects),
   remindBeforeMinutes: row.remindBeforeMinutes,
   status: row.status,

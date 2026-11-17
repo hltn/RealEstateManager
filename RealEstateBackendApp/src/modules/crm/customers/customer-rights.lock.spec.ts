@@ -100,6 +100,7 @@ describe('CustomersService.getById: phạm vi xem (FR-31 a, b, c)', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // CustomerOwnerTeamService: toDetailDto được giả lập nên không dùng (FR-30)
     );
     jest
       .spyOn(service, 'toDetailDto')
@@ -146,6 +147,7 @@ describe('CustomersService.update: sửa thông tin (FR-31 a, b, c; FR-32 giữ,
       { applyDelta: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
+      {} as never, // CustomerOwnerTeamService: toDetailDto được giả lập nên không dùng (FR-30)
     );
     jest
       .spyOn(service, 'toDetailDto')

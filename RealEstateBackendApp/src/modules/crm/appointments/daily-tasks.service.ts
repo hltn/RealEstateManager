@@ -52,6 +52,7 @@ import {
   AppointmentStatus,
   AppointmentType,
 } from './appointment.constants';
+import { assigneeFilter, getAssigneeIds } from './appointment-assignee';
 import { toProjectRef } from './appointment.mapper';
 import { customerScopeStages } from './customer-scope-stages.util';
 import {
@@ -81,6 +82,13 @@ const OCCASION_CUSTOMER_CAP = 2000;
 const CUSTOMER_TASK_PROJECTION =
   'fullName phone anonymizedAt statusId interestedProjectIds interestedProjectCodes primaryAssigneeId';
 
+/** Người thực hiện của một việc: danh sách đã suy sẵn (lịch hẹn) hoặc 0..1 người từ `assigneeId` (nguồn khác). */
+const taskAssigneeIds = (item: {
+  assigneeId: Types.ObjectId | null;
+  assigneeIds?: Types.ObjectId[];
+}): Types.ObjectId[] =>
+  item.assigneeIds ?? (item.assigneeId ? [item.assigneeId] : []);
+
 /** Một việc chưa dựng response (chỉ có id tham chiếu), đủ để sắp xếp và phân trang giữa các nguồn. */
 interface TaskCandidate {
   id: string;
@@ -96,6 +104,8 @@ interface TaskCandidate {
   projectCode?: string | null;
   careLogId?: Types.ObjectId;
   assigneeId: Types.ObjectId | null;
+  /** Mọi người thực hiện (chỉ việc kiểu lịch hẹn; nguồn khác để trống = suy từ `assigneeId`, FR-30). */
+  assigneeIds?: Types.ObjectId[];
 }
 
 interface SourceResult {
@@ -279,8 +289,9 @@ export class DailyTasksService {
         ? [
             {
               $match: {
+                // Người thực hiện qua MỘT `assigneeFilter` dùng chung (FR-30; lịch chưa backfill vẫn khớp `assigneeId`).
                 $or: [
-                  { assigneeId: ctx.actor.userId },
+                  ...assigneeFilter(ctx.actor.userId).$or,
                   { 'customer.0.careTeam.userId': ctx.actor.userId },
                 ],
               },
@@ -304,7 +315,8 @@ export class DailyTasksService {
           title: string;
           note: string;
           startAt: Date;
-          assigneeId: Types.ObjectId;
+          assigneeId?: Types.ObjectId;
+          assigneeIds?: Types.ObjectId[];
           projectId?: Types.ObjectId | null;
           projectCode?: string | null;
         }>;
@@ -325,7 +337,9 @@ export class DailyTasksService {
           projectId: row.projectId,
           projectCode: row.projectCode ?? null,
         }),
-        assigneeId: row.assigneeId,
+        // Người đầu (deprecated `assigneeId`) và danh sách đủ (FR-30), cùng suy từ `getAssigneeIds`.
+        assigneeId: getAssigneeIds(row)[0] ?? null,
+        assigneeIds: getAssigneeIds(row),
       })),
     };
   }
@@ -592,7 +606,7 @@ export class DailyTasksService {
     const [maps, projects] = await Promise.all([
       this.refs.resolve({
         statusIds: customers.map((customer) => customer.statusId),
-        userIds: items.map((item) => item.assigneeId),
+        userIds: items.flatMap((item) => taskAssigneeIds(item)),
       }),
       this.resolveProjects(customers, items),
     ]);
@@ -641,6 +655,9 @@ export class DailyTasksService {
           }),
           ...(item.careLogId && { careLogId: String(item.careLogId) }),
           assignee: toUserRef(item.assigneeId, maps.users),
+          assignees: taskAssigneeIds(item).map(
+            (id) => toUserRef(id, maps.users)!,
+          ),
           isPrimary:
             !!customer.primaryAssigneeId &&
             customer.primaryAssigneeId.equals(ctx.actor.userId),

@@ -27,6 +27,7 @@ import {
   APPOINTMENT_MAX_REMINDERS,
   AppointmentType,
 } from '../../appointments/appointment.constants';
+import { AssigneeIdsField } from '../../appointments/dtos/assignee-ids.decorator';
 import { CATALOG_CODE_PATTERN } from '../../catalogs/catalog.enums';
 import { CUSTOMER_REASON_MAX_LENGTH } from '../../customers/customer.constants';
 import { PROJECT_CODE_LEGACY_PATTERN } from '../../projects/project.rules';
@@ -49,8 +50,8 @@ const CODE_MESSAGE =
   'contactResultCode gồm chữ HOA, số, "_", bắt đầu bằng chữ, tối đa 30 ký tự';
 
 /**
- * Lịch hẹn tạo kèm nhật ký (M5): bắt đầu đúng `nextAction.dueAt` (bắt buộc khi có `appointment`), người thực hiện là
- * người ghi nhật ký (Quản trị/Quản lý ngoài nhóm chăm sóc thì phụ trách chính), tiêu đề lấy từ `suggestion`.
+ * Lịch hẹn tạo kèm nhật ký (M5): bắt đầu đúng `nextAction.dueAt` (bắt buộc khi có `appointment`), người thực hiện là `assigneeIds`
+ * (FR-30), không gửi thì mặc định người ghi nhật ký nếu thuộc tập hợp lệ của khách, ngược lại phụ trách chính, tiêu đề lấy từ `suggestion`.
  */
 export class CareLogNextActionAppointmentDto {
   @ApiProperty({ enum: AppointmentType })
@@ -63,6 +64,9 @@ export class CareLogNextActionAppointmentDto {
   @IsString()
   @MaxLength(APPOINTMENT_LOCATION_MAX_LENGTH)
   location?: string;
+
+  @AssigneeIdsField()
+  assigneeIds?: string[];
 
   @ApiPropertyOptional({
     nullable: true,

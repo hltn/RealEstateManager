@@ -153,6 +153,7 @@ describe('CustomersService.create cấp customerCode trên Mongo thật (FR-07)'
       { applyDelta: () => Promise.resolve() } as never,
       { dispatch: () => Promise.resolve() } as never,
       counters,
+      {} as never, // CustomerOwnerTeamService: toDetailDto được giả lập (FR-30)
     );
     jest
       .spyOn(created, 'toDetailDto')

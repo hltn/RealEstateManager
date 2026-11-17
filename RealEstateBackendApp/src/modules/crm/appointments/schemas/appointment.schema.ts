@@ -51,8 +51,19 @@ export class Appointment {
   @Prop({ type: String, default: '', maxlength: APPOINTMENT_NOTE_MAX_LENGTH })
   note: string;
 
+  /**
+   * DEPRECATED (bỏ ở v1.0.7, sau khi backfill lại): người thực hiện đầu tiên = `assigneeIds[0]`. Vẫn GHI KÉP (hàm
+   * `toAssigneeWrite`) để lùi về bản BE cũ an toàn. Đọc/lọc đi qua `getAssigneeIds`/`assigneeFilter`.
+   */
   @Prop({ type: Types.ObjectId, required: true })
   assigneeId: Types.ObjectId;
+
+  /**
+   * Người thực hiện (FR-30, 1..20 người, giữ thứ tự). Nguồn thật. Lịch cũ chưa chạy migration 012 có thể THIẾU trường
+   * này (không đặt `default` để lean trả `undefined`, phân biệt được với `[]`).
+   */
+  @Prop({ type: [Types.ObjectId], default: undefined })
+  assigneeIds?: Types.ObjectId[];
 
   /** Các mốc nhắc trước giờ hẹn (phút), giảm dần; rỗng = không nhắc. */
   @Prop({ type: [Number], default: [] })
@@ -108,7 +119,10 @@ export type AppointmentDocument = HydratedDocument<Appointment>;
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);
 
+// Index cũ giữ tới v1.0.7: nhánh lọc lịch chưa có `assigneeIds` (cửa sổ trước backfill 012) và BE cũ khi lùi bản.
 AppointmentSchema.index({ assigneeId: 1, startAt: 1 });
+// Lọc theo người thực hiện (index đa khóa, FR-30); migration 012 cũng tạo idempotent cho DB đã có dữ liệu.
+AppointmentSchema.index({ assigneeIds: 1, startAt: 1 });
 AppointmentSchema.index({ customerId: 1, startAt: 1 });
 AppointmentSchema.index({ status: 1, startAt: 1 });
 // Lọc danh sách lịch theo dự án trong khoảng thời gian.

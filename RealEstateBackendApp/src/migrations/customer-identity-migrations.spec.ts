@@ -265,15 +265,16 @@ describe('đăng ký 010/011 vào runner', () => {
     expect(migration011CrmDropUniquePhone.description).toContain('MỘT CHIỀU');
   });
 
-  it('FR-21: registry chứa 010 và 011 ngay sau 009, theo thứ tự', () => {
+  it('FR-21, FR-30: registry chứa 010 và 011 ngay sau 009, theo thứ tự (012 của FR-30 đứng sau 011)', () => {
     const ids = MIGRATIONS.map((m) => m.id);
-    expect(ids.slice(-3)).toEqual([
+    expect(ids.slice(-4)).toEqual([
       '009_notification_attachment_indexes',
       '010_crm_customer_code_index',
       '011_crm_drop_unique_phone',
+      '012_crm_appointment_assignee_ids',
     ]);
-    expect(MIGRATIONS.at(-2)).toBe(migration010CrmCustomerCodeIndex);
-    expect(MIGRATIONS.at(-1)).toBe(migration011CrmDropUniquePhone);
+    expect(MIGRATIONS.at(-3)).toBe(migration010CrmCustomerCodeIndex);
+    expect(MIGRATIONS.at(-2)).toBe(migration011CrmDropUniquePhone);
   });
 
   it('up của 010/011 gọi logic với db từ context', async () => {

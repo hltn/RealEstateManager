@@ -590,4 +590,79 @@ describe('planReconcile', () => {
       });
     });
   });
+
+  describe('fixture: 010 đã chạy, 011 và 012 post-up còn chờ (FR-30, FR-21)', () => {
+    // Fixture độc lập với registry thật (thêm 013 không làm đỏ test này). Lock registry thật: migration.registry.spec.ts.
+    const ID_010 = '010_crm_customer_code_index';
+    const ID_011 = '011_crm_drop_unique_phone';
+    const ID_012 = '012_crm_appointment_assignee_ids';
+    const FIXTURE_IDS = ['009_pre_up_applied', ID_010, ID_011, ID_012];
+    const FIXTURE_POST_UP = [ID_011, ID_012];
+    const productionLike = (appliedIds: string[]) =>
+      state({
+        version: withVersion('1.0.6'),
+        applied: applied(...appliedIds),
+      });
+    const plan = (
+      appliedIds: string[],
+      phase: 'pre-up' | 'post-up' | 'all',
+      postUpIds: string[] = FIXTURE_POST_UP,
+    ) =>
+      planReconcile({
+        state: productionLike(appliedIds),
+        appVersion: '1.0.6',
+        registryIds: FIXTURE_IDS,
+        postUpIds,
+        phase,
+      });
+    const UP_TO_010 = FIXTURE_IDS.slice(0, 2);
+
+    it('FR-30: bước 6b của deploy (pre-up) KHÔNG bị REFUSED khi 011 và 012 còn chờ: pre-up xong thì noop', () => {
+      expect(plan(UP_TO_010, 'pre-up')).toMatchObject({
+        outcome: 'READY',
+        pendingIds: [],
+        noop: true,
+      });
+    });
+
+    it('FR-30: pre-up còn migration pre-up chờ thì vẫn chạy nó, không đụng 011 và 012', () => {
+      const result = plan([FIXTURE_IDS[0]], 'pre-up');
+      expect(result.outcome).toBe('READY');
+      expect(result.pendingIds).toEqual([ID_010]);
+    });
+
+    it('FR-30: bước 90 (post-up) READY, chạy 011 rồi 012 theo thứ tự số', () => {
+      expect(plan(UP_TO_010, 'post-up')).toMatchObject({
+        outcome: 'READY',
+        pendingIds: [ID_011, ID_012],
+        noop: false,
+      });
+    });
+
+    it('FR-30: đã chạy 011 thì bước 90 chỉ còn 012; đã chạy cả hai thì noop (không tự chạy lại)', () => {
+      expect(plan([...UP_TO_010, ID_011], 'post-up').pendingIds).toEqual([
+        ID_012,
+      ]);
+      expect(plan(FIXTURE_IDS, 'post-up')).toMatchObject({
+        outcome: 'READY',
+        pendingIds: [],
+        noop: true,
+      });
+    });
+
+    it('FR-30: phase=all chạy đủ theo thứ tự id (cài mới, dump staging)', () => {
+      const result = plan([], 'all');
+      expect(result.outcome).toBe('READY');
+      expect(result.pendingIds).toEqual(FIXTURE_IDS);
+    });
+
+    it('FR-30 (đối chứng): 012 khai báo pre-up (chỉ 011 post-up) thì bước pre-up bị REFUSED: đó là lý do 012 phải là post-up', () => {
+      const result = plan(UP_TO_010, 'pre-up', [ID_011]);
+      expect(result.outcome).toBe('REFUSED');
+      expect(result.reason).toContain(ID_011);
+      expect(result.reason).toContain(ID_012);
+      expect(result.reason).toContain('--phase post-up');
+      expect(result.pendingIds).toEqual([]);
+    });
+  });
 });

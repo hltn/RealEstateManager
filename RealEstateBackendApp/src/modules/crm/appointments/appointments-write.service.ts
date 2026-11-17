@@ -1,10 +1,12 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
-import { CRM_TEAM_ROLES } from '../../../common/enums/user-role.enum';
+import { UserRole } from '../../../common/enums/user-role.enum';
 import { UserStatus } from '../../../common/enums/user-status.enum';
 import { BusinessException } from '../../../common/exceptions/business.exception';
 import { ErrorCode } from '../../../common/exceptions/error-codes';
+import { uniqueObjectIds } from '../../../common/utils/object-id.util';
+import { hasCrmRole } from '../../../common/utils/user-roles.util';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import {
   CrmAuditAction,
@@ -16,6 +18,10 @@ import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CrmSettingsService } from '../crm-settings/crm-settings.service';
 import { AccessContext } from '../customers/access/customer-access.service';
 import {
+  isCreator,
+  isOwnerManager,
+} from '../customers/access/customer-owner-team';
+import {
   customerNotFound,
   insufficientRole,
   versionConflict,
@@ -24,9 +30,22 @@ import {
   CatalogRef,
   CustomerRefsService,
 } from '../customers/customer-refs.service';
+import {
+  CustomerOwnerTeamService,
+  OwnerTeamCandidates,
+} from '../customers/customer-owner-team.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import { RemindersWriterService } from '../reminders/reminders-writer.service';
-import { AppointmentStatus, AppointmentType } from './appointment.constants';
+import {
+  getAssigneeIds,
+  requestedAssigneeIds,
+  toAssigneeWrite,
+} from './appointment-assignee';
+import {
+  AppointmentStatus,
+  AppointmentType,
+  AssigneeRejectReason,
+} from './appointment.constants';
 import { AppointmentCustomerLean, AppointmentLean } from './appointment.mapper';
 import {
   assertEndAfterStart,
@@ -52,7 +71,10 @@ export interface CreateAppointmentInput {
   title?: string;
   location?: string;
   note?: string;
+  /** DEPRECATED: một người thực hiện; `assigneeIds` thắng khi có cả hai. */
   assigneeId?: Types.ObjectId;
+  /** Người thực hiện (FR-30). Không gửi thì mặc định người đặt lịch nếu thuộc tập hợp lệ, ngược lại PRIMARY. */
+  assigneeIds?: Types.ObjectId[];
   remindBeforeMinutes?: number[];
   /** Dự án của buổi hẹn (tùy chọn, `id` cũ); phải còn hoạt động. */
   projectId?: Types.ObjectId | null;
@@ -69,6 +91,9 @@ const CUSTOMER_PROJECTION = {
   statusId: 1,
   careTeam: 1,
   primaryAssigneeId: 1,
+  // Nhóm chủ và người tạo khách cho tập người thực hiện hợp lệ (FR-30).
+  teamIds: 1,
+  createdBy: 1,
 } as const;
 
 const resourceNotFound = (): BusinessException =>
@@ -85,13 +110,47 @@ const statusInvalid = (message: string): BusinessException =>
     HttpStatus.CONFLICT,
   );
 
-const assigneeNotAssignable = (userId?: Types.ObjectId): BusinessException =>
+/** Thông điệp theo lý do (Architecture 5.13.3); không chứa tên/SĐT khách. */
+const ASSIGNEE_REJECT_MESSAGES: Record<AssigneeRejectReason, string> = {
+  [AssigneeRejectReason.NOT_IN_CARE_TEAM]:
+    'Người thực hiện phải là thành viên nhóm chăm sóc, người tạo khách hoặc Quản lý của nhóm chủ khách; nhờ thành viên có quyền mời đưa người đó vào nhóm trước',
+  [AssigneeRejectReason.NOT_ACTIVE]:
+    'Người thực hiện không còn hoạt động (tài khoản bị khóa hoặc đã xóa)',
+  [AssigneeRejectReason.NOT_CRM_ROLE]:
+    'Người thực hiện không có vai trò CRM (cần là Quản trị, Quản lý hoặc Nhân viên)',
+};
+
+const assigneeNotAssignable = (
+  userIds: readonly Types.ObjectId[],
+  reason: AssigneeRejectReason,
+): BusinessException =>
   new BusinessException(
     ErrorCode.USER_NOT_ASSIGNABLE,
-    'Người thực hiện phải là thành viên đang hoạt động trong nhóm chăm sóc của khách',
+    ASSIGNEE_REJECT_MESSAGES[reason],
     HttpStatus.BAD_REQUEST,
-    { userIds: userId ? [String(userId)] : [] },
+    { userIds: userIds.map(String), reason },
   );
+
+/** Phần tài khoản đọc MỘT lần để kiểm cả mảng người thực hiện. */
+interface AssigneeUser {
+  _id: Types.ObjectId;
+  roles?: string[];
+  status?: UserStatus;
+  deletedAt?: Date | null;
+}
+
+/** Tên các người thực hiện (đúng thứ tự) cho audit; thiếu tên thì dùng id. */
+const assigneeNames = (
+  ids: readonly Types.ObjectId[],
+  users: ReadonlyMap<string, string>,
+): string => ids.map((id) => users.get(String(id)) ?? String(id)).join(', ');
+
+const sameIds = (
+  left: readonly Types.ObjectId[],
+  right: readonly Types.ObjectId[],
+): boolean =>
+  left.length === right.length &&
+  left.every((id, index) => id.equals(right[index]));
 
 const iso = (date: Date | null | undefined): string | null =>
   date ? date.toISOString() : null;
@@ -100,6 +159,8 @@ const iso = (date: Date | null | undefined): string | null =>
 interface ScopedCustomer extends AppointmentCustomerLean {
   careTeam?: Array<{ userId: Types.ObjectId }>;
   primaryAssigneeId?: Types.ObjectId | null;
+  teamIds?: Types.ObjectId[];
+  createdBy?: Types.ObjectId | null;
 }
 
 /**
@@ -122,6 +183,7 @@ export class AppointmentsWriteService {
     private readonly settings: CrmSettingsService,
     private readonly reminders: RemindersWriterService,
     private readonly audit: CrmAuditLogService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async createInSession(
@@ -135,10 +197,10 @@ export class AppointmentsWriteService {
     assertStartNotInPast(input.startAt, now);
     assertEndAfterStart(input.startAt, input.endAt);
 
-    const assigneeId = await this.resolveAssignee(
+    const assigneeIds = await this.resolveAssignees(
       ctx,
       customer,
-      input.assigneeId,
+      requestedAssigneeIds(input),
       session,
     );
     // Dự án gắn MỚI (nhận `projectCode` hoặc `projectId`) phải còn hoạt động: dịch về `{ id, code, label }` rồi khóa
@@ -164,7 +226,8 @@ export class AppointmentsWriteService {
           endAt: input.endAt ?? null,
           location: input.location ?? '',
           note: input.note ?? '',
-          assigneeId,
+          // MỘT hàm ghi kép: `assigneeIds` + `assigneeId = assigneeIds[0]` (deprecated).
+          ...toAssigneeWrite(assigneeIds),
           remindBeforeMinutes: offsets,
           status: AppointmentStatus.SCHEDULED,
           projectId,
@@ -181,7 +244,7 @@ export class AppointmentsWriteService {
     await this.refreshCustomer(ctx, input.customerId, now, session);
     await this.reminders.syncAppointment(appointment, now, session);
 
-    const maps = await this.refs.resolve({ userIds: [assigneeId] });
+    const maps = await this.refs.resolve({ userIds: assigneeIds });
     const changes: CrmAuditChange[] = [
       { field: 'appointment.type', from: null, to: appointment.type },
       {
@@ -192,7 +255,7 @@ export class AppointmentsWriteService {
       {
         field: 'appointment.assignee',
         from: null,
-        to: maps.users.get(String(assigneeId)) ?? String(assigneeId),
+        to: assigneeNames(assigneeIds, maps.users),
       },
     ];
     if (project) {
@@ -271,22 +334,31 @@ export class AppointmentsWriteService {
         track(field, appointment[field], dto[field]);
       }
     }
-    let assigneeId = appointment.assigneeId;
-    if (dto.assigneeId && !oid(dto.assigneeId).equals(assigneeId)) {
-      assigneeId = await this.resolveAssignee(
-        ctx,
-        customer,
-        oid(dto.assigneeId),
-        session,
+    // Đổi người thực hiện: cùng hàm luật với lúc tạo, CHỈ kiểm id MỚI thêm (người đã có sẵn không bị kiểm lại, kể
+    // cả khi sau đó bị gỡ khỏi nhóm/khóa); sửa giờ, nội dung mà không đổi danh sách thì không kiểm gì.
+    const currentIds = getAssigneeIds(appointment);
+    const requested = requestedAssigneeIds({
+      assigneeIds: dto.assigneeIds?.map(oid),
+      assigneeId: dto.assigneeId ? oid(dto.assigneeId) : undefined,
+    });
+    // `assigneeId` cũ (deprecated) trùng người đầu hiện tại = không đổi (giữ ngữ nghĩa "gửi lại cùng người").
+    const legacyNoChange =
+      !dto.assigneeIds?.length && requested?.[0]?.equals(currentIds[0]);
+    if (requested && !legacyNoChange && !sameIds(requested, currentIds)) {
+      const added = requested.filter(
+        (id) => !currentIds.some((current) => current.equals(id)),
       );
+      if (added.length > 0) {
+        await this.resolveAssignees(ctx, customer, added, session);
+      }
       const maps = await this.refs.resolve({
-        userIds: [appointment.assigneeId, assigneeId],
+        userIds: [...currentIds, ...requested],
       });
-      set.assigneeId = assigneeId;
+      Object.assign(set, toAssigneeWrite(requested));
       track(
         'assignee',
-        maps.users.get(String(appointment.assigneeId)) ?? null,
-        maps.users.get(String(assigneeId)) ?? String(assigneeId),
+        currentIds.length > 0 ? assigneeNames(currentIds, maps.users) : null,
+        assigneeNames(requested, maps.users),
       );
     }
     // Dự án (`projectCode` hoặc `projectId`): bỏ trống = giữ nguyên; null = gỡ; đổi sang dự án KHÁC thì dự án mới
@@ -483,40 +555,93 @@ export class AppointmentsWriteService {
   }
 
   /**
-   * Chọn và kiểm người thực hiện: phải thuộc nhóm chăm sóc HIỆN TẠI của khách (đọc trong transaction nên đua với
-   * việc gỡ khỏi nhóm bị phát hiện qua xung đột ghi trên document khách), còn ACTIVE và là Quản lý/Nhân viên.
-   * Không chỉ định: chính người gọi nếu thuộc nhóm; Quản trị/Quản lý ngoài nhóm thì phụ trách chính.
+   * Chọn và kiểm CẢ MẢNG người thực hiện (FR-30). Tập hợp lệ của khách = thành viên `careTeam` HIỆN TẠI (đọc trong
+   * transaction nên đua với việc gỡ khỏi nhóm bị phát hiện qua xung đột ghi trên document khách) HỢP người tạo khách
+   * HỢP Quản lý của nhóm chủ (nhóm của người tạo), bất kể vai trò. Chỉ MỘT lần đọc `users` cho cả mảng; thứ tự lỗi:
+   * `NOT_IN_CARE_TEAM` (ngoài tập, gồm id không tồn tại) -> `NOT_ACTIVE` -> `NOT_CRM_ROLE`; `details.userIds` là các
+   * id vi phạm của lý do đó. Quản lý nhóm chủ chỉ được tính khi tài khoản thật sự còn vai trò MANAGER.
+   *
+   * Không chỉ định: người đặt lịch nếu thuộc tập hợp lệ; ngược lại phụ trách chính; không có ai thì 400
+   * `NOT_IN_CARE_TEAM` (`userIds = []`). Id mặc định đi qua đúng các bước kiểm như id do client gửi.
    */
-  private async resolveAssignee(
+  private async resolveAssignees(
     ctx: AccessContext,
     customer: ScopedCustomer,
-    requested: Types.ObjectId | undefined,
+    requested: Types.ObjectId[] | undefined,
     session: ClientSession,
-  ): Promise<Types.ObjectId> {
-    const team = (customer.careTeam ?? []).map((member) => member.userId);
-    const inTeam = (userId: Types.ObjectId) =>
-      team.some((member) => member.equals(userId));
+  ): Promise<Types.ObjectId[]> {
+    const careTeam = (customer.careTeam ?? []).map((member) => member.userId);
+    const inCareTeam = (userId: Types.ObjectId) =>
+      careTeam.some((member) => member.equals(userId));
+    const isStaticMember = (userId: Types.ObjectId) =>
+      inCareTeam(userId) || isCreator(customer, userId);
 
-    let assigneeId = requested;
-    if (!assigneeId) {
-      assigneeId = inTeam(ctx.actor.userId)
-        ? ctx.actor.userId
+    // Ứng viên Manager nhóm chủ chỉ đọc khi thật sự cần (có id ngoài careTeam và không phải người tạo).
+    let candidates: Promise<OwnerTeamCandidates> | undefined;
+    const loadCandidates = () =>
+      (candidates ??= this.ownerTeam.loadCandidates(customer, session));
+
+    let ids = requested;
+    if (!ids) {
+      const booker = ctx.actor.userId;
+      let bookerEligible = isStaticMember(booker);
+      if (!bookerEligible && ctx.actor.roles.includes(UserRole.MANAGER)) {
+        bookerEligible = isOwnerManager(
+          (await loadCandidates()).managerIds,
+          booker,
+        );
+      }
+      const fallback = bookerEligible
+        ? booker
         : (customer.primaryAssigneeId ?? undefined);
+      if (!fallback) {
+        throw assigneeNotAssignable([], AssigneeRejectReason.NOT_IN_CARE_TEAM);
+      }
+      ids = [fallback];
     }
-    if (!assigneeId || !inTeam(assigneeId)) {
-      throw assigneeNotAssignable(requested);
-    }
-    const active = await this.userModel
-      .exists({
-        _id: assigneeId,
-        status: UserStatus.ACTIVE,
-        roles: { $in: CRM_TEAM_ROLES },
-        deletedAt: null,
-      })
+    ids = uniqueObjectIds(ids);
+
+    const needsManagerCheck = ids.some((id) => !isStaticMember(id));
+    const ownerManagerIds = needsManagerCheck
+      ? (await loadCandidates()).managerIds
+      : [];
+
+    const users = (await this.userModel
+      .find({ _id: { $in: ids } })
+      .select('roles status deletedAt')
       .session(session)
-      .exec();
-    if (!active) throw assigneeNotAssignable(assigneeId);
-    return assigneeId;
+      .lean()
+      .exec()) as AssigneeUser[];
+    const byId = new Map(users.map((user) => [String(user._id), user]));
+
+    const outside = ids.filter((id) => {
+      if (isStaticMember(id)) return false;
+      const user = byId.get(String(id));
+      return !(
+        user?.roles?.includes(UserRole.MANAGER) &&
+        isOwnerManager(ownerManagerIds, id)
+      );
+    });
+    if (outside.length > 0) {
+      throw assigneeNotAssignable(
+        outside,
+        AssigneeRejectReason.NOT_IN_CARE_TEAM,
+      );
+    }
+    const inactive = ids.filter((id) => {
+      const user = byId.get(String(id));
+      return !user || user.status !== UserStatus.ACTIVE || !!user.deletedAt;
+    });
+    if (inactive.length > 0) {
+      throw assigneeNotAssignable(inactive, AssigneeRejectReason.NOT_ACTIVE);
+    }
+    const noCrmRole = ids.filter(
+      (id) => !hasCrmRole(byId.get(String(id))?.roles ?? []),
+    );
+    if (noCrmRole.length > 0) {
+      throw assigneeNotAssignable(noCrmRole, AssigneeRejectReason.NOT_CRM_ROLE);
+    }
+    return ids;
   }
 
   /**

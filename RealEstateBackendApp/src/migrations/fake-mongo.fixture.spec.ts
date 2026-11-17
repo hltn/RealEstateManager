@@ -72,6 +72,26 @@ describe('FakeMongo', () => {
       ]);
     });
 
+    it('$gt trên ObjectId so theo hex (phân trang theo _id); khác kiểu thì không khớp', async () => {
+      const fake = new FakeMongo().seed(COL, [
+        { _id: idOf(1) },
+        { _id: idOf(2) },
+        { _id: idOf(3) },
+      ]);
+      const found = await fake
+        .collection(COL)
+        .find({ _id: { $gt: new ObjectId(idOf(1).toHexString()) } })
+        .sort({ _id: 1 })
+        .toArray();
+      expect(ids(found)).toEqual([idOf(2), idOf(3)]);
+      expect(
+        await fake
+          .collection(COL)
+          .find({ _id: { $gt: 'x' } })
+          .toArray(),
+      ).toEqual([]);
+    });
+
     it('ObjectId và Date so bằng theo giá trị, không theo tham chiếu', async () => {
       const fake = new FakeMongo().seed(COL, [
         { _id: idOf(1), at: new Date(1000) },

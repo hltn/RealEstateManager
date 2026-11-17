@@ -1294,7 +1294,7 @@ describe('MigrationRunner.reconcile (CLI) trên replica set', () => {
   });
 
   describe('registry THẬT trên DB mới tinh (T-18 kịch bản 13): chưa có persona_fields.property_type', () => {
-    it('reconcile --apply --skip-version: chạy hết 007..011 (pha mặc định all), ghi sổ từng migration và version, thoát 0', async () => {
+    it('reconcile --apply --skip-version: chạy hết 007..012 (pha mặc định all), ghi sổ từng migration và version, thoát 0', async () => {
       const { db, uri } = newDb();
 
       const result = await run(uri, MIGRATIONS, [
@@ -1312,6 +1312,7 @@ describe('MigrationRunner.reconcile (CLI) trên replica set', () => {
         'migration:009_notification_attachment_indexes',
         'migration:010_crm_customer_code_index',
         'migration:011_crm_drop_unique_phone',
+        'migration:012_crm_appointment_assignee_ids',
       ]);
       expect(await systemDoc(db, 'version')).toMatchObject({ value: '1.0.3' });
     });

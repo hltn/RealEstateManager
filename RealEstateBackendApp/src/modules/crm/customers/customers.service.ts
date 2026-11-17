@@ -33,6 +33,7 @@ import {
 } from './customer.errors';
 import { collectRefIds, toDetail } from './customer.mapper';
 import { CustomerTagsService } from './customer-tags.service';
+import { CustomerOwnerTeamService } from './customer-owner-team.service';
 import { CustomerRefsService, RefMaps } from './customer-refs.service';
 import { CustomerLean, CustomersRepository } from './customers.repository';
 import {
@@ -110,6 +111,7 @@ export class CustomersService {
     private readonly tags: CustomerTagsService,
     private readonly notifications: NotificationDispatcher,
     private readonly counter: CounterService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async getById(jwt: JwtPayload, id: string): Promise<CustomerDetailDto> {
@@ -576,7 +578,11 @@ export class CustomersService {
     doc: CustomerLean,
     ctx: AccessContext,
   ): Promise<CustomerDetailDto> {
-    const refMaps: RefMaps = await this.refs.resolve(collectRefIds([doc]));
-    return toDetail(doc, refMaps, ctx.actor);
+    const [refMaps, ownerRefs] = await Promise.all([
+      this.refs.resolve(collectRefIds([doc])),
+      // `ownerManagers` và `creator` (FR-30): chỉ cho khách người gọi đã qua phạm vi (bên gọi đã lọc `scope`).
+      this.ownerTeam.buildOwnerRefs(doc),
+    ]);
+    return toDetail(doc, refMaps, ctx.actor, ownerRefs);
   }
 }

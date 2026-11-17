@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { UserStatus } from '../../../common/enums/user-status.enum';
 import type { AccessContext } from '../customers/access/customer-access.service';
 import type { CatalogRef } from '../customers/customer-refs.service';
 import { AppointmentType } from './appointment.constants';
@@ -51,7 +52,24 @@ const buildService = () => {
     findOne: jest.fn(() => chain(null)),
     findOneAndUpdate: jest.fn(),
   };
-  const userModel = { exists: jest.fn(() => chain({ _id: userId })) };
+  // Người thực hiện là thành viên careTeam ACTIVE có vai trò CRM (FR-30: MỘT lần đọc `users` theo `_id $in`).
+  const userModel = {
+    find: jest.fn(() =>
+      chain([
+        {
+          _id: userId,
+          roles: [UserRole.STAFF],
+          status: UserStatus.ACTIVE,
+          deletedAt: null,
+        },
+      ]),
+    ),
+  };
+  const ownerTeam = {
+    loadCandidates: jest
+      .fn()
+      .mockResolvedValue({ creator: null, ownerTeamIds: [], managerIds: [] }),
+  };
   const repo = {
     findOne: jest.fn().mockResolvedValue({
       _id: customerId,
@@ -83,6 +101,7 @@ const buildService = () => {
     settings as never,
     reminders as never,
     audit as never,
+    ownerTeam as never,
   );
   return { service, appointmentModel, refs, audit };
 };

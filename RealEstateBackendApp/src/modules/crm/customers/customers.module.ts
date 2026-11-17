@@ -44,6 +44,7 @@ import { CustomerHistoriesService } from './customer-histories.service';
 import { CustomerLifecycleController } from './customer-lifecycle.controller';
 import { CustomerLifecycleService } from './customer-lifecycle.service';
 import { CustomerListService } from './customer-list.service';
+import { CustomerOwnerTeamService } from './customer-owner-team.service';
 import { CustomerPersonaAnonymizerService } from './customer-persona-anonymizer.service';
 import { CustomerPurgeService } from './customer-purge.service';
 import { CustomerSchedulingAnonymizerService } from './customer-scheduling-anonymizer.service';
@@ -122,6 +123,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerTagsService,
     CustomerPersonaAnonymizerService,
     CustomerSchedulingAnonymizerService,
+    CustomerOwnerTeamService,
   ],
   exports: [
     CustomersRepository,
@@ -130,6 +132,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
     CustomerStatusChangeService,
     CustomerDeletionService,
     CustomerTagsService,
+    CustomerOwnerTeamService,
   ],
 })
 export class CustomersModule {}

@@ -411,3 +411,42 @@ describe('purchasePurposes của list item (Mục đích mua)', () => {
     expect(LIST_PROJECTION).not.toHaveProperty('searchText');
   });
 });
+
+describe('toDetail: ownerManagers và creator (FR-30)', () => {
+  const owner = {
+    userId: String(new Types.ObjectId()),
+    fullName: 'Quản lý nhóm chủ',
+    role: UserRole.MANAGER,
+  };
+  const creator = {
+    userId: String(new Types.ObjectId()),
+    fullName: 'Người tạo',
+    role: UserRole.STAFF,
+  };
+
+  it('FR-30: chuyển nguyên ownerManagers và creator vào chi tiết khách (trường cộng thêm)', () => {
+    const detail = toDetail(doc, refs, actor(UserRole.STAFF), {
+      ownerManagers: [owner],
+      creator,
+    });
+    expect(detail.ownerManagers).toEqual([owner]);
+    expect(detail.creator).toEqual(creator);
+  });
+
+  it('FR-30: không truyền thì mặc định ownerManagers [] và creator null, không bỏ mất trường cũ', () => {
+    const detail = toDetail(doc, refs, actor(UserRole.STAFF));
+    expect(detail.ownerManagers).toEqual([]);
+    expect(detail.creator).toBeNull();
+    expect(detail.createdBy).toBeNull();
+    expect(detail.careTeam).toHaveLength(1);
+  });
+
+  it('FR-30: ownerManagers/creator không đổi quyền: cờ permissions giống hệt khi không truyền', () => {
+    const plain = toDetail(doc, refs, actor(UserRole.STAFF)).permissions;
+    const withOwners = toDetail(doc, refs, actor(UserRole.STAFF), {
+      ownerManagers: [owner],
+      creator,
+    }).permissions;
+    expect(withOwners).toEqual(plain);
+  });
+});

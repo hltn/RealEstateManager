@@ -4,6 +4,7 @@ import { UserRole } from '../../../common/enums/user-role.enum';
 import { ListGroup } from '../catalogs/catalog.enums';
 import type { CatalogRef } from '../customers/customer-refs.service';
 import { AppointmentType } from './appointment.constants';
+import { assigneeFilter } from './appointment-assignee';
 import { DailyTasksService } from './daily-tasks.service';
 import { DailyTaskKind } from './daily-task.rules';
 
@@ -284,8 +285,9 @@ describe('DailyTasksService: "của tôi" theo mọi thành viên careTeam (FR-1
     } as never);
 
     const pipeline = pipelineOf(appointmentModel.aggregate);
+    // FR-30: người thực hiện qua MỘT `assigneeFilter` (nhánh `assigneeIds` + nhánh lịch chưa backfill), rồi nhánh careTeam.
     expect(mineMatchOf(pipeline)?.$or).toEqual([
-      { assigneeId: userId },
+      ...assigneeFilter(userId).$or,
       { 'customer.0.careTeam.userId': userId },
     ]);
     expect(lookupProjectOf(pipeline)).toEqual({ 'careTeam.userId': 1 });
@@ -441,5 +443,89 @@ describe('DailyTasksService: "của tôi" theo mọi thành viên careTeam (FR-1
       ).toBeNull();
       expect(await masked({ phone: '+84912345678' })).toBe('0912 ••• 678');
     });
+  });
+});
+
+describe('DailyTasksService: assignees của việc lịch hẹn (FR-30)', () => {
+  const customerId = oid();
+  const [second, third] = [oid(), oid()];
+
+  const setup = (appointmentExtra: Record<string, unknown>) => {
+    const built = buildService();
+    built.appointmentModel.aggregate.mockReturnValue({
+      exec: () =>
+        Promise.resolve([
+          {
+            rows: [
+              {
+                _id: oid(),
+                customerId,
+                type: AppointmentType.SITE_VISIT,
+                title: 'Xem nhà',
+                note: '',
+                startAt: new Date(),
+                ...appointmentExtra,
+              },
+            ],
+            total: [{ count: 1 }],
+          },
+        ]),
+    });
+    built.refs.resolve.mockResolvedValue({
+      statuses: new Map(),
+      users: new Map([
+        [String(userId), 'Tôi'],
+        [String(second), 'Người hai'],
+        [String(third), 'Người ba'],
+      ]),
+    });
+    built.repo.find.mockResolvedValue([
+      { _id: customerId, fullName: 'Khách A', statusId: oid() },
+    ]);
+    return built;
+  };
+  const first = async (built: ReturnType<typeof setup>) =>
+    (
+      await built.service.list(jwt, {
+        kinds: [DailyTaskKind.APPOINTMENT],
+        scope: 'mine',
+      } as never)
+    ).data[0];
+
+  it('FR-30: lịch nhiều người: assignees đủ, đúng thứ tự; assignee (deprecated) là người đầu; tên dịch một lần theo lô', async () => {
+    const built = setup({
+      assigneeIds: [second, userId, third],
+      assigneeId: second,
+    });
+    const task = await first(built);
+
+    expect(task.assignees.map((user) => user.id)).toEqual([
+      String(second),
+      String(userId),
+      String(third),
+    ]);
+    expect(task.assignees.map((user) => user.displayName)).toEqual([
+      'Người hai',
+      'Tôi',
+      'Người ba',
+    ]);
+    expect(task.assignee?.id).toBe(String(second));
+    const [arg] = built.refs.resolve.mock.calls[0] as [{ userIds: unknown[] }];
+    expect(arg.userIds.map(String)).toEqual(
+      expect.arrayContaining([second, userId, third].map(String)),
+    );
+    expect(built.refs.resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('FR-30 (chưa backfill): lịch cũ chỉ có assigneeId vẫn ra assignees 1 người', async () => {
+    const task = await first(setup({ assigneeId: userId }));
+    expect(task.assignees.map((user) => user.id)).toEqual([String(userId)]);
+    expect(task.assignee?.id).toBe(String(userId));
+  });
+
+  it('FR-30: assigneeIds rỗng (lịch không còn người) cho assignees rỗng và assignee null, không lỗi', async () => {
+    const task = await first(setup({ assigneeIds: [] }));
+    expect(task.assignees).toEqual([]);
+    expect(task.assignee).toBeNull();
   });
 });

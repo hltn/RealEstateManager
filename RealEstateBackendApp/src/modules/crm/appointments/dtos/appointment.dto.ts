@@ -17,6 +17,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { AssigneeIdsField } from './assignee-ids.decorator';
 import { CsvList } from '../../../../common/decorators/csv-list.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
@@ -100,12 +101,16 @@ export class CreateAppointmentDto {
   note?: string;
 
   @ApiPropertyOptional({
+    deprecated: true,
     description:
-      'Người thực hiện, phải thuộc nhóm chăm sóc của khách. Mặc định: chính mình nếu thuộc nhóm, không thì phụ trách chính',
+      'DEPRECATED: dùng `assigneeIds`. Một người thực hiện (cùng luật tập hợp lệ). Có cả `assigneeIds` thì `assigneeIds` thắng',
   })
   @OptionalNotNull()
   @IsMongoId()
   assigneeId?: string;
+
+  @AssigneeIdsField()
+  assigneeIds?: string[];
 
   @ApiPropertyOptional({
     nullable: true,
@@ -188,10 +193,17 @@ export class UpdateAppointmentDto {
   @MaxLength(APPOINTMENT_NOTE_MAX_LENGTH)
   note?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    deprecated: true,
+    description:
+      'DEPRECATED: dùng `assigneeIds`. Thay danh sách bằng đúng một người (không đổi nếu trùng người đầu hiện tại). Có cả `assigneeIds` thì `assigneeIds` thắng',
+  })
   @OptionalNotNull()
   @IsMongoId()
   assigneeId?: string;
+
+  @AssigneeIdsField()
+  assigneeIds?: string[];
 
   @ApiPropertyOptional({
     nullable: true,
@@ -349,7 +361,17 @@ export class AppointmentResponseDto {
   @ApiProperty({ nullable: true, type: String }) endAt: string | null;
   @ApiProperty() location: string;
   @ApiProperty() note: string;
-  @ApiProperty({ type: UserRefDto }) assignee: UserRefDto;
+  @ApiProperty({
+    type: UserRefDto,
+    deprecated: true,
+    description: 'DEPRECATED: người thực hiện đầu tiên; dùng `assignees`',
+  })
+  assignee: UserRefDto;
+  @ApiProperty({
+    type: [UserRefDto],
+    description: 'Mọi người thực hiện, giữ thứ tự (FR-30)',
+  })
+  assignees: UserRefDto[];
   @ApiProperty({
     type: CatalogRefDto,
     nullable: true,

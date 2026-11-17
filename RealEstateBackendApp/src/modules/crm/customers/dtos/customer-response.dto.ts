@@ -54,6 +54,17 @@ export class CareTeamUserRefDto extends UserRefDto {
   role?: UserRole | null;
 }
 
+/**
+ * Người có thể được giao lịch hẹn của khách dù chưa trong `careTeam` (FR-30): Manager nhóm chủ (`ownerManagers`) hoặc
+ * người tạo khách (`creator`). `role` = vai trò CRM cao nhất của tài khoản.
+ */
+export class OwnerRefDto {
+  @ApiProperty({ example: '66f1a2b3c4d5e6f708192a3b' }) userId: string;
+  @ApiProperty({ example: 'Hạnh' }) fullName: string;
+  @ApiProperty({ enum: UserRole, nullable: true, type: String })
+  role: UserRole | null;
+}
+
 export class CareTeamMemberDto {
   @ApiProperty({ type: CareTeamUserRefDto }) user: CareTeamUserRefDto;
   @ApiProperty({ enum: CareRole }) role: CareRole;
@@ -154,6 +165,19 @@ export class CustomerDetailDto extends CustomerListItemDto {
   nextActionSuggestions: string[];
   @ApiProperty({ type: CustomerPermissionsDto })
   permissions: CustomerPermissionsDto;
+  @ApiProperty({
+    type: [OwnerRefDto],
+    description:
+      'Manager ACTIVE của nhóm chủ (nhóm của người tạo), chưa trong careTeam, sắp theo fullName; gồm người tạo nếu là Manager (FR-30). FE dựng danh sách người thực hiện = careTeam ACTIVE + ownerManagers + creator, khử trùng theo userId',
+  })
+  ownerManagers: OwnerRefDto[];
+  @ApiProperty({
+    type: OwnerRefDto,
+    nullable: true,
+    description:
+      'Người tạo khách ngoài careTeam (ACTIVE, có vai trò CRM, chưa nằm ở ownerManagers); null ở các ca còn lại (FR-30)',
+  })
+  creator: OwnerRefDto | null;
   @ApiProperty({ description: 'Gửi lại khi PATCH (khóa lạc quan)' })
   version: number;
 }

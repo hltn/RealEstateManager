@@ -221,6 +221,8 @@ export class CareLogsService {
           startAt: nextActionDueAt,
           title: dto.nextAction.suggestion ?? '',
           location: dto.nextAction.appointment.location,
+          // Người thực hiện (FR-30): không gửi thì writer mặc định người ghi nhật ký nếu thuộc tập hợp lệ, ngược lại PRIMARY.
+          assigneeIds: dto.nextAction.appointment.assigneeIds?.map(oid),
           remindBeforeMinutes: dto.nextAction.appointment.remindBeforeMinutes,
           projectId: dto.nextAction.appointment.projectId
             ? oid(dto.nextAction.appointment.projectId)

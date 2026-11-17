@@ -54,6 +54,9 @@ const matchOperators = (
       case '$in':
         return (operand as unknown[]).some((item) => valueEquals(value, item));
       case '$gt':
+        // ObjectId so theo hex (như Mongo): để phân trang theo `_id` (`_id: { $gt: lastId }`).
+        if (value instanceof ObjectId && operand instanceof ObjectId)
+          return value.toHexString() > operand.toHexString();
         return typeof value === 'number' && value > (operand as number);
       case '$regex':
         return (

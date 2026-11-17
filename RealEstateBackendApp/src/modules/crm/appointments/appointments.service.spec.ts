@@ -1,8 +1,10 @@
 import { Types } from 'mongoose';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
 import { UserRole } from '../../../common/enums/user-role.enum';
+import { fakeConnection } from '../customers/access/customer-rights.fixture';
 import type { CatalogRef } from '../customers/customer-refs.service';
 import { AppointmentType } from './appointment.constants';
+import { assigneeFilter } from './appointment-assignee';
 import { AppointmentsService } from './appointments.service';
 import type { ListAppointmentsQueryDto } from './dtos/appointment.dto';
 
@@ -42,7 +44,7 @@ const buildService = () => {
     writer as never,
     {} as never,
   );
-  return { service, appointmentModel, refs };
+  return { service, appointmentModel, refs, writer };
 };
 
 const query = (extra: Partial<ListAppointmentsQueryDto>) => ({
@@ -210,4 +212,140 @@ describe('AppointmentsService.create: projectId/projectCode mâu thuẫn (FR-40)
       ).rejects.toMatchObject({ details: { field: 'projectCode' } });
     },
   );
+});
+
+describe('AppointmentsService.list: lọc theo người thực hiện qua assigneeFilter (FR-30)', () => {
+  const assigneeA = oid();
+  const assigneeB = oid();
+
+  it('FR-30: chỉ assigneeIds => một $or của assigneeFilter (nhánh assigneeIds + nhánh lịch chưa backfill), ids ép ObjectId', async () => {
+    const { service, appointmentModel } = buildService();
+    await service.list(
+      jwt,
+      query({ assigneeIds: [String(assigneeA), String(assigneeB)] }),
+    );
+    const match = firstMatch(appointmentModel);
+    expect(match.$and).toEqual([{}, assigneeFilter([assigneeA, assigneeB])]);
+    expect(match).not.toHaveProperty('assigneeId');
+    expect(match).not.toHaveProperty('$or');
+  });
+
+  it('FR-30: projectCode + assigneeIds cùng lúc => $and gộp hai $or, KHÔNG đè nhau (lỗi trải chung khóa $or)', async () => {
+    const { service, appointmentModel, refs } = buildService();
+    refs.resolveByCodes.mockResolvedValue([projectA]);
+    await service.list(
+      jwt,
+      query({ projectCode: 'qterra', assigneeIds: [String(assigneeA)] }),
+    );
+    const match = firstMatch(appointmentModel);
+    expect(match).not.toHaveProperty('$or');
+    expect(match.$and).toEqual([
+      {
+        $or: [
+          { projectCode: 'QTERRA' },
+          { projectCode: null, projectId: projectA.id },
+        ],
+      },
+      assigneeFilter([assigneeA]),
+    ]);
+  });
+
+  it('FR-30: không lọc người thực hiện => KHÔNG có $and (truy vấn cũ giữ nguyên, kể cả bộ lọc dự án)', async () => {
+    const { service, appointmentModel, refs } = buildService();
+    refs.resolveByCodes.mockResolvedValue([projectA]);
+    await service.list(jwt, query({ projectCode: 'qterra' }));
+    expect(firstMatch(appointmentModel)).not.toHaveProperty('$and');
+  });
+
+  it('FR-30: dịch tên người thực hiện theo lô cho MỌI người của mọi lịch (assigneeIds ?? [assigneeId]), một lần resolve', async () => {
+    const { service, appointmentModel, refs } = buildService();
+    const customer = {
+      _id: oid(),
+      fullName: 'K',
+      statusId: oid(),
+      phone: null,
+    };
+    const base = {
+      customer: [customer],
+      customerId: customer._id,
+      type: AppointmentType.SITE_VISIT,
+      title: '',
+      startAt: new Date(),
+      endAt: null,
+      location: '',
+      note: '',
+      remindBeforeMinutes: [],
+      status: 'SCHEDULED',
+      completedAt: null,
+      outcome: null,
+      createdBy: userId,
+      projectId: null,
+      projectCode: null,
+      __v: 0,
+    };
+    appointmentModel.aggregate.mockReturnValue({
+      exec: () =>
+        Promise.resolve([
+          {
+            rows: [
+              {
+                ...base,
+                _id: oid(),
+                assigneeId: assigneeA,
+                assigneeIds: [assigneeA, assigneeB],
+              },
+              // Lịch cũ chưa backfill: chỉ có assigneeId.
+              { ...base, _id: oid(), assigneeId: assigneeB },
+            ],
+            total: [{ count: 2 }],
+          },
+        ]),
+    });
+    refs.resolve.mockResolvedValue({
+      statuses: new Map(),
+      users: new Map([
+        [String(assigneeA), 'A'],
+        [String(assigneeB), 'B'],
+        [String(userId), 'U'],
+      ]),
+    });
+
+    const { data } = await service.list(jwt, query({}));
+
+    expect(refs.resolve).toHaveBeenCalledTimes(1);
+    const asked = (
+      refs.resolve.mock.calls[0][0] as { userIds: Types.ObjectId[] }
+    ).userIds.map(String);
+    expect(asked).toEqual(
+      expect.arrayContaining([String(assigneeA), String(assigneeB)]),
+    );
+    expect(data[0].assignees.map((u) => u.displayName)).toEqual(['A', 'B']);
+    expect(data[1].assignees.map((u) => u.displayName)).toEqual(['B']);
+  });
+});
+
+describe('AppointmentsService.create: chuyển assigneeIds/assigneeId xuống writer (FR-30)', () => {
+  it('FR-30: gửi assigneeIds (chuỗi) => writer nhận ObjectId; assigneeId cũ vẫn chuyển để writer áp luật "assigneeIds thắng"', async () => {
+    const { service, writer } = buildService();
+    // `create` mở transaction và dựng response: giả lập hai phần này, chỉ kiểm dữ liệu đưa xuống writer.
+    (service as unknown as { connection: unknown }).connection =
+      fakeConnection();
+    writer.createInSession.mockResolvedValue({ appointment: {}, customer: {} });
+    jest.spyOn(service as never, 'toResponse').mockResolvedValue({} as never);
+    const a = oid();
+    const b = oid();
+    await service.create(jwt, {
+      customerId: String(oid()),
+      type: AppointmentType.SITE_VISIT,
+      startAt: new Date().toISOString(),
+      assigneeIds: [String(a), String(b)],
+      assigneeId: String(b),
+    });
+    const input = writer.createInSession.mock.calls[0][1] as {
+      assigneeIds: Types.ObjectId[];
+      assigneeId: Types.ObjectId;
+    };
+    expect(input.assigneeIds.map(String)).toEqual([String(a), String(b)]);
+    expect(String(input.assigneeId)).toBe(String(b));
+  });
 });

@@ -20,13 +20,14 @@ describe('migration registry', () => {
       expect(validateMigrationRegistry(MIGRATIONS)).toEqual([]);
     });
 
-    it('FR-21: liền số 007..011, đúng thứ tự id', () => {
+    it('FR-21, FR-30: liền số 007..012, đúng thứ tự id', () => {
       expect(MIGRATIONS.map((m) => m.id)).toEqual([
         '007_crm_catalog_codes',
         '008_crm_project_property_type_codes',
         '009_notification_attachment_indexes',
         '010_crm_customer_code_index',
         '011_crm_drop_unique_phone',
+        '012_crm_appointment_assignee_ids',
       ]);
     });
 
@@ -70,6 +71,24 @@ describe('migration registry', () => {
       expect(getMigrationPhase(byId('010')!)).toBe('pre-up');
       expect(byId('011')?.phase).toBe('post-up');
       expect(byId('011')?.description).toContain('MỘT CHIỀU');
+    });
+
+    it('FR-30: 012 là post-up (KHÔNG pre-up, vì 011 post-up còn chờ sẽ làm bước 6b bị REFUSED), có up, KHÔNG một chiều', () => {
+      const m012 = MIGRATIONS.find((migration) =>
+        migration.id.startsWith('012'),
+      );
+      expect(m012?.phase).toBe('post-up');
+      expect(getMigrationPhase(m012!)).toBe('post-up');
+      expect(typeof m012?.up).toBe('function');
+      expect(m012?.description).not.toContain('MỘT CHIỀU');
+      expect(m012?.description).toContain('KHÔNG một chiều');
+    });
+
+    it('FR-30: 012 đứng sau 011 trong registry (bước 90 chạy 011 rồi 012)', () => {
+      const ids = MIGRATIONS.map((migration) => migration.id);
+      expect(ids.indexOf('012_crm_appointment_assignee_ids')).toBeGreaterThan(
+        ids.indexOf('011_crm_drop_unique_phone'),
+      );
     });
 
     it('FR-21: validateMigrationRegistry không bị ảnh hưởng bởi phase', () => {

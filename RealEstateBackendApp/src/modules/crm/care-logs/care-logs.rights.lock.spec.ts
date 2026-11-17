@@ -1,20 +1,27 @@
 import { Types } from 'mongoose';
+import { UserRole } from '../../../common/enums/user-role.enum';
+import { UserStatus } from '../../../common/enums/user-status.enum';
 import { AppointmentType } from '../appointments/appointment.constants';
 import { AppointmentsWriteService } from '../appointments/appointments-write.service';
 import {
   buildAccess,
   buildCustomer,
   buildScopedRepo,
+  buildUserDirectory,
   chain,
   ctxOf,
+  defaultCareTeam,
   fakeConnection,
   IN_SCOPE_KEYS,
   jwtOf,
+  makeFixtureUser,
   OUT_OF_SCOPE_KEYS,
   REJECTS,
   USERS,
+  type UserDirectoryOptions,
   type UserKey,
 } from '../customers/access/customer-rights.fixture';
+import { CareRole } from '../customers/customer.constants';
 import { AttachmentStatus } from './care-log.constants';
 import { CareLogAttachmentsService } from './care-log-attachments.service';
 import { CareLogsService } from './care-logs.service';
@@ -50,8 +57,10 @@ const makeLog = (customerId: Types.ObjectId) => ({
 
 const exec = <T>(result: T) => ({ exec: () => Promise.resolve(result) });
 
-const build = () => {
-  const customer = buildCustomer();
+const build = (
+  customer: ReturnType<typeof buildCustomer> = buildCustomer(),
+  directoryOptions: UserDirectoryOptions = {},
+) => {
   const { repo } = buildScopedRepo([customer]);
   const log = makeLog(customer._id);
 
@@ -96,9 +105,11 @@ const build = () => {
     resolve: jest.fn().mockResolvedValue({ users: new Map() }),
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  // Người thực hiện đọc từ thư mục tài khoản giả có luật thật (FR-30: careTeam ACTIVE ∪ Manager nhóm chủ ∪ người tạo).
+  const directory = buildUserDirectory(directoryOptions);
   const writer = new AppointmentsWriteService(
     appointmentModel as never,
-    { exists: jest.fn(() => chain({ _id: new Types.ObjectId() })) } as never,
+    directory.userModel as never,
     repo,
     refs as never,
     {
@@ -108,6 +119,7 @@ const build = () => {
     } as never,
     { syncAppointment: jest.fn().mockResolvedValue(undefined) } as never,
     audit as never,
+    directory.ownerTeam,
   );
 
   const attachments = {
@@ -195,6 +207,256 @@ describe('CareLogsService.createInSession: nhật ký kèm nextAction.appointmen
     >;
     expect(doc.assigneeId).toEqual(USERS.STAFF_PRIMARY.userId);
     expect(doc.createdBy).toEqual(USERS.MANAGER_R8.userId);
+  });
+});
+
+// ============================================================================================
+// FR-30 (T-55): người thực hiện của lịch hẹn tạo kèm nhật ký, qua MỘT luật với đường tạo lịch trực tiếp
+// ============================================================================================
+describe('CareLogsService.createInSession: assigneeIds của nextAction.appointment (FR-30)', () => {
+  const dto = (assigneeIds?: string[]) => ({
+    content: 'Gọi lần 1',
+    contactChannel: 'CALL',
+    nextAction: {
+      suggestion: 'Dẫn đi xem nhà',
+      dueAt: future().toISOString(),
+      appointment: {
+        type: AppointmentType.SITE_VISIT,
+        ...(assigneeIds && { assigneeIds }),
+      },
+    },
+  });
+  const create = (
+    h: ReturnType<typeof build>,
+    key: UserKey,
+    assigneeIds?: string[],
+  ) =>
+    h.service.createInSession(
+      ctxOf(key),
+      customerIdOf(h),
+      dto(assigneeIds) as never,
+      'WEB',
+      {} as never,
+    );
+  const apptDoc = (h: ReturnType<typeof build>) => {
+    const [[[doc]]] = h.appointmentModel.create.mock.calls as unknown as Array<
+      [[Record<string, unknown>]]
+    >;
+    return doc;
+  };
+  const ids = (...keys: UserKey[]) =>
+    keys.map((key) => String(USERS[key].userId));
+
+  it('FR-30: nhiều người (careTeam + Manager nhóm chủ) được ghi kép: assigneeIds đủ thứ tự, assigneeId = người đầu', async () => {
+    const h = build();
+    await create(
+      h,
+      'STAFF_PRIMARY',
+      ids('MANAGER_OWNER', 'STAFF_MEMBER', 'STAFF_INVITED'),
+    );
+    const doc = apptDoc(h);
+    expect(doc.assigneeIds).toEqual([
+      USERS.MANAGER_OWNER.userId,
+      USERS.STAFF_MEMBER.userId,
+      USERS.STAFF_INVITED.userId,
+    ]);
+    expect(doc.assigneeId).toEqual(USERS.MANAGER_OWNER.userId);
+  });
+
+  it('FR-30: Manager nhóm chủ ngoài careTeam đặt lịch qua nhật ký và là người thực hiện mặc định của chính mình', async () => {
+    const h = build();
+    await create(h, 'MANAGER_OWNER');
+    const doc = apptDoc(h);
+    expect(doc.assigneeIds).toEqual([USERS.MANAGER_OWNER.userId]);
+    expect(doc.assigneeId).toEqual(USERS.MANAGER_OWNER.userId);
+  });
+
+  it('FR-30: người ghi nhật ký là thành viên careTeam thì mặc định chính mình', async () => {
+    const h = build();
+    await create(h, 'STAFF_MEMBER');
+    expect(apptDoc(h).assigneeIds).toEqual([USERS.STAFF_MEMBER.userId]);
+  });
+
+  it('FR-30: Admin không thuộc tập hợp lệ (không phải người tạo) thì mặc định PRIMARY; chỉ định người ngoài tập thì 400', async () => {
+    const h = build();
+    await create(h, 'ADMIN');
+    expect(apptDoc(h).assigneeIds).toEqual([USERS.STAFF_PRIMARY.userId]);
+
+    const h2 = build();
+    await expect(create(h2, 'ADMIN', ids('MANAGER_R8'))).rejects.toMatchObject(
+      REJECTS.USER_NOT_ASSIGNABLE,
+    );
+    expect(h2.appointmentModel.create).not.toHaveBeenCalled();
+  });
+
+  it('FR-30: người ngoài tập hợp lệ (Manager nhóm khác, Staff ngoài careTeam) bị từ chối cả khi lẫn người hợp lệ', async () => {
+    const h = build();
+    await expect(
+      create(h, 'STAFF_PRIMARY', ids('STAFF_MEMBER', 'STAFF_OUT')),
+    ).rejects.toMatchObject(REJECTS.USER_NOT_ASSIGNABLE);
+    expect(h.appointmentModel.create).not.toHaveBeenCalled();
+  });
+
+  // ------------------------------------------------------------------------------------------
+  // Tiêu chí xong của T-55: đường tạo lịch qua nhật ký dùng CÙNG luật tập hợp lệ với đường tạo lịch trực tiếp
+  // ------------------------------------------------------------------------------------------
+  const memberEntry = (key: UserKey, role: CareRole) => ({
+    userId: USERS[key].userId,
+    role,
+    addedBy: USERS.STAFF_PRIMARY.userId,
+    addedAt: new Date('2026-01-01T00:00:00Z'),
+  });
+  /** Khách có ADMIN trong careTeam: PRIMARY (kịch bản lỗi staging: Admin tạo khách) hoặc MEMBER (người khác tạo). */
+  const customerWithAdminInCareTeam = (role: CareRole) =>
+    role === CareRole.PRIMARY
+      ? buildCustomer({
+          careTeam: [
+            memberEntry('ADMIN', CareRole.PRIMARY),
+            ...defaultCareTeam()
+              .slice(1)
+              .map((entry) => ({ ...entry, role: CareRole.MEMBER })),
+          ],
+          primaryAssigneeId: USERS.ADMIN.userId,
+          createdBy: USERS.ADMIN.userId,
+        })
+      : buildCustomer({
+          careTeam: [
+            ...defaultCareTeam(),
+            memberEntry('ADMIN', CareRole.MEMBER),
+          ],
+        });
+  /** Khách cũ do `creatorId` tạo mà người đó KHÔNG nằm trong careTeam (fixture dựng tay). */
+  const customerCreatedBy = (creatorId: Types.ObjectId) =>
+    buildCustomer({ createdBy: creatorId });
+  const notAssignable = (userIds: string[], reason: string) => ({
+    ...REJECTS.USER_NOT_ASSIGNABLE,
+    details: { userIds, reason },
+  });
+  const savedBoth = (h: ReturnType<typeof build>) => {
+    expect(h.careLogModel.create).toHaveBeenCalledTimes(1);
+    expect(h.appointmentModel.create).toHaveBeenCalledTimes(1);
+  };
+  const notSaved = (h: ReturnType<typeof build>) => {
+    expect(h.appointmentModel.create).not.toHaveBeenCalled();
+    expect(h.careLogModel.create).not.toHaveBeenCalled();
+  };
+
+  describe.each([
+    ['PRIMARY', CareRole.PRIMARY],
+    ['MEMBER', CareRole.MEMBER],
+  ])('Admin là %s trong careTeam (kịch bản lỗi staging cũ)', (_n, role) => {
+    it('FR-30: Admin lưu nhật ký kèm lịch (mặc định chính mình): lưu cả nhật ký lẫn lịch, KHÔNG 400 USER_NOT_ASSIGNABLE', async () => {
+      const h = build(customerWithAdminInCareTeam(role));
+      const created = await create(h, 'ADMIN');
+      expect(created.authorId).toEqual(USERS.ADMIN.userId);
+      savedBoth(h);
+      expect(apptDoc(h).assigneeIds).toEqual([USERS.ADMIN.userId]);
+      expect(apptDoc(h).assigneeId).toEqual(USERS.ADMIN.userId);
+    });
+
+    it('FR-30: Admin tự giao lịch cho chính mình, kèm một người khác trong careTeam: được, thứ tự giữ nguyên', async () => {
+      const h = build(customerWithAdminInCareTeam(role));
+      await create(h, 'ADMIN', ids('ADMIN', 'STAFF_MEMBER'));
+      savedBoth(h);
+      expect(apptDoc(h).assigneeIds).toEqual([
+        USERS.ADMIN.userId,
+        USERS.STAFF_MEMBER.userId,
+      ]);
+    });
+
+    it('FR-30: người khác trong careTeam giao lịch cho Admin (thành viên) qua nhật ký: được', async () => {
+      const h = build(customerWithAdminInCareTeam(role));
+      await create(h, 'STAFF_MEMBER', ids('ADMIN'));
+      savedBoth(h);
+      expect(apptDoc(h).assigneeIds).toEqual([USERS.ADMIN.userId]);
+    });
+  });
+
+  it('FR-30: Admin KHÁC ngoài careTeam (không phải người tạo) tự giao cho mình qua nhật ký => 400 NOT_IN_CARE_TEAM, không lưu gì', async () => {
+    const adminInTeam = makeFixtureUser('Admin tạo khách', {
+      roles: [UserRole.ADMIN],
+    });
+    const h = build(
+      buildCustomer({
+        careTeam: [
+          {
+            userId: adminInTeam._id,
+            role: CareRole.PRIMARY,
+            addedBy: adminInTeam._id,
+            addedAt: new Date('2026-01-01T00:00:00Z'),
+          },
+          memberEntry('STAFF_MEMBER', CareRole.MEMBER),
+        ],
+        primaryAssigneeId: adminInTeam._id,
+        createdBy: adminInTeam._id,
+      }),
+      { extraUsers: [adminInTeam] },
+    );
+    await expect(create(h, 'ADMIN', ids('ADMIN'))).rejects.toMatchObject(
+      notAssignable(ids('ADMIN'), 'NOT_IN_CARE_TEAM'),
+    );
+    notSaved(h);
+  });
+
+  describe('người tạo khách ngoài careTeam, đủ ba vai trò CRM, qua đường nhật ký', () => {
+    it.each([
+      ['ADMIN', [UserRole.ADMIN]],
+      ['STAFF', [UserRole.STAFF]],
+      ['MANAGER', [UserRole.MANAGER]],
+    ])(
+      'FR-30: người tạo %s ngoài careTeam được giao lịch qua nhật ký (khách cũ dựng tay): lưu cả nhật ký lẫn lịch',
+      async (_n, roles) => {
+        const creator = makeFixtureUser('Người tạo', { roles });
+        const h = build(customerCreatedBy(creator._id), {
+          extraUsers: [creator],
+        });
+        await create(h, 'ADMIN', [String(creator._id), ...ids('STAFF_MEMBER')]);
+        savedBoth(h);
+        expect(apptDoc(h).assigneeIds).toEqual([
+          creator._id,
+          USERS.STAFF_MEMBER.userId,
+        ]);
+        expect(apptDoc(h).assigneeId).toEqual(creator._id);
+      },
+    );
+  });
+
+  describe('người tạo không còn hoạt động, qua đường nhật ký', () => {
+    it.each([
+      ['bị khóa (BLOCKED)', { status: UserStatus.BLOCKED }],
+      ['đã xóa mềm', { deletedAt: new Date('2026-02-01T00:00:00Z') }],
+    ])(
+      'FR-30: người tạo %s => 400 NOT_ACTIVE, không lưu nhật ký lẫn lịch',
+      async (_n, over) => {
+        const creator = makeFixtureUser('Người tạo', over);
+        const h = build(customerCreatedBy(creator._id), {
+          extraUsers: [creator],
+        });
+        await expect(
+          create(h, 'ADMIN', [String(creator._id)]),
+        ).rejects.toMatchObject(
+          notAssignable([String(creator._id)], 'NOT_ACTIVE'),
+        );
+        notSaved(h);
+      },
+    );
+  });
+
+  describe('nguyên tử: lịch lỗi thì nhật ký không được lưu', () => {
+    it('FR-30: người thực hiện ngoài tập hợp lệ => 400 và `careLogModel.create` KHÔNG được gọi (lịch được tạo TRƯỚC nhật ký)', async () => {
+      const h = build();
+      await expect(
+        create(h, 'STAFF_PRIMARY', ids('STAFF_OUT')),
+      ).rejects.toMatchObject(REJECTS.USER_NOT_ASSIGNABLE);
+      notSaved(h);
+    });
+
+    it('FR-30: ghi lịch lỗi bất ngờ (DB) => lỗi nổi lên và `careLogModel.create` KHÔNG được gọi', async () => {
+      const h = build();
+      h.appointmentModel.create.mockRejectedValueOnce(new Error('DB lỗi'));
+      await expect(create(h, 'STAFF_PRIMARY')).rejects.toThrow('DB lỗi');
+      expect(h.careLogModel.create).not.toHaveBeenCalled();
+    });
   });
 });
 

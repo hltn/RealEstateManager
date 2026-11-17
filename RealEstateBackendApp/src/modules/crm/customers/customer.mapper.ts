@@ -11,6 +11,7 @@ import {
   PURCHASE_PURPOSES_FIELD_KEY,
 } from './customer.constants';
 import type { CustomerLean } from './customers.repository';
+import type { OwnerRefs } from './customer-owner-team.service';
 import type { RefIds, RefMaps } from './customer-refs.service';
 import { toCatalogRef, toRef, toUserRef } from './customer-refs.service';
 import {
@@ -221,6 +222,7 @@ export const toDetail = (
   doc: CustomerLean,
   refs: RefMaps,
   actor: CrmActor,
+  ownerTeam: OwnerRefs = { ownerManagers: [], creator: null },
 ): CustomerDetailDto => {
   const privileged = isAdminOrManager(actor);
   const primary = isPrimary(doc, actor);
@@ -258,6 +260,8 @@ export const toDetail = (
           requireDropped: false,
         }) === null,
     },
+    ownerManagers: ownerTeam.ownerManagers,
+    creator: ownerTeam.creator,
     version: doc.__v ?? 0,
   };
 };

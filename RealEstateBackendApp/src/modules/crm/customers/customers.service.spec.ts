@@ -166,6 +166,7 @@ const build = (options: HarnessOptions = {}): Harness => {
     tags as never,
     { dispatch } as never,
     { next: counterNext } as never,
+    { buildOwnerRefs: jest.fn() } as never,
   );
   // Dựng DTO phản hồi thuộc mapper (đã có spec riêng): ở đây chỉ cần đối chiếu bản ghi được ghi xuống DB.
   jest

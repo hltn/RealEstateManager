@@ -11,10 +11,12 @@
  */
 import { Types } from 'mongoose';
 import { UserRole } from '../../../../common/enums/user-role.enum';
+import { UserStatus } from '../../../../common/enums/user-status.enum';
 import type { JwtPayload } from '../../../../common/decorators/current-user.decorator';
 import { ErrorCode } from '../../../../common/exceptions/error-codes';
 import type { CrmActor } from '../../common/access/crm-actor';
 import { CareRole } from '../customer.constants';
+import { CustomerOwnerTeamService } from '../customer-owner-team.service';
 import { CustomersRepository } from '../customers.repository';
 import type { AccessContext } from './customer-access.service';
 import { buildCustomerScope } from './customer-scope';
@@ -310,3 +312,96 @@ export const REJECTS = {
     status: 400,
   },
 } as const;
+
+// --------------------------------------------------------------------------------------------
+// Danh bạ người dùng + nhóm giả (T-55, FR-30): `users`/`teams` cho việc chọn người thực hiện và dựng nhóm chủ
+// --------------------------------------------------------------------------------------------
+
+export interface FixtureUserDoc {
+  _id: Types.ObjectId;
+  fullName: string;
+  roles: UserRole[];
+  status: UserStatus;
+  deletedAt: Date | null;
+  teamId: Types.ObjectId | null;
+  teamIds: Types.ObjectId[];
+}
+
+export interface UserDirectoryOptions {
+  /** Ghi đè trạng thái/vai trò của vai fixture (ví dụ khóa người tạo, đổi vai thành chỉ EDITOR). */
+  overrides?: Partial<
+    Record<
+      UserKey,
+      Partial<Pick<FixtureUserDoc, 'status' | 'deletedAt' | 'roles'>>
+    >
+  >;
+  /** Người dùng thêm ngoài `USERS` (ví dụ Admin thuần là người tạo khách). */
+  extraUsers?: FixtureUserDoc[];
+  /** Nhóm bị xóa mềm (không tính là nhóm chủ). */
+  deletedTeamIds?: Types.ObjectId[];
+}
+
+/** Người dùng dựng tay cho test (mặc định STAFF còn hoạt động, không thuộc nhóm). */
+export const makeFixtureUser = (
+  fullName: string,
+  over: Partial<FixtureUserDoc> = {},
+): FixtureUserDoc => ({
+  _id: oid(),
+  fullName,
+  roles: [UserRole.STAFF],
+  status: UserStatus.ACTIVE,
+  deletedAt: null,
+  teamId: null,
+  teamIds: [],
+  ...over,
+});
+
+/**
+ * `userModel` (find/findOne) và `teamModel` (find) giả theo `USERS`: Manager nhóm chủ của TEAM_A là `MANAGER_OWNER`,
+ * TEAM_B là `MANAGER_R8`, TEAM_C là `MANAGER_OUT`, TEAM_D là `MANAGER_INCARE`. `jest.fn` để test đọc được bộ lọc.
+ */
+export const buildUserDirectory = (options: UserDirectoryOptions = {}) => {
+  const users: FixtureUserDoc[] = [
+    ...(Object.keys(USERS) as UserKey[]).map((key) => ({
+      _id: USERS[key].userId,
+      fullName: USERS[key].displayName,
+      roles: [...USERS[key].roles] as UserRole[],
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      teamId: USERS[key].teamId,
+      teamIds: [...USERS[key].teamIds],
+      ...options.overrides?.[key],
+    })),
+    ...(options.extraUsers ?? []),
+  ];
+  const deleted = options.deletedTeamIds ?? [];
+  const teams = [
+    { _id: TEAM_A, managerIds: [USERS.MANAGER_OWNER.userId] },
+    { _id: TEAM_B, managerIds: [USERS.MANAGER_R8.userId] },
+    { _id: TEAM_C, managerIds: [USERS.MANAGER_OUT.userId] },
+    { _id: TEAM_D, managerIds: [USERS.MANAGER_INCARE.userId] },
+  ].map((team) => ({
+    ...team,
+    deletedAt: deleted.some((id) => id.equals(team._id))
+      ? new Date('2026-02-01T00:00:00Z')
+      : null,
+  }));
+  const userModel = {
+    find: jest.fn((filter: Doc) =>
+      chain(users.filter((doc) => matchesFilter(doc as never, filter))),
+    ),
+    findOne: jest.fn((filter: Doc) =>
+      chain(users.find((doc) => matchesFilter(doc as never, filter)) ?? null),
+    ),
+  };
+  const teamModel = {
+    find: jest.fn((filter: Doc) =>
+      chain(teams.filter((doc) => matchesFilter(doc as never, filter))),
+    ),
+  };
+  const ownerTeam = new CustomerOwnerTeamService(
+    userModel as never,
+    teamModel as never,
+  );
+  return { users, userModel, teamModel, ownerTeam };
+};

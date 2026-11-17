@@ -176,7 +176,7 @@ describe('A0 xuyên module: registry thật + lùi rồi tiến', () => {
     return out;
   };
 
-  it('reconcile thật trên dữ liệu cũ: ghi sổ 007..011, bất biến 3.1, không đổi updatedAt/version, đổi nhãn không đổi code', async () => {
+  it('reconcile thật trên dữ liệu cũ: ghi sổ 007..012, bất biến 3.1, không đổi updatedAt/version, đổi nhãn không đổi code', async () => {
     const name = `a0x_${(n += 1)}`;
     const db = client.db(name);
     const seeded = await seedLegacy(db);
@@ -195,6 +195,7 @@ describe('A0 xuyên module: registry thật + lùi rồi tiến', () => {
       'migration:009_notification_attachment_indexes',
       'migration:010_crm_customer_code_index',
       'migration:011_crm_drop_unique_phone',
+      'migration:012_crm_appointment_assignee_ids',
     ]);
 
     const customer = await db

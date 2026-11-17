@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { AppointmentStatus } from '../appointments/appointment.constants';
+import { getAssigneeIds } from '../appointments/appointment-assignee';
 import { planAppointmentReminders } from '../appointments/appointment.rules';
 import {
   Appointment,
@@ -16,7 +17,9 @@ import { Reminder, ReminderDocument } from './schemas/reminder.schema';
 export interface ReminderAppointmentInput {
   _id: Types.ObjectId;
   customerId: Types.ObjectId;
-  assigneeId: Types.ObjectId;
+  /** DEPRECATED: dùng `assigneeIds`; lịch chưa backfill chỉ có trường này (FR-30). */
+  assigneeId?: Types.ObjectId;
+  assigneeIds?: Types.ObjectId[];
   startAt: Date;
   status: AppointmentStatus;
   deletedAt?: Date | null;
@@ -83,7 +86,7 @@ export class RemindersWriterService {
                 customerId: appointment.customerId,
                 refId: appointment._id,
                 // Chỉ là metadata/gợi ý: dispatch tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
-                recipientIds: [appointment.assigneeId],
+                recipientIds: getAssigneeIds(appointment),
                 priorityRecipientId: null,
                 fireAt: reminder.fireAt,
                 dueAt: appointment.startAt,

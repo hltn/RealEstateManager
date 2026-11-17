@@ -130,6 +130,12 @@ export class DailyTaskResponseDto {
   @ApiPropertyOptional() careLogId?: string;
   @ApiProperty({ nullable: true, type: UserRefDto })
   assignee: UserRefDto | null;
+  @ApiProperty({
+    type: [UserRefDto],
+    description:
+      'Mọi người thực hiện (FR-30; lịch hẹn nhiều người, việc nguồn khác 0..1 người). `assignee` (người đầu) giữ nguyên để client cũ không vỡ',
+  })
+  assignees: UserRefDto[];
   @ApiProperty({ description: 'Người gọi là phụ trách chính của khách' })
   isPrimary: boolean;
 }

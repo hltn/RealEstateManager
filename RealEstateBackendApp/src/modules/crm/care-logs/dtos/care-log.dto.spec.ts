@@ -87,3 +87,35 @@ describe('care-log DTO: nextAction.appointment.projectCode (FR-40)', () => {
     ).toEqual([]);
   });
 });
+
+describe('care-log DTO: nextAction.appointment.assigneeIds (FR-30)', () => {
+  const ids = Array.from(
+    { length: 21 },
+    (_, i) => `66f1a2b3c4d5e6f7081900${String(i).padStart(2, '0')}`,
+  );
+  const appointment = { type: 'SITE_VISIT' };
+
+  it('FR-30: nhận 1..20 id, khử trùng giữ thứ tự; từ chối rỗng, 21 id, id sai', async () => {
+    const ok = plainToInstance(CareLogNextActionAppointmentDto, {
+      ...appointment,
+      assigneeIds: [ids[1], ids[0], ids[1]],
+    });
+    expect(await validate(ok)).toHaveLength(0);
+    expect(ok.assigneeIds).toEqual([ids[1], ids[0]]);
+
+    for (const assigneeIds of [[], ids, ['abc']]) {
+      expect(
+        await errorsOf(CareLogNextActionAppointmentDto, {
+          ...appointment,
+          assigneeIds,
+        }),
+      ).toEqual(['assigneeIds']);
+    }
+  });
+
+  it('FR-30: bỏ trống assigneeIds hợp lệ (mặc định người ghi nhật ký nếu thuộc tập hợp lệ)', async () => {
+    expect(
+      await errorsOf(CareLogNextActionAppointmentDto, appointment),
+    ).toEqual([]);
+  });
+});

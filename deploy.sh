@@ -23,7 +23,7 @@
 #   -> manifest backups/deploy-pre-<TS>.manifest -> gắn thẻ `<name>:pre-<TS>` cho image BE/FE ĐANG CHẠY (lấy từ container) -> promote `<name>:<ver>-<commit>` thành `current`
 #   -> migration gate/`reconcile` (PT-027) -> `up -d --no-build` (KHÔNG build, KHÔNG `--pull always`) -> chờ mongo healthy + backend liveness -> ghi phiên bản
 #   hệ thống (8b; CÀI MỚI: 8a) -> hậu-migrate DÙNG CHUNG `run_post_migrate_steps`: scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên (10 bù mã danh mục, 20 bù mã khách,
-#   90 migration post-up 011 MỘT CHIỀU), MỌI lần deploy, bỏ qua toàn bộ khi downgrade. Bước nào thoát mã khác 0 thì deploy THẤT BẠI (kèm tên bước), các bước sau không chạy.
+#   90 migration post-up: 011 MỘT CHIỀU, 012 chỉ cộng thêm KHÔNG một chiều), MỌI lần deploy, bỏ qua toàn bộ khi downgrade. Bước nào thoát mã khác 0 thì deploy THẤT BẠI (kèm tên bước), các bước sau không chạy.
 #
 # Tự migrate MẶC ĐỊNH BẬT (DEPLOY_AUTO_MIGRATE=1). Tắt bằng --no-migrate (có việc chờ hoặc cần baseline thì DỪNG trước `up`; cờ này chỉ chặn migrate TRƯỚC
 # `up`, còn 8b vẫn ghi phiên bản khi DB sạch, xem mục 11.1). --migrate là bí danh giữ lại cho tương thích. --plan-only: kiểm image/`.env`/khóa rồi
@@ -160,7 +160,7 @@ Thứ tự: kiểm đĩa -> đọc release.env -> kiểm hai image đã nạp (t
 (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) + sao .env -> manifest -> gắn thẻ <name>:pre-<thời-gian> cho
 image BE/FE đang chạy -> promote <name>:<ver>-<commit> thành current -> runner migration `reconcile` (xem trên; với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần
 baseline) -> up -d --no-build -> chờ mongo healthy và backend liveness -> ghi phiên bản vào collection `system` -> hậu-migrate scripts/post-migrate/ (10 bù mã danh mục,
-20 bù mã khách, 90 migration post-up 011; lỗi = deploy báo lỗi).
+20 bù mã khách, 90 migration post-up 011 (một chiều) + 012 (chỉ cộng thêm, không một chiều); lỗi = deploy báo lỗi).
 
 Lỗi SAU promote nhưng TRƯỚC `up` (stack chưa đổi): script tự trả thẻ current về image cũ (pre-<thời-gian>), ghi PROMOTE_REVERT vào manifest; không trả được thì in cảnh báo + lệnh tay.
 Lỗi SAU `up`: script KHÔNG tự rollback; nó in lệnh `bash restore.sh --manifest backups/deploy-pre-<thời-gian>.manifest` (mặc định dry-run; chạy thật cần --apply --yes) và hướng dẫn lùi image.

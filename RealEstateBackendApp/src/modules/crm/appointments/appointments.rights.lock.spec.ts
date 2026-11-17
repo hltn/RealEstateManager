@@ -1,9 +1,9 @@
 import { Types } from 'mongoose';
-import { UserRole } from '../../../common/enums/user-role.enum';
 import { UserStatus } from '../../../common/enums/user-status.enum';
 import {
   buildAccess,
   buildCustomer,
+  buildUserDirectory,
   buildScopedRepo,
   chain,
   ctxOf,
@@ -15,8 +15,10 @@ import {
   REJECTS,
   TEAM_A,
   USERS,
+  type UserDirectoryOptions,
   type UserKey,
 } from '../customers/access/customer-rights.fixture';
+import { CareRole } from '../customers/customer.constants';
 import { AppointmentStatus, AppointmentType } from './appointment.constants';
 import { AppointmentsService } from './appointments.service';
 import { AppointmentsWriteService } from './appointments-write.service';
@@ -24,9 +26,10 @@ import { AppointmentsWriteService } from './appointments-write.service';
 /**
  * T-54 (FR-31): KHÓA HIỆN TRẠNG quyền lịch hẹn bằng `buildCustomerScope` + `CustomersRepository` THẬT.
  * - (a, b, c): ngoài phạm vi bị chặn, trong phạm vi tạo được (cả R8, e3).
- * - (d): người thực hiện ngoài `careTeam` => 400 USER_NOT_ASSIGNABLE.
+ * - (d): người thực hiện ngoài tập hợp lệ (`careTeam` ∪ Manager nhóm chủ ∪ người tạo khách) => 400 USER_NOT_ASSIGNABLE
+ *   (T-55, FR-30: đã đảo hai nhánh "Manager nhóm chủ" và "người tạo khách" từ bị chặn sang hợp lệ).
  * - (e, e1): sửa/đổi trạng thái hiện KHÔNG kiểm người sửa (ai trong phạm vi cũng được); xóa: Admin/Manager/người tạo lịch.
- * Hậu tố `[đảo ở T-55]` / `[đảo ở T-56]` = hành vi hiện tại sẽ đổi ở task đó; test không hậu tố phải xanh đến hết T-61.
+ * Hậu tố `[đảo ở T-56]` = hành vi hiện tại sẽ đổi ở task đó; test không hậu tố phải xanh đến hết T-61.
  */
 
 const SESSION = { id: 'tx-session' } as never;
@@ -59,7 +62,7 @@ const makeAppointment = (
 const build = (
   customer: Record<string, unknown> & { _id: Types.ObjectId } = buildCustomer(),
   appointment = makeAppointment(customer._id),
-  assigneeActive = true,
+  directory: UserDirectoryOptions = {},
 ) => {
   const { repo, updates } = buildScopedRepo([customer]);
   const appointmentModel = {
@@ -90,12 +93,8 @@ const build = (
         chain({ ...appointment, ...update.$set, __v: appointment.__v + 1 }),
     ),
   };
-  const userModel = {
-    // Có khai báo kiểu đối số (`[Record]`) để test đọc được `mock.calls[0][0]` (bộ lọc gửi cho `exists`).
-    exists: jest.fn<ReturnType<typeof chain>, [Record<string, unknown>]>(() =>
-      chain(assigneeActive ? { _id: new Types.ObjectId() } : null),
-    ),
-  };
+  // `users`/`teams` giả theo vai fixture; `CustomerOwnerTeamService` THẬT dựng nhóm chủ từ đó (FR-30).
+  const { userModel, ownerTeam } = buildUserDirectory(directory);
   const refs = {
     resolveOneForAssign: jest.fn().mockResolvedValue(null),
     resolveByIds: jest.fn().mockResolvedValue([]),
@@ -114,6 +113,7 @@ const build = (
     } as never,
     { syncAppointment: jest.fn().mockResolvedValue(undefined) } as never,
     { record: jest.fn().mockResolvedValue(undefined) } as never,
+    ownerTeam,
   );
   const service = new AppointmentsService(
     fakeConnection() as never,
@@ -230,7 +230,7 @@ describe('AppointmentsWriteService.createInSession: Manager chỉ nhờ careTeam
 describe('AppointmentsWriteService: người thực hiện phải thuộc careTeam (FR-31 d)', () => {
   // Người ngoài careTeam, KHÔNG phải Manager nhóm chủ, KHÔNG phải người tạo: bị chặn hiện tại và sau T-55.
   it.each(['STAFF_OUT', 'MANAGER_OUT', 'MANAGER_R8'] as UserKey[])(
-    'FR-31 (d): chỉ định %s (Manager/Staff ngoài careTeam) => 400 USER_NOT_ASSIGNABLE, details.userIds = [người đó], không tạo lịch',
+    'FR-31 (d): chỉ định %s (Manager/Staff ngoài careTeam) => 400 USER_NOT_ASSIGNABLE, details = { userIds: [người đó], reason: NOT_IN_CARE_TEAM }, không tạo lịch',
     async (assignee) => {
       const h = build();
       await expect(
@@ -244,15 +244,20 @@ describe('AppointmentsWriteService: người thực hiện phải thuộc careTe
         ),
       ).rejects.toMatchObject({
         ...REJECTS.USER_NOT_ASSIGNABLE,
-        details: { userIds: [String(USERS[assignee].userId)] },
+        details: {
+          userIds: [String(USERS[assignee].userId)],
+          reason: 'NOT_IN_CARE_TEAM',
+        },
       });
-      expect(h.userModel.exists).not.toHaveBeenCalled();
+      expect(h.userModel.find).toHaveBeenCalledTimes(1);
       expect(h.appointmentModel.create).not.toHaveBeenCalled();
     },
   );
 
-  it('FR-31 (d): thành viên careTeam nhưng `userModel.exists` không tìm thấy (không còn ACTIVE hoặc không đúng vai) => 400 USER_NOT_ASSIGNABLE (chỉ kiểm nhánh exists -> null)', async () => {
-    const h = build(undefined, undefined, false);
+  it('FR-31 (d): thành viên careTeam bị khóa => 400 USER_NOT_ASSIGNABLE, reason NOT_ACTIVE (tài khoản không còn hoạt động)', async () => {
+    const h = build(undefined, undefined, {
+      overrides: { STAFF_INVITED: { status: UserStatus.BLOCKED } },
+    });
     await expect(
       h.writer.createInSession(
         ctxOf('ADMIN'),
@@ -262,32 +267,46 @@ describe('AppointmentsWriteService: người thực hiện phải thuộc careTe
         'WEB',
         SESSION,
       ),
-    ).rejects.toMatchObject(REJECTS.USER_NOT_ASSIGNABLE);
+    ).rejects.toMatchObject({
+      ...REJECTS.USER_NOT_ASSIGNABLE,
+      details: {
+        userIds: [String(USERS.STAFF_INVITED.userId)],
+        reason: 'NOT_ACTIVE',
+      },
+    });
   });
 
-  it('FR-31 (d) bộ lọc người thực hiện gửi cho `userModel.exists` là ACTIVE + roles $in [MANAGER, STAFF] (KHÔNG có ADMIN), chưa xóa [đảo ở T-55]', async () => {
-    // Đây là gốc lỗi "Admin tạo khách rồi tạo lịch bị 400": ADMIN không nằm trong CRM_TEAM_ROLES nên không thể là
-    // người thực hiện. T-55 đổi quy tắc này; mock `exists` phải được khóa bằng ĐỐI SỐ, không chỉ bằng kết quả trả về.
-    const h = build();
-    await h.writer.createInSession(
-      ctxOf('STAFF_PRIMARY'),
-      createInput(h.customer._id, {
-        assigneeId: USERS.STAFF_INVITED.userId,
-      }),
+  it('FR-30 (d): đọc `users` đúng MỘT lần theo `_id $in`, KHÔNG còn lọc theo CRM_TEAM_ROLES: Admin trong careTeam giao cho chính mình được (kịch bản lỗi cũ "Admin tạo khách rồi tạo lịch bị 400")', async () => {
+    // Gốc lỗi cũ: ADMIN không nằm trong CRM_TEAM_ROLES nên không thể là người thực hiện dù đã là PRIMARY.
+    const admin = USERS.ADMIN;
+    const customer = buildCustomer({
+      careTeam: [
+        {
+          userId: admin.userId,
+          role: CareRole.PRIMARY,
+          addedBy: admin.userId,
+          addedAt: new Date(),
+        },
+      ],
+      primaryAssigneeId: admin.userId,
+      createdBy: admin.userId,
+    });
+    const h = build(customer);
+    const { appointment } = await h.writer.createInSession(
+      ctxOf('ADMIN'),
+      createInput(customer._id, { assigneeId: admin.userId }),
       'WEB',
       SESSION,
     );
-    expect(h.userModel.exists).toHaveBeenCalledTimes(1);
-    const filter = h.userModel.exists.mock.calls[0][0];
-    expect(filter).toEqual({
-      _id: USERS.STAFF_INVITED.userId,
-      status: UserStatus.ACTIVE,
-      roles: { $in: [UserRole.MANAGER, UserRole.STAFF] },
-      deletedAt: null,
-    });
-    expect((filter.roles as { $in: UserRole[] }).$in).not.toContain(
-      UserRole.ADMIN,
-    );
+    expect(h.userModel.find).toHaveBeenCalledTimes(1);
+    const filter = h.userModel.find.mock.calls[0][0] as {
+      _id: { $in: Types.ObjectId[] };
+      roles?: unknown;
+    };
+    expect(filter._id.$in).toEqual([admin.userId]);
+    expect(filter.roles).toBeUndefined();
+    expect(appointment.assigneeIds).toEqual([admin.userId]);
+    expect(appointment.assigneeId).toEqual(admin.userId);
   });
 
   it('FR-31 (d): chỉ định thành viên careTeam còn ACTIVE => tạo được (người gọi là Staff khác)', async () => {
@@ -317,22 +336,25 @@ describe('AppointmentsWriteService: người thực hiện phải thuộc careTe
     expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('FR-31 (d) Manager nhóm chủ ngoài careTeam bị chặn USER_NOT_ASSIGNABLE khi được chỉ định [đảo ở T-55]', async () => {
+  it('FR-30 (d): Manager nhóm chủ ngoài careTeam được chỉ định thành công, và việc chọn KHÔNG đổi careTeam', async () => {
     const h = build();
-    await expect(
-      h.writer.createInSession(
-        ctxOf('ADMIN'),
-        createInput(h.customer._id, {
-          assigneeId: USERS.MANAGER_OWNER.userId,
-        }) as never,
-        'WEB',
-        SESSION,
-      ),
-    ).rejects.toMatchObject(REJECTS.USER_NOT_ASSIGNABLE);
+    const careTeamBefore = JSON.stringify(h.customer.careTeam);
+    const { appointment } = await h.writer.createInSession(
+      ctxOf('ADMIN'),
+      createInput(h.customer._id, {
+        assigneeId: USERS.MANAGER_OWNER.userId,
+      }),
+      'WEB',
+      SESSION,
+    );
+    expect(appointment.assigneeIds).toEqual([USERS.MANAGER_OWNER.userId]);
+    expect(JSON.stringify(h.customer.careTeam)).toBe(careTeamBefore);
+    // Chỉ làm mới `nextAppointmentAt` của khách (đường tạo lịch bình thường); KHÔNG ghi đè nhóm/phụ trách chính.
+    expect(JSON.stringify(h.updates)).not.toMatch(/careTeam|primaryAssigneeId/);
   });
 
-  it('FR-31 (d) người tạo khách ngoài careTeam bị chặn USER_NOT_ASSIGNABLE khi được chỉ định [đảo ở T-55]', async () => {
-    // Fixture CÓ người tạo ngoài careTeam (cố ý, để khóa hiện trạng): STAFF_PRIMARY là người tạo nhưng đã bị gỡ.
+  it('FR-30 (d): người tạo khách ngoài careTeam được chỉ định thành công (nhánh createdBy), careTeam không đổi', async () => {
+    // Fixture CÓ người tạo ngoài careTeam (cố ý): STAFF_PRIMARY là người tạo nhưng đã bị gỡ khỏi careTeam.
     const customer = buildCustomer({
       careTeam: defaultCareTeam().filter(
         (member) => !member.userId.equals(USERS.STAFF_PRIMARY.userId),
@@ -340,16 +362,17 @@ describe('AppointmentsWriteService: người thực hiện phải thuộc careTe
       primaryAssigneeId: USERS.STAFF_MEMBER.userId,
     });
     const h = build(customer);
-    await expect(
-      h.writer.createInSession(
-        ctxOf('ADMIN'),
-        createInput(customer._id, {
-          assigneeId: USERS.STAFF_PRIMARY.userId,
-        }) as never,
-        'WEB',
-        SESSION,
-      ),
-    ).rejects.toMatchObject(REJECTS.USER_NOT_ASSIGNABLE);
+    const { appointment } = await h.writer.createInSession(
+      ctxOf('ADMIN'),
+      createInput(customer._id, {
+        assigneeId: USERS.STAFF_PRIMARY.userId,
+      }),
+      'WEB',
+      SESSION,
+    );
+    expect(appointment.assigneeIds).toEqual([USERS.STAFF_PRIMARY.userId]);
+    // Chỉ làm mới `nextAppointmentAt` của khách (đường tạo lịch bình thường); KHÔNG ghi đè nhóm/phụ trách chính.
+    expect(JSON.stringify(h.updates)).not.toMatch(/careTeam|primaryAssigneeId/);
   });
 });
 

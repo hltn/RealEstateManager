@@ -109,4 +109,29 @@ describe('migration-phase (FR-21)', () => {
       expect(findPhaseOrderViolation([], 'all')).toBeNull();
     });
   });
+
+  describe('012 sau 011, cùng post-up (FR-30)', () => {
+    it('FR-30: [post 011, post 012] hợp lệ ở mọi pha (cùng pha, không chiều nào bị từ chối)', () => {
+      const pending = [post('011_x'), post('012_y')];
+      expect(findPhaseOrderViolation(pending, 'post-up')).toBeNull();
+      expect(findPhaseOrderViolation(pending, 'pre-up')).toBeNull();
+      expect(findPhaseOrderViolation(pending, 'all')).toBeNull();
+    });
+
+    it('FR-30: [pre 010, post 011, post 012] bị từ chối ở post-up (còn pre-up 010 chờ), hợp lệ ở pre-up (deploy chạy 010 trước)', () => {
+      const pending = [pre('010_a'), post('011_b'), post('012_c')];
+      expect(findPhaseOrderViolation(pending, 'post-up')).toContain('010_a');
+      expect(findPhaseOrderViolation(pending, 'pre-up')).toBeNull();
+    });
+
+    it('FR-30 (đối chứng): nếu 012 là pre-up thì pre-up bị từ chối vì post-up 011 chờ nhỏ hơn: 012 phải là post-up', () => {
+      const message = findPhaseOrderViolation(
+        [post('011_b'), pre('012_c')],
+        'pre-up',
+      );
+      expect(message).toContain('011_b');
+      expect(message).toContain('012_c');
+      expect(message).toContain('--phase post-up');
+    });
+  });
 });
