@@ -25,7 +25,7 @@ import { CareTeamService } from './care-team.service';
  * THẬT (T-54 khóa hiện trạng; T-56 đảo theo FR-31): chỉ Admin, NGƯỜI TẠO khách, Manager nhóm chủ được mời/gỡ; PRIMARY/MEMBER
  * không tự có quyền; (A13) KHÔNG ai gỡ được người tạo (409 PRIMARY_LOCKED + reason CREATOR_LOCKED); (f) gỡ PRIMARY không
  * phải người tạo vẫn khóa 409.
- * Hậu tố `[đảo ở T-56]` = test đã đảo theo luật mới; test hậu tố `(giữ ở T-56)` giữ nguyên ý.
+ * Các test từng mang nhãn `[đảo ở T-56]` ở T-54 đã đảo theo luật mới (nhãn đã bỏ khỏi tiêu đề ở T-57); test hậu tố `(giữ ở T-56)` giữ nguyên ý.
  */
 
 const usersById = () =>
@@ -112,7 +112,7 @@ describe('CareTeamService.addMembers: mời thành viên (FR-31 a, c, e; ô A12)
   );
 
   it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e) [đảo ở T-56]: %s (Manager trong phạm vi nhưng không phải Manager nhóm chủ; INCARE còn là MEMBER) => 403, không ghi',
+    'FR-31 (e): %s (Manager trong phạm vi nhưng không phải Manager nhóm chủ; INCARE còn là MEMBER) => 403, không ghi',
     async (key) => {
       const h = build();
       await expect(invite(h, key)).rejects.toMatchObject(
@@ -122,7 +122,7 @@ describe('CareTeamService.addMembers: mời thành viên (FR-31 a, c, e; ô A12)
     },
   );
 
-  it('FR-31 (e) [đảo ở T-56]: PRIMARY không phải người tạo (khách cũ) => 403, không ghi', async () => {
+  it('FR-31 (e): PRIMARY không phải người tạo (khách cũ) => 403, không ghi', async () => {
     const h = build(buildCustomerWithOtherPrimary());
     await expect(invite(h, 'STAFF_MEMBER')).rejects.toMatchObject(
       REJECTS.CARE_TEAM_ACTION_FORBIDDEN,
@@ -141,7 +141,7 @@ describe('CareTeamService.addMembers: mời thành viên (FR-31 a, c, e; ô A12)
     },
   );
 
-  it('FR-31 (e) [đảo ở T-56]: người tạo chỉ là MEMBER (PRIMARY là người khác) mời được', async () => {
+  it('FR-31 (e): người tạo chỉ là MEMBER (PRIMARY là người khác) mời được', async () => {
     const h = build(buildCustomerWithOtherPrimary());
     await invite(h, 'STAFF_PRIMARY');
     expect(roleOf(writtenCareTeam(h), 'STAFF_OUT')).toBe(CareRole.MEMBER);
@@ -248,7 +248,7 @@ describe('CareTeamService.removeMember: gỡ thành viên (FR-31 e, e4, f; ô A1
     );
 
     it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-31 (e4) [đảo ở T-56]: %s (Manager trong phạm vi, không phải Manager nhóm chủ) => 403, không ghi',
+      'FR-31 (e4): %s (Manager trong phạm vi, không phải Manager nhóm chủ) => 403, không ghi',
       async (key) => {
         const h = build();
         await expect(kick(h, key, 'STAFF_INVITED')).rejects.toMatchObject(
@@ -258,7 +258,7 @@ describe('CareTeamService.removeMember: gỡ thành viên (FR-31 e, e4, f; ô A1
       },
     );
 
-    it('FR-31 (e4) [đảo ở T-56]: PRIMARY không phải người tạo => 403, không ghi', async () => {
+    it('FR-31 (e4): PRIMARY không phải người tạo => 403, không ghi', async () => {
       const h = build(buildCustomerWithOtherPrimary());
       await expect(
         kick(h, 'STAFF_MEMBER', 'STAFF_INVITED'),
@@ -311,7 +311,7 @@ describe('CareTeamService.removeMember: gỡ thành viên (FR-31 e, e4, f; ô A1
       },
     );
 
-    it('FR-31 (f) [đảo ở T-56]: chính PRIMARY (không phải người tạo) gỡ mình => 403 (không còn quyền gỡ), không phải 409', async () => {
+    it('FR-31 (f): chính PRIMARY (không phải người tạo) gỡ mình => 403 (không còn quyền gỡ), không phải 409', async () => {
       const h = build(buildCustomerWithOtherPrimary());
       await expect(
         kick(h, 'STAFF_MEMBER', 'STAFF_MEMBER'),
@@ -622,7 +622,7 @@ describe('CareTeamInviteesService.list: ai xem được danh sách người có 
   );
 
   it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải Manager nhóm chủ) => 403 CARE_TEAM_ACTION_FORBIDDEN, không truy vấn người dùng',
+    'FR-31 (e): %s (Manager trong phạm vi, không phải Manager nhóm chủ) => 403 CARE_TEAM_ACTION_FORBIDDEN, không truy vấn người dùng',
     async (key) => {
       const h = buildInvitees();
       await expect(listFor(h, key)).rejects.toMatchObject(
@@ -632,7 +632,7 @@ describe('CareTeamInviteesService.list: ai xem được danh sách người có 
     },
   );
 
-  it('FR-31 (e) [đảo ở T-56]: PRIMARY không phải người tạo => 403, không truy vấn người dùng', async () => {
+  it('FR-31 (e): PRIMARY không phải người tạo => 403, không truy vấn người dùng', async () => {
     const h = buildInvitees(buildCustomerWithOtherPrimary());
     await expect(listFor(h, 'STAFF_MEMBER')).rejects.toMatchObject(
       REJECTS.CARE_TEAM_ACTION_FORBIDDEN,
@@ -640,7 +640,7 @@ describe('CareTeamInviteesService.list: ai xem được danh sách người có 
     expect(h.userModel.find).not.toHaveBeenCalled();
   });
 
-  it('FR-31 (e) [đảo ở T-56]: người tạo không còn trong careTeam vẫn xem được danh sách mời theo khách', async () => {
+  it('FR-31 (e): người tạo không còn trong careTeam vẫn xem được danh sách mời theo khách', async () => {
     const h = buildInvitees(buildCustomerCreatorOutsideCareTeam());
     await expect(listFor(h, 'STAFF_PRIMARY')).resolves.toMatchObject({
       data: [],

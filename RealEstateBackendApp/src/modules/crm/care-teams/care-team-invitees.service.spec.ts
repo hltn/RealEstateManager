@@ -165,7 +165,7 @@ describe('CareTeamInviteesService: quyền (FR-13)', () => {
     expect(ctx.userModel.find).not.toHaveBeenCalled();
   });
 
-  it('FR-31 [đảo ở T-56]: Staff là PRIMARY nhưng KHÔNG phải người tạo bị 403, không truy vấn users', async () => {
+  it('FR-31: Staff là PRIMARY nhưng KHÔNG phải người tạo bị 403, không truy vấn users', async () => {
     const staff = makeActor({ role: UserRole.STAFF, roles: [UserRole.STAFF] });
     const ctx = build({
       actor: staff,
@@ -183,7 +183,7 @@ describe('CareTeamInviteesService: quyền (FR-13)', () => {
     expect(ctx.userModel.find).not.toHaveBeenCalled();
   });
 
-  it('FR-31 [đảo ở T-56]: Staff là NGƯỜI TẠO được xem dù không trong careTeam; không đọc users/teams của nhóm chủ', async () => {
+  it('FR-31: Staff là NGƯỜI TẠO được xem dù không trong careTeam; không đọc users/teams của nhóm chủ', async () => {
     const staff = makeActor({ role: UserRole.STAFF, roles: [UserRole.STAFF] });
     const ctx = build({
       actor: staff,
@@ -220,7 +220,7 @@ describe('CareTeamInviteesService: quyền (FR-13)', () => {
     ).resolves.toMatchObject({ data: [] });
   });
 
-  it('FR-31 [đảo ở T-56]: Manager nhóm khác (kể cả đang trong careTeam) bị 403', async () => {
+  it('FR-31: Manager nhóm khác (kể cả đang trong careTeam) bị 403', async () => {
     const manager = makeActor();
     const ctx = build({
       actor: manager,

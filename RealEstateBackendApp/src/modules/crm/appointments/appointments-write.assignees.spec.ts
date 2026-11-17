@@ -736,3 +736,228 @@ describe('FR-30: danh sách FE (ownerManagers + creator + careTeam) khớp tập
     );
   });
 });
+
+/**
+ * T-57 (FR-33): `USER_NOT_ASSIGNABLE` nói ĐÚNG nguyên nhân. Mỗi ca chạy trên CẢ HAI kiểu gọi của dịch vụ (tạo và PATCH
+ * danh sách người thực hiện); đường `nextAction.appointment` của nhật ký có test riêng ở `care-logs.rights.lock.spec.ts`.
+ * Thông điệp được khóa ĐÚNG chữ theo bảng Architecture 5.13.3 để gộp hoặc đổi thông điệp làm test đỏ.
+ */
+describe('AppointmentsWriteService: thông điệp và details.reason của USER_NOT_ASSIGNABLE (FR-33, T-57)', () => {
+  const MESSAGES = {
+    NOT_IN_CARE_TEAM:
+      'Người thực hiện phải là thành viên nhóm chăm sóc, người tạo khách hoặc Quản lý của nhóm chủ khách; nhờ thành viên có quyền mời đưa người đó vào nhóm trước',
+    NOT_ACTIVE:
+      'Người thực hiện không còn hoạt động (tài khoản bị khóa hoặc đã xóa)',
+    NOT_CRM_ROLE:
+      'Người thực hiện không có vai trò CRM (cần là Quản trị, Quản lý hoặc Nhân viên)',
+  } as const;
+  const CUSTOMER_NAME = 'Lê Thị Khách Bí Mật';
+  const CUSTOMER_PHONE = '+84987654321';
+  const ghost = new Types.ObjectId();
+
+  /** Khách có tên/SĐT/email riêng để chứng minh thông điệp và `details` không chứa PII khách. */
+  const piiCustomer = () =>
+    buildCustomer({
+      fullName: CUSTOMER_NAME,
+      phone: CUSTOMER_PHONE,
+      phoneMasked: '0987***321',
+      email: 'bi.mat@example.com',
+    });
+
+  type Reason = keyof typeof MESSAGES;
+  type Scenario = [
+    string,
+    Reason,
+    UserDirectoryOptions,
+    () => Types.ObjectId[],
+    () => string[],
+  ];
+  const scenarios: Scenario[] = [
+    [
+      'Staff ngoài careTeam, không phải người tạo',
+      'NOT_IN_CARE_TEAM',
+      {},
+      () => [id('STAFF_OUT')],
+      () => [sid('STAFF_OUT')],
+    ],
+    [
+      'Manager nhóm khác',
+      'NOT_IN_CARE_TEAM',
+      {},
+      () => [id('MANAGER_OUT')],
+      () => [sid('MANAGER_OUT')],
+    ],
+    [
+      'Admin KHÁC ngoài careTeam (tự giao cho mình)',
+      'NOT_IN_CARE_TEAM',
+      {},
+      () => [id('ADMIN')],
+      () => [sid('ADMIN')],
+    ],
+    [
+      'id không tồn tại (không lộ sự tồn tại tài khoản)',
+      'NOT_IN_CARE_TEAM',
+      {},
+      () => [ghost],
+      () => [String(ghost)],
+    ],
+    [
+      'thành viên careTeam bị khóa',
+      'NOT_ACTIVE',
+      { overrides: { STAFF_INVITED: { status: UserStatus.BLOCKED } } },
+      () => [id('STAFF_INVITED')],
+      () => [sid('STAFF_INVITED')],
+    ],
+    [
+      'thành viên careTeam đã xóa mềm',
+      'NOT_ACTIVE',
+      { overrides: { STAFF_INVITED: { deletedAt: new Date() } } },
+      () => [id('STAFF_INVITED')],
+      () => [sid('STAFF_INVITED')],
+    ],
+    [
+      'Quản lý nhóm chủ bị khóa',
+      'NOT_ACTIVE',
+      { overrides: { MANAGER_OWNER: { status: UserStatus.BLOCKED } } },
+      () => [id('MANAGER_OWNER')],
+      () => [sid('MANAGER_OWNER')],
+    ],
+    [
+      'thành viên careTeam chỉ có vai EDITOR',
+      'NOT_CRM_ROLE',
+      { overrides: { STAFF_INVITED: { roles: [UserRole.EDITOR] } } },
+      () => [id('STAFF_INVITED')],
+      () => [sid('STAFF_INVITED')],
+    ],
+  ];
+
+  const expectRejected = (
+    error: unknown,
+    reason: Reason,
+    userIds: string[],
+    customer: Record<string, unknown>,
+  ) => {
+    // Cùng mã lỗi và HTTP 400 ở mọi nguyên nhân; chỉ thông điệp và details.reason khác nhau.
+    expect(error).toMatchObject({
+      ...REJECTS.USER_NOT_ASSIGNABLE,
+      status: 400,
+      message: MESSAGES[reason],
+      details: { userIds, reason },
+    });
+    // `details` chỉ có đúng hai khóa (tương thích ngược), không kèm dữ liệu khách.
+    const details = (error as { details: Record<string, unknown> }).details;
+    expect(Object.keys(details).sort()).toEqual(['reason', 'userIds']);
+    const leaked = JSON.stringify([(error as Error).message, details]);
+    for (const secret of [
+      customer.fullName,
+      customer.phone,
+      customer.phoneMasked,
+      customer.email,
+      '0987',
+      '987654321',
+    ]) {
+      expect(leaked).not.toContain(String(secret));
+    }
+  };
+
+  describe.each(scenarios)(
+    '%s',
+    (_label, reason, directory, pick, expected) => {
+      it(`tạo lịch: 400 USER_NOT_ASSIGNABLE, reason ${reason}, userIds đúng, không ghi lịch`, async () => {
+        const h = build(piiCustomer(), directory);
+        const error = await create(h, 'ADMIN', { assigneeIds: pick() }).catch(
+          (e: unknown) => e,
+        );
+        expectRejected(error, reason, expected(), h.customer);
+        expect(h.appointmentModel.create).not.toHaveBeenCalled();
+        expect(h.userModel.find).toHaveBeenCalledTimes(1);
+      });
+
+      it(`sửa danh sách (PATCH): cùng reason ${reason} và cùng thông điệp, không ghi`, async () => {
+        const h = build(piiCustomer(), directory);
+        const error = await update(h, {
+          assigneeIds: [id('STAFF_MEMBER'), ...pick()],
+        }).catch((e: unknown) => e);
+        expectRejected(error, reason, expected(), h.customer);
+        expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
+      });
+    },
+  );
+
+  it('ba nguyên nhân cho ba thông điệp KHÁC NHAU (không còn một câu chung gây hiểu nhầm)', () => {
+    expect(new Set(Object.values(MESSAGES)).size).toBe(3);
+    const oldGeneric =
+      'Người thực hiện phải là thành viên đang hoạt động trong nhóm chăm sóc của khách';
+    for (const message of Object.values(MESSAGES)) {
+      expect(message).not.toBe(oldGeneric);
+    }
+  });
+
+  it('không suy ra được người mặc định: NOT_IN_CARE_TEAM, userIds = [] và đúng thông điệp NOT_IN_CARE_TEAM', async () => {
+    const h = build(piiCustomer());
+    h.customer.primaryAssigneeId = null;
+    const error = await create(h, 'ADMIN').catch((e: unknown) => e);
+    expectRejected(error, 'NOT_IN_CARE_TEAM', [], h.customer);
+  });
+
+  it('thứ tự kiểm cho cả mảng: id ngoài tập đi cùng người bị khóa và người chỉ EDITOR => NOT_IN_CARE_TEAM, userIds chỉ gồm id ngoài tập', async () => {
+    const h = build(piiCustomer(), {
+      overrides: {
+        STAFF_MEMBER: { status: UserStatus.BLOCKED },
+        STAFF_INVITED: { roles: [UserRole.EDITOR] },
+      },
+    });
+    const error = await create(h, 'ADMIN', {
+      assigneeIds: [id('STAFF_MEMBER'), id('STAFF_INVITED'), id('STAFF_OUT')],
+    }).catch((e: unknown) => e);
+    expectRejected(error, 'NOT_IN_CARE_TEAM', [sid('STAFF_OUT')], h.customer);
+    expect(h.userModel.find).toHaveBeenCalledTimes(1);
+  });
+
+  it('thứ tự kiểm: người bị khóa cùng người chỉ EDITOR (cả hai trong tập) => NOT_ACTIVE, userIds chỉ gồm người bị khóa', async () => {
+    const h = build(piiCustomer(), {
+      overrides: {
+        STAFF_MEMBER: { status: UserStatus.BLOCKED },
+        STAFF_INVITED: { roles: [UserRole.EDITOR] },
+      },
+    });
+    const error = await create(h, 'ADMIN', {
+      assigneeIds: [id('STAFF_INVITED'), id('STAFF_MEMBER')],
+    }).catch((e: unknown) => e);
+    expectRejected(error, 'NOT_ACTIVE', [sid('STAFF_MEMBER')], h.customer);
+  });
+
+  it('userIds liệt kê ĐÚNG và ĐỦ các id cùng lý do (nhiều id ngoài tập, giữ thứ tự, không kèm id hợp lệ)', async () => {
+    const h = build(piiCustomer());
+    const error = await create(h, 'ADMIN', {
+      assigneeIds: [
+        id('MANAGER_OUT'),
+        id('STAFF_PRIMARY'),
+        ghost,
+        id('STAFF_OUT'),
+      ],
+    }).catch((e: unknown) => e);
+    expectRejected(
+      error,
+      'NOT_IN_CARE_TEAM',
+      [sid('MANAGER_OUT'), String(ghost), sid('STAFF_OUT')],
+      h.customer,
+    );
+  });
+
+  it('thành viên careTeam mà tài khoản không còn trong users (id mồ côi) => NOT_ACTIVE (thuộc tập nhưng không hoạt động)', async () => {
+    const orphan = new Types.ObjectId();
+    const customer = piiCustomer();
+    (customer.careTeam as Array<Record<string, unknown>>).push({
+      userId: orphan,
+      role: CareRole.MEMBER,
+      addedBy: id('STAFF_PRIMARY'),
+      addedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    const h = build(customer);
+    const error = await create(h, 'ADMIN', { assigneeIds: [orphan] }).catch(
+      (e: unknown) => e,
+    );
+    expectRejected(error, 'NOT_ACTIVE', [String(orphan)], h.customer);
+  });
+});

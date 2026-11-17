@@ -459,32 +459,103 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(byMember.assignee.id).toBe(ids.staffB);
     });
 
-    it('người thực hiện phải thuộc nhóm chăm sóc và đang ACTIVE (400 USER_NOT_ASSIGNABLE)', async () => {
-      const outsider = await createAppointment('staffA', cA, {
-        assigneeId: ids.staffC,
+    it('người thực hiện không hợp lệ => 400 USER_NOT_ASSIGNABLE với details.reason và thông điệp ĐÚNG nguyên nhân, cả hai đường (lịch trực tiếp và nextAction.appointment) (FR-33)', async () => {
+      const expectReason = (
+        res: Res,
+        reason: string,
+        userId: string,
+        messagePart: string,
+      ) => {
+        expect([res.status, res.body.errorCode]).toEqual([
+          400,
+          'USER_NOT_ASSIGNABLE',
+        ]);
+        expect(res.body.details).toEqual({ userIds: [userId], reason });
+        expect(res.body.message).toContain(messagePart);
+        // Thông điệp không lộ dữ liệu khách (tên/SĐT).
+        expect(res.body.message).not.toMatch(/Khách M5|094\d|\+84/);
+      };
+      const viaCareLog = (assigneeId: string) =>
+        call('POST', `/crm/customers/${cA}/care-logs`, 'staffA', {
+          content: 'Gọi tư vấn',
+          contactChannel: 'CALL',
+          nextAction: {
+            dueAt: inDays(3),
+            appointment: { type: 'MEETING', assigneeIds: [assigneeId] },
+          },
+        });
+      const logsBefore = await col('care_logs').countDocuments({
+        customerId: oid(cA),
       });
-      expect([outsider.status, outsider.body.errorCode]).toEqual([
-        400,
-        'USER_NOT_ASSIGNABLE',
-      ]);
+      const appointmentsBefore = await col('appointments').countDocuments({
+        customerId: oid(cA),
+      });
+      const assertAll = async (
+        reason: string,
+        userKey: string,
+        messagePart: string,
+      ) => {
+        expectReason(
+          await createAppointment('staffA', cA, {
+            assigneeIds: [ids[userKey]],
+          }),
+          reason,
+          ids[userKey],
+          messagePart,
+        );
+        expectReason(
+          await viaCareLog(ids[userKey]),
+          reason,
+          ids[userKey],
+          messagePart,
+        );
+      };
+
+      // (1) Ngoài tập hợp lệ của khách.
+      await assertAll('NOT_IN_CARE_TEAM', 'staffC', 'thành viên nhóm chăm sóc');
+      // Client cũ chỉ gửi `assigneeId` cũng nhận đúng lý do.
+      expectReason(
+        await createAppointment('staffA', cA, { assigneeId: ids.staffC }),
+        'NOT_IN_CARE_TEAM',
+        ids.staffC,
+        'thành viên nhóm chăm sóc',
+      );
+
+      // (2) Thuộc tập nhưng bị khóa.
       await userModel.updateOne(
         { _id: ids.staffB },
         { $set: { status: UserStatus.BLOCKED } },
       );
       try {
-        const blocked = await createAppointment('staffA', cA, {
-          assigneeId: ids.staffB,
-        });
-        expect([blocked.status, blocked.body.errorCode]).toEqual([
-          400,
-          'USER_NOT_ASSIGNABLE',
-        ]);
+        await assertAll('NOT_ACTIVE', 'staffB', 'không còn hoạt động');
       } finally {
         await userModel.updateOne(
           { _id: ids.staffB },
           { $set: { status: UserStatus.ACTIVE } },
         );
       }
+
+      // (3) Thuộc tập, đang hoạt động nhưng không có vai trò CRM (chỉ EDITOR).
+      await userModel.updateOne(
+        { _id: ids.staffB },
+        { $set: { role: UserRole.EDITOR, roles: [UserRole.EDITOR] } },
+      );
+      try {
+        await assertAll('NOT_CRM_ROLE', 'staffB', 'không có vai trò CRM');
+      } finally {
+        await userModel.updateOne(
+          { _id: ids.staffB },
+          { $set: { role: UserRole.STAFF, roles: [UserRole.STAFF] } },
+        );
+      }
+
+      // Lỗi ở đường nhật ký không để lại nhật ký hay lịch nào (cùng transaction).
+      expect(
+        await col('care_logs').countDocuments({ customerId: oid(cA) }),
+      ).toBe(logsBefore);
+      expect(
+        await col('appointments').countDocuments({ customerId: oid(cA) }),
+      ).toBe(appointmentsBefore);
     });
 
     it('quy tắc thời gian: không hẹn quá khứ (dung sai 5 phút), endAt sau startAt và ≤ 24 giờ, mốc nhắc hợp lệ; lỗi không để lại gì', async () => {
@@ -804,7 +875,15 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
           assigneeId: ids.staffC,
         },
       );
-      expect(stranger.body.errorCode).toBe('USER_NOT_ASSIGNABLE');
+      expect([
+        stranger.status,
+        stranger.body.errorCode,
+        stranger.body.details,
+      ]).toEqual([
+        400,
+        'USER_NOT_ASSIGNABLE',
+        { userIds: [ids.staffC], reason: 'NOT_IN_CARE_TEAM' },
+      ]);
       const reassigned = await call(
         'PATCH',
         `/crm/appointments/${apptId}`,

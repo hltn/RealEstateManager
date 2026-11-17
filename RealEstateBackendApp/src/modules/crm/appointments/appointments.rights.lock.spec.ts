@@ -30,7 +30,7 @@ import { AppointmentsWriteService } from './appointments-write.service';
  *   (T-55, FR-30: đã đảo hai nhánh "Manager nhóm chủ" và "người tạo khách" từ bị chặn sang hợp lệ).
  * - (e, e1): sửa, đổi trạng thái, xóa lịch CHỈ người tạo lịch hoặc Admin (`canModifyAppointment`, FR-32); Manager
  *   (kể cả nhóm chủ), người tạo khách, PRIMARY, người được mời bị 403 INSUFFICIENT_ROLE, không ghi gì.
- * Hậu tố `[đảo ở T-56]` = test đã ĐẢO sang luật mới (không xóa); `(giữ ở T-56)` = ý giữ nguyên.
+ * Các test từng mang nhãn `[đảo ở T-56]` ở T-54 đã ĐẢO sang luật mới (nhãn đã bỏ khỏi tiêu đề ở T-57); `(giữ ở T-56)` = ý giữ nguyên.
  */
 
 const SESSION = { id: 'tx-session' } as never;
@@ -418,7 +418,7 @@ describe('AppointmentsWriteService.updateInSession: sửa lịch (FR-31 a, e1)',
     'MANAGER_R8',
     'MANAGER_INCARE',
   ] as UserKey[])(
-    'FR-32 (e1) A7 [đảo ở T-56]: %s (trong phạm vi, KHÔNG phải người tạo lịch) sửa lịch của người khác => 403 INSUFFICIENT_ROLE, không ghi',
+    'FR-32 (e1) A7: %s (trong phạm vi, KHÔNG phải người tạo lịch) sửa lịch của người khác => 403 INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const h = build();
       await expect(edit(h, key)).rejects.toMatchObject(
@@ -479,7 +479,7 @@ describe('AppointmentsWriteService.changeStatusInSession: đổi trạng thái l
     'MANAGER_R8',
     'MANAGER_INCARE',
   ] as UserKey[])(
-    'FR-32 (e1) A7 [đảo ở T-56]: %s (trong phạm vi, KHÔNG phải người tạo lịch) đổi trạng thái lịch của người khác => 403 INSUFFICIENT_ROLE, không ghi',
+    'FR-32 (e1) A7: %s (trong phạm vi, KHÔNG phải người tạo lịch) đổi trạng thái lịch của người khác => 403 INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const h = build();
       await expect(finish(h, key)).rejects.toMatchObject(
@@ -551,7 +551,7 @@ describe('AppointmentsService.remove: xóa lịch (FR-31 a, e)', () => {
   );
 
   it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-32 (e) A7 [đảo ở T-56]: %s (Manager trong phạm vi, không phải người tạo lịch) xóa lịch của người khác => 403 INSUFFICIENT_ROLE, không xóa',
+    'FR-32 (e) A7: %s (Manager trong phạm vi, không phải người tạo lịch) xóa lịch của người khác => 403 INSUFFICIENT_ROLE, không xóa',
     async (key) => {
       const h = build();
       await expect(remove(h, key)).rejects.toMatchObject(

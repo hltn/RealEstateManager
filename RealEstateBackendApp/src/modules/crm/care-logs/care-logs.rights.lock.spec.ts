@@ -32,7 +32,7 @@ import { CareLogsService } from './care-logs.service';
  * - (a, b, c): ngoài phạm vi bị chặn; trong phạm vi (cả R8, e3) tạo được nhật ký kèm `nextAction.appointment`.
  * - (e): sửa/xóa nhật ký và gỡ ảnh CHỈ tác giả hoặc Admin (ảnh chưa gắn: người tải hoặc Admin); Manager (kể cả
  *   nhóm chủ), người tạo khách, PRIMARY, người được mời bị 403 (ảnh chưa gắn của người khác: 404).
- * Hậu tố `[đảo ở T-56]` = test đã ĐẢO sang luật mới (không xóa); `(giữ ở T-56)` = ý giữ nguyên.
+ * Các test từng mang nhãn `[đảo ở T-56]` ở T-54 đã ĐẢO sang luật mới (nhãn đã bỏ khỏi tiêu đề ở T-57); `(giữ ở T-56)` = ý giữ nguyên.
  */
 
 const future = (): Date => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -443,6 +443,146 @@ describe('CareLogsService.createInSession: assigneeIds của nextAction.appointm
     );
   });
 
+  /**
+   * T-57 (FR-33), đường `nextAction.appointment`: cùng luật, cùng `details.reason` và cùng thông điệp như tạo lịch trực tiếp
+   * (kiểm EXACT chữ và `userIds` ở `appointments-write.assignees.spec.ts`; ở đây khóa rằng đường nhật ký không nuốt hay đổi
+   * lỗi, và nhật ký KHÔNG được lưu khi lịch bị từ chối).
+   */
+  describe('USER_NOT_ASSIGNABLE qua nhật ký: details.reason và thông điệp theo từng nguyên nhân (FR-33, T-57)', () => {
+    const piiCustomer = () =>
+      buildCustomer({
+        fullName: 'Lê Thị Khách Bí Mật',
+        phone: '+84987654321',
+        phoneMasked: '0987***321',
+      });
+    const PHRASES = {
+      NOT_IN_CARE_TEAM:
+        'thành viên nhóm chăm sóc, người tạo khách hoặc Quản lý',
+      NOT_ACTIVE: 'không còn hoạt động',
+      NOT_CRM_ROLE: 'không có vai trò CRM',
+    } as const;
+    const ghost = new Types.ObjectId();
+
+    const rejectedWith = async (
+      h: ReturnType<typeof build>,
+      reason: keyof typeof PHRASES,
+      userIds: string[],
+      assigneeIds?: string[],
+      actor: UserKey = 'ADMIN',
+    ) => {
+      const error = await create(h, actor, assigneeIds).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toMatchObject(notAssignable(userIds, reason));
+      const { message, details } = error as {
+        message: string;
+        details: Record<string, unknown>;
+      };
+      expect(message).toContain(PHRASES[reason]);
+      // Chỉ thông điệp của ĐÚNG nguyên nhân đó (không lẫn câu của nguyên nhân khác).
+      for (const other of Object.keys(PHRASES) as Array<keyof typeof PHRASES>) {
+        if (other !== reason) expect(message).not.toContain(PHRASES[other]);
+      }
+      expect(Object.keys(details).sort()).toEqual(['reason', 'userIds']);
+      expect(JSON.stringify([message, details])).not.toMatch(
+        /Lê Thị Khách|0987|987654321/,
+      );
+      notSaved(h);
+    };
+
+    it('NOT_IN_CARE_TEAM: Staff ngoài careTeam, Manager nhóm khác, Admin khác và id không tồn tại', async () => {
+      for (const target of [
+        ids('STAFF_OUT'),
+        ids('MANAGER_OUT'),
+        ids('ADMIN'),
+        [String(ghost)],
+      ]) {
+        await rejectedWith(
+          build(piiCustomer()),
+          'NOT_IN_CARE_TEAM',
+          target,
+          target,
+        );
+      }
+    });
+
+    it('NOT_ACTIVE: thành viên careTeam bị khóa hoặc đã xóa mềm, Quản lý nhóm chủ bị khóa', async () => {
+      for (const [over, key] of [
+        [{ STAFF_INVITED: { status: UserStatus.BLOCKED } }, 'STAFF_INVITED'],
+        [{ STAFF_INVITED: { deletedAt: new Date() } }, 'STAFF_INVITED'],
+        [{ MANAGER_OWNER: { status: UserStatus.BLOCKED } }, 'MANAGER_OWNER'],
+      ] as Array<[UserDirectoryOptions['overrides'], UserKey]>) {
+        await rejectedWith(
+          build(piiCustomer(), { overrides: over }),
+          'NOT_ACTIVE',
+          ids(key),
+          ids(key),
+        );
+      }
+    });
+
+    it('NOT_CRM_ROLE: thành viên careTeam chỉ có vai EDITOR', async () => {
+      const h = build(piiCustomer(), {
+        overrides: { STAFF_INVITED: { roles: [UserRole.EDITOR] } },
+      });
+      await rejectedWith(
+        h,
+        'NOT_CRM_ROLE',
+        ids('STAFF_INVITED'),
+        ids('STAFF_INVITED'),
+      );
+    });
+
+    it('thứ tự kiểm cho cả mảng: id ngoài tập cùng người bị khóa và người chỉ EDITOR => NOT_IN_CARE_TEAM, userIds chỉ gồm id ngoài tập', async () => {
+      const h = build(piiCustomer(), {
+        overrides: {
+          STAFF_MEMBER: { status: UserStatus.BLOCKED },
+          STAFF_INVITED: { roles: [UserRole.EDITOR] },
+        },
+      });
+      await rejectedWith(
+        h,
+        'NOT_IN_CARE_TEAM',
+        ids('STAFF_OUT'),
+        ids('STAFF_MEMBER', 'STAFF_INVITED', 'STAFF_OUT'),
+      );
+    });
+
+    it('thứ tự kiểm: người bị khóa cùng người chỉ EDITOR (cả hai trong tập) => NOT_ACTIVE, userIds chỉ gồm người bị khóa', async () => {
+      const h = build(piiCustomer(), {
+        overrides: {
+          STAFF_MEMBER: { status: UserStatus.BLOCKED },
+          STAFF_INVITED: { roles: [UserRole.EDITOR] },
+        },
+      });
+      await rejectedWith(
+        h,
+        'NOT_ACTIVE',
+        ids('STAFF_MEMBER'),
+        ids('STAFF_INVITED', 'STAFF_MEMBER'),
+      );
+    });
+
+    it('không suy ra được người mặc định (Admin khác, khách chưa có PRIMARY) => NOT_IN_CARE_TEAM với userIds = []', async () => {
+      const customer = piiCustomer();
+      customer.primaryAssigneeId = null;
+      await rejectedWith(build(customer), 'NOT_IN_CARE_TEAM', []);
+    });
+
+    it('người thực hiện mặc định đã bị khóa => NOT_ACTIVE (id mặc định đi qua cùng bước kiểm)', async () => {
+      const h = build(piiCustomer(), {
+        overrides: { STAFF_INVITED: { status: UserStatus.BLOCKED } },
+      });
+      await rejectedWith(
+        h,
+        'NOT_ACTIVE',
+        ids('STAFF_INVITED'),
+        undefined,
+        'STAFF_INVITED',
+      );
+    });
+  });
+
   describe('nguyên tử: lịch lỗi thì nhật ký không được lưu', () => {
     it('FR-30: người thực hiện ngoài tập hợp lệ => 400 và `careLogModel.create` KHÔNG được gọi (lịch được tạo TRƯỚC nhật ký)', async () => {
       const h = build();
@@ -506,7 +646,7 @@ describe('CareLogsService.update: sửa nhật ký (FR-31 a, e)', () => {
   );
 
   it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải tác giả) sửa nhật ký của người khác => 403 INSUFFICIENT_ROLE, không ghi',
+    'FR-32 (e): %s (Manager trong phạm vi, không phải tác giả) sửa nhật ký của người khác => 403 INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const h = build();
       await expect(edit(h, key)).rejects.toMatchObject(
@@ -565,7 +705,7 @@ describe('CareLogsService.remove: xóa nhật ký (FR-31 a, e)', () => {
   );
 
   it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải tác giả) xóa nhật ký của người khác => 403 INSUFFICIENT_ROLE, không xóa',
+    'FR-32 (e): %s (Manager trong phạm vi, không phải tác giả) xóa nhật ký của người khác => 403 INSUFFICIENT_ROLE, không xóa',
     async (key) => {
       const h = build();
       await expect(remove(h, key)).rejects.toMatchObject(
@@ -674,7 +814,7 @@ describe('CareLogAttachmentsService.remove: gỡ ảnh đính kèm (FR-31 a, e)'
     );
 
     it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải tác giả) gỡ ảnh đã gắn của người khác => 403 INSUFFICIENT_ROLE, không gỡ và không rút khỏi nhật ký',
+      'FR-32 (e): %s (Manager trong phạm vi, không phải tác giả) gỡ ảnh đã gắn của người khác => 403 INSUFFICIENT_ROLE, không gỡ và không rút khỏi nhật ký',
       async (key) => {
         const h = attached();
         await expect(removeAttachment(h, key)).rejects.toMatchObject(
@@ -721,7 +861,7 @@ describe('CareLogAttachmentsService.remove: gỡ ảnh đính kèm (FR-31 a, e)'
     );
 
     it.each(['MANAGER_OWNER', 'MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-      'FR-32 (e) [đảo ở T-56]: %s (Manager trong phạm vi, không phải người tải lên) gỡ ảnh chưa gắn của người khác => 404 RESOURCE_NOT_FOUND (không lộ sự tồn tại)',
+      'FR-32 (e): %s (Manager trong phạm vi, không phải người tải lên) gỡ ảnh chưa gắn của người khác => 404 RESOURCE_NOT_FOUND (không lộ sự tồn tại)',
       async (key) => {
         const h = unattached();
         await expect(removeAttachment(h, key)).rejects.toMatchObject(

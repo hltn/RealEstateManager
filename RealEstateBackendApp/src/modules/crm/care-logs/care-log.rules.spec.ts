@@ -58,7 +58,7 @@ describe('care-log.rules', () => {
       expect(() => assertCanModifyCareLog(admin, old)).not.toThrow();
     });
 
-    it('FR-32 [đảo ở T-56]: Quản lý KHÔNG phải tác giả bị 403 INSUFFICIENT_ROLE; Quản lý là tác giả thì được', () => {
+    it('FR-32: Quản lý KHÔNG phải tác giả bị 403 INSUFFICIENT_ROLE; Quản lý là tác giả thì được', () => {
       const manager = actorOf(UserRole.MANAGER);
       const others = logBy(new Types.ObjectId(), 1);
       expect(canModifyCareLog(manager, others)).toBe(false);

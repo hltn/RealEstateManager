@@ -25,7 +25,7 @@ import { BulkOperationType } from './dtos/bulk-operation.dto';
  *   "Bỏ" (D9); lỗi báo trong `failed[].errorCode` (`INSUFFICIENT_ROLE`).
  * - Phân hàng loạt `ASSIGN` (e2): chặn Staff cả lô (một lần), rồi KIỂM QUYỀN CHỦ KHÁCH TỪNG KHÁCH (Admin, người tạo,
  *   Manager nhóm chủ); khách không đủ quyền vào `failed[]` với `INSUFFICIENT_ROLE`.
- * Hậu tố `[đảo ở T-56]` đã được đảo theo luật mới; test cũ giữ nguyên ý có hậu tố `(giữ ở T-56)`.
+ * Các test từng mang nhãn `[đảo ở T-56]` ở T-54 đã được đảo theo luật mới (nhãn đã bỏ khỏi tiêu đề ở T-57); test cũ giữ nguyên ý có hậu tố `(giữ ở T-56)`.
  */
 
 const DROPPED_STATUS_ID = new Types.ObjectId();
@@ -184,7 +184,7 @@ describe('BulkOperationsService DELETE: xóa khách hàng loạt (FR-31 a, c, e;
         'STAFF_MEMBER',
         'STAFF_INVITED',
       ] as UserKey[])(
-        'FR-31 (e) [đảo ở T-56]: %s (không phải người tạo, kể cả Manager nhóm chủ) => failed INSUFFICIENT_ROLE, không xóa',
+        'FR-31 (e): %s (không phải người tạo, kể cả Manager nhóm chủ) => failed INSUFFICIENT_ROLE, không xóa',
         async (key) => {
           const customer = make();
           const h = build([customer]);
@@ -196,7 +196,7 @@ describe('BulkOperationsService DELETE: xóa khách hàng loạt (FR-31 a, c, e;
         },
       );
 
-      it('FR-31 (e) [đảo ở T-56]: PRIMARY không phải người tạo => failed INSUFFICIENT_ROLE', async () => {
+      it('FR-31 (e): PRIMARY không phải người tạo => failed INSUFFICIENT_ROLE', async () => {
         const customer = make(buildCustomerWithOtherPrimary());
         const h = build([customer]);
         await expect(
@@ -334,7 +334,7 @@ describe('BulkOperationsService ASSIGN: phân chăm sóc hàng loạt (FR-31 a, 
   );
 
   it.each(['MANAGER_R8', 'MANAGER_INCARE'] as UserKey[])(
-    'FR-31 (e2) [đảo ở T-56]: %s (Manager trong phạm vi nhưng không phải Manager nhóm chủ/người tạo) => failed INSUFFICIENT_ROLE, không ghi',
+    'FR-31 (e2): %s (Manager trong phạm vi nhưng không phải Manager nhóm chủ/người tạo) => failed INSUFFICIENT_ROLE, không ghi',
     async (key) => {
       const customer = normalCustomer();
       const h = build([customer]);
@@ -346,7 +346,7 @@ describe('BulkOperationsService ASSIGN: phân chăm sóc hàng loạt (FR-31 a, 
     },
   );
 
-  it('FR-31 (e2) [đảo ở T-56]: lô hỗn hợp, quyền xét TỪNG khách: Manager nhóm chủ phân khách nhóm mình, bị từ chối khách nhóm khác', async () => {
+  it('FR-31 (e2): lô hỗn hợp, quyền xét TỪNG khách: Manager nhóm chủ phân khách nhóm mình, bị từ chối khách nhóm khác', async () => {
     const mine = normalCustomer();
     // Khách do STAFF_INVITED (nhóm B) tạo: MANAGER_OWNER thấy qua teamIds nhưng KHÔNG là Manager nhóm chủ.
     const theirs = normalCustomer({

@@ -339,10 +339,12 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
         `/crm/customers/${customerId}/care-team/members/${ids.admin}`,
         'admin',
       );
-      expect([locked.status, locked.body.errorCode]).toEqual([
-        409,
-        'PRIMARY_LOCKED',
-      ]);
+      // Admin là người tạo khách (và là PRIMARY): gỡ người tạo luôn kèm details.reason = CREATOR_LOCKED (FR-32, Q-45).
+      expect([
+        locked.status,
+        locked.body.errorCode,
+        locked.body.details?.reason,
+      ]).toEqual([409, 'PRIMARY_LOCKED', 'CREATOR_LOCKED']);
       expect(await careTeamOf(customerId)).toEqual([
         { userId: ids.admin, role: 'PRIMARY' },
       ]);
@@ -531,10 +533,12 @@ describe('CRM v1.0.5 T-33 — nhóm chăm sóc theo luồng mời (khóa PRIMARY
         `/crm/customers/${id}/care-team/members/${ids.staffA}`,
         'manager1',
       );
-      expect([locked.status, locked.body.errorCode]).toEqual([
-        409,
-        'PRIMARY_LOCKED',
-      ]);
+      // staffA vừa là PRIMARY vừa là người tạo khách => gỡ bị khóa kèm details.reason = CREATOR_LOCKED.
+      expect([
+        locked.status,
+        locked.body.errorCode,
+        locked.body.details?.reason,
+      ]).toEqual([409, 'PRIMARY_LOCKED', 'CREATOR_LOCKED']);
     });
   });
 
