@@ -26,8 +26,9 @@ const ReminderPayloadSchema = SchemaFactory.createForClass(ReminderPayload);
  * Nhắc việc (`reminders`, tài liệu 04 mục 3.5) — dữ liệu KỸ THUẬT, là nguồn sự thật để nhắc đúng hạn và không trùng:
  * - `dedupeKey` duy nhất: tạo lại (sửa lịch, scheduler quét lại, nhiều instance) không sinh bản thứ hai;
  * - `status`: PENDING -> PROCESSING (nhận bằng `findOneAndUpdate`, chỉ một instance thắng) -> SENT | CANCELED | FAILED;
- * - người nhận KHÔNG lấy từ `recipientIds` lúc tạo mà tính lại theo nhóm chăm sóc HIỆN TẠI khi gửi (QT8: người bị gỡ
- *   không nhận); `recipientIds` chỉ là ảnh chụp tham khảo lúc tạo;
+ * - người nhận KHÔNG lấy từ `recipientIds` (chỉ là ảnh chụp lúc tạo, không dùng để quyết định người nhận) mà tính lại
+ *   lúc gửi theo trạng thái HIỆN TẠI (QT8: người bị gỡ không nhận): `APPOINTMENT_DUE` = `assigneeIds` của lịch giao với
+ *   tập hợp lệ hiện tại của khách (FR-33); các loại khác = nhóm chăm sóc (`careTeam`) ACTIVE hiện tại;
  * - `dueAt`: mốc nghiệp vụ mà nhắc nói tới (giờ hẹn, hạn bước tiếp theo, ngày dịp) để kiểm lịch đã dời chưa.
  */
 @Schema({ timestamps: true, collection: 'reminders' })

@@ -85,7 +85,8 @@ export class RemindersWriterService {
                 type: ReminderType.APPOINTMENT,
                 customerId: appointment.customerId,
                 refId: appointment._id,
-                // Chỉ là metadata/gợi ý: dispatch tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
+                // Ảnh chụp người thực hiện lúc tạo nhắc (chỉ metadata, `$setOnInsert`): dispatch tính lại người nhận
+                // = `assigneeIds` giao tập hợp lệ HIỆN TẠI của khách lúc gửi (FR-33).
                 recipientIds: getAssigneeIds(appointment),
                 priorityRecipientId: null,
                 fireAt: reminder.fireAt,

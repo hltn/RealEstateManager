@@ -39,6 +39,7 @@ const build = (appointment: unknown = null) => {
     {} as never,
     { dispatch: jest.fn() } as never,
     {} as never,
+    { buildOwnerRefs: jest.fn() } as never,
   );
   return service;
 };
@@ -63,7 +64,8 @@ describe('ReminderDispatchService dựng yêu cầu thông báo cho Dispatcher (
       _id: APPOINTMENT,
       startAt,
       type: AppointmentType.SITE_VISIT,
-      assigneeId: MEMBER,
+      assigneeIds: [PRIMARY, MEMBER],
+      assigneeId: PRIMARY,
     });
     const decision = await (service as any).evaluateAppointment(
       reminder(ReminderType.APPOINTMENT),
@@ -72,7 +74,7 @@ describe('ReminderDispatchService dựng yêu cầu thông báo cho Dispatcher (
       {},
     );
     expect(decision.action).toBe('SEND');
-    // Người nhận: mọi thành viên careTeam (PRIMARY và MEMBER), mỗi người một yêu cầu.
+    // Người nhận: đúng các người thực hiện (PRIMARY và MEMBER, cùng nằm trong careTeam), mỗi người một yêu cầu.
     expect(decision.notifications).toHaveLength(2);
     const byUser = new Map(
       decision.notifications.map((n: any) => [String(n.recipientIds[0]), n]),

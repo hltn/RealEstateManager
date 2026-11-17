@@ -1321,7 +1321,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       startAt = new Date(Date.now() + 3 * DAY_MS);
       appt = await mustCreate('staffA', c, {
         startAt: startAt.toISOString(),
-        assigneeId: ids.staffB,
+        assigneeIds: [ids.staffB, ids.staffA],
         title: 'Xem nhà',
       });
     });
@@ -1546,13 +1546,13 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       expect(result).toMatchObject({ claimed: 1, sent: 0, canceled: 1 });
     });
 
-    it('QT8: người bị gỡ khỏi nhóm chăm sóc trước giờ nhắc không nhận; phụ trách chính vẫn nhận; hết người nhận thì hủy', async () => {
+    it('QT8: người bị gỡ khỏi nhóm chăm sóc trước giờ nhắc không nhận; người thực hiện còn lại vẫn nhận (người không được chọn thì không)', async () => {
       await resetPendingReminders();
       const cx = await createCustomer('staffA');
       await addMember(cx, 'staffB');
       const created = await mustCreate('staffA', cx, {
         startAt: inDays(3),
-        assigneeId: ids.staffB,
+        assigneeIds: [ids.staffB, ids.staffA],
         remindBeforeMinutes: [60],
       });
       const removal = await call(
@@ -1575,21 +1575,135 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
           'data.appointmentId': oid(created.id),
         }),
       ).toHaveLength(1);
+    });
 
-      // Nhóm chăm sóc không còn ai (bỏ cả phụ trách chính bằng DB) => không có người nhận => hủy.
-      const empty = await createCustomer('staffA');
-      const second = await mustCreate('staffA', empty, {
+    it('QT8: người thực hiện duy nhất bị gỡ khỏi tập hợp lệ => hết người nhận thì hủy; phụ trách chính không được chọn cũng không nhận (FR-33)', async () => {
+      await resetPendingReminders();
+      const cx = await createCustomer('staffA');
+      await addMember(cx, 'staffB');
+      const created = await mustCreate('staffA', cx, {
         startAt: inDays(3),
+        assigneeIds: [ids.staffB],
         remindBeforeMinutes: [60],
       });
+      const removal = await call(
+        'DELETE',
+        `/crm/customers/${cx}/care-team/members/${ids.staffB}`,
+        'admin',
+      );
+      expect(removal.status).toBe(200);
+      const result = await dispatch.dispatchDue(
+        new Date(new Date(created.startAt).getTime() - 30 * MINUTE_MS),
+      );
+      expect(result).toMatchObject({ claimed: 1, sent: 0, canceled: 1 });
+      for (const who of ['staffA', 'staffB', 'manager1', 'admin']) {
+        expect(
+          await notificationsOf(who, {
+            'data.appointmentId': oid(created.id),
+          }),
+        ).toHaveLength(0);
+      }
+      expect((await remindersOf(created.id))[0].status).toBe('CANCELED');
+    });
+
+    it('T-58: Manager nhóm chủ ngoài nhóm chăm sóc được chọn làm người thực hiện thì nhận; thành viên không được chọn thì không', async () => {
+      await resetPendingReminders();
+      const cx = await createCustomer('staffA'); // nhóm chủ = nhóm A, manager1 là Manager
+      await addMember(cx, 'staffB');
+      const created = await mustCreate('staffA', cx, {
+        startAt: inDays(3),
+        assigneeIds: [ids.manager1],
+        remindBeforeMinutes: [60],
+      });
+      const result = await dispatch.dispatchDue(
+        new Date(new Date(created.startAt).getTime() - 30 * MINUTE_MS),
+      );
+      expect(result).toMatchObject({ claimed: 1, sent: 1, canceled: 0 });
+      expect(
+        await notificationsOf('manager1', {
+          'data.appointmentId': oid(created.id),
+        }),
+      ).toHaveLength(1);
+      for (const who of ['staffA', 'staffB']) {
+        expect(
+          await notificationsOf(who, {
+            'data.appointmentId': oid(created.id),
+          }),
+        ).toHaveLength(0);
+      }
+    });
+
+    it('T-58: người tạo khách (Admin) ngoài nhóm chăm sóc được chọn thì nhận (đọc createdBy thật từ DB); Admin khác ngoài tập hợp lệ không nhận', async () => {
+      await resetPendingReminders();
+      const cx = await createCustomer('admin');
+      await addMember(cx, 'staffA');
+      // Admin tạo khách luôn nằm trong nhóm chăm sóc: bỏ ra để người tạo chỉ còn tư cách người tạo.
       await col('customers').updateOne(
-        { _id: oid(empty) },
-        { $set: { careTeam: [], primaryAssigneeId: null } },
+        { _id: oid(cx) },
+        {
+          $set: {
+            careTeam: (await customerDoc(cx))!.careTeam.filter(
+              (member: { userId: Types.ObjectId }) =>
+                String(member.userId) !== ids.admin,
+            ),
+          },
+        },
       );
-      const emptyResult = await dispatch.dispatchDue(
-        new Date(new Date(second.startAt).getTime() - 30 * MINUTE_MS),
+      const created = await mustCreate('admin', cx, {
+        startAt: inDays(3),
+        assigneeIds: [ids.admin],
+        remindBeforeMinutes: [60],
+      });
+      // Ghi thẳng DB (API từ chối): thêm admin2 không thuộc tập hợp lệ của khách.
+      await col('appointments').updateOne(
+        { _id: oid(created.id) },
+        { $set: { assigneeIds: [oid(ids.admin), oid(ids.admin2)] } },
       );
-      expect(emptyResult).toMatchObject({ claimed: 1, sent: 0, canceled: 1 });
+      const result = await dispatch.dispatchDue(
+        new Date(new Date(created.startAt).getTime() - 30 * MINUTE_MS),
+      );
+      expect(result).toMatchObject({ claimed: 1, sent: 1 });
+      expect(
+        await notificationsOf('admin', {
+          'data.appointmentId': oid(created.id),
+        }),
+      ).toHaveLength(1);
+      for (const who of ['admin2', 'staffA']) {
+        expect(
+          await notificationsOf(who, {
+            'data.appointmentId': oid(created.id),
+          }),
+        ).toHaveLength(0);
+      }
+    });
+
+    it('T-58: lịch cũ chỉ có assigneeId (chưa backfill assigneeIds) vẫn nhắc đúng người thực hiện đó', async () => {
+      await resetPendingReminders();
+      const cx = await createCustomer('staffA');
+      await addMember(cx, 'staffB');
+      const created = await mustCreate('staffA', cx, {
+        startAt: inDays(3),
+        assigneeIds: [ids.staffB],
+        remindBeforeMinutes: [60],
+      });
+      await col('appointments').updateOne(
+        { _id: oid(created.id) },
+        { $unset: { assigneeIds: '' }, $set: { assigneeId: oid(ids.staffB) } },
+      );
+      const result = await dispatch.dispatchDue(
+        new Date(new Date(created.startAt).getTime() - 30 * MINUTE_MS),
+      );
+      expect(result).toMatchObject({ claimed: 1, sent: 1 });
+      expect(
+        await notificationsOf('staffB', {
+          'data.appointmentId': oid(created.id),
+        }),
+      ).toHaveLength(1);
+      expect(
+        await notificationsOf('staffA', {
+          'data.appointmentId': oid(created.id),
+        }),
+      ).toHaveLength(0);
     });
 
     it('người nhận tắt loại APPOINTMENT_DUE trong cài đặt thì không có thông báo; người khác vẫn nhận', async () => {
@@ -1598,7 +1712,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       await addMember(cx, 'staffB');
       const created = await mustCreate('staffA', cx, {
         startAt: inDays(3),
-        assigneeId: ids.staffB,
+        assigneeIds: [ids.staffB, ids.staffA],
         remindBeforeMinutes: [60],
       });
       const put = await call('PUT', '/notification-preferences/me', 'staffB', {

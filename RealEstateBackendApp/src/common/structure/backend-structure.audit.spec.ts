@@ -218,7 +218,7 @@ describe('Cấu trúc BE (audit tĩnh)', () => {
       expect(names.filter((n) => exists(`utils/${n}`))).toEqual([]);
     });
 
-    it('FR-08: 26 file crm-*.integration.spec.ts nằm hết ở modules/crm/__integration__/, gốc modules/crm/ không còn file nào', () => {
+    it('FR-08: 27 file crm-*.integration.spec.ts nằm hết ở modules/crm/__integration__/, gốc modules/crm/ không còn file nào', () => {
       const crmRoot = path.join(SRC_ROOT, 'modules/crm');
       const isCrmIntegration = (n: string): boolean =>
         /^crm-.*\.integration\.spec\.ts$/.test(n);
@@ -227,10 +227,10 @@ describe('Cấu trúc BE (audit tĩnh)', () => {
       const moved = fs
         .readdirSync(path.join(crmRoot, '__integration__'))
         .filter(isCrmIntegration);
-      expect(moved).toHaveLength(26);
+      expect(moved).toHaveLength(27);
     });
 
-    it('FR-08: 25 file __integration__ vào test:integration, riêng crm-m2-perf vào test:perf (đủ 26)', () => {
+    it('FR-08: 26 file __integration__ vào test:integration, riêng crm-m2-perf vào test:perf (đủ 27)', () => {
       const scripts = readJson(path.join(BE_ROOT, 'package.json'))
         .scripts as Record<string, string>;
       const regexOf = (script: string): RegExp => {
@@ -253,9 +253,9 @@ describe('Cấu trúc BE (audit tĩnh)', () => {
           !(ignoreIntegration && /crm-m2-perf/.test(n)),
       );
       const inPerf = files.filter((n) => perfRegex.test(n));
-      expect(inIntegration).toHaveLength(25);
+      expect(inIntegration).toHaveLength(26);
       expect(inPerf).toEqual(['crm-m2-perf.integration.spec.ts']);
-      expect(inIntegration.length + inPerf.length).toBe(26);
+      expect(inIntegration.length + inPerf.length).toBe(27);
     });
 
     it('FR-08: tsconfig.json và tsconfig.build.json của BE không còn exclude "client"', () => {

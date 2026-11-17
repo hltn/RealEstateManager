@@ -359,7 +359,7 @@ describe('CRM M5 — QA đối kháng', () => {
       const startAt = new Date(Date.now() + 3 * DAY_MS);
       const appt = await mustCreate('staffA', c, {
         startAt: startAt.toISOString(),
-        assigneeId: ids.staffB,
+        assigneeIds: [ids.staffB, ids.staffA],
       });
       const del = await call(
         'DELETE',
@@ -382,7 +382,7 @@ describe('CRM M5 — QA đối kháng', () => {
         'staffB',
       );
       expect(list.body.data.map((a: any) => a.id)).not.toContain(appt.id);
-      // đến giờ nhắc: staffB (đã gỡ) không nhận, staffA (phụ trách chính) vẫn nhận
+      // đến giờ nhắc: staffB (đã gỡ) không nhận, staffA (người thực hiện còn trong tập hợp lệ) vẫn nhận
       await dispatch.dispatchDue(
         new Date(startAt.getTime() - 1439 * MINUTE_MS),
       );
@@ -397,7 +397,7 @@ describe('CRM M5 — QA đối kháng', () => {
       ).toHaveLength(1);
     });
 
-    it('đổi người thực hiện trước giờ nhắc: nhắc tới MỌI thành viên nhóm ACTIVE (phụ trách chính HIGH, còn lại NORMAL), không phụ thuộc người thực hiện', async () => {
+    it('đổi người thực hiện trước giờ nhắc: chỉ người thực hiện MỚI nhận (phụ trách chính HIGH, còn lại NORMAL); người bị bỏ khỏi danh sách không nhận dù vẫn trong nhóm (FR-33)', async () => {
       await resetPendingReminders();
       const c = await createCustomer('staffA');
       await addMember(c, 'staffB');
@@ -412,7 +412,7 @@ describe('CRM M5 — QA đối kháng', () => {
         'PATCH',
         `/crm/appointments/${appt.id}`,
         'admin',
-        { assigneeId: ids.manager1, version: appt.version },
+        { assigneeIds: [ids.manager1, ids.staffA], version: appt.version },
       );
       expect(patch.status).toBe(200);
       await dispatch.dispatchDue(new Date(startAt.getTime() - 59 * MINUTE_MS));
@@ -420,14 +420,13 @@ describe('CRM M5 — QA đối kháng', () => {
         type: 'APPOINTMENT_DUE',
         'data.appointmentId': oid(appt.id),
       };
-      // FR-19: người nhận tính lại từ careTeam ACTIVE lúc gửi; staffB vẫn là thành viên nhóm nên vẫn nhận (NORMAL).
+      // FR-33: người nhận = assigneeIds HIỆN TẠI giao tập hợp lệ; staffB đã bị bỏ khỏi danh sách nên không nhận.
       const toA = await notificationsOf('staffA', forAppt);
       const toB = await notificationsOf('staffB', forAppt);
       const toManager = await notificationsOf('manager1', forAppt);
       expect(toA).toHaveLength(1);
       expect(toA[0].priority).toBe('HIGH');
-      expect(toB).toHaveLength(1);
-      expect(toB[0].priority).toBe('NORMAL');
+      expect(toB).toHaveLength(0);
       expect(toManager).toHaveLength(1);
       expect(toManager[0].priority).toBe('NORMAL');
     });
@@ -553,7 +552,7 @@ describe('CRM M5 — QA đối kháng', () => {
       await resetPendingReminders();
       const c = await createCustomer('staffA');
       await addMember(c, 'staffB');
-      const appt = await mustCreate('staffA', c, { startAt: inDays(0, 30 * MINUTE_MS), remindBeforeMinutes: [60, 1440], assigneeId: ids.staffB });
+      const appt = await mustCreate('staffA', c, { startAt: inDays(0, 30 * MINUTE_MS), remindBeforeMinutes: [60, 1440], assigneeIds: [ids.staffB, ids.staffA] });
       let version = appt.version;
       for (let i = 0; i < 4; i += 1) {
         const res = await call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', { version, title: `Sửa ${i}`, note: `ghi chú ${i}` });

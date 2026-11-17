@@ -5,9 +5,10 @@ import { ReminderType } from './reminder.constants';
 import { ReminderDispatchService } from './reminder-dispatch.service';
 
 /**
- * FR-18/19: MỌI loại nhắc (lịch hẹn, việc kế tiếp, khách lâu chưa chăm, dịp đặc biệt) gửi cho MỌI thành viên
- * `careTeam` ACTIVE (PRIMARY `HIGH`, MEMBER `NORMAL`), không phụ thuộc người thực hiện lịch/người ghi nhật ký.
- * Người bị khóa không nhận; không còn ai thì HỦY (không đánh dấu SENT khi Dispatcher sẽ loại hết).
+ * FR-18/19: các nhắc việc KẾ TIẾP, KHÁCH LÂU CHƯA CHĂM, DỊP ĐẶC BIỆT gửi cho MỌI thành viên `careTeam` ACTIVE (PRIMARY
+ * `HIGH`, MEMBER `NORMAL`), không phụ thuộc người ghi nhật ký. Người bị khóa không nhận; không còn ai thì HỦY (không
+ * đánh dấu SENT khi Dispatcher sẽ loại hết). FR-33 (T-58): ba loại này GIỮ NGUYÊN lọc `careTeam` (không đọc người tạo
+ * hay Manager nhóm chủ). Riêng `APPOINTMENT_DUE` gửi theo `assigneeIds`: xem `reminder-dispatch.assignees.spec.ts`.
  */
 const oid = () => new Types.ObjectId();
 const CUSTOMER = oid();
@@ -64,6 +65,7 @@ const build = ({ customer, activeIds }: Setup) => {
   const customers = {
     findForSystemJobById: jest.fn().mockResolvedValue(customer),
   };
+  const ownerTeam = { buildOwnerRefs: jest.fn() };
   const service = new ReminderDispatchService(
     {} as never,
     {} as never,
@@ -73,8 +75,9 @@ const build = ({ customer, activeIds }: Setup) => {
     customers as never,
     { dispatch: jest.fn() } as never,
     userModel as never,
+    ownerTeam as never,
   );
-  return { service, userModel };
+  return { service, userModel, ownerTeam };
 };
 
 const reminder = (type: ReminderType) =>
@@ -127,8 +130,8 @@ const recipientPriorities = (decision: TestDecision) =>
 const expected = (...pairs: Array<[Types.ObjectId, string]>) =>
   pairs.map(([id, priority]) => `${String(id)}:${priority}`).sort();
 
+/** Ba loại nhắc giữ nguyên lọc `careTeam` (FR-33: chỉ `APPOINTMENT` đổi sang người thực hiện). */
 const TYPES = [
-  ReminderType.APPOINTMENT,
   ReminderType.FOLLOW_UP,
   ReminderType.STALE_CUSTOMER,
   ReminderType.OCCASION,
@@ -141,7 +144,7 @@ describe('ReminderDispatchService: người nhận là mọi thành viên careTe
       activeIds: [PRIMARY, MEMBER_A, MEMBER_B],
     });
 
-    await evaluate(service, ReminderType.APPOINTMENT);
+    await evaluate(service, ReminderType.FOLLOW_UP);
 
     expect(userModel.find).toHaveBeenCalledTimes(1);
     expect(userModel.find).toHaveBeenCalledWith({
@@ -228,6 +231,24 @@ describe('ReminderDispatchService: người nhận là mọi thành viên careTe
         action: 'CANCEL',
       });
       expect(userModel.find).not.toHaveBeenCalled();
+    });
+
+    it('FR-33: giữ nguyên lọc careTeam, KHÔNG dựng người tạo/Manager nhóm chủ (không gọi buildOwnerRefs)', async () => {
+      const { service, ownerTeam } = build({
+        customer: {
+          ...customerOf([PRIMARY, MEMBER_A], PRIMARY),
+          createdBy: OUTSIDER,
+          teamIds: [oid()],
+        },
+        activeIds: [PRIMARY, MEMBER_A],
+      });
+
+      const decision = await evaluate(service, type);
+
+      expect(recipientPriorities(decision)).toEqual(
+        expected([PRIMARY, 'HIGH'], [MEMBER_A, 'NORMAL']),
+      );
+      expect(ownerTeam.buildOwnerRefs).not.toHaveBeenCalled();
     });
 
     it('ca biên 11 người (1 PRIMARY + 10 MEMBER): mỗi người đúng một thông báo, chỉ PRIMARY HIGH', async () => {
