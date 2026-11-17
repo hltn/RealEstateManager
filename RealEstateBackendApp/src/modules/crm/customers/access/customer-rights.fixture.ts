@@ -343,7 +343,8 @@ export const REJECTS = {
 
 export interface FixtureUserDoc {
   _id: Types.ObjectId;
-  fullName: string;
+  /** Hình dạng User thật: chỉ có `displayName` (không có `fullName`). */
+  displayName: string;
   roles: UserRole[];
   status: UserStatus;
   deletedAt: Date | null;
@@ -367,11 +368,11 @@ export interface UserDirectoryOptions {
 
 /** Người dùng dựng tay cho test (mặc định STAFF còn hoạt động, không thuộc nhóm). */
 export const makeFixtureUser = (
-  fullName: string,
+  displayName: string,
   over: Partial<FixtureUserDoc> = {},
 ): FixtureUserDoc => ({
   _id: oid(),
-  fullName,
+  displayName,
   roles: [UserRole.STAFF],
   status: UserStatus.ACTIVE,
   deletedAt: null,
@@ -388,7 +389,7 @@ export const buildUserDirectory = (options: UserDirectoryOptions = {}) => {
   const users: FixtureUserDoc[] = [
     ...(Object.keys(USERS) as UserKey[]).map((key) => ({
       _id: USERS[key].userId,
-      fullName: USERS[key].displayName,
+      displayName: USERS[key].displayName,
       roles: [...USERS[key].roles] as UserRole[],
       status: UserStatus.ACTIVE,
       deletedAt: null,

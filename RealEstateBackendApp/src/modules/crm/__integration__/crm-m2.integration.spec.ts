@@ -1444,7 +1444,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       expect(await listIds('admin', '&hasNationalId=false')).not.toContain(id);
     });
 
-    it('xem đầy đủ: chỉ Quản trị, Quản lý trong phạm vi hoặc PHỤ TRÁCH CHÍNH; thành viên thường 403 NATIONAL_ID_FORBIDDEN; mỗi lần xem có audit + no-store', async () => {
+    it('xem đầy đủ: chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ (FR-31); thành viên thường 403 NATIONAL_ID_FORBIDDEN; mỗi lần xem có audit + no-store', async () => {
       for (const who of ['staffB', 'manager1', 'admin']) {
         const res = await call(
           'POST',

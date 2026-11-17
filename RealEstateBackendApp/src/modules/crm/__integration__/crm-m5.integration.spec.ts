@@ -460,18 +460,22 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
     });
 
     it('người thực hiện không hợp lệ => 400 USER_NOT_ASSIGNABLE với details.reason và thông điệp ĐÚNG nguyên nhân, cả hai đường (lịch trực tiếp và nextAction.appointment) (FR-33)', async () => {
-      const expectReason = (
-        res: Res,
-        reason: string,
-        userId: string,
-        messagePart: string,
-      ) => {
+      // Toàn văn theo bảng Architecture 5.13.3 (gộp hay đổi chữ thì đỏ).
+      const MESSAGES: Record<string, string> = {
+        NOT_IN_CARE_TEAM:
+          'Người thực hiện phải là thành viên nhóm chăm sóc, người tạo khách hoặc Quản lý của nhóm chủ khách; nhờ thành viên có quyền mời đưa người đó vào nhóm trước',
+        NOT_ACTIVE:
+          'Người thực hiện không còn hoạt động (tài khoản bị khóa hoặc đã xóa)',
+        NOT_CRM_ROLE:
+          'Người thực hiện không có vai trò CRM (cần là Quản trị, Quản lý hoặc Nhân viên)',
+      };
+      const expectReason = (res: Res, reason: string, userId: string) => {
         expect([res.status, res.body.errorCode]).toEqual([
           400,
           'USER_NOT_ASSIGNABLE',
         ]);
         expect(res.body.details).toEqual({ userIds: [userId], reason });
-        expect(res.body.message).toContain(messagePart);
+        expect(res.body.message).toBe(MESSAGES[reason]);
         // Thông điệp không lộ dữ liệu khách (tên/SĐT).
         expect(res.body.message).not.toMatch(/Khách M5|094\d|\+84/);
       };
@@ -490,35 +494,24 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
       const appointmentsBefore = await col('appointments').countDocuments({
         customerId: oid(cA),
       });
-      const assertAll = async (
-        reason: string,
-        userKey: string,
-        messagePart: string,
-      ) => {
+      const assertAll = async (reason: string, userKey: string) => {
         expectReason(
           await createAppointment('staffA', cA, {
             assigneeIds: [ids[userKey]],
           }),
           reason,
           ids[userKey],
-          messagePart,
         );
-        expectReason(
-          await viaCareLog(ids[userKey]),
-          reason,
-          ids[userKey],
-          messagePart,
-        );
+        expectReason(await viaCareLog(ids[userKey]), reason, ids[userKey]);
       };
 
       // (1) Ngoài tập hợp lệ của khách.
-      await assertAll('NOT_IN_CARE_TEAM', 'staffC', 'thành viên nhóm chăm sóc');
+      await assertAll('NOT_IN_CARE_TEAM', 'staffC');
       // Client cũ chỉ gửi `assigneeId` cũng nhận đúng lý do.
       expectReason(
         await createAppointment('staffA', cA, { assigneeId: ids.staffC }),
         'NOT_IN_CARE_TEAM',
         ids.staffC,
-        'thành viên nhóm chăm sóc',
       );
 
       // (2) Thuộc tập nhưng bị khóa.
@@ -527,7 +520,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         { $set: { status: UserStatus.BLOCKED } },
       );
       try {
-        await assertAll('NOT_ACTIVE', 'staffB', 'không còn hoạt động');
+        await assertAll('NOT_ACTIVE', 'staffB');
       } finally {
         await userModel.updateOne(
           { _id: ids.staffB },
@@ -541,7 +534,7 @@ describe('CRM M5 — lịch hẹn, việc hôm nay, nhắc việc, thông báo',
         { $set: { role: UserRole.EDITOR, roles: [UserRole.EDITOR] } },
       );
       try {
-        await assertAll('NOT_CRM_ROLE', 'staffB', 'không có vai trò CRM');
+        await assertAll('NOT_CRM_ROLE', 'staffB');
       } finally {
         await userModel.updateOne(
           { _id: ids.staffB },

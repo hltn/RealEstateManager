@@ -60,7 +60,7 @@ describe('toCustomerDetail', () => {
     expect(detail.email).toBe('');
     expect(detail.createdBy.displayName).toBe('Hệ thống');
     expect(detail.version).toBe(3);
-    expect(detail.permissions).toMatchObject({ canEdit: true, canManageCareTeam: false, canSetInitialPrimary: false, canRevealNationalId: false });
+    expect(detail.permissions).toMatchObject({ canEdit: true, canManageCareTeam: false, canSetInitialPrimary: false, canDelete: false, canRevealNationalId: false });
     expect(detail.permissions).not.toHaveProperty('canChangePrimary');
     expect(detail.permissions).not.toHaveProperty('canReviewJoinRequests');
     expect(detail.status.tone).toBe('gray');

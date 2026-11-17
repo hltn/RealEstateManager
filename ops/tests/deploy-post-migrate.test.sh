@@ -148,6 +148,25 @@ expect_contains "90, từ chối: vẫn ghi log" "010_crm_customer_code_index" "
 rc="$(FAKE_STATUS_OUT='{"pending":[{"id":"012_next","description":"d","phase":"pre-up"}],"locked":null}' run_step 90-post-up-migrations.sh)"
 expect_eq "90, còn pre-up chờ bất kỳ: exit 1" "1" "$rc"
 expect_eq "90, còn pre-up chờ bất kỳ: không gọi reconcile" "0" "$(calls 'migrations/cli.js reconcile')"
+
+# T-61 (FR-30, v1.0.6): 010 đã áp dụng, 011 VÀ 012 (đều post-up) cùng chờ => bước 90 KHÔNG từ chối; chỉ gọi status rồi reconcile post-up.
+BOTH_POSTUP='{"appVersion":"1.0.6","applied":[{"id":"010_crm_customer_code_index"}],"pending":[{"id":"011_crm_drop_unique_phone","description":"d","phase":"post-up"},{"id":"012_crm_appointment_assignee_ids","description":"d","phase":"post-up"}],"locked":null,"lastError":null,"baselineRequired":false,"replicaSet":true}'
+rc="$(FAKE_STATUS_OUT="$BOTH_POSTUP" run_step 90-post-up-migrations.sh)"
+expect_eq "90, 011 và 012 (post-up) cùng chờ: exit 0 (không từ chối)" "0" "$rc"
+o="$(cat "$TMP/out")"
+expect_not_contains "90, 011+012 post-up chờ: không có chữ TỪ CHỐI" "TỪ CHỐI" "$o"
+mapfile -t order < "$ORDER_FILE"
+expect_eq "90, 011+012 post-up chờ: đúng 2 lệnh docker" "2" "${#order[@]}"
+expect_eq "90, 011+012 post-up chờ: lệnh 1 là status --json" "$STATUS_CMD" "${order[0]:-}"
+expect_eq "90, 011+012 post-up chờ: lệnh 2 là reconcile post-up (một lần, chạy cả hai)" "$POSTUP_CMD" "${order[1]:-}"
+
+# 012 chờ ở pha pre-up (khai báo sai) cùng 011 post-up => từ chối, không gọi reconcile (đối chứng của ca trên).
+PRE012='{"appVersion":"1.0.6","applied":[{"id":"010_crm_customer_code_index"}],"pending":[{"id":"011_crm_drop_unique_phone","description":"d","phase":"post-up"},{"id":"012_crm_appointment_assignee_ids","description":"d","phase":"pre-up"}],"locked":null,"lastError":null,"baselineRequired":false}'
+rc="$(FAKE_STATUS_OUT="$PRE012" run_step 90-post-up-migrations.sh)"
+expect_eq "90, 012 chờ ở pha pre-up: exit 1 (từ chối)" "1" "$rc"
+o="$(cat "$TMP/out")"
+expect_contains "90, 012 pre-up chờ: nêu mã 012" "012_crm_appointment_assignee_ids" "$o"
+expect_eq "90, 012 pre-up chờ: KHÔNG gọi reconcile" "0" "$(calls 'migrations/cli.js reconcile')"
 # status lỗi (3 khóa, 4 baseline, 1 chung): từ chối, không reconcile.
 for src in 1 3 4; do
   rc="$(FAKE_STATUS_RC=$src run_step 90-post-up-migrations.sh)"

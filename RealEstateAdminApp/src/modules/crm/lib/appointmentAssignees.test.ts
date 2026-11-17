@@ -94,6 +94,15 @@ describe('validateAssigneeIds (FR-30)', () => {
     expect(validateAssigneeIds(manyIds, manyOptions)).toBe(`Tối đa ${MAX_APPOINTMENT_ASSIGNEES} người thực hiện mỗi lịch hẹn.`);
   });
 
+  it('ranh giới viết cứng theo hợp đồng backend (assigneeIds 1..20): 20 hợp lệ, 21 bị chặn, hằng số = 20 (không suy từ chính hằng số)', () => {
+    expect(MAX_APPOINTMENT_ASSIGNEES).toBe(20);
+    const many = Array.from({ length: 21 }, (_, index) => member(`u${index}`, 'MEMBER'));
+    const manyOptions = listAssignableAssignees(customer({ careTeam: many }));
+    const manyIds = manyOptions.map((option) => option.userId);
+    expect(validateAssigneeIds(manyIds.slice(0, 20), manyOptions)).toBeNull();
+    expect(validateAssigneeIds(manyIds.slice(0, 21), manyOptions)).toBe('Tối đa 20 người thực hiện mỗi lịch hẹn.');
+  });
+
   it('người tạo khách ngoài careTeam là hợp lệ (bỏ chặn cứng "phải thuộc nhóm chăm sóc")', () => {
     expect(validateAssigneeIds(['cr'], options)).toBeNull();
     expect(validateAssigneeIds(['p', 'cr'], options)).toBeNull();

@@ -18,7 +18,8 @@ import { OwnerRefDto } from './dtos/customer-response.dto';
 /** Tài khoản người tạo khách đọc bằng MỘT truy vấn (đủ để xác định nhóm chủ VÀ dựng `creator`). */
 export interface OwnerTeamCreatorUser {
   _id: Types.ObjectId;
-  fullName?: string;
+  /** Tên hiển thị của User (schema User chỉ có `displayName`, KHÔNG có `fullName`). */
+  displayName?: string;
   roles?: string[];
   status?: UserStatus;
   deletedAt?: Date | null;
@@ -45,11 +46,11 @@ export interface OwnerRefs {
   managerIds: Types.ObjectId[];
 }
 
-const CREATOR_SELECT = 'teamId teamIds fullName roles status deletedAt';
+const CREATOR_SELECT = 'teamId teamIds displayName roles status deletedAt';
 
 const toOwnerRef = (user: OwnerTeamCreatorUser): OwnerRefDto => ({
   userId: String(user._id),
-  fullName: user.fullName ?? '',
+  fullName: user.displayName ?? '',
   role: highestRole(user.roles ?? []),
 });
 
@@ -121,7 +122,7 @@ export class CustomerOwnerTeamService {
 
   /**
    * Trường cộng thêm của chi tiết khách (FR-30). `ownerManagers`: Manager `ACTIVE` chưa xóa của nhóm chủ (gồm người
-   * tạo nếu là Manager), CHƯA trong `careTeam`, sắp theo `fullName`. `creator`: người tạo `ACTIVE`, chưa xóa, có vai
+   * tạo nếu là Manager), CHƯA trong `careTeam`, sắp theo tên hiển thị (`displayName` của User, trả ra API là `fullName`). `creator`: người tạo `ACTIVE`, chưa xóa, có vai
    * trò CRM, KHÔNG trong `careTeam` và chưa nằm ở `ownerManagers`; ngược lại `null`. Chỉ gọi cho khách người gọi đã qua
    * phạm vi (không lộ khách ngoài phạm vi).
    */
@@ -150,7 +151,7 @@ export class CustomerOwnerTeamService {
               deletedAt: null,
               roles: UserRole.MANAGER,
             })
-            .select('fullName roles')
+            .select('displayName roles')
             .session(session ?? null)
             .lean()
             .exec()) as OwnerTeamCreatorUser[])

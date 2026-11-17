@@ -23,7 +23,7 @@ const locationInput = (page: Page) => page.getByRole('textbox', { name: /^Địa
 const projectSelect = (page: Page) => page.getByLabel('Dự án', { exact: true });
 
 test.describe('f4b-appointment-context', () => {
-  test('F4-01 đặt lịch từ chi tiết khách: mang khách + dự án, khóa trường khách, giữ sau F5 (G5, G2, G7)', async ({ loginAs, api, seed, backstage }, testInfo) => {
+  test('F4-01 đặt lịch từ chi tiết khách: mang khách + dự án, khóa trường khách, giữ sau F5 (G5, G2, G7)', async ({ loginAs, api, backstage }, testInfo) => {
     const slot = tomorrowSlot();
     const A = await api.createProject('Dự án A');
     const customer = await api.createCustomer({ projectIds: [A.id] });

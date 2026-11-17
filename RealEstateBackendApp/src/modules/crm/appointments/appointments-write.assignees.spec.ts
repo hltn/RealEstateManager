@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { UserStatus } from '../../../common/enums/user-status.enum';
+import { BusinessException } from '../../../common/exceptions/business.exception';
+import { ErrorCode } from '../../../common/exceptions/error-codes';
 import {
   buildCustomer,
   buildCustomerWithOtherPrimary,
@@ -430,6 +432,39 @@ describe('AppointmentsWriteService.createInSession: tập người thực hiện
       expect(h.userModel.findOne).toHaveBeenCalledTimes(1);
       expect(h.teamModel.find).toHaveBeenCalledTimes(1);
     });
+
+    it('FR-30 (PATCH): đổi nhiều người thực hiện gồm Manager nhóm chủ => MỘT lần đọc users cho cả mảng, người tạo MỘT lần, nhóm MỘT lần', async () => {
+      const h = build();
+      await update(h, {
+        assigneeIds: [
+          id('STAFF_PRIMARY'),
+          id('STAFF_MEMBER'),
+          id('MANAGER_OWNER'),
+        ],
+      });
+      expect(h.userModel.find).toHaveBeenCalledTimes(1);
+      const [filter] = h.userModel.find.mock.calls[0] as unknown as [
+        { _id: { $in: Types.ObjectId[] } },
+      ];
+      // STAFF_MEMBER đã là người thực hiện hiện tại của lịch nên không bị kiểm lại; chỉ id MỚI thêm đi vào MỘT truy vấn.
+      expect(filter._id.$in.map(String)).toEqual([
+        sid('STAFF_PRIMARY'),
+        sid('MANAGER_OWNER'),
+      ]);
+      expect(h.userModel.findOne).toHaveBeenCalledTimes(1);
+      expect(h.teamModel.find).toHaveBeenCalledTimes(1);
+      expect(h.appointmentModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('FR-30 (PATCH): mọi người đều trong careTeam hoặc là người tạo => một lần đọc users, không đọc người tạo/nhóm', async () => {
+      const h = build();
+      await update(h, {
+        assigneeIds: [id('STAFF_PRIMARY'), id('STAFF_MEMBER')],
+      });
+      expect(h.userModel.find).toHaveBeenCalledTimes(1);
+      expect(h.userModel.findOne).not.toHaveBeenCalled();
+      expect(h.teamModel.find).not.toHaveBeenCalled();
+    });
   });
 
   describe('người thực hiện mặc định', () => {
@@ -679,8 +714,17 @@ describe('FR-30: danh sách FE (ownerManagers + creator + careTeam) khớp tập
       try {
         await create(h, 'ADMIN', { assigneeIds: [id(key)] });
         result.add(sid(key));
-      } catch {
-        // bị từ chối: không thuộc tập hợp lệ
+      } catch (error) {
+        // Chỉ lỗi nghiệp vụ dự kiến (400 USER_NOT_ASSIGNABLE: không thuộc tập hợp lệ) mới là "bị từ chối".
+        // Mọi lỗi khác (crash, lỗi mạng giả, 403/404...) phải làm test đỏ, không được nuốt.
+        if (
+          !(
+            error instanceof BusinessException &&
+            String(error.errorCode) === String(ErrorCode.USER_NOT_ASSIGNABLE)
+          )
+        ) {
+          throw error;
+        }
       }
     }
     return result;
@@ -880,6 +924,8 @@ describe('AppointmentsWriteService: thông điệp và details.reason của USER
         }).catch((e: unknown) => e);
         expectRejected(error, reason, expected(), h.customer);
         expect(h.appointmentModel.findOneAndUpdate).not.toHaveBeenCalled();
+        // Một lần đọc `users` cho cả các id MỚI thêm (người đang có sẵn không bị kiểm lại), như đường tạo.
+        expect(h.userModel.find).toHaveBeenCalledTimes(1);
       });
     },
   );

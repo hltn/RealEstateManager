@@ -148,7 +148,14 @@ const build = (
       get: jest.fn().mockResolvedValue({ careLogNotifyDebounceMinutes: 0 }),
     } as never,
   );
-  return { service, customer, log, careLogModel, appointmentModel };
+  return {
+    service,
+    customer,
+    log,
+    careLogModel,
+    appointmentModel,
+    userModel: directory.userModel,
+  };
 };
 
 const customerIdOf = (h: { customer: { _id: Types.ObjectId } }) =>
@@ -455,20 +462,25 @@ describe('CareLogsService.createInSession: assigneeIds của nextAction.appointm
         phone: '+84987654321',
         phoneMasked: '0987***321',
       });
-    const PHRASES = {
+    /** Toàn văn theo bảng Architecture 5.13.3 (cùng chữ với `appointments-write.assignees.spec.ts`). */
+    const MESSAGES = {
       NOT_IN_CARE_TEAM:
-        'thành viên nhóm chăm sóc, người tạo khách hoặc Quản lý',
-      NOT_ACTIVE: 'không còn hoạt động',
-      NOT_CRM_ROLE: 'không có vai trò CRM',
+        'Người thực hiện phải là thành viên nhóm chăm sóc, người tạo khách hoặc Quản lý của nhóm chủ khách; nhờ thành viên có quyền mời đưa người đó vào nhóm trước',
+      NOT_ACTIVE:
+        'Người thực hiện không còn hoạt động (tài khoản bị khóa hoặc đã xóa)',
+      NOT_CRM_ROLE:
+        'Người thực hiện không có vai trò CRM (cần là Quản trị, Quản lý hoặc Nhân viên)',
     } as const;
     const ghost = new Types.ObjectId();
 
     const rejectedWith = async (
       h: ReturnType<typeof build>,
-      reason: keyof typeof PHRASES,
+      reason: keyof typeof MESSAGES,
       userIds: string[],
       assigneeIds?: string[],
       actor: UserKey = 'ADMIN',
+      /** Số lần đọc `users` ở bước kiểm (MỘT lần cho cả mảng; 0 khi không suy ra được người mặc định). */
+      usersReads = 1,
     ) => {
       const error = await create(h, actor, assigneeIds).catch(
         (e: unknown) => e,
@@ -478,11 +490,9 @@ describe('CareLogsService.createInSession: assigneeIds của nextAction.appointm
         message: string;
         details: Record<string, unknown>;
       };
-      expect(message).toContain(PHRASES[reason]);
-      // Chỉ thông điệp của ĐÚNG nguyên nhân đó (không lẫn câu của nguyên nhân khác).
-      for (const other of Object.keys(PHRASES) as Array<keyof typeof PHRASES>) {
-        if (other !== reason) expect(message).not.toContain(PHRASES[other]);
-      }
+      // Đúng toàn văn của nguyên nhân đó (gộp hay đổi chữ thì đỏ).
+      expect(message).toBe(MESSAGES[reason]);
+      expect(h.userModel.find).toHaveBeenCalledTimes(usersReads);
       expect(Object.keys(details).sort()).toEqual(['reason', 'userIds']);
       expect(JSON.stringify([message, details])).not.toMatch(
         /Lê Thị Khách|0987|987654321/,
@@ -566,7 +576,14 @@ describe('CareLogsService.createInSession: assigneeIds của nextAction.appointm
     it('không suy ra được người mặc định (Admin khác, khách chưa có PRIMARY) => NOT_IN_CARE_TEAM với userIds = []', async () => {
       const customer = piiCustomer();
       customer.primaryAssigneeId = null;
-      await rejectedWith(build(customer), 'NOT_IN_CARE_TEAM', []);
+      await rejectedWith(
+        build(customer),
+        'NOT_IN_CARE_TEAM',
+        [],
+        undefined,
+        'ADMIN',
+        0,
+      );
     });
 
     it('người thực hiện mặc định đã bị khóa => NOT_ACTIVE (id mặc định đi qua cùng bước kiểm)', async () => {

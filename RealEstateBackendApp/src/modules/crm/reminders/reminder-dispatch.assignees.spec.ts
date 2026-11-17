@@ -20,7 +20,7 @@ const APPOINTMENT = oid();
 
 interface FakeUser {
   _id: Types.ObjectId;
-  fullName: string;
+  displayName: string;
   roles: UserRole[];
   status: UserStatus;
   deletedAt: Date | null;
@@ -35,12 +35,12 @@ interface FakeTeam {
 }
 
 const user = (
-  fullName: string,
+  displayName: string,
   over: Partial<FakeUser> = {},
   role: UserRole = UserRole.STAFF,
 ): FakeUser => ({
   _id: oid(),
-  fullName,
+  displayName,
   roles: [role],
   status: UserStatus.ACTIVE,
   deletedAt: null,

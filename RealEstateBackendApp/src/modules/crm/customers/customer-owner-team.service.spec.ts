@@ -8,7 +8,7 @@ const id = () => new Types.ObjectId();
 
 interface FakeUser {
   _id: Types.ObjectId;
-  fullName: string;
+  displayName: string;
   roles: UserRole[];
   status: UserStatus;
   deletedAt: Date | null;
@@ -22,7 +22,7 @@ interface FakeTeam {
   deletedAt: Date | null;
 }
 
-const user = (over: Partial<FakeUser> & { fullName: string }): FakeUser => ({
+const user = (over: Partial<FakeUser> & { displayName: string }): FakeUser => ({
   _id: id(),
   roles: [UserRole.STAFF],
   status: UserStatus.ACTIVE,
@@ -32,14 +32,36 @@ const user = (over: Partial<FakeUser> & { fullName: string }): FakeUser => ({
   ...over,
 });
 
+/**
+ * Áp `.select('a b')` như Mongo: chỉ giữ `_id` và các trường được chọn, nên service quên chọn `displayName` (hoặc đọc
+ * nhầm `fullName`, trường KHÔNG có trong schema User) thì tên ra rỗng và test đỏ.
+ */
+const project = <T extends object>(row: T, fields: string | null): T => {
+  if (fields === null) return row;
+  const keep = new Set(['_id', ...fields.split(' ')]);
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => keep.has(key)),
+  ) as T;
+};
+
 /** Model giả chỉ đủ cho chuỗi `.select().session().lean().exec()`; lọc theo `_id`, `deletedAt`, `status`, `roles`. */
 const build = (users: FakeUser[], teams: FakeTeam[]) => {
-  const chain = <T>(rows: T[]) => {
+  const chain = <T extends object>(result: T[] | T | null) => {
+    let fields: string | null = null;
     const api = {
-      select: jest.fn().mockReturnThis(),
+      select: jest.fn((selected: string) => {
+        fields = selected;
+        return api;
+      }),
       session: jest.fn().mockReturnThis(),
       lean: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue(rows),
+      exec: jest.fn(() =>
+        Promise.resolve(
+          Array.isArray(result)
+            ? result.map((row) => project(row, fields))
+            : result && project(result, fields),
+        ),
+      ),
     };
     return api;
   };
@@ -55,13 +77,9 @@ const build = (users: FakeUser[], teams: FakeTeam[]) => {
       ),
     );
   });
-  const userFindOne = jest.fn((filter: { _id: Types.ObjectId }) => {
-    const api = chain([] as FakeUser[]);
-    api.exec.mockResolvedValue(
-      users.find((u) => u._id.equals(filter._id)) ?? null,
-    );
-    return api;
-  });
+  const userFindOne = jest.fn((filter: { _id: Types.ObjectId }) =>
+    chain(users.find((u) => u._id.equals(filter._id)) ?? null),
+  );
   const teamFind = jest.fn((filter: { _id: { $in: Types.ObjectId[] } }) =>
     chain(
       teams.filter(
@@ -79,14 +97,14 @@ const build = (users: FakeUser[], teams: FakeTeam[]) => {
 
 describe('CustomerOwnerTeamService (FR-30)', () => {
   describe('loadCandidates: MỘT hàm dựng ứng viên', () => {
-    it('FR-30: đọc người tạo bằng MỘT truy vấn users với select đủ fullName roles status deletedAt, rồi managerIds nhóm chủ', async () => {
+    it('FR-30: đọc người tạo bằng MỘT truy vấn users với select đủ displayName roles status deletedAt, rồi managerIds nhóm chủ', async () => {
       const team: FakeTeam = {
         _id: id(),
         managerIds: [id(), id()],
         deletedAt: null,
       };
       const creator = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: team._id,
         teamIds: [team._id],
       });
@@ -100,7 +118,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
       expect(userFindOne).toHaveBeenCalledTimes(1);
       const select = userFindOne.mock.results[0].value.select as jest.Mock;
       expect(select).toHaveBeenCalledWith(
-        'teamId teamIds fullName roles status deletedAt',
+        'teamId teamIds displayName roles status deletedAt',
       );
       expect(teamFind).toHaveBeenCalledTimes(1);
       expect(result.ownerTeamIds).toEqual([team._id]);
@@ -111,7 +129,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
     });
 
     it('FR-30: người tạo là Admin thuần (không nhóm) thì không đọc teams và không có Manager nhóm chủ', async () => {
-      const admin = user({ fullName: 'Admin', roles: [UserRole.ADMIN] });
+      const admin = user({ displayName: 'Admin', roles: [UserRole.ADMIN] });
       const { service, teamFind } = build([admin], []);
       const result = await service.loadCandidates({
         createdBy: admin._id,
@@ -151,7 +169,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
         deletedAt: new Date(),
       };
       const creator = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: team._id,
         teamIds: [team._id],
       });
@@ -163,7 +181,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
     it('FR-30: truyền session xuống cả hai truy vấn (đọc trong transaction của bên gọi)', async () => {
       const team: FakeTeam = { _id: id(), managerIds: [id()], deletedAt: null };
       const creator = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: team._id,
         teamIds: [team._id],
       });
@@ -224,7 +242,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
         deletedAt: null,
       };
       const creator = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: team._id,
         teamIds: [team._id],
       });
@@ -247,7 +265,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
         deletedAt: null,
       };
       const creator = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: ownerTeam._id,
         teamIds: [ownerTeam._id],
       });
@@ -268,11 +286,14 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
         deletedAt: new Date(),
       };
       const creatorInDeleted = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: deletedTeam._id,
         teamIds: [deletedTeam._id],
       });
-      const adminCreator = user({ fullName: 'Admin', roles: [UserRole.ADMIN] });
+      const adminCreator = user({
+        displayName: 'Admin',
+        roles: [UserRole.ADMIN],
+      });
       const { service } = build(
         [creatorInDeleted, adminCreator],
         [deletedTeam],
@@ -298,7 +319,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
         deletedAt: null,
       };
       const creator = user({
-        fullName: 'Tạo',
+        displayName: 'Tạo',
         teamId: team._id,
         teamIds: [team._id],
       });
@@ -318,22 +339,23 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
   describe('buildOwnerRefs: ownerManagers và creator của chi tiết khách', () => {
     const setup = () => {
       const team: FakeTeam = { _id: id(), managerIds: [], deletedAt: null };
-      const mk = (over: Partial<FakeUser> & { fullName: string }) =>
+      const mk = (over: Partial<FakeUser> & { displayName: string }) =>
         user({ teamId: team._id, teamIds: [team._id], ...over });
       return { team, mk };
     };
 
-    it('FR-30: ownerManagers đúng định dạng, sắp theo fullName, không trùng thành viên careTeam', async () => {
+    it('FR-30: ownerManagers đúng định dạng, sắp theo tên hiển thị, không trùng thành viên careTeam', async () => {
       const { team, mk } = setup();
-      const creator = mk({ fullName: 'Người tạo', roles: [UserRole.STAFF] });
-      const mB = mk({ fullName: 'Bình', roles: [UserRole.MANAGER] });
-      const mA = mk({ fullName: 'An', roles: [UserRole.MANAGER] });
+      const creator = mk({ displayName: 'Người tạo', roles: [UserRole.STAFF] });
+      const mB = mk({ displayName: 'Bình', roles: [UserRole.MANAGER] });
+      const mA = mk({ displayName: 'An', roles: [UserRole.MANAGER] });
       const mInTeam = mk({
-        fullName: 'Có trong nhóm',
+        displayName: 'Có trong nhóm',
         roles: [UserRole.MANAGER],
       });
       team.managerIds = [mB._id, mA._id, mInTeam._id];
-      const { service } = build([creator, mA, mB, mInTeam], [team]);
+      // Thứ tự nạp cố ý đảo (Bình trước An) để bỏ bước sắp là test đỏ.
+      const { service } = build([creator, mB, mA, mInTeam], [team]);
 
       const result = await service.buildOwnerRefs({
         createdBy: creator._id,
@@ -348,19 +370,19 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
 
     it('FR-30: ownerManagers loại Manager bị khóa, đã xóa mềm hoặc không còn vai trò MANAGER', async () => {
       const { team, mk } = setup();
-      const creator = mk({ fullName: 'Tạo' });
-      const ok = mk({ fullName: 'Ổn', roles: [UserRole.MANAGER] });
+      const creator = mk({ displayName: 'Tạo' });
+      const ok = mk({ displayName: 'Ổn', roles: [UserRole.MANAGER] });
       const blocked = mk({
-        fullName: 'Khóa',
+        displayName: 'Khóa',
         roles: [UserRole.MANAGER],
         status: UserStatus.BLOCKED,
       });
       const deleted = mk({
-        fullName: 'Xóa',
+        displayName: 'Xóa',
         roles: [UserRole.MANAGER],
         deletedAt: new Date(),
       });
-      const demoted = mk({ fullName: 'Hạ cấp', roles: [UserRole.STAFF] });
+      const demoted = mk({ displayName: 'Hạ cấp', roles: [UserRole.STAFF] });
       team.managerIds = [ok._id, blocked._id, deleted._id, demoted._id];
       const { service } = build(
         [creator, ok, blocked, deleted, demoted],
@@ -373,7 +395,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
     it('FR-30: ownerManagers gồm người tạo nếu là Manager (kể cả khi không nằm trong managerIds), và creator là null (đã ở ownerManagers)', async () => {
       const { team, mk } = setup();
       const creator = mk({
-        fullName: 'Quản lý tạo',
+        displayName: 'Quản lý tạo',
         roles: [UserRole.MANAGER],
       });
       const { service } = build([creator], [team]);
@@ -391,10 +413,10 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
     it('FR-30: creator khác null cho người tạo Admin hoặc Staff ngoài careTeam và ACTIVE, role = vai trò cao nhất', async () => {
       const { team, mk } = setup();
       const admin = mk({
-        fullName: 'Admin tạo',
+        displayName: 'Admin tạo',
         roles: [UserRole.STAFF, UserRole.ADMIN],
       });
-      const staff = mk({ fullName: 'Staff tạo', roles: [UserRole.STAFF] });
+      const staff = mk({ displayName: 'Staff tạo', roles: [UserRole.STAFF] });
       const { service } = build([admin, staff], [team]);
 
       const forAdmin = await service.buildOwnerRefs({ createdBy: admin._id });
@@ -413,7 +435,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
 
     it('FR-30: creator = null khi người tạo đã trong careTeam', async () => {
       const { team, mk } = setup();
-      const staff = mk({ fullName: 'Staff tạo' });
+      const staff = mk({ displayName: 'Staff tạo' });
       const { service } = build([staff], [team]);
       const result = await service.buildOwnerRefs({
         createdBy: staff._id,
@@ -428,7 +450,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
       ['chỉ EDITOR (không có vai trò CRM)', { roles: [UserRole.EDITOR] }],
     ])('FR-30: creator = null khi người tạo %s', async (_label, over) => {
       const { team, mk } = setup();
-      const creator = mk({ fullName: 'Tạo', ...over });
+      const creator = mk({ displayName: 'Tạo', ...over });
       const { service } = build([creator], [team]);
       const result = await service.buildOwnerRefs({ createdBy: creator._id });
       expect(result.creator).toBeNull();
@@ -436,7 +458,7 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
 
     it('FR-30: creator = null và ownerManagers theo teamIds khi khách cũ thiếu createdBy', async () => {
       const { team, mk } = setup();
-      const manager = mk({ fullName: 'Quản lý', roles: [UserRole.MANAGER] });
+      const manager = mk({ displayName: 'Quản lý', roles: [UserRole.MANAGER] });
       team.managerIds = [manager._id];
       const { service } = build([manager], [team]);
       const result = await service.buildOwnerRefs({
@@ -445,6 +467,78 @@ describe('CustomerOwnerTeamService (FR-30)', () => {
       });
       expect(result.creator).toBeNull();
       expect(result.ownerManagers.map((m) => m.fullName)).toEqual(['Quản lý']);
+    });
+
+    it('FR-30: sắp ownerManagers theo tên hiển thị với collation tiếng Việt; Manager là người tạo (nối cuối) vẫn vào đúng vị trí', async () => {
+      const { team, mk } = setup();
+      const creator = mk({ displayName: 'Ân', roles: [UserRole.MANAGER] });
+      const mB = mk({ displayName: 'Bình', roles: [UserRole.MANAGER] });
+      const mA = mk({ displayName: 'An', roles: [UserRole.MANAGER] });
+      team.managerIds = [mB._id, mA._id];
+      const { service } = build([creator, mB, mA], [team]);
+
+      const result = await service.buildOwnerRefs({ createdBy: creator._id });
+
+      // So sánh theo mã ký tự sẽ đẩy "Ân" ra sau "Bình"; collation vi xếp An < Ân < Bình.
+      expect(result.ownerManagers.map((m) => m.fullName)).toEqual([
+        'An',
+        'Ân',
+        'Bình',
+      ]);
+    });
+
+    it('FR-30: collation "vi" (không phải "en"): Â đứng SAU A (Ab < Âa) và Đ đứng SAU D (Dung < Đức), khớp thứ tự sort của Mongo', async () => {
+      const { team, mk } = setup();
+      const creator = mk({ displayName: 'Tạo', roles: [UserRole.STAFF] });
+      const names = ['Đức', 'Âa', 'Dung', 'Ab'];
+      const managers = names.map((displayName) =>
+        mk({ displayName, roles: [UserRole.MANAGER] }),
+      );
+      team.managerIds = managers.map((m) => m._id);
+      const { service } = build([creator, ...managers], [team]);
+
+      const result = await service.buildOwnerRefs({ createdBy: creator._id });
+
+      // Locale "en" xếp Âa trước Ab và Đức trước Dung; chỉ "vi" cho đúng thứ tự dưới đây.
+      expect(result.ownerManagers.map((m) => m.fullName)).toEqual([
+        'Ab',
+        'Âa',
+        'Dung',
+        'Đức',
+      ]);
+    });
+
+    it('FR-30: tên trả ra (`fullName` của API) lấy từ `displayName` của User, đọc bằng select có displayName', async () => {
+      const { team, mk } = setup();
+      const creator = mk({ displayName: 'Chị Tạo', roles: [UserRole.STAFF] });
+      const manager = mk({
+        displayName: 'Anh Quản',
+        roles: [UserRole.MANAGER],
+      });
+      team.managerIds = [manager._id];
+      const { service, userFind } = build([creator, manager], [team]);
+
+      const result = await service.buildOwnerRefs({ createdBy: creator._id });
+
+      expect(result.creator?.fullName).toBe('Chị Tạo');
+      expect(result.ownerManagers[0].fullName).toBe('Anh Quản');
+      expect(userFind.mock.results[0].value.select).toHaveBeenCalledWith(
+        'displayName roles',
+      );
+    });
+
+    it('FR-30: User thật không có `fullName`: dữ liệu chỉ có `fullName` (sai trường) cho tên rỗng, không đoán', async () => {
+      const { team } = setup();
+      const creator = {
+        ...user({ displayName: 'x', teamId: team._id, teamIds: [team._id] }),
+        displayName: undefined,
+        fullName: 'Tên sai trường',
+      } as unknown as FakeUser;
+      const { service } = build([creator], [team]);
+
+      const result = await service.buildOwnerRefs({ createdBy: creator._id });
+
+      expect(result.creator?.fullName).toBe('');
     });
   });
 });
