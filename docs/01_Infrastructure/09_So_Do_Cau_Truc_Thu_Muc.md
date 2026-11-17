@@ -556,8 +556,8 @@ Lưu ý cho người làm: các test tích hợp import bằng đường dẫn t
 ```text
 TRƯỚC (hiện trạng)                                     SAU (đích)
 src/assets/ {hero.png, react.svg, vite.svg}            (xóa cả 3; thư mục assets/ rỗng, suy ra bỏ)
-src/images/logo/ {logo.png, logo -dark.png}            src/images/logo/ {logo.png}
-src/icons/ 57 file *.svg + index.ts                    src/icons/ 18 svg còn dùng + index.ts (xóa calendar.svg và 38 icon không dùng)
+src/images/logo/ {logo.png, logo -dark.png}            src/images/logo/ {logo.png, logo -dark.png}   (đã khôi phục: là tài nguyên dự phòng)
+src/icons/ 57 file *.svg + index.ts                    src/icons/ 57 file *.svg + index.ts   (đã khôi phục: giữ cả icon chưa dùng)
 src/components/
   common/ {ChartTab, ComponentCard, GridShape,         common/ {PageMeta, Pagination, TableSkeletonRows, ThemeToggleButton}
            PageBreadCrumb, PageMeta, Pagination,
@@ -705,7 +705,7 @@ Nếu tính năng chỉ cần util dùng chung nhiều module: đặt `common/ut
 | 3 | FR-08: "chuyển vào module news" | BE không có thư mục `news`; module thật là `news-fire-crawl-manager` |
 | 4 | FR-07: đổi thành `*.fixture.ts` "hoặc loại khỏi build" | `tsconfig.build.json` đã loại `**/*.fixture.ts` sẵn, nên chỉ cần đổi hậu tố |
 | 5 | FR-12: "`App.tsx` (12 import)" | `App.tsx` import 13 màn (11 màn legacy + `LoginScreen` + `UserManagementScreen`); `RawArticlesScreen` không import trực tiếp ở `App.tsx` |
-| 6 | FR-09: "38 icon không dùng, giữ 18 tên" | `src/icons/` có 57 `.svg`: 38 + 18 + `calendar.svg` (xóa riêng) = 57, khớp |
+| 6 | FR-09: "38 icon không dùng, giữ 18 tên" | `src/icons/` có 57 `.svg`: 38 + 18 + `calendar.svg` (xóa riêng) = 57, khớp. **Đã hủy việc xóa (2026-11-17)**: giữ cả 57 svg và `logo -dark.png` |
 | 7 | FR-05/FR-06 xóa file (đã kiểm không ai tham chiếu) | Các file này đều còn tồn tại; riêng `app.controller.ts` còn được `app.module.ts` và `common/guards/role-coverage.audit.spec.ts` nhắc đến (Plan đã lường trước) |
 
 ### 6.3 Ghi chú vận hành tài liệu

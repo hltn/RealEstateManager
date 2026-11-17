@@ -17,7 +17,7 @@ Thống nhất môi trường và dọn cấu trúc (không thêm tính năng ng
 - Đồng bộ Node 24.18.1; cron lưu qua `CRON_CONFIG_FILE`; đổi tên cờ thành `CRM_*_ENABLED` (VPS cập nhật `.env` theo `.env.example` trước khi deploy).
 
 ### Sửa
-- Dọn file thừa ở Backend, tách `modules/news` ngang `modules/crm` ở Frontend.
+- Dọn file thừa ở Backend, tách `modules/news` ngang `modules/crm` ở Frontend. Riêng Web admin **giữ lại** bộ icon svg và `logo -dark.png` (tài nguyên dự phòng, không xóa); `icons/icons.test.ts` chỉ kiểm tính toàn vẹn của `index.ts`, không ép số lượng icon.
 
 Chi tiết: `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ, không đưa lên repo); mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
 
