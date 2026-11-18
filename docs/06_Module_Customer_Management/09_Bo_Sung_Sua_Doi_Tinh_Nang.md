@@ -24,6 +24,7 @@
 | [v1.0.2](#v102-2026-10-29) | 2026-10-29 | 4 sửa đổi: (A) nhiều role + nhiều nhóm cho một tài khoản; (B) khu vực theo 34 tỉnh thành; (C) thêm/gỡ/xem thành viên nhóm; (D) xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" | Đã triển khai production 2026-11-02 (commit `e6099c0`; code A–D, cả BE lẫn FE, đều nằm trong commit này; migration 005/006 đã chạy trên VPS). **Chưa đóng (Cổng 3)**: cần xác nhận kết quả QA cuối của FE C/D (ghi nhận gần nhất 2026-10-30 là "FE đang QA") và nghiệm thu thực tế trên production (chưa có ai test, xem `08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`) |
 | v1.0.3 (Kế hoạch) | chưa có | Các việc cần sửa sau khi chạy test trên production; không ghi trong file này mà ở [`../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](../08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md) | Kế hoạch |
 | [v1.0.5](#v105-2026-11-10) | 2026-11-10 | "Định danh khách hàng": SĐT khách tùy chọn và không duy nhất; mã khách `KH-000123`; người tạo = phụ trách chính bất biến; bỏ luồng xin tham gia, chia sẻ bằng mời (tối đa 10 thành viên phụ, được mời cả người ngoài nhóm); xóa 6 endpoint cũ, thêm 2 endpoint; migration 010/011; deploy gộp v1.0.3 → v1.0.5 | Đang làm (code BE/FE và tài liệu xong, còn test, diễn tập staging và nghiệm thu) |
+| v1.0.6 (Phân quyền CRM) | 2026-11-17 | Người thực hiện lịch hẹn chọn nhiều người; xóa khách chỉ Quản trị hoặc người tạo khách (bỏ điều kiện khách "Bỏ", bỏ mã `CUSTOMER_NOT_DROPPED`); sửa/xóa lịch hẹn, nhật ký, ảnh chỉ của chính mình; xem CMND/CCCD và mời/gỡ thành viên chỉ chủ khách. **Không ghi chi tiết trong file này**, xem [`13_Ma_Tran_Phan_Quyen_CRM.md`](13_Ma_Tran_Phan_Quyen_CRM.md) (nguồn duy nhất về luật phân quyền), tài liệu 04 mục 4.2, 11 (quyết định #48 đến #52) và 05 | Đã triển khai (Đợt 7 xong, staging nghiệm thu 2026-11-18) |
 
 ---
 
@@ -279,6 +280,8 @@ Không có migration riêng; dựa vào `teamIds[]` và migration 005 của sử
 
 **Trạng thái:** BE đã code + QA đạt 2026-10-30, FE đang QA (Đợt 2). Hợp đồng API cuối cùng ở mục 7.4.
 
+> **Lưu ý (v1.0.6): luật xóa khách ở mục 7 này đã được THAY.** Từ v1.0.6 xóa khách (đơn và hàng loạt) chỉ **Quản trị hoặc người tạo khách**, **không còn điều kiện khách thuộc nhóm "Bỏ"**, và mã lỗi `CUSTOMER_NOT_DROPPED` đã bị xóa khỏi `ErrorCode`. Mục 7.2, 7.3 và "Hợp đồng API cuối cùng" bên dưới giữ nguyên làm **lịch sử v1.0.2**; luật hiện hành xem [`13_Ma_Tran_Phan_Quyen_CRM.md`](13_Ma_Tran_Phan_Quyen_CRM.md) (mục 2.2).
+
 #### 7.1 Bối cảnh / vấn đề
 BE đã có xóa mềm đơn và các route khôi phục/ẩn danh hóa cho Admin, nhưng thao tác hàng loạt chưa có xóa, FE chưa có nút xóa hay màn khách đã xóa, và chưa có cách xóa hẳn khách (SĐT vẫn bị giữ chỗ sau khi xóa mềm).
 
@@ -321,6 +324,8 @@ Xóa là **xóa mềm**; **Admin khôi phục** và **xóa vĩnh viễn**. (Ch�
 
 ##### Hợp đồng API cuối cùng (BE đã code; FE bám theo)
 
+> **Đã thay ở v1.0.6 (xóa khách):** các dòng về quyền xóa, điều kiện "Bỏ" và mã `CUSTOMER_NOT_DROPPED` dưới đây là **hợp đồng v1.0.2**, không còn hiệu lực. Hợp đồng hiện hành ở `05_Danh_Sach_API_Module_Quan_Ly_Khach_Hang.md` (2.3) và [`13_Ma_Tran_Phan_Quyen_CRM.md`](13_Ma_Tran_Phan_Quyen_CRM.md). Phần khôi phục, ẩn danh hóa, xóa vĩnh viễn (mục 4 đến 6) **không đổi**.
+
 **1. Xóa hàng loạt** `POST /crm/customer-bulk-operations` (role CRM, `X-Idempotency-Key` tùy chọn, giới hạn 10 lần/phút/người như các thao tác hàng loạt khác):
 - Body: `{ "type": "DELETE", "customerIds": [≤ 200 id], "payload": { "reason": "<bắt buộc, ≤ 500 ký tự>" } }`. **`reason` nằm TRONG `payload`**, không ở cấp ngoài (cấp ngoài bị 400 do whitelist).
 - 200: `{ "data": { "succeeded": ["id", ...], "failed": [{ "customerId": "id", "errorCode": "..." }] } }`. Mỗi khách một transaction; khách lỗi không làm hỏng khách khác.
@@ -339,6 +344,8 @@ Xóa là **xóa mềm**; **Admin khôi phục** và **xóa vĩnh viễn**. (Ch�
 **6. Xóa vĩnh viễn** `DELETE /crm/deleted-customers/:id` (chỉ Admin; không body; không hoàn tác) → **200** `{ "data": { "customerId": "id", "purged": { "careLogs": n, "attachments": n, "files": n, "appointments": n, "careTeamRequests": n, "reminders": n, "notifications": n, "auditLogs": n } } }` (`files` = số file MinIO đã xóa; có thể dùng để hiện thông báo). Lỗi: 400 id sai; 403 không phải Admin; 404 `CUSTOMER_NOT_FOUND`; **409 `CUSTOMER_NOT_DELETED`** (khách chưa xóa mềm); **409 `CUSTOMER_PURGE_IN_PROGRESS`** (đang có một lần xóa vĩnh viễn khác chạy cùng lúc, thử lại sau ít giây); **503 `SERVICE_UNAVAILABLE`** (không xóa được file ở kho lưu trữ hoặc kho chưa cấu hình: **CHƯA xóa gì ở DB**, khách ở trạng thái "đang xóa dở" `purgeInProgress=true`, FE cho phép bấm thử lại ngay). Sau khi xóa, SĐT dùng lại được; khách không còn trong danh sách đã xóa; khôi phục/xóa lại trả 404.
 
 **Mã lỗi mới:** `CUSTOMER_NOT_DROPPED` (409), `CUSTOMER_NOT_DELETED` (409), `CUSTOMER_PURGE_IN_PROGRESS` (409). **Action audit mới:** `CUSTOMER_PURGED`.
+
+> **v1.0.6:** `CUSTOMER_NOT_DROPPED` đã **xóa khỏi `ErrorCode`**; khách không đủ quyền xóa nay báo 403 `INSUFFICIENT_ROLE` (xóa đơn) hoặc `failed[].errorCode = INSUFFICIENT_ROLE` (hàng loạt). `CUSTOMER_NOT_DELETED` và `CUSTOMER_PURGE_IN_PROGRESS` giữ nguyên.
 
 **Thiết kế xóa vĩnh viễn (quyết định của coder BE):**
 - Thứ tự an toàn: (1) **đặt cờ `customers.purgingAt` nguyên tử** bằng một `updateOne` có điều kiện (khách tồn tại, đã xóa mềm, `purgingAt` rỗng hoặc cũ hơn 15 giây); từ đây khôi phục/ẩn danh hóa bị chặn (ghi của chúng có thêm điều kiện `purgingAt: null`, nên đua nhau cũng không lọt); (2) xóa **file MinIO TRƯỚC**, ngoài transaction, **song song tối đa 6 file, dừng ngay ở lỗi đầu tiên** (không gọi tiếp các ảnh chưa bắt đầu); lỗi bất kỳ thì ghi log có cấu trúc (`customerId`, bước lỗi, số file đã xóa), dừng 503 và chưa động tới DB (file đã xóa được đánh dấu `purgedAt` nên lần thử lại bỏ qua; xóa object idempotent); lỗi thì cờ được lùi về quá 15 giây để **thử lại ngay** được nhưng vẫn khác rỗng (khách vẫn "đang xóa dở", vẫn không khôi phục được); (3) **một transaction** xóa nhật ký, ảnh, lịch hẹn, yêu cầu nhóm chăm sóc, nhắc, thông báo (`data.customerId`), **mọi audit cũ của khách** (chứa tên/SĐT/email/lý do), trả lại `usageCount` của thẻ, xóa chính khách và ghi **đúng một dòng audit `CUSTOMER_PURGED`** (`customerId` + người làm + số lượng đã xóa trong `changes`; **không** nhận lý do tự do, không SĐT/tên/email). Nhờ file xóa trước nên không bao giờ có file mồ côi mà DB không còn dấu vết để dọn.

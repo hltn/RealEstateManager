@@ -4,6 +4,22 @@ Bản tóm tắt thay đổi theo phiên bản, theo kiểu [Keep a Changelog](h
 
 Nguồn chính và đầy đủ: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md). Mã `PT-NNN` là mã mục trong file kế hoạch v1.0.3.
 
+## [1.0.7] - dự kiến (đang lên kế hoạch, chưa triển khai)
+
+Chuyển từ v1.0.6 sang (Oniichan quyết 2026-11-16). Danh sách dưới đây là dự kiến, có thể đổi khi bắt đầu v1.0.7.
+
+### CI/CD (GitHub Actions)
+- CI (FR-24): kiểm thử, lint, build thử Docker khi có Pull Request; không dùng secret.
+- CD (FR-25): deploy staging tự động khi merge vào `main`, deploy production cần người duyệt; dùng runner tự dựng `staging-runner` (đã cài ngoài repo, chưa có workflow dùng).
+- Gỡ staging local (FR-26): xóa `docker-compose.staging.yml`, `ops/staging.sh`, `.env.staging.example` và test của chúng, sau khi CD staging chạy đạt.
+- Quét bảo mật (FR-29): Trivy, `npm audit`, Gitleaks, Dependabot; ban đầu chỉ báo cáo (trừ Gitleaks chặn trên diff), bật chặn theo ngưỡng sau khi dọn baseline.
+- Dọn ESLint backend (~1079 lỗi tồn đọng) và biến thành cổng chặn.
+
+### Backlog đã có
+- Cải thiện cấu trúc Backend/Frontend (gồm luật biên ESLint), hoãn từ v1.0.6.
+
+Chi tiết thiết kế dự kiến: `docs/01_Infrastructure/06_Production_Deploy.md` mục 17 và `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ).
+
 ## [1.0.6] - chưa phát hành
 
 Thống nhất môi trường và dọn cấu trúc (không thêm tính năng nghiệp vụ): build một lần chạy mọi nơi, dev/staging/production chỉ khác file `.env`. Chưa có thẻ git; số phiên bản Backend và Web admin đã nâng lên 1.0.6 (ứng dụng mobile `RealEstateApp/` không đổi trong đợt này).
@@ -13,7 +29,7 @@ Thống nhất môi trường và dọn cấu trúc (không thêm tính năng ng
 - `deploy.sh`, `backup.sh`, `restore.sh` ở gốc repo; phần phụ trợ gom vào `ops/`, `scripts/` chỉ giữ migration.
 - Đưa bản lên máy chủ bằng `release.sh send` (gói `release.tgz` kèm sha256, rồi `docker save | gzip | ssh | docker load`, rồi `deploy.sh`); máy chủ **không build và không dùng git**. `deploy.sh` chỉ còn các cờ `--no-migrate`, `--migrate`, `--plan-only`, `--help` (cờ `--no-pull` bị từ chối), promote thẻ `<version>-<commit>` thành `current`, tự trả `current` về image cũ khi lỗi trước `up`.
 - Backup/restore theo thẻ image `pre-<TS>` và manifest v2 (không còn bundle/thẻ git `pre-deploy-<TS>`): `restore.sh` khôi phục DB và image về bản trước deploy, luôn kèm backup an toàn và thẻ `pre-restore-<RTS>` trước khi ghi; bỏ các cờ `--code-only`, `--use-image-tag`, `--allow-infra-change`; từ chối manifest v1. `.env.docker` đổi thành `.env` (một file, một mẫu `.env.example`).
-- Tài liệu: viết lại `docs/01_Infrastructure/06_Production_Deploy.md` (quy trình phát hành, bảng cờ cũ sang mới, rollback, chính sách dọn thẻ `pre-*`, kế hoạch CI/CD) và `README.md` gốc. Quy trình CI/CD GitHub Actions (kiểm thử khi có PR, deploy staging tự động, production cần người duyệt) đang triển khai, chưa có workflow.
+- Tài liệu: viết lại `docs/01_Infrastructure/06_Production_Deploy.md` (quy trình phát hành, bảng cờ cũ sang mới, rollback, chính sách dọn thẻ `pre-*`) và `README.md` gốc. **v1.0.6 không có CI/CD**: Oniichan quyết (2026-11-16) chuyển toàn bộ CI/CD GitHub Actions (CI, CD, gỡ staging local, quét bảo mật) sang v1.0.7; repo chưa có `.github/workflows/`. Quy trình phát hành ở v1.0.6 là chạy tay `release.sh build` → `release.sh send` → `deploy.sh` (đã chạy trên VPS staging). Staging local (`docker-compose.staging.yml`, `ops/staging.sh`) tạm giữ trong repo nhưng không còn dùng được với `deploy.sh` mới.
 - Đồng bộ Node 24.18.1; cron lưu qua `CRON_CONFIG_FILE`; đổi tên cờ thành `CRM_*_ENABLED` (VPS cập nhật `.env` theo `.env.example` trước khi deploy).
 
 ### Sửa

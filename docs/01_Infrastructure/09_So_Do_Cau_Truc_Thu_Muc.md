@@ -40,16 +40,16 @@ RealEstateManager/
 │   └── post-migrate/          #   10-catalog-codes.sh, 20-customer-codes.sh, 90-post-up-migrations.sh
 ├── ops/                       # Công cụ vận hành phụ (sau FR-02, v1.0.6)
 │   ├── lib/                   #   ops-common.sh: hàm dùng chung cho các script
-│   ├── staging/               #   tài liệu + script diễn tập staging local (đã lỗi thời, gỡ ở T-46)
+│   ├── staging/               #   tài liệu + script diễn tập staging local (đã lỗi thời, tạm giữ ở v1.0.6, gỡ ở v1.0.7 (T-46))
 │   ├── tests/                 #   *.test.sh: test cho các script bash
 │   └── check-disk.sh, print-image-digests.sh, verify-env.sh, install-release.sh, staging.sh
 ├── release.sh                 # Dựng image một lần (build) và gửi gói + image lên VPS (send) (FR-14, v1.0.6)
 ├── deploy.sh, backup.sh, restore.sh  # Script vận hành ở gốc (sau FR-01, v1.0.6); chạy trên VPS, không build, không dùng git
 ├── docker-compose.yml         # Stack chạy thật: backend, frontend, mongo, redis, minio, ...; dùng image dựng sẵn (FR-17)
 ├── docker-compose.dev.yml, docker-compose.dev-watch.yml  # Lớp phủ cho máy dev (FR-17); luôn dùng kèm docker-compose.yml
-├── docker-compose.staging.yml # Staging local (đã lỗi thời, gỡ ở T-46)
+├── docker-compose.staging.yml # Staging local (đã lỗi thời, tạm giữ ở v1.0.6, gỡ ở v1.0.7, T-46)
 ├── .env.example               # Mẫu duy nhất của file `.env` (không commit); thay `.env.docker.example` (FR-18)
-├── .env.staging.example       # Mẫu biến môi trường staging local (đã lỗi thời, gỡ ở T-46)
+├── .env.staging.example       # Mẫu biến môi trường staging local (đã lỗi thời, tạm giữ ở v1.0.6, gỡ ở v1.0.7, T-46)
 ├── README.md                  # Điểm vào repo (FR-13): giới thiệu, chạy dev, build/deploy (`release.sh`), quy ước đồng bộ prototype
 ├── CHANGELOG.md               # Lịch sử phiên bản
 ├── .gitignore, .gitattributes
@@ -70,15 +70,15 @@ RealEstateManager/
 │   ├── lib/ops-common.sh
 │   ├── tests/*.test.sh
 │   ├── check-disk.sh  print-image-digests.sh
-│   └── staging.sh  staging/           #   chỉ tới khi FR-26 gỡ staging local
+│   └── staging.sh  staging/           #   tạm giữ ở v1.0.6; FR-26 (v1.0.7) gỡ staging local
 ├── scripts/                           # FR-02: chỉ còn run-migration.sh và post-migrate/*
-├── .github/workflows/                 # FR-24, FR-25: CI/CD (GitHub Actions)
+├── .github/workflows/                 # (v1.0.7, chưa có) FR-24, FR-25: CI/CD (GitHub Actions), chuyển khỏi v1.0.6 ngày 2026-11-16
 ├── docker-compose.yml                 # FR-17: một compose gốc dùng chung, override mỏng cho dev
 ├── .env.example                       # FR-18: đúng một mẫu, một .env duy nhất (không commit)
 └── docs/ ...
 ```
 
-Bị gỡ theo Plan: `docker-compose.staging.yml`, `.env.staging.example`, `.env.docker.example` (gộp vào `.env.example`), `.staging/`, `ops/staging*` (FR-18, FR-26).
+Bị gỡ theo Plan (việc gỡ staging local, FR-26, chuyển sang v1.0.7): `docker-compose.staging.yml`, `.env.staging.example`, `.env.docker.example` (gộp vào `.env.example`), `.staging/`, `ops/staging*` (FR-18, FR-26).
 Chưa rõ: tên file override compose cho dev, tên script build/chuyển image, cách đóng gói "gói release" gửi lên VPS (FR-14, FR-17, FR-25): **architect sẽ chốt ở Architecture**.
 
 ### 1.3 Thư mục `docs/` (HIỆN TRẠNG)

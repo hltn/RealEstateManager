@@ -16,6 +16,7 @@ Module mới thay cho Google Sheets (DSKH, DSKH_DROP, DSKH_NET): quản lý và 
 | 10 | [`10_Dinh_Danh_Khach_Hang_Plan.md`](10_Dinh_Danh_Khach_Hang_Plan.md) | Plan | Kế hoạch v1.0.5 (`Approved`): bỏ ràng buộc SĐT, mã khách tự sinh, người tạo = người chăm sóc chính không đổi, bỏ xin tham gia nhóm, chia sẻ bằng mời |
 | 11 | [`11_Dinh_Danh_Khach_Hang_Architecture.md`](11_Dinh_Danh_Khach_Hang_Architecture.md) | Architecture | Kiến trúc v1.0.5 (`Approved`): migration 010 (pre-up) và 011 (post-up, một chiều), cấp mã bằng counter, điểm gọi hậu-migrate `scripts/post-migrate/`, API và giao diện hiển thị mã, diễn tập staging |
 | 12 | [`12_Dinh_Danh_Khach_Hang_Tasks.md`](12_Dinh_Danh_Khach_Hang_Tasks.md) | Tasks | Danh sách 38 task v1.0.5 (`Approved`, T-01 đến T-38, 5 đợt), ma trận phủ FR-01 đến FR-23 (FR-05 bỏ) |
+| 13 | [`13_Ma_Tran_Phan_Quyen_CRM.md`](13_Ma_Tran_Phan_Quyen_CRM.md) | Ma trận | Nguồn duy nhất về luật phân quyền CRM v1.0.6 (Mảng F, FR-30..FR-33): bảng vai trò × hành động, sơ đồ quyết định, người thực hiện lịch và người nhận nhắc, truy vết luật → code → test (`Draft`) |
 
 > `03_Design_System_Quy_Tac_Phong_Cach.md` mô tả phong cách của **toàn bộ web admin**, không riêng module này. Nếu sau này có module khác dùng, có thể chuyển lên `00_Project_Overview/`.
 

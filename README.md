@@ -23,7 +23,7 @@ Các tính năng chính: thu thập và phân tích tin tức thị trường, b
 - `deploy.sh`, `backup.sh`, `restore.sh`: cập nhật, sao lưu và khôi phục stack trên máy chủ (không build, không dùng git).
 - `docker-compose.yml`: stack production/staging dùng image dựng sẵn; `docker-compose.dev.yml` và `docker-compose.dev-watch.yml`: lớp phủ cho máy dev.
 - `.env.example`: mẫu duy nhất của file `.env` (mọi môi trường).
-- `.github/workflows/`: (sẽ có ở v1.0.6, quy trình CI/CD GitHub Actions; xem `docs/01_Infrastructure/06_Production_Deploy.md` mục 17).
+- `.github/workflows/`: **chưa có**; CI/CD GitHub Actions là kế hoạch v1.0.7 (xem `docs/01_Infrastructure/06_Production_Deploy.md` mục 17).
 - `stnd-crm-unified/`: prototype giao diện, giữ nguyên (xem mục 6).
 - `RealEstateApp/`: ứng dụng di động, **không thuộc luồng build/deploy này**.
 
@@ -49,8 +49,8 @@ Nguyên tắc: **build một lần, chạy mọi nơi**. Máy chủ không build
 - Cập nhật stack trên máy chủ (do `send` gọi; chạy tay khi cần): `bash deploy.sh` (xem `bash deploy.sh --help`).
 - Sao lưu: `bash backup.sh`; khôi phục: `bash restore.sh` (mặc định chỉ dry-run, xem `bash restore.sh --help`).
 - Quy trình đầy đủ, cảnh báo dữ liệu và cách khôi phục: `docs/01_Infrastructure/06_Production_Deploy.md`.
-- Sơ đồ CI/CD và luồng đi của các thành phần: `docs/01_Infrastructure/08_So_Do_CICD.md`.
-- CI/CD GitHub Actions (kiểm thử khi có PR, deploy staging tự động, production cần người duyệt): đang triển khai, mô tả ở mục 17 của tài liệu 06.
+- Sơ đồ phát hành và luồng đi của các thành phần: `docs/01_Infrastructure/08_So_Do_CICD.md`.
+- CI/CD GitHub Actions (kiểm thử khi có PR, deploy staging tự động, production cần người duyệt, quét bảo mật): **kế hoạch v1.0.7, chưa triển khai**; ở v1.0.6 quy trình là chạy tay `release.sh build` → `release.sh send` → `deploy.sh`. Thiết kế dự kiến ở mục 17 của tài liệu 06.
 
 ## 5. Mục lục tài liệu
 

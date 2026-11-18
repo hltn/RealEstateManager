@@ -2,14 +2,14 @@
 
 > **Phiên bản tài liệu:** v1.0.6 (2026-11-14)
 
-Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Từ v1.0.6 **VPS không build và không dùng git**: image dựng MỘT lần ở máy build (máy dev hoặc runner CI) bằng `release.sh build`, được gửi lên VPS bằng `release.sh send` (gói script + `docker save | ssh | docker load`), rồi `deploy.sh` chạy trên VPS bằng đúng image đã nạp. Tài liệu này mô tả quy trình đó (mục 0), kiến trúc stack, biến môi trường, sao lưu/khôi phục và xử lý sự cố. Các mục đánh dấu **lịch sử** (5, 11.2, 11.4 đến 11.7 và một số ví dụ rải rác) mô tả cách làm trước v1.0.6 (VPS tự `git pull` và build) và chỉ giữ để tham khảo; khi lệch với mục 0, 6, 11 và 11.8 thì theo các mục đó.
+Stack production nằm ở `docker-compose.yml` (thư mục gốc repo). Từ v1.0.6 **VPS không build và không dùng git**: image dựng MỘT lần ở máy build (máy dev; runner CI là kế hoạch v1.0.7, chưa có) bằng `release.sh build`, được gửi lên VPS bằng `release.sh send` (gói script + `docker save | ssh | docker load`), rồi `deploy.sh` chạy trên VPS bằng đúng image đã nạp. Tài liệu này mô tả quy trình đó (mục 0), kiến trúc stack, biến môi trường, sao lưu/khôi phục và xử lý sự cố. Các mục đánh dấu **lịch sử** (5, 11.2, 11.4 đến 11.7 và một số ví dụ rải rác) mô tả cách làm trước v1.0.6 (VPS tự `git pull` và build) và chỉ giữ để tham khảo; khi lệch với mục 0, 6, 11 và 11.8 thì theo các mục đó.
 
 > **Ghi chú đầu tài liệu (v1.0.6, FR-22):**
 > - **Compose gốc (`docker-compose.yml`)**: `backend` và `frontend` dùng image dựng sẵn `realestatemanager-backend:current` và `realestatemanager-frontend:current` (ghi đè bằng `BACKEND_IMAGE`/`FRONTEND_IMAGE` trong `.env` khi muốn ghim một tag khác); **không có `build:`**, backend **không có `env_file`** và không bind-mount `.env` (danh sách khóa env của backend nằm tường minh trong compose). Trạng thái bền của backend nằm ở volume `backend_state` (mount `/app/state`). Mọi biến nằm trong MỘT file `.env` ở gốc repo, lập từ MỘT mẫu duy nhất `.env.example` (cùng danh sách khóa ở dev, staging và production; chỉ khác giá trị; `.env` không commit, quyền 600). Compose tự đọc `.env` ở thư mục gốc nên lệnh chỉ là `docker compose <lệnh>`: **không còn `--env-file .env.docker`**. `ops/verify-env.sh` kiểm `.env` (chỉ in tên khóa, không in giá trị); `deploy.sh` gọi nó trước khi làm bất cứ việc gì.
 > - **Cấu hình frontend lúc chạy**: Admin App đọc cấu hình runtime từ `/env.js` do entrypoint nginx sinh từ biến môi trường của container; không còn build arg `VITE_*` nhúng lúc build, nên đổi cờ (ví dụ `CRM_ENABLED`) chỉ cần tạo lại container `frontend`, không dựng lại image. Template nginx dùng `envsubst` (`BACKEND_UPSTREAM`, `TRUSTED_PROXY_IP`, `CLIENT_MAX_BODY`); có route `/healthz`.
 > - **Dev**: dùng đúng stack production qua `docker-compose.yml` + `docker-compose.dev.yml` (override mỏng, chỉ publish thêm cổng loopback `DEV_MONGO_PORT`, `DEV_REDIS_PORT`, `DEV_MINIO_CONSOLE_PORT`), tùy chọn thêm `docker-compose.dev-watch.yml` (stage `dev` của Dockerfile backend, tag `realestatemanager-backend:dev-watch`, backend tự biên dịch lại khi sửa `src/`). Lệnh mẫu ở `README.md` gốc mục 3. Hạ tầng dev CŨ `RealEstateBackendApp/docker-compose.dev.yml` (project `realestate-dev`) là hệ riêng, không bị ảnh hưởng.
-> - **Staging local (`ops/staging.sh`, `docker-compose.staging.yml`, `.env.staging.example`)**: **không còn dùng được với `deploy.sh` v1.0.6** (wrapper vẫn thêm cờ `--no-pull` mà `deploy.sh` mới từ chối với mã 2, và `deploy.sh` không còn build). Mục 11.3 chỉ còn là ghi chú lịch sử; staging thật chạy trên VPS staging bằng đúng quy trình mục 0 và CD (mục 17). Các file staging local sẽ gỡ ở T-46 sau khi một lượt CD staging chạy đạt.
-> - **CI/CD**: mô tả ở mục 17 (kế hoạch; `.github/workflows/` chưa có tại thời điểm viết, sẽ thêm ở T-42 đến T-45).
+> - **Staging local (`ops/staging.sh`, `docker-compose.staging.yml`, `.env.staging.example`)**: **không còn dùng được với `deploy.sh` v1.0.6** (wrapper vẫn thêm cờ `--no-pull` mà `deploy.sh` mới từ chối với mã 2, và `deploy.sh` không còn build). Mục 11.3 chỉ còn là ghi chú lịch sử; staging thật chạy trên VPS staging bằng đúng quy trình mục 0 (chạy tay `release.sh send`). Các file staging local **tạm giữ nguyên ở v1.0.6**; việc gỡ chúng (T-46) chuyển sang v1.0.7 cùng CI/CD.
+> - **CI/CD (GitHub Actions)**: **không thuộc v1.0.6** (Oniichan quyết 2026-11-16, chuyển sang v1.0.7). Hiện **không có** CI, CD, runner staging hay quét bảo mật tự động nào trong repo (không có `.github/workflows/`); quy trình hiện hành duy nhất là `release.sh build` → `release.sh send` → `deploy.sh` chạy tay (mục 0). Mục 17 chỉ là **kế hoạch v1.0.7, chưa triển khai**.
 
 > Trạng thái kiểm chứng (tích lũy đến v1.0.5; mô tả cách làm cũ, khi lệch với mục 0 thì theo mục 0):
 > - **Đã chạy thật** (máy dev, project tạm, mật khẩu giả): Mongo/Redis/MinIO/minio-init; nâng cấp tại chỗ từ standalone; mongodump/mongorestore; `mc mirror`; ký URL bằng host công khai. QA đã dựng và chạy **backend thật** trên stack này: readiness 200 (database/redis/storage up), đăng nhập, tạo khách hàng có transaction, idempotency, upload ảnh + presigned URL (Host khớp trả 200, Host sai trả 403), dữ liệu còn sau restart và `down`/`up`. Với `NODE_ENV=production` đã chạy thật lại: backend khởi động, readiness 200, đăng nhập admin OK, `Set-Cookie` refresh có `Secure`, thiếu `ADMIN_*` trên DB trống thì backend thoát với lỗi rõ ràng.
@@ -23,7 +23,7 @@ Nguyên tắc **build một lần, chạy mọi nơi**: cùng một cặp image 
 
 | Thành phần | Chạy ở | Việc |
 |---|---|---|
-| `./release.sh build` | máy build (dev hoặc runner CI) | dựng 2 image, ghi `release.env`, đóng gói `release.tgz` |
+| `./release.sh build` | máy build (máy dev; runner CI là kế hoạch v1.0.7) | dựng 2 image, ghi `release.env`, đóng gói `release.tgz` |
 | `./release.sh send --to <ssh-host>` | máy build | gửi gói + image lên VPS rồi gọi `deploy.sh` |
 | `ops/install-release.sh` | VPS (do `send` gọi, lấy từ chính gói) | kiểm sha256 + danh sách gói, hoán đổi các mục whitelist vào thư mục deploy; không bao giờ chạm `.env`, `backups/`, `logs/` |
 | `deploy.sh` | VPS, thư mục deploy | backup, gắn thẻ, promote, migrate, `up`, kiểm sức khỏe, hậu-migrate |
@@ -34,7 +34,7 @@ Nguyên tắc **build một lần, chạy mọi nơi**: cùng một cặp image 
 | Thẻ | Ai đặt | Ý nghĩa |
 |---|---|---|
 | `<version>-<commit 7 ký tự>` (ví dụ `1.0.6-ab12cd3`) | `release.sh build` | bất biến, định danh bản phát hành; `release.env` ghi thẻ và ID |
-| `current` | `deploy.sh` (promote); `restore.sh` (đặt lại về bản cũ); `release.sh build` ở máy dev (trừ `--no-current` và khi chạy trong CI) | thẻ **di động** mà compose đọc mặc định; trỏ tới bản đang (hoặc sắp) chạy |
+| `current` | `deploy.sh` (promote); `restore.sh` (đặt lại về bản cũ); `release.sh build` ở máy dev (trừ `--no-current`; script cũng bỏ qua khi chạy trong CI, chuẩn bị cho v1.0.7, hiện chưa có CI) | thẻ **di động** mà compose đọc mặc định; trỏ tới bản đang (hoặc sắp) chạy |
 | `pre-<TS>` | `deploy.sh`, `backup.sh` | bản **đang chạy ngay trước** lần deploy/backup đó (đường lùi), `<TS>` = `YYYYMMDD-HHMMSS` |
 | `pre-restore-<RTS>` | `restore.sh` | bản đang chạy ngay trước lần restore (để quay lại nếu restore sai) |
 | `dev-watch` | `docker-compose.dev-watch.yml` | chỉ dev, không dính tới `current` |
@@ -47,7 +47,7 @@ Nguyên tắc **build một lần, chạy mọi nơi**: cùng một cặp image 
 ./release.sh build --no-current  # không đặt thẻ current cục bộ
 ```
 
-Làm lần lượt, dừng ở lỗi đầu tiên: (1) đọc version ở `RealEstateBackendApp/package.json` và khẳng định `RealEstateAdminApp/package.json` cùng version; (2) từ chối cây git bẩn (kể cả file chưa theo dõi) và nhánh chưa push (trong CI, `CI=true` hoặc `GITHUB_ACTIONS=true`, bỏ qua kiểm "chưa push" nhưng vẫn từ chối cây bẩn); (3) dựng hai image (`--target production`, `--build-arg GIT_COMMIT`) với thẻ bất biến `<version>-<commit 7 ký tự>`; (4) ghi `release.env` (không bí mật: version, commit, tên/thẻ/ID hai image); (5) sinh `release.tgz` + `release.tgz.sha256` chỉ gồm whitelist `docker-compose.yml deploy.sh backup.sh restore.sh release.env ops/ scripts/` (lấy bằng `git ls-files`: `.env`, `backups/`, `logs/` không bao giờ lọt vào gói; có thêm chốt chặn đường dẫn trông như bí mật/dump); (6) đặt thẻ `current` cục bộ cho cả hai image, trừ khi có `--no-current` hoặc đang chạy trong CI (runner CI dùng chung Docker daemon với stack đang chạy, mà compose đọc `current`; trong CI chỉ `deploy.sh` được promote `current`). Mỗi lần `build` xóa ba file đầu ra của lần trước. Đầu ra (`release.env`, `release.tgz`, `release.tgz.sha256`) nằm ở gốc repo và đều nằm trong `.gitignore`.
+Làm lần lượt, dừng ở lỗi đầu tiên: (1) đọc version ở `RealEstateBackendApp/package.json` và khẳng định `RealEstateAdminApp/package.json` cùng version; (2) từ chối cây git bẩn (kể cả file chưa theo dõi) và nhánh chưa push (khi `CI=true` hoặc `GITHUB_ACTIONS=true`, bỏ qua kiểm "chưa push" nhưng vẫn từ chối cây bẩn; nhánh này chuẩn bị cho CI ở v1.0.7, hiện chưa có pipeline nào đặt các biến đó); (3) dựng hai image (`--target production`, `--build-arg GIT_COMMIT`) với thẻ bất biến `<version>-<commit 7 ký tự>`; (4) ghi `release.env` (không bí mật: version, commit, tên/thẻ/ID hai image); (5) sinh `release.tgz` + `release.tgz.sha256` chỉ gồm whitelist `docker-compose.yml deploy.sh backup.sh restore.sh release.env ops/ scripts/` (lấy bằng `git ls-files`: `.env`, `backups/`, `logs/` không bao giờ lọt vào gói; có thêm chốt chặn đường dẫn trông như bí mật/dump); (6) đặt thẻ `current` cục bộ cho cả hai image, trừ khi có `--no-current` hoặc đang chạy trong CI (dành cho v1.0.7: runner CI dùng chung Docker daemon với stack đang chạy, mà compose đọc `current`, nên trong CI chỉ `deploy.sh` được promote `current`; ở v1.0.6 chưa có CI nên nhánh này chưa dùng tới). Mỗi lần `build` xóa ba file đầu ra của lần trước. Đầu ra (`release.env`, `release.tgz`, `release.tgz.sha256`) nằm ở gốc repo và đều nằm trong `.gitignore`.
 
 ### 0.2. Gửi: `release.sh send` (và chuyển image bằng `docker save | ssh | docker load`)
 
@@ -100,7 +100,7 @@ Khôi phục = nạp lại DB từ `deploy-pre-<TS>.archive.gz` **và** gắn l�
 |---|---|
 | `bash deploy.sh` tự `git pull --ff-only` rồi build trên VPS | `./release.sh send --to <host>` (build ở máy build, VPS chỉ nạp image); `deploy.sh` không build, không dùng git |
 | `deploy.sh --no-pull` | **bỏ** (không còn pull); thoát mã 2 |
-| `ops/staging.sh deploy --pull` | bỏ cùng staging local (T-46) |
+| `ops/staging.sh deploy --pull` | bỏ cùng staging local (gỡ ở v1.0.7, T-46; tạm giữ ở v1.0.6 nhưng không còn dùng được) |
 | `restore.sh --code-only` | **bỏ** (không còn khôi phục code bằng git; code = image) |
 | `restore.sh --use-image-tag` | **thành mặc định** (gắn `pre-<TS>` thành `current`); cờ bị từ chối |
 | `restore.sh --allow-infra-change` | **bỏ** (không còn `git reset` đổi file hạ tầng) |
@@ -111,7 +111,7 @@ Khôi phục = nạp lại DB từ `deploy-pre-<TS>.archive.gz` **và** gắn l�
 | `.env.docker`, `.env.docker.example` | **`.env`, `.env.example`** (một file, một mẫu) |
 | `docker compose --env-file .env.docker <lệnh>` | `docker compose <lệnh>` |
 | `.env.staging.example`, `.staging/env` (staging local) | `.env` trên VPS staging (cùng mẫu `.env.example`) |
-| `docker-compose.staging.yml`, `ops/staging.sh` | bỏ ở T-46 (staging chạy trên VPS bằng quy trình mục 0) |
+| `docker-compose.staging.yml`, `ops/staging.sh` | gỡ ở v1.0.7 (T-46); tạm giữ ở v1.0.6 nhưng không còn dùng được (staging chạy trên VPS bằng quy trình mục 0) |
 | backend bind-mount `./.env`, `touch .env` | bỏ; compose liệt kê khóa tường minh, trạng thái bền ở volume `backend_state` |
 | `docker compose up -d --build` | `docker compose up -d` (không build; build = `release.sh build`) |
 | thẻ git `pre-deploy-<TS>`, `deploy-code-pre-<TS>.bundle` | **bỏ**; thẻ image `pre-<TS>` |
@@ -1031,7 +1031,7 @@ Thứ tự các bước của script (nhãn `5`, `6b`, `8a`, `8b`, `8c` giữ ng
 
 > **Đổi tên bước 8c (v1.0.5).** Từ v1.0.5 bước "8c bù mã danh mục" là tệp `scripts/post-migrate/10-catalog-codes.sh` (hành vi giữ nguyên, log `deploy-catalog-codes-<thời-gian>.log`). Các chỗ khác của tài liệu này (11.2, 11.4, 15.7 và đoạn L1/L2 ở dưới) vẫn nói "bước 8c" cho phần này: đọc là "bước 10 của điểm gọi hậu-migrate". Toàn bộ phần mới của v1.0.5 (khách có mã, SĐT tùy chọn, bước 20 và 90) nằm ở mục 11.6; việc báo người dùng sau deploy ở mục 11.7.
 
-Biến tùy chọn (không bí mật): `MONGO_TIMEOUT`, `HEALTH_TIMEOUT` (giây), `HEALTH_URL`, `DEPLOY_MIN_FREE_GB`, `DUMP_TIMEOUT`, `OPS_EXEC_TIMEOUT`, `DEPLOY_AUTO_MIGRATE` (`1` mặc định = tự baseline + migrate; `0` = như `--no-migrate`; cờ dòng lệnh thắng biến), `DEPLOY_ALLOW_DOWNGRADE` (`1` = cho phép cố ý deploy bản có version thấp hơn DB; mặc định `0`), `DEPLOY_ENFORCE_IMAGE_ID` (`1` = lệch image ID là lỗi; mặc định `0` chỉ cảnh báo), `DEPLOY_ALLOW_NEW_MONGO_VOLUME` (`1` = cho phép tạo volume Mongo mới khi chưa có container, bước 3a), `DEPLOY_CD_RUN_ID` (mã lần chạy CD, ghi vào manifest `CD_RUN_ID`; mặc định lấy `GITHUB_RUN_ID` nếu có). `--migrate` và `--no-migrate` loại trừ nhau (mã thoát 2). Chưa có container `realestate_mongo` (triển khai mới): script bỏ qua backup (không có dữ liệu) và nói rõ. Container Mongo đã chạy nhưng DB `realestate` chưa có dữ liệu (không `users`, không document nào): cũng bỏ qua backup và nói rõ (xem bước 5). DB đã có `users` thì backup luôn bắt buộc.
+Biến tùy chọn (không bí mật): `MONGO_TIMEOUT`, `HEALTH_TIMEOUT` (giây), `HEALTH_URL`, `DEPLOY_MIN_FREE_GB`, `DUMP_TIMEOUT`, `OPS_EXEC_TIMEOUT`, `DEPLOY_AUTO_MIGRATE` (`1` mặc định = tự baseline + migrate; `0` = như `--no-migrate`; cờ dòng lệnh thắng biến), `DEPLOY_ALLOW_DOWNGRADE` (`1` = cho phép cố ý deploy bản có version thấp hơn DB; mặc định `0`), `DEPLOY_ENFORCE_IMAGE_ID` (`1` = lệch image ID là lỗi; mặc định `0` chỉ cảnh báo), `DEPLOY_ALLOW_NEW_MONGO_VOLUME` (`1` = cho phép tạo volume Mongo mới khi chưa có container, bước 3a), `DEPLOY_CD_RUN_ID` (mã lần chạy CD, ghi vào manifest `CD_RUN_ID`; mặc định lấy `GITHUB_RUN_ID` nếu có; chuẩn bị cho CD v1.0.7, ở v1.0.6 chạy tay nên thường để trống). `--migrate` và `--no-migrate` loại trừ nhau (mã thoát 2). Chưa có container `realestate_mongo` (triển khai mới): script bỏ qua backup (không có dữ liệu) và nói rõ. Container Mongo đã chạy nhưng DB `realestate` chưa có dữ liệu (không `users`, không document nào): cũng bỏ qua backup và nói rõ (xem bước 5). DB đã có `users` thì backup luôn bắt buộc.
 
 **Vì sao KHÔNG tự rollback sau `up`:** khi dữ liệu Mongo đã được nâng cấp (replica set + xác thực, migration 005/006...), image và compose cũ **không đọc được dữ liệu mới**; tự quay image có thể làm hỏng thêm đúng lúc cần ổn định nhất. Vì vậy khi lỗi sau `up` script chỉ **in hướng dẫn** (log, lệnh `bash restore.sh --manifest backups/deploy-pre-<TS>.manifest`) rồi thoát mã khác 0. Đường lùi:
 
@@ -1224,23 +1224,23 @@ Từ v1.0.3 hệ thống lưu **phiên bản** và **sổ migration đã chạy*
 
 ### 11.3. Staging: VPS staging (hiện hành) và staging local (đã lỗi thời)
 
-> **Cập nhật v1.0.6 (FR-22).** Staging local (`ops/staging.sh` + `docker-compose.staging.yml` + `.env.staging.example`, dựng stack giả ngay trên máy dev, diễn tập `deploy.sh` bản cũ) **không còn dùng được**: wrapper vẫn thêm cờ `--no-pull` vào `deploy.sh`, mà `deploy.sh` v1.0.6 từ chối cờ này (mã 2) và cũng không còn build. Các file đó còn trong repo chỉ chờ gỡ ở T-46, **sau khi** một lượt CD staging thật chạy đạt. Đừng dùng chúng để diễn tập bản v1.0.6.
+> **Cập nhật v1.0.6 (FR-22).** Staging local (`ops/staging.sh` + `docker-compose.staging.yml` + `.env.staging.example`, dựng stack giả ngay trên máy dev, diễn tập `deploy.sh` bản cũ) **không còn dùng được**: wrapper vẫn thêm cờ `--no-pull` vào `deploy.sh`, mà `deploy.sh` v1.0.6 từ chối cờ này (mã 2) và cũng không còn build. Các file đó **tạm giữ trong repo ở v1.0.6**; việc gỡ (T-46) chuyển sang v1.0.7 cùng CI/CD (mục 17). Đừng dùng chúng để diễn tập bản v1.0.6.
 
 **Staging hiện hành là một VPS thật** chạy **đúng quy trình production** (mục 0), để kiểm bản phát hành trước khi lên production:
 
 | Hạng mục | Staging (VPS) | Production |
 |---|---|---|
-| Đường đưa bản lên | `release.sh send --to <ssh-host-staging>` (hoặc CD tự động, mục 17) | `release.sh send --to <ssh-host-production>` (hoặc job production của CD, cần duyệt) |
+| Đường đưa bản lên | `release.sh send --to <ssh-host-staging>` (chạy tay; CD tự động là kế hoạch v1.0.7, mục 17) | `release.sh send --to <ssh-host-production>` (chạy tay; job production của CD cần duyệt là kế hoạch v1.0.7) |
 | Image | **cùng** cặp image `<version>-<commit>` đã dựng một lần | **cùng** cặp image đó (build một lần, chạy mọi nơi) |
 | `.env` | một file `.env` riêng trên VPS staging (**bí mật giả/riêng**, không dùng chung với production), lập từ **cùng** mẫu `.env.example` | một file `.env` riêng trên VPS production |
 | Dữ liệu | dữ liệu thử; có thể nạp bản sao đã ẩn danh khi cần diễn tập migration (xem 11.4 để hiểu cách làm; dump production chỉ để ở máy dev của người có quyền, **không** để lên VPS staging) | thật |
 | Kiểm | `deploy.sh --plan-only`, rồi deploy thật; xem mục 7 (health), 11.1 (`status`), 11.6 (hậu-migrate) | như staging, sau khi staging đạt |
 
-Địa chỉ, IP và tên tài khoản ssh của VPS staging **không ghi trong repo** (repo công khai): đặt trong `~/.ssh/config` của máy build (một `Host` bí danh dùng cho `--to`) và trong secret của CI/CD; xem mục 17. Lần ssh đầu tới VPS cần `ssh-keyscan -H <host> >> ~/.ssh/known_hosts` rồi đối chiếu fingerprint (mục 0.2).
+Địa chỉ, IP và tên tài khoản ssh của VPS staging **không ghi trong repo** (repo công khai): đặt trong `~/.ssh/config` của máy build (một `Host` bí danh dùng cho `--to`) (khi có CI/CD ở v1.0.7 thì thêm vào secret của CI/CD; xem mục 17). Lần ssh đầu tới VPS cần `ssh-keyscan -H <host> >> ~/.ssh/known_hosts` rồi đối chiếu fingerprint (mục 0.2).
 
 Diễn tập tại chỗ trước khi lên production, theo thứ tự: `./release.sh send --to <staging> --dry-run`, `./release.sh send --to <staging>`, kiểm `docker compose ps`, `curl` readiness (mục 7), thử một thao tác thật, rồi `bash restore.sh --latest` (**dry-run**) để chắc đường lùi đọc được manifest. Chỉ sau khi staging đạt mới gửi cùng gói lên production.
 
-**Gốc lịch sử của mục này.** Bản trước v1.0.6 mô tả `ops/staging.sh` (các lệnh `init`, `seed-prod102`, `deploy`, `status`, `down`, `reset`), project `realestate-staging`, container `rhstg_*`, cổng `127.0.0.1:13100/18080` và bí mật giả sinh vào `.staging/env`. Các kết quả diễn tập ở 11.2 và 11.4 (kịch bản migration 1..12, dump 007/008/009) vẫn là hồ sơ hợp lệ về **hành vi của runner migration**, nhưng các lệnh `bash deploy.sh --no-pull` trong đó nay đọc là `bash deploy.sh` (không còn cờ `--no-pull`). Test của rào chắn staging local (`bash ops/tests/staging.test.sh`) vẫn còn trong `ops/tests/` cho tới khi gỡ ở T-46.
+**Gốc lịch sử của mục này.** Bản trước v1.0.6 mô tả `ops/staging.sh` (các lệnh `init`, `seed-prod102`, `deploy`, `status`, `down`, `reset`), project `realestate-staging`, container `rhstg_*`, cổng `127.0.0.1:13100/18080` và bí mật giả sinh vào `.staging/env`. Các kết quả diễn tập ở 11.2 và 11.4 (kịch bản migration 1..12, dump 007/008/009) vẫn là hồ sơ hợp lệ về **hành vi của runner migration**, nhưng các lệnh `bash deploy.sh --no-pull` trong đó nay đọc là `bash deploy.sh` (không còn cờ `--no-pull`). Test của rào chắn staging local (`bash ops/tests/staging.test.sh`) vẫn còn trong `ops/tests/` cho tới khi gỡ ở v1.0.7 (T-46).
 
 
 ### 11.4. A0 (v1.0.4): diễn tập migration 007/008/009 trên bản sao dữ liệu thật (T-18)
@@ -1432,7 +1432,7 @@ Không còn `deploy-code-pre-<TS>.bundle` và thẻ git `pre-deploy-<TS>` (VPS k
 |---|---|
 | `MANIFEST_VERSION`, `BACKUP_KIND`, `TS`, `CREATED_AT`, `HOST` | phiên bản định dạng (**2**); `BACKUP_KIND=manual` do `backup.sh` ghi (mục 6.2), `BACKUP_KIND=deploy` do `deploy.sh` ghi (`manifest_init`); mã thời gian; giờ UTC; tên máy |
 | `COMPOSE_PROJECT`, `MONGO_CONTAINER`, `BACKEND_CONTAINER`, `FRONTEND_CONTAINER` | định danh stack |
-| `RELEASE_VERSION`, `RELEASE_COMMIT`, `CD_RUN_ID` | bản **mới** đang được deploy (từ `release.env`); mã lần chạy CD nếu có |
+| `RELEASE_VERSION`, `RELEASE_COMMIT`, `CD_RUN_ID` | bản **mới** đang được deploy (từ `release.env`); mã lần chạy CD nếu có (v1.0.6 chưa có CD nên thường trống) |
 | `BACKEND_IMAGE_NAME`, `BACKEND_IMAGE_TAG`, `FRONTEND_IMAGE_NAME`, `FRONTEND_IMAGE_TAG` | tên và thẻ `<version>-<commit>` của image mới |
 | `PRE_TAG`, `BACKEND_PRE_IMAGE`, `FRONTEND_PRE_IMAGE` | thẻ `pre-<TS>` và hai image **cũ** để lùi (`restore.sh` gắn lại thành `current`) |
 | `DB_VERSION_BEFORE`, `DB_VERSION_READ` | version trong collection `system` trước deploy; `DB_VERSION_READ=0` nghĩa là không đọc được (restore không tự kiểm version) |
@@ -2112,11 +2112,11 @@ Ngày 2026-11-07, `devops-agent`, máy dev, container Mongo tạm (đã xóa), d
 - 16.2 trên dữ liệu production thật: số lượng và hình dạng cặp trùng thực tế, thao tác "Xoá dự án"/"Ngừng hoạt động"/"Khôi phục" trên giao diện thật (chỉ đọc mã giao diện).
 - Chưa có số liệu nào về việc production có thực sự đang có dự án trùng hay không.
 
-## 17. CI/CD (kế hoạch, T-42 đến T-45)
+## 17. CI/CD (KẾ HOẠCH v1.0.7, CHƯA TRIỂN KHAI)
 
-> **Trạng thái:** thư mục `.github/workflows/` **chưa có** tại thời điểm viết tài liệu này (v1.0.6); các workflow dưới đây được thêm lần lượt ở T-42 đến T-45 và mục này mô tả **thiết kế đã duyệt**, không phải việc đã chạy. Khi các workflow có thật, đối chiếu lại bảng job với file `.github/workflows/*.yml` (file thắng khi lệch) và cập nhật mục này. Runbook vận hành runner (xem trạng thái, log, khởi động lại, gỡ/đăng ký lại, chính sách PR từ fork) là việc của T-49, sẽ ghi thêm vào tài liệu này.
+> **Trạng thái (cập nhật 2026-11-16):** Oniichan quyết **gỡ toàn bộ CI/CD khỏi phạm vi v1.0.6 và chuyển sang v1.0.7** (mảng D: FR-24 CI, FR-25 CD, FR-26 gỡ staging local, FR-29 quét bảo mật Trivy/npm audit/Gitleaks/Dependabot; tasks T-42 đến T-53). **Toàn bộ mục này là kế hoạch, KHÔNG phải quy trình hiện hành**: repo **không có** `.github/workflows/`, không có CI, CD, quét bảo mật tự động hay runner nào đang vận hành trong repo. Quy trình thật ở v1.0.6 là chạy tay: `release.sh build` → `release.sh send` (`docker save | ssh | docker load`) → `deploy.sh` (mục 0); đã chạy trên VPS staging ở T-34 đến T-41. Phần dưới giữ lại làm đầu vào cho v1.0.7; thiết kế có thể được duyệt lại khi bắt đầu v1.0.7. Khi các workflow có thật (v1.0.7), đối chiếu lại bảng job với file `.github/workflows/*.yml` (file thắng khi lệch). Runbook vận hành runner (trạng thái, log, khởi động lại, gỡ/đăng ký lại, chính sách PR từ fork) là việc của T-49 (v1.0.7). Ghi chú về runner `staging-runner`: bước cài runner (T-47) đã làm **ngoài repo** trên máy staging, nhưng chưa có workflow nào dùng nó.
 
-Quy trình: **build → lint → test → audit → deploy**. Ba file workflow, đúng vai:
+Quy trình dự kiến (v1.0.7): **build → lint → test → audit → deploy**. Ba file workflow dự kiến, đúng vai (đều **chưa tồn tại**):
 
 | File | Trigger | Runner | Nội dung |
 |---|---|---|---|
@@ -2124,13 +2124,13 @@ Quy trình: **build → lint → test → audit → deploy**. Ba file workflow, 
 | `ci.yml` | **chỉ** `pull_request` | chỉ `ubuntu-latest`; `permissions: contents: read`; **không secret** | job `tests` (gọi `_tests.yml`), `docker-build-smoke` (build BE + FE, không push), `npm-audit` (`npm audit --omit=dev` cho BE và Admin App, chỉ báo cáo), `gitleaks` (quét diff của PR, **chặn** khi lộ khóa) |
 | `cd.yml` | `push` vào `main` + `workflow_dispatch` | `ubuntu-latest` cho test/e2e; `[self-hosted, staging]` cho build và deploy | một **lượt** gồm `tests`, `e2e-fe` (song song, không chặn deploy), `build`, `deploy-staging`, `deploy-production` |
 
-Chuỗi trong `cd.yml` (cùng một lượt, chung artifact bằng `upload-artifact`/`download-artifact`; không dùng `workflow_run`):
+Chuỗi dự kiến trong `cd.yml` (v1.0.7; cùng một lượt, chung artifact bằng `upload-artifact`/`download-artifact`; không dùng `workflow_run`):
 
 1. `build` (self-hosted `staging-runner`, `needs: tests`): `ops/check-disk.sh`, `./release.sh build` (**build một lần**; trong CI **không đặt thẻ `current`**, chỉ thẻ bất biến `<version>-<commit>`, vì runner dùng chung Docker daemon với stack staging mà compose đọc `current`), quét Trivy hai image (chỉ báo cáo), rồi `upload-artifact` (hai image + `release.env` + gói release, giữ khoảng 7 ngày).
 2. `deploy-staging` (environment `staging`, `needs: build`): `download-artifact`, `docker load`, `ops/install-release.sh`, rồi `deploy.sh` **trực tiếp trên máy runner** (không ssh vòng); chỉ `deploy.sh` promote `<version>-<commit>` thành `current` (sau khi kiểm image ID/`.env` và backup); smoke test (liveness, readiness, `/env.js`, frontend 200).
 3. `deploy-production` (environment `production`, `needs: deploy-staging`): dùng **cùng artifact** đã qua staging, gửi gói + image tới VPS production bằng ssh (`release.sh send`), host key được ghim (`StrictHostKeyChecking=yes`), khóa ssh là secret của Environment `production`. **Job này cần người duyệt (Oniichan là reviewer bắt buộc của Environment `production`, chỉ nhánh `main`)** trước khi chạy; không có chạy tự động lên production.
 
-Quy tắc an toàn (kiểm bằng test tĩnh quét `.github/workflows/`, các assertion S1 đến S8):
+Quy tắc an toàn dự kiến (v1.0.7; sẽ kiểm bằng test tĩnh quét `.github/workflows/`, các assertion S1 đến S8):
 
 - Workflow kích hoạt bởi `pull_request` chỉ dùng `ubuntu-latest`, `permissions: contents: read`, **không secret**, không bao giờ `self-hosted`, không `pull_request_target` (repo công khai: PR từ bên ngoài không được chạm runner staging hay secret).
 - `[self-hosted, staging]` chỉ có trong `cd.yml` và mọi job đó có guard nhánh `main`.
@@ -2139,6 +2139,6 @@ Quy tắc an toàn (kiểm bằng test tĩnh quét `.github/workflows/`, các as
 - Không `--fix` trong lệnh lint của CI; không in secret ra log; token đăng ký runner và PAT không đưa vào repo.
 - Staging không cần khóa ssh (deploy cục bộ trên runner); production cần khóa ssh riêng quyền tối thiểu.
 
-Chạy tay thay CD (đường dự phòng khi runner hỏng): `./release.sh build` rồi `./release.sh send --to <ssh-host>` từ máy của người có quyền (mục 0). Địa chỉ, IP và tên tài khoản của VPS staging/production không ghi trong repo (công khai); đặt chúng trong `~/.ssh/config` của máy build và trong secret của CI/CD.
+**Chạy tay (đường hiện hành ở v1.0.6, và sẽ là đường dự phòng khi runner hỏng ở v1.0.7):** `./release.sh build` rồi `./release.sh send --to <ssh-host>` từ máy của người có quyền (mục 0). Địa chỉ, IP và tên tài khoản của VPS staging/production không ghi trong repo (công khai); đặt chúng trong `~/.ssh/config` của máy build (và trong secret của CI/CD khi v1.0.7 có CI/CD).
 
 [← Về chỉ mục Hạ tầng](README.md)
