@@ -28,10 +28,12 @@ interface CardHeadingProps {
   description?: string;
   trailing?: ReactNode;
   as?: 'h2' | 'h3';
+  /** Cột hẹp + khối `trailing` rộng: cho khối này xuống dòng dưới tiêu đề thay vì ép tiêu đề bẻ nhiều dòng. Mặc định giữ một hàng. */
+  shouldWrapTrailing?: boolean;
 }
 
-export const CardHeading = ({ icon: Icon, title, description, trailing, as: Heading = 'h2' }: CardHeadingProps) => (
-  <div className={`flex items-center justify-between gap-3 border-b pb-4 ${DIVIDER_CLASS}`}>
+export const CardHeading = ({ icon: Icon, title, description, trailing, as: Heading = 'h2', shouldWrapTrailing = false }: CardHeadingProps) => (
+  <div className={`flex items-center justify-between border-b pb-4 ${DIVIDER_CLASS} ${shouldWrapTrailing ? 'flex-wrap gap-x-3 gap-y-2' : 'gap-3'}`}>
     <div className="flex min-w-0 items-center gap-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-400">
         <Icon size={18} aria-hidden="true" />

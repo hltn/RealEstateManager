@@ -73,3 +73,51 @@ describe.each([
     expect(screen.getByRole('button', { name })).toBeInTheDocument();
   });
 });
+
+/** Dựng thẻ từ MỘT lịch hẹn mẫu, đổi loại/địa điểm/ghi chú/người thực hiện để kiểm dòng "Phụ trách" (FR-30). */
+const AssigneeCard = ({
+  variant,
+  type,
+  assignees,
+  note = 'Khách hẹn gọi sau 5 giờ chiều',
+}: {
+  variant: 'desktop' | 'mobile';
+  type: 'SITE_VISIT' | 'DEPOSIT_CONTRACT' | 'CALLBACK';
+  assignees: { id: string; displayName: string }[];
+  note?: string;
+}) => {
+  const { data } = useAppointments();
+  const base = data[0];
+  if (!base) return null;
+  const appointment = { ...base, type, location: 'Sảnh tòa A', note, assignees, status: 'SCHEDULED' as const };
+  return variant === 'desktop' ? <AppointmentCardDesktop appointment={appointment} /> : <AppointmentCardMobile appointment={appointment} />;
+};
+
+describe.each([['desktop'], ['mobile']] as const)('Thẻ lịch hẹn hiện dòng "Phụ trách" cho mọi loại lịch (FR-30): %s', (variant) => {
+  const HANH = { id: 'u1', displayName: 'Hạnh' };
+  const MINH = { id: 'u2', displayName: 'Minh' };
+
+  it('"Nhắc gọi lại": hiện "Phụ trách" với 1 người, giữ ghi chú, KHÔNG hiện địa điểm', () => {
+    renderCrm(<AssigneeCard variant={variant} type="CALLBACK" assignees={[HANH]} />, { actAs: 'hanh' });
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: Hạnh');
+    expect(screen.getByText(/Khách hẹn gọi sau 5 giờ chiều/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sảnh tòa A/)).not.toBeInTheDocument();
+  });
+
+  it('"Nhắc gọi lại": nhiều người thì liệt kê đủ; danh sách rỗng giữ "—"; không ghi chú vẫn hiện "Phụ trách"', () => {
+    const many = renderCrm(<AssigneeCard variant={variant} type="CALLBACK" assignees={[HANH, MINH]} />, { actAs: 'hanh' });
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: Hạnh, Minh');
+    many.unmount();
+
+    renderCrm(<AssigneeCard variant={variant} type="CALLBACK" assignees={[]} note="" />, { actAs: 'hanh' });
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: —');
+    expect(screen.queryByText(/Ghi chú/)).not.toBeInTheDocument();
+  });
+
+  it.each(['SITE_VISIT', 'DEPOSIT_CONTRACT'] as const)('loại %s: vẫn hiện địa điểm và đúng MỘT dòng "Phụ trách"', (type) => {
+    renderCrm(<AssigneeCard variant={variant} type={type} assignees={[HANH, MINH]} />, { actAs: 'hanh' });
+    expect(screen.getAllByText(/Phụ trách:/)).toHaveLength(1);
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: Hạnh, Minh');
+    expect(screen.getByText(/Sảnh tòa A/)).toBeInTheDocument();
+  });
+});

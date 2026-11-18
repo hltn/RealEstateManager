@@ -225,6 +225,7 @@ export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, has
         icon={Activity}
         title="Nhật ký chăm sóc"
         as="h3"
+        shouldWrapTrailing
         trailing={
           <div className="flex shrink-0 items-center gap-3">
             <span className={`whitespace-nowrap ${MUTED_TEXT_CLASS}`}>{careLogs.length}{hasMore ? '+' : ''} mục</span>

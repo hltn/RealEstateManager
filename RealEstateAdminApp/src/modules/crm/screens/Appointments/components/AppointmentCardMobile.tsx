@@ -97,15 +97,13 @@ export const AppointmentCardMobile = ({ appointment }: AppointmentCardMobileProp
           </div>
         )}
 
-        {actionVariant === 'visit' && (
-          <div className="flex min-w-0 items-center gap-2">
-            <IdCard size={16} aria-hidden="true" className="shrink-0 text-gray-400 dark:text-gray-500" />
-            <span className="truncate">
-              Phụ trách: <strong className="font-medium text-gray-800 dark:text-white/90">{formatAssigneeNames(appointment.assignees)}</strong>
-            </span>
-          </div>
-        )}
-
+        {/* FR-30: mọi loại lịch (visit, deposit, reminder) đều hiện người thực hiện, khớp thẻ desktop. */}
+        <div className="flex min-w-0 items-center gap-2">
+          <IdCard size={16} aria-hidden="true" className="shrink-0 text-gray-400 dark:text-gray-500" />
+          <span className="truncate">
+            Phụ trách: <strong className="font-medium text-gray-800 dark:text-white/90">{formatAssigneeNames(appointment.assignees)}</strong>
+          </span>
+        </div>
 
         {actionVariant === 'reminder' && appointment.note && (
           <div className="flex items-start gap-2 rounded-lg bg-gray-50 p-2 dark:bg-white/[0.03]">

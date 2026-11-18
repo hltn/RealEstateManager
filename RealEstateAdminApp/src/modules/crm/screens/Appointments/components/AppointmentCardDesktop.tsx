@@ -114,28 +114,26 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
               </InfoRow>
             )}
 
-            {actionVariant === 'reminder' ? (
-              appointment.note && (
-                <div className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 sm:col-span-2 dark:border-white/[0.05] dark:bg-white/[0.02]">
-                  <StickyNote size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
-                  <span className="text-theme-xs leading-relaxed text-gray-700 dark:text-gray-300">
-                    <strong className="font-semibold">Ghi chú:</strong> {appointment.note}
-                  </span>
-                </div>
-              )
-            ) : (
-              <>
-                <InfoRow icon={actionVariant === 'deposit' ? <Building size={16} /> : <MapPin size={16} />}>
-                  <span className="truncate" title={appointment.location}>
-                    {actionVariant === 'deposit' ? `Địa điểm: ${appointment.location}` : appointment.location}
-                  </span>
-                </InfoRow>
-                <InfoRow icon={<IdCard size={16} />}>
-                  <span className="truncate">
-                    Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{formatAssigneeNames(appointment.assignees)}</strong>
-                  </span>
-                </InfoRow>
-              </>
+            {actionVariant !== 'reminder' && (
+              <InfoRow icon={actionVariant === 'deposit' ? <Building size={16} /> : <MapPin size={16} />}>
+                <span className="truncate" title={appointment.location}>
+                  {actionVariant === 'deposit' ? `Địa điểm: ${appointment.location}` : appointment.location}
+                </span>
+              </InfoRow>
+            )}
+            {/* FR-30: mọi loại lịch (kể cả "Nhắc gọi lại") đều hiện người thực hiện. */}
+            <InfoRow icon={<IdCard size={16} />}>
+              <span className="truncate">
+                Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{formatAssigneeNames(appointment.assignees)}</strong>
+              </span>
+            </InfoRow>
+            {actionVariant === 'reminder' && appointment.note && (
+              <div className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 sm:col-span-2 dark:border-white/[0.05] dark:bg-white/[0.02]">
+                <StickyNote size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
+                <span className="text-theme-xs leading-relaxed text-gray-700 dark:text-gray-300">
+                  <strong className="font-semibold">Ghi chú:</strong> {appointment.note}
+                </span>
+              </div>
             )}
           </div>
         </div>

@@ -141,3 +141,62 @@ describe('thẻ "Lịch sắp tới" (G7)', () => {
     expect(screen.getByText('Trần Thị Bình')).toBeInTheDocument();
   });
 });
+
+describe('thẻ lịch hẹn hiện dòng "Phụ trách" cho MỌI loại lịch (FR-30)', () => {
+  const MINH = { id: 'u2', displayName: 'Minh' };
+  const withType = (type: AppointmentView['type'], overrides: Partial<AppointmentView> = {}): AppointmentView => ({
+    ...makeAppointment(null),
+    type,
+    location: 'Sảnh tòa A',
+    note: 'Khách hẹn gọi sau 5 giờ chiều',
+    ...overrides,
+  });
+
+  it.each([
+    ['desktop', AppointmentCardDesktop],
+    ['mobile', AppointmentCardMobile],
+  ])('%s, "Nhắc gọi lại": hiện "Phụ trách" với 1 người, giữ ghi chú, KHÔNG hiện địa điểm', (_name, Card) => {
+    renderCard(<Card appointment={withType('CALLBACK')} />);
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: Hạnh');
+    expect(screen.getByText(/Khách hẹn gọi sau 5 giờ chiều/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sảnh tòa A/)).toBeNull();
+  });
+
+  it.each([
+    ['desktop', AppointmentCardDesktop],
+    ['mobile', AppointmentCardMobile],
+  ])('%s, "Nhắc gọi lại": nhiều người thực hiện thì liệt kê đủ, cách nhau dấu phẩy', (_name, Card) => {
+    renderCard(<Card appointment={withType('CALLBACK', { assignees: [{ id: 'u1', displayName: 'Hạnh' }, MINH] })} />);
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: Hạnh, Minh');
+  });
+
+  it.each([
+    ['desktop', AppointmentCardDesktop],
+    ['mobile', AppointmentCardMobile],
+  ])('%s, "Nhắc gọi lại": không có ghi chú vẫn hiện "Phụ trách"; danh sách rỗng giữ nguyên cách hiện "—"', (_name, Card) => {
+    renderCard(<Card appointment={withType('CALLBACK', { note: '', assignees: [] })} />);
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: —');
+    expect(screen.queryByText(/Ghi chú/)).toBeNull();
+  });
+
+  it.each([
+    ['desktop', 'SITE_VISIT', AppointmentCardDesktop],
+    ['desktop', 'DEPOSIT_CONTRACT', AppointmentCardDesktop],
+    ['mobile', 'SITE_VISIT', AppointmentCardMobile],
+    ['mobile', 'DEPOSIT_CONTRACT', AppointmentCardMobile],
+  ] as const)('%s, loại %s: vẫn hiện địa điểm và đúng MỘT dòng "Phụ trách" (nhiều người)', (_name, type, Card) => {
+    renderCard(<Card appointment={withType(type, { assignees: [{ id: 'u1', displayName: 'Hạnh' }, MINH] })} />);
+    expect(screen.getAllByText(/Phụ trách:/)).toHaveLength(1);
+    expect(screen.getByText(/Phụ trách:/)).toHaveTextContent('Phụ trách: Hạnh, Minh');
+    expect(screen.getByText(/Sảnh tòa A/)).toBeInTheDocument();
+  });
+
+  it('desktop, loại đặt cọc: địa điểm có nhãn "Địa điểm:"; loại xem nhà: chỉ tên địa điểm', () => {
+    const deposit = renderCard(<AppointmentCardDesktop appointment={withType('DEPOSIT_CONTRACT')} />);
+    expect(screen.getByText(/Sảnh tòa A/)).toHaveTextContent('Địa điểm: Sảnh tòa A');
+    deposit.unmount();
+
+    renderCard(<AppointmentCardDesktop appointment={withType('SITE_VISIT')} />);
+    expect(screen.getByText(/Sảnh tòa A/)).not.toHaveTextContent('Địa điểm:');
+  });
+});
