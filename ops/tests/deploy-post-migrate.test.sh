@@ -144,8 +144,8 @@ expect_contains "90, 010 chưa áp dụng: có mã màu đỏ" $'\033[1;31m' "$o
 expect_eq "90, 010 chưa áp dụng: KHÔNG gọi reconcile" "0" "$(calls 'migrations/cli.js reconcile')"
 expect_eq "90, 010 chưa áp dụng: chỉ gọi status" "1" "$(wc -l < "$ORDER_FILE" | tr -d ' ')"
 expect_contains "90, từ chối: vẫn ghi log" "010_crm_customer_code_index" "$(cat "$logfile" 2>/dev/null)"
-# Một migration pre-up chờ bất kỳ (vd 012 của bản sau) cũng chặn.
-rc="$(FAKE_STATUS_OUT='{"pending":[{"id":"012_next","description":"d","phase":"pre-up"}],"locked":null}' run_step 90-post-up-migrations.sh)"
+# Một migration pre-up chờ bất kỳ (vd 013 của bản sau) cũng chặn.
+rc="$(FAKE_STATUS_OUT='{"pending":[{"id":"013_next","description":"d","phase":"pre-up"}],"locked":null}' run_step 90-post-up-migrations.sh)"
 expect_eq "90, còn pre-up chờ bất kỳ: exit 1" "1" "$rc"
 expect_eq "90, còn pre-up chờ bất kỳ: không gọi reconcile" "0" "$(calls 'migrations/cli.js reconcile')"
 
