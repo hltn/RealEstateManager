@@ -124,7 +124,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
             )}
             {/* FR-30: mọi loại lịch (kể cả "Nhắc gọi lại") đều hiện người thực hiện. */}
             <InfoRow icon={<IdCard size={16} />}>
-              <span className="truncate">
+              <span className="truncate" title={`Phụ trách: ${formatAssigneeNames(appointment.assignees)}`}>
                 Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{formatAssigneeNames(appointment.assignees)}</strong>
               </span>
             </InfoRow>

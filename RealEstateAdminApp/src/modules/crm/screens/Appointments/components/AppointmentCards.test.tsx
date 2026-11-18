@@ -200,3 +200,41 @@ describe('thẻ lịch hẹn hiện dòng "Phụ trách" cho MỌI loại lịch
     expect(screen.getByText(/Sảnh tòa A/)).not.toHaveTextContent('Địa điểm:');
   });
 });
+
+describe('dòng "Phụ trách" bị cắt "…" thì rê chuột xem đủ qua thuộc tính title (F-3, FR-30)', () => {
+  const HANH = { id: 'u1', displayName: 'Hạnh' };
+  const MINH = { id: 'u2', displayName: 'Minh' };
+  const LONG_NAMES = [HANH, MINH, { id: 'u3', displayName: 'Nguyễn Thị Thanh Thảo Nguyên' }];
+
+  it.each([
+    ['desktop', AppointmentCardDesktop],
+    ['mobile', AppointmentCardMobile],
+  ])('%s: title của dòng "Phụ trách" khớp đủ chuỗi cho 1 người, nhiều người và danh sách rỗng', (_name, Card) => {
+    const cases: Array<[AppointmentView['assignees'], string]> = [
+      [[HANH], 'Phụ trách: Hạnh'],
+      [LONG_NAMES, 'Phụ trách: Hạnh, Minh, Nguyễn Thị Thanh Thảo Nguyên'],
+      [[], 'Phụ trách: —'],
+    ];
+    cases.forEach(([assignees, expected]) => {
+      const { unmount } = renderCard(<Card appointment={{ ...makeAppointment(null), assignees }} />);
+      const line = screen.getByText(/Phụ trách:/);
+      expect(line).toHaveAttribute('title', expected);
+      expect(line).toHaveClass('truncate');
+      unmount();
+    });
+  });
+
+  it('"Lịch sắp tới": title là cả dòng, có tiền tố dự án khi lịch gắn dự án, không có khi không gắn', () => {
+    upcomingState.items = [
+      { ...makeAppointment({ id: 'p1', label: "Q'Terra" }), id: 'a1', startAt: '2026-10-28T02:00:00.000Z', assignees: LONG_NAMES },
+      { ...makeAppointment(null), id: 'a2', startAt: '2026-10-28T03:00:00.000Z', assignees: [] },
+    ];
+    renderCard(<UpcomingAppointmentsCard todayIso="2026-10-26" />);
+    const withProject = screen.getByText(/Dự án Q'Terra •/);
+    expect(withProject).toHaveAttribute('title', "Dự án Q'Terra • Phụ trách: Hạnh, Minh, Nguyễn Thị Thanh Thảo Nguyên");
+    expect(withProject).toHaveTextContent("Dự án Q'Terra • Phụ trách: Hạnh, Minh, Nguyễn Thị Thanh Thảo Nguyên");
+    const withoutProject = screen.getByText('Phụ trách: —');
+    expect(withoutProject).toHaveAttribute('title', 'Phụ trách: —');
+    expect(withoutProject).toHaveClass('truncate');
+  });
+});

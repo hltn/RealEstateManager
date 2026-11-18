@@ -52,7 +52,9 @@ export const UpcomingAppointmentsSection = ({ customerId }: UpcomingAppointments
                   <span className="truncate">{appointment.location}</span>
                 </p>
               )}
-              <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">Phụ trách: {formatAssigneeNames(appointment.assignees)}</p>
+              <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400" title={`Phụ trách: ${formatAssigneeNames(appointment.assignees)}`}>
+                Phụ trách: {formatAssigneeNames(appointment.assignees)}
+              </p>
             </li>
           ))}
           {hiddenCount > 0 && <li className={MUTED_TEXT_CLASS}>và {hiddenCount} lịch hẹn khác</li>}
