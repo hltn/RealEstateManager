@@ -216,7 +216,7 @@ test.describe('f4-appointments', () => {
     await expect(form.getByLabel('Kênh liên hệ')).toBeVisible();
     await expect(form.getByLabel('Kết quả liên hệ')).toBeVisible();
     await expect(form.getByLabel('Việc cần làm tiếp theo')).toBeVisible();
-    await expect(form.getByLabel('Thời điểm nhắc')).toBeVisible();
+    await expect(form.getByRole('switch', { name: 'Tạo lịch hẹn' })).toHaveAttribute('aria-checked', 'false');
     await expect(page).toHaveURL(/\/crm\/appointments/);
 
     // Có bản nháp mà đóng thì được hỏi lại; "Tiếp tục nhập" giữ nguyên nháp; "Bỏ thay đổi" đóng và không tạo nhật ký.
