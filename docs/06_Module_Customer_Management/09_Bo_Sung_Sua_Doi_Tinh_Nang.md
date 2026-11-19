@@ -463,7 +463,7 @@ Không có migration. Xóa vĩnh viễn là thao tác dữ liệu có transactio
 5. Nghỉ việc chỉ **khóa** tài khoản, không xóa; PRIMARY bị khóa giữ nguyên trên khách; tài khoản bị khóa không nhận thông báo (FR-18).
 6. **Không giữ bản chuyển tiếp nào cho PWA bản cũ** (Oniichan 2026-11-10, FR-20): xóa hẳn endpoint/trường cũ ngay trong v1.0.5.
 7. Giữ nguyên quyết định #10 (mọi thành viên xem/gọi SĐT, ghi `PHONE_VIEWED`), #14, #34, #37 (chặn dò số: từ khóa toàn số vẫn là SĐT).
-8. Deploy **gộp** v1.0.3 → v1.0.5 (v1.0.4 chưa lên production); bước 8c bù mã danh mục tách khỏi `deploy.sh` thành script riêng dùng chung điểm gọi hậu-migrate (FR-21, FR-23).
+8. Deploy **gộp** v1.0.3 → v1.0.5 (v1.0.4 lên production cùng lượt v1.0.5, ngày 2026-11-13); bước 8c bù mã danh mục tách khỏi `deploy.sh` thành script riêng dùng chung điểm gọi hậu-migrate (FR-21, FR-23).
 
 ### 3. Thiết kế / quy tắc thay thế (truy vết)
 

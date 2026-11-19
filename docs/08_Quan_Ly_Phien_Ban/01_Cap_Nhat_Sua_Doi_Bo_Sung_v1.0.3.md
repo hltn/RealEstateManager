@@ -2,7 +2,7 @@
 
 > **Phiên bản tài liệu:** v1.0.3
 
-> Kế hoạch v1.0.3 đã hoàn tất: mọi mục `Xong` hoặc `Bỏ` (Oniichan xác nhận 2026-11-04). v1.0.3 đã deploy lên production ngày 2026-11-04 (phiên bản đang chạy production là v1.0.3). Ngày 2026-11-02: phần lớn mục đã được code và test trong repo; trạng thái từng mục ở mục 4.
+> Kế hoạch v1.0.3 đã hoàn tất: mọi mục `Xong` hoặc `Bỏ` (Oniichan xác nhận 2026-11-04). v1.0.3 đã deploy lên production ngày 2026-11-04 (tính đến 2026-11-04, phiên bản đang chạy production là v1.0.3). Ngày 2026-11-02: phần lớn mục đã được code và test trong repo; trạng thái từng mục ở mục 4.
 
 > **Mục đích file:** gom **mọi việc cần sửa hoặc bổ sung phát hiện sau khi chạy test trên production** vào một chỗ, theo mã mục `PT-NNN`, để giao việc cho từng agent và nghiệm thu. File này là **kế hoạch và hồ sơ của v1.0.3**; phiên bản đang chạy production là **v1.0.3** (từ 2026-11-04; trước đó v1.0.2).
 > **Tài liệu liên quan:** [`README.md`](README.md) (mục lục phiên bản), [`../01_Infrastructure/06_Production_Deploy.md`](../01_Infrastructure/06_Production_Deploy.md) (triển khai, nâng cấp, backup), [`../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md`](../06_Module_Customer_Management/09_Bo_Sung_Sua_Doi_Tinh_Nang.md) (đợt A–D thuộc v1.0.2).

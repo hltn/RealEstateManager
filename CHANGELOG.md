@@ -20,7 +20,9 @@ Chuyển từ v1.0.6 sang (Oniichan quyết 2026-11-16). Danh sách dưới đâ
 
 Chi tiết thiết kế dự kiến: `docs/01_Infrastructure/06_Production_Deploy.md` mục 17 và `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ).
 
-## [1.0.6] - chưa phát hành
+## [1.0.6] - chưa phát hành (đã nghiệm thu staging, chưa lên production)
+
+Đã nghiệm thu trên staging (T-62, 2026-11-18); chưa lên production, Oniichan quyết deploy riêng. Production hiện chạy v1.0.5.
 
 Thống nhất môi trường và dọn cấu trúc (không thêm tính năng nghiệp vụ): build một lần chạy mọi nơi, dev/staging/production chỉ khác file `.env`. Chưa có thẻ git; số phiên bản Backend và Web admin đã nâng lên 1.0.6 (ứng dụng mobile `RealEstateApp/` không đổi trong đợt này).
 
@@ -36,6 +38,47 @@ Thống nhất môi trường và dọn cấu trúc (không thêm tính năng ng
 - Dọn file thừa ở Backend, tách `modules/news` ngang `modules/crm` ở Frontend. Riêng Web admin **giữ lại** bộ icon svg và `logo -dark.png` (tài nguyên dự phòng, không xóa); `icons/icons.test.ts` chỉ kiểm tính toàn vẹn của `index.ts`, không ép số lượng icon.
 
 Chi tiết: `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ, không đưa lên repo); mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
+
+## [1.0.5] - 2026-11-13
+
+Định danh khách hàng (CRM). Đã lên production ngày 2026-11-13 (commit `15770ac`, merge PR #22); production nâng thẳng từ v1.0.3 lên v1.0.5 trong một lượt deploy (cùng lượt với v1.0.4). Chưa có thẻ git.
+
+### Thêm
+- Mã khách tự sinh dạng `KH-000123` (counter riêng, có CLI bù mã cho khách cũ), tìm khách theo mã.
+- Mời người vào nhóm chăm sóc không giới hạn nhóm, tối đa 10 thành viên phụ, có rate-limit; `GET /crm/care-team-invitees` tìm người để mời; `GET /crm/customer-assignees` thay `assignable-users`.
+- Danh sách khách hiện Mục đích mua dưới SĐT; chấm đỏ thông báo chưa đọc trên nút ba chấm header mobile.
+
+### Đổi
+- SĐT khách không còn bắt buộc và không còn duy nhất; chỉ họ tên bắt buộc. Gỡ `phone-lookups`; ẩn danh giữ nguyên mã khách.
+- Người tạo khách là người chăm sóc chính và không đổi (khóa `PRIMARY`, mã lỗi `PRIMARY_LOCKED`); gỡ `PUT care-team/primary`.
+- Bỏ luồng xin tham gia nhóm chăm sóc; chia sẻ khách bằng mời. Việc hằng ngày và nhắc lịch theo mọi thành viên nhóm.
+- Danh sách khách bỏ cột Hẹn.
+
+### Hạ tầng
+- Migration 010 (pre-up) và 011 (post-up) cho mã khách và bỏ unique index `phone`; runner migration chạy theo pha; migration 011 là một chiều.
+- `deploy.sh`: backup code theo nhánh hiện tại; thêm `backup.sh` (chạy tay) và `restore.sh`.
+
+Chi tiết: Plan, Architecture, Tasks "Định danh khách hàng" ở `docs/06_Module_Customer_Management/10_Dinh_Danh_Khach_Hang_Plan.md` đến `12_...`; mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
+
+## [1.0.4] - 2026-11-13
+
+Web Push (VAPID) cho PWA, sửa lỗi QA và bổ sung danh mục CRM. Không có lượt deploy riêng: v1.0.4 lên production cùng lượt v1.0.5 ngày 2026-11-13 (suy ra từ manifest `deploy-pre-20261113-021647`, `DB_VERSION_BEFORE=1.0.3`). Chưa có thẻ git. Nội dung dưới đây lấy từ nhật ký commit `feat(v1.0.4)`/`feat(push)` và Plan v1.0.4; mức hoàn tất từng `FR-xx` xem file kế hoạch (chưa đối chiếu lại sau phát hành).
+
+### Thêm
+- Web Push cho web admin: đăng ký thiết bị, dispatcher và worker `push.send`, giờ yên lặng, công tắc và trang Cài đặt thông báo; bật bằng `CRM_PUSH_ENABLED` và khóa `VAPID_*`.
+- Thông báo: dropdown thông báo, màn thông báo mobile tải thêm khi cuộn.
+- Cài đặt CRM: tab Kết quả liên hệ, tab Thẻ (có loại thẻ `OTHER`), màn Trường chân dung và bộ lọc nâng cao theo chân dung; form Dự án chọn "loại hình" nhiều lựa chọn.
+- Thumbnail ảnh chăm sóc.
+
+### Đổi
+- Tham chiếu danh mục CRM đổi từ ObjectId sang `code` (ghi song song): migration 007, 008, 009 và CLI bù code.
+- Số phiên bản 1.0.4 cho ba ứng dụng.
+
+### Sửa
+- Bảo mật: che dữ liệu cá nhân trong log, chặn toán tử NoSQL, sửa race khi tạo user, siết DTO tin tức.
+- Sidebar mobile đóng không còn nằm trong thứ tự phím Tab; phím Esc đóng dropdown.
+
+Chi tiết: `docs/08_Quan_Ly_Phien_Ban/03_Ke_Hoach_v1.0.4.md` (cùng bộ Architecture, Tasks); mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
 
 ## [1.0.3] - 2026-11-04
 

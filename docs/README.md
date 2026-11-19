@@ -4,7 +4,7 @@
 
 Đây là chỉ mục tổng của toàn bộ tài liệu dự án. Tài liệu được tổ chức theo **Tổng thể → Hạ tầng → Từng module → Frontend**, mỗi thư mục và mỗi file đều đánh số để đọc theo thứ tự.
 
-**Phiên bản hiện tại: v1.0.3** (đang chạy production từ 2026-11-04; trước đó v1.0.2 từ 2026-11-02). **Đang phát triển: v1.0.6** (thống nhất môi trường và dọn cấu trúc, mã nguồn đã nâng số 1.0.6, chưa phát hành; v1.0.4 và v1.0.5 cũng chưa lên production). Điểm vào của repo: [`../README.md`](../README.md). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
+**Phiên bản hiện tại: v1.0.5** (đang chạy production từ 2026-11-13, đã xác minh 2026-11-19; trước đó v1.0.3 từ 2026-11-04). **Đã xong, chờ deploy: v1.0.6** (thống nhất môi trường và dọn cấu trúc, mã nguồn đã nâng số 1.0.6; đã nghiệm thu trên staging, chưa lên production, deploy riêng). Điểm vào của repo: [`../README.md`](../README.md). Mục lục phiên bản của hệ thống, của từng thành phần ứng dụng và của từng tài liệu: [`08_Quan_Ly_Phien_Ban/README.md`](08_Quan_Ly_Phien_Ban/README.md).
 
 ## Dự án gồm những gì
 
