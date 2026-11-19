@@ -1,5 +1,6 @@
 /** CustomerTableRow: mã KH cạnh SĐT (FR-04, FR-02) và ô "Người chăm sóc chính" chỉ khi được bật (FR-17). */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CustomerListItem } from '@crm/api';
 import { makeListItem } from '@crm/test/listItemFactory';
@@ -77,6 +78,21 @@ describe('CustomerTableRow - mã khách là nút sao chép (chip gọn)', () => 
   it('bấm: chép đúng mã, KHÔNG mở chi tiết của hàng (không chọn hàng/điều hướng)', async () => {
     renderRow(makeListItem({ customerCode: 'KH-000053' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' }));
+    await waitFor(() => expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000053'));
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  // Enter bắn click ở keydown, Space bắn click ở keyup: cả hai nổi bọt lên <tr onClick> nếu nút copy không stopPropagation.
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', ' '],
+  ])('bàn phím: Tab tới nút copy rồi nhấn %s -> chép đúng mã, KHÔNG mở chi tiết của hàng', async (_label, keys) => {
+    renderRow(makeListItem({ customerCode: 'KH-000053' }));
+    const user = userEvent.setup();
+    const button = screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' });
+    for (let i = 0; i < 5 && document.activeElement !== button; i += 1) await user.tab();
+    expect(button).toHaveFocus();
+    await user.keyboard(keys);
     await waitFor(() => expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000053'));
     expect(mocks.selectCustomer).not.toHaveBeenCalled();
   });

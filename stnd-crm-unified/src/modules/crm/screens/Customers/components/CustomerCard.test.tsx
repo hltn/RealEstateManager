@@ -50,6 +50,21 @@ describe('CustomerCard (prototype) - mã khách là nút sao chép', () => {
     expect(mocks.selectCustomer).not.toHaveBeenCalled();
   });
 
+  // Enter bắn click ở keydown, Space bắn click ở keyup: cả hai phải sao chép và KHÔNG nổi bọt lên thẻ mở chi tiết.
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', ' '],
+  ])('bàn phím: focus nút mã rồi nhấn %s -> sao chép đúng 1 lần, KHÔNG mở chi tiết', async (_label, keys) => {
+    render(<CustomerCard customer={customer()} showPrimaryAssignee={false} />);
+    const user = userEvent.setup();
+    const button = screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' });
+    for (let i = 0; i < 5 && document.activeElement !== button; i += 1) await user.tab();
+    expect(button).toHaveFocus();
+    await user.keyboard(keys);
+    expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000053');
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
   it('nút tên vẫn mở chi tiết và KHÔNG sao chép', async () => {
     render(<CustomerCard customer={customer()} showPrimaryAssignee={false} />);
     await userEvent.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));

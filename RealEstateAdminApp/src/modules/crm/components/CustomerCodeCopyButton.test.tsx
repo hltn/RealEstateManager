@@ -18,11 +18,13 @@ describe('CustomerCodeCopyButton', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('là <button type="button"> có aria-label tên mã, không có chữ hướng dẫn, đủ cao cho ngón tay', () => {
+  it('là <button type="button"> có aria-label tên mã, không có chữ hướng dẫn, chip cao 32px và vùng bấm nới ~40px cho ngón tay', () => {
     render(<CustomerCodeCopyButton code="KH-000053" />);
     const button = screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' });
     expect(button).toHaveAttribute('type', 'button');
     expect(button).toHaveClass('min-h-8');
+    // Vùng bấm nới ~40px bằng pseudo-element con của nút (jsdom không tính layout nên kiểm class).
+    expect(button).toHaveClass('relative', 'before:absolute', 'before:-inset-y-1.25', 'before:inset-x-0');
     expect(button.textContent).toBe('KH-000053');
     expect(button.querySelector('svg.lucide-copy')).not.toBeNull();
     expect(button.querySelector('svg.lucide-check')).toBeNull();
@@ -70,13 +72,15 @@ describe('CustomerCodeCopyButton', () => {
     const button = screen.getByRole('button');
     expect(button).toHaveClass('min-h-6');
     expect(button).not.toHaveClass('min-h-8');
+    // Chip gọn giữ nguyên, không nới vùng bấm (tránh chạm lấn sang ô/hàng bên cạnh).
+    expect(button).not.toHaveClass('before:absolute');
   });
 
   it('className tùy chỉnh THAY kiểu chip mặc định (không chồng hai kiểu) nhưng vẫn có phản hồi hover/active', () => {
     render(<CustomerCodeCopyButton code="KH-000053" className="rounded-full bg-gray-100 text-xs" />);
     const button = screen.getByRole('button');
     expect(button).toHaveClass('bg-gray-100', 'text-xs', 'hover:ring-1');
-    expect(button).not.toHaveClass('min-h-8', 'border', 'bg-gray-50');
+    expect(button).not.toHaveClass('min-h-8', 'border', 'bg-gray-50', 'before:absolute');
   });
 
   it('mã dài hơn 6 số được chép nguyên vẹn', async () => {

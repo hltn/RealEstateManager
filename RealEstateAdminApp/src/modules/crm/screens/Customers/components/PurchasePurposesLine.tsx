@@ -22,6 +22,7 @@ export const PurchasePurposesLine = ({ purposes, field, className = '', isWrappe
 
   return (
     <p className={`flex min-w-0 ${isWrapped ? 'items-start' : 'items-center'} gap-1 text-theme-xs text-gray-500 dark:text-gray-400 ${className}`} title={`Mục đích mua: ${text}`}>
+      {/* isWrapped (items-start): đẩy icon 11px xuống 3px để tâm icon nằm giữa dòng đầu (line-height của text-theme-xs ~18px: (18 - 11) / 2 ≈ 3). */}
       <Target size={11} className={`shrink-0 ${isWrapped ? 'mt-[3px]' : ''}`.trim()} aria-hidden="true" />
       <span className="sr-only">Mục đích mua: </span>
       <span className={isWrapped ? 'min-w-0 break-words' : 'truncate'}>{text}</span>

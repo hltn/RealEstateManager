@@ -123,14 +123,18 @@ describe('CustomerCard - bấm thẻ mở chi tiết', () => {
     expect(article).toContainElement(copyButton);
   });
 
-  it('bàn phím: focus nút mã rồi Enter -> sao chép, KHÔNG mở chi tiết', async () => {
+  // Enter bắn click ở keydown, Space bắn click ở keyup: cả hai phải sao chép và KHÔNG nổi bọt lên <article> mở chi tiết.
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', ' '],
+  ])('bàn phím: focus nút mã rồi nhấn %s -> sao chép đúng 1 lần, KHÔNG mở chi tiết', async (_label, keys) => {
     renderCard();
     const user = userEvent.setup();
     await user.tab();
     await user.tab();
     expect(screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' })).toHaveFocus();
-    await user.keyboard('{Enter}');
-    expect(mocks.copyTextToClipboard).toHaveBeenCalledWith('KH-000001');
+    await user.keyboard(keys);
+    expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000001');
     expect(mocks.selectCustomer).not.toHaveBeenCalled();
   });
 
