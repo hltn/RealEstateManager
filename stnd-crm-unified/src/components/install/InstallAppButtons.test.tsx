@@ -96,6 +96,61 @@ describe('InstallAppButtons: hiện/ẩn nút', () => {
   });
 });
 
+describe('InstallAppButtons: logo store trên nút', () => {
+  const buttonLogo = (button: HTMLElement, testId: string) => button.querySelector(`svg[data-testid="${testId}"]`);
+
+  it('máy tính: nút Android có logo Google Play (không có Apple), nút iOS có logo Apple (không có Google Play)', () => {
+    setNavigator({ userAgent: WINDOWS_UA, platform: 'Win32' });
+    render(<InstallAppButtons />);
+    const androidButton = screen.getByRole('button', ANDROID_BUTTON);
+    const iosButton = screen.getByRole('button', IOS_BUTTON);
+
+    expect(buttonLogo(androidButton, 'google-play-icon')).not.toBeNull();
+    expect(buttonLogo(androidButton, 'apple-icon')).toBeNull();
+    expect(buttonLogo(iosButton, 'apple-icon')).not.toBeNull();
+    expect(buttonLogo(iosButton, 'google-play-icon')).toBeNull();
+  });
+
+  it('logo ẩn khỏi trình đọc màn hình, nên tên nút vẫn chỉ là chữ', () => {
+    setNavigator({ userAgent: WINDOWS_UA, platform: 'Win32' });
+    render(<InstallAppButtons />);
+
+    for (const testId of ['google-play-icon', 'apple-icon']) {
+      expect(screen.getByTestId(testId)).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
+
+  it('logo Apple đơn sắc theo currentColor (hợp dark mode), logo Google Play giữ màu riêng', () => {
+    setNavigator({ userAgent: WINDOWS_UA, platform: 'Win32' });
+    render(<InstallAppButtons />);
+
+    expect(screen.getByTestId('apple-icon')).toHaveAttribute('fill', 'currentColor');
+    expect(screen.getByTestId('google-play-icon')).not.toHaveAttribute('fill');
+    expect(screen.getByTestId('google-play-icon').querySelectorAll('path[fill^="#"]')).toHaveLength(4);
+  });
+
+  it('không còn icon Smartphone (lucide) trên cả hai nút', () => {
+    setNavigator({ userAgent: WINDOWS_UA, platform: 'Win32' });
+    const { container } = render(<InstallAppButtons />);
+
+    expect(container.querySelector('svg.lucide-smartphone')).toBeNull();
+    expect(container.querySelectorAll('button svg')).toHaveLength(2);
+  });
+
+  it('Android chỉ hiện logo Google Play, iPhone chỉ hiện logo Apple', () => {
+    setNavigator({ userAgent: ANDROID_UA, platform: 'Linux armv81', maxTouchPoints: 5 });
+    const { unmount } = render(<InstallAppButtons />);
+    expect(screen.getByTestId('google-play-icon')).toBeInTheDocument();
+    expect(screen.queryByTestId('apple-icon')).not.toBeInTheDocument();
+    unmount();
+
+    setNavigator({ userAgent: IPHONE_SAFARI_UA, platform: 'iPhone', maxTouchPoints: 5 });
+    render(<InstallAppButtons />);
+    expect(screen.getByTestId('apple-icon')).toBeInTheDocument();
+    expect(screen.queryByTestId('google-play-icon')).not.toBeInTheDocument();
+  });
+});
+
 describe('InstallAppButtons: hộp thoại hướng dẫn', () => {
   it('nút Android luôn mở hướng dẫn dự phòng qua menu trình duyệt (prototype không có prompt cài tự động)', async () => {
     setNavigator({ userAgent: ANDROID_UA, platform: 'Linux armv81', maxTouchPoints: 5 });

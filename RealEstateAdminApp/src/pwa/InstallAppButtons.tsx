@@ -1,8 +1,8 @@
 import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Smartphone } from 'lucide-react';
 import { runtimeConfig } from '../config/runtimeConfig';
 import { DialogFrame } from '@crm/components/DialogFrame';
 import { BUTTON_OUTLINE_LG_CLASS, BUTTON_PRIMARY_CLASS } from '@crm/lib/uiClasses';
+import { AppleIcon, GooglePlayIcon } from './StoreIcons';
 import { IosInstallGuideText } from './IosInstallHint';
 import { detectInstallPlatform, resolveInstallButtons } from './installPlatform';
 import { hasCapturedInstallPrompt, hasInstalledApp, promptInstall, subscribeInstallPrompt } from './installPromptCapture';
@@ -119,13 +119,13 @@ const InstallAppButtons = () => {
       <div className="flex flex-col gap-3 sm:flex-row">
         {isAndroidVisible && (
           <button type="button" onClick={handleAndroidClick} className={`${BUTTON_OUTLINE_LG_CLASS} flex-1`}>
-            <Smartphone size={18} aria-hidden="true" />
+            <GooglePlayIcon />
             Cài app cho Android
           </button>
         )}
         {isIosVisible && (
           <button type="button" onClick={() => setOpenGuide('ios')} className={`${BUTTON_OUTLINE_LG_CLASS} flex-1`}>
-            <Smartphone size={18} aria-hidden="true" />
+            <AppleIcon />
             Cài app cho iOS
           </button>
         )}
