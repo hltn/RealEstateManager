@@ -59,4 +59,21 @@ describe('DeleteCustomerButton', () => {
     expect(api.deleteCustomer).toHaveBeenLastCalledWith('c1', 'Khách trùng');
     expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Đã xóa khách Nguyễn Văn An' }));
   });
+
+  it('mobile: kiểu kín đáo (đường kẻ phía trên, chữ đỏ, không nền đỏ đặc); desktop vẫn là nút icon viền', () => {
+    const { container, rerender } = render(<DeleteCustomerButton customer={customer(true)} variant="mobile" />);
+    const mobileButton = screen.getByRole('button', { name: 'Xóa khách' });
+    expect(container.firstElementChild).toHaveClass('border-t');
+    expect(mobileButton).toHaveClass('text-error-600');
+    expect(mobileButton.className).not.toMatch(/(^|\s)bg-error-(500|600)/);
+    expect(mobileButton).not.toHaveClass('col-span-2');
+    rerender(<DeleteCustomerButton customer={customer(true)} variant="desktop" />);
+    expect(screen.getByRole('button', { name: 'Xóa khách' })).toHaveAttribute('title', 'Xóa khách');
+    expect(container.querySelector('.border-t')).toBeNull();
+  });
+
+  it('mobile không quyền xóa: không render gì (kể cả đường kẻ)', () => {
+    const { container } = render(<DeleteCustomerButton customer={customer(false)} variant="mobile" />);
+    expect(container).toBeEmptyDOMElement();
+  });
 });

@@ -1,10 +1,13 @@
 /** CustomerTableRow: mã KH cạnh SĐT (FR-04, FR-02) và ô "Người chăm sóc chính" chỉ khi được bật (FR-17). */
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CustomerListItem } from '@crm/api';
 import { makeListItem } from '@crm/test/listItemFactory';
 
-vi.mock('@crm/store', () => ({ useCrmActions: () => ({ selectCustomer: vi.fn() }) }));
+const mocks = vi.hoisted(() => ({ selectCustomer: vi.fn(), copyTextToClipboard: vi.fn() }));
+vi.mock('@crm/store', () => ({ useCrmActions: () => ({ selectCustomer: mocks.selectCustomer }) }));
+vi.mock('@crm/lib/clipboard', () => ({ copyTextToClipboard: mocks.copyTextToClipboard }));
+vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@crm/components/TableContactActions', () => ({ TableContactActions: () => null }));
 
 import { CustomerTableRow } from './CustomerTableRow';
@@ -24,26 +27,26 @@ describe('CustomerTableRow - mã khách cạnh SĐT', () => {
     const code = screen.getByText('KH-000123');
     const phone = screen.getByText('0912 ••• 678');
     expect(code.closest('p')).toBe(phone.closest('p'));
-    expect(code.closest('p')?.textContent).toBe('Mã khách KH-000123·0912 ••• 678');
+    expect(code.closest('p')?.textContent).toBe('KH-000123·0912 ••• 678');
     expect(code.compareDocumentPosition(phone) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('khách KHÔNG có SĐT: chỉ hiện mã, không dấu phân cách thừa, không chữ "null"', () => {
     renderRow(makeListItem({ customerCode: 'KH-000124', phoneMasked: null }));
-    expect(screen.getByText('KH-000124').closest('p')?.textContent).toBe('Mã khách KH-000124');
+    expect(screen.getByText('KH-000124').closest('p')?.textContent).toBe('KH-000124');
     expect(screen.queryByText('·')).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|undefined/);
   });
 
   it.each(['', '   '])('SĐT là chuỗi rỗng/khoảng trắng (%j): coi như không có SĐT, chỉ hiện mã, không dấu phân cách', (phoneMasked) => {
     renderRow(makeListItem({ customerCode: 'KH-000125', phoneMasked }));
-    expect(screen.getByText('KH-000125').closest('p')?.textContent).toBe('Mã khách KH-000125');
+    expect(screen.getByText('KH-000125').closest('p')?.textContent).toBe('KH-000125');
     expect(screen.queryByText('·')).not.toBeInTheDocument();
   });
 
   it('mã null (khách cũ) + có SĐT: chỉ hiện SĐT, không dấu phân cách', () => {
     renderRow(makeListItem({ customerCode: null }));
-    expect(screen.queryByText(/Mã khách/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sao chép mã khách/ })).not.toBeInTheDocument();
     expect(screen.getByText('0912 ••• 678').closest('p')?.textContent).toBe('0912 ••• 678');
   });
 
@@ -55,6 +58,34 @@ describe('CustomerTableRow - mã khách cạnh SĐT', () => {
   it('mã dài hơn 6 số hiển thị đúng', () => {
     renderRow(makeListItem({ customerCode: 'KH-1000000' }));
     expect(screen.getByText('KH-1000000')).toHaveTextContent('KH-1000000');
+  });
+});
+
+describe('CustomerTableRow - mã khách là nút sao chép (chip gọn)', () => {
+  beforeEach(() => {
+    mocks.selectCustomer.mockClear();
+    mocks.copyTextToClipboard.mockReset().mockResolvedValue(true);
+  });
+
+  it('có nút sao chép đúng aria-label, kiểu chip gọn (min-h-6) để không làm lệch chiều cao hàng', () => {
+    renderRow(makeListItem({ customerCode: 'KH-000053' }));
+    const button = screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' });
+    expect(button).toHaveClass('min-h-6');
+    expect(button).not.toHaveClass('min-h-8');
+  });
+
+  it('bấm: chép đúng mã, KHÔNG mở chi tiết của hàng (không chọn hàng/điều hướng)', async () => {
+    renderRow(makeListItem({ customerCode: 'KH-000053' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' }));
+    await waitFor(() => expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000053'));
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  it('đối chứng: bấm vùng khác của hàng (SĐT) vẫn mở chi tiết', () => {
+    renderRow(makeListItem({ customerCode: 'KH-000053' }));
+    fireEvent.click(screen.getByText('0912 ••• 678'));
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.copyTextToClipboard).not.toHaveBeenCalled();
   });
 });
 

@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CustomerListItem } from '@crm/api';
 
 const mocks = vi.hoisted(() => ({
+  copyTextToClipboard: vi.fn(),
   selectCustomer: vi.fn(),
   callCustomer: vi.fn(),
   messageZalo: vi.fn(),
@@ -18,6 +19,9 @@ vi.mock('@crm/store', () => ({ useCrmActions: () => ({ selectCustomer: mocks.sel
 vi.mock('@crm/hooks/useContactActions', () => ({
   useContactActions: () => ({ callCustomer: mocks.callCustomer, messageZalo: mocks.messageZalo, openQuickNote: mocks.openQuickNote }),
 }));
+
+vi.mock('@crm/lib/clipboard', () => ({ copyTextToClipboard: mocks.copyTextToClipboard }));
+vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
 
 import { CustomerCard } from './CustomerCard';
 
@@ -44,7 +48,10 @@ const customer = (overrides: Partial<CustomerListItem> = {}): CustomerListItem =
 });
 
 describe('CustomerCard - bấm thẻ mở chi tiết', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.copyTextToClipboard.mockResolvedValue(true);
+  });
 
   const renderCard = () => render(<CustomerCard customer={customer()} />).container.querySelector('article') as HTMLElement;
 
@@ -104,5 +111,33 @@ describe('CustomerCard - bấm thẻ mở chi tiết', () => {
     renderCard();
     await userEvent.click(screen.getByRole('button', { name: 'Gọi' }).parentElement as HTMLElement);
     expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  it('bấm nút mã khách -> sao chép đúng mã, KHÔNG mở chi tiết; nút nằm trong <article> và không lồng trong nút/liên kết khác', async () => {
+    const article = renderCard();
+    const copyButton = screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' });
+    expect(copyButton.parentElement?.closest('button, a')).toBeNull();
+    await userEvent.click(copyButton);
+    expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000001');
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+    expect(article).toContainElement(copyButton);
+  });
+
+  it('bàn phím: focus nút mã rồi Enter -> sao chép, KHÔNG mở chi tiết', async () => {
+    renderCard();
+    const user = userEvent.setup();
+    await user.tab();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(mocks.copyTextToClipboard).toHaveBeenCalledWith('KH-000001');
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  it('sau khi sao chép, bấm vùng khác của thẻ vẫn mở chi tiết bình thường', async () => {
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' }));
+    await userEvent.click(screen.getByText('0912 ••• 678'));
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
   });
 });

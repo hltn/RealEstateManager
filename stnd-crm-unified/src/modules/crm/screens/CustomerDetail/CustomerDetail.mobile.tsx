@@ -14,6 +14,7 @@ import { CustomerInfoCard } from './components/CustomerInfoCard';
 import { NextStepNotice } from './components/DetailParts';
 import { HistoryList } from './components/HistoryList';
 import { MobileContactFooter } from './components/MobileContactFooter';
+import { DeleteCustomerButton } from './components/DeleteCustomerButton';
 import { MobileDetailHeader } from './components/MobileDetailHeader';
 import { UpcomingAppointmentsSection } from './components/UpcomingAppointmentsSection';
 import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
@@ -38,7 +39,7 @@ export const CustomerDetailMobile = () => {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 pb-24" data-testid="customer-detail-mobile">
-      <MobileDetailHeader customerName={customer.fullName} customerCode={customer.customerCode} />
+      <MobileDetailHeader customerName={customer.fullName} />
       <CustomerHeader customer={customer} variant="mobile" />
 
       <div role="tablist" aria-label="Thông tin khách hàng" className="flex border-b border-gray-200 dark:border-white/[0.05]">
@@ -65,6 +66,8 @@ export const CustomerDetailMobile = () => {
           <CustomerInfoCard customer={customer} />
           <PersonaCard customer={customer} />
           <RealEstateNeedsCard customer={customer} />
+          {/* Xóa khách (chỉ khi `permissions.canDelete`): kín đáo ở cuối tab Thông tin, không nằm trong cụm nút đầu trang. */}
+          <DeleteCustomerButton customer={customer} variant="mobile" />
         </>
       )}
 

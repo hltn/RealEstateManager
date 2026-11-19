@@ -24,4 +24,27 @@ describe('PurchasePurposesLine', () => {
     const { container } = render(<PurchasePurposesLine purposes={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('isWrapped: hiện đủ nội dung, KHÔNG có class truncate, chữ cho xuống dòng, icon căn đầu dòng; vẫn có title + sr-only', () => {
+    const { container } = render(<PurchasePurposesLine purposes={['LIVING', 'INVEST_RENT']} isWrapped />);
+    const text = screen.getByText('Ở thực, Đầu tư cho thuê');
+    expect(text).not.toHaveClass('truncate');
+    expect(text).toHaveClass('break-words', 'min-w-0');
+    expect(container.querySelector('p')).toHaveClass('items-start');
+    expect(container.querySelector('svg')).toHaveClass('shrink-0');
+    expect(container.querySelector('p')).toHaveAttribute('title', 'Mục đích mua: Ở thực, Đầu tư cho thuê');
+    expect(screen.getByText('Mục đích mua:')).toHaveClass('sr-only');
+  });
+
+  it('chế độ mặc định giữ nguyên: truncate, không break-words, icon căn giữa', () => {
+    const { container } = render(<PurchasePurposesLine purposes={['LIVING']} />);
+    expect(screen.getByText('Ở thực')).toHaveClass('truncate');
+    expect(screen.getByText('Ở thực')).not.toHaveClass('break-words');
+    expect(container.querySelector('p')).toHaveClass('items-center');
+  });
+
+  it('isWrapped + rỗng: vẫn không render gì', () => {
+    const { container } = render(<PurchasePurposesLine purposes={[]} isWrapped />);
+    expect(container).toBeEmptyDOMElement();
+  });
 });

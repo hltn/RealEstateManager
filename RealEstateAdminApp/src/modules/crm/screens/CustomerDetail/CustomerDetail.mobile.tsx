@@ -12,6 +12,7 @@ import { CareTeamCard } from './components/CareTeamCard';
 import { CareTimeline } from './components/CareTimeline';
 import { CriteriaBoard } from './components/CriteriaBoard';
 import { CustomerHeader } from './components/CustomerHeader';
+import { DeleteCustomerButton } from './components/DeleteCustomerButton';
 import { CustomerInfoCard } from './components/CustomerInfoCard';
 import { NextStepNotice } from './components/DetailParts';
 import { HistoryList } from './components/HistoryList';
@@ -53,7 +54,7 @@ export const CustomerDetailMobile = () => {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 pb-[calc(6rem+env(safe-area-inset-bottom))]" data-testid="customer-detail-mobile">
-      <MobileDetailHeader customerCode={customer.customerCode} />
+      <MobileDetailHeader />
       <CustomerHeader
         customer={customer}
         variant="mobile"
@@ -84,6 +85,8 @@ export const CustomerDetailMobile = () => {
           <CustomerInfoCard customer={customer} />
           <PersonaCard customer={customer} />
           <RealEstateNeedsCard customer={customer} />
+          {/* Xóa khách (chỉ khi `permissions.canDelete`): kín đáo ở cuối tab Thông tin, không nằm trong cụm nút đầu trang. */}
+          <DeleteCustomerButton customer={customer} variant="mobile" />
         </>
       )}
 

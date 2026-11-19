@@ -1,4 +1,4 @@
-/** MobileDetailHeader: mã khách ở hàng đầu chi tiết trên điện thoại (FR-04). */
+/** MobileDetailHeader: không còn mã khách ở hàng đầu (mã nằm ngay dưới tên trong CustomerHeader mobile, là chip sao chép). */
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
@@ -7,30 +7,20 @@ import { createCrmStore, createSeedDataState } from '@crm/store/crmStore';
 import { FIXED_NOW } from '@crm/test/fixtures';
 import { MobileDetailHeader } from './MobileDetailHeader';
 
-const renderWithCode = (code?: string | null) => {
-  const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
-  return render(
-    <MemoryRouter>
-      <CrmProvider store={store}>
-        <MobileDetailHeader customerCode={code} />
-      </CrmProvider>
-    </MemoryRouter>,
-  );
-};
-
-describe('MobileDetailHeader: mã khách', () => {
-  it('có mã: hiện mã (kèm chữ ẩn "Mã khách"), vẫn chỉ có nút Quay lại, không heading', () => {
-    renderWithCode('KH-000123');
-    expect(screen.getByText('KH-000123')).toHaveTextContent('KH-000123');
+describe('MobileDetailHeader: không hiện mã khách', () => {
+  it('chỉ có nút Quay lại + nhãn "Quản lý khách hàng"; không mã, không nút sao chép, không heading', () => {
+    const store = createCrmStore({ initialData: createSeedDataState(FIXED_NOW), shouldPersist: false });
+    const { container } = render(
+      <MemoryRouter>
+        <CrmProvider store={store}>
+          <MobileDetailHeader />
+        </CrmProvider>
+      </MemoryRouter>,
+    );
     expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Quay lại' })).toBeInTheDocument();
+    expect(screen.getByText('Quản lý khách hàng')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/KH-|Mã khách/);
     expect(screen.queryByRole('heading')).toBeNull();
-  });
-
-  it('mã null hoặc không truyền: không hiện gì thêm', () => {
-    const { unmount } = renderWithCode(null);
-    expect(screen.queryByText(/Mã khách/)).not.toBeInTheDocument();
-    unmount();
-    renderWithCode();
-    expect(screen.queryByText(/Mã khách/)).not.toBeInTheDocument();
   });
 });

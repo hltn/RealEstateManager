@@ -32,7 +32,7 @@ const cardOf = (name: string) => containerOf(name, 'article');
 describe('Danh sách khách (desktop): mã khách', () => {
   it('mã KH nằm ngay cạnh SĐT trong cùng ô khách', () => {
     const { harness } = renderCrm(<CustomersDesktop />, { actAs: 'thao' });
-    const badge = within(rowOf('Nguyễn Văn An')).getByText(codeOf(harness, 'CUST-001'));
+    const badge = within(rowOf('Nguyễn Văn An')).getByRole('button', { name: `Sao chép mã khách ${codeOf(harness, 'CUST-001')}` });
     expect(badge.parentElement).toHaveTextContent('•••');
   });
 
@@ -40,8 +40,8 @@ describe('Danh sách khách (desktop): mã khách', () => {
     const { harness } = renderCrm(<CustomersDesktop />, { actAs: 'hanh' });
     const row = rowOf('Mai Thị Hồng');
     const code = codeOf(harness, 'CUST-017');
-    const badge = within(row).getByText(code);
-    expect(badge.parentElement?.textContent).toBe(`Mã khách ${code}`);
+    const badge = within(row).getByRole('button', { name: `Sao chép mã khách ${code}` });
+    expect(badge.parentElement?.textContent).toBe(code);
     expect(within(row).queryByText('Chưa có SĐT')).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: /^Gọi$/ })).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: /^Zalo$/ })).not.toBeInTheDocument();
@@ -93,12 +93,12 @@ describe('Danh sách khách (mobile)', () => {
   it('thẻ hiện mã cạnh SĐT; khách chưa có SĐT chỉ hiện mã và không có nút Gọi/Zalo', () => {
     const { harness } = renderCrm(<CustomersMobile />, { actAs: 'hanh' });
     const withPhone = cardOf('Nguyễn Văn An');
-    expect(within(withPhone).getByText(codeOf(harness, 'CUST-001')).parentElement).toHaveTextContent('•••');
+    expect(within(withPhone).getByRole('button', { name: `Sao chép mã khách ${codeOf(harness, 'CUST-001')}` }).closest('p')).toHaveTextContent('•••');
     expect(within(withPhone).getByRole('button', { name: /Gọi/ })).toBeInTheDocument();
 
     const noPhone = cardOf('Mai Thị Hồng');
     const code = codeOf(harness, 'CUST-017');
-    expect(within(noPhone).getByText(code).parentElement?.textContent).toBe(`Mã khách ${code}`);
+    expect(within(noPhone).getByRole('button', { name: `Sao chép mã khách ${code}` }).closest('p')?.textContent).toBe(code);
     expect(within(noPhone).queryByRole('button', { name: /Gọi/ })).not.toBeInTheDocument();
     expect(within(noPhone).queryByRole('button', { name: /Zalo/ })).not.toBeInTheDocument();
     expect(within(noPhone).getByRole('button', { name: /Ghi chú/ })).toBeInTheDocument();

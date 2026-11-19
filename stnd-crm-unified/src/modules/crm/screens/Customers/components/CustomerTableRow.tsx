@@ -49,7 +49,7 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, showPri
         </button>
         <p className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${TEXT_MUTED}`}>
           {customer.phoneMasked ? <span className="tabular-nums">{customer.phoneMasked}</span> : !customer.customerCode && <span>Chưa có SĐT</span>}
-          <CustomerCodeBadge code={customer.customerCode} />
+          <CustomerCodeBadge code={customer.customerCode} isCopyable isCompact />
         </p>
         <div className="pt-1.5 2xl:hidden">{projectSummary && <span className={PROJECT_CHIP_CLASS}>{projectSummary}</span>}</div>
       </td>

@@ -18,6 +18,10 @@ interface CustomerHeaderProps {
   variant: 'desktop' | 'mobile';
 }
 
+/** Giữ kiểu chip mã khách vốn có của header desktop (nền xám bo vừa); `className` của nút sao chép thay kiểu mặc định. */
+const HEADER_CODE_CHIP_CLASS =
+  'inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-1.5 py-0.5 text-theme-xs font-medium text-gray-600 dark:bg-white/[0.06] dark:text-gray-300';
+
 export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
   const { openCreateAppointment } = useCrmActions();
   const { callCustomer, messageZalo, openQuickNote } = useContactActions();
@@ -27,7 +31,8 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
 
   const meta = (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-theme-sm text-gray-500 dark:text-gray-400">
-      <CustomerCodeBadge code={customer.customerCode} />
+      {/* Mobile: mã nằm ngay dưới tên (chip sao chép riêng), không lặp lại trong hàng meta. */}
+      {isDesktop && <CustomerCodeBadge code={customer.customerCode} isCopyable className={HEADER_CODE_CHIP_CLASS} />}
       {hasPhone && (
         <span className="inline-flex items-center gap-1.5">
           <Phone size={15} aria-hidden="true" className="text-gray-400" />
@@ -49,7 +54,14 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
     return (
       <section aria-label="Tóm tắt hồ sơ" className={`${CARD_CLASS} space-y-3 p-4`}>
         <div className="flex items-start justify-between gap-2">
-          <h2 className="min-w-0 text-xl font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</h2>
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</h2>
+            {customer.customerCode && (
+              <div className="mt-1.5">
+                <CustomerCodeBadge code={customer.customerCode} isCopyable />
+              </div>
+            )}
+          </div>
           <StatusDropdown customer={customer} align="right" />
         </div>
         {meta}
@@ -62,7 +74,6 @@ export const CustomerHeader = ({ customer, variant }: CustomerHeaderProps) => {
             <CalendarPlus size={16} aria-hidden="true" />
             Hẹn nhắc
           </button>
-          <DeleteCustomerButton customer={customer} variant="mobile" />
         </div>
       </section>
     );

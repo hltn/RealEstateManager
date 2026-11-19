@@ -55,15 +55,15 @@ export const CustomerCard = ({ customer, isShowingPrimaryAssignee = false, purch
               {customer.fullName}
             </span>
           </button>
-          {/* Mã KH ngay cạnh SĐT; khách không SĐT chỉ hiện mã, không dấu phân cách thừa. */}
+          {/* Mã KH ngay cạnh SĐT; khách không SĐT chỉ hiện mã, không dấu phân cách thừa. Mã là nút chip bấm để sao chép (tự chặn nổi bọt, không mở chi tiết). */}
           {(customer.customerCode || hasPhone(customer.phoneMasked)) && (
             <p className="flex flex-wrap items-center gap-x-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
-              <CustomerCodeBadge code={customer.customerCode} />
+              <CustomerCodeBadge code={customer.customerCode} isCopyable />
               {customer.customerCode && hasPhone(customer.phoneMasked) && <span aria-hidden="true">·</span>}
               {hasPhone(customer.phoneMasked) && <span className="font-mono">{customer.phoneMasked}</span>}
             </p>
           )}
-          <PurchasePurposesLine purposes={customer.purchasePurposes} field={purchasePurposeField} />
+          <PurchasePurposesLine purposes={customer.purchasePurposes} field={purchasePurposeField} isWrapped />
         </div>
         <CustomerStatusChip status={customer.status} />
       </div>

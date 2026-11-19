@@ -60,10 +60,10 @@ export const CustomerTableRow = ({ customer, isSelected, onToggleSelect, isShowi
         >
           {customer.fullName}
         </button>
-        {/* Mã KH ngay cạnh SĐT; khách không SĐT chỉ hiện mã, không dấu phân cách thừa. */}
+        {/* Mã KH ngay cạnh SĐT; khách không SĐT chỉ hiện mã, không dấu phân cách thừa. Mã là chip gọn bấm để sao chép (tự chặn nổi bọt, không mở chi tiết cả hàng). */}
         {(customer.customerCode || hasPhone(customer.phoneMasked)) && (
           <p className={`${TEXT_MUTED} flex flex-wrap items-center gap-x-1.5`}>
-            <CustomerCodeBadge code={customer.customerCode} />
+            <CustomerCodeBadge code={customer.customerCode} isCopyable isCompact />
             {customer.customerCode && hasPhone(customer.phoneMasked) && <span aria-hidden="true">·</span>}
             {hasPhone(customer.phoneMasked) && <span className="tabular-nums">{customer.phoneMasked}</span>}
           </p>

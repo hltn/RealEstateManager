@@ -1,5 +1,6 @@
 // Đầu trang chi tiết khách (02 §4.3): tên + mã KH + tình trạng (đổi được) + phụ trách chính + SĐT che + Gọi/Zalo + ghi chú nhanh/đặt hẹn.
-// Khách chưa có SĐT (FR-02): ẩn dòng SĐT và nút Gọi/Zalo (không disable). Mã KH: desktop cạnh tên; mobile ở `MobileDetailHeader`.
+// Khách chưa có SĐT (FR-02): ẩn dòng SĐT và nút Gọi/Zalo (không disable). Mã KH (chip bấm để sao chép): desktop cạnh tên; mobile ngay dưới tên (không còn ở `MobileDetailHeader`).
+// Nút "Xóa khách" chỉ ở desktop trong cụm nút đầu trang; mobile đặt kín đáo cuối tab "Thông tin" (`CustomerDetail.mobile`).
 // Desktop: breadcrumb + thẻ ngang; mobile: thẻ gọn (nút Gọi/Zalo cố định ở `MobileContactFooter`).
 import { CalendarPlus, MessageCircle, NotebookPen, Phone, Star } from 'lucide-react';
 import type { CustomerDetail } from '@crm/api';
@@ -51,7 +52,15 @@ export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderP
     return (
       <section aria-label="Tóm tắt hồ sơ" className={`${CARD_CLASS} space-y-3 p-4`}>
         <div className="flex items-start justify-between gap-2">
-          <h1 className="min-w-0 text-xl font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-gray-800 dark:text-white/90">{customer.fullName}</h1>
+            {/* Mã KH ngay dưới tên, là nút chip sao chép (kiểu chip mặc định, đủ vùng chạm). */}
+            {customer.customerCode && (
+              <div className="mt-1.5">
+                <CustomerCodeBadge code={customer.customerCode} isCopyable />
+              </div>
+            )}
+          </div>
           <StatusDropdown customer={customer} align="right" />
         </div>
         {meta}
@@ -64,7 +73,6 @@ export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderP
             <CalendarPlus size={16} aria-hidden="true" />
             Hẹn nhắc
           </button>
-          <DeleteCustomerButton customer={customer} variant="mobile" />
         </div>
       </section>
     );
@@ -81,7 +89,7 @@ export const CustomerHeader = ({ customer, variant, onAddNote }: CustomerHeaderP
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-xl font-semibold text-gray-800 md:text-2xl dark:text-white/90">{customer.fullName}</h1>
-              <CustomerCodeBadge code={customer.customerCode} className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`} />
+              <CustomerCodeBadge code={customer.customerCode} isCopyable className={`${CHIP_SMALL_CLASS} ${CHIP_TONE_CLASS.gray}`} />
               <StatusDropdown customer={customer} />
             </div>
             {meta}

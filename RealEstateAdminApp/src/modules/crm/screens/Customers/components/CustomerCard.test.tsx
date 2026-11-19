@@ -73,4 +73,23 @@ describe('CustomerCard - mục đích mua dưới SĐT', () => {
     expect(screen.queryByTitle(/Mục đích mua/)).not.toBeInTheDocument();
     expect(screen.queryByText('Để ở')).not.toBeInTheDocument();
   });
+
+  it('thẻ mobile hiện ĐỦ mục đích dài: không truncate, xuống dòng, vẫn có title đủ nội dung', () => {
+    const long = ['LIVING', 'INVEST_RENT', 'INVEST_FLIP', 'X_Y'];
+    render(<CustomerCard customer={customer({ purchasePurposes: long })} />);
+    const text = screen.getByText(/^Ở thực, /);
+    expect(text).not.toHaveClass('truncate');
+    expect(text).toHaveClass('break-words');
+    expect(text.closest('p')).toHaveAttribute('title', expect.stringContaining('X_Y'));
+  });
+});
+
+describe('CustomerCard - mã khách là nút sao chép', () => {
+  it('mã hiện dưới dạng nút sao chép; mã null thì không có nút', () => {
+    const { unmount } = render(<CustomerCard customer={customer({ customerCode: 'KH-000053' })} />);
+    expect(screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' })).toBeInTheDocument();
+    unmount();
+    render(<CustomerCard customer={customer({ customerCode: null })} />);
+    expect(screen.queryByRole('button', { name: /Sao chép mã khách/ })).not.toBeInTheDocument();
+  });
 });

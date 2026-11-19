@@ -35,4 +35,27 @@ describe('CustomerCodeBadge', () => {
     render(<CustomerCodeBadge code="KH-000001" className="text-gray-500" />);
     expect(screen.getByText('KH-000001')).toHaveClass('text-gray-500', 'font-mono');
   });
+
+  it('chế độ mặc định không đổi: chữ thuần, KHÔNG có button, KHÔNG có icon', () => {
+    const { container } = render(<CustomerCodeBadge code="KH-000053" />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(container.querySelector('svg')).toBeNull();
+    expect(container.textContent).toBe('Mã khách KH-000053');
+  });
+
+  it('isCopyable: là nút sao chép có aria-label, KHÔNG còn chữ sr-only "Mã khách" trong nút (tránh đọc trùng)', () => {
+    const { container } = render(<CustomerCodeBadge code="KH-000053" isCopyable />);
+    expect(screen.getByRole('button', { name: 'Sao chép mã khách KH-000053' })).toBeInTheDocument();
+    expect(container.querySelector('.sr-only')).toBeNull();
+  });
+
+  it.each([null, undefined, ''])('isCopyable với mã %j: không render gì', (code) => {
+    const { container } = render(<CustomerCodeBadge code={code} isCopyable />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('isCopyable với mã dài hơn 6 số: hiện nguyên vẹn', () => {
+    render(<CustomerCodeBadge code="KH-1000000" isCopyable />);
+    expect(screen.getByRole('button')).toHaveTextContent('KH-1000000');
+  });
 });

@@ -9,27 +9,27 @@ vi.mock('@crm/components/ContactActionGrid', () => ({ ContactActionGrid: () => n
 import { CustomerCard } from './CustomerCard';
 
 describe('CustomerCard - mã khách cạnh SĐT', () => {
-  it('có cả mã lẫn SĐT: cùng một dòng, mã trước SĐT, có dấu "·" ở giữa', () => {
+  it('có cả mã lẫn SĐT: cùng một dòng, mã trước SĐT, có dấu "·" ở giữa (nút mã không còn chữ sr-only)', () => {
     render(<CustomerCard customer={makeListItem({ customerCode: 'KH-000123' })} />);
-    expect(screen.getByText('KH-000123').closest('p')?.textContent).toBe('Mã khách KH-000123·0912 ••• 678');
+    expect(screen.getByText('KH-000123').closest('p')?.textContent).toBe('KH-000123·0912 ••• 678');
   });
 
   it('khách KHÔNG có SĐT: chỉ hiện mã, không dấu phân cách thừa, không chữ "null"', () => {
     render(<CustomerCard customer={makeListItem({ customerCode: 'KH-000124', phoneMasked: null })} />);
-    expect(screen.getByText('KH-000124').closest('p')?.textContent).toBe('Mã khách KH-000124');
+    expect(screen.getByText('KH-000124').closest('p')?.textContent).toBe('KH-000124');
     expect(screen.queryByText('·')).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|undefined/);
   });
 
   it.each(['', '   '])('SĐT là chuỗi rỗng/khoảng trắng (%j): coi như không có SĐT, chỉ hiện mã, không dấu phân cách', (phoneMasked) => {
     render(<CustomerCard customer={makeListItem({ customerCode: 'KH-000125', phoneMasked })} />);
-    expect(screen.getByText('KH-000125').closest('p')?.textContent).toBe('Mã khách KH-000125');
+    expect(screen.getByText('KH-000125').closest('p')?.textContent).toBe('KH-000125');
     expect(screen.queryByText('·')).not.toBeInTheDocument();
   });
 
   it('mã null + không SĐT: không có dòng định danh', () => {
     render(<CustomerCard customer={makeListItem({ customerCode: null, phoneMasked: null })} />);
-    expect(screen.queryByText(/Mã khách/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sao chép mã khách/ })).not.toBeInTheDocument();
     expect(document.querySelector('article > div p')).toBeNull();
   });
 });

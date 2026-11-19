@@ -1,6 +1,7 @@
 /**
  * Nút "Xóa khách" ở chi tiết khách (FR-31): chỉ hiện theo cờ `permissions.canDelete` của backend (Quản trị hoặc người tạo khách,
  * mọi tình trạng khách; không còn điều kiện khách "Bỏ"). FE không tự suy quyền từ vai trò.
+ * Desktop: nút icon vuông viền đỏ trong cụm nút đầu trang. Mobile: nút chữ đỏ kín đáo cuối tab "Thông tin" (đặt bởi `CustomerDetail.mobile`, không ở đầu trang).
  * Bấm -> hộp xác nhận có ô lý do bắt buộc (dùng chung với xóa hàng loạt) -> `DELETE /crm/customers/:id?reason=`; xong quay về danh sách khách.
  */
 import { useState } from 'react';
@@ -51,10 +52,17 @@ export const DeleteCustomerButton = ({ customer, variant }: DeleteCustomerButton
           <Trash2 size={18} aria-hidden="true" />
         </button>
       ) : (
-        <button type="button" onClick={openDialog} className={`${DANGER_OUTLINE_BUTTON_CLASS} col-span-2 h-10 w-full text-sm`}>
-          <Trash2 size={16} aria-hidden="true" />
-          Xóa khách
-        </button>
+        // Mobile: kín đáo (hành động nhạy cảm) - đường kẻ ngăn phía trên + nút chữ đỏ nhỏ, không nền đặc; đặt cuối tab "Thông tin".
+        <div className="border-t border-gray-200 pt-4 text-center dark:border-white/[0.05]">
+          <button
+            type="button"
+            onClick={openDialog}
+            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium text-error-600 transition-colors hover:bg-error-50 active:bg-error-50 dark:text-error-400 dark:hover:bg-error-500/10 dark:active:bg-error-500/10"
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Xóa khách
+          </button>
+        </div>
       )}
       <DeleteReasonDialog
         isOpen={isOpen}

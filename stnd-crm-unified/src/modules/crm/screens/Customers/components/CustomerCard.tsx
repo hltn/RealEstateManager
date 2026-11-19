@@ -36,7 +36,7 @@ export const CustomerCard = ({ customer, showPrimaryAssignee }: CustomerCardProp
           </button>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-theme-xs text-gray-500 dark:text-gray-400">
             {customer.phoneMasked ? <span className="font-mono">{customer.phoneMasked}</span> : !customer.customerCode && <span>Chưa có SĐT</span>}
-            <CustomerCodeBadge code={customer.customerCode} />
+            <CustomerCodeBadge code={customer.customerCode} isCopyable />
           </p>
         </div>
         <CustomerStatusChip status={customer.status} />
