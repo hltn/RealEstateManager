@@ -1,0 +1,32 @@
+# Dependabot: PR cập nhật hằng tuần. PR của Dependabot chạy CI như PR thường (không secret).
+# Không cấu hình RealEstateApp (mobile, cấm đụng) và stnd-crm-unified (prototype).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /RealEstateBackendApp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /RealEstateAdminApp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: /RealEstateBackendApp
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /RealEstateAdminApp
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

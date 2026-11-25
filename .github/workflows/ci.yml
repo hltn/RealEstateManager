@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ci.yml: CI cho Pull Request. KHÔNG deploy, KHÔNG secret, KHÔNG self-hosted.
+# Repo PUBLIC: PR từ người ngoài chạy ở đây, nên CẤM `runs-on: self-hosted` và CẤM `pull_request_target`.
+# Không dùng `paths:` để check luôn xuất hiện trên mọi PR (cần cho required check của ruleset `main`).
+# Cổng chặn: tests (lint, build, test), gitleaks, docker-build-smoke. npm-audit chỉ báo cáo.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# Khóa theo nhánh nguồn: lượt mới hủy lượt cũ của cùng PR.
+concurrency:
+  group: ci-${{ github.event.pull_request.head.repo.full_name }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests
+    uses: ./.github/workflows/_tests.yml
+
+  # Gitleaks chỉ quét phần diff của PR (base..head), không quét cả lịch sử. Binary ghim phiên bản + sha256, không cần token.
+  # `--redact`: không in giá trị secret ra log.
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (đủ lịch sử để quét base..head)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Cài gitleaks (ghim phiên bản, kiểm sha256)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+      - name: Quét diff của PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose \
+            --log-opts="${BASE_SHA}..${HEAD_SHA}" .
+
+  # Báo cáo, không chặn: lỗ hổng phụ thuộc production của BE và FE hiện ra ở job summary.
+  npm-audit:
+    name: npm-audit (chỉ báo cáo)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [RealEstateBackendApp, RealEstateAdminApp]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ${{ matrix.app }}/.nvmrc
+      - name: npm audit --omit=dev
+        working-directory: ${{ matrix.app }}
+        run: |
+          {
+            echo "### npm audit (${{ matrix.app }}, --omit=dev)"
+            echo '```'
+            npm audit --omit=dev || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Dựng thử hai image đúng cách release.sh dựng (--target production), không push, không lưu artifact.
+  docker-build-smoke:
+    name: docker-build-smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [RealEstateBackendApp, RealEstateAdminApp]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: docker build --target production (không push)
+        run: docker build --target production --build-arg GIT_COMMIT="${GITHUB_SHA::7}" -f "${{ matrix.app }}/Dockerfile" "${{ matrix.app }}"
