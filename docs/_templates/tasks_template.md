@@ -19,6 +19,15 @@
 - **Ô tick:** `[ ]` chưa làm, `[x]` đã xong (code + unit test, `qa-agent` đã review đạt).
 - **Hoàn tất:** file Tasks xong khi mọi task đều `[x]`; không có trạng thái riêng.
 
+## Checkpoint phân rã
+
+> Điền đủ 4 mục; mục không áp dụng thì giữ lại và ghi `n/a: <lý do>`.
+
+1. **Bước chặn đầu tiên:** <task phải xong trước khi các task khác chạy, ví dụ schema, hợp đồng API, migration>
+2. **Luồng độc lập:** <nhóm task chạm file/module/tầng rời nhau, các task `[P]` lấy từ đây>
+3. **Trạng thái dùng chung:** <file/collection/key nhiều task cùng ghi; ưu tiên tách đích ghi, chỉ tuần tự khi có bất biến thật>
+4. **Phân rã nhỏ nhất an toàn:** <vì sao chia như vậy; nếu một coder làm hết thì nêu lý do>
+
 ## Đợt 1: <tên đợt>
 
 | Xong | Mã | Nhãn | Tên task | Agent | Phụ thuộc | FR | Tiêu chí xong |
