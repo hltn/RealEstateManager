@@ -14,6 +14,9 @@
 # ──────────────────────────────────────────────────────────────────
 # shellcheck disable=SC2034,SC2016  # biến dùng gián tiếp; nháy đơn có chủ ý (stub nhận lệnh chứa $ chưa mở rộng)
 set -uo pipefail
+# Cô lập khỏi môi trường CI: GitHub luôn đặt GITHUB_RUN_ID, làm CD_RUN_ID không còn rỗng như test giả định.
+# Ca cần các biến này tự đặt qua EXTRA_ENV/rd.
+unset GITHUB_RUN_ID DEPLOY_CD_RUN_ID
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$TEST_DIR/../.." && pwd)"
