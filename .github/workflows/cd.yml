@@ -1,0 +1,82 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# cd.yml: CD cho STAGING (v1.0.7). Chỉ nhánh `main` và chạy tay; KHÔNG BAO GIỜ chạy từ Pull Request.
+#
+# Phạm vi hiện tại: test (runner GitHub) -> build + cài gói + deploy.sh + smoke test trên `staging-runner` (máy staging).
+# CHƯA có production: job production cần Environment `production` (required reviewer) + khóa SSH deploy riêng,
+# làm riêng sau khi Oniichan cho phép (chạm production). Khi đó thêm artifact (image.tar + gói release) để production
+# nhận ĐÚNG bộ image đã qua staging.
+#
+# Trigger `push` (merge vào main tự deploy staging) CHƯA bật: chạy tay `workflow_dispatch` trên `main` để chứng minh trước.
+# Bật bằng cách thêm khối `push: branches: [main]` dưới `on:` sau khi một lượt chạy tay đạt.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Một lượt deploy tại một thời điểm; lượt đang chạy KHÔNG bị hủy (hủy giữa chừng deploy.sh là nguy hiểm).
+concurrency:
+  group: cd
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: tests
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/_tests.yml
+
+  deploy-staging:
+    name: Build, deploy và smoke test staging
+    needs: tests
+    if: github.ref == 'refs/heads/main'
+    # self-hosted CHỈ ở đây (và chỉ khi ref là main): máy staging dùng chung Docker daemon, có quyền gần như root.
+    runs-on: [self-hosted, staging]
+    timeout-minutes: 60
+    environment: staging
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+    steps:
+      - name: Kiểm biến cấu hình của Environment
+        run: |
+          : "${DEPLOY_PATH:?Thiếu variable DEPLOY_PATH trong Environment staging}"
+          : "${PUBLIC_URL:?Thiếu variable PUBLIC_URL trong Environment staging}"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Dựng MỘT lần, tag bất biến <version>-<commit>; trong CI release.sh không đặt tag `current` (chỉ deploy.sh promote).
+      - name: release.sh build
+        run: ./release.sh build
+
+      - name: Cài gói release vào thư mục deploy (không đụng .env, backups, logs)
+        run: bash ops/install-release.sh --dir "$DEPLOY_PATH" --sha256 release.tgz.sha256 release.tgz
+
+      # Chạy qua systemd --user để restart runner giữa chừng không giết deploy.sh (Architecture Q-36).
+      # DEPLOY_ENFORCE_IMAGE_ID=1: image ID lệch release.env là lỗi (cùng một Docker daemon nên phải khớp).
+      - name: deploy.sh (kiểm image ID và .env, backup, migrate, up, health)
+        run: |
+          systemd-run --user --wait --collect --pipe \
+            --working-directory="$DEPLOY_PATH" \
+            --setenv=DEPLOY_ENFORCE_IMAGE_ID=1 \
+            --setenv=DEPLOY_CD_RUN_ID="$GITHUB_RUN_ID" \
+            ./deploy.sh
+
+      - name: Smoke test (liveness, readiness, /env.js, trang chủ)
+        run: |
+          set -euo pipefail
+          check() {
+            local path="$1" want="$2"
+            echo "GET ${PUBLIC_URL}${path}"
+            curl -fsS --retry 6 --retry-delay 10 --retry-all-errors -o "$RUNNER_TEMP/smoke.out" "${PUBLIC_URL}${path}"
+            grep -q "$want" "$RUNNER_TEMP/smoke.out" || { echo "::error::${path} không chứa '${want}'"; exit 1; }
+          }
+          check /api/v1/health/liveness ""
+          check /api/v1/health/readiness ""
+          check /env.js "__APP_CONFIG__"
+          check / "<div id=\"root\""

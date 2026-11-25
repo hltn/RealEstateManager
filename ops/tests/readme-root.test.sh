@@ -56,6 +56,8 @@ while IFS= read -r line; do
       [[ "$tok" =~ $PATH_RE ]] || continue
       CHECKED=$((CHECKED + 1))
       if [[ -e "$ROOT_DIR/${tok%/}" ]]; then ok
+      # Tài liệu nội bộ cố ý bị .gitignore (không lên repo public) nên vắng trong checkout của CI: không coi là thiếu.
+      elif git -C "$ROOT_DIR" check-ignore -q -- "${tok%/}" 2>/dev/null; then ok
       elif [[ "$FUTURE_TOKENS" == *" ${tok%/} "* ]]; then
         [[ "$line" == *"(sẽ có ở v1.0.6"* ]] && ok || fail "[FR-13] README nhắc '$tok' (chưa có) mà dòng không đánh dấu '(sẽ có ở v1.0.6'"
       else fail "[FR-13] README nhắc '$tok' nhưng không tồn tại ở gốc repo"; fi
@@ -75,7 +77,12 @@ expect_has "[FR-13] mục 4 nêu restore.sh" "$README" "restore.sh"
 expect_has "[FR-13] mục 5 trỏ mục lục docs" "$README" "docs/README.md"
 expect_has "[FR-13] mục 6 nêu prototype" "$README" "stnd-crm-unified/"
 expect_has "[FR-13] mục 6 nêu ngoại lệ FR-28" "$README" "FR-28"
-expect_has "[FR-13] lệnh chưa có được đánh dấu v1.0.6" "$README" "(sẽ có ở v1.0.6"
+# Chỉ đòi dấu "(sẽ có ở v1.0.6" khi còn token chưa có thật; khi mọi token đã có (v1.0.6 xong) thì không còn gì để đánh dấu.
+PENDING_FUTURE=0
+for t in $FUTURE_TOKENS; do [[ -e "$ROOT_DIR/$t" ]] || PENDING_FUTURE=1; done
+if [[ "$PENDING_FUTURE" == 1 ]]; then
+  expect_has "[FR-13] lệnh chưa có được đánh dấu v1.0.6" "$README" "(sẽ có ở v1.0.6"
+fi
 # Mục 3: nếu lệnh/tệp mới chưa tồn tại thì README phải ghi rõ "sẽ có ở v1.0.6" (không được nêu như đang có).
 if [[ ! -e "$ROOT_DIR/release.sh" ]]; then
   # shellcheck disable=SC2016

@@ -1,0 +1,136 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# _tests.yml: bộ kiểm tra dùng lại (workflow_call). Gọi từ ci.yml (PR) và cd.yml (main).
+# CHỈ chạy trên runner GitHub, KHÔNG secret, KHÔNG self-hosted, quyền contents: read.
+# Phạm vi: RealEstateAdminApp, RealEstateBackendApp, ops/. Không đụng RealEstateApp (mobile).
+# Cổng chặn: mọi job dưới đây. Lint Backend chặn khi có lỗi (đã về 0 lỗi), cảnh báo không chặn.
+# Không dùng script `lint` của Backend (có `--fix`, tự sửa file); chỉ dùng `lint:ci`.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-admin:
+    name: Lint Admin App (oxlint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: RealEstateAdminApp
+    steps:
+      # Ghim theo SHA commit của tag chính thức (comment ghi tag để dễ nâng cấp).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: RealEstateAdminApp/.nvmrc
+          cache: npm
+          cache-dependency-path: RealEstateAdminApp/package-lock.json
+      - name: Cài phụ thuộc (npm ci)
+        run: npm ci --no-audit --no-fund
+      - name: Lint (oxlint)
+        run: npm run lint
+
+  lint-backend:
+    name: Lint Backend (ESLint, không --fix)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: RealEstateBackendApp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: RealEstateBackendApp/.nvmrc
+          cache: npm
+          cache-dependency-path: RealEstateBackendApp/package-lock.json
+      - name: Cài phụ thuộc (npm ci)
+        run: npm ci --no-audit --no-fund
+      - name: Lint (ESLint, chỉ báo lỗi, không sửa file)
+        run: npm run lint:ci
+
+  test-backend:
+    name: Build và test Backend (nest build, jest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: RealEstateBackendApp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: RealEstateBackendApp/.nvmrc
+          cache: npm
+          cache-dependency-path: RealEstateBackendApp/package-lock.json
+      - name: Cài phụ thuộc (npm ci)
+        run: npm ci --no-audit --no-fund
+      - name: Build (nest build)
+        run: npm run build
+      # `npm test` bỏ qua *.integration.spec.ts (cần Mongo/Redis/MinIO); integration không chạy ở đây.
+      - name: Test (jest, không integration)
+        run: npm test -- --ci
+
+  test-admin:
+    name: Build và test Admin App (tsc, vite, vitest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: RealEstateAdminApp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: RealEstateAdminApp/.nvmrc
+          cache: npm
+          cache-dependency-path: RealEstateAdminApp/package-lock.json
+      - name: Cài phụ thuộc (npm ci)
+        run: npm ci --no-audit --no-fund
+      - name: Build (tsc -b và vite build)
+        run: npm run build
+      - name: Test (vitest)
+        run: npm test
+
+  ops-tests:
+    name: Test script vận hành (ops/tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Chạy hết mọi file rồi mới báo lỗi, để một lượt thấy đủ các test hỏng.
+      - name: Chạy ops/tests/*.test.sh
+        run: |
+          failed=()
+          for f in ops/tests/*.test.sh; do
+            echo "::group::$f"
+            if ! bash "$f"; then failed+=("$f"); fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::Test hỏng: ${failed[*]}"
+            exit 1
+          fi

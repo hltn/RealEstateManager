@@ -85,4 +85,22 @@ describe('sao lưu dữ liệu hỏng trước khi nạp seed', () => {
     expect(contents).toContain('lần 5');
     expect(contents).not.toContain('lần 1');
   });
+
+  it('nhiều lần hỏng trong cùng một mili giây vẫn giữ 3 bản MỚI nhất (đồng hồ đóng băng)', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      for (let index = 1; index <= 6; index += 1) {
+        window.localStorage.setItem(CRM_STORAGE_KEY, `{hỏng lần ${index}`);
+        loadCrmData();
+      }
+    } finally {
+      now.mockRestore();
+    }
+    const keys = backupKeys();
+    expect(keys).toHaveLength(3);
+    const contents = keys.map((key) => window.localStorage.getItem(key)).join('|');
+    expect(contents).toContain('lần 4');
+    expect(contents).toContain('lần 5');
+    expect(contents).toContain('lần 6');
+  });
 });
