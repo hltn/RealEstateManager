@@ -148,7 +148,10 @@ export class GoogleDriveOAuthService {
    - Refresh thành công → tiếp tục normal flow với event listener
    */
   async getOAuth2Client(userId: string): Promise<OAuth2Client> {
-    const tokenDoc = await this.tokenModel.findOne({ userId }).exec();
+    const tokenDoc = await this.tokenModel
+      .findOne({ userId })
+      .select('+accessToken +refreshToken')
+      .exec();
     if (!tokenDoc) {
       throw new UnauthorizedException(
         'Google Drive not connected. Please connect first.',
@@ -257,7 +260,10 @@ export class GoogleDriveOAuthService {
    * Idempotent: xử lý trường hợp token đã revoke.
    */
   async revokeAndDelete(userId: string): Promise<void> {
-    const tokenDoc = await this.tokenModel.findOne({ userId }).exec();
+    const tokenDoc = await this.tokenModel
+      .findOne({ userId })
+      .select('+accessToken +refreshToken')
+      .exec();
     if (!tokenDoc) {
       throw new UnauthorizedException('Google Drive not connected.');
     }

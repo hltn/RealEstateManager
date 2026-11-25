@@ -490,4 +490,35 @@ describe('GoogleDriveOAuthService', () => {
       expect(hasUniqueUserId).toBe(true);
     });
   });
+
+  describe('token Google là bí mật (select: false)', () => {
+    it('schema: accessToken và refreshToken mặc định không bị đọc ra', () => {
+      expect(GoogleDriveTokenSchema.path('accessToken').options.select).toBe(
+        false,
+      );
+      expect(GoogleDriveTokenSchema.path('refreshToken').options.select).toBe(
+        false,
+      );
+    });
+
+    it("getOAuth2Client chủ động nạp token bằng .select('+accessToken +refreshToken')", async () => {
+      const chain = chainable(TOKEN_DOC);
+      tokenModel.findOne.mockReturnValue(chain);
+
+      await service.getOAuth2Client(USER_ID);
+
+      expect(chain.select).toHaveBeenCalledWith('+accessToken +refreshToken');
+    });
+
+    it("revokeAndDelete chủ động nạp token bằng .select('+accessToken +refreshToken')", async () => {
+      const chain = chainable(TOKEN_DOC);
+      tokenModel.findOne.mockReturnValue(chain);
+      mockOAuth2Instance.revokeCredentials.mockResolvedValue({});
+      tokenModel.deleteOne.mockReturnValue(chainable(undefined));
+
+      await service.revokeAndDelete(USER_ID);
+
+      expect(chain.select).toHaveBeenCalledWith('+accessToken +refreshToken');
+    });
+  });
 });

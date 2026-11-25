@@ -14,10 +14,12 @@ export class GoogleDriveToken extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
   userId: Types.ObjectId;
 
-  @Prop({ type: String, required: true })
+  // `select: false`: token Google là bí mật, mặc định không đọc ra. Chỉ đọc bằng `.select('+accessToken +refreshToken')`
+  // ở nơi thật sự cần (getOAuth2Client, revokeAndDelete). Dữ liệu cũ không đổi, đây chỉ là mặc định của truy vấn.
+  @Prop({ type: String, required: true, select: false })
   accessToken: string;
 
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, required: true, select: false })
   refreshToken: string;
 
   @Prop({ type: Date, required: true })
