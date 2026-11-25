@@ -240,7 +240,7 @@ describe('Cấu trúc BE (audit tĩnh)', () => {
       };
       const integrationRegex = regexOf(scripts['test:integration']);
       const perfRegex = regexOf(scripts['test:perf']);
-      const ignoreIntegration = /"crm-m2-perf"/.test(
+      const shouldIgnoreIntegration = /"crm-m2-perf"/.test(
         scripts['test:integration'],
       );
       const dir = path.join(SRC_ROOT, 'modules/crm/__integration__');
@@ -250,7 +250,7 @@ describe('Cấu trúc BE (audit tĩnh)', () => {
       const inIntegration = files.filter(
         (n) =>
           integrationRegex.test(n) &&
-          !(ignoreIntegration && /crm-m2-perf/.test(n)),
+          !(shouldIgnoreIntegration && /crm-m2-perf/.test(n)),
       );
       const inPerf = files.filter((n) => perfRegex.test(n));
       expect(inIntegration).toHaveLength(26);

@@ -245,11 +245,11 @@ async function fillByRef(
   db: Db,
   field: RefField,
   entries: readonly RefEntry[],
-  apply: boolean,
+  shouldApply: boolean,
 ): Promise<number> {
   if (entries.length === 0) return 0;
   const collection = db.collection(field.collection);
-  if (!apply) {
+  if (!shouldApply) {
     return collection.countDocuments(
       missingCodeFilter(
         field,
@@ -304,7 +304,7 @@ async function collectOrphans(
 async function fillInterestedProjectCodes(
   db: Db,
   projectCodeById: ReadonlyMap<string, string>,
-  apply: boolean,
+  shouldApply: boolean,
   orphans: string[],
 ): Promise<number> {
   const customers = db.collection(CUSTOMERS);
@@ -348,7 +348,7 @@ async function fillInterestedProjectCodes(
       });
     }
     if (operations.length === 0) continue;
-    if (apply) {
+    if (shouldApply) {
       const result = await customers.bulkWrite(operations, { ordered: false });
       coded += result.modifiedCount;
     } else {
@@ -389,7 +389,7 @@ async function writeAreaCodes(
 /** Một lượt: đếm (apply=false) hoặc điền (apply=true) toàn bộ các bước 1..6, trả báo cáo kèm danh sách mồ côi. */
 async function runOnce(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
 ): Promise<MigrateCatalogCodesResult> {
   // Đọc danh mục: tính cả bản ngừng hoạt động và xóa mềm (khách cũ vẫn trỏ vào chúng).
   const areaDocs = await db
@@ -403,13 +403,13 @@ async function runOnce(
 
   // Bước 1: mã khu vực (kế hoạch luôn lập, để dry-run đếm đúng cả phần phụ thuộc mã khu vực).
   const plan = planAreaCodes(areaDocs);
-  const areaIndexCreated = !(await indexExists(
+  const isAreaIndexCreated = !(await indexExists(
     db,
     AREAS,
     AREA_CODE_INDEX_NAME,
   ));
   let areasCoded = plan.size;
-  if (apply) {
+  if (shouldApply) {
     areasCoded = await writeAreaCodes(db, plan, areaIds);
     await db.collection(AREAS).createIndex(
       { code: 1 },
@@ -422,7 +422,7 @@ async function runOnce(
   }
 
   // Bước 2: chỉ mục mới ở 3.1.
-  if (apply) {
+  if (shouldApply) {
     for (const spec of NEW_INDEXES) {
       await db
         .collection(spec.collection)
@@ -466,31 +466,31 @@ async function runOnce(
     db,
     PROJECT_AREA_FIELD,
     areaEntries,
-    apply,
+    shouldApply,
   );
   // Bước 4: khách.
   const customersStatusCoded = await fillByRef(
     db,
     STATUS_FIELD,
     statusEntries,
-    apply,
+    shouldApply,
   );
   const customersSourceCoded = await fillByRef(
     db,
     SOURCE_FIELD,
     sourceEntries,
-    apply,
+    shouldApply,
   );
   const customersAreaCoded = await fillByRef(
     db,
     CUSTOMER_AREA_FIELD,
     areaEntries,
-    apply,
+    shouldApply,
   );
   const customersProjectsCoded = await fillInterestedProjectCodes(
     db,
     projectCodeById,
-    apply,
+    shouldApply,
     orphans,
   );
   // Bước 5: nhật ký chăm sóc, lịch hẹn.
@@ -498,13 +498,13 @@ async function runOnce(
     db,
     CONTACT_RESULT_FIELD,
     contactResultEntries,
-    apply,
+    shouldApply,
   );
   const appointmentsCoded = await fillByRef(
     db,
     APPOINTMENT_PROJECT_FIELD,
     projectEntries,
-    apply,
+    shouldApply,
   );
 
   // Bước 6 (phần mồ côi): id không còn trong danh mục.
@@ -522,7 +522,7 @@ async function runOnce(
 
   return {
     areasCoded,
-    areaIndexCreated,
+    areaIndexCreated: isAreaIndexCreated,
     projectsAreaCoded,
     customersStatusCoded,
     customersSourceCoded,
@@ -576,12 +576,12 @@ const formatResult = (result: MigrateCatalogCodesResult): string =>
  */
 export async function migrateCatalogCodes(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
   log?: (message: string) => void,
 ): Promise<MigrateCatalogCodesResult> {
-  const result = await runOnce(db, apply);
-  log?.(`${apply ? 'Đã điền' : 'Dry-run'}: ${formatResult(result)}`);
-  if (!apply) return result;
+  const result = await runOnce(db, shouldApply);
+  log?.(`${shouldApply ? 'Đã điền' : 'Dry-run'}: ${formatResult(result)}`);
+  if (!shouldApply) return result;
 
   // Kiểm cuối bằng một lượt đếm: sau khi điền xong không được còn bản ghi có id mà thiếu code.
   const verify = await runOnce(db, false);

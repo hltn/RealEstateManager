@@ -113,7 +113,7 @@ export class CustomerCriteriaService {
         };
       }
 
-      const matched = await this.repo.updateOne(
+      const isMatched = await this.repo.updateOne(
         ctx.scope,
         id,
         { __v: version },
@@ -128,7 +128,7 @@ export class CustomerCriteriaService {
         },
         { session },
       );
-      if (!matched) {
+      if (!isMatched) {
         const current = await this.repo.findOne(ctx.scope, id, {
           session,
           projection: { __v: 1 },

@@ -124,16 +124,16 @@ export class MigrationRunner {
   }
 
   /** `status` (chỉ đọc). Mã thoát: 3 nếu đang có khóa, 4 nếu cần baseline, còn lại 0. */
-  async status(asJson: boolean): Promise<ExitCode> {
+  async status(isJson: boolean): Promise<ExitCode> {
     assertValidRegistry(this.options.migrations);
     const state = await readMigrationState(this.db);
     const pending = selectPendingMigrations(
       this.options.migrations,
       state.applied,
     );
-    const replicaSet = await this.isReplicaSet();
+    const isReplicaSet = await this.isReplicaSet();
 
-    if (asJson) {
+    if (isJson) {
       this.options.out(
         JSON.stringify({
           appVersion: this.options.app.version,
@@ -148,11 +148,11 @@ export class MigrationRunner {
           locked: state.lock,
           lastError: state.lastError,
           baselineRequired: state.baselineRequired,
-          replicaSet,
+          replicaSet: isReplicaSet,
         }),
       );
     } else {
-      this.printStatus(state, pending, replicaSet);
+      this.printStatus(state, pending, isReplicaSet);
     }
     if (state.lock) return EXIT_CODE.LOCKED;
     if (state.baselineRequired) return EXIT_CODE.BASELINE_REQUIRED;
@@ -161,7 +161,7 @@ export class MigrationRunner {
 
   /** `up`: dry-run mặc định (liệt kê migration chờ), `apply` mới chạy thật. */
   async up(
-    apply: boolean,
+    shouldApply: boolean,
     by: MigrationActor,
     phase: PhaseFilter = 'all',
   ): Promise<ExitCode> {
@@ -192,7 +192,7 @@ export class MigrationRunner {
     );
     const versionChange = this.describeVersionChange(state);
 
-    if (!apply) {
+    if (!shouldApply) {
       out('[DRY-RUN] Không ghi gì vào DB.');
       if (state.lock) out(`Cảnh báo: đang có khóa (${state.lock.by}).`);
       this.printPending(pending);
@@ -432,12 +432,14 @@ export class MigrationRunner {
     report.warnings = [];
     if (plan.outcome === 'NEEDS_PROBES') {
       const results = await runBaselineProbes(this.db, plan.probeIds);
-      report.probes = results.map(({ id, passed, counts, reason }) => ({
-        id,
-        passed,
-        counts,
-        reason: reason ?? null,
-      }));
+      report.probes = results.map(
+        ({ id, passed: hasPassed, counts, reason }) => ({
+          id,
+          passed: hasPassed,
+          counts,
+          reason: reason ?? null,
+        }),
+      );
       for (const result of results) report.warnings.push(...result.warnings);
       plan = planReconcile({ ...input, probeResults: results });
     }
@@ -592,7 +594,7 @@ export class MigrationRunner {
    * `system` đã có `version`. Dry-run mặc định.
    */
   async baseline(
-    apply: boolean,
+    shouldApply: boolean,
     version: string | undefined,
     commit: string | undefined,
   ): Promise<ExitCode> {
@@ -617,7 +619,7 @@ export class MigrationRunner {
     const missing = BASELINE_MIGRATION_IDS.filter(
       (id) => !state.applied.some((doc) => doc.id === id),
     );
-    if (!apply) {
+    if (!shouldApply) {
       out(
         '[DRY-RUN] Không ghi gì vào DB. Sẽ ghi sổ "đã áp dụng" (by=baseline):',
       );
@@ -764,7 +766,7 @@ export class MigrationRunner {
   private printStatus(
     state: MigrationState,
     pending: readonly Migration[],
-    replicaSet: boolean,
+    isReplicaSet: boolean,
   ): void {
     const { out, app } = this.options;
     out(`Phiên bản app: ${app.version}${app.commit ? ` (${app.commit})` : ''}`);
@@ -773,7 +775,9 @@ export class MigrationRunner {
         ? `Phiên bản hệ thống (DB): ${state.version.value}${state.version.commit ? ` (${state.version.commit})` : ''}, cập nhật ${formatDate(state.version.updatedAt)}`
         : 'Phiên bản hệ thống (DB): chưa có',
     );
-    out(`Replica set: ${replicaSet ? 'có' : 'KHÔNG (--apply sẽ bị từ chối)'}`);
+    out(
+      `Replica set: ${isReplicaSet ? 'có' : 'KHÔNG (--apply sẽ bị từ chối)'}`,
+    );
     out(`Đã áp dụng (${state.applied.length}):`);
     for (const doc of state.applied) {
       out(`  ${doc.id} (${doc.by}, ${formatDate(doc.at)})`);

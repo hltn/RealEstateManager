@@ -18,12 +18,13 @@ export const probe006Areas: BaselineProbe = {
   run: async (db: Db): Promise<ProbeResult> => {
     const result = await migrateAreasTo34Provinces(db, false);
     // provincesKept === 0 kéo theo provincesNormalized === 0 (chỉ tỉnh giữ lại mới cần chuẩn hóa).
-    const areasEmpty = result.provincesKept === 0 && result.areasDeleted === 0;
+    const isAreasEmpty =
+      result.provincesKept === 0 && result.areasDeleted === 0;
     const pendingWork =
       result.customersCleared +
       result.projectsCleared +
       result.areasDeleted +
-      (areasEmpty ? 0 : result.provincesInserted) +
+      (isAreasEmpty ? 0 : result.provincesInserted) +
       result.provincesNormalized;
     return {
       id: PROBE_006_ID,
@@ -36,7 +37,7 @@ export const probe006Areas: BaselineProbe = {
         provincesNormalized: result.provincesNormalized,
         provincesKept: result.provincesKept,
         // 1 = areas rỗng hoàn toàn (không tính thiếu 34 tỉnh là việc còn lại); tự giải thích provincesInserted=34 mà vẫn đạt.
-        areasEmpty: areasEmpty ? 1 : 0,
+        areasEmpty: isAreasEmpty ? 1 : 0,
       },
       warnings: [],
     };

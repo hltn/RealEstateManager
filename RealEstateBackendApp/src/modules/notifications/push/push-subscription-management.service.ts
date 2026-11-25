@@ -53,11 +53,14 @@ export class PushSubscriptionManagementService {
    * thiếu biến thì `enabled = false` dù cờ bật. `publicKey` chỉ trả khi `enabled` (khóa công khai, không bí mật).
    */
   getConfig(): PushConfigDto {
-    const enabled = this.provider.isEnabled();
+    const isEnabled = this.provider.isEnabled();
     const publicKey = (this.config.get<string>('VAPID_PUBLIC_KEY') ?? '')
       .toString()
       .trim();
-    return { enabled, publicKey: enabled && publicKey ? publicKey : null };
+    return {
+      enabled: isEnabled,
+      publicKey: isEnabled && publicKey ? publicKey : null,
+    };
   }
 
   /** Thiết bị đang hiệu lực (mới hoạt động trước) + thiết bị bị thu hồi trong 7 ngày gần nhất (mới nhất trước). */

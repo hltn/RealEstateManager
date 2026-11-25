@@ -190,7 +190,7 @@ export class DailyTasksService {
     query: ListDailyTasksQueryDto,
   ): Promise<{ data: DailyTaskResponseDto[]; meta: PaginationMetaDto }> {
     const ctx = await this.access.resolve(jwt);
-    const mine = this.resolveMine(ctx, query.scope);
+    const isMine = this.resolveMine(ctx, query.scope);
     const { page, limit, skip } = normalizePagination(query.page, query.limit);
     const now = new Date();
     const upcomingDays = query.upcomingDays ?? DEFAULT_UPCOMING_DAYS;
@@ -199,7 +199,7 @@ export class DailyTasksService {
     const sources = await this.runSources(
       ctx,
       kinds,
-      mine,
+      isMine,
       query.group,
       now,
       upcomingDays,
@@ -221,13 +221,13 @@ export class DailyTasksService {
     query: DailyTaskSummaryQueryDto,
   ): Promise<DailyTaskSummaryDto> {
     const ctx = await this.access.resolve(jwt);
-    const mine = this.resolveMine(ctx, query.scope);
+    const isMine = this.resolveMine(ctx, query.scope);
     const now = new Date();
     const upcomingDays = query.upcomingDays ?? DEFAULT_UPCOMING_DAYS;
     const kinds = new Set(Object.values(DailyTaskKind));
     const count = async (group: DailyTaskGroup): Promise<number> =>
       (
-        await this.runSources(ctx, kinds, mine, group, now, upcomingDays, 1)
+        await this.runSources(ctx, kinds, isMine, group, now, upcomingDays, 1)
       ).reduce((sum, source) => sum + source.total, 0);
     const [overdue, today, upcoming] = await Promise.all([
       count(DailyTaskGroup.OVERDUE),
@@ -254,7 +254,7 @@ export class DailyTasksService {
   private async runSources(
     ctx: AccessContext,
     kinds: Set<DailyTaskKind>,
-    mine: boolean,
+    isMine: boolean,
     group: DailyTaskGroup | undefined,
     now: Date,
     upcomingDays: number,
@@ -262,7 +262,7 @@ export class DailyTasksService {
   ): Promise<SourceResult[]> {
     const params: SourceQuery = {
       ctx,
-      mine,
+      mine: isMine,
       window: buildTaskWindow(group, now, upcomingDays),
       group,
       now,
@@ -286,7 +286,7 @@ export class DailyTasksService {
 
   /** Lịch hẹn SCHEDULED trong khoảng; `mine` = mình là người thực hiện hoặc nằm trong nhóm chăm sóc của khách (FR-19). */
   private async appointmentSource(params: SourceQuery): Promise<SourceResult> {
-    const { ctx, mine, window, limit } = params;
+    const { ctx, mine: isMine, window, limit } = params;
     const pipeline: PipelineStage[] = [
       {
         $match: {
@@ -296,7 +296,7 @@ export class DailyTasksService {
         },
       },
       ...customerScopeStages(this.repo, ctx, { 'careTeam.userId': 1 }),
-      ...(mine
+      ...(isMine
         ? [
             {
               $match: {
@@ -362,7 +362,7 @@ export class DailyTasksService {
    * đã chăm sóc xong việc này), chưa có lịch hẹn đi kèm. `mine` = mình là người ghi nhật ký hoặc nằm trong nhóm chăm sóc của khách (FR-19).
    */
   private async followUpSource(params: SourceQuery): Promise<SourceResult> {
-    const { ctx, mine, window, limit } = params;
+    const { ctx, mine: isMine, window, limit } = params;
     const pipeline: PipelineStage[] = [
       {
         $match: {
@@ -385,7 +385,7 @@ export class DailyTasksService {
           },
         },
       },
-      ...(mine
+      ...(isMine
         ? [
             {
               $match: {
@@ -439,7 +439,7 @@ export class DailyTasksService {
     params: SourceQuery,
     leadDays: readonly number[],
   ): Promise<SourceResult> {
-    const { ctx, mine, group, now, upcomingDays } = params;
+    const { ctx, mine: isMine, group, now, upcomingDays } = params;
     if (group === DailyTaskGroup.OVERDUE) return EMPTY;
 
     const todayKey = vnDateKey(now);
@@ -470,7 +470,7 @@ export class DailyTasksService {
           occasions: { $elemMatch: { month, day } },
         })),
         ...statusNotInRefsCondition(droppedStatuses),
-        ...(mine && { 'careTeam.userId': ctx.actor.userId }),
+        ...(isMine && { 'careTeam.userId': ctx.actor.userId }),
       },
       {
         projection: 'fullName statusId primaryAssigneeId occasions',
@@ -526,7 +526,7 @@ export class DailyTasksService {
     params: SourceQuery,
     staleDays: number,
   ): Promise<SourceResult> {
-    const { ctx, mine, group, now, limit } = params;
+    const { ctx, mine: isMine, group, now, limit } = params;
     if (group !== undefined && group !== DailyTaskGroup.TODAY) return EMPTY;
 
     const staleStatuses = await this.statusRefsOf([
@@ -546,7 +546,7 @@ export class DailyTasksService {
         },
       ],
       'careTeam.0': { $exists: true },
-      ...(mine && { 'careTeam.userId': ctx.actor.userId }),
+      ...(isMine && { 'careTeam.userId': ctx.actor.userId }),
     };
     const [total, customers] = await Promise.all([
       this.repo.count(ctx.scope, filter),

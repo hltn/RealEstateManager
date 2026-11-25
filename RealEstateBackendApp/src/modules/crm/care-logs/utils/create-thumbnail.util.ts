@@ -56,11 +56,11 @@ export async function createThumbnail(input: Buffer): Promise<ThumbnailResult> {
       })
       .webp({ quality: THUMBNAIL_WEBP_QUALITY })
       .toBuffer();
-    const swap = isQuarterTurn(meta.orientation);
+    const shouldSwap = isQuarterTurn(meta.orientation);
     return {
       buffer,
-      width: swap ? meta.height : meta.width,
-      height: swap ? meta.width : meta.height,
+      width: shouldSwap ? meta.height : meta.width,
+      height: shouldSwap ? meta.width : meta.height,
     };
   } catch (error) {
     throw new ThumbnailImageError((error as Error).message, { cause: error });

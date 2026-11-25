@@ -115,12 +115,9 @@ export class PushSubscriptionsController {
     @Headers('user-agent') userAgent: string | undefined,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const { created, subscription } = await this.subscriptions.register(
-      user.sub,
-      dto,
-      userAgent,
-    );
-    void reply.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    const { created: isCreated, subscription } =
+      await this.subscriptions.register(user.sub, dto, userAgent);
+    void reply.status(isCreated ? HttpStatus.CREATED : HttpStatus.OK);
     return { data: subscription };
   }
 }

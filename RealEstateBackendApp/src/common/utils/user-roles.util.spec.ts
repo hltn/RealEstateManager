@@ -78,8 +78,8 @@ describe('user-roles.util', () => {
       [[UserRole.EDITOR], false],
       [[], false],
       [['SUPERUSER'], false],
-    ])('%j → %s', (roles, expected) => {
-      expect(hasCrmRole(roles)).toBe(expected);
+    ])('%j → %s', (roles, isExpected) => {
+      expect(hasCrmRole(roles)).toBe(isExpected);
     });
 
     it('khác hasCrmTeamRole đúng ở Admin: Admin thuần có vai trò CRM nhưng không thuộc nhóm làm việc', () => {
@@ -97,8 +97,8 @@ describe('user-roles.util', () => {
       [[UserRole.EDITOR], false],
       [['SUPERUSER'], false],
       [[], false],
-    ])('FR-10: %j → %s', (roles, expected) => {
-      expect(canBePrimary(roles)).toBe(expected);
+    ])('FR-10: %j → %s', (roles, isExpected) => {
+      expect(canBePrimary(roles)).toBe(isExpected);
     });
 
     it('FR-10: Admin thuần được đứng tên PRIMARY dù không thuộc CRM_TEAM_ROLES', () => {

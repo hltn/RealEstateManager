@@ -22,9 +22,9 @@ const BRACKET_OPERATOR = /\[\s*(\$|__proto__|constructor)/;
 
 type Source = 'body' | 'query' | 'params';
 
-function isForbiddenKey(key: string, strict: boolean): boolean {
+function isForbiddenKey(key: string, isStrict: boolean): boolean {
   if (key.startsWith('$') || FORBIDDEN_KEYS.has(key)) return true;
-  if (!strict) return false;
+  if (!isStrict) return false;
   return key.includes('.') || BRACKET_OPERATOR.test(key);
 }
 
@@ -32,7 +32,10 @@ function isForbiddenKey(key: string, strict: boolean): boolean {
  * Duyệt lặp (không đệ quy → không tràn stack) toàn bộ giá trị; trả `true` nếu có khóa bị cấm
  * hoặc vượt `NOSQL_MAX_DEPTH`. `strict` (query/params) chặn thêm khóa chứa `.` và dạng `a[$...]`.
  */
-export function containsForbiddenKey(root: unknown, strict: boolean): boolean {
+export function containsForbiddenKey(
+  root: unknown,
+  isStrict: boolean,
+): boolean {
   if (root === null || typeof root !== 'object') return false;
   const stack: Array<{ value: object; depth: number }> = [
     { value: root, depth: 0 },
@@ -49,7 +52,7 @@ export function containsForbiddenKey(root: unknown, strict: boolean): boolean {
       continue;
     }
     for (const key of Object.keys(value)) {
-      if (isForbiddenKey(key, strict)) return true;
+      if (isForbiddenKey(key, isStrict)) return true;
       const child = (value as Record<string, unknown>)[key];
       if (child !== null && typeof child === 'object') {
         stack.push({ value: child, depth: depth + 1 });
@@ -90,8 +93,8 @@ export class NoSqlOperatorInterceptor implements NestInterceptor {
     ];
     if (!isMultipart(request)) checks.push(['body', false]);
 
-    for (const [source, strict] of checks) {
-      if (containsForbiddenKey(request[source], strict)) {
+    for (const [source, isStrict] of checks) {
+      if (containsForbiddenKey(request[source], isStrict)) {
         throw new BusinessException(
           ErrorCode.VALIDATION_FAILED,
           NOSQL_REJECT_MESSAGE,

@@ -17,12 +17,12 @@ const makeModel = (insertedSeedKeys: string[]) => ({
 });
 
 describe('PersonaSeedService', () => {
-  const build = (crmEnabled: boolean) => {
+  const build = (isCrmEnabled: boolean) => {
     const groupKeys: string[] = [];
     const fieldKeys: string[] = [];
     const featureFlags = {
       isEnabled: jest.fn((flag: FeatureFlag) =>
-        flag === FeatureFlag.CRM_ENABLED ? crmEnabled : false,
+        flag === FeatureFlag.CRM_ENABLED ? isCrmEnabled : false,
       ),
     };
     const config = { bumpVersionNow: jest.fn().mockResolvedValue(undefined) };

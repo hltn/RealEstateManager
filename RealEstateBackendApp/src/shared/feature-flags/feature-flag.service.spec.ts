@@ -60,7 +60,7 @@ describe('FeatureFlagService', () => {
       FEATURE_CRM_IMPORT: 'true',
     });
 
-    expect(Object.values(service.snapshot()).every((on) => !on)).toBe(true);
+    expect(Object.values(service.snapshot()).every((isOn) => !isOn)).toBe(true);
   });
 
   it('mỗi cờ độc lập: bật CRM_ENABLED không bật CRM_PUSH_ENABLED', () => {

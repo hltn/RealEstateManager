@@ -45,13 +45,15 @@ export const buildProfileChanges = (
   before: ProfileSnapshot,
   after: ProfileSnapshot,
   refs: RefMaps,
-  maskPhoneValue = false,
+  shouldMaskPhoneValue = false,
 ): CrmAuditChange[] => {
   const changes: CrmAuditChange[] = [];
   const scalar = (field: 'fullName' | 'phone' | 'email') => {
     if (before[field] === after[field]) return;
     const show = (value: string | null) =>
-      field === 'phone' && maskPhoneValue && value ? maskPhone(value) : value;
+      field === 'phone' && shouldMaskPhoneValue && value
+        ? maskPhone(value)
+        : value;
     changes.push({ field, from: show(before[field]), to: show(after[field]) });
   };
   scalar('fullName');

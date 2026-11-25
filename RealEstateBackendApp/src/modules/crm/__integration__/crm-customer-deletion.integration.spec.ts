@@ -160,7 +160,7 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
   const createCustomer = async (
     primary: string,
     members: string[] = [],
-    dropped = true,
+    isDropped = true,
     extra: Record<string, unknown> = {},
   ) => {
     const phone = `091${String(4_000_000 + ++seq)}`;
@@ -184,7 +184,7 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
     }
     await col('customers').updateOne(
       { _id: oid(id) },
-      { $set: { statusId: dropped ? status.DROPPED : status.INTERESTED } },
+      { $set: { statusId: isDropped ? status.DROPPED : status.INTERESTED } },
     );
     return {
       id,
@@ -203,13 +203,13 @@ describe('Xóa / khôi phục / xóa vĩnh viễn khách "Bỏ" — HTTP + Mongo
   /** Khách "đang xóa vĩnh viễn dở": danh sách báo cờ, khôi phục và ẩn danh hóa đều 409 và không đổi dữ liệu. */
   const expectPurgeBlocksOthers = async (
     id: string,
-    purgeInProgress: boolean,
+    isPurgeInProgress: boolean,
   ) => {
     const list = await call('GET', '/crm/deleted-customers?limit=100', 'admin');
     expect(
       list.body.data.find((row: any) => row.id === id).purgeInProgress,
-    ).toBe(purgeInProgress);
-    if (!purgeInProgress) return;
+    ).toBe(isPurgeInProgress);
+    if (!isPurgeInProgress) return;
     const restore = await call('POST', '/crm/customer-restorations', 'admin', {
       customerId: id,
     });

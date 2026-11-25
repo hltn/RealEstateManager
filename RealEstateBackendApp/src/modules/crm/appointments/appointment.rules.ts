@@ -164,9 +164,9 @@ export const assertProjectInputConsistent = (
   projectId: string | null | undefined,
   projectCode: string | null | undefined,
 ): void => {
-  const anyNull = projectId === null || projectCode === null;
-  const anyValue = !!projectId || !!projectCode;
-  if (anyNull && anyValue) {
+  const hasAnyNull = projectId === null || projectCode === null;
+  const hasAnyValue = !!projectId || !!projectCode;
+  if (hasAnyNull && hasAnyValue) {
     throw invalidField(
       'projectId và projectCode mâu thuẫn: một giá trị null (gỡ dự án), một giá trị có dữ liệu',
       'projectCode',

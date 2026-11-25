@@ -120,8 +120,8 @@ describe('canTransitionStatus', () => {
     [CANCELED, SCHEDULED, true],
     [DONE, CANCELED, false],
     [CANCELED, DONE, false],
-  ])('%s -> %s: %p', (from, to, expected) => {
-    expect(canTransitionStatus(from, to)).toBe(expected);
+  ])('%s -> %s: %p', (from, to, isExpected) => {
+    expect(canTransitionStatus(from, to)).toBe(isExpected);
   });
 });
 

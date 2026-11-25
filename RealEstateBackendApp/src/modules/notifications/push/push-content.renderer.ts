@@ -104,16 +104,16 @@ function fillTemplate(
   template: string,
   vars: Record<string, string>,
 ): string | null {
-  let missing = false;
+  let isMissing = false;
   const out = template.replace(/\{([^{}]*)\}/g, (_m, name: string) => {
     const value = vars[name];
     if (!value) {
-      missing = true;
+      isMissing = true;
       return '';
     }
     return value;
   });
-  return missing ? null : out;
+  return isMissing ? null : out;
 }
 
 function buildUrl(entry: PushCatalogEntry | undefined, input: PushRenderInput) {

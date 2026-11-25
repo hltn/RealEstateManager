@@ -1,9 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { AttachmentThumbnailQueueService } from './attachment-thumbnail-queue.service';
 
-const build = (enabled = true) => {
+const build = (isEnabled = true) => {
   const runtime = {
-    isEnabled: jest.fn(() => enabled),
+    isEnabled: jest.fn(() => isEnabled),
     registerWorker: jest.fn(),
     add: jest.fn().mockResolvedValue({ id: 'job' }),
     getJob: jest.fn().mockResolvedValue(null),

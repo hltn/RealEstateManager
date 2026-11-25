@@ -104,7 +104,7 @@ export const createProbe002UrlHash = (
     const counts: Record<string, number> = {};
     const warnings: string[] = [];
     const deadline = now() + limits.maxDurationMs;
-    let passed = true;
+    let hasPassed = true;
     let reason: string | undefined;
     for (const name of ARTICLE_COLLECTIONS) {
       const scan = await scanCollection(db, name, limits, deadline, now);
@@ -112,12 +112,12 @@ export const createProbe002UrlHash = (
       counts[`${name}_hashMismatch`] = scan.mismatched;
       counts[`${name}_duplicateUrls`] = scan.duplicateUrls;
       counts[`${name}_missingUrl`] = scan.missingUrl;
-      if (scan.mismatched > 0 || scan.duplicateUrls > 0) passed = false;
+      if (scan.mismatched > 0 || scan.duplicateUrls > 0) hasPassed = false;
       if (scan.missingUrl > 0) {
         warnings.push(`${name}: ${scan.missingUrl} doc thiếu url (bỏ qua).`);
       }
       if (scan.abortedBy) {
-        passed = false;
+        hasPassed = false;
         counts.unverifiable = 1;
         reason ??= `không xác minh được: ${name} vượt trần quét (${
           scan.abortedBy === 'docs'
@@ -127,7 +127,7 @@ export const createProbe002UrlHash = (
         break;
       }
     }
-    return { id: PROBE_002_ID, passed, counts, warnings, reason };
+    return { id: PROBE_002_ID, passed: hasPassed, counts, warnings, reason };
   },
 });
 

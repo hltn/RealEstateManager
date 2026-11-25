@@ -104,13 +104,13 @@ describe('CRM M2 — kiểm tải sơ bộ danh sách trên 10.000 khách', () =
     roles: string[],
     thresholdMs: number,
     sampleCount = SAMPLES,
-    resetSearchLimit = false,
+    shouldResetSearchLimit = false,
   ) => {
     for (const role of roles) {
       await timed(urlFor(role, 0), role); // làm nóng
       const samples: number[] = [];
       for (let i = 0; i < sampleCount; i += 1) {
-        if (resetSearchLimit) {
+        if (shouldResetSearchLimit) {
           await app
             .get<Redis>(REDIS_CLIENT)
             .del(`crm:rl:CUSTOMER_SEARCH:${userIds[role]}`);

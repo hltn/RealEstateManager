@@ -64,7 +64,7 @@ export class PersonaSeedService implements OnApplicationBootstrap {
   async seedAll(): Promise<PersonaSeedReport> {
     let personaGroups = 0;
     for (const group of SEED_PERSONA_GROUPS) {
-      const created = await ensureSeeded(
+      const isCreated = await ensureSeeded(
         this.itemModel,
         `${CatalogItemType.PERSONA_GROUP}:${group.code}`,
         { type: CatalogItemType.PERSONA_GROUP, code: group.code },
@@ -76,12 +76,12 @@ export class PersonaSeedService implements OnApplicationBootstrap {
           meta: null,
         },
       );
-      if (created) personaGroups += 1;
+      if (isCreated) personaGroups += 1;
     }
 
     let personaFields = 0;
     for (const [index, field] of SEED_PERSONA_FIELDS.entries()) {
-      const created = await ensureSeeded(
+      const isCreated = await ensureSeeded(
         this.fieldModel,
         `PERSONA_FIELD:${field.key}`,
         { key: field.key },
@@ -107,7 +107,7 @@ export class PersonaSeedService implements OnApplicationBootstrap {
           isActive: true,
         },
       );
-      if (created) personaFields += 1;
+      if (isCreated) personaFields += 1;
     }
     // Trường mới chèn làm đổi mẫu số độ đầy đủ của khách cũ: chỉ instance nào chèn THẬT mới tăng phiên bản cấu hình
     // (instance khác thấy trường đã có thì không chèn, không tăng) rồi kích job tính lại.

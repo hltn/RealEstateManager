@@ -623,8 +623,8 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
     const ROUNDS = 8;
 
     it('hai request chuyển khu vực chéo nhau (A vào B, B vào A) không bao giờ tạo vòng cha-con', async () => {
-      let sawCycle = false;
-      for (let round = 0; round < ROUNDS && !sawCycle; round += 1) {
+      let hasSeenCycle = false;
+      for (let round = 0; round < ROUNDS && !hasSeenCycle; round += 1) {
         const a = (
           await call('POST', '/crm/areas', 'admin', {
             name: `Cycle A ${round}`,
@@ -646,14 +646,15 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
           areas.findOne({ _id: new Types.ObjectId(a) }),
           areas.findOne({ _id: new Types.ObjectId(b) }),
         ]);
-        sawCycle = String(docA?.parentId) === b && String(docB?.parentId) === a;
+        hasSeenCycle =
+          String(docA?.parentId) === b && String(docB?.parentId) === a;
       }
-      expect(sawCycle).toBe(false);
+      expect(hasSeenCycle).toBe(false);
     });
 
     it('gán người vào nhóm đồng thời với xóa nhóm không bao giờ để người dùng trỏ vào nhóm đã xóa', async () => {
-      let sawOrphan = false;
-      for (let round = 0; round < ROUNDS && !sawOrphan; round += 1) {
+      let hasSeenOrphan = false;
+      for (let round = 0; round < ROUNDS && !hasSeenOrphan; round += 1) {
         const key = `raceStaff${round}`;
         await createUser(key, UserRole.STAFF);
         const t = (
@@ -672,9 +673,9 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
             .collection('teams')
             .findOne({ _id: new Types.ObjectId(t) }),
         ]);
-        sawOrphan = !!team?.deletedAt && String(user?.teamId) === t;
+        hasSeenOrphan = !!team?.deletedAt && String(user?.teamId) === t;
       }
-      expect(sawOrphan).toBe(false);
+      expect(hasSeenOrphan).toBe(false);
     });
   });
 
@@ -691,7 +692,7 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
       codeField: string,
       id: string,
       code: string,
-      asArray = false,
+      isArrayInput = false,
     ) => {
       const idValue = new Types.ObjectId(id);
       return {
@@ -699,9 +700,11 @@ describe('CRM M1 — QA đối kháng (HTTP + Replica Set)', () => {
         phone: `+8490${Math.floor(1_000_000 + Math.random() * 8_999_999)}`,
         deletedAt: null,
         ...(shape !== 'chỉ code' && {
-          [idField]: asArray ? [idValue] : idValue,
+          [idField]: isArrayInput ? [idValue] : idValue,
         }),
-        ...(shape !== 'chỉ id' && { [codeField]: asArray ? [code] : code }),
+        ...(shape !== 'chỉ id' && {
+          [codeField]: isArrayInput ? [code] : code,
+        }),
       };
     };
 

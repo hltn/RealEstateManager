@@ -63,7 +63,7 @@ async function indexExists(db: Db, spec: ManagedIndex): Promise<boolean> {
  */
 export async function createNotificationAttachmentIndexes(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
   log?: (message: string) => void,
 ): Promise<NotificationAttachmentIndexesResult> {
   const result: NotificationAttachmentIndexesResult = {
@@ -76,7 +76,7 @@ export async function createNotificationAttachmentIndexes(
       result.existing.push(label);
       continue;
     }
-    if (apply) {
+    if (shouldApply) {
       await db.collection(spec.collection).createIndex(spec.keys, {
         name: spec.name,
         partialFilterExpression: spec.partialFilterExpression,
@@ -85,7 +85,7 @@ export async function createNotificationAttachmentIndexes(
     result.created.push(label);
   }
   log?.(
-    `${apply ? 'Đã tạo' : 'Dry-run: sẽ tạo'} ${result.created.length} index` +
+    `${shouldApply ? 'Đã tạo' : 'Dry-run: sẽ tạo'} ${result.created.length} index` +
       ` [${result.created.join(', ')}]; đã có sẵn ${result.existing.length} [${result.existing.join(', ')}]`,
   );
   return result;

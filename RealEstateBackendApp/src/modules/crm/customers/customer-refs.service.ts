@@ -318,11 +318,11 @@ export class CustomerRefsService {
     input: RefAssignInput,
     field: string,
     session?: ClientSession,
-    activeOnly = true,
+    isActiveOnly = true,
   ): Promise<CatalogRef[]> {
     const ids = unique(input.ids ?? []);
     const codes = normalizeCodes(kind, input.codes ?? []);
-    const options = { activeOnly, session };
+    const options = { activeOnly: isActiveOnly, session };
     const none: CatalogRef[] = [];
     const [byId, byCode] = await Promise.all([
       ids.length ? this.resolveByIds(kind, ids, options) : none,
@@ -338,10 +338,10 @@ export class CustomerRefsService {
     }
     if (ids.length && codes.length) {
       const idSet = new Set(byId.map((ref) => String(ref.id)));
-      const sameSet =
+      const isSameSet =
         idSet.size === byCode.length &&
         byCode.every((ref) => idSet.has(String(ref.id)));
-      if (!sameSet) throw mismatchError(kind, field);
+      if (!isSameSet) throw mismatchError(kind, field);
     }
     return ids.length ? byId : byCode;
   }
@@ -359,7 +359,7 @@ export class CustomerRefsService {
     input: SingleRefInput,
     field: string,
     session?: ClientSession,
-    activeOnly = true,
+    isActiveOnly = true,
   ): Promise<{ provided: boolean; ref: CatalogRef | null }> {
     const hasId = input.id !== undefined;
     const hasCode = input.code !== undefined;
@@ -376,7 +376,7 @@ export class CustomerRefsService {
       },
       field,
       session,
-      activeOnly,
+      isActiveOnly,
     );
     return { provided: true, ref: ref ?? null };
   }
@@ -390,7 +390,7 @@ export class CustomerRefsService {
     input: ListRefInput,
     field: string,
     session?: ClientSession,
-    activeOnly = true,
+    isActiveOnly = true,
   ): Promise<{ provided: boolean; refs: CatalogRef[] }> {
     const hasIds = input.ids !== undefined;
     const hasCodes = input.codes !== undefined;
@@ -408,7 +408,7 @@ export class CustomerRefsService {
       { ids, codes },
       field,
       session,
-      activeOnly,
+      isActiveOnly,
     );
     const order = ids.length ? ids.map(String) : codes;
     const keyOf = (ref: CatalogRef) => (ids.length ? String(ref.id) : ref.code);

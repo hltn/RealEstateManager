@@ -78,7 +78,7 @@ ${CATALOG_CODES_USAGE}`,
     );
     return EXIT_CODE.USAGE;
   }
-  const apply = argv.includes('--apply');
+  const shouldApply = argv.includes('--apply');
   if (!deps.mongoUri) {
     deps.err('Thiếu biến môi trường MONGODB_URI.');
     return EXIT_CODE.FAILURE;
@@ -96,7 +96,7 @@ ${CATALOG_CODES_USAGE}`,
       return EXIT_CODE.FAILURE;
     }
     deps.out(
-      apply
+      shouldApply
         ? 'Chế độ --apply: điền mã còn thiếu.'
         : 'Dry-run (thêm --apply để ghi): chỉ đếm, không ghi.',
     );
@@ -104,11 +104,11 @@ ${CATALOG_CODES_USAGE}`,
     const steps: { label: string; run: () => Promise<unknown> }[] = [
       {
         label: '[1/2] mã danh mục (007)',
-        run: () => migrateCatalogCodes(db, apply, deps.out),
+        run: () => migrateCatalogCodes(db, shouldApply, deps.out),
       },
       {
         label: '[2/2] mã loại hình dự án (008)',
-        run: () => migrateProjectPropertyTypeCodes(db, apply, deps.out),
+        run: () => migrateProjectPropertyTypeCodes(db, shouldApply, deps.out),
       },
     ];
     const outcomes: { label: string; outcome: StepOutcome }[] = [];

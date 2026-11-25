@@ -57,10 +57,10 @@ export class RemindersWriterService {
     now: Date,
     session: ClientSession,
   ): Promise<void> {
-    const active =
+    const isActive =
       appointment.status === AppointmentStatus.SCHEDULED &&
       !appointment.deletedAt;
-    const planned = active
+    const planned = isActive
       ? planAppointmentReminders(
           appointment.startAt,
           appointment.remindBeforeMinutes,

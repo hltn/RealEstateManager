@@ -268,11 +268,11 @@ describe('MigrationRunner', () => {
     ])(
       '%s: mã 1, in lý do ra stderr, KHÔNG ghi gì (cả dry-run lẫn --apply), không chạy migration',
       async (_label, specs, phase, message) => {
-        for (const apply of [false, true]) {
+        for (const shouldApply of [false, true]) {
           const { runner, fake, err, out, ran } = setup({ specs });
           const before = fake.snapshot();
 
-          const code = await runner.up(apply, 'deploy', phase);
+          const code = await runner.up(shouldApply, 'deploy', phase);
 
           expect(code).toBe(EXIT_CODE.FAILURE);
           expect(code).toBe(1);
@@ -419,13 +419,15 @@ describe('MigrationRunner', () => {
     });
 
     it('app CŨ hơn DB (downgrade): mã 5 cho cả dry-run lẫn apply, không migrate, không hạ version', async () => {
-      for (const apply of [false, true]) {
+      for (const shouldApply of [false, true]) {
         const { runner, fake, err, ran } = setup({
           specs: [['007_alpha']],
           dbVersion: '1.0.9',
         });
 
-        expect(await runner.up(apply, 'deploy')).toBe(EXIT_CODE.DOWNGRADE);
+        expect(await runner.up(shouldApply, 'deploy')).toBe(
+          EXIT_CODE.DOWNGRADE,
+        );
         expect(err[0]).toContain('CŨ hơn DB 1.0.9');
         expect(ran).toEqual([]);
         expect(fake.writeCalls).toBe(0);
@@ -633,17 +635,17 @@ describe('MigrationRunner', () => {
     ])(
       '%s: result=refused, mã 1, JSON đúng một dòng, KHÔNG ghi gì, không chạy migration (cả dry-run lẫn --apply)',
       async (_label, specs, phase, reason) => {
-        for (const apply of [false, true]) {
+        for (const shouldApply of [false, true]) {
           const { runner, fake, out, err, ran } = setup({ specs });
           const before = fake.snapshot();
 
           const code = await runner.reconcile(
-            reconcileOptions({ apply, phase, json: true }),
+            reconcileOptions({ apply: shouldApply, phase, json: true }),
           );
 
           expect(code).toBe(EXIT_CODE.FAILURE);
           expect(parseReport(out)).toEqual({
-            mode: apply ? 'apply' : 'dry-run',
+            mode: shouldApply ? 'apply' : 'dry-run',
             result: 'refused',
             exitCode: 1,
             appVersion: APP_VERSION,
@@ -739,14 +741,14 @@ describe('MigrationRunner', () => {
     });
 
     it('không phải replica set: dry-run cũng trả mã 1 (cùng mã với --apply), result=refused', async () => {
-      for (const apply of [false, true]) {
+      for (const shouldApply of [false, true]) {
         const { runner, fake, out } = setup({
           specs: PRE_POST,
           replicaSet: false,
         });
 
         const code = await runner.reconcile(
-          reconcileOptions({ apply, json: true }),
+          reconcileOptions({ apply: shouldApply, json: true }),
         );
 
         expect(code).toBe(EXIT_CODE.FAILURE);

@@ -60,7 +60,7 @@ describe('runCatalogCodesCli (Mongo thật)', () => {
     return _id;
   };
 
-  const seed = async (dbName: string, ghostStatus = false) => {
+  const seed = async (dbName: string, hasGhostStatus = false) => {
     const db = client.db(dbName);
     await seedPersonaField(db);
     const statusId = new ObjectId();
@@ -69,7 +69,7 @@ describe('runCatalogCodesCli (Mongo thật)', () => {
       .insertOne({ _id: statusId, code: 'NEW' });
     await db.collection('customers').insertOne({
       _id: new ObjectId(),
-      statusId: ghostStatus ? new ObjectId() : statusId,
+      statusId: hasGhostStatus ? new ObjectId() : statusId,
       interestedProjectIds: [],
     });
     return db;

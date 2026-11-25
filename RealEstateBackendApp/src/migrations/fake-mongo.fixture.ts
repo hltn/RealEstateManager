@@ -430,13 +430,13 @@ class FakeCollection {
   private applyUpdate(
     filter: Filter,
     update: Update,
-    upsert: boolean,
+    isUpsert: boolean,
   ): UpdateOutcome {
     assertSupportedUpdate(update);
     let target = this.docs.find((doc) => matches(doc, filter));
-    let inserted = false;
+    let isInserted = false;
     if (!target) {
-      if (!upsert) return { modifiedCount: 0, before: null, after: null };
+      if (!isUpsert) return { modifiedCount: 0, before: null, after: null };
       // Upsert: tài liệu mới mang các điều kiện bằng-giá-trị của filter (ở đây luôn là `_id`).
       const base: FakeDoc = {};
       for (const [key, condition] of Object.entries(filter)) {
@@ -444,10 +444,10 @@ class FakeCollection {
       }
       target = base;
       this.docs.push(target);
-      inserted = true;
+      isInserted = true;
     }
-    const before = inserted ? null : cloneDoc(target);
-    let changed = inserted;
+    const before = isInserted ? null : cloneDoc(target);
+    let isChanged = isInserted;
     for (const [operator, fields] of Object.entries(update)) {
       for (const [field, operand] of Object.entries(fields)) {
         const previous = target[field];
@@ -463,11 +463,11 @@ class FakeCollection {
             operand as number,
           );
         }
-        if (!valueEquals(previous, target[field])) changed = true;
+        if (!valueEquals(previous, target[field])) isChanged = true;
       }
     }
     return {
-      modifiedCount: changed ? 1 : 0,
+      modifiedCount: isChanged ? 1 : 0,
       before,
       after: cloneDoc(target),
     };

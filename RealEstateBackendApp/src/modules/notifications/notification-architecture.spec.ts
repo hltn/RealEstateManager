@@ -120,14 +120,14 @@ const findViolations = (files: SourceFile[]): string[] => {
   const violations: string[] = [];
   for (const file of files) {
     const code = stripComments(file.content);
-    const outside = isOutsideNotifications(file.path);
+    const isOutside = isOutsideNotifications(file.path);
 
     // Quy tắc 1: `createMany` không còn tồn tại ở bất kỳ đâu (định nghĩa lẫn nơi gọi).
     if (new RegExp(`${WORD_START}createMany${WORD_END}`).test(code)) {
       violations.push(`${file.path}: còn dùng createMany`);
     }
 
-    if (outside) {
+    if (isOutside) {
       // Quy tắc 2: xem `countIllegalNotifyAdminsUses`.
       if (countIllegalNotifyAdminsUses(code) > 0) {
         violations.push(
@@ -157,7 +157,7 @@ const findViolations = (files: SourceFile[]): string[] => {
 
     // Quy tắc 4: bên trong module, `notifyAdmins` chỉ được xuất hiện ở Dispatcher.
     if (
-      !outside &&
+      !isOutside &&
       file.path !== DISPATCHER_FILE &&
       new RegExp(`${WORD_START}notifyAdmins${WORD_END}`).test(code)
     ) {

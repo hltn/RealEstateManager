@@ -84,9 +84,9 @@ describe('JwtAuthGuard (canActivate) — contract mục 8 + 5.1', () => {
     const ctx = createMockContext('Bearer valid.jwt.token');
     const request = ctx.switchToHttp().getRequest();
 
-    const result = guard.canActivate(ctx);
+    const isAllowed = guard.canActivate(ctx);
 
-    expect(result).toBe(true);
+    expect(isAllowed).toBe(true);
     expect(jwtService.verify).toHaveBeenCalledTimes(1);
     expect(jwtService.verify).toHaveBeenCalledWith('valid.jwt.token');
     // Guard gắn nguyên payload vào request.user — RolesGuard/@CurrentUser đọc từ đây.

@@ -50,10 +50,10 @@ const OPTIONS: PushSendOptions = {
   topic: 'abc123_-XYZ',
 };
 
-function buildFlags(enabled = true): FeatureFlagService {
+function buildFlags(isEnabled = true): FeatureFlagService {
   const config = {
     get: (key: string) =>
-      key === 'CRM_PUSH_ENABLED' ? `${enabled}` : undefined,
+      key === 'CRM_PUSH_ENABLED' ? `${isEnabled}` : undefined,
   } as unknown as ConfigService;
   return new FeatureFlagService(config);
 }
@@ -281,10 +281,10 @@ describe('WebPushProvider', () => {
 
       const pending = provider.send(buildSubscription(), PAYLOAD, OPTIONS);
       await jest.advanceTimersByTimeAsync(WEB_PUSH_TIMEOUT_MS - 1);
-      let settled = false;
-      void pending.then(() => (settled = true));
+      let isSettled = false;
+      void pending.then(() => (isSettled = true));
       await Promise.resolve();
-      expect(settled).toBe(false);
+      expect(isSettled).toBe(false);
 
       await jest.advanceTimersByTimeAsync(1);
       await expect(pending).resolves.toEqual({ outcome: 'TRANSIENT' });

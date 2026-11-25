@@ -218,7 +218,7 @@ export const toDetail = (
 ): CustomerDetailDto => {
   // FR-31: MỘT nguồn luật quyền chủ khách (Admin, người tạo, Manager nhóm chủ) cho xem CMND và mời/gỡ; không công
   // thức thứ hai. `managerIds` do `buildOwnerRefs` nạp sẵn nên không truy vấn thêm.
-  const ownerRights = hasOwnerRights(actor, doc, ownerTeam.managerIds);
+  const hasOwnerAccess = hasOwnerRights(actor, doc, ownerTeam.managerIds);
   const listItem = toListItem(doc, refs);
   const careTeam: CareTeamMemberDto[] = (doc.careTeam ?? []).map((member) => ({
     user: toMemberUser(member.userId, refs),
@@ -234,7 +234,7 @@ export const toDetail = (
     careTeam,
     nationalIdMasked: maskNationalId(doc.nationalIdLast4),
     hasNationalId: doc.hasNationalId === true,
-    canRevealNationalId: ownerRights,
+    canRevealNationalId: hasOwnerAccess,
     dataConsent: toConsentResponse(doc, refs.users),
     lastUpdatedBy: toUserRef(doc.lastUpdatedBy, refs.users),
     createdAt: iso(doc.createdAt)!,
@@ -243,11 +243,11 @@ export const toDetail = (
     nextActionSuggestions: [],
     permissions: {
       canEdit: true,
-      canManageCareTeam: ownerRights,
+      canManageCareTeam: hasOwnerAccess,
       // Khách cũ chưa có PRIMARY: Admin/Manager được đặt đúng một lần (FR-11) và phải có quyền chủ khách vì việc đặt
       // đi qua cổng mời (FR-31); đã có PRIMARY thì khóa.
       canSetInitialPrimary:
-        ownerRights && canSetInitialPrimary(actor, doc.careTeam ?? []),
+        hasOwnerAccess && canSetInitialPrimary(actor, doc.careTeam ?? []),
       // Cùng một nguồn luật với route xóa (`getDeleteDenial`): chỉ Admin hoặc người tạo, không điều kiện trạng thái.
       canDelete: getDeleteDenial(actor, doc) === null,
     },

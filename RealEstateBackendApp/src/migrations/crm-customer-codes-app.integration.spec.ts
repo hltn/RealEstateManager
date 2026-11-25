@@ -43,11 +43,13 @@ describe('runCustomerCodesCli (Mongo thật)', () => {
   });
 
   /** DB mới; `gate` = đã ghi sổ migration 010 (mặc định có) và tạo index/counter như 010 thật. */
-  const newDb = async (gate = true): Promise<{ db: Db; name: string }> => {
+  const newDb = async (
+    isGateOpen = true,
+  ): Promise<{ db: Db; name: string }> => {
     dbCounter += 1;
     const name = `custcodes_${dbCounter}`;
     const db = client.db(name);
-    if (gate) {
+    if (isGateOpen) {
       await createCustomerCodeIndex(db);
       await db.collection<{ _id: string }>('system').insertOne({
         _id: CUSTOMER_CODES_GATE_ID,

@@ -125,7 +125,7 @@ const PNG_KEEP_CHUNKS = new Set([
 const stripPng = (input: Buffer): Buffer => {
   const parts: Buffer[] = [input.subarray(0, PNG_SIGNATURE_LENGTH)];
   let offset = PNG_SIGNATURE_LENGTH;
-  let sawEnd = false;
+  let hasSeenEnd = false;
   while (offset < input.length) {
     if (offset + 12 > input.length) throw new InvalidImageError('PNG bị cắt');
     const length = input.readUInt32BE(offset);
@@ -135,11 +135,11 @@ const stripPng = (input: Buffer): Buffer => {
     if (PNG_KEEP_CHUNKS.has(type)) parts.push(input.subarray(offset, end));
     offset = end;
     if (type === 'IEND') {
-      sawEnd = true;
+      hasSeenEnd = true;
       break;
     }
   }
-  if (!sawEnd) throw new InvalidImageError('PNG thiếu IEND');
+  if (!hasSeenEnd) throw new InvalidImageError('PNG thiếu IEND');
   return Buffer.concat(parts);
 };
 
@@ -171,7 +171,7 @@ const collectWebpChunks = (
   start: number,
   limit: number,
   allowed: Set<string>,
-  rebuildAnmf: boolean,
+  shouldRebuildAnmf: boolean,
 ): Buffer[] => {
   const chunks: Buffer[] = [];
   let offset = start;
@@ -189,7 +189,7 @@ const collectWebpChunks = (
       );
       if (fourcc === 'VP8X' && size >= 1) {
         payload[0] &= ~(WEBP_VP8X_EXIF_FLAG | WEBP_VP8X_XMP_FLAG);
-      } else if (fourcc === 'ANMF' && rebuildAnmf) {
+      } else if (fourcc === 'ANMF' && shouldRebuildAnmf) {
         if (size < WEBP_ANMF_HEADER_LENGTH) {
           throw new InvalidImageError('WebP ANMF quá ngắn');
         }

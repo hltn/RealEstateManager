@@ -417,13 +417,13 @@ export class CareLogsService {
             to: dto.contactChannel,
           });
         }
-        let occurredAtChanged = false;
+        let isOccurredAtChanged = false;
         if (dto.occurredAt !== undefined) {
           const occurredAt = new Date(dto.occurredAt);
           assertOccurredAtNotFuture(occurredAt, now);
           if (occurredAt.getTime() !== log.occurredAt.getTime()) {
             set.occurredAt = occurredAt;
-            occurredAtChanged = true;
+            isOccurredAtChanged = true;
             changes.push({
               field: 'careLog.occurredAt',
               from: log.occurredAt.toISOString(),
@@ -495,7 +495,7 @@ export class CareLogsService {
         await this.careLogModel
           .updateOne({ _id: log._id }, { $set: set }, { session })
           .exec();
-        if (occurredAtChanged) {
+        if (isOccurredAtChanged) {
           await this.recomputeLastCareLogAt(ctx, customerId, now, session);
         } else {
           await this.touchCustomer(ctx, customerId, now, session);
@@ -634,9 +634,10 @@ export class CareLogsService {
           session,
         },
       );
-      const sameId = !intent.id || intent.id === String(current);
-      const sameCode = !intent.code || intent.code === stored?.code;
-      if (stored && sameId && sameCode) return { changed: false, ref: null };
+      const isSameId = !intent.id || intent.id === String(current);
+      const isSameCode = !intent.code || intent.code === stored?.code;
+      if (stored && isSameId && isSameCode)
+        return { changed: false, ref: null };
     }
     return {
       changed: true,

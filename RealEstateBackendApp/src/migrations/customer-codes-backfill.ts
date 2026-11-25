@@ -53,10 +53,10 @@ export interface CustomerCodesBackfillResult {
 }
 
 const emptyResult = (
-  gateOpen: boolean,
+  isGateOpen: boolean,
   patch: Partial<CustomerCodesBackfillResult> = {},
 ): CustomerCodesBackfillResult => ({
-  gateOpen,
+  gateOpen: isGateOpen,
   missingBefore: 0,
   missingSoftDeleted: 0,
   assigned: 0,
@@ -187,7 +187,7 @@ export async function backfillCustomerCodes(
   db: Db,
   options: CustomerCodesBackfillOptions,
 ): Promise<CustomerCodesBackfillResult> {
-  const { apply, log, afterBatch } = options;
+  const { apply: shouldApply, log, afterBatch } = options;
   const batchSize = options.batchSize ?? CUSTOMER_CODES_DEFAULT_BATCH_SIZE;
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
     throw new RangeError(
@@ -212,7 +212,7 @@ export async function backfillCustomerCodes(
   log(
     `Khách thiếu mã: ${missingBefore} (trong đó đã xóa mềm: ${missingSoftDeleted}).`,
   );
-  if (!apply) {
+  if (!shouldApply) {
     return emptyResult(true, {
       missingBefore,
       missingSoftDeleted,

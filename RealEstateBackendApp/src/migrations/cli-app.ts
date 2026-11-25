@@ -169,10 +169,10 @@ ${CLI_USAGE}`);
   const client = new MongoClient(deps.mongoUri, {
     serverSelectionTimeoutMS: deps.serverSelectionTimeoutMs ?? 10_000,
   });
-  let connected = false;
+  let isConnected = false;
   try {
     await client.connect();
-    connected = true;
+    isConnected = true;
     const runner = new MigrationRunner({
       client,
       migrations: deps.migrations,
@@ -204,7 +204,7 @@ ${CLI_USAGE}`);
     }
   } catch (error) {
     deps.err(`LỖI: ${sanitizeErrorMessage(error)}`);
-    if (!connected || isConnectionError(error)) deps.err(CONNECTION_HINT);
+    if (!isConnected || isConnectionError(error)) deps.err(CONNECTION_HINT);
     return EXIT_CODE.FAILURE;
   } finally {
     await client.close().catch(() => undefined);

@@ -116,7 +116,7 @@ async function hasProjectsNeedingCodes(
  */
 export async function migrateProjectPropertyTypeCodes(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
   log?: (message: string) => void,
 ): Promise<MigrateProjectPropertyTypeCodesResult> {
   const projects = db.collection(PROJECTS);
@@ -176,7 +176,7 @@ export async function migrateProjectPropertyTypeCodes(
         },
       });
     }
-    if (apply) {
+    if (shouldApply) {
       const result = await projects.bulkWrite(operations, { ordered: false });
       projectsCoded += result.modifiedCount;
     } else {
@@ -190,7 +190,7 @@ export async function migrateProjectPropertyTypeCodes(
     unmappedTexts: [...unmappedTexts],
   };
   log?.(
-    `${apply ? 'Đã điền' : 'Dry-run'}: projectsCoded=${projectsCoded} projectsWithUnmapped=${projectsWithUnmapped} unmappedTexts=${result.unmappedTexts.length}`,
+    `${shouldApply ? 'Đã điền' : 'Dry-run'}: projectsCoded=${projectsCoded} projectsWithUnmapped=${projectsWithUnmapped} unmappedTexts=${result.unmappedTexts.length}`,
   );
   if (result.unmappedTexts.length > 0) {
     log?.(

@@ -71,8 +71,8 @@ export class TagsController {
     @Body() dto: CreateTagDto,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const { tag, created } = await this.tags.create(user, dto);
-    void reply.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    const { tag, created: isCreated } = await this.tags.create(user, dto);
+    void reply.status(isCreated ? HttpStatus.CREATED : HttpStatus.OK);
     return { data: tag };
   }
 

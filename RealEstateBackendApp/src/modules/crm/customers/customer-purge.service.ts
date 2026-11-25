@@ -152,7 +152,7 @@ export class CustomerPurgeService {
     customerId: Types.ObjectId,
   ): Promise<Date> {
     const now = new Date();
-    const matched = await withTransaction(this.connection, (session) =>
+    const isMatched = await withTransaction(this.connection, (session) =>
       this.repo.updateOne(
         ctx.scope,
         customerId,
@@ -170,7 +170,7 @@ export class CustomerPurgeService {
         { session, deleted: 'only' },
       ),
     );
-    if (matched) return now;
+    if (isMatched) return now;
     const current = await this.repo.findOne(ctx.scope, customerId, {
       deleted: 'any',
       projection: { deletedAt: 1 },

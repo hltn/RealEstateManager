@@ -542,14 +542,14 @@ export class CustomersService {
         phone: next.phone,
       }),
     };
-    const matched = await this.repo.updateOne(
+    const isMatched = await this.repo.updateOne(
       ctx.scope,
       id,
       { __v: dto.version },
       { $set: set, $inc: { __v: 1 } },
       { session },
     );
-    if (!matched) {
+    if (!isMatched) {
       const current = await this.repo.findOne(ctx.scope, id, {
         session,
         projection: { __v: 1 },

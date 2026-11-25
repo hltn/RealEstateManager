@@ -1,9 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { PushQueueWorker } from './push-queue-worker.service';
 
-const build = (enabled: boolean) => {
+const build = (isEnabled: boolean) => {
   const runtime = {
-    isEnabled: jest.fn(() => enabled),
+    isEnabled: jest.fn(() => isEnabled),
     registerWorker: jest.fn(),
     upsertSchedulers: jest.fn().mockResolvedValue(undefined),
   };

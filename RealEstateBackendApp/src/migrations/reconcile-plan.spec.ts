@@ -26,9 +26,9 @@ const withVersion = (value: string): MigrationState['version'] => ({
 
 const probe = (
   id: string,
-  passed = true,
+  hasPassed = true,
   counts: Record<string, number> = {},
-): ProbeResult => ({ id, passed, counts, warnings: [] });
+): ProbeResult => ({ id, passed: hasPassed, counts, warnings: [] });
 
 const allPass = BASELINE_MIGRATION_IDS.map((id) => probe(id));
 const REGISTRY = ['007_one', '008_two'];

@@ -98,9 +98,16 @@ export const readMigrationState = async (db: Db): Promise<MigrationState> => {
   applied.sort((a, b) => a.id.localeCompare(b.id));
 
   const hasUsers = await hasUserData(db);
-  const baselineRequired =
+  const isBaselineRequired =
     version === null && !hasAllBaselineIds(applied) && hasUsers;
-  return { version, applied, lock, lastError, baselineRequired, hasUsers };
+  return {
+    version,
+    applied,
+    lock,
+    lastError,
+    baselineRequired: isBaselineRequired,
+    hasUsers,
+  };
 };
 
 /** Sổ đã có đủ mọi id 002..006 (baseline đã ghi xong). */

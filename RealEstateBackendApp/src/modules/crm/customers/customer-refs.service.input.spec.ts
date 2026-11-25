@@ -220,12 +220,12 @@ describe('CustomerRefsService.resolveSingleInput (FR-40)', () => {
 describe('CustomerRefsService.resolveListInput (FR-40)', () => {
   it('FR-40: giữ ĐÚNG thứ tự code đầu vào và khử trùng lặp (một find $in)', async () => {
     const { service, projectModel } = build();
-    const { provided, refs } = await service.resolveListInput(
+    const { provided: isProvided, refs } = await service.resolveListInput(
       'project',
       { codes: ['MASTERI', 'VINHOMES', 'MASTERI'] },
       'projectCodes',
     );
-    expect(provided).toBe(true);
+    expect(isProvided).toBe(true);
     expect(refs.map((ref) => ref.code)).toEqual(['MASTERI', 'VINHOMES']);
     expect(projectModel.find).toHaveBeenCalledTimes(1);
   });

@@ -137,14 +137,14 @@ describe('FR-14: AppModule đăng ký NoSqlOperatorInterceptor', () => {
   it('FR-14: providers của AppModule có APP_INTERCEPTOR dùng NoSqlOperatorInterceptor', () => {
     const providers: unknown[] =
       Reflect.getMetadata('providers', AppModule) ?? [];
-    const found = providers.some(
+    const isFound = providers.some(
       (p) =>
         typeof p === 'object' &&
         p !== null &&
         (p as { provide?: unknown }).provide === APP_INTERCEPTOR &&
         (p as { useClass?: unknown }).useClass === NoSqlOperatorInterceptor,
     );
-    expect(found).toBe(true);
+    expect(isFound).toBe(true);
   });
 });
 

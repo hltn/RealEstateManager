@@ -126,11 +126,11 @@ export async function backfillAppointmentAssigneeIds(
   log?: (message: string) => void,
 ): Promise<BackfillAppointmentAssigneeIdsResult> {
   const { backfilled, skipped } = await backfillAssigneeIds(db, log);
-  const indexCreated = await ensureAssigneeIdsIndex(db);
+  const isIndexCreated = await ensureAssigneeIdsIndex(db);
   log?.(
     `appointments: điền assigneeIds cho ${backfilled} lịch` +
       `${skipped > 0 ? ` (bỏ qua ${skipped} lịch có assigneeId hỏng)` : ''}; ` +
-      `${indexCreated ? 'đã tạo' : 'đã có'} index ${ASSIGNEE_IDS_INDEX_NAME}`,
+      `${isIndexCreated ? 'đã tạo' : 'đã có'} index ${ASSIGNEE_IDS_INDEX_NAME}`,
   );
-  return { backfilled, skipped, indexCreated };
+  return { backfilled, skipped, indexCreated: isIndexCreated };
 }

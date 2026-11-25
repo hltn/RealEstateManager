@@ -46,7 +46,7 @@ ${CUSTOMER_CODES_USAGE}`,
     );
     return EXIT_CODE.USAGE;
   }
-  const apply = argv.includes('--apply');
+  const shouldApply = argv.includes('--apply');
   if (!deps.mongoUri) {
     deps.err('Thiếu biến môi trường MONGODB_URI.');
     return EXIT_CODE.FAILURE;
@@ -64,7 +64,7 @@ ${CUSTOMER_CODES_USAGE}`,
       return EXIT_CODE.FAILURE;
     }
     deps.out(
-      apply
+      shouldApply
         ? 'Chế độ --apply: bù mã khách còn thiếu.'
         : 'Dry-run (thêm --apply để ghi): chỉ đếm, không ghi.',
     );
@@ -72,7 +72,7 @@ ${CUSTOMER_CODES_USAGE}`,
     let result;
     try {
       result = await backfillCustomerCodes(client, client.db(), {
-        apply,
+        apply: shouldApply,
         batchSize: deps.batchSize,
         afterBatch: deps.afterBatch,
         log: deps.out,
@@ -88,7 +88,7 @@ ${CUSTOMER_CODES_USAGE}`,
     deps.out(
       `Tóm tắt: assigned=${result.assigned}, remaining=${result.remaining}, duplicates=${result.duplicateCodes}.`,
     );
-    if (!apply) return EXIT_CODE.OK;
+    if (!shouldApply) return EXIT_CODE.OK;
     if (result.remaining > 0 || result.duplicateCodes > 0) {
       deps.err(
         `LỖI: sau bù vẫn còn ${result.remaining} khách thiếu mã, ${result.duplicateCodes} mã trùng.`,

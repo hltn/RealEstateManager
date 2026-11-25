@@ -112,11 +112,11 @@ export const parseIsoDate = (
   const [year, month, day] = [match[1], match[2], match[3]].map(Number);
   if (year < MIN_YEAR || year > MAX_YEAR) return null;
   const date = new Date(Date.UTC(year, month - 1, day));
-  const valid =
+  const isValid =
     date.getUTCFullYear() === year &&
     date.getUTCMonth() === month - 1 &&
     date.getUTCDate() === day;
-  return valid ? { year, month, day } : null;
+  return isValid ? { year, month, day } : null;
 };
 
 const isValidNumber = (value: unknown): value is number =>

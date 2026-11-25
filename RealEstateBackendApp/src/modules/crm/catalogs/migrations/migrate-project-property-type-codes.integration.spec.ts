@@ -240,9 +240,9 @@ describe('migrateProjectPropertyTypeCodes', () => {
   it('thiếu trường property_type nhưng KHÔNG có dự án cần mã (DB trống / dự án không có chữ loại hình): OK kèm cảnh báo, không ghi', async () => {
     const empty = freshDb();
     const logEmpty: string[] = [];
-    for (const apply of [false, true]) {
+    for (const shouldApply of [false, true]) {
       expect(
-        await migrateProjectPropertyTypeCodes(empty, apply, (m) =>
+        await migrateProjectPropertyTypeCodes(empty, shouldApply, (m) =>
           logEmpty.push(m),
         ),
       ).toEqual({

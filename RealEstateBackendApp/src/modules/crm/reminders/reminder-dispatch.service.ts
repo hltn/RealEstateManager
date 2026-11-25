@@ -208,9 +208,9 @@ export class ReminderDispatchService {
     error: Error,
     now: Date,
   ): Promise<'failed'> {
-    const exhausted = reminder.attempts >= REMINDER_MAX_ATTEMPTS;
+    const isExhausted = reminder.attempts >= REMINDER_MAX_ATTEMPTS;
     this.logger.error(
-      `Gửi nhắc việc ${String(reminder._id)} (${reminder.type}) lần ${reminder.attempts} thất bại${exhausted ? ', bỏ cuộc' : ''}: ${error.message}`,
+      `Gửi nhắc việc ${String(reminder._id)} (${reminder.type}) lần ${reminder.attempts} thất bại${isExhausted ? ', bỏ cuộc' : ''}: ${error.message}`,
     );
     await this.reminderModel
       .updateOne(
@@ -220,7 +220,7 @@ export class ReminderDispatchService {
           lockedAt: reminder.lockedAt,
         },
         {
-          $set: exhausted
+          $set: isExhausted
             ? { status: ReminderStatus.FAILED, finishedAt: now }
             : { status: ReminderStatus.PENDING, lockedAt: null },
         },

@@ -123,8 +123,8 @@ export class AuthService implements OnModuleInit {
       .lean()
       .exec();
     if (!user) return null;
-    const valid = await argon2.verify(user.password, password);
-    if (!valid) return null;
+    const isValid = await argon2.verify(user.password, password);
+    if (!isValid) return null;
     return user;
   }
 
@@ -371,16 +371,16 @@ export class AuthService implements OnModuleInit {
       DEFAULT_ADMIN_DISPLAY_NAME;
 
     const isProduction = nodeEnv === 'production';
-    const missingCredentials = !email || !password;
+    const isMissingCredentials = !email || !password;
 
-    if (isProduction && missingCredentials) {
+    if (isProduction && isMissingCredentials) {
       throw new Error('ADMIN_EMAIL/ADMIN_PASSWORD must be set in production');
     }
 
     const finalEmail = email || DEFAULT_ADMIN_EMAIL;
     const finalPassword = password || DEFAULT_ADMIN_PASSWORD;
 
-    if (missingCredentials) {
+    if (isMissingCredentials) {
       // Dev fallback — cảnh báo qua CustomLogger (KHÔNG dùng console.warn).
       this.logger.warn(
         'Using default admin credentials — change before production',

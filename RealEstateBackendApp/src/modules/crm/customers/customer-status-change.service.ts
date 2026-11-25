@@ -142,7 +142,7 @@ export class CustomerStatusChangeService {
     const fromStatus = maps.statuses.get(String(before.statusId));
     const toStatus = maps.statuses.get(String(targetId))!;
     const now = new Date();
-    const matched = await this.repo.updateOne(
+    const isMatched = await this.repo.updateOne(
       ctx.scope,
       id,
       version === undefined ? {} : { __v: version },
@@ -158,7 +158,7 @@ export class CustomerStatusChangeService {
       },
       { session },
     );
-    if (!matched) {
+    if (!isMatched) {
       const current = await this.repo.findOne(ctx.scope, id, {
         session,
         projection: { __v: 1 },

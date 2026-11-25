@@ -610,7 +610,7 @@ export class ProjectsService {
       ).values(),
     ];
     // Chỉ nạp lựa chọn loại hình khi có dự án đã có `propertyTypeCodes` (suy nhãn), một truy vấn cho cả lô.
-    const needsPropertyOptions = projects.some(hasMappedPropertyTypes);
+    const isPropertyOptionsNeeded = projects.some(hasMappedPropertyTypes);
     const [areas, customerCounts, propertyOptions] = await Promise.all([
       areaIds.length
         ? this.areaModel
@@ -620,7 +620,7 @@ export class ProjectsService {
             .exec()
         : Promise.resolve([]),
       this.usage.countActiveCustomersByProjects(projects),
-      needsPropertyOptions
+      isPropertyOptionsNeeded
         ? this.loadPropertyTypeOptions()
         : Promise.resolve([] as PropertyTypeOption[]),
     ]);

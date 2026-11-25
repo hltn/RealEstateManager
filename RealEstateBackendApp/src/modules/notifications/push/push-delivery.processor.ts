@@ -220,13 +220,13 @@ export class PushDeliveryProcessor {
     // (8)-(9) Tổng hợp.
     const isLastAttempt =
       job.attemptsMade + 1 >= (job.opts?.attempts ?? Number.POSITIVE_INFINITY);
-    const { status: final, inFlight } = await this.aggregate(
+    const { status: final, inFlight: isInFlight } = await this.aggregate(
       notificationId,
       subscriptions.map((s) => s._id),
     );
     // `inFlight`: còn hàng SENDING (TRANSIENT của mình, hoặc hàng của worker khác mà mình thua claim E11000): chưa
     // được chốt FAILED/SKIPPED khi còn lần retry, vì kết quả thật chưa biết.
-    if ((hasTransient || inFlight) && !isLastAttempt) {
+    if ((hasTransient || isInFlight) && !isLastAttempt) {
       // Ném lỗi: BullMQ retry, chỉ thiết bị chưa xong được làm lại nhờ `push_deliveries`.
       throw new Error(
         `PUSH_TRANSIENT notificationId=${String(notificationId)}`,
@@ -390,18 +390,18 @@ export class PushDeliveryProcessor {
       .lean()
       .exec();
     const statuses = rows.map((row) => row.status);
-    const inFlight = statuses.includes(PushDeliveryStatus.SENDING);
+    const isInFlight = statuses.includes(PushDeliveryStatus.SENDING);
     if (statuses.includes(PushDeliveryStatus.SENT)) {
-      return { status: NotificationPushStatus.SENT, inFlight };
+      return { status: NotificationPushStatus.SENT, inFlight: isInFlight };
     }
-    const allGone =
+    const areAllGone =
       statuses.length === 0 ||
       statuses.every((status) => status === PushDeliveryStatus.GONE);
     return {
-      status: allGone
+      status: areAllGone
         ? NotificationPushStatus.SKIPPED
         : NotificationPushStatus.FAILED,
-      inFlight,
+      inFlight: isInFlight,
     };
   }
 

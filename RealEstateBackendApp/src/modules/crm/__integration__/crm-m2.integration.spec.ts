@@ -2340,7 +2340,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
           }),
           call('DELETE', `/crm/customer-statuses/${statusId}`, 'admin'),
         ]);
-        const deleted = !!(await connection
+        const isDeleted = !!(await connection
           .collection('customer_statuses')
           .findOne({
             _id: new Types.ObjectId(statusId),
@@ -2350,7 +2350,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
           statusId: new Types.ObjectId(statusId),
         });
         // Bất biến: tình trạng đã xóa thì không có khách dùng.
-        expect(deleted && used > 0).toBe(false);
+        expect(isDeleted && used > 0).toBe(false);
         // Mỗi kết quả hợp lệ: tạo thành công (và xóa bị chặn 409) hoặc tạo bị từ chối (400) và xóa 204.
         expect([customer.status, removal.status]).toEqual(
           customer.status === 201 ? [201, 409] : [400, 204],

@@ -317,12 +317,12 @@ export class AppointmentsWriteService {
         : dto.endAt === null
           ? null
           : new Date(dto.endAt);
-    const startChanged = startAt.getTime() !== appointment.startAt.getTime();
-    if (startChanged) assertStartNotInPast(startAt, now);
-    if (startChanged || dto.endAt !== undefined) {
+    const isStartChanged = startAt.getTime() !== appointment.startAt.getTime();
+    if (isStartChanged) assertStartNotInPast(startAt, now);
+    if (isStartChanged || dto.endAt !== undefined) {
       assertEndAfterStart(startAt, endAt);
     }
-    if (startChanged) {
+    if (isStartChanged) {
       set.startAt = startAt;
       track('startAt', iso(appointment.startAt), iso(startAt));
     }
@@ -344,9 +344,9 @@ export class AppointmentsWriteService {
       assigneeId: dto.assigneeId ? oid(dto.assigneeId) : undefined,
     });
     // `assigneeId` cũ (deprecated) trùng người đầu hiện tại = không đổi (giữ ngữ nghĩa "gửi lại cùng người").
-    const legacyNoChange =
+    const isLegacyNoChange =
       !dto.assigneeIds?.length && requested?.[0]?.equals(currentIds[0]);
-    if (requested && !legacyNoChange && !sameIds(requested, currentIds)) {
+    if (requested && !isLegacyNoChange && !sameIds(requested, currentIds)) {
       const added = requested.filter(
         (id) => !currentIds.some((current) => current.equals(id)),
       );
@@ -585,14 +585,14 @@ export class AppointmentsWriteService {
     let ids = requested;
     if (!ids) {
       const booker = ctx.actor.userId;
-      let bookerEligible = isStaticMember(booker);
-      if (!bookerEligible && ctx.actor.roles.includes(UserRole.MANAGER)) {
-        bookerEligible = isOwnerManager(
+      let isBookerEligible = isStaticMember(booker);
+      if (!isBookerEligible && ctx.actor.roles.includes(UserRole.MANAGER)) {
+        isBookerEligible = isOwnerManager(
           (await loadCandidates()).managerIds,
           booker,
         );
       }
-      const fallback = bookerEligible
+      const fallback = isBookerEligible
         ? booker
         : (customer.primaryAssigneeId ?? undefined);
       if (!fallback) {
@@ -602,8 +602,8 @@ export class AppointmentsWriteService {
     }
     ids = uniqueObjectIds(ids);
 
-    const needsManagerCheck = ids.some((id) => !isStaticMember(id));
-    const ownerManagerIds = needsManagerCheck
+    const isManagerCheckNeeded = ids.some((id) => !isStaticMember(id));
+    const ownerManagerIds = isManagerCheckNeeded
       ? (await loadCandidates()).managerIds
       : [];
 
@@ -688,11 +688,11 @@ export class AppointmentsWriteService {
     // Dự án hiện tại có thể không còn trong danh mục (xóa cứng ngoài ứng dụng): lấy mã từ giá trị đã ghi kép trên lịch
     // để gửi lại đúng giá trị đang lưu vẫn là "không đổi" thay vì 400 "không tồn tại".
     const currentCode = from?.code ?? appointment.projectCode ?? null;
-    const sameAsCurrent =
+    const isSameAsCurrent =
       !!currentId &&
       (!projectId || currentId.equals(oid(projectId))) &&
       (!projectCode || currentCode === projectCode.trim().toUpperCase());
-    if (sameAsCurrent) return null;
+    if (isSameAsCurrent) return null;
 
     const to = await this.resolveProjectForAssign(
       projectId ? oid(projectId) : null,

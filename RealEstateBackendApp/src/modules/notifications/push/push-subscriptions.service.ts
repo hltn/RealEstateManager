@@ -148,15 +148,15 @@ export class PushSubscriptionsService {
       // Không xảy ra với upsert; chặn để không trả dữ liệu rỗng nếu driver đổi hành vi.
       throw new Error('Upsert push_subscriptions không trả về bản ghi');
     }
-    const created = !result.lastErrorObject?.updatedExisting;
+    const isCreated = !result.lastErrorObject?.updatedExisting;
 
     const displaced = await this.enforceLimit(userId, saved);
     this.logger.log(
-      `Đăng ký push: user=${userId} endpoint#${shortEndpointHash(endpointHash)} created=${created} displaced=${displaced.length}`,
+      `Đăng ký push: user=${userId} endpoint#${shortEndpointHash(endpointHash)} created=${isCreated} displaced=${displaced.length}`,
     );
 
     return {
-      created,
+      created: isCreated,
       subscription: {
         id: String(saved._id),
         deviceLabel: saved.deviceLabel,

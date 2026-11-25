@@ -19,9 +19,9 @@ describe('isQueueWorkersEnabled', () => {
     ['bat-ky-gi', false],
     [true, true],
     [false, false],
-  ])('cấu hình tường minh %p => %p (bất kể NODE_ENV)', (raw, expected) => {
+  ])('cấu hình tường minh %p => %p (bất kể NODE_ENV)', (raw, isExpected) => {
     process.env.NODE_ENV = 'test';
-    expect(isQueueWorkersEnabled(configWith(raw))).toBe(expected);
+    expect(isQueueWorkersEnabled(configWith(raw))).toBe(isExpected);
   });
 
   it('không cấu hình: tắt khi NODE_ENV=test, bật ở môi trường khác', () => {

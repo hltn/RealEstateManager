@@ -390,11 +390,11 @@ export class CustomerListService {
       { ids: query.statusIds, codes: query.statusCodes },
       'statusCodes',
     );
-    const inTab = !!listGroup && listGroup !== 'ALL';
+    const isInTab = !!listGroup && listGroup !== 'ALL';
 
     if (picked.ids) {
       let ids = picked.ids;
-      if (inTab) {
+      if (isInTab) {
         const inGroup = await this.statusModel
           .find({ listGroup })
           .select('_id')
@@ -407,14 +407,14 @@ export class CustomerListService {
     }
 
     let codes: string[] | null = picked.codes ?? null;
-    if (codes === null && !inTab) return null;
+    if (codes === null && !isInTab) return null;
     // Tình trạng của tab, hoặc tình trạng theo `statusCodes`: lấy cả id để khách chưa backfill `statusCode` vẫn khớp.
     const candidates = await this.statusModel
-      .find(inTab ? { listGroup } : { code: { $in: codes ?? [] } })
+      .find(isInTab ? { listGroup } : { code: { $in: codes ?? [] } })
       .select('code')
       .lean()
       .exec();
-    if (inTab) {
+    if (isInTab) {
       const groupCodes = candidates.map((status) => status.code);
       codes = codes
         ? codes.filter((code) => groupCodes.includes(code))
@@ -478,11 +478,11 @@ export class CustomerListService {
         this.refs.resolveByIds(kind, toObjectIds(ids)),
       ]);
       const idSet = new Set(byId.map((ref) => String(ref.id)));
-      const sameSet =
+      const isSameSet =
         idSet.size === byCode.length &&
         idSet.size === new Set(ids).size &&
         byCode.every((ref) => idSet.has(String(ref.id)));
-      if (!sameSet) {
+      if (!isSameSet) {
         throw new BusinessException(
           ErrorCode.VALIDATION_FAILED,
           'Bộ lọc id và code không cùng một tập bản ghi',

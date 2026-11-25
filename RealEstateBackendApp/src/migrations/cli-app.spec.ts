@@ -171,7 +171,7 @@ describe('isConnectionError', () => {
     ['undefined', undefined, false],
     ['null', null, false],
     ['object thường có code 18 (không phải Error)', { code: 18 }, false],
-  ])('%s', (_label, error, expected) => {
-    expect(isConnectionError(error)).toBe(expected);
+  ])('%s', (_label, error, isExpected) => {
+    expect(isConnectionError(error)).toBe(isExpected);
   });
 });

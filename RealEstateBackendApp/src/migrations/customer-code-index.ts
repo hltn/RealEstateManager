@@ -62,7 +62,7 @@ export async function createCustomerCodeIndex(
     (index) => index.name === options.name,
   );
 
-  let indexCreated = false;
+  let isIndexCreated = false;
   if (existing) {
     if (!matchesCustomerCodeIndex(existing)) {
       throw conflictError(
@@ -83,7 +83,7 @@ export async function createCustomerCodeIndex(
           partialFilterExpression: { ...options.partialFilterExpression },
         },
       );
-      indexCreated = true;
+      isIndexCreated = true;
     } catch (error) {
       if (
         hasMongoErrorCode(error, MONGO_INDEX_OPTIONS_CONFLICT) ||
@@ -104,11 +104,11 @@ export async function createCustomerCodeIndex(
       { $setOnInsert: { seq: 0 } },
       { upsert: true },
     );
-  const counterCreated = counter.upsertedCount > 0;
+  const isCounterCreated = counter.upsertedCount > 0;
 
   log?.(
-    `Index ${options.name}: ${indexCreated ? 'đã tạo' : 'đã có sẵn đúng spec'}; ` +
-      `counter ${COUNTER_KEY}: ${counterCreated ? 'đã tạo (seq 0)' : 'đã có, giữ nguyên'}`,
+    `Index ${options.name}: ${isIndexCreated ? 'đã tạo' : 'đã có sẵn đúng spec'}; ` +
+      `counter ${COUNTER_KEY}: ${isCounterCreated ? 'đã tạo (seq 0)' : 'đã có, giữ nguyên'}`,
   );
-  return { indexCreated, counterCreated };
+  return { indexCreated: isIndexCreated, counterCreated: isCounterCreated };
 }

@@ -35,14 +35,18 @@ const FIELD = {
 describe('migrateProjectPropertyTypeCodes: thiếu trường property_type', () => {
   it.each([true, false])(
     'không có dự án cần mã (apply=%s): thoát OK kèm cảnh báo, không ghi, không ném lỗi',
-    async (apply) => {
+    async (shouldApply) => {
       const { db, bulkWrite, find } = buildFakeDb({
         field: null,
         needingCodes: false,
       });
       const log = jest.fn();
 
-      const result = await migrateProjectPropertyTypeCodes(db, apply, log);
+      const result = await migrateProjectPropertyTypeCodes(
+        db,
+        shouldApply,
+        log,
+      );
 
       expect(result).toEqual({
         projectsCoded: 0,
@@ -57,15 +61,15 @@ describe('migrateProjectPropertyTypeCodes: thiếu trường property_type', () 
 
   it.each([true, false])(
     'có dự án cần mã (apply=%s): vẫn ném PropertyTypeFieldMissingError',
-    async (apply) => {
+    async (shouldApply) => {
       const { db, bulkWrite } = buildFakeDb({
         field: null,
         needingCodes: true,
       });
 
-      await expect(migrateProjectPropertyTypeCodes(db, apply)).rejects.toThrow(
-        PropertyTypeFieldMissingError,
-      );
+      await expect(
+        migrateProjectPropertyTypeCodes(db, shouldApply),
+      ).rejects.toThrow(PropertyTypeFieldMissingError);
       expect(bulkWrite).not.toHaveBeenCalled();
     },
   );

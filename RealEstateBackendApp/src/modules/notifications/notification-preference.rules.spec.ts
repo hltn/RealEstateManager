@@ -43,8 +43,8 @@ describe('isValidQuietHours', () => {
     [{ start: '22:00', end: '22:00' }, false],
     [{ start: '24:00', end: '06:00' }, false],
     [{ start: '9:00', end: '10:00' }, false],
-  ])('%j => %p', (value, expected) => {
-    expect(isValidQuietHours(value)).toBe(expected);
+  ])('%j => %p', (value, isExpected) => {
+    expect(isValidQuietHours(value)).toBe(isExpected);
   });
 });
 
@@ -60,8 +60,8 @@ describe('isInQuietHours (T-30)', () => {
     ['17:00', false],
   ])(
     'khung trong ngày 09:00-17:00 lúc %s => %p (start bao gồm, end không)',
-    (now, expected) => {
-      expect(isInQuietHours(now, day)).toBe(expected);
+    (now, isExpected) => {
+      expect(isInQuietHours(now, day)).toBe(isExpected);
     },
   );
 
@@ -73,8 +73,8 @@ describe('isInQuietHours (T-30)', () => {
     ['05:59', true],
     ['06:00', false],
     ['12:00', false],
-  ])('khung qua nửa đêm 22:00-06:00 lúc %s => %p', (now, expected) => {
-    expect(isInQuietHours(now, night)).toBe(expected);
+  ])('khung qua nửa đêm 22:00-06:00 lúc %s => %p', (now, isExpected) => {
+    expect(isInQuietHours(now, night)).toBe(isExpected);
   });
 
   it('mặc định tắt: quietHours null/undefined luôn false', () => {

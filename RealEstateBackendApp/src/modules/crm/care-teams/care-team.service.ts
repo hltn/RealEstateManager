@@ -261,7 +261,7 @@ export class CareTeamService {
       memberIds,
       new Map([...users].map(([key, user]) => [key, user.teamIds])),
     );
-    const matched = await this.repo.updateOne(
+    const isMatched = await this.repo.updateOne(
       ctx.scope,
       customerId,
       { __v: before.__v },
@@ -277,7 +277,7 @@ export class CareTeamService {
       },
       { session },
     );
-    if (!matched) throw versionConflict(before.__v);
+    if (!isMatched) throw versionConflict(before.__v);
 
     const maps = await this.refs.resolve({
       userIds: [

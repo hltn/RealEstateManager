@@ -485,7 +485,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
   });
 
   it('FR-26: upload xếp job SAU khi transaction commit: ảnh đã có trong DB lúc job được xếp', async () => {
-    let wasPersistedAtEnqueue = false;
+    let hasBeenPersistedAtEnqueue = false;
     runtime.add.mockImplementationOnce(
       async (
         _q: string,
@@ -493,7 +493,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
         data: { attachmentId: string },
         o: { jobId: string },
       ) => {
-        wasPersistedAtEnqueue =
+        hasBeenPersistedAtEnqueue =
           (await attachments.countDocuments({ _id: data.attachmentId })) === 1;
         jobs.set(o.jobId, { name, data, state: 'waiting' });
         return { id: o.jobId };
@@ -502,7 +502,7 @@ describe('FR-26 thumbnail ảnh đính kèm (tích hợp)', () => {
 
     await upload(await sampleImage('jpeg', 400, 400));
 
-    expect(wasPersistedAtEnqueue).toBe(true);
+    expect(hasBeenPersistedAtEnqueue).toBe(true);
   });
 
   describe('T-54: phần phục vụ, bù ảnh cũ, xóa/dọn kèm thumbnail', () => {

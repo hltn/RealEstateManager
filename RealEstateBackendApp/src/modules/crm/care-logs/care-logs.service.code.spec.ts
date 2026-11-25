@@ -124,7 +124,7 @@ const create = (service: CareLogsService, dto: Partial<CreateCareLogDto>) =>
     {} as never,
   );
 
-const storedLog = (ref: CatalogRef | null, withCode: boolean): CareLogLean =>
+const storedLog = (ref: CatalogRef | null, hasCode: boolean): CareLogLean =>
   ({
     _id: oid(),
     customerId: new Types.ObjectId(customerId),
@@ -134,7 +134,7 @@ const storedLog = (ref: CatalogRef | null, withCode: boolean): CareLogLean =>
     content: 'Nội dung cũ',
     contactChannel: 'CALL',
     contactResultId: ref?.id ?? null,
-    ...(withCode && { contactResultCode: ref?.code ?? null }),
+    ...(hasCode && { contactResultCode: ref?.code ?? null }),
     attachments: [],
     nextAction: null,
     source: 'MANUAL',
