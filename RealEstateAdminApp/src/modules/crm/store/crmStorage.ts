@@ -295,8 +295,12 @@ const setItemWithQuotaRetry = (storage: Storage, key: string, value: string): bo
 /** Lưu bản sao `<key>_corrupt_<timestamp>` (giữ tối đa 3 bản mới nhất) để có thể cứu dữ liệu thủ công. */
 const backupCorruptPayload = (storage: Storage, raw: string): void => {
   try {
-    let stamp = Date.now();
-    while (storage.getItem(`${CORRUPT_KEY_PREFIX}${stamp}`) !== null) stamp += 1;
+    // Dấu thời gian mới phải LỚN HƠN mọi dấu đang có: chỉ tránh trùng khóa thì chưa đủ, vì khi bản cũ nhất bị xóa (giữ tối đa 3)
+    // khóa của nó trống ra, một lần ghi cùng mili giây sẽ nhận lại đúng dấu đó, thành "cũ nhất" và bị xóa ngay.
+    const existingStamps = keysWithPrefix(storage, CORRUPT_KEY_PREFIX)
+      .map((key) => Number(key.slice(CORRUPT_KEY_PREFIX.length)))
+      .filter(Number.isFinite);
+    const stamp = Math.max(Date.now(), ...existingStamps.map((value) => value + 1));
     if (!setItemWithQuotaRetry(storage, `${CORRUPT_KEY_PREFIX}${stamp}`, raw)) return;
     keysWithPrefix(storage, CORRUPT_KEY_PREFIX)
       .sort((first, second) => Number(first.slice(CORRUPT_KEY_PREFIX.length)) - Number(second.slice(CORRUPT_KEY_PREFIX.length)))
