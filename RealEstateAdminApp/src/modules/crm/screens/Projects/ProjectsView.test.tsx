@@ -111,7 +111,7 @@ describe('ProjectsView (API thật)', () => {
   });
 
   it('G7: "Dẫn khách xem" trên thẻ dự án mở form tạo lịch kèm ?projectId=; nút chung ở đầu trang mở form trống', () => {
-    const PROJECT_ID = '6add87b88f689f6e6cd96aa1';
+    const PROJECT_ID = 'QTERRA'; // id giao diện là MÃ dự án (T-15), không phải ObjectId
     state.projects = [project({ id: PROJECT_ID })];
     let url = '';
     const Probe = () => {

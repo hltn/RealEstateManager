@@ -93,7 +93,7 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   const originProjectId = parseCreateAppointmentProjectId(search);
   // null = người dùng chưa tự chọn dự án (dùng dự án mang sang / gợi ý); '' = chủ động "Không chọn".
   const [manualProjectId, setManualProjectId] = useState<string | null>(null);
-  // Lỗi 400 của trường dự án do máy chủ trả về (`details.field = projectId`).
+  // Lỗi 400 của trường dự án do máy chủ trả về (`details.field = projectCode` hoặc `projectId`).
   // Gắn kèm dự án lúc lỗi: dự án đổi (tay hoặc do gợi ý khi đổi khách) thì lỗi cũ tự hết hiệu lực.
   const [projectServerError, setProjectServerError] = useState<{ message: string; projectId: string } | null>(null);
   // null = chưa chọn tay người thực hiện (dùng mặc định theo khách); mảng (kể cả rỗng) = lựa chọn tay.
@@ -122,7 +122,8 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
 
   // Đổi khách thì người thực hiện về mặc định của khách mới (manualAssigneeIds null = chưa chọn tay).
   const assigneeOptions = useMemo(() => listAssignableAssignees(selectedCustomer), [selectedCustomer]);
-  const linkedProjectId = originProjectId && selectableProjects.some((project) => project.id === originProjectId) ? originProjectId : '';
+  // Mã dự án trên URL không phân biệt hoa thường (id giao diện là mã đã viết HOA); lấy đúng id của dự án chọn được.
+  const linkedProjectId = originProjectId ? (selectableProjects.find((project) => project.id.toUpperCase() === originProjectId.toUpperCase())?.id ?? '') : '';
   const projectId = manualProjectId ?? (linkedProjectId || getSuggestedProjectId(selectedCustomer, selectableProjects));
   const values = useMemo(
     () => ({ ...draft, customerId, projectId, assigneeIds: manualAssigneeIds ?? getDefaultAssigneeIds(assigneeOptions, currentUser.id) }),
@@ -196,7 +197,8 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
       setIsSubmitting(false);
       if (!result.ok) {
         // Lỗi gắn với dự án (dự án không còn hoạt động...): hiện cạnh ô dự án; lỗi khác: toast.
-        if (result.error.details?.field === 'projectId') {
+        // Backend trả `projectCode` khi FE gửi mã dự án (đường chính từ T-15), `projectId` khi gửi id.
+        if (result.error.details?.field === 'projectCode' || result.error.details?.field === 'projectId') {
           setProjectServerError({ message: result.error.message, projectId: values.projectId });
           document.getElementById(getFieldId('projectId'))?.focus();
           return;

@@ -51,6 +51,12 @@ export const CREATE_APPOINTMENT_PROJECT_PARAM = 'projectId';
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
 export const isValidCustomerId = (value: string | null | undefined): value is string => typeof value === 'string' && OBJECT_ID_PATTERN.test(value);
 
+/**
+ * Id dự án ở giao diện là MÃ dự án chuẩn hóa (T-15), không phải ObjectId: cùng bộ ký tự với `PROJECT_CODE_LEGACY_PATTERN` của backend
+ * (chữ, số, `_`, `-`, tối đa 30). ObjectId 24 ký tự hex cũng khớp nên đường dẫn cũ vẫn đọc được.
+ */
+const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]{1,30}$/;
+export const isValidProjectId = (value: string | null | undefined): value is string => typeof value === 'string' && PROJECT_ID_PATTERN.test(value);
 export interface CreateAppointmentLink {
   customerId?: string | null;
   projectId?: string | null;
@@ -63,7 +69,7 @@ export interface CreateAppointmentLink {
 export const buildCreateAppointmentPath = ({ customerId, projectId }: CreateAppointmentLink = {}): string => {
   const params = new URLSearchParams();
   if (isValidCustomerId(customerId)) params.set(CREATE_APPOINTMENT_CUSTOMER_PARAM, customerId);
-  if (isValidCustomerId(projectId)) params.set(CREATE_APPOINTMENT_PROJECT_PARAM, projectId);
+  if (isValidProjectId(projectId)) params.set(CREATE_APPOINTMENT_PROJECT_PARAM, projectId);
   const query = params.toString();
   return query ? `${STATIC_PATH_BY_VIEW.create_appointment}?${query}` : STATIC_PATH_BY_VIEW.create_appointment;
 };
@@ -83,7 +89,10 @@ export const hasInvalidCreateAppointmentCustomerId = (search: string): boolean =
 };
 
 /** Dự án mang theo ở query của màn tạo lịch hẹn; `null` nếu không có hoặc sai định dạng. */
-export const parseCreateAppointmentProjectId = (search: string): string | null => readIdParam(search, CREATE_APPOINTMENT_PROJECT_PARAM);
+export const parseCreateAppointmentProjectId = (search: string): string | null => {
+  const value = new URLSearchParams(search).get(CREATE_APPOINTMENT_PROJECT_PARAM);
+  return isValidProjectId(value) ? value : null;
+};
 
 export interface CrmRouteMatch {
   view: ViewId;

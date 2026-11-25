@@ -301,7 +301,7 @@ test.describe('f4b-appointment-context', () => {
     const cardB = page.getByRole('article').filter({ hasText: B.name });
     await expect(cardB).toHaveCount(1);
     await cardB.getByRole('button', { name: /Dẫn khách xem/ }).click();
-    await expect(page).toHaveURL(new RegExp(`/crm/appointments/new\\?projectId=${B.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/crm/appointments/new\\?projectId=${B.code}$`));
     await expect(projectSelect(page)).toHaveValue(B.name);
     await expect(page.getByText('Chưa chọn khách hàng.')).toBeVisible(); // chưa có ngữ cảnh khách
     await expect(page.getByRole('button', { name: 'Chọn khách' })).toBeVisible();
@@ -325,12 +325,12 @@ test.describe('f4b-appointment-context', () => {
     await expect(page.getByText('Chưa chọn khách hàng.')).toBeVisible();
 
     // Dự án ngừng hoạt động qua ?projectId= bị bỏ qua.
-    await page.goto(`/crm/appointments/new?projectId=${D.id}`);
+    await page.goto(`/crm/appointments/new?projectId=${D.code}`);
     await expect(page.getByText('Chưa chọn khách hàng.')).toBeVisible();
     await expect(projectSelect(page)).toHaveValue('');
 
     // Tổ hợp khách + dự án: giữ cả hai, trường khách khóa.
-    await page.goto(`/crm/appointments/new?customerId=${customer.id}&projectId=${B.id}`);
+    await page.goto(`/crm/appointments/new?customerId=${customer.id}&projectId=${B.code}`);
     await expect(customerCard(page)).toContainText(customer.fullName);
     await expect(page.getByText(LOCKED_HINT)).toBeVisible();
     await expect(projectSelect(page)).toHaveValue(B.name);

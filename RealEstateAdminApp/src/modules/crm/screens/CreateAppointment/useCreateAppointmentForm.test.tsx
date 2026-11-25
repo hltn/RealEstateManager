@@ -349,6 +349,16 @@ describe('G7: dự án của lịch', () => {
     }
   });
 
+  it('id dự án là MÃ (như dữ liệu thật sau T-15): ?projectId= chọn sẵn đúng dự án, không phân biệt hoa thường; mã đã ngừng thì bỏ qua', () => {
+    catalogProjects.current = [project('QTERRA'), project('PRIVIA'), project('OFFLINE', false)];
+    for (const typed of ['QTERRA', 'qterra']) {
+      const { result } = setup(`/crm/appointments/new?projectId=${typed}`);
+      expect(result.current.values.projectId).toBe('QTERRA');
+    }
+    expect(setup('/crm/appointments/new?projectId=OFFLINE').result.current.values.projectId).toBe('');
+    expect(setup('/crm/appointments/new?projectId=KHONGCO').result.current.values.projectId).toBe('');
+  });
+
   it('kết hợp ?customerId=&projectId=: khách khóa + dự án chọn sẵn', () => {
     useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
     const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}&projectId=${PROJECT_A}`);
@@ -379,6 +389,18 @@ describe('G7: dự án của lịch', () => {
     expect(result.current.errors.projectId).toBe('Dự án không tồn tại hoặc đã ngừng hoạt động');
     expect(toastDefault).not.toHaveBeenCalled();
     expect(currentUrl.value).toBe(entry);
+    act(() => result.current.setField('projectId', PROJECT_B));
+    expect(result.current.errors.projectId).toBeUndefined();
+  });
+
+  it('lỗi 400 có details.field = projectCode (FE gửi mã dự án từ T-15): cũng hiện cạnh ô dự án, không toast', async () => {
+    useCustomerDetail.mockImplementation((id: string | null) => (id ? detailOf(id) : NO_DETAIL));
+    createAppointment.mockResolvedValue({ ok: false, error: { statusCode: 400, errorCode: 'VALIDATION_FAILED', message: 'Dự án không tồn tại hoặc đã ngừng hoạt động', details: { field: 'projectCode' } } });
+    const { result } = setup(`/crm/appointments/new?customerId=${CUSTOMER_ID}&projectId=${PROJECT_A}`);
+    fillValidForm(result);
+    await act(() => result.current.handleSubmit());
+    expect(result.current.errors.projectId).toBe('Dự án không tồn tại hoặc đã ngừng hoạt động');
+    expect(toastDefault).not.toHaveBeenCalled();
     act(() => result.current.setField('projectId', PROJECT_B));
     expect(result.current.errors.projectId).toBeUndefined();
   });
