@@ -310,9 +310,9 @@ describe('BackfillEmbeddingsDto (FR-14)', () => {
 describe('articles phải là mảng object (FR-14)', () => {
   it.each([AnalyzeRawArticlesDto, SaveArticlesDto])(
     'FR-14: %p từ chối phần tử không phải object',
-    async (Dto) => {
+    async (dtoClass) => {
       const errors = await validate(
-        plainToInstance(Dto, { articles: ['x', 1, null] }),
+        plainToInstance(dtoClass, { articles: ['x', 1, null] }),
       );
       expect(errors.length).toBeGreaterThan(0);
     },

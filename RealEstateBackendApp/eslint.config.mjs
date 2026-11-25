@@ -38,6 +38,40 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      // Quy ước đặt tên theo SKILL nodejs-react-mongo-coding-guidelines, mục 1 (mức warn, chưa chặn CI).
+      '@typescript-eslint/naming-convention': [
+        'warn',
+        { selector: 'typeLike', format: ['PascalCase'] },
+        { selector: 'enumMember', format: ['PascalCase', 'UPPER_CASE'] },
+        {
+          selector: 'variable',
+          format: ['camelCase', 'UPPER_CASE', 'PascalCase'],
+          leadingUnderscore: 'allow',
+        },
+        {
+          selector: 'function',
+          format: ['camelCase', 'PascalCase'],
+          leadingUnderscore: 'allow',
+        },
+        {
+          selector: 'parameter',
+          format: ['camelCase'],
+          leadingUnderscore: 'allow',
+        },
+        {
+          // Biến và tham số kiểu boolean phải có tiền tố is/has/should (SKILL mục 1), thêm can/did/will/are cho tên tự nhiên như canEdit, didChange. Chưa áp cho thuộc tính DTO/schema vì đổi tên sẽ đổi API và dữ liệu.
+          selector: ['variable', 'parameter'],
+          types: ['boolean'],
+          format: ['PascalCase'],
+          prefix: ['is', 'has', 'should', 'can', 'did', 'will', 'are'],
+          leadingUnderscore: 'allow',
+        },
+        {
+          selector: 'classMethod',
+          format: ['camelCase'],
+          leadingUnderscore: 'allow',
+        },
+      ],
       'no-var': 'error',
       'prefer-const': 'error',
       'no-console': 'error',
