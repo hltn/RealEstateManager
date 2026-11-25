@@ -71,7 +71,9 @@ export class NewsFireCrawlManagerController {
     private readonly auditLogService: AuditLogService,
     private readonly analyzeJobService: AnalyzeJobService,
   ) {
-    if (typeof this.cronjobService.setMarketAnalysisWorkflowTrigger === 'function') {
+    if (
+      typeof this.cronjobService.setMarketAnalysisWorkflowTrigger === 'function'
+    ) {
       this.cronjobService.setMarketAnalysisWorkflowTrigger(() =>
         this.triggerMarketAnalysisWorkflowForToday(),
       );
@@ -304,12 +306,17 @@ export class NewsFireCrawlManagerController {
     // tránh phụ thuộc thời gian crawl thực tế (gây Axios timeout phía FE) — giống
     // pattern analyze-raw / analyze-market-trends. `.catch` safety net chống
     // unhandled rejection ngoài dự kiến.
-    void this.runManualCrawlJob(jobId, days, startDate, endDate, LOCK_KEY).catch(
-      (err: any) =>
-        this.logger.error(
-          `Manual crawl fire-and-forget rejected: ${err?.message}`,
-          err?.stack,
-        ),
+    void this.runManualCrawlJob(
+      jobId,
+      days,
+      startDate,
+      endDate,
+      LOCK_KEY,
+    ).catch((err: any) =>
+      this.logger.error(
+        `Manual crawl fire-and-forget rejected: ${err?.message}`,
+        err?.stack,
+      ),
     );
 
     return { message: 'Crawl started', jobId };
@@ -499,8 +506,7 @@ export class NewsFireCrawlManagerController {
   ): Promise<void> {
     return this.runLockedJob(jobId, lockKey, 'Analyze-all job', async () => {
       // Lấy toàn bộ articles từ DB (không phân trang), chỉ lấy field cần thiết
-      const allArticles =
-        await this.customCrawlerService.getAllRawArticles();
+      const allArticles = await this.customCrawlerService.getAllRawArticles();
 
       if (!allArticles || allArticles.length === 0) {
         // markDone([]) được runLockedJob gọi khi work trả về [].
@@ -508,9 +514,7 @@ export class NewsFireCrawlManagerController {
       }
 
       // submittedHashes = phạm vi toàn bộ collection → AI có thể xóa bất kỳ bài nào
-      const submittedHashes = allArticles
-        .map((a) => a.urlHash)
-        .filter(Boolean) as string[];
+      const submittedHashes = allArticles.map((a) => a.urlHash).filter(Boolean);
 
       const filteredArticles =
         await this.aiFilterService.filterRawArticles(allArticles);
@@ -532,7 +536,10 @@ export class NewsFireCrawlManagerController {
     summary: 'Get analyze-raw job status',
     description: 'Poll trạng thái job phân tích AI chạy nền theo jobId.',
   })
-  @ApiParam({ name: 'jobId', description: 'ID job trả về từ POST /analyze-raw' })
+  @ApiParam({
+    name: 'jobId',
+    description: 'ID job trả về từ POST /analyze-raw',
+  })
   @Get('analyze-raw/:jobId')
   getAnalyzeRawJob(@Param('jobId') jobId: string) {
     const job = this.analyzeJobService.getJob(jobId);
@@ -585,11 +592,16 @@ export class NewsFireCrawlManagerController {
 
   @ApiOperation({
     summary: 'Get market analysis history',
-    description: 'Cursor pagination: returns 10 newest records; pass meta.nextCursor for the next batch.',
+    description:
+      'Cursor pagination: returns 10 newest records; pass meta.nextCursor for the next batch.',
   })
   @Get('articles/market-analysis-history')
-  async getMarketAnalysisHistory(@Query() query: GetMarketAnalysisHistoryQueryDto) {
-    const history = await this.newsArticleService.getMarketAnalysisHistory(query.cursor);
+  async getMarketAnalysisHistory(
+    @Query() query: GetMarketAnalysisHistoryQueryDto,
+  ) {
+    const history = await this.newsArticleService.getMarketAnalysisHistory(
+      query.cursor,
+    );
     return {
       message: 'Market analysis history fetched successfully',
       data: history.data,
@@ -653,11 +665,12 @@ export class NewsFireCrawlManagerController {
     // Fire-and-forget: không await trong request handler để HTTP response trả về ngay,
     // tránh phụ thuộc vào thời gian xử lý AI upstream (có thể tới 300s) — giống pattern analyze-raw.
     // `.catch` safety net chống unhandled rejection ngoài dự kiến.
-    void this.runAnalyzeMarketTrendsJob(jobId, ids, LOCK_KEY).catch((err: any) =>
-      this.logger.error(
-        `Analyze market trends fire-and-forget rejected: ${err?.message}`,
-        err?.stack,
-      ),
+    void this.runAnalyzeMarketTrendsJob(jobId, ids, LOCK_KEY).catch(
+      (err: any) =>
+        this.logger.error(
+          `Analyze market trends fire-and-forget rejected: ${err?.message}`,
+          err?.stack,
+        ),
     );
 
     return { message: 'Market trends analysis started', jobId };
@@ -673,17 +686,15 @@ export class NewsFireCrawlManagerController {
     ids: string[],
     lockKey: string,
   ): Promise<void> {
-    return this.runLockedJob(
-      jobId,
-      lockKey,
-      'Analyze market trends job',
-      () => this.newsArticleService.analyzeMarketTrendsByAI(ids),
+    return this.runLockedJob(jobId, lockKey, 'Analyze market trends job', () =>
+      this.newsArticleService.analyzeMarketTrendsByAI(ids),
     );
   }
 
   @ApiOperation({
     summary: 'Get analyze-market-trends job status',
-    description: 'Poll trạng thái job phân tích thị trường AI chạy nền theo jobId.',
+    description:
+      'Poll trạng thái job phân tích thị trường AI chạy nền theo jobId.',
   })
   @ApiParam({
     name: 'jobId',
@@ -760,11 +771,8 @@ export class NewsFireCrawlManagerController {
     ids: string[],
     lockKey: string,
   ): Promise<void> {
-    return this.runLockedJob(
-      jobId,
-      lockKey,
-      'Analyze market bulk job',
-      () => this.newsArticleService.analyzeMarketBulk(ids),
+    return this.runLockedJob(jobId, lockKey, 'Analyze market bulk job', () =>
+      this.newsArticleService.analyzeMarketBulk(ids),
     );
   }
 
@@ -829,7 +837,8 @@ export class NewsFireCrawlManagerController {
 
   @ApiOperation({
     summary: 'Get market-analysis-bulk job status',
-    description: 'Poll trạng thái job phân tích thị trường bulk chạy nền theo jobId.',
+    description:
+      'Poll trạng thái job phân tích thị trường bulk chạy nền theo jobId.',
   })
   @ApiParam({
     name: 'jobId',
@@ -875,7 +884,9 @@ export class NewsFireCrawlManagerController {
     date: string,
     source: 'manual' | 'cron',
   ): Promise<{ message: string; jobId: string }> {
-    this.logger.log(`Market analysis workflow triggered by ${source} for date: ${date}`);
+    this.logger.log(
+      `Market analysis workflow triggered by ${source} for date: ${date}`,
+    );
 
     const LOCK_KEY = 'workflow:market-analysis';
     if (!(await this.idempotencyService.tryMarkInFlight(LOCK_KEY))) {
@@ -951,7 +962,9 @@ export class NewsFireCrawlManagerController {
     const job = this.analyzeJobService.getJob(jobId);
     if (!job) throw new NotFoundException('Không tìm thấy workflow job');
     const state = job.result as WorkflowJobState | undefined;
-    const failedStep = state?.steps?.find((step) => step.status === 'error')?.step;
+    const failedStep = state?.steps?.find(
+      (step) => step.status === 'error',
+    )?.step;
     if (job.status !== 'error' || !state || !failedStep) {
       throw new BadRequestException('Workflow job không có bước lỗi để retry');
     }
@@ -1005,7 +1018,11 @@ export class NewsFireCrawlManagerController {
     return { message: `Đang retry bước ${failedStep}`, jobId };
   }
 
-  private async runWorkflowRetry(jobId: string, lockKey: string, startStep: number): Promise<void> {
+  private async runWorkflowRetry(
+    jobId: string,
+    lockKey: string,
+    startStep: number,
+  ): Promise<void> {
     const updateStep = (step: number, patch: Partial<WorkflowStepState>) => {
       const job = this.analyzeJobService.getJob(jobId);
       const state = job?.result as WorkflowJobState | undefined;
@@ -1015,32 +1032,60 @@ export class NewsFireCrawlManagerController {
       this.analyzeJobService.updateJob(jobId, { result: state });
     };
     try {
-      const state = this.analyzeJobService.getJob(jobId)!.result as WorkflowJobState;
-      const step2 = state.steps[1].result as { filteredRawArticleIds: string[]; filteredCount: number };
-      let step3 = state.steps[2].result as { newsArticleIds: string[] } | undefined;
+      const state = this.analyzeJobService.getJob(jobId)!
+        .result as WorkflowJobState;
+      const step2 = state.steps[1].result as {
+        filteredRawArticleIds: string[];
+        filteredCount: number;
+      };
+      let step3 = state.steps[2].result as
+        | { newsArticleIds: string[] }
+        | undefined;
       let newsArticleIds = step3?.newsArticleIds ?? [];
-      let bulkResult = state.steps[3].result as { processed: number; failed: number } | undefined;
+      let bulkResult = state.steps[3].result as
+        | { processed: number; failed: number }
+        | undefined;
       if (startStep <= 3) {
         updateStep(3, { status: 'running', error: undefined });
-        const rawArticles = await this.customCrawlerService.getRawArticlesByIds(step2.filteredRawArticleIds);
-        const saveResult = await this.newsArticleService.saveArticles(rawArticles);
-        newsArticleIds = await this.newsArticleService.getArticleIdsByUrlHashes(saveResult.processedUrlHashes);
+        const rawArticles = await this.customCrawlerService.getRawArticlesByIds(
+          step2.filteredRawArticleIds,
+        );
+        const saveResult =
+          await this.newsArticleService.saveArticles(rawArticles);
+        newsArticleIds = await this.newsArticleService.getArticleIdsByUrlHashes(
+          saveResult.processedUrlHashes,
+        );
         step3 = { newsArticleIds };
-        updateStep(3, { status: 'done', result: { ...step3, savedCount: saveResult.savedCount, duplicates: saveResult.duplicates } });
+        updateStep(3, {
+          status: 'done',
+          result: {
+            ...step3,
+            savedCount: saveResult.savedCount,
+            duplicates: saveResult.duplicates,
+          },
+        });
       }
       if (startStep <= 4) {
         updateStep(4, { status: 'running', error: undefined });
-        bulkResult = await this.newsArticleService.analyzeMarketBulk(newsArticleIds);
+        bulkResult =
+          await this.newsArticleService.analyzeMarketBulk(newsArticleIds);
         updateStep(4, { status: 'done', result: bulkResult });
       }
       updateStep(5, { status: 'running', error: undefined });
-      const markdownContent = await this.newsArticleService.analyzeMarketTrendsByAI(newsArticleIds);
+      const markdownContent =
+        await this.newsArticleService.analyzeMarketTrendsByAI(newsArticleIds);
       updateStep(5, { status: 'done', result: { content: markdownContent } });
-      const finalState = this.analyzeJobService.getJob(jobId)!.result as WorkflowJobState;
+      const finalState = this.analyzeJobService.getJob(jobId)!
+        .result as WorkflowJobState;
       finalState.finalResult = {
         markdownContent,
         newsArticleCount: newsArticleIds.length,
-        stats: { totalArticles: 0, filtered: step2.filteredCount, crawledContent: bulkResult?.processed ?? 0, failedCrawl: bulkResult?.failed ?? 0 },
+        stats: {
+          totalArticles: 0,
+          filtered: step2.filteredCount,
+          crawledContent: bulkResult?.processed ?? 0,
+          failedCrawl: bulkResult?.failed ?? 0,
+        },
       };
       this.analyzeJobService.markDone(jobId, finalState);
     } catch (error: any) {
@@ -1049,12 +1094,26 @@ export class NewsFireCrawlManagerController {
       const state = job?.result as WorkflowJobState | undefined;
       const running = state?.steps.find((step) => step.status === 'running');
       if (state && running) {
-        state.steps[running.step - 1] = { ...running, status: 'error', error: errMsg };
-        this.analyzeJobService.updateJob(jobId, { status: 'error', error: errMsg, result: state });
+        state.steps[running.step - 1] = {
+          ...running,
+          status: 'error',
+          error: errMsg,
+        };
+        this.analyzeJobService.updateJob(jobId, {
+          status: 'error',
+          error: errMsg,
+          result: state,
+        });
       }
     } finally {
-      try { await this.idempotencyService.clearInFlight(lockKey); }
-      catch (err: any) { this.logger.error(`Workflow retry ${jobId}: clearInFlight threw`, err?.stack); }
+      try {
+        await this.idempotencyService.clearInFlight(lockKey);
+      } catch (err: any) {
+        this.logger.error(
+          `Workflow retry ${jobId}: clearInFlight threw`,
+          err?.stack,
+        );
+      }
     }
   }
 
@@ -1108,7 +1167,9 @@ export class NewsFireCrawlManagerController {
       updateStep(2, { status: 'running' });
       const allArticles =
         await this.customCrawlerService.getRawArticlesByDate(date);
-      this.logger.log(`agentgw.cloud 2: found ${allArticles.length} raw articles for date ${date}`);
+      this.logger.log(
+        `agentgw.cloud 2: found ${allArticles.length} raw articles for date ${date}`,
+      );
       if (!allArticles || allArticles.length === 0) {
         const emptyResult: WorkflowJobState = {
           currentStep: 5,
@@ -1147,9 +1208,7 @@ export class NewsFireCrawlManagerController {
         await this.aiFilterService.filterRawArticles(allArticles);
       const keepHashes: string[] =
         filteredArticles?.map((a: any) => a.urlHash).filter(Boolean) ?? [];
-      const submittedHashes = allArticles
-        .map((a) => a.urlHash)
-        .filter(Boolean);
+      const submittedHashes = allArticles.map((a) => a.urlHash).filter(Boolean);
       const filteredKeepArticles = allArticles.filter(
         (a: any) => a.urlHash && keepHashes.includes(a.urlHash),
       );
@@ -1225,8 +1284,7 @@ export class NewsFireCrawlManagerController {
       const successfulIds = typedRawArticles
         .filter(
           (raw) =>
-            raw.urlHash &&
-            saveResult.processedUrlHashes.includes(raw.urlHash),
+            raw.urlHash && saveResult.processedUrlHashes.includes(raw.urlHash),
         )
         .map((raw) => raw._id.toString());
       if (successfulIds.length > 0) {
@@ -1313,9 +1371,7 @@ export class NewsFireCrawlManagerController {
       // ── Step 5: Phân tích thị trường ──
       updateStep(5, { status: 'running' });
       const markdownContent =
-        await this.newsArticleService.analyzeMarketTrendsByAI(
-          newsArticleIds,
-        );
+        await this.newsArticleService.analyzeMarketTrendsByAI(newsArticleIds);
       updateStep(5, { status: 'done', result: { content: markdownContent } });
 
       // ── Hoàn tất ──
@@ -1356,7 +1412,10 @@ export class NewsFireCrawlManagerController {
       );
     } catch (error: any) {
       const errMsg = error?.message || 'Lỗi không xác định trong pipeline';
-      this.logger.error(`Workflow ${jobId} failed at step: ${errMsg}`, error?.stack);
+      this.logger.error(
+        `Workflow ${jobId} failed at step: ${errMsg}`,
+        error?.stack,
+      );
 
       // KHÔNG dùng markError trực tiếp: nó ghi đè toàn bộ job và XOÁ field
       // result (mất currentStep/steps đã cập nhật tới bước lỗi) — spec yêu
@@ -1389,10 +1448,7 @@ export class NewsFireCrawlManagerController {
       try {
         await this.idempotencyService.clearInFlight(lockKey);
       } catch (err: any) {
-        this.logger.error(
-          `Workflow ${jobId}: clearInFlight threw`,
-          err?.stack,
-        );
+        this.logger.error(`Workflow ${jobId}: clearInFlight threw`, err?.stack);
       }
     }
   }
@@ -1538,7 +1594,9 @@ export class NewsFireCrawlManagerController {
   @ApiParam({ name: 'id', description: 'Raw article ID' })
   @Patch('raw-articles/:id/override-duplicate')
   async overrideDuplicate(@Param('id') id: string) {
-    const rawArticle = await this.customCrawlerService.getRawArticlesByIds([id]);
+    const rawArticle = await this.customCrawlerService.getRawArticlesByIds([
+      id,
+    ]);
     if (!rawArticle || rawArticle.length === 0) {
       throw new NotFoundException(`Raw article with ID ${id} not found`);
     }

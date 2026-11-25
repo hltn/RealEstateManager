@@ -124,7 +124,8 @@ export class GetArticlesQueryDto extends PaginationQueryDto {
   date?: string;
 
   @ApiPropertyOptional({
-    description: 'Lọc theo trạng thái WordPress/crawl; pending là bài chưa có trạng thái',
+    description:
+      'Lọc theo trạng thái WordPress/crawl; pending là bài chưa có trạng thái',
     enum: ['pending', 'CRAWLED', 'POSTED_WP', 'ERROR'],
   })
   @IsOptional()

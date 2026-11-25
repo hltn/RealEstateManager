@@ -4,10 +4,7 @@ import {
   KnowledgeConfig,
   KnowledgeConfigSchema,
 } from './schemas/knowledge-config.schema';
-import {
-  PipelineLog,
-  PipelineLogSchema,
-} from './schemas/pipeline-log.schema';
+import { PipelineLog, PipelineLogSchema } from './schemas/pipeline-log.schema';
 import { KnowledgeArticlesController } from './knowledge-articles.controller';
 import { KnowledgeArticleService } from './services/knowledge-article.service';
 import { KnowledgeConfigService } from './services/knowledge-config.service';
@@ -21,7 +18,6 @@ import { CategoryRotationService } from './services/category-rotation.service';
 import { NewsFireCrawlManagerModule } from '../news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { SharedModule } from '../../shared/shared.module';
 import { CrmCommonModule } from '../crm/common/crm-common.module';
-
 
 @Module({
   imports: [

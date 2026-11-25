@@ -812,7 +812,7 @@ describe('CRM M2 — khách hàng lõi (HTTP + Replica Set + Redis)', () => {
       ]) {
         expect([route, doc.paths[route] !== undefined]).toEqual([route, true]);
       }
-      const schemas = (doc.components?.schemas ?? {}) as Record<string, any>;
+      const schemas = doc.components?.schemas ?? {};
       const createDto = schemas.CreateCustomerDto;
       expect(createDto).toBeDefined();
       expect(Object.keys(createDto.properties)).not.toContain('careTeam');

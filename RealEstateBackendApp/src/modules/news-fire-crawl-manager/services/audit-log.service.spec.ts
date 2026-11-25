@@ -15,7 +15,9 @@ describe('AuditLogService', () => {
 
   beforeEach(async () => {
     mockAuditLogModel = { create: jest.fn() };
-    mockRequestContextService = { getRequestId: jest.fn().mockReturnValue('req-123') };
+    mockRequestContextService = {
+      getRequestId: jest.fn().mockReturnValue('req-123'),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { UserStatus } from '../../../common/enums/user-status.enum';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 import { buildRevocationSet } from './push-revocation.util';
@@ -76,9 +76,9 @@ export class PushCleanupService {
 
   /** Chủ không còn `ACTIVE`, đã soft-delete hoặc không còn tồn tại: thu hồi mọi thiết bị còn hiệu lực. */
   private async revokeForInactiveUsers(now: Date): Promise<number> {
-    const holders = (await this.subscriptionModel
+    const holders = await this.subscriptionModel
       .distinct('userId', { revokedAt: null })
-      .exec()) as Types.ObjectId[];
+      .exec();
     if (holders.length === 0) return 0;
     const healthy = await this.userModel
       .find({

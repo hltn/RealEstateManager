@@ -44,7 +44,7 @@ function normalizeContent(content: string | undefined | null): string {
 const MARKET_ANALYSIS_HISTORY_PAGE_SIZE = 10;
 
 /** Default dedup threshold (configurable via env DEDUP_THRESHOLD) */
-const DEFAULT_DEDUP_THRESHOLD = 0.90;
+const DEFAULT_DEDUP_THRESHOLD = 0.9;
 
 /** Default dedup window in days (configurable via env DEDUP_WINDOW_DAYS) */
 const DEFAULT_DEDUP_WINDOW_DAYS = 30;
@@ -54,20 +54,33 @@ export interface MarketAnalysisHistoryPage {
   meta: { limit: number; hasMore: boolean; nextCursor: string | null };
 }
 
-interface MarketAnalysisHistoryCursor { createdAt: string; id: string; }
-
-function encodeMarketAnalysisHistoryCursor(record: any): string {
-  return Buffer.from(JSON.stringify({
-    createdAt: new Date(record.createdAt).toISOString(),
-    id: record._id.toString(),
-  } satisfies MarketAnalysisHistoryCursor)).toString('base64url');
+interface MarketAnalysisHistoryCursor {
+  createdAt: string;
+  id: string;
 }
 
-function decodeMarketAnalysisHistoryCursor(cursor: string): MarketAnalysisHistoryCursor {
+function encodeMarketAnalysisHistoryCursor(record: any): string {
+  return Buffer.from(
+    JSON.stringify({
+      createdAt: new Date(record.createdAt).toISOString(),
+      id: record._id.toString(),
+    } satisfies MarketAnalysisHistoryCursor),
+  ).toString('base64url');
+}
+
+function decodeMarketAnalysisHistoryCursor(
+  cursor: string,
+): MarketAnalysisHistoryCursor {
   try {
-    const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as MarketAnalysisHistoryCursor;
+    const decoded = JSON.parse(
+      Buffer.from(cursor, 'base64url').toString('utf8'),
+    ) as MarketAnalysisHistoryCursor;
     const createdAt = new Date(decoded.createdAt);
-    if (!decoded?.id || Number.isNaN(createdAt.getTime()) || !Types.ObjectId.isValid(decoded.id)) {
+    if (
+      !decoded?.id ||
+      Number.isNaN(createdAt.getTime()) ||
+      !Types.ObjectId.isValid(decoded.id)
+    ) {
       throw new Error('invalid cursor');
     }
     return { createdAt: createdAt.toISOString(), id: decoded.id };
@@ -110,10 +123,16 @@ export class NewsArticleService implements OnModuleInit {
     private readonly configService: ConfigService,
   ) {
     this.dedupThreshold = Number(
-      this.configService.get<number>('DEDUP_THRESHOLD', DEFAULT_DEDUP_THRESHOLD),
+      this.configService.get<number>(
+        'DEDUP_THRESHOLD',
+        DEFAULT_DEDUP_THRESHOLD,
+      ),
     );
     this.dedupWindowDays = Number(
-      this.configService.get<number>('DEDUP_WINDOW_DAYS', DEFAULT_DEDUP_WINDOW_DAYS),
+      this.configService.get<number>(
+        'DEDUP_WINDOW_DAYS',
+        DEFAULT_DEDUP_WINDOW_DAYS,
+      ),
     );
   }
 
@@ -164,7 +183,9 @@ export class NewsArticleService implements OnModuleInit {
   async findDuplicateCandidates(
     publishDate: string,
     windowDays: number = this.dedupWindowDays,
-  ): Promise<{ _id: Types.ObjectId; contentEmbedding: number[]; title: string }[]> {
+  ): Promise<
+    { _id: Types.ObjectId; contentEmbedding: number[]; title: string }[]
+  > {
     const refDate = new Date(publishDate);
     if (isNaN(refDate.getTime())) {
       return [];
@@ -183,7 +204,9 @@ export class NewsArticleService implements OnModuleInit {
       })
       .select('_id contentEmbedding title')
       .lean()
-      .exec() as Promise<{ _id: Types.ObjectId; contentEmbedding: number[]; title: string }[]>;
+      .exec() as Promise<
+      { _id: Types.ObjectId; contentEmbedding: number[]; title: string }[]
+    >;
   }
 
   /**
@@ -314,7 +337,8 @@ export class NewsArticleService implements OnModuleInit {
 
         try {
           embeddingInput = this.embeddingService.prepareEmbeddingInput(article);
-          contentEmbedding = await this.embeddingService.createEmbedding(embeddingInput);
+          contentEmbedding =
+            await this.embeddingService.createEmbedding(embeddingInput);
 
           // Check duplicate against DB candidates + batch buffer
           const checkResult = await this.checkDuplicate(
@@ -331,7 +355,7 @@ export class NewsArticleService implements OnModuleInit {
           if (isDuplicate) {
             this.logger.warn(
               `Duplicate detected: "${article.title}" ~ existing article ` +
-              `(score: ${duplicateScore?.toFixed(3)}, ref: ${duplicateOfArticleId})`,
+                `(score: ${duplicateScore?.toFixed(3)}, ref: ${String(duplicateOfArticleId)})`,
             );
           }
         } catch (embeddingError: any) {
@@ -493,7 +517,7 @@ export class NewsArticleService implements OnModuleInit {
       } catch (error: any) {
         failed++;
         this.logger.error(
-          `Backfill failed for ${article._id}: ${error.message}`,
+          `Backfill failed for ${String(article._id)}: ${error.message}`,
         );
       }
 
@@ -613,7 +637,10 @@ export class NewsArticleService implements OnModuleInit {
           {
             $and: [
               {
-                $or: [{ publishDate: { $exists: false } }, { publishDate: null }],
+                $or: [
+                  { publishDate: { $exists: false } },
+                  { publishDate: null },
+                ],
               },
               { createdAt: { $gte: startDate, $lte: endDate } },
             ],
@@ -633,7 +660,12 @@ export class NewsArticleService implements OnModuleInit {
       filters.push({ status });
     }
 
-    const query = filters.length === 0 ? {} : filters.length === 1 ? filters[0] : { $and: filters };
+    const query =
+      filters.length === 0
+        ? {}
+        : filters.length === 1
+          ? filters[0]
+          : { $and: filters };
     const { skip, limit: pageSize } = normalizePagination(page, limit);
 
     const [data, total] = await Promise.all([
@@ -834,7 +866,9 @@ Content: ${article.content || article.summary || 'N/A'}
     return markdownResponse;
   }
 
-  async getMarketAnalysisHistory(cursor?: string): Promise<MarketAnalysisHistoryPage> {
+  async getMarketAnalysisHistory(
+    cursor?: string,
+  ): Promise<MarketAnalysisHistoryPage> {
     const query: Record<string, unknown> = {};
     if (cursor) {
       const anchor = decodeMarketAnalysisHistoryCursor(cursor);
@@ -851,13 +885,17 @@ Content: ${article.content || article.summary || 'N/A'}
       .limit(MARKET_ANALYSIS_HISTORY_PAGE_SIZE + 1)
       .exec();
     const hasMore = records.length > MARKET_ANALYSIS_HISTORY_PAGE_SIZE;
-    const data = hasMore ? records.slice(0, MARKET_ANALYSIS_HISTORY_PAGE_SIZE) : records;
+    const data = hasMore
+      ? records.slice(0, MARKET_ANALYSIS_HISTORY_PAGE_SIZE)
+      : records;
     return {
       data,
       meta: {
         limit: MARKET_ANALYSIS_HISTORY_PAGE_SIZE,
         hasMore,
-        nextCursor: hasMore ? encodeMarketAnalysisHistoryCursor(data[data.length - 1]) : null,
+        nextCursor: hasMore
+          ? encodeMarketAnalysisHistoryCursor(data[data.length - 1])
+          : null,
       },
     };
   }
@@ -957,7 +995,9 @@ Content: ${article.content || article.summary || 'N/A'}
    */
   async deleteArticlesByUrlHashes(urlHashes: string[]): Promise<void> {
     // FR-14: chỉ nhận chuỗi trước khi vào filter Mongo
-    const safeHashes = urlHashes.filter((h): h is string => typeof h === 'string');
+    const safeHashes = urlHashes.filter(
+      (h): h is string => typeof h === 'string',
+    );
     if (safeHashes.length === 0) return;
     await this.newsArticleModel
       .deleteMany({ urlHash: { $in: safeHashes } })

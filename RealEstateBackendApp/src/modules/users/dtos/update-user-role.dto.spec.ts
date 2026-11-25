@@ -55,9 +55,7 @@ describe('UpdateUserRoleDto (mục 16.4 — class-validator exact)', () => {
   });
 
   it('thiếu role → fail', async () => {
-    const errors = await validate(
-      plainToInstance(UpdateUserRoleDto, {}),
-    );
+    const errors = await validate(plainToInstance(UpdateUserRoleDto, {}));
     expect(errors.length).toBeGreaterThan(0);
   });
 

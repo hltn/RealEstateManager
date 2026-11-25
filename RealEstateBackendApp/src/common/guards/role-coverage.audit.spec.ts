@@ -23,10 +23,7 @@ import { UserRole } from '../enums/user-role.enum';
 import { RolesGuard } from './roles.guard';
 
 /** Route dành cho mọi người dùng đã đăng nhập, có chủ đích (không phải lỗ hổng). */
-const ANY_ROLE_ALLOWLIST = [
-  'AuthController.logout',
-  'AuthController.me',
-];
+const ANY_ROLE_ALLOWLIST = ['AuthController.logout', 'AuthController.me'];
 
 const SRC_ROOT = path.resolve(__dirname, '..', '..');
 const HTTP_DECORATOR = /@(Get|Post|Put|Patch|Delete)\(/;

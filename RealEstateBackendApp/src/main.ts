@@ -101,4 +101,4 @@ async function bootstrap() {
       : `Swagger docs đã tắt (${SWAGGER_ENABLED_ENV}=${swaggerFlag ?? '(chưa đặt)'})`,
   );
 }
-bootstrap();
+void bootstrap();

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * TEST-FIRST (TDD) — RolesGuard unit spec.
  *

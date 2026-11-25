@@ -91,7 +91,7 @@ describe('UnifiedAiService', () => {
     global.fetch = originalFetch;
     for (const k of ENV_KEYS) {
       if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k] as string;
+      else process.env[k] = savedEnv[k];
     }
   });
 

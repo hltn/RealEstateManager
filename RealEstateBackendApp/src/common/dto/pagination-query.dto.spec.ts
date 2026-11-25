@@ -11,7 +11,12 @@
  */
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { PaginationQueryDto, DEFAULT_LIMIT, DEFAULT_PAGE, MAX_LIMIT } from './pagination-query.dto';
+import {
+  PaginationQueryDto,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  MAX_LIMIT,
+} from './pagination-query.dto';
 
 async function validateDto(
   input: Record<string, unknown>,
@@ -20,7 +25,10 @@ async function validateDto(
     enableImplicitConversion: true,
   });
   const errs = await validate(dto, { whitelist: true });
-  return { dto, errors: errs.flatMap((e) => Object.values(e.constraints ?? {})) };
+  return {
+    dto,
+    errors: errs.flatMap((e) => Object.values(e.constraints ?? {})),
+  };
 }
 
 describe('PaginationQueryDto (contract mục 2/3)', () => {

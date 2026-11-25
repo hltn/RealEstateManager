@@ -66,7 +66,9 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
       // Lần 1: og:image; lần 2: article:published_time.
       querySelectorMock
         .mockReturnValueOnce({
-          getAttribute: jest.fn().mockReturnValue('https://img.example.com/a.jpg'),
+          getAttribute: jest
+            .fn()
+            .mockReturnValue('https://img.example.com/a.jpg'),
         })
         .mockReturnValueOnce({
           getAttribute: jest.fn().mockReturnValue('2025-01-02T03:04:05Z'),
@@ -101,7 +103,9 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
         'meta[property="article:published_time"]',
       );
       // Readability nhận document.
-      expect(Readability).toHaveBeenCalledWith({ querySelector: querySelectorMock });
+      expect(Readability).toHaveBeenCalledWith({
+        querySelector: querySelectorMock,
+      });
       expect(parseMock).toHaveBeenCalled();
       // TurndownService nhận article.content.
       expect(TurndownService).toHaveBeenCalledWith({
@@ -123,7 +127,8 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
       parseMock.mockReturnValue({ content: '<p>x</p>' });
       turndownMock.mockReturnValue('x');
 
-      const result = await ArticleExtractorUtil.extractArticle('https://x.com/a');
+      const result =
+        await ArticleExtractorUtil.extractArticle('https://x.com/a');
 
       expect(result.thumbnailUrl).toBeUndefined();
       expect(result.publishDate).toBeUndefined();
@@ -138,7 +143,8 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
       parseMock.mockReturnValue({ content: '<p>x</p>' });
       turndownMock.mockReturnValue('x');
 
-      const result = await ArticleExtractorUtil.extractArticle('https://x.com/a');
+      const result =
+        await ArticleExtractorUtil.extractArticle('https://x.com/a');
       expect(result.thumbnailUrl).toBeUndefined();
       expect(result.publishDate).toBeUndefined();
     });
@@ -146,7 +152,8 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
 
   describe('extractArticle — anti-bot bypass', () => {
     const CHALLENGE_HTML = `<script>document.cookie="D1N=eb79e4a01234567890abcdef1234567"+" expires=Fri, 31 Dec 2099 23:59:59 GMT; path=/";window.location.reload(true);</script>`;
-    const REAL_HTML = '<html><head><meta property="og:image" content="https://img.laodong.vn/a.jpg"/><meta property="article:published_time" content="2025-06-01T10:00:00Z"/></head><body><p>real content</p></body></html>';
+    const REAL_HTML =
+      '<html><head><meta property="og:image" content="https://img.laodong.vn/a.jpg"/><meta property="article:published_time" content="2025-06-01T10:00:00Z"/></head><body><p>real content</p></body></html>';
 
     it('detect challenge D1N → extract cookie → retry with Cookie header → parse real HTML', async () => {
       // Lần 1: challenge; lần 2: real HTML
@@ -156,7 +163,9 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
 
       querySelectorMock
         .mockReturnValueOnce({
-          getAttribute: jest.fn().mockReturnValue('https://img.laodong.vn/a.jpg'),
+          getAttribute: jest
+            .fn()
+            .mockReturnValue('https://img.laodong.vn/a.jpg'),
         })
         .mockReturnValueOnce({
           getAttribute: jest.fn().mockReturnValue('2025-06-01T10:00:00Z'),
@@ -247,7 +256,8 @@ describe('ArticleExtractorUtil (contract mục 1/4)', () => {
 
     it('detect challenge but cookie NOT extractable → proceed with original challenge body', async () => {
       // Body chứa "document.cookie=" nhưng không có pattern extractable (không có dấu nháy kép sau =)
-      const unparseableChallenge = '<script>document.cookie=something;window.location.reload();</script>';
+      const unparseableChallenge =
+        '<script>document.cookie=something;window.location.reload();</script>';
 
       axiosGetMock.mockResolvedValue({ data: unparseableChallenge });
 

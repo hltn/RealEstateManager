@@ -45,7 +45,7 @@ const validationFailed = (message: string, details?: Record<string, unknown>) =>
 const toErrorCode = (error: unknown): string => {
   if (error instanceof BusinessException) return String(error.errorCode);
   if (error instanceof HttpException) {
-    return error.getStatus() === HttpStatus.FORBIDDEN
+    return error.getStatus() === Number(HttpStatus.FORBIDDEN)
       ? ErrorCode.INSUFFICIENT_ROLE
       : ErrorCode.VALIDATION_FAILED;
   }
@@ -92,7 +92,7 @@ export class BulkOperationsService {
         result.succeeded.push(customerId);
       } catch (error) {
         const errorCode = toErrorCode(error);
-        if (errorCode === ErrorCode.INTERNAL_ERROR) {
+        if (errorCode === (ErrorCode.INTERNAL_ERROR as string)) {
           this.logger.error(
             `Thao tác hàng loạt ${dto.type} lỗi với một khách: ${(error as Error).message}`,
           );

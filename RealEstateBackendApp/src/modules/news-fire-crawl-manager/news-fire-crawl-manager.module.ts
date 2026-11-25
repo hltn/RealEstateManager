@@ -26,7 +26,6 @@ import { ExternalLogModule } from '../external-log/external-log.module';
 import { SharedModule } from '../../shared/shared.module';
 import { CrmCommonModule } from '../crm/common/crm-common.module';
 
-
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -58,7 +57,9 @@ import { CrmCommonModule } from '../crm/common/crm-common.module';
     EmbeddingService,
   ],
   exports: [
-    MongooseModule.forFeature([{ name: NewsArticle.name, schema: NewsArticleSchema }]),
+    MongooseModule.forFeature([
+      { name: NewsArticle.name, schema: NewsArticleSchema },
+    ]),
     IdempotencyService,
     AuditLogService,
   ],

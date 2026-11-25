@@ -48,13 +48,9 @@ export class ArticleExtractorUtil {
 
       if (isChallenge) {
         // Ưu tiên cookie D1N cụ thể (laodong.vn), fallback generic cho các challenge tương tự.
-        const d1nMatch = html.match(
-          /document\.cookie="D1N=([a-f0-9]+)"/,
-        );
+        const d1nMatch = html.match(/document\.cookie="D1N=([a-f0-9]+)"/);
         const genericMatch = html.match(/document\.cookie="([^"]+)"/);
-        const cookiePair = d1nMatch
-          ? `D1N=${d1nMatch[1]}`
-          : genericMatch?.[1];
+        const cookiePair = d1nMatch ? `D1N=${d1nMatch[1]}` : genericMatch?.[1];
 
         if (cookiePair) {
           articleExtractorLogger.warn(
@@ -93,8 +89,7 @@ export class ArticleExtractorUtil {
         'meta[property="article:published_time"]',
       );
       if (articlePublishedTime) {
-        publishDate =
-          articlePublishedTime.getAttribute('content') || undefined;
+        publishDate = articlePublishedTime.getAttribute('content') || undefined;
       }
 
       const reader = new Readability(doc.window.document);

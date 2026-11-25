@@ -6,12 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { google, docs_v1 as DocsV1 } from 'googleapis';
+import { google } from 'googleapis';
 import {
   MarketAnalysisHistory,
   MarketAnalysisHistoryDocument,
 } from '../../news-fire-crawl-manager/schemas/market-analysis-history.schema';
-import { GoogleDriveExport } from '../../news-fire-crawl-manager/schemas/market-analysis-history.schema';
 import { GoogleDriveOAuthService } from './google-drive-oauth.service';
 import { MarkdownToGoogleDocsConverter } from './markdown-to-docs.converter';
 
@@ -88,9 +87,7 @@ export class GoogleDriveExportService {
     if (folderUrl) {
       folderId = this.parseFolderId(folderUrl);
       if (!folderId) {
-        throw new BadRequestException(
-          'Invalid Google Drive folder URL format',
-        );
+        throw new BadRequestException('Invalid Google Drive folder URL format');
       }
 
       // Validate folder access.
@@ -109,8 +106,14 @@ export class GoogleDriveExportService {
     const title = this.generateTitle();
 
     // 5. Create Google Doc.
-    const docsClient = google.docs({ version: 'v1', auth: oauth2Client as any });
-    const driveClient = google.drive({ version: 'v3', auth: oauth2Client as any });
+    const docsClient = google.docs({
+      version: 'v1',
+      auth: oauth2Client,
+    });
+    const driveClient = google.drive({
+      version: 'v3',
+      auth: oauth2Client,
+    });
 
     const createResponse = await docsClient.documents.create({
       requestBody: { title },
@@ -118,7 +121,9 @@ export class GoogleDriveExportService {
 
     const documentId = createResponse.data.documentId ?? '';
     if (!documentId) {
-      throw new BadRequestException('Failed to create Google Doc: no documentId returned');
+      throw new BadRequestException(
+        'Failed to create Google Doc: no documentId returned',
+      );
     }
     this.logger.log(`Created Google Doc: ${documentId}`);
 
@@ -129,7 +134,7 @@ export class GoogleDriveExportService {
     if (requests.length > 0) {
       await docsClient.documents.batchUpdate({
         documentId,
-        requestBody: { requests: requests as DocsV1.Schema$Request[] },
+        requestBody: { requests: requests },
       });
       this.logger.log(
         `BatchUpdate completed: ${requests.length} requests for doc ${documentId}`,
@@ -159,7 +164,9 @@ export class GoogleDriveExportService {
           exportedAt: new Date(),
         },
       });
-      this.logger.log(`Updated history record ${historyId} with Google Drive export info`);
+      this.logger.log(
+        `Updated history record ${historyId} with Google Drive export info`,
+      );
     } catch (err) {
       // Log warn but don't throw — Google Doc already created successfully
       this.logger.warn(
@@ -189,9 +196,7 @@ export class GoogleDriveExportService {
   ): Promise<FolderValidation> {
     const folderId = this.parseFolderId(folderUrl);
     if (!folderId) {
-      throw new BadRequestException(
-        'Invalid Google Drive folder URL format',
-      );
+      throw new BadRequestException('Invalid Google Drive folder URL format');
     }
 
     const oauth2Client = await this.oauthService.getOAuth2Client(userId);
@@ -224,14 +229,18 @@ export class GoogleDriveExportService {
     folderId: string,
   ): Promise<FolderValidation> {
     try {
-      const driveClient = google.drive({ version: 'v3', auth: oauth2Client as any });
+      const driveClient = google.drive({
+        version: 'v3',
+        auth: oauth2Client,
+      });
       const response = await driveClient.files.get({
         fileId: folderId,
         fields: 'id, name, mimeType',
         supportsAllDrives: true,
       });
 
-      const isFolder = response.data.mimeType === 'application/vnd.google-apps.folder';
+      const isFolder =
+        response.data.mimeType === 'application/vnd.google-apps.folder';
       if (!isFolder) {
         return { valid: false, folderId, folderName: '' };
       }

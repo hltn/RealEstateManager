@@ -125,13 +125,16 @@ describe('AiImageService', () => {
   describe('generateInlineImages', () => {
     it('should generate images for multiple sections', async () => {
       const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockImplementation(async () => ({
-        ok: true,
-        json: async () => ({
-          data: [{ url: 'https://example.com/inline.png' }],
-        }),
-        arrayBuffer: async () => Buffer.from('inline-data'),
-      } as any));
+      global.fetch = jest.fn().mockImplementation(
+        async () =>
+          ({
+            ok: true,
+            json: async () => ({
+              data: [{ url: 'https://example.com/inline.png' }],
+            }),
+            arrayBuffer: async () => Buffer.from('inline-data'),
+          }) as any,
+      );
 
       const result = await service.generateInlineImages({
         sections: [

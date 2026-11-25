@@ -94,7 +94,7 @@ describe('AuthController.login @Throttle wiring', () => {
   const readLimit = (): unknown =>
     Reflect.getMetadata(
       THROTTLER_LIMIT + 'default',
-      // eslint-disable-next-line @typescript-eslint/unbound-method -- chỉ làm khóa đọc metadata, không gọi
+
       AuthController.prototype.login,
     );
 
@@ -104,7 +104,7 @@ describe('AuthController.login @Throttle wiring', () => {
     expect(
       Reflect.getMetadata(
         THROTTLER_TTL + 'default',
-        // eslint-disable-next-line @typescript-eslint/unbound-method -- chỉ làm khóa đọc metadata, không gọi
+
         AuthController.prototype.login,
       ),
     ).toBe(AUTH_LOGIN_THROTTLE_TTL_MS);

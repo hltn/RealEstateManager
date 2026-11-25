@@ -67,16 +67,13 @@ describe('GoogleDriveController', () => {
 
   describe('getAuthUrl', () => {
     it('returns OAuth2 URL for the authenticated user', () => {
-      const expectedUrl =
-        'https://accounts.google.com/o/oauth2/v2/auth?...';
+      const expectedUrl = 'https://accounts.google.com/o/oauth2/v2/auth?...';
       oauthService.generateAuthUrl.mockReturnValue(expectedUrl);
 
-      const result = controller.getAuthUrl(MOCK_USER as any);
+      const result = controller.getAuthUrl(MOCK_USER);
 
       expect(result).toEqual({ url: expectedUrl });
-      expect(oauthService.generateAuthUrl).toHaveBeenCalledWith(
-        MOCK_USER.sub,
-      );
+      expect(oauthService.generateAuthUrl).toHaveBeenCalledWith(MOCK_USER.sub);
     });
   });
 
@@ -99,11 +96,7 @@ describe('GoogleDriveController', () => {
         email: 'user@gmail.com',
       });
 
-      await controller.handleCallback(
-        'auth-code-123',
-        SIGNED_STATE,
-        mockReply as any,
-      );
+      await controller.handleCallback('auth-code-123', SIGNED_STATE, mockReply);
 
       expect(oauthService.validateOAuthState).toHaveBeenCalledWith(
         SIGNED_STATE,
@@ -121,11 +114,7 @@ describe('GoogleDriveController', () => {
     });
 
     it('redirects with error when code is missing', async () => {
-      await controller.handleCallback(
-        '',
-        SIGNED_STATE,
-        mockReply as any,
-      );
+      await controller.handleCallback('', SIGNED_STATE, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(302);
       expect(mockReply.header).toHaveBeenCalledWith(
@@ -137,14 +126,12 @@ describe('GoogleDriveController', () => {
 
     it('redirects with error when state validation fails (CSRF)', async () => {
       oauthService.validateOAuthState.mockImplementation(() => {
-        throw new UnauthorizedException('Invalid state parameter (CSRF detected)');
+        throw new UnauthorizedException(
+          'Invalid state parameter (CSRF detected)',
+        );
       });
 
-      await controller.handleCallback(
-        'auth-code-123',
-        'bad-state',
-        mockReply as any,
-      );
+      await controller.handleCallback('auth-code-123', 'bad-state', mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(302);
       expect(mockReply.header).toHaveBeenCalledWith(
@@ -160,11 +147,7 @@ describe('GoogleDriveController', () => {
         new UnauthorizedException('Invalid code'),
       );
 
-      await controller.handleCallback(
-        'bad-code',
-        SIGNED_STATE,
-        mockReply as any,
-      );
+      await controller.handleCallback('bad-code', SIGNED_STATE, mockReply);
 
       expect(mockReply.code).toHaveBeenCalledWith(302);
       expect(mockReply.header).toHaveBeenCalledWith(
@@ -184,7 +167,7 @@ describe('GoogleDriveController', () => {
       };
       oauthService.getTokenInfo.mockResolvedValue(statusInfo);
 
-      const result = await controller.getStatus(MOCK_USER as any);
+      const result = await controller.getStatus(MOCK_USER);
 
       expect(result).toEqual(statusInfo);
       expect(oauthService.getTokenInfo).toHaveBeenCalledWith(MOCK_USER.sub);
@@ -193,7 +176,7 @@ describe('GoogleDriveController', () => {
     it('returns connected=false when not connected', async () => {
       oauthService.getTokenInfo.mockResolvedValue({ connected: false });
 
-      const result = await controller.getStatus(MOCK_USER as any);
+      const result = await controller.getStatus(MOCK_USER);
 
       expect(result).toEqual({ connected: false });
     });
@@ -203,14 +186,12 @@ describe('GoogleDriveController', () => {
     it('revokes and deletes token, returns success message', async () => {
       oauthService.revokeAndDelete.mockResolvedValue(undefined);
 
-      const result = await controller.disconnect(MOCK_USER as any);
+      const result = await controller.disconnect(MOCK_USER);
 
       expect(result).toEqual({
         message: 'Google Drive disconnected successfully',
       });
-      expect(oauthService.revokeAndDelete).toHaveBeenCalledWith(
-        MOCK_USER.sub,
-      );
+      expect(oauthService.revokeAndDelete).toHaveBeenCalledWith(MOCK_USER.sub);
     });
 
     it('propagates UnauthorizedException when not connected', async () => {
@@ -234,11 +215,9 @@ describe('GoogleDriveController', () => {
       };
       exportService.exportAnalysis.mockResolvedValue(exportResult);
 
-      const result = await controller.exportAnalysis(
-        MOCK_USER as any,
-        'history-123',
-        { folderUrl: 'https://drive.google.com/drive/folders/abc' },
-      );
+      const result = await controller.exportAnalysis(MOCK_USER, 'history-123', {
+        folderUrl: 'https://drive.google.com/drive/folders/abc',
+      });
 
       expect(exportService.exportAnalysis).toHaveBeenCalledWith(
         MOCK_USER.sub,
@@ -260,7 +239,7 @@ describe('GoogleDriveController', () => {
       });
 
       const result = await controller.exportAnalysis(
-        MOCK_USER as any,
+        MOCK_USER,
         'history-456',
         {},
       );
@@ -301,7 +280,7 @@ describe('GoogleDriveController', () => {
       };
       exportService.validateFolder.mockResolvedValue(validationResult);
 
-      const result = await controller.validateFolder(MOCK_USER as any, {
+      const result = await controller.validateFolder(MOCK_USER, {
         folderUrl: 'https://drive.google.com/drive/folders/folder-abc',
       });
 
@@ -319,7 +298,7 @@ describe('GoogleDriveController', () => {
         folderName: '',
       });
 
-      const result = await controller.validateFolder(MOCK_USER as any, {
+      const result = await controller.validateFolder(MOCK_USER, {
         folderUrl: 'https://drive.google.com/drive/folders/no-access',
       });
 

@@ -13,10 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const SOURCE = fs.readFileSync(
-  path.join(
-    __dirname,
-    'firecrawl.service.ts',
-  ),
+  path.join(__dirname, 'firecrawl.service.ts'),
   'utf8',
 );
 

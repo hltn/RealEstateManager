@@ -14,7 +14,9 @@ describe('AnalyzeJobService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     // Mock randomUUID để có giá trị deterministic, mỗi lần tăng dần
-    jest.spyOn(require('crypto'), 'randomUUID').mockImplementation(mockRandomUUID);
+    jest
+      .spyOn(require('crypto'), 'randomUUID')
+      .mockImplementation(mockRandomUUID);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [AnalyzeJobService],

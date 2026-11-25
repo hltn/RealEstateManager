@@ -11,7 +11,6 @@ describe('auth-response.dto — load module không throw TDZ', () => {
   it('import file thành công (KHÔNG còn ReferenceError sau khi đảo class)', () => {
     expect(() => {
       jest.isolateModules(() => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         require('./auth-response.dto');
       });
     }).not.toThrow();

@@ -156,23 +156,23 @@ export class SettingsService {
     } catch (error) {
       this.logger.error('Error fetching OpenRouter models', error);
       throw error;
-      }
-      }
+    }
+  }
 
-      async get9RouterModels() {
-      const baseUrl =
+  async get9RouterModels() {
+    const baseUrl =
       this.configService.get<string>('NINEROUTER_BASE_URL') ||
       process.env.NINEROUTER_BASE_URL ||
       'http://127.0.0.1:20128/v1';
-      const apiKey =
+    const apiKey =
       this.configService.get<string>('NINEROUTER_API_KEY') ||
       process.env.NINEROUTER_API_KEY;
 
-      if (!apiKey) {
+    if (!apiKey) {
       throw new Error('9router API key is not configured');
-      }
+    }
 
-      try {
+    try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
@@ -196,14 +196,16 @@ export class SettingsService {
       }
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch 9router models: ${response.statusText}`);
+        throw new Error(
+          `Failed to fetch 9router models: ${response.statusText}`,
+        );
       }
 
       const data = await response.json();
       return data;
-      } catch (error) {
+    } catch (error) {
       this.logger.error('Error fetching 9router models', error);
       throw error;
-      }
-      }
-      }
+    }
+  }
+}

@@ -137,7 +137,7 @@ export class CareLogsService {
       this.careLogModel.countDocuments(filter).exec(),
     ]);
     return {
-      data: await this.toResponses(rows as CareLogLean[], ctx),
+      data: await this.toResponses(rows, ctx),
       meta: buildPaginationMeta(total, page, limit),
     };
   }
@@ -320,7 +320,7 @@ export class CareLogsService {
       auditSource,
       session,
     );
-    return inserted.toObject() as CareLogLean;
+    return inserted.toObject();
   }
 
   /**
@@ -511,7 +511,7 @@ export class CareLogsService {
           session,
         );
         return {
-          updated: { ...log, ...set } as CareLogLean,
+          updated: { ...log, ...set },
           removedKeys,
         };
       },
@@ -659,7 +659,7 @@ export class CareLogsService {
       .lean()
       .exec();
     if (!log) throw logNotFound();
-    return log as CareLogLean;
+    return log;
   }
 
   /** Ghi nhận khách vừa được cập nhật (không đổi `__v`). */

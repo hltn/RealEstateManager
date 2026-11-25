@@ -46,7 +46,7 @@ export function createAppFileLogger(opts: AppLoggerOptions): winston.Logger {
     winston.format.timestamp({ format: () => new Date().toISOString() }),
     winston.format.printf(
       ({ timestamp, level, message }) =>
-        `[${timestamp}] [${level.toUpperCase()}] ${message ?? ''}`,
+        `[${String(timestamp)}] [${level.toUpperCase()}] ${message == null ? '' : typeof message === 'string' ? message : JSON.stringify(message)}`,
     ),
   );
 

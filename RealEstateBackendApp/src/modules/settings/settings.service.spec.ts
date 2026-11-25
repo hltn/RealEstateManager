@@ -190,7 +190,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
 
       const content = readFileSync(savedPath, 'utf8');
       expect(
-        content.split('\n').filter((l) => l.startsWith('OPENROUTER_AI_PROVIDER=')),
+        content
+          .split('\n')
+          .filter((l) => l.startsWith('OPENROUTER_AI_PROVIDER=')),
       ).toHaveLength(1);
       expect(readSettingsConfigFile(savedPath)).toEqual({
         OPENROUTER_AI_PROVIDER: 'new',
@@ -287,9 +289,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
       try {
         service.updateAiConfig({ apiKey: SECRET, nineRouterApiKey: SECRET });
 
-        expect(JSON.stringify([logSpy.mock.calls, errorSpy.mock.calls])).not.toContain(
-          SECRET,
-        );
+        expect(
+          JSON.stringify([logSpy.mock.calls, errorSpy.mock.calls]),
+        ).not.toContain(SECRET);
         expect(logSpy).toHaveBeenCalledTimes(1);
       } finally {
         logSpy.mockRestore();
@@ -359,9 +361,9 @@ describe('SettingsService (contract mục 3 + bảo mật Least Privilege)', () 
         if (key === 'OPENROUTER_API_KEY') return 'sk-or';
         return undefined;
       });
-      (global.fetch as unknown as jest.Mock) = jest.fn().mockRejectedValue(
-        new Error('network down'),
-      );
+      (global.fetch as unknown as jest.Mock) = jest
+        .fn()
+        .mockRejectedValue(new Error('network down'));
 
       await expect(service.getOpenRouterModels()).rejects.toThrow(
         'network down',

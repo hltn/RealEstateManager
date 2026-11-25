@@ -170,10 +170,7 @@ export class NotificationDispatcher {
     );
 
     // `upsertedIds`: chỉ số thao tác -> _id của bản MỚI tạo (bản trùng `dedupeKey` không có mặt).
-    const upsertedIds = (result.upsertedIds ?? {}) as Record<
-      number,
-      Types.ObjectId
-    >;
+    const upsertedIds = result.upsertedIds ?? {};
     for (const [position, id] of Object.entries(upsertedIds)) {
       if (operations[Number(position)]?.isPending) {
         await this.enqueueAfterCommit(String(id), session);

@@ -22,7 +22,10 @@ class WpCategoryMappingDto {
   @IsNumber()
   wpCategoryId: number;
 
-  @ApiProperty({ description: 'WordPress category name', example: 'BĐS Hà Nội' })
+  @ApiProperty({
+    description: 'WordPress category name',
+    example: 'BĐS Hà Nội',
+  })
   @IsString()
   @IsNotEmpty()
   wpCategoryName: string;
@@ -40,7 +43,10 @@ class WpTagMappingDto {
 }
 
 export class UpdateWpConfigDto {
-  @ApiPropertyOptional({ description: 'WordPress site URL', example: 'https://example.com' })
+  @ApiPropertyOptional({
+    description: 'WordPress site URL',
+    example: 'https://example.com',
+  })
   @IsOptional()
   @IsString()
   siteUrl?: string;
@@ -55,19 +61,28 @@ export class UpdateWpConfigDto {
   @IsString()
   appPassword?: string;
 
-  @ApiPropertyOptional({ description: 'Default WordPress category ID', example: 15 })
+  @ApiPropertyOptional({
+    description: 'Default WordPress category ID',
+    example: 15,
+  })
   @IsOptional()
   @IsNumber()
   defaultCategoryId?: number;
 
-  @ApiPropertyOptional({ description: 'Category mapping from local to WordPress', type: [WpCategoryMappingDto] })
+  @ApiPropertyOptional({
+    description: 'Category mapping from local to WordPress',
+    type: [WpCategoryMappingDto],
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => WpCategoryMappingDto)
   categoryMapping?: WpCategoryMappingDto[];
 
-  @ApiPropertyOptional({ description: 'Default WordPress tag IDs', example: [1, 2, 3] })
+  @ApiPropertyOptional({
+    description: 'Default WordPress tag IDs',
+    example: [1, 2, 3],
+  })
   @IsOptional()
   @IsArray()
   @IsNumber({}, { each: true })
@@ -94,19 +109,27 @@ class AiWritingTopicDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ description: 'Topic context for AI', example: 'Thị trường bất động sản Hà Nội' })
+  @ApiProperty({
+    description: 'Topic context for AI',
+    example: 'Thị trường bất động sản Hà Nội',
+  })
   @IsString()
   @IsNotEmpty()
   description: string;
 }
 
 export class UpdateAiWritingConfigDto {
-  @ApiPropertyOptional({ description: 'Prompt template with {{topic}}, {{category}} placeholders' })
+  @ApiPropertyOptional({
+    description: 'Prompt template with {{topic}}, {{category}} placeholders',
+  })
   @IsOptional()
   @IsString()
   promptTemplate?: string;
 
-  @ApiPropertyOptional({ description: 'AI model ID', example: 'google/gemini-2.5-flash' })
+  @ApiPropertyOptional({
+    description: 'AI model ID',
+    example: 'google/gemini-2.5-flash',
+  })
   @IsOptional()
   @IsString()
   model?: string;
@@ -126,14 +149,20 @@ export class UpdateAiWritingConfigDto {
   @IsNumber()
   temperature?: number;
 
-  @ApiPropertyOptional({ description: 'Topics for rotation', type: [AiWritingTopicDto] })
+  @ApiPropertyOptional({
+    description: 'Topics for rotation',
+    type: [AiWritingTopicDto],
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AiWritingTopicDto)
   topics?: AiWritingTopicDto[];
 
-  @ApiPropertyOptional({ description: 'Default articles per batch', example: 3 })
+  @ApiPropertyOptional({
+    description: 'Default articles per batch',
+    example: 3,
+  })
   @IsOptional()
   @IsNumber()
   articlesPerBatch?: number;
@@ -142,12 +171,18 @@ export class UpdateAiWritingConfigDto {
 // ── AI Image Config ──────────────────────────────────
 
 export class UpdateAiImageConfigDto {
-  @ApiPropertyOptional({ description: 'Enable/disable image generation', example: true })
+  @ApiPropertyOptional({
+    description: 'Enable/disable image generation',
+    example: true,
+  })
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
 
-  @ApiPropertyOptional({ description: 'Image prompt template with {{title}}, {{content_summary}} placeholders' })
+  @ApiPropertyOptional({
+    description:
+      'Image prompt template with {{title}}, {{content_summary}} placeholders',
+  })
   @IsOptional()
   @IsString()
   promptTemplate?: string;
@@ -157,7 +192,10 @@ export class UpdateAiImageConfigDto {
   @IsString()
   model?: string;
 
-  @ApiPropertyOptional({ description: 'Image generation provider', example: 'OpenRouter' })
+  @ApiPropertyOptional({
+    description: 'Image generation provider',
+    example: 'OpenRouter',
+  })
   @IsOptional()
   @IsString()
   provider?: string;
@@ -186,12 +224,18 @@ export class UpdateKnowledgeCronConfigDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ description: 'Cron expression', example: '0 8 * * 1-5' })
+  @ApiPropertyOptional({
+    description: 'Cron expression',
+    example: '0 8 * * 1-5',
+  })
   @IsOptional()
   @IsString()
   frequency?: string;
 
-  @ApiPropertyOptional({ description: 'Natural language description', example: 'Chạy hàng ngày 8h sáng từ T2-T6' })
+  @ApiPropertyOptional({
+    description: 'Natural language description',
+    example: 'Chạy hàng ngày 8h sáng từ T2-T6',
+  })
   @IsOptional()
   @IsString()
   nlDescription?: string;

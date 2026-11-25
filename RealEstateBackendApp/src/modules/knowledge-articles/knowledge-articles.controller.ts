@@ -60,7 +60,9 @@ export class KnowledgeArticlesController {
 
   @AdminOnly()
   @Get('config/wp')
-  @ApiOperation({ summary: 'Get WordPress connection config (password masked)' })
+  @ApiOperation({
+    summary: 'Get WordPress connection config (password masked)',
+  })
   async getWpConfig() {
     const config = await this.knowledgeConfigService.getWpConfig();
     // M-01: Mask appPassword before returning to prevent credential exposure.
@@ -164,9 +166,7 @@ export class KnowledgeArticlesController {
   @AdminOnly()
   @Get('/')
   @ApiOperation({ summary: 'List knowledge articles (paginated)' })
-  async getKnowledgeArticles(
-    @Query() query: GetKnowledgeArticlesQueryDto,
-  ) {
+  async getKnowledgeArticles(@Query() query: GetKnowledgeArticlesQueryDto) {
     return this.knowledgeArticleService.listArticles(query);
   }
 
@@ -202,11 +202,12 @@ export class KnowledgeArticlesController {
       this.idempotencyService,
       iKey,
       async () => {
-        const result = await this.knowledgeArticleService.publishToWordPress(id);
+        const result =
+          await this.knowledgeArticleService.publishToWordPress(id);
         const response = { message: 'Article published', data: result };
 
         // C-03: Audit log
-        this.auditLogService.log(
+        void this.auditLogService.log(
           AuditAction.KNOWLEDGE_PUBLISH,
           'news_articles',
           [id],
@@ -239,7 +240,7 @@ export class KnowledgeArticlesController {
         const response = { message: 'Article republished', data: result };
 
         // C-03: Audit log
-        this.auditLogService.log(
+        void this.auditLogService.log(
           AuditAction.KNOWLEDGE_REPUBLISH,
           'news_articles',
           [id],
@@ -261,7 +262,7 @@ export class KnowledgeArticlesController {
     await this.knowledgeArticleService.deleteArticle(id);
 
     // C-03: Audit log
-    this.auditLogService.log(
+    void this.auditLogService.log(
       AuditAction.KNOWLEDGE_DELETE,
       'news_articles',
       [id],
@@ -283,15 +284,16 @@ export class KnowledgeArticlesController {
       this.idempotencyService,
       iKey,
       async () => {
-        const result =
-          await this.knowledgeArticleService.deleteBulkArticles(body.ids);
+        const result = await this.knowledgeArticleService.deleteBulkArticles(
+          body.ids,
+        );
         const response = {
           message: `${result.deletedCount} articles deleted`,
           data: result,
         };
 
         // C-03: Audit log
-        this.auditLogService.log(
+        void this.auditLogService.log(
           AuditAction.KNOWLEDGE_BULK_DELETE,
           'news_articles',
           body.ids,
@@ -335,7 +337,7 @@ export class KnowledgeArticlesController {
         };
 
         // C-03: Audit log
-        this.auditLogService.log(
+        void this.auditLogService.log(
           AuditAction.KNOWLEDGE_BULK_PUBLISH,
           'news_articles',
           body.ids,

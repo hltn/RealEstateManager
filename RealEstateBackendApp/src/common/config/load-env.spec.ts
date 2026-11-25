@@ -14,7 +14,6 @@ describe('load-env (nạp .env + file cấu hình AI lúc khởi động)', () =
 
   const runLoadEnv = (): void => {
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('./load-env');
     });
   };

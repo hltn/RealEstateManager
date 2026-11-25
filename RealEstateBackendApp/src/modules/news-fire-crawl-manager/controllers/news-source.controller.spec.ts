@@ -55,33 +55,53 @@ describe('NewsSourceController', () => {
       newsSourceService.findAll.mockResolvedValue([]);
       const result = await controller.findAll();
       // buildPaginationMeta(0,1,0) → totalPages=0 (tránh NaN/Infinity khi limit=0).
-      expect(result.meta).toEqual({ total: 0, page: 1, limit: 0, totalPages: 0 });
+      expect(result.meta).toEqual({
+        total: 0,
+        page: 1,
+        limit: 0,
+        totalPages: 0,
+      });
     });
   });
 
   describe('POST /news-sources', () => {
     it('gọi service.create(dto) và trả { message, data }', async () => {
-      const dto = { name: 'New', url: 'https://new.example', rssUrl: 'https://new.example/rss' };
+      const dto = {
+        name: 'New',
+        url: 'https://new.example',
+        rssUrl: 'https://new.example/rss',
+      };
       const created = { _id: '9', ...dto };
       newsSourceService.create.mockResolvedValue(created as any);
 
-      const result = await controller.create(dto as any);
+      const result = await controller.create(dto);
 
       expect(newsSourceService.create).toHaveBeenCalledWith(dto);
-      expect(result).toEqual({ message: 'Source created successfully', data: created });
+      expect(result).toEqual({
+        message: 'Source created successfully',
+        data: created,
+      });
     });
   });
 
   describe('PUT /news-sources/:id', () => {
     it('gọi service.update(id, dto) và trả { message, data }', async () => {
       const dto = { isActive: false };
-      const updated = { _id: '1', name: 'S1', url: 'https://s1.example', isActive: false };
+      const updated = {
+        _id: '1',
+        name: 'S1',
+        url: 'https://s1.example',
+        isActive: false,
+      };
       newsSourceService.update.mockResolvedValue(updated as any);
 
-      const result = await controller.update('1', dto as any);
+      const result = await controller.update('1', dto);
 
       expect(newsSourceService.update).toHaveBeenCalledWith('1', dto);
-      expect(result).toEqual({ message: 'Source updated successfully', data: updated });
+      expect(result).toEqual({
+        message: 'Source updated successfully',
+        data: updated,
+      });
     });
   });
 
@@ -93,7 +113,10 @@ describe('NewsSourceController', () => {
       const result = await controller.remove('1');
 
       expect(newsSourceService.remove).toHaveBeenCalledWith('1');
-      expect(result).toEqual({ message: 'Source deleted successfully', data: deleted });
+      expect(result).toEqual({
+        message: 'Source deleted successfully',
+        data: deleted,
+      });
     });
   });
 });

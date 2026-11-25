@@ -118,12 +118,12 @@ describe('GoogleDriveExportService', () => {
     it('throws NotFoundException when history not found', async () => {
       historyModel.findById.mockReturnValue(chainable(null));
 
-      await expect(
-        service.exportAnalysis(USER_ID, HISTORY_ID),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        service.exportAnalysis(USER_ID, HISTORY_ID),
-      ).rejects.toThrow('Market analysis history not found');
+      await expect(service.exportAnalysis(USER_ID, HISTORY_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.exportAnalysis(USER_ID, HISTORY_ID)).rejects.toThrow(
+        'Market analysis history not found',
+      );
     });
 
     it('calls getOAuth2Client to verify connection', async () => {
@@ -145,7 +145,9 @@ describe('GoogleDriveExportService', () => {
 
       // Verify doc creation.
       expect(mockDocsCreate).toHaveBeenCalledWith({
-        requestBody: { title: expect.stringContaining('Báo cáo phân tích thị trường') },
+        requestBody: {
+          title: expect.stringContaining('Báo cáo phân tích thị trường'),
+        },
       });
 
       // Verify batchUpdate was called (content has tokens).
@@ -339,7 +341,9 @@ describe('GoogleDriveExportService', () => {
       oauthService.getOAuth2Client.mockResolvedValue({});
 
       // Mock findByIdAndUpdate to throw error
-      historyModel.findByIdAndUpdate.mockRejectedValue(new Error('Database error'));
+      historyModel.findByIdAndUpdate.mockRejectedValue(
+        new Error('Database error'),
+      );
 
       const result = await service.exportAnalysis(USER_ID, HISTORY_ID);
 

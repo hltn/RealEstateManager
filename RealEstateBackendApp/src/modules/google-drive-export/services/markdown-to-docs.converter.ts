@@ -1,7 +1,5 @@
 import { lexer } from 'marked';
-import type {
-  docs_v1 as DocsV1,
-} from 'googleapis';
+import type { docs_v1 as DocsV1 } from 'googleapis';
 
 /**
  * MarkdownToGoogleDocsConverter — convert Markdown string to Google Docs API requests.
@@ -49,10 +47,7 @@ const MONOSPACE_STYLE: DocsV1.Schema$TextStyle = {
 };
 
 // Heading paragraph styles keyed by depth.
-const HEADING_STYLES: Record<
-  number,
-  DocsV1.Schema$ParagraphStyle
-> = {
+const HEADING_STYLES: Record<number, DocsV1.Schema$ParagraphStyle> = {
   1: { namedStyleType: 'HEADING_1' },
   2: { namedStyleType: 'HEADING_2' },
   3: { namedStyleType: 'HEADING_3' },
@@ -179,7 +174,7 @@ export class MarkdownToGoogleDocsConverter {
           startIndex: start,
           endIndex: textEnd + 1, // +1 for newline
         },
-        paragraphStyle: HEADING_STYLES[depth]!,
+        paragraphStyle: HEADING_STYLES[depth],
         fields: 'namedStyleType',
       },
     });
@@ -190,8 +185,6 @@ export class MarkdownToGoogleDocsConverter {
   // ─── Paragraph (with inline styles) ──────────────────────────────────────
 
   private processParagraph(token: { tokens: any[] }): void {
-    const start = this.currentIndex;
-
     for (const inlineToken of token.tokens ?? []) {
       this.processInlineToken(inlineToken);
     }
@@ -264,9 +257,9 @@ export class MarkdownToGoogleDocsConverter {
     this.requests.push({
       createParagraphBullets: {
         range: {
-          startIndex: this.pendingBulletIndices[0]!.startIndex,
+          startIndex: this.pendingBulletIndices[0].startIndex,
           endIndex:
-            this.pendingBulletIndices[this.pendingBulletIndices.length - 1]!
+            this.pendingBulletIndices[this.pendingBulletIndices.length - 1]
               .endIndex,
         },
         bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE',
@@ -385,7 +378,11 @@ export class MarkdownToGoogleDocsConverter {
         this.processStyledInlineTokens(token, ITALIC_STYLE, 'italic');
         break;
       case 'codespan':
-        this.insertStyledSegment(token.text, MONOSPACE_STYLE, 'weightedFontFamily');
+        this.insertStyledSegment(
+          token.text,
+          MONOSPACE_STYLE,
+          'weightedFontFamily',
+        );
         break;
       case 'link':
         this.processLinkToken(token);
@@ -485,11 +482,7 @@ export class MarkdownToGoogleDocsConverter {
   private processImageToken(token: any): void {
     const altText = token.text || '';
     if (altText.length > 0) {
-      this.insertStyledSegment(
-        `[${altText}]`,
-        ITALIC_STYLE,
-        'italic',
-      );
+      this.insertStyledSegment(`[${altText}]`, ITALIC_STYLE, 'italic');
     }
   }
 

@@ -162,7 +162,7 @@ describe('CRM M4 — QA bổ sung', () => {
       .useValue({
         isConfigured: () => false,
         checkHealth: () => Promise.resolve(),
-      } as unknown as IFileStorage)
+      })
       .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),

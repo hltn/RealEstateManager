@@ -516,7 +516,7 @@ describe('T-38 PII của payload push thật và log luồng push (tích hợp)'
           vars: {
             ...varsFor(NotificationType.CARE_LOG_ADDED),
             [forbidden]: SECRET_NOTE,
-          } as Partial<Record<PushVarName, string>>,
+          },
         });
         await expect(dispatcher.dispatch([request])).rejects.toBeInstanceOf(
           PushRenderError,

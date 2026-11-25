@@ -4,7 +4,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { google } from 'googleapis';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 
 import { createHmac, randomBytes } from 'node:crypto';
@@ -29,7 +28,7 @@ export class GoogleDriveOAuthService {
     private readonly configService: ConfigService,
     @InjectModel(GoogleDriveToken.name)
     private readonly tokenModel: Model<GoogleDriveTokenDocument>,
-  ) { }
+  ) {}
 
   /**
    * Tạo OAuth2 URL để frontend redirect user sang Google consent screen.
@@ -44,7 +43,12 @@ export class GoogleDriveOAuthService {
     return oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
-      scope: ['https://www.googleapis.com/auth/drive.file', 'openid', 'email', 'profile'],
+      scope: [
+        'https://www.googleapis.com/auth/drive.file',
+        'openid',
+        'email',
+        'profile',
+      ],
       state,
     });
   }
@@ -67,7 +71,9 @@ export class GoogleDriveOAuthService {
     const expectedSignature = this.computeSignature(userId, nonce);
 
     if (!timingSafeEqual(providedSignature, expectedSignature)) {
-      throw new UnauthorizedException('Invalid state parameter (CSRF detected)');
+      throw new UnauthorizedException(
+        'Invalid state parameter (CSRF detected)',
+      );
     }
 
     return userId;
@@ -92,16 +98,7 @@ export class GoogleDriveOAuthService {
   }> {
     const oauth2Client = this.createBaseOAuth2Client();
 
-
-    let tokens;
-    try {
-      const result = await oauth2Client.getToken(code);
-
-      tokens = result.tokens;
-    } catch (tokenErr: any) {
-
-      throw tokenErr;
-    }
+    const { tokens } = await oauth2Client.getToken(code);
     if (!tokens.access_token || !tokens.refresh_token) {
       throw new UnauthorizedException(
         'Failed to obtain tokens from Google. Please try again.',
@@ -110,7 +107,7 @@ export class GoogleDriveOAuthService {
 
     // Lấy email từ Google userinfo endpoint.
     oauth2Client.setCredentials(tokens);
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client as any });
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const { data: userInfo } = await oauth2.userinfo.get();
 
     const expiresAt = new Date(tokens.expiry_date ?? Date.now() + 3600_000);
@@ -200,10 +197,7 @@ export class GoogleDriveOAuthService {
         }
         this.logger.log(`Tokens auto-saved for user ${userId}`);
       } catch (err) {
-        this.logger.error(
-          `Failed to auto-save tokens for user ${userId}`,
-          err,
-        );
+        this.logger.error(`Failed to auto-save tokens for user ${userId}`, err);
       }
     };
 
@@ -214,7 +208,7 @@ export class GoogleDriveOAuthService {
       try {
         // getAccessToken() trigger refresh bằng refresh_token bên trong library.
         // Cast any vì test mock trả tokens object; real library trả {token,res}.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         const refreshed: any = await oauth2Client.getAccessToken();
 
         // Refresh thành công → persist tokens mới (giữ refresh_token cũ nếu
@@ -232,7 +226,9 @@ export class GoogleDriveOAuthService {
           },
           { upsert: true, new: true },
         );
-        this.logger.log(`Access token refreshed proactively for user ${userId}`);
+        this.logger.log(
+          `Access token refreshed proactively for user ${userId}`,
+        );
       } catch (refreshErr: any) {
         if (refreshErr?.code === 'invalid_grant') {
           // Refresh token bị revoke (user đổi mật khẩu / revoke / quá hạn 6 tháng).
@@ -249,7 +245,9 @@ export class GoogleDriveOAuthService {
     // được dùng gọi API Google). Dùng once() để tránh listener leak (M-03).
     // Lưu ý: lần refresh proactive ở trên đã persist token trực tiếp qua
     // findOneAndUpdate, không phụ thuộc event này.
-    oauth2Client.once('tokens', tokensListener);
+    oauth2Client.once('tokens', (tokens) => {
+      void tokensListener(tokens);
+    });
 
     return oauth2Client;
   }
@@ -336,9 +334,7 @@ export class GoogleDriveOAuthService {
    */
   private createBaseOAuth2Client(): OAuth2Client {
     const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
-    const clientSecret = this.configService.get<string>(
-      'GOOGLE_CLIENT_SECRET',
-    );
+    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET');
     const redirectUri = this.configService.get<string>('GOOGLE_REDIRECT_URI');
 
     return new google.auth.OAuth2(clientId, clientSecret, redirectUri);

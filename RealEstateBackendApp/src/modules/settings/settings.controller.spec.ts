@@ -133,17 +133,26 @@ describe('SettingsController (contract mục 1/3)', () => {
 
   describe('@Roles metadata — RBAC matrix mục 11', () => {
     it('getAiConfig có @Roles(ADMIN)', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getAiConfig);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        SettingsController.prototype.getAiConfig,
+      );
       expect(roles).toEqual([UserRole.ADMIN]);
     });
 
     it('updateAiConfig có @Roles(ADMIN)', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.updateAiConfig);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        SettingsController.prototype.updateAiConfig,
+      );
       expect(roles).toEqual([UserRole.ADMIN]);
     });
 
     it('getOpenRouterModels có @Roles(ADMIN)', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getOpenRouterModels);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        SettingsController.prototype.getOpenRouterModels,
+      );
       expect(roles).toEqual([UserRole.ADMIN]);
     });
   });

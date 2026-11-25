@@ -1,4 +1,8 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PipelineLogService } from './pipeline-log.service';
 import { KnowledgeConfigService } from './knowledge-config.service';
 
@@ -43,12 +47,12 @@ export class CategoryRotationService {
    * Pick the next category for a pipeline batch.
    *
    * @param overrideSlug - Explicit category slug to use (optional)
-   * @param articleCount - Number of articles to generate (used for balance calculation)
+   * @param _articleCount - Number of articles to generate (used for balance calculation)
    * @returns RotationResult with the selected topic and WP category ID
    */
   async pickCategory(
     overrideSlug?: string,
-    articleCount?: number,
+    _articleCount?: number,
   ): Promise<RotationResult> {
     const topics = await this.getTopics();
     if (!topics || topics.length === 0) {
@@ -113,9 +117,7 @@ export class CategoryRotationService {
   private async getTopics(): Promise<CategoryTopic[]> {
     const aiWritingConfig =
       await this.knowledgeConfigService.getAiWritingConfig();
-    const topics = aiWritingConfig.topics as
-      | CategoryTopic[]
-      | undefined;
+    const topics = aiWritingConfig.topics as CategoryTopic[] | undefined;
     return topics || [];
   }
 
@@ -161,8 +163,7 @@ export class CategoryRotationService {
     const nextTopic = topics.find((t) => !recentlyUsed.includes(t.slug));
 
     if (nextTopic) {
-      this.rotationIndex =
-        (topics.indexOf(nextTopic) + 1) % topics.length;
+      this.rotationIndex = (topics.indexOf(nextTopic) + 1) % topics.length;
       this.logger.log(
         `Category rotation: selected "${nextTopic.slug}" (not used recently)`,
       );
@@ -198,8 +199,7 @@ export class CategoryRotationService {
       }
     }
 
-    this.rotationIndex =
-      (topics.indexOf(leastUsedTopic) + 1) % topics.length;
+    this.rotationIndex = (topics.indexOf(leastUsedTopic) + 1) % topics.length;
     this.logger.log(
       `Category rotation: selected "${leastUsedTopic.slug}" (least used: ${minCount} times)`,
     );

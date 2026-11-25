@@ -48,4 +48,4 @@ export class SettingsController {
   get9RouterModels() {
     return this.settingsService.get9RouterModels();
   }
-  }
+}

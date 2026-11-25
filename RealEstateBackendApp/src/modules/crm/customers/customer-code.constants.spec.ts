@@ -81,7 +81,6 @@ describe('customer-code.constants (T-01, FR-07, FR-08, FR-21)', () => {
     });
 
     it('FR-21: module không phụ thuộc NestJS/Mongoose (import được từ migration/CLI)', () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const source = require('fs').readFileSync(
         require.resolve('./customer-code.constants.ts'),
         'utf8',

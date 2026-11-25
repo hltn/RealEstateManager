@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/require-await -- fake `work`/callback async theo chữ ký, không cần await */
 /**
  * FR-03 — hook sau-commit của withTransaction (unit, dùng connection giả mô phỏng commit/abort/retry).
  */

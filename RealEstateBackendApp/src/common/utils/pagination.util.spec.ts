@@ -8,10 +8,7 @@
  * - buildPaginationMeta: totalPages = 0 khi total = 0 (không NaN/Infinity).
  * - buildPaginationMeta: totalPages = 0 khi limit = 0 (defensive).
  */
-import {
-  normalizePagination,
-  buildPaginationMeta,
-} from './pagination.util';
+import { normalizePagination, buildPaginationMeta } from './pagination.util';
 import { DEFAULT_LIMIT, DEFAULT_PAGE } from '../dto/pagination-query.dto';
 
 describe('pagination.util (contract mục 2 — Response Format)', () => {
@@ -34,10 +31,26 @@ describe('pagination.util (contract mục 2 — Response Format)', () => {
     });
 
     it('skip = (page - 1) * limit', () => {
-      expect(normalizePagination(1, 20)).toEqual({ page: 1, limit: 20, skip: 0 });
-      expect(normalizePagination(2, 20)).toEqual({ page: 2, limit: 20, skip: 20 });
-      expect(normalizePagination(3, 10)).toEqual({ page: 3, limit: 10, skip: 20 });
-      expect(normalizePagination(10, 25)).toEqual({ page: 10, limit: 25, skip: 225 });
+      expect(normalizePagination(1, 20)).toEqual({
+        page: 1,
+        limit: 20,
+        skip: 0,
+      });
+      expect(normalizePagination(2, 20)).toEqual({
+        page: 2,
+        limit: 20,
+        skip: 20,
+      });
+      expect(normalizePagination(3, 10)).toEqual({
+        page: 3,
+        limit: 10,
+        skip: 20,
+      });
+      expect(normalizePagination(10, 25)).toEqual({
+        page: 10,
+        limit: 25,
+        skip: 225,
+      });
     });
 
     it('truyền page nhưng thiếu limit → limit = DEFAULT', () => {

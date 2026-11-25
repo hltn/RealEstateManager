@@ -552,44 +552,93 @@ describe('CRM M5 — QA đối kháng', () => {
       await resetPendingReminders();
       const c = await createCustomer('staffA');
       await addMember(c, 'staffB');
-      const appt = await mustCreate('staffA', c, { startAt: inDays(0, 30 * MINUTE_MS), remindBeforeMinutes: [60, 1440], assigneeIds: [ids.staffB, ids.staffA] });
+      const appt = await mustCreate('staffA', c, {
+        startAt: inDays(0, 30 * MINUTE_MS),
+        remindBeforeMinutes: [60, 1440],
+        assigneeIds: [ids.staffB, ids.staffA],
+      });
       let version = appt.version;
       for (let i = 0; i < 4; i += 1) {
-        const res = await call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', { version, title: `Sửa ${i}`, note: `ghi chú ${i}` });
+        const res = await call(
+          'PATCH',
+          `/crm/appointments/${appt.id}`,
+          'staffA',
+          { version, title: `Sửa ${i}`, note: `ghi chú ${i}` },
+        );
         expect(res.status).toBe(200);
         version = res.body.data.version;
       }
       expect(await remindersOf(appt.id)).toHaveLength(1);
-      await call('DELETE', `/crm/customers/${c}/care-team/members/${ids.staffB}`, 'admin');
-      const forAppt = { type: 'APPOINTMENT_DUE', 'data.appointmentId': oid(appt.id) };
+      await call(
+        'DELETE',
+        `/crm/customers/${c}/care-team/members/${ids.staffB}`,
+        'admin',
+      );
+      const forAppt = {
+        type: 'APPOINTMENT_DUE',
+        'data.appointmentId': oid(appt.id),
+      };
       const first = await dispatch.dispatchDue(new Date());
       expect(first.sent).toBeGreaterThanOrEqual(1);
       expect(await notificationsOf('staffB', forAppt)).toHaveLength(0);
       expect(await notificationsOf('staffA', forAppt)).toHaveLength(1);
       // sửa sau khi đã gửi + chạy lại: không gửi lần hai
-      const after = await call('PATCH', `/crm/appointments/${appt.id}`, 'staffA', { version, title: 'Sửa sau gửi' });
+      const after = await call(
+        'PATCH',
+        `/crm/appointments/${appt.id}`,
+        'staffA',
+        { version, title: 'Sửa sau gửi' },
+      );
       expect(after.status).toBe(200);
       await dispatch.dispatchDue(new Date());
       await dispatch.dispatchDue(new Date(Date.now() + 5 * MINUTE_MS));
       expect(await notificationsOf('staffA', forAppt)).toHaveLength(1);
-      expect((await remindersOf(appt.id)).map((r) => r.status)).toEqual(['SENT']);
+      expect((await remindersOf(appt.id)).map((r) => r.status)).toEqual([
+        'SENT',
+      ]);
 
       // hủy trước khi gửi: không có nhắc nào được gửi
       const c2 = await createCustomer('staffA');
-      const a2 = await mustCreate('staffA', c2, { startAt: inDays(0, 20 * MINUTE_MS), remindBeforeMinutes: [60] });
-      expect((await call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', { status: 'CANCELED' })).status).toBe(200);
+      const a2 = await mustCreate('staffA', c2, {
+        startAt: inDays(0, 20 * MINUTE_MS),
+        remindBeforeMinutes: [60],
+      });
+      expect(
+        (
+          await call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', {
+            status: 'CANCELED',
+          })
+        ).status,
+      ).toBe(200);
       await dispatch.dispatchDue(new Date());
-      expect(await notificationsOf('staffA', { type: 'APPOINTMENT_DUE', 'data.appointmentId': oid(a2.id) })).toHaveLength(0);
+      expect(
+        await notificationsOf('staffA', {
+          type: 'APPOINTMENT_DUE',
+          'data.appointmentId': oid(a2.id),
+        }),
+      ).toHaveLength(0);
       // mở lại: dựng lại nhắc "ngay" đúng một cái
-      expect((await call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', { status: 'SCHEDULED' })).status).toBe(200);
+      expect(
+        (
+          await call('PATCH', `/crm/appointments/${a2.id}/status`, 'staffA', {
+            status: 'SCHEDULED',
+          })
+        ).status,
+      ).toBe(200);
       expect(await remindersOf(a2.id)).toHaveLength(1);
     });
 
     it('biên: startAt sắp tới 2 giây có nhắc ngay; startAt quá khứ (trong dung sai 5 phút) không có nhắc', async () => {
       const c = await createCustomer('staffA');
-      const soon = await mustCreate('staffA', c, { startAt: new Date(Date.now() + 2000).toISOString(), remindBeforeMinutes: [60] });
+      const soon = await mustCreate('staffA', c, {
+        startAt: new Date(Date.now() + 2000).toISOString(),
+        remindBeforeMinutes: [60],
+      });
       expect(await remindersOf(soon.id)).toHaveLength(1);
-      const past = await mustCreate('staffA', c, { startAt: new Date(Date.now() - 60_000).toISOString(), remindBeforeMinutes: [60] });
+      const past = await mustCreate('staffA', c, {
+        startAt: new Date(Date.now() - 60_000).toISOString(),
+        remindBeforeMinutes: [60],
+      });
       expect(await remindersOf(past.id)).toHaveLength(0);
     });
 

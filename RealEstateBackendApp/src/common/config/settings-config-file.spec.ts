@@ -22,7 +22,6 @@ import {
   writeSettingsConfigFile,
 } from './settings-config-file';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const nodeFs: typeof import('node:fs') = require('node:fs'); // đối tượng CJS gốc để jest.spyOn được
 
 const SECRET = 'sk-SUPER-SECRET-VALUE-123';

@@ -78,7 +78,7 @@ describe('ReminderDispatchService dựng yêu cầu thông báo cho Dispatcher (
     expect(decision.notifications).toHaveLength(2);
     const byUser = new Map(
       decision.notifications.map((n: any) => [String(n.recipientIds[0]), n]),
-    ) as Map<string, any>;
+    );
     const toPrimary = byUser.get(String(PRIMARY))!;
     const toMember = byUser.get(String(MEMBER))!;
     expect(toPrimary.inApp.priority).toBe('HIGH');

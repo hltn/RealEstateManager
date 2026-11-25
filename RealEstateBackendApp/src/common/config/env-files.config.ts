@@ -24,7 +24,7 @@ export const loadEnvFiles = (
 ): void => {
   loadDotenv({
     path: [...paths],
-    processEnv: target as Record<string, string>,
+    processEnv: target,
     quiet: true,
   });
 };

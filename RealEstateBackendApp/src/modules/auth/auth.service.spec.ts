@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * AuthService unit spec — contract mục 16.1 / 7.2.1–7.2.3 / 7.4.1.
  *

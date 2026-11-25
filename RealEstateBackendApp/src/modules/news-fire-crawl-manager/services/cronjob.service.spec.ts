@@ -1,5 +1,9 @@
 jest.mock('cron', () => ({
-  CronJob: jest.fn().mockImplementation(function (this: any, frequency: string, callback: () => Promise<void>) {
+  CronJob: jest.fn().mockImplementation(function (
+    this: any,
+    frequency: string,
+    callback: () => Promise<void>,
+  ) {
     this.frequency = frequency;
     this.callback = callback;
     this.start = jest.fn();
@@ -56,7 +60,10 @@ describe('CronjobService', () => {
   describe('onApplicationBootstrap', () => {
     it('uses default values when .env is empty', () => {
       service.onApplicationBootstrap();
-      expect(service.getConfig()).toEqual({ isActive: false, frequency: '0 8 * * *' });
+      expect(service.getConfig()).toEqual({
+        isActive: false,
+        frequency: '0 8 * * *',
+      });
       expect(schedulerRegistry.addCronJob).not.toHaveBeenCalled();
     });
 
@@ -66,12 +73,20 @@ describe('CronjobService', () => {
         return undefined;
       });
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.readFileSync as jest.Mock).mockReturnValue('DAILY_CRAWLER_ACTIVE=true\nDAILY_CRAWLER_FREQUENCY=0 12 * * *\n');
+      (fs.readFileSync as jest.Mock).mockReturnValue(
+        'DAILY_CRAWLER_ACTIVE=true\nDAILY_CRAWLER_FREQUENCY=0 12 * * *\n',
+      );
 
       service.onApplicationBootstrap();
-      
-      expect(service.getConfig()).toEqual({ isActive: true, frequency: '0 12 * * *' });
-      expect(schedulerRegistry.addCronJob).toHaveBeenCalledWith('daily_news_crawler', expect.anything());
+
+      expect(service.getConfig()).toEqual({
+        isActive: true,
+        frequency: '0 12 * * *',
+      });
+      expect(schedulerRegistry.addCronJob).toHaveBeenCalledWith(
+        'daily_news_crawler',
+        expect.anything(),
+      );
     });
   });
 
@@ -81,28 +96,35 @@ describe('CronjobService', () => {
 
       const config = service.updateConfig(true, '0 6 * * *');
 
-      expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith('daily_news_crawler');
-      expect(schedulerRegistry.addCronJob).toHaveBeenCalledWith('daily_news_crawler', expect.anything());
+      expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
+        'daily_news_crawler',
+      );
+      expect(schedulerRegistry.addCronJob).toHaveBeenCalledWith(
+        'daily_news_crawler',
+        expect.anything(),
+      );
       expect(CronJob).toHaveBeenCalledWith('0 6 * * *', expect.any(Function));
       expect(config).toEqual({ isActive: true, frequency: '0 6 * * *' });
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         path.resolve(process.cwd(), '.env'),
         'DAILY_CRAWLER_ACTIVE=true\nDAILY_CRAWLER_FREQUENCY=0 6 * * *\n',
-        'utf8'
+        'utf8',
       );
     });
 
     it('replaces existing values in .env when updating', () => {
       (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.readFileSync as jest.Mock).mockReturnValue('SOME_VAR=1\nDAILY_CRAWLER_ACTIVE=false\nDAILY_CRAWLER_FREQUENCY=0 8 * * *\nOTHER=2');
+      (fs.readFileSync as jest.Mock).mockReturnValue(
+        'SOME_VAR=1\nDAILY_CRAWLER_ACTIVE=false\nDAILY_CRAWLER_FREQUENCY=0 8 * * *\nOTHER=2',
+      );
 
       service.updateConfig(true, '0 10 * * *');
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         path.resolve(process.cwd(), '.env'),
         'SOME_VAR=1\nDAILY_CRAWLER_ACTIVE=true\nDAILY_CRAWLER_FREQUENCY=0 10 * * *\nOTHER=2\n',
-        'utf8'
+        'utf8',
       );
     });
 
@@ -119,7 +141,9 @@ describe('CronjobService', () => {
       const trigger = jest.fn().mockResolvedValue({ jobId: 'workflow-job-1' });
       service.setMarketAnalysisWorkflowTrigger(trigger);
       service.updateConfig(true, '0 6 * * *');
-      const callback = (CronJob as unknown as jest.Mock).mock.calls.at(-1)[1] as () => Promise<void>;
+      const callback = (CronJob as unknown as jest.Mock).mock.calls.at(
+        -1,
+      )[1] as () => Promise<void>;
 
       await callback();
 
@@ -128,7 +152,9 @@ describe('CronjobService', () => {
 
     it('does not throw when the workflow trigger has not been registered', async () => {
       service.updateConfig(true, '0 6 * * *');
-      const callback = (CronJob as unknown as jest.Mock).mock.calls.at(-1)[1] as () => Promise<void>;
+      const callback = (CronJob as unknown as jest.Mock).mock.calls.at(
+        -1,
+      )[1] as () => Promise<void>;
 
       await expect(callback()).resolves.toBeUndefined();
     });
