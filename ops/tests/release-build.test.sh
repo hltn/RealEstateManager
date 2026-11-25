@@ -116,6 +116,8 @@ build_template_repo() {
     echo 'FROM scratch' > RealEstateBackendApp/Dockerfile; echo 'FROM scratch' > RealEstateAdminApp/Dockerfile
     echo 'tài liệu' > docs/readme.md; echo '{}' > RealEstateApp/app.json; echo '# changelog' > CHANGELOG.md
     printf '.env\n.env.*\n!.env.example\nbackups/\nlogs/\n*.dump\n/release.env\n/release.tgz\n/release.tgz.sha256\n' > .gitignore
+    # chmod thật trên đĩa (không chỉ trong index): trên Linux (CI) file 644 mà index 755 bị coi là cây bẩn.
+    chmod +x release.sh deploy.sh backup.sh restore.sh ops/check-disk.sh scripts/run-migration.sh
     git add -A
     git update-index --chmod=+x release.sh deploy.sh backup.sh restore.sh ops/check-disk.sh scripts/run-migration.sh
     git commit -q -m init
