@@ -233,7 +233,8 @@ test.describe('f12-customer-identity', () => {
         // Mã đứng cạnh SĐT trong cùng một dòng thông tin: "KH-000123 · 0931 ••• 567".
         await expect(item).toContainText(code);
         await expect(item).toContainText(phoneShown);
-        await expect(item.getByText(code).locator('xpath=..')).toContainText(phoneShown);
+        // Mã là nút chip "Sao chép mã khách" (v1.0.6); phần tử cha của nút là dòng thông tin chứa cả SĐT.
+        await expect(item.getByRole('button', { name: `Sao chép mã khách ${code}`, exact: true }).locator('xpath=..')).toContainText(phoneShown);
         await expect(item).not.toContainText(formatPhone(c.phone)); // SĐT đầy đủ không lộ ở danh sách
 
         // Chi tiết hiện mã (mọi vai trò).

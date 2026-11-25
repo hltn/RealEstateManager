@@ -2,7 +2,7 @@
  * F10 - Xóa, khôi phục, xóa vĩnh viễn khách "Bỏ" (v1.0.2 mục D, doc 09 mục 7). Dùng khách RIÊNG tạo bằng API (tên có hậu tố ngẫu nhiên).
  * - F10-01 (Admin): chọn khách Bỏ -> Xóa hàng loạt kèm lý do -> thấy ở "Khách đã xóa" -> Khôi phục một khách -> Xóa vĩnh viễn khách còn lại
  *   (SĐT được giải phóng, backend không còn bản ghi).
- * - F10-02 (Nhân viên): option "Xóa" chỉ hiện khi MỌI khách Bỏ đang chọn do mình phụ trách chính; không vào được màn "Khách đã xóa".
+ * - F10-02 (Nhân viên, FR-31 v1.0.6): quyền xóa = Admin hoặc người tạo khách; lô lẫn khách của người khác thì backend từ chối từng khách (INSUFFICIENT_ROLE) và hộp kết quả báo rõ; không vào được màn "Khách đã xóa".
  */
 import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures';
@@ -102,26 +102,44 @@ test.describe('f10-delete-customers', () => {
     expect(reused.status, JSON.stringify(reused.data)).toBe(201);
   });
 
-  test('F10-02 Nhân viên chỉ thấy "Xóa" khi mọi khách Bỏ đang chọn do mình phụ trách chính; không vào được màn Khách đã xóa', async ({ loginAs, api, seed }) => {
+  test('F10-02 Nhân viên: "Xóa" luôn có (FR-31); lô lẫn khách của người khác -> chỉ xóa khách do mình tạo, hộp kết quả báo khách kia thiếu quyền; không vào được màn Khách đã xóa', async ({ loginAs, api, seed }) => {
     const statusId = await droppedStatusId(api);
     const mine = await createDropped(api, 'staff1', statusId, 'F10-CuaToi');
     const others = await createDropped(api, 'staff2', statusId, 'F10-CuaNguoiKhac');
-    // staff1 chỉ là THÀNH VIÊN (không phải phụ trách chính) của khách do staff2 phụ trách (Admin thêm vì khác nhóm nên staff2 không tự thêm được).
+    // staff1 chỉ là THÀNH VIÊN (không phải người tạo) của khách do staff2 tạo (Admin thêm vì khác nhóm nên staff2 không tự thêm được) => xem được nhưng không có quyền xóa.
     const added = await api.call('admin', 'POST', `/crm/customers/${others.id}/care-team/members`, { userIds: [seed.users.staff1.id] });
     expect(added.status, JSON.stringify(added.data)).toBeLessThan(300);
 
-    const staff = await loginAs('staff1');
-    await openDroppedTab(staff);
-    await staff.getByRole('checkbox', { name: `Chọn ${mine.fullName}` }).check();
-    await expect(bulkSelect(staff)).toBeVisible();
-    await expect(deleteOption(staff)).toHaveCount(1);
-
-    await staff.getByRole('checkbox', { name: `Chọn ${others.fullName}` }).check();
-    await expect(deleteOption(staff)).toHaveCount(0);
-
-    // Chỉ Quản trị vào màn Khách đã xóa: Nhân viên bị chuyển về Việc hôm nay kèm thông báo.
-    await staff.goto('/crm/deleted-customers');
-    await expect(staff).toHaveURL(/\/crm\/today$/);
-    await expect(toast(staff, 'Bạn không có quyền vào trang này.')).toBeVisible();
+    // Dọn: gỡ staff1 khỏi khách của staff2, kẻo các ca sau (F12-08...) dùng chung seed thấy staff1 trong danh sách người phụ trách của staff2.
+    try {
+      const staff = await loginAs('staff1');
+      await openDroppedTab(staff);
+      await staff.getByRole('checkbox', { name: `Chọn ${mine.fullName}` }).check();
+      await staff.getByRole('checkbox', { name: `Chọn ${others.fullName}` }).check();
+      // FR-31: FE không tự suy quyền, option "Xóa" có cả khi lô lẫn khách của người khác; backend quyết định từng khách.
+      await expect(bulkSelect(staff)).toBeVisible();
+      await expect(deleteOption(staff)).toHaveCount(1);
+      await bulkSelect(staff).selectOption('DELETE');
+      await staff.getByRole('button', { name: 'Xóa', exact: true }).click();
+      await staff.getByLabel(/Lý do xóa/).fill('E2E: Nhân viên xóa lô lẫn khách người khác');
+      await staff.getByRole('button', { name: 'Xóa 2 khách' }).click();
+      // Hộp kết quả theo từng khách: khách của mình đã xóa, khách của người khác bị từ chối kèm lý do thiếu quyền.
+      const result = staff.getByRole('dialog', { name: 'Kết quả xóa khách' });
+      await expect(result).toBeVisible();
+      await expect(result).toContainText(others.fullName);
+      await expect(result).toContainText('bạn không có quyền xóa khách này');
+      await staff.getByRole('button', { name: 'Đã hiểu' }).click();
+      // Backend: khách của mình vào danh sách đã xóa, khách của người khác vẫn còn nguyên.
+      const deleted = (await api.call('admin', 'GET', `/crm/deleted-customers?q=${encodeURIComponent('F10-Cua')}&limit=50`)).data as unknown as Array<{ id: string }>;
+      expect(deleted.some((item) => item.id === mine.id)).toBe(true);
+      expect(deleted.some((item) => item.id === others.id)).toBe(false);
+      expect((await api.call('admin', 'GET', `/crm/customers/${others.id}`)).status).toBe(200);
+      // Chỉ Quản trị vào màn Khách đã xóa: Nhân viên bị chuyển về Việc hôm nay kèm thông báo.
+      await staff.goto('/crm/deleted-customers');
+      await expect(staff).toHaveURL(/\/crm\/today$/);
+      await expect(toast(staff, 'Bạn không có quyền vào trang này.')).toBeVisible();
+    } finally {
+      await api.call('admin', 'DELETE', `/crm/customers/${others.id}/care-team/members/${seed.users.staff1.id}`);
+    }
   });
 });
