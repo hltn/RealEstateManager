@@ -2,12 +2,11 @@
  * Mapper khách hàng, nhóm chăm sóc, nhật ký, lịch hẹn, việc hôm nay, lịch sử: response backend -> view-type của UI.
  * Hàm thuần, không đọc mạng/store -> test được. Không log dữ liệu (có PII).
  */
-import type { PersonaFieldDefinition, PersonaValue, UserRef, UserRole } from '@crm/types/crm';
+import type { PersonaFieldDefinition, PersonaValue, UserRef } from '@crm/types/crm';
 import type {
   AppointmentView,
   CareLogView,
   CareTeamMemberView,
-  CareTeamRequestView,
   CriterionView,
   CustomerDetail,
   CustomerListItem,
@@ -16,12 +15,12 @@ import type {
   DailyTask,
   HistoryEntry,
   NationalIdViewEntry,
+  OwnerRef,
 } from '../types';
 import type {
   AppointmentDto,
   CareLogDto,
   CareTeamMemberDto,
-  CareTeamRequestDto,
   CriterionDto,
   CustomerDetailDto,
   CustomerListItemDto,
@@ -29,24 +28,29 @@ import type {
   DeletedCustomerDto,
   DailyTaskDto,
   HistoryEntryDto,
+  OwnerRefDto,
   PersonaValueDto,
   UserRefDto,
 } from './dto';
-import { optionLabelToValue, optionValueToLabel, toPersonaGroupCode, toStatusRef } from './catalogMappers';
+import { optionLabelToValue, optionValueToLabel, toCatalogRef, toNullableCatalogRef, toPersonaGroupCode, toStatusRef } from './catalogMappers';
 
 /** Người không xác định (bản ghi hệ thống/đã xóa). */
 export const SYSTEM_USER: UserRef = { id: '', displayName: 'Hệ thống' };
 
-export const toUserRef = (dto: UserRefDto | null | undefined): UserRef => (dto ? { id: dto.id, displayName: dto.displayName } : SYSTEM_USER);
+/** `isLocked` chỉ gắn khi backend trả (người chăm sóc chính/thành viên nhóm); vắng thì không thêm khóa để so sánh/snapshot không đổi. */
+export const toUserRef = (dto: UserRefDto | null | undefined): UserRef =>
+  dto ? { id: dto.id, displayName: dto.displayName, ...(dto.isLocked !== undefined ? { isLocked: dto.isLocked } : {}) } : SYSTEM_USER;
 
 export const toCustomerListItem = (dto: CustomerListItemDto): CustomerListItem => ({
   id: dto.id,
   fullName: dto.fullName,
-  phoneMasked: dto.phoneMasked,
+  phoneMasked: dto.phoneMasked ?? null,
+  customerCode: dto.customerCode ?? null,
+  purchasePurposes: dto.purchasePurposes ?? [],
   status: toStatusRef(dto.status),
-  source: dto.source,
-  projects: dto.projects,
-  area: dto.area,
+  source: toNullableCatalogRef('leadSources', dto.source),
+  projects: dto.projects.map((project) => toCatalogRef('projects', project)),
+  area: toNullableCatalogRef('areas', dto.area),
   tags: dto.tags,
   progress: dto.progress,
   criteriaDone: dto.criteriaDone,
@@ -77,28 +81,20 @@ const toCriterion = (dto: CriterionDto): CriterionView => ({
 /** Chức danh hiển thị theo vai trò (backend không có chức danh riêng). */
 export const ROLE_JOB_TITLES: Record<string, string> = { MANAGER: 'Quản lý', STAFF: 'Nhân viên kinh doanh', ADMIN: 'Quản trị' };
 
-export const toCareTeamMember = (dto: CareTeamMemberDto, roleOf?: (userId: string) => UserRole | undefined): CareTeamMemberView => {
-  const role = roleOf?.(dto.user.id);
+/** Vai trò lấy từ chính `careTeam[].user.role` của API chi tiết; vắng/null (người không còn trong DB) -> chức danh rỗng, không lỗi. */
+export const toCareTeamMember = (dto: CareTeamMemberDto): CareTeamMemberView => {
+  const role = dto.user.role;
   return {
-    user: { id: dto.user.id, displayName: dto.user.displayName, fullName: dto.user.displayName, jobTitle: role ? (ROLE_JOB_TITLES[role] ?? '') : '' },
+    user: { ...toUserRef(dto.user), fullName: dto.user.displayName, jobTitle: role ? (ROLE_JOB_TITLES[role] ?? '') : '' },
     role: dto.role,
     addedAt: dto.addedAt,
     addedBy: toUserRef(dto.addedBy),
   };
 };
 
-export interface DetailMappingContext {
-  /** Người đang đăng nhập (suy ra quyền duyệt đề nghị tham gia). */
-  actor: { userId: string; role: UserRole };
-  roleOf?: (userId: string) => UserRole | undefined;
-}
+const toOwnerRef = (dto: OwnerRefDto): OwnerRef => ({ userId: dto.userId, fullName: dto.fullName, role: dto.role });
 
-/**
- * `canReviewJoinRequests` không có trong response: Quản trị/Quản lý (đã nằm trong phạm vi khách) hoặc phụ trách chính được duyệt (05 §2.5).
- * Chỉ để ẩn/hiện nút — backend vẫn kiểm quyền.
- */
-export const toCustomerDetail = (dto: CustomerDetailDto, context: DetailMappingContext): CustomerDetail => {
-  const isPrimary = dto.careTeam.some((member) => member.role === 'PRIMARY' && member.user.id === context.actor.userId);
+export const toCustomerDetail = (dto: CustomerDetailDto): CustomerDetail => {
   return {
     ...toCustomerListItem(dto),
     createdAt: dto.createdAt,
@@ -109,39 +105,25 @@ export const toCustomerDetail = (dto: CustomerDetailDto, context: DetailMappingC
       finance: toCriterion(dto.criteria.finance),
       timing: toCriterion(dto.criteria.timing),
     },
-    careTeam: dto.careTeam.map((member) => toCareTeamMember(member, context.roleOf)),
+    careTeam: dto.careTeam.map(toCareTeamMember),
     nationalIdMasked: dto.nationalIdMasked,
     hasNationalId: dto.hasNationalId,
     lastUpdatedBy: toUserRef(dto.lastUpdatedBy),
     createdBy: toUserRef(dto.createdBy),
     createdVia: dto.createdVia,
+    ownerManagers: (dto.ownerManagers ?? []).map(toOwnerRef),
+    creator: dto.creator ? toOwnerRef(dto.creator) : null,
     nextActionSuggestions: dto.nextActionSuggestions ?? [],
     permissions: {
       canEdit: dto.permissions.canEdit,
       canManageCareTeam: dto.permissions.canManageCareTeam,
-      canChangePrimary: dto.permissions.canChangePrimary,
+      canSetInitialPrimary: dto.permissions.canSetInitialPrimary,
       canDelete: dto.permissions.canDelete,
       canRevealNationalId: dto.canRevealNationalId,
-      canReviewJoinRequests: context.actor.role === 'ADMIN' || context.actor.role === 'MANAGER' || isPrimary,
     },
     version: dto.version,
   };
 };
-
-export const toCareTeamRequest = (dto: CareTeamRequestDto): CareTeamRequestView => ({
-  id: dto.id,
-  customer: dto.customer.fullName ? { id: dto.customer.id, fullName: dto.customer.fullName } : null,
-  requester: toUserRef(dto.requester),
-  message: dto.message ?? '',
-  status: dto.status,
-  createdAt: dto.createdAt,
-  resolvedBy: dto.resolvedBy ? toUserRef(dto.resolvedBy) : null,
-  resolvedAt: dto.resolvedAt,
-  resolutionNote: dto.resolutionNote,
-});
-
-/** `id` khách của đề nghị (có cả khi người xem không thấy tên). */
-export const getRequestCustomerId = (dto: CareTeamRequestDto): string => dto.customer.id;
 
 export const toCareLog = (dto: CareLogDto, primaryUserId: string | null): CareLogView => ({
   id: dto.id,
@@ -151,7 +133,7 @@ export const toCareLog = (dto: CareLogDto, primaryUserId: string | null): CareLo
   occurredAt: dto.occurredAt,
   content: dto.content,
   contactChannel: dto.contactChannel,
-  contactResult: dto.contactResult,
+  contactResult: toNullableCatalogRef('contactResults', dto.contactResult),
   nextAction: dto.nextAction
     ? { suggestion: dto.nextAction.suggestion ?? '', dueAt: dto.nextAction.dueAt, appointmentId: dto.nextAction.appointmentId }
     : null,
@@ -164,21 +146,23 @@ export const toCareLog = (dto: CareLogDto, primaryUserId: string | null): CareLo
 
 export const toAppointment = (dto: AppointmentDto): AppointmentView => ({
   id: dto.id,
-  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked, status: toStatusRef(dto.customer.status) },
+  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked ?? null, status: toStatusRef(dto.customer.status) },
   type: dto.type,
   title: dto.title,
   startAt: dto.startAt,
   endAt: dto.endAt,
   location: dto.location,
   note: dto.note,
-  project: dto.project ? { id: dto.project.id, label: dto.project.label } : null,
+  project: toNullableCatalogRef('projects', dto.project),
   assignee: toUserRef(dto.assignee),
+  assignees: (dto.assignees ?? [dto.assignee]).map(toUserRef),
   remindBeforeMinutes: dto.remindBeforeMinutes,
   status: dto.status,
   completedAt: dto.completedAt,
   outcome: dto.outcome,
   createdBy: toUserRef(dto.createdBy),
   version: dto.version,
+  canEdit: dto.canEdit ?? dto.canDelete,
   canDelete: dto.canDelete,
 });
 
@@ -187,14 +171,17 @@ export const toDailyTask = (dto: DailyTaskDto): DailyTask => ({
   kind: dto.kind,
   dueAt: dto.dueAt,
   group: dto.group,
-  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked, status: toStatusRef(dto.customer.status), projects: dto.customer.projects },
-  project: dto.project ? { id: dto.project.id, label: dto.project.label } : null,
+  customer: { id: dto.customer.id, fullName: dto.customer.fullName, phoneMasked: dto.customer.phoneMasked ?? null, status: toStatusRef(dto.customer.status), projects: dto.customer.projects.map((project) => toCatalogRef('projects', project)) },
+  project: toNullableCatalogRef('projects', dto.project),
   title: dto.title,
   lastCareLog: dto.lastCareLog,
   suggestion: dto.suggestion,
   appointmentId: dto.appointmentId,
   careLogId: dto.careLogId,
   assignee: dto.assignee ? toUserRef(dto.assignee) : null,
+  assignees: (dto.assignees ?? (dto.assignee ? [dto.assignee] : [])).map(toUserRef),
+  ...(dto.canEdit !== undefined ? { canEdit: dto.canEdit } : {}),
+  ...(dto.canDelete !== undefined ? { canDelete: dto.canDelete } : {}),
   isPrimary: dto.isPrimary,
 });
 

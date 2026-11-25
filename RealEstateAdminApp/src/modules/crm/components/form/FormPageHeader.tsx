@@ -18,7 +18,7 @@ interface FormPageHeaderProps {
 /**
  * Đầu trang form CRM theo mẫu "Đầu trang có nút" của Admin (`RawArticlesScreen.tsx:435-491`):
  * `pb-6 border-b`, `h2.text-title-sm.font-semibold`, mô tả `text-theme-sm`.
- * - Desktop/tablet: `CrmBreadcrumb` (nhiều cấp, lớp chữ như `PageBreadCrumb`) + nút bên phải.
+ * - Desktop/tablet: `CrmBreadcrumb` (nhiều cấp, lớp chữ theo giao diện Admin) + nút bên phải.
  * - Mobile: KHÔNG vẽ top app bar riêng (header/drawer là của Admin) — chỉ hàng "← Quay lại" + tiêu đề trong nội dung.
  */
 export const FormPageHeader = ({ variant, title, description, breadcrumbs, badges, actions, onBack }: FormPageHeaderProps) => {

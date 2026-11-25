@@ -18,13 +18,8 @@ export class KnowledgeConfigService {
   /**
    * Get a config record by type. Returns null if not yet created.
    */
-  async getConfig(
-    type: KnowledgeConfigType,
-  ): Promise<KnowledgeConfig | null> {
-    return this.configModel
-      .findOne({ type })
-      .lean()
-      .exec() as unknown as KnowledgeConfig | null;
+  async getConfig(type: KnowledgeConfigType): Promise<KnowledgeConfig | null> {
+    return this.configModel.findOne({ type }).lean().exec();
   }
 
   /**

@@ -216,13 +216,13 @@ test.describe('f4-appointments', () => {
     await expect(form.getByLabel('Kênh liên hệ')).toBeVisible();
     await expect(form.getByLabel('Kết quả liên hệ')).toBeVisible();
     await expect(form.getByLabel('Việc cần làm tiếp theo')).toBeVisible();
-    await expect(form.getByLabel('Thời điểm nhắc')).toBeVisible();
+    await expect(form.getByRole('switch', { name: 'Tạo lịch hẹn' })).toHaveAttribute('aria-checked', 'false');
     await expect(page).toHaveURL(/\/crm\/appointments/);
 
     // Có bản nháp mà đóng thì được hỏi lại; "Tiếp tục nhập" giữ nguyên nháp; "Bỏ thay đổi" đóng và không tạo nhật ký.
     await form.getByRole('textbox', { name: /^Nội dung trao đổi/ }).fill('Nháp sẽ bỏ');
     await form.getByRole('button', { name: 'Hủy' }).click();
-    await expect(page.getByRole('dialog').filter({ hasText: 'Bỏ thay đổi chưa lưu?' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Bỏ thay đổi chưa lưu?' }) /* hộp xác nhận lồng trong hộp ghi chú: lọc theo tên để không khớp cả hai */).toBeVisible();
     await page.getByRole('button', { name: 'Tiếp tục nhập' }).click();
     await expect(form.getByRole('textbox', { name: /^Nội dung trao đổi/ })).toHaveValue('Nháp sẽ bỏ');
     await form.getByRole('button', { name: 'Hủy' }).click();

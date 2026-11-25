@@ -24,7 +24,9 @@ const mockFind = jest.fn(() => ({
 const mockFindOne = jest.fn(() => ({
   lean: jest.fn(() => ({ exec: mockExec })),
 }));
-const mockUpdateOne = jest.fn(() => ({ exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }) }));
+const mockUpdateOne = jest.fn(() => ({
+  exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+}));
 const mockCreate = jest.fn();
 const mockCountDocuments = jest.fn(() => ({
   exec: jest.fn().mockResolvedValue(0),
@@ -264,7 +266,9 @@ describe('PipelineLogService', () => {
   describe('listLogs', () => {
     it('returns paginated results with default params', async () => {
       const logs = [{ batchId: 'b1' }, { batchId: 'b2' }];
-      const mockLean = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(logs) });
+      const mockLean = jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue(logs) });
       const mockLimit = jest.fn().mockReturnValue({ lean: mockLean });
       const mockSkip = jest.fn().mockReturnValue({ limit: mockLimit });
       const mockSort = jest.fn().mockReturnValue({ skip: mockSkip });
@@ -281,12 +285,16 @@ describe('PipelineLogService', () => {
     });
 
     it('filters by status', async () => {
-      const mockLean = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) });
+      const mockLean = jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue([]) });
       const mockLimit = jest.fn().mockReturnValue({ lean: mockLean });
       const mockSkip = jest.fn().mockReturnValue({ limit: mockLimit });
       const mockSort = jest.fn().mockReturnValue({ skip: mockSkip });
       mockFind.mockReturnValue({ sort: mockSort });
-      mockCountDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockCountDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.listLogs({ page: 1, limit: 20, status: 'completed' });
 
@@ -296,12 +304,16 @@ describe('PipelineLogService', () => {
     });
 
     it('filters by category', async () => {
-      const mockLean = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) });
+      const mockLean = jest
+        .fn()
+        .mockReturnValue({ exec: jest.fn().mockResolvedValue([]) });
       const mockLimit = jest.fn().mockReturnValue({ lean: mockLean });
       const mockSkip = jest.fn().mockReturnValue({ limit: mockLimit });
       const mockSort = jest.fn().mockReturnValue({ skip: mockSkip });
       mockFind.mockReturnValue({ sort: mockSort });
-      mockCountDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockCountDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.listLogs({ page: 1, limit: 20, category: 'hcm' });
 

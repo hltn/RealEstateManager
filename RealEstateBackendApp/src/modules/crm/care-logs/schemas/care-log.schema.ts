@@ -53,8 +53,8 @@ const CareLogAttachmentSchema = SchemaFactory.createForClass(CareLogAttachment);
 
 /**
  * Nhật ký chăm sóc (`care_logs`, tài liệu 04 mục 3.5).
- * Giữ NGUYÊN tên collection và field `contactResultId`, `deletedAt`: `CrmUsageService` (M1) đếm
- * `care_logs.contactResultId` để chặn xóa danh mục "kết quả liên hệ" đang dùng.
+ * Giữ NGUYÊN tên collection và field `contactResultId`, `contactResultCode`, `deletedAt`: `CrmUsageService` (M1) đếm
+ * `care_logs.contactResultId`/`contactResultCode` để chặn xóa danh mục "kết quả liên hệ" đang dùng.
  * `content` và `nextAction.suggestion` là văn bản tự do (có thể chứa PII) => bị ghi đè khi ẩn danh hóa khách.
  */
 @Schema({ timestamps: true, collection: 'care_logs' })
@@ -80,6 +80,13 @@ export class CareLog {
 
   @Prop({ type: Types.ObjectId, default: null })
   contactResultId: Types.ObjectId | null;
+
+  /**
+   * Mã bất biến của kết quả liên hệ, ghi kép với `contactResultId` (FR-40). `null` khi không chọn; bản ghi cũ
+   * chưa có field cho tới khi migration `007` điền (mapper dịch từ id để hiển thị).
+   */
+  @Prop({ type: String, default: null })
+  contactResultCode?: string | null;
 
   @Prop({ type: CareLogNextActionSchema, default: null })
   nextAction: CareLogNextAction | null;
@@ -119,3 +126,5 @@ CareLogSchema.index(
 CareLogSchema.index({ authorId: 1, occurredAt: -1 });
 // Đếm theo kết quả liên hệ (CrmUsageService).
 CareLogSchema.index({ contactResultId: 1 }, { sparse: true });
+// Cùng mục đích theo mã bất biến (FR-40, ghi kép).
+CareLogSchema.index({ contactResultCode: 1 }, { sparse: true });

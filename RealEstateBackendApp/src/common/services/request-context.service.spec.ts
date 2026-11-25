@@ -36,9 +36,8 @@ describe('RequestContextService (contract mục 4)', () => {
 
   it('hai ALS run lồng nhau (nested) → lấy ID của context gần nhất', () => {
     const outer = requestContextStorage.run({ requestId: 'outer' }, () => {
-      const inner = requestContextStorage.run(
-        { requestId: 'inner' },
-        () => service.getRequestId(),
+      const inner = requestContextStorage.run({ requestId: 'inner' }, () =>
+        service.getRequestId(),
       );
       return { inner, outerSelf: service.getRequestId() };
     });

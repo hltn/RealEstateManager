@@ -23,8 +23,6 @@ import {
 } from '../../../common/decorators/api-response.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
 import {
@@ -36,6 +34,7 @@ import {
   UpdateProjectDto,
 } from './dtos/project.dto';
 import { ProjectsService } from './projects.service';
+import { ActiveCrmUser } from '../common/access/active-crm-user.decorator';
 import { AdminOnly } from '../common/access/admin-only.decorator';
 
 /** Dự án (tài liệu 05 mục 2.8). Đọc: A/M/S. Thêm/sửa/ngừng hoạt động/xóa mềm/khôi phục: chỉ Quản trị. */
@@ -47,7 +46,7 @@ export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Get('projects')
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({
     summary: 'Danh sách dự án (isDeleted=true chỉ dành cho Quản trị)',
   })
@@ -57,7 +56,7 @@ export class ProjectsController {
   }
 
   @Get('projects/:id')
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({ summary: 'Chi tiết dự án' })
   @ApiDataResponse(ProjectDetailResponseDto)
   async getById(

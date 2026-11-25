@@ -3,15 +3,15 @@
  *
  * Quyết định [Chưa rõ]:
  * - Tiêu đề màn danh sách thực tế là "Quản lý khách hàng" (doc ghi "Khách hàng"); nút thêm khách là "Thêm khách".
- * - Trùng SĐT khi bấm "Lưu khách hàng": CHẶN NGAY Ở GIAO DIỆN (toast "Chưa thể lưu khách hàng" + lỗi cạnh ô SĐT "Số điện thoại đã có trong hệ thống."),
- *   không đợi máy chủ; dữ liệu đã nhập còn nguyên.
+ * - v1.0.5 (doc 10 FR-03, FR-10): ĐÃ BỎ tra trùng SĐT (banner "Đã có khách hàng...", "Xem hồ sơ", xin tham gia) và ô chọn "Người phụ trách chính";
+ *   người tạo luôn là PRIMARY. SĐT trùng được phép lưu (F2-03 viết lại theo quy tắc mới). Phần "không có SĐT" nằm ở F12-01.
  * - Tìm/lọc không ra kết quả: hiện "Không có khách hàng phù hợp" + hướng dẫn + nút "Xóa bộ lọc"; "Chưa có khách." + "Thêm khách đầu tiên"
  *   chỉ hiện khi hệ thống thật sự chưa có khách nào (không từ khoá/bộ lọc).
  * - F2-05 dùng hai trường cơ bản khác nhau (Email ở tab 1, Họ và tên ở tab 2) của màn "Chân dung khách hàng".
  */
 import { test, expect } from '../fixtures';
 import { formatPhone, uid, vnPhone } from '../lib/api';
-import { MOBILE_VIEWPORT, note, openCustomerDetail, searchCustomers, toast } from '../lib/ui';
+import { MOBILE_VIEWPORT, note, openCustomerDetail, searchCustomers, toast, waitPastLegacyDebounce } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
 /** Danh sách và chi tiết che phần giữa: "0935 ••• 721". */
@@ -21,6 +21,8 @@ const e164 = (phone: string): string => `+84${phone.slice(1)}`;
 const phoneBox = (page: Page) => page.getByLabel('Số điện thoại');
 const nameBox = (page: Page) => page.getByLabel('Họ và tên khách hàng');
 const dupBanner = (page: Page) => page.getByRole('alert').filter({ hasText: 'Đã có khách hàng với số điện thoại này' });
+/** Lưu thành công thì đứng ở chi tiết CHÍNH khách vừa tạo (không phải form, không phải danh sách). */
+const detailUrl = /\/crm\/customers\/[0-9a-f]{24}$/;
 
 test.describe('f2-customers', () => {
   test('F2-01 danh sách che SĐT; "Hiện số" lộ số đầy đủ và ghi log PHONE_VIEWED đúng 1 lần mỗi lần bấm', async ({ loginAs, api, backstage }) => {
@@ -71,7 +73,7 @@ test.describe('f2-customers', () => {
     await expect(page.getByRole('region', { name: 'Tóm tắt hồ sơ' }).getByRole('button', { name: 'Hiện số' })).toBeVisible();
   });
 
-  test('F2-02 thêm khách thành công: về chi tiết khách vừa tạo, người phụ trách mặc định là mình, Back không về form', async ({ loginAs, backstage, seed }, testInfo) => {
+  test('F2-02 thêm khách thành công: về chi tiết khách vừa tạo, người tạo là PRIMARY (không còn ô chọn người phụ trách), Back không về form', async ({ loginAs, backstage, seed }, testInfo) => {
     const page = await loginAs('staff1');
     const fullName = `Khách-Thêm-${uid()}`;
     const phone = vnPhone();
@@ -79,14 +81,13 @@ test.describe('f2-customers', () => {
     await page.getByRole('button', { name: 'Thêm khách' }).click();
     await expect(page).toHaveURL(/\/crm\/customers\/new$/);
     await expect(page.getByRole('heading', { name: 'Thêm khách hàng mới' })).toBeVisible();
-    // Người phụ trách chính đã là mình, khóa (không phải chọn lại).
-    const primary = page.getByLabel('Người phụ trách chính');
-    await expect(primary).toBeDisabled();
-    await expect(primary).toHaveValue(seed.users.staff1.id);
+    // v1.0.5: không còn ô "Người phụ trách chính" (người tạo tự là PRIMARY); form báo rõ điều đó.
+    await expect(page.getByLabel('Người phụ trách chính')).toHaveCount(0);
+    await expect(page.getByText('Người chăm sóc chính: bạn (tự động)')).toBeVisible();
 
     await nameBox(page).fill(fullName);
     await phoneBox(page).fill(phone);
-    await expect(page.getByText('Chưa có, tạo được')).toBeVisible(); // kiểm trùng thời gian thực
+    await expect(page.getByText('Chưa có, tạo được')).toHaveCount(0); // đã bỏ kiểm trùng thời gian thực
     const source = page.getByLabel('Nguồn khách');
     await source.selectOption({ index: 1 });
     // Khu vực là combobox có tìm kiếm (không còn là <select>): mở ô rồi chọn tỉnh đầu tiên trong listbox
@@ -109,9 +110,9 @@ test.describe('f2-customers', () => {
     expect(rows[0].__v).toBe(0);
     expect(rows[0].phone).toBe(e164(phone));
     expect(rows[0].areaId).toBeTruthy(); // khu vực chọn từ combobox được lưu
-    expect(rows[0].careTeam.map((m: { userId: unknown }) => String(m.userId))).toEqual([seed.users.staff1.id]);
+    expect(rows[0].careTeam.map((m: { userId: unknown; role: string }) => [String(m.userId), m.role])).toEqual([[seed.users.staff1.id, 'PRIMARY']]);
     expect(String(rows[0].primaryAssigneeId)).toBe(seed.users.staff1.id);
-    note(testInfo, 'TT', 'Thêm khách: 1 click mở form + 2 ô nhập (tên, SĐT) + 2 chọn (nguồn, khu vực, không bắt buộc) + 1 click lưu; người phụ trách không phải chọn.');
+    note(testInfo, 'TT', 'Thêm khách: 1 click mở form + 2 ô nhập (tên, SĐT) + 2 chọn (nguồn, khu vực, không bắt buộc) + 1 click lưu; người phụ trách không phải chọn (tự là PRIMARY).');
   });
 
   test('F2-02 "Hủy bỏ" ở form thêm khách quay về nơi đã mở form', async ({ loginAs }) => {
@@ -128,48 +129,52 @@ test.describe('f2-customers', () => {
     await expect(page).toHaveURL(/\/crm\/today$/);
   });
 
-  test('F2-03 trùng SĐT: khách trong phạm vi có "Xem hồ sơ"; khách ngoài phạm vi chỉ có đề nghị tham gia; Lưu bị chặn và giữ dữ liệu', async ({ loginAs, api, backstage }) => {
+  test('F2-03 trùng SĐT được phép (v1.0.5): lưu thành công với SĐT của khách cùng phạm vi lẫn khách ngoài phạm vi, không banner chặn, không lộ khách kia', async ({ loginAs, api, backstage, seed }) => {
     const x = await api.createCustomer({ label: 'Khách-X' }); // đội 1, staff1 thấy
     const y = await api.createCustomer({ role: 'staff2', label: 'Khách-Y' }); // đội 2, staff1 không thấy
     const page = await loginAs('staff1');
-    await page.goto('/crm/customers/new');
+    const net: string[] = [];
+    page.on('request', (r) => {
+      if (/phone-lookups|assignable-users|care-team-requests/.test(r.url())) net.push(`${r.method()} ${r.url()}`);
+    });
 
-    // A: trong phạm vi.
-    await phoneBox(page).fill(x.phone);
-    await expect(dupBanner(page)).toContainText('Đã có khách hàng với số điện thoại này.'); // trong phạm vi: không cần nêu người chăm sóc
-    await expect(page.getByText('Đã có trên hệ thống')).toBeVisible();
-    await page.getByRole('button', { name: 'Xem hồ sơ' }).click();
-    await expect(page).toHaveURL(new RegExp(`/crm/customers/${x.id}$`));
-    await expect(page.getByRole('heading', { name: x.fullName }).first()).toBeVisible();
+    for (const [dup, label] of [[x, 'cùng phạm vi'], [y, 'ngoài phạm vi']] as const) {
+      const fullName = `Khách-TrùngSĐT-${label}-${uid()}`;
+      await page.goto('/crm/customers/new');
+      await nameBox(page).fill(fullName);
+      await phoneBox(page).fill(dup.phone);
+      await phoneBox(page).blur();
+      await waitPastLegacyDebounce(page); // chờ thật quá debounce 500 ms cũ (kiểm phủ định: tra trùng đã bỏ, không chỉ chưa kịp hiện); `net` kiểm ở cuối test
+      // Không banner chặn, không nút "Xem hồ sơ"/xin tham gia, không lộ tên khách kia, ô SĐT không báo lỗi.
+      await expect(dupBanner(page)).toHaveCount(0);
+      await expect(page.getByText('Đã có trên hệ thống')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Xem hồ sơ|Đề nghị tham gia|Xin tham gia/ })).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(dup.fullName);
+      await expect(phoneBox(page)).not.toHaveAttribute('aria-invalid', 'true');
 
-    // B: ngoài phạm vi - không lộ tên/SĐT của khách, có lối đi tiếp.
-    await page.goto('/crm/customers/new');
-    await nameBox(page).fill('Tên đã nhập, phải còn nguyên');
-    await phoneBox(page).fill(y.phone);
-    await expect(dupBanner(page)).toContainText('Đã có khách hàng với số điện thoại này, do Nhân viên Hai chăm sóc.');
-    await expect(dupBanner(page)).not.toContainText(y.fullName);
-    await expect(page.locator('body')).not.toContainText(y.fullName);
-    await expect(page.getByRole('button', { name: 'Xem hồ sơ' })).toHaveCount(0);
+      // Lưu: thành công, vào chi tiết CHÍNH khách vừa tạo (không phải khách trùng SĐT).
+      await page.getByRole('button', { name: 'Lưu khách hàng' }).click();
+      await expect(toast(page, 'Thêm khách hàng thành công')).toContainText(`${fullName} đã được thêm vào hệ thống.`);
+      await expect(page).toHaveURL(detailUrl);
+      await expect(page).not.toHaveURL(new RegExp(`/crm/customers/${dup.id}$`));
+      await expect(page.getByRole('heading', { name: fullName }).first()).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Hồ sơ khách hàng' })).toContainText('Phụ trách chính: Nhân viên Một');
+      await expect(page.locator('body')).not.toContainText(dup.fullName);
+      // Back không quay về form đã lưu.
+      await page.goBack();
+      await expect(page).not.toHaveURL(/\/crm\/customers\/new$/);
+    }
 
-    // Cố bấm Lưu khi trùng: chặn, báo tiếng Việt, giữ dữ liệu, không tạo khách.
-    await page.getByRole('button', { name: 'Lưu khách hàng' }).click();
-    await expect(toast(page, 'Chưa thể lưu khách hàng')).toContainText('Số điện thoại đã có trong hệ thống.');
-    await expect(page.locator('#cc-desktop-phone-error')).toHaveText('Số điện thoại đã có trong hệ thống.');
-    await expect(nameBox(page)).toHaveValue('Tên đã nhập, phải còn nguyên');
-    await expect(phoneBox(page)).toHaveValue(y.phone);
-    expect(await backstage.count('customers', { phone: e164(y.phone) })).toBe(1);
-
-    // Đề nghị tham gia nhóm: gửi được, trạng thái "đang chờ duyệt" giữ sau khi tải lại.
-    await page.getByRole('button', { name: 'Đề nghị tham gia nhóm chăm sóc' }).click();
-    await expect(toast(page, 'Đã gửi đề nghị tham gia nhóm chăm sóc')).toBeVisible();
-    await expect(dupBanner(page)).toContainText('Đã gửi đề nghị, đang chờ duyệt');
-    await page.reload();
-    await phoneBox(page).fill(y.phone);
-    await expect(dupBanner(page)).toContainText('Đã gửi đề nghị, đang chờ duyệt');
-    const requests = (await backstage.find('care_team_requests')).filter((r) => String(r.customerId) === y.id);
-    expect(requests).toHaveLength(1);
-    expect(requests[0].status).toBe('PENDING');
-    expect(await backstage.count('customers', { fullName: 'Tên đã nhập, phải còn nguyên' })).toBe(0);
+    // Hậu trường: mỗi SĐT có 2 khách riêng biệt; khách mới do staff1 là PRIMARY; khách Y KHÔNG bị đụng (nhóm chăm sóc vẫn chỉ staff2).
+    for (const dup of [x, y]) {
+      const same = await backstage.find('customers', { phone: e164(dup.phone) });
+      expect(same, `SĐT ${dup.phone} phải có đúng 2 khách (khách mồi + khách mới)`).toHaveLength(2);
+      const created = same.find((c) => String(c._id) !== dup.id)!;
+      expect(created.careTeam.map((m: { userId: unknown; role: string }) => [String(m.userId), m.role])).toEqual([[seed.users.staff1.id, 'PRIMARY']]);
+    }
+    const yRow = (await backstage.find('customers', { phone: e164(y.phone) })).find((c) => String(c._id) === y.id)!;
+    expect(yRow.careTeam.map((m: { userId: unknown }) => String(m.userId))).toEqual([seed.users.staff2.id]);
+    expect(net, 'không gọi endpoint đã bỏ (phone-lookups / assignable-users / care-team-requests)').toEqual([]);
   });
 
   test('F2-04 tìm không dấu có debounce, lọc theo dự án, tab rỗng có hướng dẫn', async ({ loginAs, api }, testInfo) => {

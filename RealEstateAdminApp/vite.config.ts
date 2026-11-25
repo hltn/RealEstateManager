@@ -1,15 +1,43 @@
 /// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import svgr from 'vite-plugin-svgr'
 import { VitePWA } from 'vite-plugin-pwa'
+import { createRuntimeConfigMiddleware } from './src/config/devRuntimeConfig.ts'
+
+// Thư mục GỐC repo (cha của RealEstateAdminApp): nơi duy nhất đặt `.env` (một danh sách khóa cho mọi thành phần, FR-18).
+const REPO_ROOT_DIR = fileURLToPath(new URL('..', import.meta.url))
+
+/**
+ * Cấu hình FE lúc chạy (FR-15) cho dev/preview: phục vụ `/env.js` từ `.env` ở GỐC repo + `process.env` (process.env thắng, e2e dùng đường này).
+ * Production không qua plugin này: entrypoint nginx sinh cùng file từ env của container. Chỉ phát khóa allowlist của
+ * `src/config/runtimeConfigSchema.ts` (không rò mật khẩu/secret trong `.env`), giá trị sai bị bỏ để FE dùng mặc định.
+ * Đọc env MỖI request: sửa `.env` rồi tải lại trang là có hiệu lực (không cần build lại).
+ */
+const runtimeConfigPlugin = (): Plugin => {
+  let mode = 'development'
+  const middleware = createRuntimeConfigMiddleware(() => loadEnv(mode, REPO_ROOT_DIR, ''))
+  return {
+    name: 'stnd-runtime-config',
+    configResolved: (config) => {
+      mode = config.mode
+    },
+    configureServer: (server) => {
+      server.middlewares.use(middleware)
+    },
+    configurePreviewServer: (server) => {
+      server.middlewares.use(middleware)
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    runtimeConfigPlugin(),
     react(),
     tailwindcss(),
     svgr({
@@ -61,8 +89,10 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // [Prototype] Module CRM alias
+      // Alias module CRM (`@crm/*` trỏ tới src/modules/crm)
       '@crm': fileURLToPath(new URL('./src/modules/crm', import.meta.url)),
+      // Alias module tin tức/crawl (`@news/*` trỏ tới src/modules/news)
+      '@news': fileURLToPath(new URL('./src/modules/news', import.meta.url)),
     },
   },
   server: {
@@ -78,8 +108,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
-    // Spec Playwright (e2e/) chạy bằng `npm run e2e`, không phải vitest.
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    // Spec Playwright (e2e/specs, e2e/specs-mock) chạy bằng `npm run e2e`, không phải vitest; test đơn vị của e2e/env.ts thì chạy ở đây.
+    exclude: [...configDefaults.exclude, 'e2e/specs/**', 'e2e/specs-mock/**'],
     pool: 'forks',
     // Màn hình nặng (ManageWp...) render chậm khi chạy song song cả suite; 5s mặc định gây flaky.
     testTimeout: 15_000,

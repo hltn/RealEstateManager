@@ -1,0 +1,147 @@
+/**
+ * `CustomerCard` - cả thẻ bấm được để mở chi tiết khách (như hàng bảng desktop), dùng ContactActionGrid THẬT:
+ * chạm vùng trống / nút tên = đúng 1 lần `selectCustomer`; nút liên hệ không kích hoạt thẻ (chặn nổi bọt).
+ */
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CustomerListItem } from '@crm/api';
+
+const mocks = vi.hoisted(() => ({
+  copyTextToClipboard: vi.fn(),
+  selectCustomer: vi.fn(),
+  callCustomer: vi.fn(),
+  messageZalo: vi.fn(),
+  openQuickNote: vi.fn(),
+}));
+
+vi.mock('@crm/store', () => ({ useCrmActions: () => ({ selectCustomer: mocks.selectCustomer }) }));
+vi.mock('@crm/hooks/useContactActions', () => ({
+  useContactActions: () => ({ callCustomer: mocks.callCustomer, messageZalo: mocks.messageZalo, openQuickNote: mocks.openQuickNote }),
+}));
+
+vi.mock('@crm/lib/clipboard', () => ({ copyTextToClipboard: mocks.copyTextToClipboard }));
+vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
+
+import { CustomerCard } from './CustomerCard';
+
+const customer = (overrides: Partial<CustomerListItem> = {}): CustomerListItem => ({
+  id: 'c1',
+  customerCode: 'KH-000001',
+  fullName: 'Nguyễn Văn An',
+  phoneMasked: '0912 ••• 678',
+  purchasePurposes: [],
+  status: { id: 'NOT_CONTACTED', code: 'NOT_CONTACTED', label: 'Chưa tiếp cận', listGroup: 'NOT_CONTACTED', tone: 'gray' },
+  source: null,
+  projects: [],
+  area: null,
+  tags: [],
+  progress: 0,
+  criteriaDone: { demand: false, motivation: false, finance: false, timing: false },
+  primaryAssignee: null,
+  careTeamSize: 0,
+  nextAppointmentAt: null,
+  lastCareLogAt: null,
+  lastUpdatedAt: '2026-10-24T01:00:00.000Z',
+  personaCompleteness: 0,
+  ...overrides,
+});
+
+describe('CustomerCard - bấm thẻ mở chi tiết', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.copyTextToClipboard.mockResolvedValue(true);
+  });
+
+  const renderCard = () => render(<CustomerCard customer={customer()} />).container.querySelector('article') as HTMLElement;
+
+  it('thẻ là vùng bấm được (con trỏ tay)', () => {
+    expect(renderCard()).toHaveClass('cursor-pointer');
+  });
+
+  it('bấm vùng trống của thẻ -> selectCustomer đúng 1 lần với id khách', async () => {
+    await userEvent.click(renderCard());
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.selectCustomer).toHaveBeenCalledWith('c1');
+  });
+
+  it('bấm vào chữ không tương tác (SĐT) cũng mở chi tiết, đúng 1 lần', async () => {
+    renderCard();
+    await userEvent.click(screen.getByText('0912 ••• 678'));
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.selectCustomer).toHaveBeenCalledWith('c1');
+  });
+
+  it('bấm nút tên -> đúng 1 lần (không gấp đôi do nút + thẻ)', async () => {
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.selectCustomer).toHaveBeenCalledWith('c1');
+  });
+
+  it.each(['Enter', ' '])('bàn phím: focus nút tên rồi nhấn %j -> đúng 1 lần', async (key) => {
+    renderCard();
+    const user = userEvent.setup();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Nguyễn Văn An' })).toHaveFocus();
+    await user.keyboard(key === ' ' ? ' ' : `{${key}}`);
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.selectCustomer).toHaveBeenCalledWith('c1');
+  });
+
+  it.each([
+    ['Gọi', 'callCustomer'],
+    ['Zalo', 'messageZalo'],
+    ['Ghi chú', 'openQuickNote'],
+  ] as const)('bấm nút "%s" -> chạy hành động liên hệ, KHÔNG mở chi tiết', async (name, action) => {
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name }));
+    expect(mocks[action]).toHaveBeenCalledWith('c1');
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  it('bấm nút "Xem" -> mở chi tiết đúng 1 lần (nút tự xử lý, thẻ không gọi thêm)', async () => {
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name: 'Xem' }));
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.selectCustomer).toHaveBeenCalledWith('c1');
+  });
+
+  it('bấm khe giữa các nút liên hệ (nền cụm nút) -> không mở chi tiết', async () => {
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name: 'Gọi' }).parentElement as HTMLElement);
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  it('bấm nút mã khách -> sao chép đúng mã, KHÔNG mở chi tiết; nút nằm trong <article> và không lồng trong nút/liên kết khác', async () => {
+    const article = renderCard();
+    const copyButton = screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' });
+    expect(copyButton.parentElement?.closest('button, a')).toBeNull();
+    await userEvent.click(copyButton);
+    expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000001');
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+    expect(article).toContainElement(copyButton);
+  });
+
+  // Enter bắn click ở keydown, Space bắn click ở keyup: cả hai phải sao chép và KHÔNG nổi bọt lên <article> mở chi tiết.
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', ' '],
+  ])('bàn phím: focus nút mã rồi nhấn %s -> sao chép đúng 1 lần, KHÔNG mở chi tiết', async (_label, keys) => {
+    renderCard();
+    const user = userEvent.setup();
+    await user.tab();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' })).toHaveFocus();
+    await user.keyboard(keys);
+    expect(mocks.copyTextToClipboard).toHaveBeenCalledExactlyOnceWith('KH-000001');
+    expect(mocks.selectCustomer).not.toHaveBeenCalled();
+  });
+
+  it('sau khi sao chép, bấm vùng khác của thẻ vẫn mở chi tiết bình thường', async () => {
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name: 'Sao chép mã khách KH-000001' }));
+    await userEvent.click(screen.getByText('0912 ••• 678'));
+    expect(mocks.selectCustomer).toHaveBeenCalledTimes(1);
+  });
+});

@@ -20,11 +20,19 @@ export const isDeniedNavigationPath = (pathname: string): boolean =>
   NAVIGATION_DENYLIST.some((pattern) => pattern.test(pathname));
 
 /**
- * URL không được precache dù plugin tự thêm: manifest.webmanifest phải luôn lấy từ mạng
- * (precache là cache-first nên đổi tên/icon/màu sẽ bị kẹt bản cũ).
+ * Tệp (đường dẫn gốc, không query/hash) KHÔNG được precache dù plugin tự thêm hay build lỡ phát ra:
+ *  - manifest.webmanifest: phải luôn lấy từ mạng (precache là cache-first nên đổi tên/icon/màu sẽ bị kẹt bản cũ);
+ *  - env.js (FR-15): cấu hình lúc chạy do nginx/entrypoint sinh khi khởi động container. Precache cache-first sẽ giữ cờ cũ
+ *    sau khi đổi cờ + restart (không build lại), nên luôn phải lấy từ mạng. Luật này là phòng thủ: hiện không có luật nào khác cache nó.
  */
-const PRECACHE_EXCLUDED_URLS: readonly string[] = ['manifest.webmanifest'];
+const PRECACHE_EXCLUDED_FILES: readonly string[] = ['manifest.webmanifest', 'env.js'];
 
-/** Lọc danh sách precache do plugin chèn (`self.__WB_MANIFEST`), bỏ các URL trong PRECACHE_EXCLUDED_URLS. */
+/** Có phải mục precache bị loại: so khớp tên tệp gốc sau khi bỏ `/` đầu, query (`?v=1`) và hash (`#x`) để không lách được bằng hậu tố. */
+export const isPrecacheExcluded = (url: string): boolean => {
+  const path = url.split(/[?#]/, 1)[0].replace(/^\/+/, '');
+  return PRECACHE_EXCLUDED_FILES.includes(path);
+};
+
+/** Lọc danh sách precache do plugin chèn (`self.__WB_MANIFEST`), bỏ các mục thỏa `isPrecacheExcluded`. */
 export const filterPrecacheEntries = <T extends string | { url: string }>(entries: readonly T[]): T[] =>
-  entries.filter((entry) => !PRECACHE_EXCLUDED_URLS.includes(typeof entry === 'string' ? entry : entry.url));
+  entries.filter((entry) => !isPrecacheExcluded(typeof entry === 'string' ? entry : entry.url));

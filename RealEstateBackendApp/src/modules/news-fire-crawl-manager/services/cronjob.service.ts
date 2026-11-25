@@ -6,7 +6,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /** Callback được controller đăng ký để CronjobService không phụ thuộc vòng vào controller. */
-type MarketAnalysisWorkflowTrigger = () => Promise<{ jobId: string }> | { jobId: string };
+type MarketAnalysisWorkflowTrigger = () =>
+  | Promise<{ jobId: string }>
+  | { jobId: string };
 
 @Injectable()
 export class CronjobService implements OnApplicationBootstrap {
@@ -26,8 +28,12 @@ export class CronjobService implements OnApplicationBootstrap {
    */
   onApplicationBootstrap() {
     const envFileConfig = this.loadConfigFromEnvFile();
-    const envActive = envFileConfig.isActive ?? this.configService.get<string>('DAILY_CRAWLER_ACTIVE');
-    const envFreq = envFileConfig.frequency ?? this.configService.get<string>('DAILY_CRAWLER_FREQUENCY');
+    const envActive =
+      envFileConfig.isActive ??
+      this.configService.get<string>('DAILY_CRAWLER_ACTIVE');
+    const envFreq =
+      envFileConfig.frequency ??
+      this.configService.get<string>('DAILY_CRAWLER_FREQUENCY');
 
     this.isActive = envActive === 'true';
     if (envFreq && envFreq.trim() !== '') {
@@ -37,26 +43,42 @@ export class CronjobService implements OnApplicationBootstrap {
     if (this.isActive) {
       this.startCron();
     } else {
-      this.logger.log('Cronjob is currently disabled from persistent env configuration.');
+      this.logger.log(
+        'Cronjob is currently disabled from persistent env configuration.',
+      );
     }
   }
 
   private getCronConfigFilePath(): string {
-    return this.configService.get<string>('CRON_CONFIG_FILE') || path.resolve(process.cwd(), '.env');
+    return (
+      this.configService.get<string>('CRON_CONFIG_FILE') ||
+      path.resolve(process.cwd(), '.env')
+    );
   }
 
-  /** Đọc trực tiếp file bind-mount vì process.env không đổi sau khi runtime sửa .env. */
+  /**
+   * Đọc trực tiếp file cấu hình cron (CRON_CONFIG_FILE, thường nằm trong volume /app/state)
+   * vì process.env không đổi sau khi runtime ghi file.
+   * File thiếu (lần chạy đầu) hoặc khóa rỗng/hỏng => trả undefined để caller rơi về biến env.
+   */
   private loadConfigFromEnvFile(): { isActive?: string; frequency?: string } {
     try {
       const envPath = this.getCronConfigFilePath();
       if (!fs.existsSync(envPath)) return {};
       const content = fs.readFileSync(envPath, 'utf8');
       return {
-        isActive: content.match(/^DAILY_CRAWLER_ACTIVE=(.*)$/m)?.[1]?.trim(),
-        frequency: content.match(/^DAILY_CRAWLER_FREQUENCY=(.*)$/m)?.[1]?.trim(),
+        isActive:
+          content.match(/^DAILY_CRAWLER_ACTIVE=(.*)$/m)?.[1]?.trim() ||
+          undefined,
+        frequency:
+          content.match(/^DAILY_CRAWLER_FREQUENCY=(.*)$/m)?.[1]?.trim() ||
+          undefined,
       };
     } catch (error: any) {
-      this.logger.error('Failed to load persistent cron configuration', error?.stack);
+      this.logger.error(
+        'Failed to load persistent cron configuration',
+        error?.stack,
+      );
       return {};
     }
   }
@@ -65,7 +87,9 @@ export class CronjobService implements OnApplicationBootstrap {
    * Đăng ký workflow đầy đủ cho Daily News Crawler. Callback được cung cấp bởi
    * controller sau khi module khởi tạo để tránh circular dependency.
    */
-  setMarketAnalysisWorkflowTrigger(trigger: MarketAnalysisWorkflowTrigger): void {
+  setMarketAnalysisWorkflowTrigger(
+    trigger: MarketAnalysisWorkflowTrigger,
+  ): void {
     this.marketAnalysisWorkflowTrigger = trigger;
   }
 
@@ -102,25 +126,34 @@ export class CronjobService implements OnApplicationBootstrap {
   private startCron() {
     try {
       const job = new CronJob(this.frequency, async () => {
-        this.logger.log(`Executing Daily News Crawler at ${new Date().toISOString()}`);
+        this.logger.log(
+          `Executing Daily News Crawler at ${new Date().toISOString()}`,
+        );
         await this.executeWorkflow();
       });
 
       this.schedulerRegistry.addCronJob(this.JOB_NAME, job);
       job.start();
-      this.logger.log(`Cronjob configured and started with frequency: ${this.frequency}`);
+      this.logger.log(
+        `Cronjob configured and started with frequency: ${this.frequency}`,
+      );
     } catch (error: any) {
-      this.logger.error(`Failed to start cron with frequency: ${this.frequency}`, error?.stack);
+      this.logger.error(
+        `Failed to start cron with frequency: ${this.frequency}`,
+        error?.stack,
+      );
     }
   }
 
   /**
-   * Lưu cấu hình ra file .env ở thư mục gốc của project (nơi được Docker mount).
+   * Lưu cấu hình ra file CRON_CONFIG_FILE (volume /app/state/cron.env khi chạy Docker;
+   * mặc định cwd/.env khi dev). Tạo thư mục cha nếu thiếu.
    * Dùng regex để replace (nếu có) hoặc append (nếu chưa có).
    */
   private saveConfigToEnv(isActive: boolean, frequency: string) {
     try {
       const envPath = this.getCronConfigFilePath();
+      fs.mkdirSync(path.dirname(envPath), { recursive: true });
       let envContent = '';
 
       if (fs.existsSync(envPath)) {
@@ -132,21 +165,27 @@ export class CronjobService implements OnApplicationBootstrap {
       const freqRegex = /^DAILY_CRAWLER_FREQUENCY=.*$/m;
 
       if (activeRegex.test(envContent)) {
-        envContent = envContent.replace(activeRegex, `DAILY_CRAWLER_ACTIVE=${isActive}`);
+        envContent = envContent.replace(
+          activeRegex,
+          `DAILY_CRAWLER_ACTIVE=${isActive}`,
+        );
       } else {
-        envContent += `\nDAILY_CRAWLER_ACTIVE=${isActive}`;
+        envContent = `${envContent.trimEnd()}\nDAILY_CRAWLER_ACTIVE=${isActive}`;
       }
 
       if (freqRegex.test(envContent)) {
-        envContent = envContent.replace(freqRegex, `DAILY_CRAWLER_FREQUENCY=${frequency}`);
+        envContent = envContent.replace(
+          freqRegex,
+          `DAILY_CRAWLER_FREQUENCY=${frequency}`,
+        );
       } else {
-        envContent += `\nDAILY_CRAWLER_FREQUENCY=${frequency}`;
+        envContent = `${envContent.trimEnd()}\nDAILY_CRAWLER_FREQUENCY=${frequency}`;
       }
 
       fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf8');
-      this.logger.log(`Saved cron configuration to .env`);
+      this.logger.log(`Saved cron configuration to ${envPath}`);
     } catch (error: any) {
-      this.logger.error('Failed to save cron configuration to .env', error?.stack);
+      this.logger.error('Failed to save cron configuration file', error?.stack);
     }
   }
 
@@ -157,15 +196,22 @@ export class CronjobService implements OnApplicationBootstrap {
    */
   private async executeWorkflow(): Promise<void> {
     if (!this.marketAnalysisWorkflowTrigger) {
-      this.logger.error('Daily News Crawler skipped: market analysis workflow trigger is not registered.');
+      this.logger.error(
+        'Daily News Crawler skipped: market analysis workflow trigger is not registered.',
+      );
       return;
     }
 
     try {
       const { jobId } = await this.marketAnalysisWorkflowTrigger();
-      this.logger.log(`Daily News Crawler started market analysis workflow job ${jobId}.`);
+      this.logger.log(
+        `Daily News Crawler started market analysis workflow job ${jobId}.`,
+      );
     } catch (error: any) {
-      this.logger.error('Error triggering market analysis workflow from cron', error?.stack);
+      this.logger.error(
+        'Error triggering market analysis workflow from cron',
+        error?.stack,
+      );
     }
   }
 }

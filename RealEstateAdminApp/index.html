@@ -16,6 +16,8 @@
     <meta name="apple-mobile-web-app-title" content="STND" />
     <!-- default: thanh trạng thái iOS nền trắng chữ đen, nội dung nằm dưới thanh (không bị tai thỏ che) -->
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- Cấu hình lúc chạy (FR-15): /env.js gán window.__APP_CONFIG__ (src/config/runtimeConfig.ts). Script thường (không defer/module) để chạy TRƯỚC script app. -->
+    <script src="/env.js"></script>
     <script>
       // Áp lớp `dark` trước khi vẽ để người đã chọn tối không bị nháy sáng→tối. Mặc định (chưa chọn) là sáng.
       try {

@@ -61,7 +61,9 @@ const toVietnameseLocal = (input: string): string | null => {
  * Chuẩn hoá về E.164. Trả `null` nếu không hợp lệ (backend trả 400 `INVALID_PHONE`).
  * Số VN -> "+84..."; số mang mã +84/0084 mà sai mẫu VN bị chặn; số nước ngoài cần "+" hoặc "00" và đúng E.164.
  */
-export const normalizePhone = (input: string): string | null => {
+export const normalizePhone = (input: string | null | undefined): string | null => {
+  // Khách có thể chưa có SĐT (v1.0.5): null/undefined không hợp lệ nhưng không ném lỗi.
+  if (input === null || input === undefined) return null;
   // Chỉ chấp nhận chữ số, khoảng trắng, ( ) . + - — còn ký tự khác (chữ, dấu nháy...) là sai (không "lọc ngầm" thành số).
   if (/[^\d\s().+-]/.test(input)) return null;
   const local = toVietnameseLocal(input);
@@ -72,10 +74,11 @@ export const normalizePhone = (input: string): string | null => {
   return E164_PATTERN.test(e164) ? e164 : null;
 };
 
-export const isValidPhone = (input: string): boolean => normalizePhone(input) !== null;
+export const isValidPhone = (input: string | null | undefined): boolean => normalizePhone(input) !== null;
 
-/** "+84912345678" -> "0912 345 678"; máy bàn 11 số -> "0283 822 1234"; số nước ngoài giữ E.164. */
-export const formatPhoneDisplay = (phone: string): string => {
+/** "+84912345678" -> "0912 345 678"; máy bàn 11 số -> "0283 822 1234"; số nước ngoài giữ E.164. Khách không có SĐT (null) -> "". */
+export const formatPhoneDisplay = (phone: string | null | undefined): string => {
+  if (phone === null || phone === undefined) return '';
   const normalized = normalizePhone(phone);
   if (!normalized) return phone.trim();
   if (!normalized.startsWith('+84')) return normalized;
@@ -83,8 +86,9 @@ export const formatPhoneDisplay = (phone: string): string => {
   return `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}`;
 };
 
-/** Dạng nội địa không khoảng trắng để gọi/Zalo: "+84912345678" -> "0912345678". */
-export const toLocalDigits = (phone: string): string => {
+/** Dạng nội địa không khoảng trắng để gọi/Zalo: "+84912345678" -> "0912345678". Không có SĐT -> "". */
+export const toLocalDigits = (phone: string | null | undefined): string => {
+  if (phone === null || phone === undefined) return '';
   const normalized = normalizePhone(phone);
   if (normalized?.startsWith('+84')) return `0${normalized.slice(3)}`;
   return digitsOnly(phone);
@@ -93,7 +97,8 @@ export const toLocalDigits = (phone: string): string => {
 /**
  * Các biến thể chữ số đưa vào `searchText` để tìm theo SĐT (04 §3.2.3): "0912345678", "84912345678", "912345678".
  */
-export const getPhoneSearchVariants = (phone: string): string[] => {
+export const getPhoneSearchVariants = (phone: string | null | undefined): string[] => {
+  if (phone === null || phone === undefined) return [];
   const normalized = normalizePhone(phone);
   if (!normalized) return [digitsOnly(phone)].filter(Boolean);
   const international = normalized.slice(1);
@@ -102,8 +107,8 @@ export const getPhoneSearchVariants = (phone: string): string[] => {
   return [`0${national}`, international, national];
 };
 
-/** Che SĐT khi chưa được phép xem đầy đủ: "+84912345678" -> "0912 345 •••". */
-export const maskPhoneDisplay = (phone: string): string => {
+/** Che SĐT khi chưa được phép xem đầy đủ: "+84912345678" -> "0912 345 •••". Không có SĐT -> "". */
+export const maskPhoneDisplay = (phone: string | null | undefined): string => {
   const display = formatPhoneDisplay(phone);
   return display.length > 3 ? `${display.slice(0, -3)}•••` : display;
 };

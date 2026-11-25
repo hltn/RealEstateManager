@@ -1,7 +1,7 @@
 /**
  * Màn Báo cáo (X6) dùng chung desktop + mobile — bố cục co giãn bằng Tailwind (mobile-first).
- * M8 (giai đoạn 2): CHƯA có API dashboard nên màn chạy trên DỮ LIỆU MẪU trong trình duyệt khi bật cờ `VITE_CRM_MOCK_REPORTS`
- * (mặc định bật ở dev, tắt ở production -> hiện thông báo "sắp ra mắt"). Số liệu mẫu KHÔNG phải số liệu thật của hệ thống.
+ * M8 (giai đoạn 2): CHƯA có API dashboard nên màn chạy trên DỮ LIỆU MẪU trong trình duyệt khi bật cờ `CRM_MOCK_REPORTS`
+ * (mặc định tắt -> hiện thông báo "sắp ra mắt"). Số liệu mẫu KHÔNG phải số liệu thật của hệ thống.
  */
 import { ChartPie, Construction, Download, FolderKanban, MapPin, Megaphone, RotateCcw, UserCheck, UserMinus, UserRound, UserRoundCheck, Users } from 'lucide-react';
 import type { DashboardDateField } from '@crm/api';

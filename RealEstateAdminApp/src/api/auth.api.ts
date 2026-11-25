@@ -1,5 +1,6 @@
 import apiAxios from './axios';
 import type { LoginResponse, MeResponse, RefreshResponse } from '../types/user';
+import { clearPushRegistration, readPushSubscriptionId } from '../pwa/pushStorage';
 
 /**
  * Gọi `POST /auth/login`.
@@ -26,9 +27,16 @@ export async function refresh(): Promise<RefreshResponse> {
 /**
  * Gọi `POST /auth/logout`. Backend revoke refresh token trong DB + clear cookie.
  * Idempotent: token không tồn tại cũng không throw.
+ * Có id subscription push đã lưu (T-40, FR-01) thì gửi kèm `{ pushSubscriptionId }` để server thu hồi đúng thiết bị này
+ * (không có thì body rỗng, hành vi như cũ). Bản ghi cục bộ luôn được xóa, kể cả khi gọi lỗi, để lần đăng nhập sau làm tươi ngay.
  */
 export async function logout(): Promise<void> {
-  await apiAxios.post<{ message: string }>('/auth/logout');
+  const pushSubscriptionId = readPushSubscriptionId();
+  try {
+    await apiAxios.post<{ message: string }>('/auth/logout', pushSubscriptionId ? { pushSubscriptionId } : undefined);
+  } finally {
+    clearPushRegistration();
+  }
 }
 
 /**

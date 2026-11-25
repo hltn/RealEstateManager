@@ -57,7 +57,11 @@ export const CustomerInfoCard = ({ customer }: CustomerInfoCardProps) => {
         <InfoField label="CCCD">
           <NationalIdField customer={customer} />
         </InfoField>
-        <InfoField label="Số điện thoại"><PhoneDisplay customer={customer} /></InfoField>
+        {customer.phoneMasked !== null && (
+          <InfoField label="Số điện thoại">
+            <PhoneDisplay customer={customer} />
+          </InfoField>
+        )}
         <InfoField label="Email">{orEmptyText(customer.email)}</InfoField>
         <InfoField label="Tạo lúc">
           {formatVnDateTime(customer.createdAt)} · {customer.createdBy.displayName}

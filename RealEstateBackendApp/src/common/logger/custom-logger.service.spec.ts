@@ -92,9 +92,7 @@ describe('CustomLogger (contract mục 3 — no console.log)', () => {
     });
 
     it('log(object) → JSON.stringify kèm prefix', () => {
-      withFakeStack(CALLER_STACK, () =>
-        logger.log({ k: 'v', n: 42 }),
-      );
+      withFakeStack(CALLER_STACK, () => logger.log({ k: 'v', n: 42 }));
 
       const msg = superLogSpy.mock.calls[0][0] as string;
       expect(msg).toBe(EXPECTED_PREFIX + '{"k":"v","n":42}');
@@ -129,9 +127,7 @@ describe('CustomLogger (contract mục 3 — no console.log)', () => {
 
     it('log(undefined) → "undefined" kèm prefix', () => {
       withFakeStack(CALLER_STACK, () => logger.log(undefined));
-      expect(superLogSpy.mock.calls[0][0]).toBe(
-        EXPECTED_PREFIX + 'undefined',
-      );
+      expect(superLogSpy.mock.calls[0][0]).toBe(EXPECTED_PREFIX + 'undefined');
     });
   });
 

@@ -204,7 +204,7 @@ export const CareTimeline = ({ careLogs, isFramed = true, isLoading = false, has
   if (!isFramed) return content;
   return (
     <section aria-label="Nhật ký chăm sóc" className={`${CARD_CLASS} space-y-4 p-5`}>
-      <CardHeading icon={Activity} title="Nhật ký chăm sóc" as="h3" trailing={<span className={MUTED_TEXT_CLASS}>{careLogs.length}{hasMore ? '+' : ''} mục</span>} />
+      <CardHeading icon={Activity} title="Nhật ký chăm sóc" as="h3" shouldWrapTrailing trailing={<span className={`whitespace-nowrap ${MUTED_TEXT_CLASS}`}>{careLogs.length}{hasMore ? '+' : ''} mục</span>} />
       {content}
     </section>
   );

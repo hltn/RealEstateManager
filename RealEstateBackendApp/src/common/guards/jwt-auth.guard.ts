@@ -58,7 +58,7 @@ export class JwtAuthGuard implements CanActivate {
 
     let payload: Record<string, unknown>;
     try {
-      payload = this.jwtService.verify(token) as Record<string, unknown>;
+      payload = this.jwtService.verify(token);
     } catch {
       // Token sai chữ ký / hết hạn / malformed → cùng message để không rò rỉ thông tin.
       throw new UnauthorizedException('Missing or invalid access token');

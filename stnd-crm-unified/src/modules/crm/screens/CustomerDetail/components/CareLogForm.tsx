@@ -3,13 +3,14 @@
 import { useState, type FormEvent } from 'react';
 import { CalendarClock, CircleCheck, MessageSquareText, Save } from 'lucide-react';
 import { useCatalogs, type CustomerDetail } from '@crm/api';
+import { ToggleRow } from '@crm/components/form/ToggleRow';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { CONTACT_CHANNEL_LABELS, CONTACT_CHANNEL_ORDER } from '@crm/lib/customerAdapters';
+import { getVnTodayKey } from '@crm/lib/dateTime';
 import {
   BUTTON_DASHED_CLASS,
   BUTTON_PRIMARY_LG_CLASS,
   CARD_CLASS,
-  CHECKBOX_CLASS,
   DIVIDER_CLASS,
   FORM_HINT_CLASS,
   FORM_LABEL_CLASS,
@@ -20,6 +21,8 @@ import type { ContactChannel } from '@crm/types/crm';
 import { fromDateTimeLocalValue, getSuggestedFollowUpIso, toDateTimeLocalValue } from '../customerDetailUtils';
 import { MAX_ATTACHED_PHOTOS, MAX_PHOTO_BYTES, useAttachedPhotos } from '../useAttachedPhotos';
 import { useCustomerDetailActions } from '../useCustomerDetailActions';
+import { ReminderSelectField, ScheduleDateTimeFields } from '../../CreateAppointment/components/ScheduleDateTimeFields';
+import { DEFAULT_REMINDER_MINUTES, DEFAULT_TIME, validateScheduleDateTime } from '../../CreateAppointment/createAppointmentForm';
 import { AttachedPhotoTray, CardHeading, PhotoPickerButton } from './DetailParts';
 
 interface CareLogFormProps {
@@ -41,9 +44,21 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
   const [nextSuggestion, setNextSuggestion] = useState('');
   const [nextDueLocal, setNextDueLocal] = useState('');
   const [shouldCreateAppointment, setShouldCreateAppointment] = useState(false);
+  const [remindBeforeMinutes, setRemindBeforeMinutes] = useState(DEFAULT_REMINDER_MINUTES);
+  // Đã bấm Lưu khi bật "Tạo lịch hẹn" mà ngày/giờ chưa hợp lệ: từ đó mới hiện lỗi cạnh ô (không báo lỗi khi người dùng chưa nhập xong).
+  const [hasTriedSubmit, setHasTriedSubmit] = useState(false);
+  // `nextDueLocal` đang là mốc MẶC ĐỊNH do công tắc điền sẵn (hôm nay 09:30), người dùng chưa chỉnh tay: gợi ý từ "kết quả liên hệ" được phép thay nó; mốc đã chỉnh tay thì không bao giờ bị ghi đè.
+  const [isDueToggleDefault, setIsDueToggleDefault] = useState(false);
   const idPrefix = `care-log-${variant}`;
   const contactResults = catalogs.contactResults.filter((item) => item.isActive).sort((a, b) => a.order - b.order);
   const isContentEmpty = content.trim().length === 0;
+  // Ngày + Giờ của lịch hẹn gộp trong `nextDueLocal` ("YYYY-MM-DDTHH:mm", giờ VN): BE lấy giờ bắt đầu lịch từ `nextAction.dueAt`.
+  // Công tắc "Tạo lịch hẹn" TẮT thì không có ô ngày giờ nào và không gửi `dueAt` (chỉ lưu "việc cần làm tiếp theo").
+  const [dueDate = '', dueTime = ''] = nextDueLocal.split('T');
+  const scheduleErrors = shouldCreateAppointment ? validateScheduleDateTime(dueDate, dueTime.slice(0, 5)) : {};
+  const shownScheduleErrors = hasTriedSubmit ? scheduleErrors : {};
+  const dateInputId = `${idPrefix}-appointment-date`;
+  const timeInputId = `${idPrefix}-appointment-time`;
   const hasAttachments = CRM_FEATURE_FLAGS.isAttachmentsEnabled;
 
   const handleResultChange = (resultId: string) => {
@@ -52,7 +67,12 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
     if (!result) return;
     // Gợi ý mốc hẹn + việc tiếp theo theo kết quả liên hệ; chỉ điền khi người dùng chưa tự nhập.
     if (!nextSuggestion.trim() && result.suggestionText) setNextSuggestion(result.suggestionText);
-    if (!nextDueLocal) setNextDueLocal(toDateTimeLocalValue(getSuggestedFollowUpIso(result.suggestedFollowUpDays)));
+    // Mốc gợi ý điền khi chưa có mốc, hoặc khi mốc còn là mặc định do công tắc điền (bật công tắc trước rồi mới chọn kết quả); mốc người dùng đã tự sửa thì giữ nguyên.
+    const suggestedDue = toDateTimeLocalValue(getSuggestedFollowUpIso(result.suggestedFollowUpDays));
+    if (suggestedDue && (!nextDueLocal || isDueToggleDefault)) {
+      setNextDueLocal(suggestedDue);
+      setIsDueToggleDefault(false);
+    }
   };
 
   const reset = () => {
@@ -60,14 +80,43 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
     setContactResultId('');
     setNextSuggestion('');
     setNextDueLocal('');
+    setIsDueToggleDefault(false);
     setShouldCreateAppointment(false);
+    setRemindBeforeMinutes(DEFAULT_REMINDER_MINUTES);
+    setHasTriedSubmit(false);
     clearPhotos();
+  };
+
+  // Gộp Ngày + Giờ thành `nextDueLocal`; cả hai rỗng = chưa đặt mốc ('' để không tính là "đã nhập").
+  const composeDue = (date: string, time: string) => (date || time ? `${date}T${time}` : '');
+
+  // Bật: chưa có mốc thì điền sẵn hôm nay + giờ mặc định của form Tạo lịch hẹn (đã có mốc gợi ý từ "kết quả liên hệ" thì dùng mốc đó). Tắt: giữ giá trị đã nhập để bật lại không mất, nhưng không gửi.
+  const handleAppointmentToggle = (isOn: boolean) => {
+    setShouldCreateAppointment(isOn);
+    if (!isOn) setHasTriedSubmit(false);
+    else if (!nextDueLocal) {
+      setNextDueLocal(composeDue(getVnTodayKey(), DEFAULT_TIME));
+      setIsDueToggleDefault(true);
+    }
+  };
+
+  // Người dùng tự chọn Ngày/Giờ: từ đó mốc là của họ, gợi ý từ "kết quả liên hệ" không ghi đè nữa.
+  const handleDueChange = (date: string, time: string) => {
+    setNextDueLocal(composeDue(date, time));
+    setIsDueToggleDefault(false);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving || isUploading) return;
-    const dueAt = fromDateTimeLocalValue(nextDueLocal) || null;
+    // Bật "Tạo lịch hẹn": kiểm ngày giờ như form Tạo lịch hẹn (bắt buộc, không ở quá khứ); sai thì hiện lỗi + đưa tiêu điểm tới ô sai, không gọi API.
+    if (shouldCreateAppointment && (scheduleErrors.date || scheduleErrors.time)) {
+      setHasTriedSubmit(true);
+      document.getElementById(scheduleErrors.date ? dateInputId : timeInputId)?.focus();
+      return;
+    }
+    // Công tắc tắt = không có mốc: `nextAction` chỉ còn `suggestion` (BE chấp nhận, không tạo lịch/nhắc).
+    const dueAt = (shouldCreateAppointment && fromDateTimeLocalValue(nextDueLocal)) || null;
     const hasNextAction = Boolean(nextSuggestion.trim() || dueAt);
     setIsSaving(true);
     const isSaved = await saveCareLog({
@@ -75,7 +124,7 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
       contactChannel,
       contactResultId: contactResultId || null,
       nextAction: hasNextAction
-        ? { suggestion: nextSuggestion, dueAt, appointment: shouldCreateAppointment && dueAt ? { type: 'CALLBACK' } : undefined }
+        ? { suggestion: nextSuggestion, dueAt, appointment: dueAt ? { type: 'CALLBACK', remindBeforeMinutes: [remindBeforeMinutes] } : undefined }
         : undefined,
       attachmentIds,
     });
@@ -135,34 +184,34 @@ export const CareLogForm = ({ customer, variant }: CareLogFormProps) => {
           <CalendarClock size={16} aria-hidden="true" className="text-brand-500" />
           Nhắc việc tiếp theo
         </legend>
-        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
-          <input
-            type="text"
-            value={nextSuggestion}
-            onChange={(event) => setNextSuggestion(event.target.value)}
-            aria-label="Việc cần làm tiếp theo"
-            placeholder="VD: Gọi lại báo giá căn tầng cao"
-            className={SOLID_INPUT_CLASS}
-          />
-          <input
-            type="datetime-local"
-            value={nextDueLocal}
-            onChange={(event) => setNextDueLocal(event.target.value)}
-            aria-label="Thời điểm nhắc"
-            className={`${SOLID_INPUT_CLASS} dark:[color-scheme:dark]`}
-          />
-        </div>
-        <label className="flex items-center gap-2 text-theme-sm text-gray-700 dark:text-gray-300">
-          <input
-            type="checkbox"
-            checked={shouldCreateAppointment}
-            disabled={!nextDueLocal}
-            onChange={(event) => setShouldCreateAppointment(event.target.checked)}
-            className={CHECKBOX_CLASS}
-          />
-          Tạo lịch hẹn "Nhắc gọi lại" vào thời điểm này
-        </label>
-        <p className={FORM_HINT_CLASS}>Có thời điểm nhắc thì việc sẽ hiện ở "Việc hôm nay" đúng ngày (giờ Việt Nam).</p>
+        <input
+          type="text"
+          value={nextSuggestion}
+          onChange={(event) => setNextSuggestion(event.target.value)}
+          aria-label="Việc cần làm tiếp theo"
+          placeholder="VD: Gọi lại báo giá căn tầng cao"
+          className={SOLID_INPUT_CLASS}
+        />
+        <ToggleRow title="Tạo lịch hẹn" description='Tạo lịch "Nhắc gọi lại" cho khách vào đúng ngày giờ đã chọn' isChecked={shouldCreateAppointment} onChange={handleAppointmentToggle} />
+        {shouldCreateAppointment && (
+          <div className="space-y-3">
+            <ScheduleDateTimeFields
+              dateId={dateInputId}
+              timeId={timeInputId}
+              date={dueDate}
+              time={dueTime}
+              dateError={shownScheduleErrors.date}
+              timeError={shownScheduleErrors.time}
+              onDateChange={(date) => handleDueChange(date, dueTime)}
+              onTimeChange={(time) => handleDueChange(dueDate, time)}
+              gridClassName="grid grid-cols-1 gap-3 @md:grid-cols-2"
+            />
+            <ReminderSelectField id={`${idPrefix}-appointment-remind`} value={remindBeforeMinutes} onChange={setRemindBeforeMinutes} />
+          </div>
+        )}
+        <p className={FORM_HINT_CLASS}>
+          {shouldCreateAppointment ? 'Lịch hẹn hiện ở "Việc hôm nay" đúng ngày hẹn (giờ Việt Nam).' : 'Bật "Tạo lịch hẹn" để đặt ngày giờ; không bật thì chỉ lưu việc cần làm tiếp theo.'}
+        </p>
       </fieldset>
 
       {hasAttachments && (

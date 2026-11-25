@@ -12,6 +12,7 @@ import { login } from '../api/auth.api';
 import { useAuth } from '../hooks/useAuth';
 import { resolvePostLoginPath } from '../components/auth/postLoginPath';
 import { rolesOf } from '../utils/userRoles';
+import InstallAppButtons from '../pwa/InstallAppButtons';
 import { EnvelopeIcon as EnvelopeIconRaw, LockIcon as LockIconRaw, EyeIcon as EyeIconRaw, EyeCloseIcon as EyeCloseIconRaw } from '../icons';
 
 // Cast icon svgr sang typed FC để truyền className (type gốc của svgr client
@@ -206,6 +207,9 @@ const LoginScreen: React.FC = () => {
             {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
         </form>
+
+        {/* FR-27: hai nút cài app lên Màn hình chính (tự ẩn khi đã cài / theo nền tảng) */}
+        <InstallAppButtons />
       </div>
     </div>
   );

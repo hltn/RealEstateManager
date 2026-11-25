@@ -270,20 +270,26 @@ describe('ExternalLogService', () => {
   describe('findAll — filter theo startDate/endDate (bug timezone)', () => {
     it('date-only YYYY-MM-DD → quy đổi qua startOfDayUtc/endOfDayUtc (giờ Việt Nam)', async () => {
       mockModel.find.mockReturnValue(chainableFind([]));
-      mockModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.findAll({
         startDate: '2026-08-05',
         endDate: '2026-08-05',
-      } as any);
+      });
 
       const query = mockModel.find.mock.calls[0][0];
       // Literal ISO hardcode (KHÔNG gọi lại startOfDayUtc/endOfDayUtc) để tránh
       // assertion tự tham chiếu — nếu helper bị sửa sai, test này vẫn phải fail.
       // 00:00:00 ngày 05/08 giờ VN = 17:00:00 ngày 04/08 UTC (offset +7).
       // 23:59:59.999 ngày 05/08 giờ VN = 16:59:59.999 ngày 05/08 UTC (offset +7).
-      expect(query.createdAt.$gte).toEqual(new Date('2026-08-04T17:00:00.000Z'));
-      expect(query.createdAt.$lte).toEqual(new Date('2026-08-05T16:59:59.999Z'));
+      expect(query.createdAt.$gte).toEqual(
+        new Date('2026-08-04T17:00:00.000Z'),
+      );
+      expect(query.createdAt.$lte).toEqual(
+        new Date('2026-08-05T16:59:59.999Z'),
+      );
 
       // Case biên: log tạo lúc 06:54:02 sáng giờ VN ngày 05/08
       // (= 2026-08-04T23:54:02.000Z UTC) phải nằm TRONG khoảng lọc ngày 05/08 —
@@ -300,27 +306,37 @@ describe('ExternalLogService', () => {
 
     it('full ISO timestamp → giữ nguyên new Date(), KHÔNG quy đổi qua timezone helper', async () => {
       mockModel.find.mockReturnValue(chainableFind([]));
-      mockModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.findAll({
         startDate: '2026-08-05T10:30:00.000Z',
         endDate: '2026-08-05T20:15:00.000Z',
-      } as any);
+      });
 
       const query = mockModel.find.mock.calls[0][0];
-      expect(query.createdAt.$gte).toEqual(new Date('2026-08-05T10:30:00.000Z'));
-      expect(query.createdAt.$lte).toEqual(new Date('2026-08-05T20:15:00.000Z'));
+      expect(query.createdAt.$gte).toEqual(
+        new Date('2026-08-05T10:30:00.000Z'),
+      );
+      expect(query.createdAt.$lte).toEqual(
+        new Date('2026-08-05T20:15:00.000Z'),
+      );
     });
 
     it('chỉ truyền startDate date-only → $lte không được set', async () => {
       mockModel.find.mockReturnValue(chainableFind([]));
-      mockModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
-      await service.findAll({ startDate: '2026-08-05' } as any);
+      await service.findAll({ startDate: '2026-08-05' });
 
       const query = mockModel.find.mock.calls[0][0];
       // Literal ISO hardcode, không gọi lại helper — xem giải thích ở test phía trên.
-      expect(query.createdAt.$gte).toEqual(new Date('2026-08-04T17:00:00.000Z'));
+      expect(query.createdAt.$gte).toEqual(
+        new Date('2026-08-04T17:00:00.000Z'),
+      );
       expect(query.createdAt.$lte).toBeUndefined();
     });
   });

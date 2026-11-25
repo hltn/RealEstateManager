@@ -4,7 +4,7 @@
  */
 import { MongoClient, ObjectId } from 'mongodb';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { createMemoryReplSet } from '../../../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../../../shared/database/memory-replset.fixture';
 import { provinceSeedKey, SEED_PROVINCES } from '../../seed/crm-seed.data';
 import { migrateAreasTo34Provinces } from './migrate-areas-to-34-provinces';
 

@@ -4,10 +4,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { KnowledgeConfigService } from './knowledge-config.service';
-import {
-  UnifiedAiService,
-  AiProviderConfig,
-} from '../../../shared/ai-provider/unified-ai.service';
+import { UnifiedAiService } from '../../../shared/ai-provider/unified-ai.service';
 
 /**
  * AI content generation service using UnifiedAiService.
@@ -91,8 +88,6 @@ export class AiWritingService {
   }> {
     const config = await this.configService.getAiWritingConfig();
     const promptTemplate = config.promptTemplate as string;
-    const maxTokens = (config.maxTokens as number) || 4096;
-    const temperature = (config.temperature as number) || 0.7;
 
     if (!promptTemplate) {
       throw new InternalServerErrorException(

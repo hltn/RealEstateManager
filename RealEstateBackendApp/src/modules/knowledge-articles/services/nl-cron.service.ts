@@ -94,8 +94,7 @@ export class NlCronService implements OnModuleInit {
     categories: string[];
   }> {
     // Build the request — uses same provider as AI writing
-    const config =
-      await this.knowledgeConfigService.getAiWritingConfig();
+    const config = await this.knowledgeConfigService.getAiWritingConfig();
     const provider = (config.provider as string) || 'OpenRouter';
     const model = (config.model as string) || 'google/gemini-2.5-flash';
 
@@ -166,7 +165,9 @@ export class NlCronService implements OnModuleInit {
     const rawContent = result.choices?.[0]?.message?.content;
 
     if (!rawContent) {
-      throw new InternalServerErrorException('AI returned empty NL parse response');
+      throw new InternalServerErrorException(
+        'AI returned empty NL parse response',
+      );
     }
 
     try {
@@ -175,9 +176,7 @@ export class NlCronService implements OnModuleInit {
       // Validate the parsed cron expression
       this.validateCronExpression(parsed.cron);
 
-      this.logger.log(
-        `NL parsed: "${description}" -> cron: ${parsed.cron}`,
-      );
+      this.logger.log(`NL parsed: "${description}" -> cron: ${parsed.cron}`);
       return {
         cronExpression: parsed.cron,
         explanation: parsed.explanation,
@@ -198,10 +197,7 @@ export class NlCronService implements OnModuleInit {
    * Preview next N execution times from a cron expression.
    * Uses the cron-parser library pattern (manual calculation).
    */
-  previewSchedule(
-    cronExpression: string,
-    count = 5,
-  ): { nextRuns: string[] } {
+  previewSchedule(cronExpression: string, count = 5): { nextRuns: string[] } {
     try {
       // Validate before previewing
       this.validateCronExpression(cronExpression);
@@ -232,7 +228,7 @@ export class NlCronService implements OnModuleInit {
     }
 
     // Validate each field has valid characters
-    const validCronRegex = /^[\d\*\/\,\-]+$/;
+    const validCronRegex = /^[\d*,/-]+$/;
     for (const part of parts) {
       if (!validCronRegex.test(part)) {
         throw new Error(`Invalid cron field: "${part}"`);
@@ -315,7 +311,7 @@ export class NlCronService implements OnModuleInit {
     const runs: string[] = [];
     const maxIterations = 366 * 24 * 60; // Safety limit
 
-    let cursor = new Date(now);
+    const cursor = new Date(now);
     cursor.setSeconds(0);
     cursor.setMilliseconds(0);
     cursor.setMinutes(cursor.getMinutes() + 1); // Start from next minute
@@ -358,14 +354,16 @@ export class NlCronService implements OnModuleInit {
     field: string,
     value: number,
     min: number,
-    max: number,
+    _max: number,
   ): boolean {
     if (field === '*') return true;
 
     // Handle ranges: 1-5
     const rangeMatch = field.match(/^(\d+)-(\d+)$/);
     if (rangeMatch) {
-      return value >= parseInt(rangeMatch[1]) && value <= parseInt(rangeMatch[2]);
+      return (
+        value >= parseInt(rangeMatch[1]) && value <= parseInt(rangeMatch[2])
+      );
     }
 
     // Handle step: */2 or 1-5/2
@@ -487,20 +485,17 @@ export class NlCronService implements OnModuleInit {
         });
 
         try {
-          await this.pipelineService.startPipeline({ source: 'cron' });
+          this.pipelineService.startPipeline({ source: 'cron' });
         } catch (error: any) {
           this.logger.error(`Cron pipeline failed: ${error.message}`, error);
         }
       },
       undefined, // onComplete
-      false,     // start (we call .start() below)
+      false, // start (we call .start() below)
       NlCronService.CRON_TIMEZONE,
     );
 
-    this.schedulerRegistry.addCronJob(
-      NlCronService.CRON_JOB_NAME,
-      job,
-    );
+    this.schedulerRegistry.addCronJob(NlCronService.CRON_JOB_NAME, job);
     job.start();
   }
 
@@ -519,7 +514,9 @@ export class NlCronService implements OnModuleInit {
   async initFromConfig(): Promise<void> {
     const config = await this.knowledgeConfigService.getCronConfig();
     if (config.isActive && config.parsedCron) {
-      this.logger.log(`Restoring cron schedule: ${config.parsedCron}`);
+      this.logger.log(
+        `Restoring cron schedule: ${config.parsedCron as string}`,
+      );
       this.registerCronJob(config.parsedCron as string);
     }
   }

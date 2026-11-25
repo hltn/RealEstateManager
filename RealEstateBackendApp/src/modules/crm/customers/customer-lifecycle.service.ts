@@ -99,7 +99,7 @@ export class CustomerLifecycleService {
 
       const now = new Date();
       // `purgingAt: null` trong bộ lọc ghi: nếu xóa vĩnh viễn kịp đặt cờ giữa lúc đọc và ghi thì không khớp => 409.
-      const matched = await this.repo.updateOne(
+      const isMatched = await this.repo.updateOne(
         ctx.scope,
         dto.customerId,
         { purgingAt: null },
@@ -114,7 +114,7 @@ export class CustomerLifecycleService {
         },
         { session, deleted: 'only' },
       );
-      if (!matched) throw customerPurgeInProgress();
+      if (!isMatched) throw customerPurgeInProgress();
       await this.reminders.resyncCustomer(oid(dto.customerId), now, session);
       await this.audit.record(
         {
@@ -162,15 +162,16 @@ export class CustomerLifecycleService {
         await this.personaData.anonymize(customerId, session);
         await this.schedulingData.anonymize(customerId, now, session);
         // `purgingAt: null` trong bộ lọc ghi: xóa vĩnh viễn kịp đặt cờ giữa chừng thì không khớp => 409, rollback.
-        const matched = await this.repo.updateOne(
+        const isMatched = await this.repo.updateOne(
           ctx.scope,
           customerId,
           { purgingAt: null },
           {
             $set: {
               fullName: ANONYMIZED_NAME,
-              // Giữ unique index `phone` hợp lệ cho khách đã ẩn danh mà không còn số thật.
-              phone: `anonymized:${String(customerId)}`,
+              // FR-06: không còn unique index `phone` nên không cần số giả `anonymized:<id>`; `customerCode` được GIỮ
+              // (không phải dữ liệu cá nhân, phục vụ truy vết, không bao giờ cấp lại).
+              phone: null,
               email: null,
               nationalId: null,
               nationalIdLast4: null,
@@ -192,7 +193,7 @@ export class CustomerLifecycleService {
           },
           { session, deleted: 'any' },
         );
-        if (!matched) throw customerPurgeInProgress();
+        if (!isMatched) throw customerPurgeInProgress();
         await this.audit.record(
           {
             entityType: CrmAuditEntityType.CUSTOMER,

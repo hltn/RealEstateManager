@@ -20,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/pwa/sw.ts", "src/pwa/serviceWorkerConfig.ts"]
+  "include": ["src/pwa/sw.ts", "src/pwa/serviceWorkerConfig.ts", "src/pwa/pushPayload.ts"]
 }

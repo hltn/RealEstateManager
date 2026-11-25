@@ -21,11 +21,10 @@ export class EmbeddingService {
 
   constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('OPENROUTER_API_KEY', '');
-    this.model =
-      this.configService.get<string>(
-        'EMBEDDING_MODEL',
-        DEFAULT_EMBEDDING_MODEL,
-      );
+    this.model = this.configService.get<string>(
+      'EMBEDDING_MODEL',
+      DEFAULT_EMBEDDING_MODEL,
+    );
     this.dimensions = Number(
       this.configService.get<number>(
         'EMBEDDING_DIMENSIONS',
@@ -65,9 +64,7 @@ export class EmbeddingService {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Embedding API error (${response.status}): ${errorBody}`,
-      );
+      throw new Error(`Embedding API error (${response.status}): ${errorBody}`);
     }
 
     const data: OpenRouterEmbeddingResponse = await response.json();
@@ -108,9 +105,7 @@ export class EmbeddingService {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Embedding API error (${response.status}): ${errorBody}`,
-      );
+      throw new Error(`Embedding API error (${response.status}): ${errorBody}`);
     }
 
     const data: OpenRouterEmbeddingResponse = await response.json();

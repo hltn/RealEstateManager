@@ -4,7 +4,9 @@
 import type { DailyTask } from '@crm/api';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { TableContactActions } from '@crm/components/TableContactActions';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
+import { hasPhone } from '@crm/lib/phone';
 import { useCrmActions } from '@crm/store';
 import { TASK_KIND_LABELS } from '../taskFilters';
 import { TaskDoneButton, TaskDueChip } from './TaskCard';
@@ -47,7 +49,7 @@ export const TaskListTable = ({ tasks }: { tasks: DailyTask[] }) => {
                 </td>
                 <td className="px-5 py-4">
                   <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{task.customer.fullName}</p>
-                  {task.customer.phoneMasked && <p className="text-theme-xs text-gray-500 dark:text-gray-400">{task.customer.phoneMasked}</p>}
+                  {hasPhone(task.customer.phoneMasked) && <p className="text-theme-xs text-gray-500 dark:text-gray-400">{task.customer.phoneMasked}</p>}
                 </td>
                 <td className="px-5 py-4">
                   <CustomerStatusChip status={task.customer.status} />
@@ -58,9 +60,9 @@ export const TaskListTable = ({ tasks }: { tasks: DailyTask[] }) => {
                   <p className="line-clamp-2 text-theme-sm text-gray-700 dark:text-gray-300">{task.title}</p>
                   <TaskDoneButton task={task} />
                 </td>
-                <td className="hidden whitespace-nowrap px-5 py-4 text-theme-sm text-gray-700 xl:table-cell dark:text-gray-300">{task.assignee?.displayName ?? '—'}</td>
+                <td className="hidden whitespace-nowrap px-5 py-4 text-theme-sm text-gray-700 xl:table-cell dark:text-gray-300">{formatAssigneeNames(task.assignees)}</td>
                 <td className="px-5 py-4">
-                  <TableContactActions customerId={task.customer.id} customerName={task.customer.fullName} />
+                  <TableContactActions customerId={task.customer.id} customerName={task.customer.fullName} hasPhone={hasPhone(task.customer.phoneMasked)} />
                 </td>
               </tr>
             ))}

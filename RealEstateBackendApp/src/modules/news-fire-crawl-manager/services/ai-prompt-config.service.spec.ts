@@ -145,9 +145,9 @@ describe('AiPromptConfigService', () => {
 
       // Rollback: state in-memory phải về giá trị cũ, KHÔNG giữ payload lỗi.
       expect(service.getPrompts()).toEqual(before);
-      expect(
-        service.getPrompts().some((p) => p.api_ai_name === 'FAIL'),
-      ).toBe(false);
+      expect(service.getPrompts().some((p) => p.api_ai_name === 'FAIL')).toBe(
+        false,
+      );
     });
   });
 });

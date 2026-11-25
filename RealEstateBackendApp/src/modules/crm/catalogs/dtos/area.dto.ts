@@ -138,6 +138,13 @@ export class ListAreasQueryDto extends CatalogPaginationQueryDto {
 
 export class AreaResponseDto {
   @ApiProperty() id: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Mã bất biến (FR-40); null chỉ với bản ghi cũ chưa chạy migration 007',
+  })
+  code: string | null;
   @ApiProperty({ description: 'Tên khu vực (đóng vai trò `label` của Ref)' })
   label: string;
   @ApiProperty() name: string;

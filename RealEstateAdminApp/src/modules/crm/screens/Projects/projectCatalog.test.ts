@@ -29,8 +29,8 @@ describe('projectCatalog', () => {
   });
 
   it('số khách quan tâm theo id dự án', () => {
-    const counts = toInterestedCounts([{ key: { id: 'proj-1', label: 'A' }, count: 4, percent: 40, averageProgress: 50 }]);
-    expect(counts.get('proj-1')).toBe(4);
-    expect(counts.get('proj-2')).toBeUndefined();
+    const counts = toInterestedCounts([{ key: { id: 'QTERRA', label: 'A' }, count: 4, percent: 40, averageProgress: 50 }]);
+    expect(counts.get('QTERRA')).toBe(4);
+    expect(counts.get('PRIVIA')).toBeUndefined();
   });
 });

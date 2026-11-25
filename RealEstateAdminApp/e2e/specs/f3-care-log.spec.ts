@@ -11,7 +11,7 @@
  *   nút "Xóa ảnh N" ở khay trước khi lưu là điều khiển khác (F3-04a).
  */
 import { test, expect } from '../fixtures';
-import { MOBILE_VIEWPORT, bigPng, makeJpeg, note, openCareLogComposer, openCustomerDetail, pdfFile, todaySlot, toast } from '../lib/ui';
+import { MOBILE_VIEWPORT, bigPng, makeJpeg, note, openCareLogComposer, openCustomerDetail, pdfFile, setSchedule, todaySlot, toast } from '../lib/ui';
 import type { Page } from '@playwright/test';
 
 const photoInput = (page: Page) => page.getByLabel('Thêm ảnh');
@@ -28,7 +28,7 @@ async function expectNoPendingUpload(page: Page) {
 
 test.describe('f3-care-log', () => {
   test('F3-01 ghi nhật ký có nhắc việc: hiện ngay đầu dòng thời gian, form dọn trống, Việc hôm nay có "Bước tiếp theo"', async ({ loginAs, api, backstage }, testInfo) => {
-    const dueSlot = await todaySlot(testInfo); // "Thời điểm nhắc" hôm nay để việc hiện ở Việc hôm nay
+    const dueSlot = await todaySlot(testInfo); // Ngày + Giờ của lịch hẹn: hôm nay để việc hiện ở Việc hôm nay
     const customer = await api.createCustomer();
     const page = await loginAs('staff1');
     await openCustomerDetail(page, customer.id, customer.fullName);
@@ -54,7 +54,14 @@ test.describe('f3-care-log', () => {
     // Chọn kết quả liên hệ tự gợi ý việc tiếp theo (người dùng sửa được).
     await expect(page.getByLabel('Việc cần làm tiếp theo')).not.toHaveValue('');
     await page.getByLabel('Việc cần làm tiếp theo').fill(nextStep);
-    await page.getByLabel('Thời điểm nhắc').fill(`${dueSlot.date}T${dueSlot.time}`);
+    // Công tắc "Tạo lịch hẹn" (mặc định tắt, chưa có ô ngày giờ) bật thì xổ ra Ngày diễn ra + Giờ + Nhắc trước.
+    const appointmentSwitch = page.getByRole('switch', { name: 'Tạo lịch hẹn' });
+    await expect(appointmentSwitch).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByPlaceholder('Chọn ngày')).toHaveCount(0);
+    await appointmentSwitch.click();
+    await expect(appointmentSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByLabel('Nhắc trước')).toHaveValue('60');
+    await setSchedule(page, dueSlot);
     await saveButton(page).click();
 
     await expect(toast(page, 'Đã lưu nhật ký chăm sóc')).toBeVisible();
@@ -80,16 +87,22 @@ test.describe('f3-care-log', () => {
     expect(logs[0].nextAction.suggestion).toBe(nextStep);
     const reminders = (await backstage.find('reminders')).filter((r) => String(r.customerId) === customer.id);
     expect(reminders.length).toBeGreaterThanOrEqual(1);
-    expect(reminders.map((r) => r.type)).toContain('FOLLOW_UP');
+    // Bật "Tạo lịch hẹn": nhật ký có nextAction.dueAt + lịch hẹn kèm theo với mốc nhắc trước 1 tiếng (mặc định của ô "Nhắc trước").
+    expect(logs[0].nextAction.dueAt).toBeTruthy();
+    expect(logs[0].nextAction.appointmentId).toBeTruthy();
+    expect(reminders.map((r) => r.type)).toContain('APPOINTMENT');
+    const appointments = (await backstage.find('appointments')).filter((a) => String(a.customerId) === customer.id);
+    expect(appointments).toHaveLength(1);
+    expect(appointments[0].remindBeforeMinutes).toEqual([60]);
 
-    // Việc hôm nay của staff1: có việc "Bước tiếp theo" của khách này, có nút "Ghi nhật ký".
+    // Việc hôm nay của staff1: có việc "Lịch hẹn" (tạo kèm nhật ký) của khách này, có nút "Hoàn thành".
     await page.goto('/crm/today');
     const task = page.getByTestId('daily-task-card').filter({ hasText: customer.fullName });
     await expect(task).toHaveCount(1);
-    await expect(task).toContainText('Bước tiếp theo');
+    await expect(task).toContainText('Lịch hẹn');
     await expect(task).toContainText(nextStep);
-    await expect(task.getByRole('button', { name: 'Ghi nhật ký' })).toBeVisible();
-    note(testInfo, 'TT', 'Ghi nhật ký có nhắc việc: nhập 4 ô (nội dung, việc tiếp theo, thời điểm nhắc) + chọn 2 danh sách + 1 click lưu.');
+    await expect(task.getByRole('button', { name: 'Hoàn thành' })).toBeVisible();
+    note(testInfo, 'TT', 'Ghi nhật ký có lịch hẹn: nhập nội dung + việc tiếp theo, chọn 2 danh sách, bật công tắc "Tạo lịch hẹn" rồi chọn ngày + giờ + 1 click lưu.');
   });
 
   test('F3-02 tải ảnh lên nhật ký: khung ảnh hiện khi cờ bật, tải lên MinIO, hiện lại sau khi tải lại trang (G1)', async ({ loginAs, api, backstage }) => {

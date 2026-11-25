@@ -7,8 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CustomerListItem } from '@crm/api';
 
 const bulkOperation = vi.fn();
+const currentRole = vi.hoisted(() => ({ value: 'ADMIN' as 'ADMIN' | 'MANAGER' | 'STAFF' }));
 const customers = ['c1', 'c2', 'c3'].map(
-  (id) => ({ id, fullName: `Khách ${id}`, status: { id: 'st-dropped', listGroup: 'DROPPED' }, primaryAssignee: null }) as unknown as CustomerListItem,
+  (id) => ({ id, fullName: `Khách ${id}`, status: { id: 'DROPPED', listGroup: 'DROPPED' }, primaryAssignee: null }) as unknown as CustomerListItem,
 );
 
 vi.mock('@crm/api', async () => {
@@ -16,9 +17,10 @@ vi.mock('@crm/api', async () => {
   return {
     ...actual,
     useCrmApi: () => ({ bulkOperation }),
-    useCrmActor: () => ({ userId: 'admin', role: 'ADMIN', teamId: null, managedTeamIds: [] }),
+    useCrmActor: () => ({ userId: 'admin', role: currentRole.value, teamId: null, managedTeamIds: [] }),
     useCatalogs: () => ({ catalogs: { statuses: [], tags: [] }, users: [] }),
-    useAssignableUsers: () => ({ data: [] }),
+    useCareTeamInvitees: () => ({ data: { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } }),
+    usePersonaFieldMap: () => new Map(),
   };
 });
 vi.mock('@crm/api/mockHooks', async () => ({ ...(await vi.importActual<object>('@crm/api/mockHooks')), useCustomerExport: () => vi.fn() }));
@@ -27,8 +29,18 @@ vi.mock('@crm/components/CrmModuleTabs', () => ({ CrmModuleTabs: () => null }));
 vi.mock('./components/CustomerToolbar', () => ({ CustomerToolbar: () => null }));
 vi.mock('./components/CustomerStatusPills', () => ({ CustomerStatusPills: () => null }));
 vi.mock('./components/CustomerTableRow', () => ({
-  CustomerTableRow: ({ customer, isSelected, onToggleSelect }: { customer: CustomerListItem; isSelected: boolean; onToggleSelect: (id: string) => void }) => (
-    <tr>
+  CustomerTableRow: ({
+    customer,
+    isSelected,
+    onToggleSelect,
+    isShowingPrimaryAssignee,
+  }: {
+    customer: CustomerListItem;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
+    isShowingPrimaryAssignee?: boolean;
+  }) => (
+    <tr data-primary-assignee={String(Boolean(isShowingPrimaryAssignee))}>
       <td>
         <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(customer.id)} aria-label={`Chọn ${customer.fullName}`} />
       </td>
@@ -55,7 +67,10 @@ vi.mock('./useCustomerListScreen', async () => {
 
 import { CustomersDesktop } from './Customers.desktop';
 
-beforeEach(() => bulkOperation.mockReset());
+beforeEach(() => {
+  bulkOperation.mockReset();
+  currentRole.value = 'ADMIN';
+});
 
 describe('CustomersDesktop - xóa hàng loạt', () => {
   it('3 khách chọn: 2 xóa được + 1 CUSTOMER_NOT_FOUND -> thanh chọn biến mất nhưng hộp kết quả VẪN hiện đủ từng khách; đóng hộp thì tiêu điểm về vùng danh sách', async () => {
@@ -78,5 +93,28 @@ describe('CustomersDesktop - xóa hàng loạt', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Đã hiểu' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Kết quả xóa khách' })).not.toBeInTheDocument());
     expect(document.activeElement).toBe(document.querySelector('[data-focus-fallback]'));
+  });
+
+  it('Quản trị: cột "Hẹn" không còn; có cột "Người chăm sóc chính" đúng thứ tự; hàng nhận cờ hiện cột', () => {
+    render(<CustomersDesktop />);
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
+    expect(headers).not.toContain('Hẹn');
+    expect(headers.slice(1)).toEqual(['Khách hàng', 'Tình trạng', 'Dự án', 'Nguồn', 'Khu vực', 'Tiến độ', 'Người chăm sóc chính', 'Cập nhật', 'Thao tác']);
+    document.querySelectorAll('tbody tr').forEach((row) => expect(row).toHaveAttribute('data-primary-assignee', 'true'));
+  });
+
+  it('Quản lý cũng thấy cột "Người chăm sóc chính"', () => {
+    currentRole.value = 'MANAGER';
+    render(<CustomersDesktop />);
+    expect(screen.getByRole('columnheader', { name: 'Người chăm sóc chính' })).toBeInTheDocument();
+  });
+
+  it('Nhân viên KHÔNG thấy cột "Người chăm sóc chính" (cũng không còn cột "Phụ trách"); hàng không nhận cờ', () => {
+    currentRole.value = 'STAFF';
+    render(<CustomersDesktop />);
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
+    expect(headers.slice(1)).toEqual(['Khách hàng', 'Tình trạng', 'Dự án', 'Nguồn', 'Khu vực', 'Tiến độ', 'Cập nhật', 'Thao tác']);
+    expect(screen.queryByText(/Phụ trách|chăm sóc chính/i)).not.toBeInTheDocument();
+    document.querySelectorAll('tbody tr').forEach((row) => expect(row).toHaveAttribute('data-primary-assignee', 'false'));
   });
 });

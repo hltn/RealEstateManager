@@ -1,10 +1,12 @@
+import { runtimeConfig } from '../../../config/runtimeConfig';
+
 /**
  * Cờ bật/tắt tính năng giai đoạn sau của module CRM (Feature Toggle - skill mục 3 "DevOps & Môi trường").
- * NGUỒN DUY NHẤT: mọi chỗ cần kiểm tra cờ đều import từ đây, không tự đọc biến môi trường.
+ * NGUỒN DUY NHẤT: mọi chỗ cần kiểm tra cờ đều import từ đây, không tự đọc cấu hình.
  *
- * Mặc định TẮT toàn bộ. Có thể bật thử ở máy dev bằng biến Vite (vd `VITE_CRM_FEATURE_ZALO_ZNS=true`).
- * `VITE_CRM_PROTOTYPE` (cờ BẬT/TẮT cả module): mặc định BẬT ở dev, TẮT ở bản build production nếu không đặt
- * (prototype dùng vai trò giả + dữ liệu mẫu, KHÔNG được lộ ra production). Staging muốn xem thì đặt `VITE_CRM_PROTOTYPE=true`.
+ * Giá trị lấy từ `runtimeConfig` (đọc lúc chạy từ `/env.js`, FR-15), KHÔNG còn mặc định theo `import.meta.env.DEV`:
+ * mọi cờ mặc định TẮT; dev muốn bật phải đặt tường minh trong `.env` (vd `CRM_ENABLED=true`, `CRM_MOCK_REPORTS=true`).
+ * `CRM_ENABLED` (cờ BẬT/TẮT cả module): production/staging đặt trong env của container FE rồi restart, không cần build lại.
  *
  * Khi tắt:
  * - Zalo: nút Zalo chỉ mở `https://zalo.me/<sđt>` (Z1, tài liệu 01 mục 3.3) — không gửi ZNS/OA.
@@ -21,32 +23,20 @@ export interface CrmFeatureFlags {
   isInAppCallEnabled: boolean;
   /** Tự gửi SMS/ZNS xác nhận lịch hẹn + đồng bộ Google/Outlook Calendar. */
   isAppointmentNotifySyncEnabled: boolean;
-  /** Ảnh đính kèm nhật ký (khớp cờ backend `FEATURE_CRM_ATTACHMENTS`; backend tắt thì API upload trả 404). Mặc định TẮT. */
+  /** Ảnh đính kèm nhật ký (khớp cờ backend `CRM_ATTACHMENTS_ENABLED`; backend tắt thì API upload trả 404). Mặc định TẮT. */
   isAttachmentsEnabled: boolean;
-  /** M8: màn Báo cáo chạy trên DỮ LIỆU MẪU (chưa có API dashboard). Mặc định bật ở dev, tắt ở production (màn hiện "sắp ra mắt"). */
+  /** M8: màn Báo cáo chạy trên DỮ LIỆU MẪU (chưa có API dashboard). Mặc định tắt (màn hiện "sắp ra mắt"); dev đặt `CRM_MOCK_REPORTS=true` để xem. */
   isMockReportsEnabled: boolean;
-  /** M8: nhập/xuất file chạy trên DỮ LIỆU MẪU (chưa có API import/export). Mặc định bật ở dev, tắt ở production (ẩn nút). */
+  /** M8: nhập/xuất file chạy trên DỮ LIỆU MẪU (chưa có API import/export). Mặc định tắt (ẩn nút); dev đặt `CRM_MOCK_IMPORT_EXPORT=true` để xem. */
   isMockImportExportEnabled: boolean;
 }
 
-const readFlag = (value: unknown): boolean => value === true || value === 'true';
-
-/** Giá trị rõ ràng ('true'/'false') thắng; không đặt thì chỉ bật ở môi trường dev. */
-export const resolvePrototypeFlag = (value: unknown, isDev: boolean): boolean => {
-  if (value === true || value === 'true') return true;
-  if (value === false || value === 'false') return false;
-  return isDev;
-};
-
-const env = (import.meta as ImportMeta & { env?: Record<string, unknown> }).env ?? {};
-
 export const CRM_FEATURE_FLAGS: Readonly<CrmFeatureFlags> = Object.freeze({
-  // `VITE_CRM_ENABLED` (module nối API thật) ưu tiên; `VITE_CRM_PROTOTYPE` giữ để tương thích cấu hình cũ.
-  isPrototypeEnabled: resolvePrototypeFlag(env.VITE_CRM_ENABLED ?? env.VITE_CRM_PROTOTYPE, env.DEV === true),
-  isZaloZnsEnabled: readFlag(env.VITE_CRM_FEATURE_ZALO_ZNS),
-  isInAppCallEnabled: readFlag(env.VITE_CRM_FEATURE_IN_APP_CALL),
-  isAppointmentNotifySyncEnabled: readFlag(env.VITE_CRM_FEATURE_APPOINTMENT_SYNC),
-  isAttachmentsEnabled: readFlag(env.VITE_FEATURE_CRM_ATTACHMENTS),
-  isMockReportsEnabled: resolvePrototypeFlag(env.VITE_CRM_MOCK_REPORTS, env.DEV === true),
-  isMockImportExportEnabled: resolvePrototypeFlag(env.VITE_CRM_MOCK_IMPORT_EXPORT, env.DEV === true),
+  isPrototypeEnabled: runtimeConfig.CRM_ENABLED,
+  isZaloZnsEnabled: runtimeConfig.CRM_FEATURE_ZALO_ZNS,
+  isInAppCallEnabled: runtimeConfig.CRM_FEATURE_IN_APP_CALL,
+  isAppointmentNotifySyncEnabled: runtimeConfig.CRM_FEATURE_APPOINTMENT_SYNC,
+  isAttachmentsEnabled: runtimeConfig.CRM_ATTACHMENTS_ENABLED,
+  isMockReportsEnabled: runtimeConfig.CRM_MOCK_REPORTS,
+  isMockImportExportEnabled: runtimeConfig.CRM_MOCK_IMPORT_EXPORT,
 });

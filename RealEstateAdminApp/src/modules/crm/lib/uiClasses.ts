@@ -1,6 +1,6 @@
 /**
  * NGUỒN DUY NHẤT các mẫu lớp Tailwind của module CRM — rút từ các mẫu lặp lại của Admin App
- * (tài liệu 03 mục 5; đường dẫn `file:dòng` tính từ `RealEstateAdminApp/src/screens/` nếu không ghi khác).
+ * (tài liệu 03 mục 5; đường dẫn `file:dòng` tính từ `RealEstateAdminApp/src/` nếu không ghi khác; tên file trần là màn tin tức ở `modules/news/screens/`).
  * Mọi màu đều có cặp `dark:` (Admin mặc định chạy tối). Chỉ gom mẫu ≥ 2 nơi dùng; lớp riêng của 1 màn viết tại chỗ.
  *
  * Gộp từ 5 tệp cũ do các màn tự tạo khi port song song: `components/crmClassNames.ts`,

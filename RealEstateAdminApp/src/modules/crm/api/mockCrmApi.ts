@@ -1,6 +1,6 @@
 /**
  * Bản MOCK còn lại của lớp truy cập dữ liệu CRM — CHỈ cho phần giai đoạn 2 (M8) chưa có API: nhập file và xuất file,
- * chạy trên store Zustand trong trình duyệt với DỮ LIỆU MẪU (bật bằng cờ `VITE_CRM_MOCK_IMPORT_EXPORT`, xem `config/featureFlags.ts`).
+ * chạy trên store Zustand trong trình duyệt với DỮ LIỆU MẪU (bật bằng cờ `CRM_MOCK_IMPORT_EXPORT`, xem `config/featureFlags.ts`).
  * Mọi thao tác nghiệp vụ khác (khách, chăm sóc, lịch hẹn, danh mục...) đã chuyển sang API thật ở `httpCrmApi.ts`.
  * Quy ước kết quả: `{ ok: true, data }` hoặc `{ ok: false, error: { statusCode, errorCode, message } }`. Gỡ file này khi M8 xong.
  */
@@ -13,7 +13,6 @@ import { selectCurrentUser } from '@crm/store/selectors';
 import type { AuditLog, Customer } from '@crm/types/crm';
 import { buildActor, canExportCustomers, canImportCustomers, type CrmActor } from './access';
 import { buildCustomerExport, type CustomerExportFile } from './exports';
-import { lookupPhone } from './queries';
 import type { ApiResult, CustomerListQuery } from './types';
 
 export interface MockCrmApiDependencies {
@@ -87,10 +86,6 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
           skipped.push({ row: index + 1, message: 'Thiếu họ tên hoặc số điện thoại không hợp lệ.' });
           return;
         }
-        if (lookupPhone(state, actor, phone)?.exists) {
-          skipped.push({ row: index + 1, message: 'Số điện thoại đã có trong hệ thống.' });
-          return;
-        }
         const isHidden =
           (row.statusId && !catalogs.statuses.some((item) => item.id === row.statusId && item.isActive)) ||
           (row.sourceId && !catalogs.leadSources.some((item) => item.id === row.sourceId && item.isActive)) ||
@@ -105,6 +100,7 @@ export const createMockCrmApi = ({ getState, dispatch, now = () => new Date(), g
         const fullName = row.fullName.trim();
         const customer: Customer = {
           id: generateId('CUST'),
+          customerCode: null, // reducer `customers/create` cấp mã kế tiếp
           fullName,
           phone,
           email: '',

@@ -47,7 +47,7 @@ const vnTimeOfDay = (date: Date): string => formatVnDateTime(date).slice(0, 5);
  * - Quét theo ngày (dịp đặc biệt, khách lâu chưa chăm sóc) KHÔNG dùng cron cố định mà kiểm mỗi nhịp "đã đến giờ cấu hình
  *   (giờ VN) và hôm nay chưa quét?" (dấu trong Redis): đọc lại cấu hình ở mỗi nhịp (đổi giờ có hiệu lực ngay), và khởi
  *   động lại/downtime qua giờ quét vẫn quét bù trong ngày. Quét lại không tạo nhắc trùng (khóa chống trùng).
- * Chỉ chạy khi `QUEUE_WORKERS_ENABLED` (tắt trong test) và cờ `FEATURE_CRM_ENABLED` bật.
+ * Chỉ chạy khi `QUEUE_WORKERS_ENABLED` (tắt trong test) và cờ `CRM_ENABLED` bật.
  */
 @Injectable()
 export class CrmSchedulerService implements OnApplicationBootstrap {

@@ -158,8 +158,7 @@ describe('GoogleDriveOAuthService', () => {
 
   describe('generateAuthUrl', () => {
     it('creates OAuth2 URL with drive.file scope and signed state', () => {
-      const expectedUrl =
-        'https://accounts.google.com/o/oauth2/v2/auth?...';
+      const expectedUrl = 'https://accounts.google.com/o/oauth2/v2/auth?...';
       mockOAuth2Instance.generateAuthUrl.mockReturnValue(expectedUrl);
 
       const url = service.generateAuthUrl(USER_ID);
@@ -169,7 +168,12 @@ describe('GoogleDriveOAuthService', () => {
         expect.objectContaining({
           access_type: 'offline',
           prompt: 'consent',
-          scope: ['https://www.googleapis.com/auth/drive.file', 'openid', 'email', 'profile'],
+          scope: [
+            'https://www.googleapis.com/auth/drive.file',
+            'openid',
+            'email',
+            'profile',
+          ],
           // M-02: state is now signed format userId:nonce:signature
           state: expect.stringContaining(`${USER_ID}:`),
         }),
@@ -262,12 +266,12 @@ describe('GoogleDriveOAuthService', () => {
         tokens: { access_token: null, refresh_token: null },
       });
 
-      await expect(
-        service.exchangeCode('bad-code', USER_ID),
-      ).rejects.toThrow(UnauthorizedException);
-      await expect(
-        service.exchangeCode('bad-code', USER_ID),
-      ).rejects.toThrow('Failed to obtain tokens from Google');
+      await expect(service.exchangeCode('bad-code', USER_ID)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      await expect(service.exchangeCode('bad-code', USER_ID)).rejects.toThrow(
+        'Failed to obtain tokens from Google',
+      );
     });
   });
 
@@ -393,7 +397,9 @@ describe('GoogleDriveOAuthService', () => {
       };
 
       mockOAuth2Instance.getAccessToken.mockResolvedValue(mockRefreshedTokens);
-      tokenModel.findOneAndUpdate.mockReturnValue(chainable({ userId: USER_ID }));
+      tokenModel.findOneAndUpdate.mockReturnValue(
+        chainable({ userId: USER_ID }),
+      );
 
       const client = await service.getOAuth2Client(USER_ID);
 
@@ -426,7 +432,7 @@ describe('GoogleDriveOAuthService', () => {
       tokenModel.deleteOne.mockReturnValue(chainable(undefined));
 
       await expect(service.getOAuth2Client(USER_ID)).rejects.toThrow(
-        'Google Drive token expired or revoked. Please reconnect.'
+        'Google Drive token expired or revoked. Please reconnect.',
       );
 
       // Verify token was deleted from DB when invalid_grant
@@ -442,7 +448,7 @@ describe('GoogleDriveOAuthService', () => {
       mockOAuth2Instance.getAccessToken.mockRejectedValue(refreshError);
 
       await expect(service.getOAuth2Client(USER_ID)).rejects.toThrow(
-        'token_expired'
+        'token_expired',
       );
 
       // Verify token was NOT deleted for non-invalid_grant errors
@@ -482,6 +488,37 @@ describe('GoogleDriveOAuthService', () => {
       });
 
       expect(hasUniqueUserId).toBe(true);
+    });
+  });
+
+  describe('token Google là bí mật (select: false)', () => {
+    it('schema: accessToken và refreshToken mặc định không bị đọc ra', () => {
+      expect(GoogleDriveTokenSchema.path('accessToken').options.select).toBe(
+        false,
+      );
+      expect(GoogleDriveTokenSchema.path('refreshToken').options.select).toBe(
+        false,
+      );
+    });
+
+    it("getOAuth2Client chủ động nạp token bằng .select('+accessToken +refreshToken')", async () => {
+      const chain = chainable(TOKEN_DOC);
+      tokenModel.findOne.mockReturnValue(chain);
+
+      await service.getOAuth2Client(USER_ID);
+
+      expect(chain.select).toHaveBeenCalledWith('+accessToken +refreshToken');
+    });
+
+    it("revokeAndDelete chủ động nạp token bằng .select('+accessToken +refreshToken')", async () => {
+      const chain = chainable(TOKEN_DOC);
+      tokenModel.findOne.mockReturnValue(chain);
+      mockOAuth2Instance.revokeCredentials.mockResolvedValue({});
+      tokenModel.deleteOne.mockReturnValue(chainable(undefined));
+
+      await service.revokeAndDelete(USER_ID);
+
+      expect(chain.select).toHaveBeenCalledWith('+accessToken +refreshToken');
     });
   });
 });

@@ -65,7 +65,10 @@ describe('CreateNewsSourceDto', () => {
 
   it('rssUrl optional — không có vẫn pass', async () => {
     const errors = await validate(
-      plainToInstance(CreateNewsSourceDto, { name: 'X', url: 'https://x.example' }),
+      plainToInstance(CreateNewsSourceDto, {
+        name: 'X',
+        url: 'https://x.example',
+      }),
     );
     expect(errors).toHaveLength(0);
   });

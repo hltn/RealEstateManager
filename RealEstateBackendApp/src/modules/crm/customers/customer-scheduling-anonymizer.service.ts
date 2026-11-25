@@ -18,7 +18,8 @@ import { ANONYMIZED_PLACEHOLDER } from './customer.constants';
  * - lịch hẹn: ghi đè tiêu đề, ghi chú, địa điểm, kết quả (văn bản tự do, có thể có PII); giữ loại, giờ, trạng thái,
  *   người thực hiện cho thống kê;
  * - nhắc việc chưa gửi: hủy (bản ghi chỉ chứa id nên không cần xóa);
- * - thông báo trong hộp thông báo của mọi người: XÓA (tiêu đề/nội dung có tên khách); là dữ liệu tạm có TTL.
+ * - thông báo trong hộp thông báo của mọi người: XÓA CẢ BẢN GHI (tiêu đề/nội dung và `push` dựng sẵn đều có tên
+ *   khách, FR-06); là dữ liệu tạm có TTL. Job `push.send` đang chờ gặp bản ghi đã mất thì dừng, không gửi gì.
  */
 @Injectable()
 export class CustomerSchedulingAnonymizerService {
@@ -58,6 +59,7 @@ export class CustomerSchedulingAnonymizerService {
       )
       .exec();
     await this.reminders.cancelForCustomer(customerId, now, session);
+    // Xóa cả bản ghi nên `notifications.push` (nội dung push có tên khách) cũng mất; không để lại bản có `push`.
     await this.notificationModel
       .deleteMany({ 'data.customerId': customerId }, { session })
       .exec();

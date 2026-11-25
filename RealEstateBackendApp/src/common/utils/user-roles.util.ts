@@ -1,4 +1,4 @@
-import { CRM_TEAM_ROLES, UserRole } from '../enums/user-role.enum';
+import { CRM_ROLES, CRM_TEAM_ROLES, UserRole } from '../enums/user-role.enum';
 
 /**
  * Thứ tự ưu tiên trong CÙNG phân vùng quyền CRM: ADMIN > MANAGER > STAFF.
@@ -38,6 +38,29 @@ export const hasAnyRole = (
   allowed: readonly string[],
 ): boolean => roles.some((role) => allowed.includes(role));
 
+/**
+ * Có ít nhất một vai trò CRM: ADMIN, MANAGER hoặc STAFF (EDITOR ngoài CRM) (FR-30).
+ * Khác `hasCrmTeamRole` (chỉ MANAGER/STAFF, điều kiện NGƯỜI ĐƯỢC MỜI/phân vào nhóm): `hasCrmRole` dùng cho việc chọn
+ * người thực hiện lịch hẹn, nơi Admin trong `careTeam` hoặc là người tạo khách cũng giao được.
+ */
+export const hasCrmRole = (roles: readonly string[]): boolean =>
+  hasAnyRole(roles, CRM_ROLES);
+
 /** Có role được thuộc nhóm làm việc CRM (MANAGER/STAFF). */
 export const hasCrmTeamRole = (roles: readonly string[]): boolean =>
   hasAnyRole(roles, CRM_TEAM_ROLES);
+
+/** Vai trò được đứng tên người chăm sóc chính (PRIMARY) khi tạo khách: ADMIN, MANAGER, STAFF (EDITOR ngoài CRM). */
+const PRIMARY_CAPABLE_ROLES: readonly UserRole[] = [
+  UserRole.ADMIN,
+  UserRole.MANAGER,
+  UserRole.STAFF,
+];
+
+/**
+ * Tài khoản có thể làm PRIMARY của khách do chính mình tạo (FR-10): mọi vai trò CRM, kể cả Admin thuần.
+ * Khác `hasCrmTeamRole` (chỉ Manager/Staff, dùng cho điều kiện NGƯỜI ĐƯỢC MỜI/phân vào nhóm): Admin tự đứng tên khi tạo
+ * nhưng không bị phân vào nhóm người khác.
+ */
+export const canBePrimary = (roles: readonly string[]): boolean =>
+  hasAnyRole(roles, PRIMARY_CAPABLE_ROLES);

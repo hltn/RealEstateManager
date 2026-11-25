@@ -1,5 +1,5 @@
 /**
- * Thanh lọc của bảng khách (02 §4.2): tìm kiếm (không dấu) + sắp xếp + Dự án + Khu vực + Người chăm sóc + Bộ lọc nâng cao.
+ * Thanh lọc của bảng khách (02 §4.2): tìm kiếm (không dấu) + sắp xếp + Dự án + Khu vực + Người phụ trách + Bộ lọc nâng cao.
  * Ô chọn nhanh ghi 1 giá trị vào mảng bộ lọc tương ứng; chọn nhiều giá trị/tiêu chí khác ở "Bộ lọc nâng cao".
  */
 import { Search, SlidersHorizontal } from 'lucide-react';
@@ -70,7 +70,7 @@ export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
             type="search"
             value={filters.q}
             onChange={(event) => set({ q: event.target.value })}
-            placeholder="Tên (có/không dấu), SĐT, email..."
+            placeholder="Tìm tên, SĐT, mã KH-…"
             className={`${FILTER_INPUT_CLASS} w-full pl-10`}
           />
         </div>
@@ -105,7 +105,7 @@ export const CustomerToolbar = ({ screen }: CustomerToolbarProps) => {
       />
       <QuickSelect
         id="customer-assignee"
-        label="Người chăm sóc"
+        label="Người phụ trách"
         values={filters.assigneeIds}
         options={assigneeOptions}
         onChange={(assigneeIds) => set({ assigneeIds })}

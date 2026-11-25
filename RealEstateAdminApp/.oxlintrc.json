@@ -3,16 +3,42 @@
   "plugins": ["react", "typescript", "oxc"],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-unused-vars": "error",
+    // Cấm console.log; giữ warn/error cho lỗi runtime ở trình duyệt (Admin App chưa có logger riêng).
+    "no-console": ["error", { "allow": ["warn", "error"] }],
+    // Chặn import nguyên thư viện không tree-shake được (xem SKILL nodejs-react-mongo-coding-guidelines, mục 2).
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          { "name": "lodash", "message": "Import từng hàm (lodash/pick) hoặc dùng lodash-es để tree-shaking." },
+          { "name": "moment", "message": "moment nặng và không tree-shake được; dùng date-fns hoặc Date/Intl." },
+          { "name": "antd", "message": "Import theo đường dẫn con để tree-shaking." },
+          { "name": "@mui/material", "message": "Import theo đường dẫn con (@mui/material/Button)." },
+          { "name": "@mui/icons-material", "message": "Import theo đường dẫn con (@mui/icons-material/Add)." }
+        ]
+      }
+    ]
   },
   "overrides": [
     {
       // E2E Playwright: fixture dùng tham số `use` (không phải React hook) và `{}` làm tham số đầu bắt buộc của Playwright.
-      // Chỉ tắt đúng 2 quy tắc này cho e2e/**; mã app (src/**) vẫn giữ nguyên mức lint.
+      // Công cụ chạy dòng lệnh (e2e runner, script) in ra console là chủ đích.
+      // Chỉ tắt đúng các quy tắc này cho e2e/** và scripts/**; mã app (src/**) vẫn giữ nguyên mức lint.
       "files": ["e2e/**"],
       "rules": {
         "react/rules-of-hooks": "off",
-        "no-empty-pattern": "off"
+        "no-empty-pattern": "off",
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["scripts/**"],
+      "rules": {
+        "no-console": "off"
       }
     }
   ]

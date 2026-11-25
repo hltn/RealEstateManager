@@ -1,4 +1,8 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { KnowledgeConfigService } from './knowledge-config.service';
 import axios, { AxiosInstance } from 'axios';
 
@@ -13,9 +17,7 @@ export class WpClientService {
   private httpClient: AxiosInstance | null = null;
   private cachedSiteUrl: string | null = null;
 
-  constructor(
-    private readonly configService: KnowledgeConfigService,
-  ) {}
+  constructor(private readonly configService: KnowledgeConfigService) {}
 
   // ── HTTP Client Setup ───────────────────────────────────
 
@@ -66,9 +68,7 @@ export class WpClientService {
 
         // Do not retry on 4xx (except 429 rate limit)
         if (status && status >= 400 && status < 500 && status !== 429) {
-          this.logger.error(
-            `${context}: HTTP ${status} — ${error.message}`,
-          );
+          this.logger.error(`${context}: HTTP ${status} — ${error.message}`);
           throw new InternalServerErrorException(
             `WP API error (${context}): ${error.response?.data?.message || error.message}`,
           );
@@ -201,18 +201,14 @@ export class WpClientService {
     const client = await this.getClient();
 
     const result = await this.withRetry(async () => {
-      const response = await client.post(
-        '/media',
-        file,
-        {
-          headers: {
-            'Content-Type': mimeType,
-            'Content-Disposition': `attachment; filename="${filename}"`,
-          },
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
+      const response = await client.post('/media', file, {
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Disposition': `attachment; filename="${filename}"`,
         },
-      );
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
       return response.data;
     }, `uploadMedia(${filename})`);
 

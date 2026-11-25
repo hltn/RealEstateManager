@@ -28,10 +28,12 @@ interface CardHeadingProps {
   description?: string;
   trailing?: ReactNode;
   as?: 'h2' | 'h3';
+  /** Cột hẹp + khối `trailing` rộng: cho khối này xuống dòng dưới tiêu đề thay vì ép tiêu đề bẻ nhiều dòng. Mặc định giữ một hàng. */
+  shouldWrapTrailing?: boolean;
 }
 
-export const CardHeading = ({ icon: Icon, title, description, trailing, as: Heading = 'h2' }: CardHeadingProps) => (
-  <div className={`flex items-center justify-between gap-3 border-b pb-4 ${DIVIDER_CLASS}`}>
+export const CardHeading = ({ icon: Icon, title, description, trailing, as: Heading = 'h2', shouldWrapTrailing = false }: CardHeadingProps) => (
+  <div className={`flex items-center justify-between border-b pb-4 ${DIVIDER_CLASS} ${shouldWrapTrailing ? 'flex-wrap gap-x-3 gap-y-2' : 'gap-3'}`}>
     <div className="flex min-w-0 items-center gap-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-400">
         <Icon size={18} aria-hidden="true" />
@@ -149,7 +151,10 @@ export const StatusDropdown = ({ customer, align = 'left' }: StatusDropdownProps
 // SĐT + CCCD che theo quyền (C9)
 // ---------------------------------------------------------------------------
 
-/** SĐT che 3 số cuối; "Hiện số" dành cho mọi người xem được khách (kể cả thành viên nhóm), MỖI lần hiện ghi log PHONE_VIEWED. */
+/**
+ * SĐT che 3 số cuối; "Hiện số" dành cho mọi người xem được khách (kể cả thành viên nhóm), MỖI lần hiện ghi log PHONE_VIEWED.
+ * Khách chưa có SĐT (`phoneMasked` null, v1.0.5): chỉ hiện chữ "Chưa có số điện thoại", KHÔNG có nút "Hiện số" (gọi sẽ 409 CUSTOMER_PHONE_NOT_SET).
+ */
 export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerDetail; className?: string }) => {
   const api = useCrmApi();
   const { showToast } = useCrmActions();
@@ -164,11 +169,12 @@ export const PhoneDisplay = ({ customer, className = '' }: { customer: CustomerD
     }
     const result = await api.createPhoneView(customer.id);
     if (!result.ok) {
-      showToast({ type: 'error', title: result.error.message });
+      showToast({ type: 'error', title: result.error.errorCode === 'CUSTOMER_PHONE_NOT_SET' ? 'Khách chưa có số điện thoại' : result.error.message });
       return;
     }
     setRevealedPhone(result.data.phone);
   };
+  if (customer.phoneMasked === null) return <span className={`text-gray-500 dark:text-gray-400 ${className}`}>Chưa có số điện thoại</span>;
   return (
     <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
       <span className="font-medium tracking-wide tabular-nums text-gray-800 dark:text-white/90">

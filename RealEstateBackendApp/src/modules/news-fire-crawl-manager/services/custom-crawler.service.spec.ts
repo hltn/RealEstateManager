@@ -101,7 +101,11 @@ describe('CustomCrawlerService', () => {
   describe('crawlData — RSS source', () => {
     it('parse RSS thành công → upsert đúng số bài, stats successfulSources=1', async () => {
       newsSourceService.findActive.mockResolvedValue([
-        { name: 'VnExpress', url: 'https://vnexpress.net', rssUrl: 'https://vnexpress.net/rss' },
+        {
+          name: 'VnExpress',
+          url: 'https://vnexpress.net',
+          rssUrl: 'https://vnexpress.net/rss',
+        },
       ]);
       mockedAxios.get.mockResolvedValue({
         data: '<?xml version="1.0"?><rss><channel><item><title>Tin 1</title></item></channel></rss>',
@@ -109,8 +113,18 @@ describe('CustomCrawlerService', () => {
       const rssInstance = (service as any).rssParser;
       rssInstance.parseString.mockResolvedValue({
         items: [
-          { title: 'Tin 1', link: 'https://vnexpress.net/tin-1', contentSnippet: 'desc 1', pubDate: 'Wed, 28 Jul 2026 10:00:00 +0000' },
-          { title: 'Tin 2', link: 'https://vnexpress.net/tin-2', contentSnippet: 'desc 2', pubDate: 'Wed, 28 Jul 2026 11:00:00 +0000' },
+          {
+            title: 'Tin 1',
+            link: 'https://vnexpress.net/tin-1',
+            contentSnippet: 'desc 1',
+            pubDate: 'Wed, 28 Jul 2026 10:00:00 +0000',
+          },
+          {
+            title: 'Tin 2',
+            link: 'https://vnexpress.net/tin-2',
+            contentSnippet: 'desc 2',
+            pubDate: 'Wed, 28 Jul 2026 11:00:00 +0000',
+          },
         ],
       });
 
@@ -122,13 +136,19 @@ describe('CustomCrawlerService', () => {
       expect(mockRawArticleModel.updateOne).toHaveBeenCalledTimes(2);
       const call = mockRawArticleModel.updateOne.mock.calls[0];
       expect(call[0]).toEqual({ urlHash: expect.any(String) });
-      expect(call[1]).toMatchObject({ $set: expect.objectContaining({ urlHash: expect.any(String) }) });
+      expect(call[1]).toMatchObject({
+        $set: expect.objectContaining({ urlHash: expect.any(String) }),
+      });
       expect(call[2]).toEqual({ upsert: true });
     });
 
     it('filter theo days: bỏ qua bài cũ hơn cutoff', async () => {
       newsSourceService.findActive.mockResolvedValue([
-        { name: 'S', url: 'https://s.example', rssUrl: 'https://s.example/rss' },
+        {
+          name: 'S',
+          url: 'https://s.example',
+          rssUrl: 'https://s.example/rss',
+        },
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<rss></rss>' });
       const old = new Date();
@@ -137,8 +157,16 @@ describe('CustomCrawlerService', () => {
       const rssInstance = (service as any).rssParser;
       rssInstance.parseString.mockResolvedValue({
         items: [
-          { title: 'Cũ', link: 'https://s.example/cu', pubDate: old.toISOString() },
-          { title: 'Mới', link: 'https://s.example/moi', pubDate: recent.toISOString() },
+          {
+            title: 'Cũ',
+            link: 'https://s.example/cu',
+            pubDate: old.toISOString(),
+          },
+          {
+            title: 'Mới',
+            link: 'https://s.example/moi',
+            pubDate: recent.toISOString(),
+          },
         ],
       });
 
@@ -149,32 +177,64 @@ describe('CustomCrawlerService', () => {
 
     it('filter theo startDate/endDate: chỉ giữ bài trong khoảng', async () => {
       newsSourceService.findActive.mockResolvedValue([
-        { name: 'S', url: 'https://s.example', rssUrl: 'https://s.example/rss' },
+        {
+          name: 'S',
+          url: 'https://s.example',
+          rssUrl: 'https://s.example/rss',
+        },
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<rss></rss>' });
       const rssInstance = (service as any).rssParser;
       rssInstance.parseString.mockResolvedValue({
         items: [
-          { title: 'Trước', link: 'https://s.example/before', pubDate: '2026-07-01T10:00:00Z' },
-          { title: 'Trong', link: 'https://s.example/in', pubDate: '2026-07-25T10:00:00Z' },
-          { title: 'Sau', link: 'https://s.example/after', pubDate: '2026-07-30T10:00:00Z' },
+          {
+            title: 'Trước',
+            link: 'https://s.example/before',
+            pubDate: '2026-07-01T10:00:00Z',
+          },
+          {
+            title: 'Trong',
+            link: 'https://s.example/in',
+            pubDate: '2026-07-25T10:00:00Z',
+          },
+          {
+            title: 'Sau',
+            link: 'https://s.example/after',
+            pubDate: '2026-07-30T10:00:00Z',
+          },
         ],
       });
 
-      const result = await service.crawlData(undefined, '2026-07-20', '2026-07-28');
+      const result = await service.crawlData(
+        undefined,
+        '2026-07-20',
+        '2026-07-28',
+      );
       expect(result.stats.totalArticles).toBe(1);
     });
 
     it('bài thiếu title → bị skip ở filter (line 220), KHÔNG lên DB', async () => {
       newsSourceService.findActive.mockResolvedValue([
-        { name: 'S', url: 'https://s.example', rssUrl: 'https://s.example/rss' },
+        {
+          name: 'S',
+          url: 'https://s.example',
+          rssUrl: 'https://s.example/rss',
+        },
       ]);
       mockedAxios.get.mockResolvedValue({ data: '<rss></rss>' });
       const rssInstance = (service as any).rssParser;
       rssInstance.parseString.mockResolvedValue({
         items: [
-          { title: '', link: 'https://s.example/no-title', pubDate: new Date().toISOString() },
-          { title: 'Hợp lệ', link: 'https://s.example/ok', pubDate: new Date().toISOString() },
+          {
+            title: '',
+            link: 'https://s.example/no-title',
+            pubDate: new Date().toISOString(),
+          },
+          {
+            title: 'Hợp lệ',
+            link: 'https://s.example/ok',
+            pubDate: new Date().toISOString(),
+          },
         ],
       });
 
@@ -186,19 +246,29 @@ describe('CustomCrawlerService', () => {
 
     it('source lỗi (axios throw) → failedSources++, KHÔNG throw ra ngoài', async () => {
       newsSourceService.findActive.mockResolvedValue([
-        { name: 'Bad', url: 'https://bad.example', rssUrl: 'https://bad.example/rss' },
+        {
+          name: 'Bad',
+          url: 'https://bad.example',
+          rssUrl: 'https://bad.example/rss',
+        },
       ]);
       mockedAxios.get.mockRejectedValue(new Error('network down'));
 
       const result = await service.crawlData();
       expect(result.stats.failedSources).toBe(1);
       expect(result.stats.successfulSources).toBe(0);
-      expect(result.stats.failedDetails).toEqual([{ url: 'https://bad.example', error: 'network down' }]);
+      expect(result.stats.failedDetails).toEqual([
+        { url: 'https://bad.example', error: 'network down' },
+      ]);
     });
 
     it('RSS parse throw → source tính là failed', async () => {
       newsSourceService.findActive.mockResolvedValue([
-        { name: 'S', url: 'https://s.example', rssUrl: 'https://s.example/rss' },
+        {
+          name: 'S',
+          url: 'https://s.example',
+          rssUrl: 'https://s.example/rss',
+        },
       ]);
       mockedAxios.get.mockResolvedValue({ data: 'not xml' });
       const rssInstance = (service as any).rssParser;
@@ -233,24 +303,40 @@ describe('CustomCrawlerService', () => {
       aiPromptConfigService.getPromptByName.mockReturnValue('extract prompt');
       aiFilterService.callAiCompletion.mockResolvedValue(
         JSON.stringify([
-          { title: 'Post 1', url: '/post-1', publishedAt: new Date().toISOString() },
+          {
+            title: 'Post 1',
+            url: '/post-1',
+            publishedAt: new Date().toISOString(),
+          },
         ]),
       );
 
       const result = await service.crawlData();
       expect(result.stats.successfulSources).toBe(1);
       expect(result.stats.totalArticles).toBe(1);
-      expect(mockRawArticleModel.updateOne.mock.calls[0][1].$set.url).toBe('https://ai.example/post-1');
+      expect(mockRawArticleModel.updateOne.mock.calls[0][1].$set.url).toBe(
+        'https://ai.example/post-1',
+      );
     });
 
     it('AI trả JSON có key articles → trích đúng mảng', async () => {
       newsSourceService.findActive.mockResolvedValue([
         { name: 'AI-src', url: 'https://ai.example', rssUrl: undefined },
       ]);
-      mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
+      mockedAxios.get.mockResolvedValue({
+        data: '<html><body>x</body></html>',
+      });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
       aiFilterService.callAiCompletion.mockResolvedValue(
-        JSON.stringify({ articles: [{ title: 'A', url: 'https://ai.example/a', publishedAt: new Date().toISOString() }] }),
+        JSON.stringify({
+          articles: [
+            {
+              title: 'A',
+              url: 'https://ai.example/a',
+              publishedAt: new Date().toISOString(),
+            },
+          ],
+        }),
       );
 
       const result = await service.crawlData();
@@ -261,7 +347,9 @@ describe('CustomCrawlerService', () => {
       newsSourceService.findActive.mockResolvedValue([
         { name: 'AI-src', url: 'https://ai.example', rssUrl: undefined },
       ]);
-      mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
+      mockedAxios.get.mockResolvedValue({
+        data: '<html><body>x</body></html>',
+      });
       aiPromptConfigService.getPromptByName.mockReturnValue('');
 
       const result = await service.crawlData();
@@ -272,7 +360,9 @@ describe('CustomCrawlerService', () => {
       newsSourceService.findActive.mockResolvedValue([
         { name: 'AI-src', url: 'https://ai.example', rssUrl: undefined },
       ]);
-      mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
+      mockedAxios.get.mockResolvedValue({
+        data: '<html><body>x</body></html>',
+      });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
       aiFilterService.callAiCompletion.mockResolvedValue('not-json');
 
@@ -285,10 +375,20 @@ describe('CustomCrawlerService', () => {
       newsSourceService.findActive.mockResolvedValue([
         { name: 'AI-src', url: 'https://ai.example', rssUrl: undefined },
       ]);
-      mockedAxios.get.mockResolvedValue({ data: '<html><body>x</body></html>' });
+      mockedAxios.get.mockResolvedValue({
+        data: '<html><body>x</body></html>',
+      });
       aiPromptConfigService.getPromptByName.mockReturnValue('p');
-      const inner = JSON.stringify([{ title: 'Fenced', url: 'https://ai.example/f', publishedAt: new Date().toISOString() }]);
-      aiFilterService.callAiCompletion.mockResolvedValue('```json\n' + inner + '\n```');
+      const inner = JSON.stringify([
+        {
+          title: 'Fenced',
+          url: 'https://ai.example/f',
+          publishedAt: new Date().toISOString(),
+        },
+      ]);
+      aiFilterService.callAiCompletion.mockResolvedValue(
+        '```json\n' + inner + '\n```',
+      );
 
       const result = await service.crawlData();
       expect(result.stats.totalArticles).toBe(1);
@@ -299,9 +399,18 @@ describe('CustomCrawlerService', () => {
     it('trả { data, total } và gọi find/countDocuments cùng query', async () => {
       const data = [{ _id: 'a' }, { _id: 'b' }];
       mockRawArticleModel.find.mockReturnValue(chainableFind(data));
-      mockRawArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(2) });
+      mockRawArticleModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(2),
+      });
 
-      const result = await service.getRawArticles(undefined, 'newest', undefined, undefined, 1, 20);
+      const result = await service.getRawArticles(
+        undefined,
+        'newest',
+        undefined,
+        undefined,
+        1,
+        20,
+      );
 
       expect(result).toEqual({ data, total: 2 });
       expect(mockRawArticleModel.find).toHaveBeenCalledWith({});
@@ -310,7 +419,9 @@ describe('CustomCrawlerService', () => {
 
     it('search → query $or trên title + description, escape regex ký tự đặc biệt (chống NoSQL injection)', async () => {
       mockRawArticleModel.find.mockReturnValue(chainableFind([]));
-      mockRawArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockRawArticleModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.getRawArticles('a.b*c', 'newest');
 
@@ -324,7 +435,9 @@ describe('CustomCrawlerService', () => {
     it('sort newest → find().sort({ publishedAt: -1 })', async () => {
       const chain = chainableFind([]);
       mockRawArticleModel.find.mockReturnValue(chain);
-      mockRawArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockRawArticleModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.getRawArticles(undefined, 'newest');
 
@@ -334,7 +447,9 @@ describe('CustomCrawlerService', () => {
     it('sort oldest → find().sort({ publishedAt: 1 })', async () => {
       const chain = chainableFind([]);
       mockRawArticleModel.find.mockReturnValue(chain);
-      mockRawArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockRawArticleModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
       await service.getRawArticles(undefined, 'oldest');
 
@@ -343,9 +458,16 @@ describe('CustomCrawlerService', () => {
 
     it('startDate/endDate → query.publishedAt có $gte/$lte quy đổi đúng mốc UTC theo giờ Việt Nam (offset +7)', async () => {
       mockRawArticleModel.find.mockReturnValue(chainableFind([]));
-      mockRawArticleModel.countDocuments.mockReturnValue({ exec: jest.fn().mockResolvedValue(0) });
+      mockRawArticleModel.countDocuments.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(0),
+      });
 
-      await service.getRawArticles(undefined, 'newest', '2026-07-01', '2026-07-31');
+      await service.getRawArticles(
+        undefined,
+        'newest',
+        '2026-07-01',
+        '2026-07-31',
+      );
 
       const query = mockRawArticleModel.find.mock.calls[0][0];
       expect(query.publishedAt).toBeDefined();
@@ -359,11 +481,15 @@ describe('CustomCrawlerService', () => {
   describe('getRawArticlesByIds', () => {
     it('find với _id $in ids + lean', async () => {
       const exec = jest.fn().mockResolvedValue([{ _id: '1' }]);
-      mockRawArticleModel.find.mockReturnValue({ lean: jest.fn().mockReturnValue({ exec }) });
+      mockRawArticleModel.find.mockReturnValue({
+        lean: jest.fn().mockReturnValue({ exec }),
+      });
 
       const result = await service.getRawArticlesByIds(['1', '2']);
       expect(result).toEqual([{ _id: '1' }]);
-      expect(mockRawArticleModel.find).toHaveBeenCalledWith({ _id: { $in: ['1', '2'] } });
+      expect(mockRawArticleModel.find).toHaveBeenCalledWith({
+        _id: { $in: ['1', '2'] },
+      });
     });
   });
 
@@ -381,7 +507,9 @@ describe('CustomCrawlerService', () => {
       const exec = jest.fn();
       mockRawArticleModel.deleteMany.mockReturnValue({ exec });
       await service.deleteRawArticlesBulk(['1', '2']);
-      expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['1', '2'] } });
+      expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({
+        _id: { $in: ['1', '2'] },
+      });
     });
   });
 
@@ -390,7 +518,23 @@ describe('CustomCrawlerService', () => {
       const exec = jest.fn();
       mockRawArticleModel.deleteMany.mockReturnValue({ exec });
       await service.deleteRawArticlesNotIn(['h1', 'h2']);
-      expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({ urlHash: { $nin: ['h1', 'h2'] } });
+      expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({
+        urlHash: { $nin: ['h1', 'h2'] },
+      });
+    });
+  });
+
+  describe('deleteRawArticlesNotIn (FR-14)', () => {
+    it('FR-14: loại phần tử không phải chuỗi khỏi $nin', async () => {
+      const exec = jest.fn();
+      mockRawArticleModel.deleteMany.mockReturnValue({ exec });
+      await service.deleteRawArticlesNotIn([
+        'a',
+        { $ne: null },
+      ] as unknown as string[]);
+      expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({
+        urlHash: { $nin: ['a'] },
+      });
     });
   });
 
@@ -409,6 +553,26 @@ describe('CustomCrawlerService', () => {
       expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({
         urlHash: { $in: ['s1', 's2'], $nin: ['s1'] },
       });
+    });
+
+    it('FR-14: phần tử không phải chuỗi (object `$ne`) bị loại trước khi vào filter', async () => {
+      const exec = jest.fn();
+      mockRawArticleModel.deleteMany.mockReturnValue({ exec });
+      await service.deleteRawArticlesInSetNotIn(
+        ['s1', { $ne: null }, 5, ''] as unknown as string[],
+        [{ $gt: '' }, 'k'] as unknown as string[],
+      );
+      expect(mockRawArticleModel.deleteMany).toHaveBeenCalledWith({
+        urlHash: { $in: ['s1'], $nin: ['k'] },
+      });
+    });
+
+    it('FR-14: toàn bộ phần tử không hợp lệ → KHÔNG gọi deleteMany', async () => {
+      await service.deleteRawArticlesInSetNotIn(
+        [{ $ne: null }] as unknown as string[],
+        [],
+      );
+      expect(mockRawArticleModel.deleteMany).not.toHaveBeenCalled();
     });
   });
 });

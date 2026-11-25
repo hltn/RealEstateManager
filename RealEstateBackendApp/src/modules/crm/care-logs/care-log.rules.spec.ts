@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
 import { CrmActor } from '../common/access/crm-actor';
@@ -7,6 +8,7 @@ import {
   assertOccurredAtNotFuture,
   canModifyCareLog,
   diffAttachmentIds,
+  readContactResultIntent,
 } from './care-log.rules';
 
 const NOW = new Date('2026-10-23T12:00:00Z');
@@ -49,13 +51,23 @@ describe('care-log.rules', () => {
       }
     });
 
-    it('Quản trị và Quản lý sửa mọi nhật ký, mọi lúc', () => {
+    it('FR-32: Quản trị sửa mọi nhật ký, mọi lúc', () => {
       const old = logBy(new Types.ObjectId(), 90);
-      for (const role of [UserRole.ADMIN, UserRole.MANAGER]) {
-        const actor = actorOf(role);
-        expect(canModifyCareLog(actor, old)).toBe(true);
-        expect(() => assertCanModifyCareLog(actor, old)).not.toThrow();
-      }
+      const admin = actorOf(UserRole.ADMIN);
+      expect(canModifyCareLog(admin, old)).toBe(true);
+      expect(() => assertCanModifyCareLog(admin, old)).not.toThrow();
+    });
+
+    it('FR-32: Quản lý KHÔNG phải tác giả bị 403 INSUFFICIENT_ROLE; Quản lý là tác giả thì được', () => {
+      const manager = actorOf(UserRole.MANAGER);
+      const others = logBy(new Types.ObjectId(), 1);
+      expect(canModifyCareLog(manager, others)).toBe(false);
+      expect(() => assertCanModifyCareLog(manager, others)).toThrow(
+        ForbiddenException,
+      );
+      const own = logBy(manager.userId, 1);
+      expect(canModifyCareLog(manager, own)).toBe(true);
+      expect(() => assertCanModifyCareLog(manager, own)).not.toThrow();
     });
   });
 
@@ -85,5 +97,66 @@ describe('care-log.rules', () => {
 
     expect(toAttach.map(String)).toEqual([String(c)]);
     expect(toDetach.map(String)).toEqual([String(a)]);
+  });
+
+  describe('readContactResultIntent (FR-40)', () => {
+    const id = new Types.ObjectId().toHexString();
+
+    it('FR-40: không gửi id lẫn code thì không đụng tới kết quả liên hệ', () => {
+      expect(readContactResultIntent(undefined, undefined)).toEqual({
+        kind: 'unchanged',
+      });
+    });
+
+    it('FR-40: chỉ gửi code thì gán theo code, lỗi báo ở field contactResultCode', () => {
+      expect(readContactResultIntent(undefined, 'QUAN_TAM')).toEqual({
+        kind: 'assign',
+        id: null,
+        code: 'QUAN_TAM',
+        field: 'contactResultCode',
+      });
+    });
+
+    it('FR-40: chỉ gửi id (cũ) thì gán theo id, lỗi báo ở field contactResultId', () => {
+      expect(readContactResultIntent(id, undefined)).toEqual({
+        kind: 'assign',
+        id,
+        code: null,
+        field: 'contactResultId',
+      });
+    });
+
+    it('FR-40: gửi cả hai thì giữ cả hai để CustomerRefsService kiểm cùng một bản ghi', () => {
+      expect(readContactResultIntent(id, 'QUAN_TAM')).toMatchObject({
+        kind: 'assign',
+        id,
+        code: 'QUAN_TAM',
+      });
+    });
+
+    it('FR-40: null ở id, code hoặc cả hai thì bỏ chọn', () => {
+      for (const [i, c] of [
+        [null, undefined],
+        [undefined, null],
+        [null, null],
+      ] as const) {
+        expect(readContactResultIntent(i, c)).toEqual({ kind: 'clear' });
+      }
+    });
+
+    it('FR-40: một bên bỏ chọn, bên kia chọn giá trị thì 400 VALIDATION_FAILED', () => {
+      expect(() => readContactResultIntent(null, 'QUAN_TAM')).toThrow(
+        expect.objectContaining({
+          errorCode: 'VALIDATION_FAILED',
+          details: { field: 'contactResultId' },
+        }),
+      );
+      expect(() => readContactResultIntent(id, null)).toThrow(
+        expect.objectContaining({
+          errorCode: 'VALIDATION_FAILED',
+          details: { field: 'contactResultCode' },
+        }),
+      );
+    });
   });
 });

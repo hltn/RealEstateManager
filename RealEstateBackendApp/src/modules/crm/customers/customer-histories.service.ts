@@ -83,7 +83,7 @@ const dateRange = (from?: string, to?: string) =>
  * Lịch sử thay đổi của khách (`GET /crm/customers/:id/histories`) và audit toàn CRM (`/crm/audit-logs`, Quản trị).
  *
  * Histories: ai xem được khách thì xem được lịch sử (SĐT cũ -> mới đầy đủ theo quyết định #34; CCCD luôn che);
- * mục `PHONE_VIEWED`/`NATIONAL_ID_VIEWED` chỉ Quản trị/Quản lý; các cảnh báo dò số (`PHONE_LOOKUP`...) chỉ ở `/crm/audit-logs`.
+ * mục `PHONE_VIEWED`/`NATIONAL_ID_VIEWED` chỉ Quản trị/Quản lý; các cảnh báo dò số (`PHONE_SEARCH_ANOMALY`...; `PHONE_LOOKUP` chỉ còn trong log cũ) chỉ ở `/crm/audit-logs`.
  */
 @Injectable()
 export class CustomerHistoriesService {

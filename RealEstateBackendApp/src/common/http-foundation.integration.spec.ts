@@ -24,9 +24,9 @@ import { Test } from '@nestjs/testing';
 import { MongooseHealthIndicator, TerminusModule } from '@nestjs/terminus';
 import fastifyHelmet from '@fastify/helmet';
 import type Redis from 'ioredis';
-import { HealthController } from '../health.controller';
-import { RedisHealthIndicator } from '../health-indicators/redis.health-indicator';
-import { StorageHealthIndicator } from '../health-indicators/storage.health-indicator';
+import { HealthController } from '../health/health.controller';
+import { RedisHealthIndicator } from '../health/redis.health-indicator';
+import { StorageHealthIndicator } from '../health/storage.health-indicator';
 import { RedisModule } from '../shared/redis/redis.module';
 import { REDIS_CLIENT } from '../shared/redis/redis.constants';
 import { FILE_STORAGE } from '../shared/storage/file-storage.interface';
@@ -45,10 +45,10 @@ class ProbeController {
   @Get('business')
   business() {
     throw new BusinessException(
-      ErrorCode.CUSTOMER_PHONE_DUPLICATED,
-      'Số điện thoại đã tồn tại',
+      ErrorCode.VERSION_CONFLICT,
+      'Hồ sơ đã bị người khác chỉnh sửa',
       HttpStatus.CONFLICT,
-      { existingCustomerId: 'c1' },
+      { currentVersion: 3 },
     );
   }
 
@@ -143,9 +143,9 @@ describe('HTTP nền tảng: Helmet + GlobalExceptionFilter (Fastify thật)', (
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({
       statusCode: 409,
-      message: 'Số điện thoại đã tồn tại',
-      errorCode: 'CUSTOMER_PHONE_DUPLICATED',
-      details: { existingCustomerId: 'c1' },
+      message: 'Hồ sơ đã bị người khác chỉnh sửa',
+      errorCode: 'VERSION_CONFLICT',
+      details: { currentVersion: 3 },
       timestamp: expect.any(String),
       path: '/api/v1/probe/business',
     });

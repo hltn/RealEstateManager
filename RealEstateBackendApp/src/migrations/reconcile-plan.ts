@@ -1,5 +1,7 @@
 import type { ProbeResult } from './baseline-probes/probe.types';
+import { findPhaseOrderViolation } from './migration-phase';
 import type { MigrationState } from './migration-state';
+import type { PhaseFilter } from './migration.types';
 import { BASELINE_MIGRATION_IDS } from './system.constants';
 import { compareVersions, isValidVersion } from './version-compare.util';
 
@@ -47,6 +49,10 @@ export interface ReconcilePlanInput {
   probeResults?: readonly ProbeResult[];
   /** Id migration trong registry (từ 007 trở đi), đã hợp lệ (`assertValidRegistry`). */
   registryIds: readonly string[];
+  /** Id (trong `registryIds`) có pha `post-up`; id khác coi là `pre-up`. Mặc định rỗng. */
+  postUpIds?: readonly string[];
+  /** Pha được chọn chạy (`--phase`); mặc định `all` = mọi migration chờ như trước đây. */
+  phase?: PhaseFilter;
 }
 
 const emptyPlan = (
@@ -92,11 +98,16 @@ const findLedgerGap = (
  *    cần probe cho id còn thiếu (NEEDS_PROBES); có probe không đạt/thiếu kết quả -> PROBE_FAILED (KHÔNG baseline gì),
  *    đạt hết -> READY kèm `baselineIds`. 6. Còn lại READY: chạy migration chờ, ghi version nếu khác.
  *
+ * Pha (FR-21): `phase` chỉ chọn migration chờ theo pha; chọn `pre-up` mà còn `post-up` chờ có số nhỏ hơn một `pre-up` chờ
+ * -> REFUSED (mã 1, "chạy `--phase post-up` trước") để không tạo lỗ hổng sổ.
+ *
  * `version` đã có trong DB thì TIN version (không baseline dù sổ thiếu 002..006); DB mới tinh (users rỗng) không baseline
  * và được ghi version ngay (`forceVersionWrite`) kể cả khi `--skip-version`.
  */
 export const planReconcile = (input: ReconcilePlanInput): ReconcilePlan => {
   const { state, appVersion, probeResults, registryIds } = input;
+  const phase = input.phase ?? 'all';
+  const postUpIds = new Set(input.postUpIds ?? []);
 
   if (state.lock) {
     return emptyPlan(
@@ -159,9 +170,21 @@ export const planReconcile = (input: ReconcilePlanInput): ReconcilePlan => {
     baselineIds.push(...missing);
   }
 
-  const pendingIds = registryIds
+  const allPending = registryIds
     .filter((id) => !appliedIds.has(id))
     .sort((a, b) => a.localeCompare(b));
+  // Quy tắc an toàn sổ theo pha (FR-21): không cho pre-up chạy vượt mặt post-up nhỏ hơn còn chờ.
+  const phaseViolation = findPhaseOrderViolation(
+    allPending.map((id) => ({
+      id,
+      phase: postUpIds.has(id) ? 'post-up' : 'pre-up',
+    })),
+    phase,
+  );
+  if (phaseViolation) return emptyPlan('REFUSED', phaseViolation);
+  const pendingIds = allPending.filter(
+    (id) => phase === 'all' || (phase === 'post-up') === postUpIds.has(id),
+  );
   const warnings: string[] = [];
   if (order === 0 && pendingIds.length > 0) {
     warnings.push(

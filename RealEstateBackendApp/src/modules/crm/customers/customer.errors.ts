@@ -26,14 +26,6 @@ export const versionConflict = (currentVersion: number): BusinessException =>
 export const insufficientRole = (): ForbiddenException =>
   new ForbiddenException('Insufficient role');
 
-/** 409: xóa khách không thuộc nhóm "Bỏ" (xóa hàng loạt, hoặc STAFF xóa đơn). */
-export const customerNotDropped = (): BusinessException =>
-  new BusinessException(
-    ErrorCode.CUSTOMER_NOT_DROPPED,
-    'Chỉ xóa được khách thuộc nhóm "Bỏ"',
-    HttpStatus.CONFLICT,
-  );
-
 /** 409: xóa vĩnh viễn khách chưa bị xóa mềm. */
 export const customerNotDeleted = (): BusinessException =>
   new BusinessException(
@@ -65,6 +57,19 @@ export const normalizePhoneOrThrow = (input: string): string => {
     );
   }
   return phone;
+};
+
+/**
+ * Chuẩn hóa SĐT TÙY CHỌN (FR-01): `null`/`undefined`/chuỗi rỗng (hoặc chỉ khoảng trắng) => `null` (không có SĐT);
+ * có giá trị mà sai định dạng => 400 `INVALID_PHONE`. Không bao giờ gọi `normalizePhone` với giá trị rỗng.
+ */
+export const normalizeOptionalPhoneOrThrow = (
+  input: string | null | undefined,
+): string | null => {
+  if (input === null || input === undefined || input.trim() === '') {
+    return null;
+  }
+  return normalizePhoneOrThrow(input);
 };
 
 /** CCCD 9 hoặc 12 chữ số, sai => 400 `VALIDATION_FAILED`. */

@@ -51,14 +51,20 @@ export const AppointmentMoreMenu = ({ appointment, orientation = 'horizontal' }:
   const items: MenuItem[] = [
     { label: 'Xem hồ sơ khách', icon: UserRound, onSelect: () => selectCustomer(appointment.customer.id) },
     { label: 'Ghi chú nhanh', icon: NotebookPen, onSelect: () => openQuickNote(appointment.customer.id) },
-    { label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customer.id) },
-    {
-      label: appointment.status === 'DONE' ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
-      icon: appointment.status === 'DONE' ? Undo2 : CircleCheck,
-      onSelect: () => toggleCompleted(appointment),
-    },
+    // Khách chưa có SĐT: không có số để nhắn Zalo -> ẩn mục.
+    ...(appointment.customer.phoneMasked ? [{ label: 'Nhắn Zalo', icon: MessageSquareText, onSelect: () => messageZalo(appointment.customer.id) }] : []),
+    // FR-32: đổi trạng thái / đổi giờ / hủy chỉ hiện khi backend báo `canEdit` (người tạo lịch hoặc Quản trị) — KHÔNG suy từ vai trò Quản lý.
+    ...(appointment.canEdit
+      ? [
+          {
+            label: appointment.status === 'DONE' ? 'Bỏ đánh dấu hoàn thành' : 'Đánh dấu hoàn thành',
+            icon: appointment.status === 'DONE' ? Undo2 : CircleCheck,
+            onSelect: () => toggleCompleted(appointment),
+          },
+        ]
+      : []),
     // Đổi giờ / hủy chỉ áp dụng cho lịch đang chờ thực hiện (backend từ chối sửa lịch đã xong/đã hủy).
-    ...(appointment.status === 'SCHEDULED'
+    ...(appointment.canEdit && appointment.status === 'SCHEDULED'
       ? [
           { label: 'Đổi giờ', icon: CalendarClock, onSelect: () => setIsRescheduling(true) },
           { label: 'Hủy lịch hẹn', icon: CalendarX2, onSelect: () => setIsConfirmingCancel(true) },

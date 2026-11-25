@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiError } from '@crm/api';
-import type { AdminUser, CrmSettings, CustomerStatusItem, UserRole } from '@crm/types/crm';
+import type { AdminTag, AdminUser, ContactResult, CrmSettings, CustomerStatusItem, UserRole } from '@crm/types/crm';
 import {
+  CATALOG_ENDPOINTS,
+  SETTINGS_TABS,
+  TAG_COLOR_OPTIONS,
+  buildTagPatch,
+  listMergeTargets,
+  toTagDraft,
+  validateTagDraft,
   createEmptyDraft,
+  parseFollowUpDays,
   withAreaParent,
   buildCreateUserBody,
   createEmptyUserDraft,
@@ -228,5 +236,100 @@ describe('tài khoản và nhóm', () => {
     expect(validateTeam({ id: null, name: 'KD1', code: 'KD-1', managerIds: [], isActive: true })).toBeNull();
     expect(validateTeam({ id: 't1', name: '', code: '', managerIds: [], isActive: true })).toMatch(/tên nhóm/);
     expect(validateTeam({ id: 't1', name: 'KD1', code: '', managerIds: [], isActive: true })).toBeNull();
+  });
+});
+
+const CONTACT_RESULT: ContactResult = { id: 'PRICE_QUOTE', label: 'Đã báo giá', suggestedFollowUpDays: 2, suggestionText: 'Gọi hỏi phản hồi báo giá', order: 3, isActive: true };
+
+describe('FR-39: danh mục Kết quả liên hệ', () => {
+  it('FR-39: có tab "Kết quả liên hệ" và ánh xạ sang endpoint contact-results', () => {
+    expect(SETTINGS_TABS).toContainEqual({ id: 'contactResults', label: 'Kết quả liên hệ' });
+    expect(CATALOG_ENDPOINTS.contactResults).toBe('contact-results');
+  });
+
+  it('FR-39: bản nháp mới không gợi ý; toDraft đọc đủ số ngày và lời gợi ý (null -> trống, 0 giữ là "0")', () => {
+    expect(createEmptyDraft([])).toMatchObject({ suggestedFollowUpDays: '', suggestionText: '' });
+    expect(toDraft(CONTACT_RESULT)).toMatchObject({ id: 'PRICE_QUOTE', name: 'Đã báo giá', order: 3, suggestedFollowUpDays: '2', suggestionText: 'Gọi hỏi phản hồi báo giá' });
+    expect(toDraft({ ...CONTACT_RESULT, suggestedFollowUpDays: null })).toMatchObject({ suggestedFollowUpDays: '' });
+    expect(toDraft({ ...CONTACT_RESULT, suggestedFollowUpDays: 0 })).toMatchObject({ suggestedFollowUpDays: '0' });
+  });
+
+  it('FR-39: tạo mới gửi code sinh từ tên + số ngày (số) + lời gợi ý đã trim; sửa KHÔNG gửi code, gửi isActive', () => {
+    const create = toCatalogBody('contactResults', { ...createEmptyDraft([]), name: ' Hẹn xem nhà ', suggestedFollowUpDays: '3', suggestionText: '  Chuẩn bị lịch  ' });
+    expect(create).toEqual({ code: 'HEN_XEM_NHA', label: 'Hẹn xem nhà', order: 1, suggestedFollowUpDays: 3, suggestionText: 'Chuẩn bị lịch' });
+    const edit = toCatalogBody('contactResults', { ...toDraft(CONTACT_RESULT), isActive: false });
+    expect(edit).toEqual({ label: 'Đã báo giá', order: 3, isActive: false, suggestedFollowUpDays: 2, suggestionText: 'Gọi hỏi phản hồi báo giá' });
+    expect(edit).not.toHaveProperty('code');
+  });
+
+  it('FR-39: để trống số ngày -> null (bỏ gợi ý), "0" -> 0 (hẹn ngay trong ngày)', () => {
+    expect(toCatalogBody('contactResults', { ...toDraft(CONTACT_RESULT), suggestedFollowUpDays: '' })).toMatchObject({ suggestedFollowUpDays: null });
+    expect(toCatalogBody('contactResults', { ...toDraft(CONTACT_RESULT), suggestedFollowUpDays: '0' })).toMatchObject({ suggestedFollowUpDays: 0 });
+  });
+
+  it.each([
+    ['', null],
+    ['  ', null],
+    ['0', 0],
+    ['365', 365],
+    [' 7 ', 7],
+  ])('FR-39: parseFollowUpDays(%j) = %j', (text, expected) => {
+    expect(parseFollowUpDays(text)).toBe(expected);
+  });
+
+  it.each(['366', '-1', '1.5', 'abc', '1e2'])('FR-39: parseFollowUpDays từ chối %j', (text) => {
+    expect(parseFollowUpDays(text)).toBeNaN();
+  });
+
+  it('FR-39: validateDraft báo lỗi tiếng Việt cho số ngày sai và lời gợi ý quá 300 ký tự; hợp lệ thì null', () => {
+    const base = { ...createEmptyDraft([]), name: 'Hẹn xem nhà' };
+    expect(validateDraft('contactResults', base)).toBeNull();
+    expect(validateDraft('contactResults', { ...base, suggestedFollowUpDays: '366' })).toMatch(/từ 0 đến 365/);
+    expect(validateDraft('contactResults', { ...base, suggestedFollowUpDays: '1.5' })).toMatch(/số nguyên/);
+    expect(validateDraft('contactResults', { ...base, suggestionText: 'a'.repeat(300) })).toBeNull();
+    expect(validateDraft('contactResults', { ...base, suggestionText: 'a'.repeat(301) })).toMatch(/tối đa 300/);
+    // Quy tắc chung vẫn áp dụng: tên trống, tên không sinh được mã.
+    expect(validateDraft('contactResults', createEmptyDraft([]))).toMatch(/nhập tên/);
+    expect(validateDraft('contactResults', { ...base, name: '123' })).toMatch(/mã/);
+  });
+
+  it('FR-39: loại danh mục khác không bị kiểm số ngày/lời gợi ý và không gửi hai trường này', () => {
+    const draft = { ...createEmptyDraft([]), name: 'Zalo', suggestedFollowUpDays: '999', suggestionText: 'x'.repeat(500) };
+    expect(validateDraft('leadSources', draft)).toBeNull();
+    expect(toCatalogBody('leadSources', draft)).toEqual({ code: 'ZALO', label: 'Zalo', order: 1 });
+  });
+});
+
+describe('thẻ (FR-42)', () => {
+  const tag = (patchValue: Partial<AdminTag> = {}): AdminTag => ({ id: 't1', name: 'Golf', category: 'INTEREST', usageCount: 3, color: null, ...patchValue });
+
+  it('có tab "Thẻ"; màu chọn được gồm "Không màu" (giá trị rỗng) và các tông thiết kế', () => {
+    expect(SETTINGS_TABS).toContainEqual({ id: 'tags', label: 'Thẻ' });
+    // FR-41: tab "Trường chân dung" nằm ngay sau "Thẻ".
+    const ids = SETTINGS_TABS.map((tab) => tab.id);
+    expect(SETTINGS_TABS).toContainEqual({ id: 'personaFields', label: 'Trường chân dung' });
+    expect(ids.indexOf('personaFields')).toBe(ids.indexOf('tags') + 1);
+    expect(TAG_COLOR_OPTIONS[0]).toEqual({ value: '', label: 'Không màu' });
+    expect(TAG_COLOR_OPTIONS.map((option) => option.value)).toContain('brand');
+  });
+
+  it('validateTagDraft: tên trống/quá dài báo lỗi, hợp lệ trả null', () => {
+    expect(validateTagDraft({ ...toTagDraft(tag()), name: '  ' })).toBe('Vui lòng nhập tên thẻ.');
+    expect(validateTagDraft({ ...toTagDraft(tag()), name: 'x'.repeat(51) })).toBe('Tên thẻ tối đa 50 ký tự.');
+    expect(validateTagDraft({ ...toTagDraft(tag()), name: 'x'.repeat(50) })).toBeNull();
+  });
+
+  it('buildTagPatch: không đổi gì thì rỗng; chỉ gồm field đổi; trim tên; màu rỗng -> null, không màu -> có màu', () => {
+    expect(buildTagPatch(tag(), toTagDraft(tag()))).toEqual({});
+    expect(buildTagPatch(tag(), { ...toTagDraft(tag()), name: ' Golf ' })).toEqual({});
+    expect(buildTagPatch(tag(), { ...toTagDraft(tag()), name: 'Gôn', category: 'OTHER' })).toEqual({ name: 'Gôn', category: 'OTHER' });
+    expect(buildTagPatch(tag({ color: 'brand' }), { ...toTagDraft(tag({ color: 'brand' })), color: '' })).toEqual({ color: null });
+    expect(buildTagPatch(tag(), { ...toTagDraft(tag()), color: 'error' })).toEqual({ color: 'error' });
+  });
+
+  it('listMergeTargets: cùng nhóm, loại chính nó', () => {
+    const source = tag({ id: 'a' });
+    const tags = [source, tag({ id: 'b' }), tag({ id: 'c', category: 'OCCUPATION' })];
+    expect(listMergeTargets(tags, source).map((item) => item.id)).toEqual(['b']);
   });
 });

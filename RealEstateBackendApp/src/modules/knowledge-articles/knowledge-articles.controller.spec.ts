@@ -164,7 +164,7 @@ describe('KnowledgeArticlesController', () => {
 
       await controller.updateWpConfig({
         siteUrl: 'https://old.com',
-        appPassword: '***' as never,
+        appPassword: '***',
       });
 
       // The config service must receive payload WITHOUT appPassword
@@ -180,7 +180,7 @@ describe('KnowledgeArticlesController', () => {
 
       await controller.updateWpConfig({
         siteUrl: 'https://old.com',
-        appPassword: '' as never,
+        appPassword: '',
       });
 
       const passedPayload = mockConfigService.updateWpConfig.mock.calls[0][0];
@@ -194,7 +194,7 @@ describe('KnowledgeArticlesController', () => {
       } as never);
 
       await controller.updateWpConfig({
-        appPassword: 'new-real-pw' as never,
+        appPassword: 'new-real-pw',
       });
 
       const passedPayload = mockConfigService.updateWpConfig.mock.calls[0][0];
@@ -540,7 +540,11 @@ describe('KnowledgeArticlesController', () => {
       mockNlCronService.parseDescription.mockResolvedValue({
         cronExpression: '0 8 * * 1-5',
         explanation: 'Weekdays at 8am',
-        schedule: { frequency: 'weekdays', time: '08:00', timezone: 'Asia/Ho_Chi_Minh' },
+        schedule: {
+          frequency: 'weekdays',
+          time: '08:00',
+          timezone: 'Asia/Ho_Chi_Minh',
+        },
         articlesPerBatch: 3,
         categories: [],
       });
@@ -551,7 +555,9 @@ describe('KnowledgeArticlesController', () => {
 
       expect(result.cronExpression).toBe('0 8 * * 1-5');
       expect(result.explanation).toBe('Weekdays at 8am');
-      expect(mockNlCronService.parseDescription).toHaveBeenCalledWith('Run daily at 8am weekdays');
+      expect(mockNlCronService.parseDescription).toHaveBeenCalledWith(
+        'Run daily at 8am weekdays',
+      );
     });
   });
 

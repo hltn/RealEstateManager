@@ -1,7 +1,7 @@
 /**
  * Thân form sửa hồ sơ + chân dung, dùng chung desktop/tablet + mobile và 2 màn:
  * "Chân dung khách hàng" (có phần thông tin cơ bản + thẻ) và "Nhu cầu BĐS" (chỉ nhóm Nhu cầu BĐS).
- * Mọi trường chân dung không bắt buộc; ghi kèm nguồn thông tin (khách tự chia sẻ / nhân viên quan sát) — QT9.
+ * Chỉ họ tên bắt buộc (SĐT tùy chọn, bỏ trống = xóa SĐT). Mọi trường chân dung không bắt buộc; ghi kèm nguồn thông tin (khách tự chia sẻ / nhân viên quan sát) — QT9.
  */
 import { useState } from 'react';
 import { Briefcase, Building2, Hash, IdCard, Mail, MapPin, Megaphone, Phone, Plus, Sparkles, StickyNote, User, UserRound } from 'lucide-react';
@@ -18,9 +18,9 @@ import { SearchableMultiSelect } from '@crm/components/form/SearchableMultiSelec
 import { SearchableSelect } from '@crm/components/form/SearchableSelect';
 import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
+import { TAG_CATEGORY_ORDER, TAG_GROUP_TITLES, isTagInCategory } from '@crm/lib/tagCategories';
 import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
 import type { PersonaGroupCode, TagCategory } from '@crm/types/crm';
-import { DuplicatePhoneBanner } from '../CreateCustomer/components/DuplicatePhoneBanner';
 import { PersonaFieldInput } from './components/PersonaFieldInput';
 import type { PersonaFormApi } from './usePersonaForm';
 
@@ -34,16 +34,14 @@ const GROUP_ICONS: Record<PersonaGroupCode, typeof User> = {
   REAL_ESTATE: Building2,
 };
 
-const TAG_GROUPS: { category: TagCategory; label: string }[] = [
-  { category: 'INTEREST', label: 'Thẻ sở thích' },
-  { category: 'OCCUPATION', label: 'Thẻ nghề nghiệp' },
-];
+/** Đủ 3 nhóm (kể cả "Khác", FR-48): mỗi nhóm có ô "Gắn nhanh thẻ mới" tạo thẻ đúng nhóm đó. */
+const TAG_GROUPS: { category: TagCategory; label: string }[] = TAG_CATEGORY_ORDER.map((category) => ({ category, label: TAG_GROUP_TITLES[category] }));
 
 /** Nhóm thẻ: chọn thẻ có sẵn + gắn nhanh thẻ mới (C11). */
 const TagPicker = ({ form, category, label }: { form: PersonaFormApi; category: TagCategory; label: string }) => {
   const { catalogs } = useCatalogs();
   const [draftName, setDraftName] = useState('');
-  const tags = catalogs.tags.filter((tag) => tag.isActive && tag.category === category);
+  const tags = catalogs.tags.filter((tag) => tag.isActive && isTagInCategory(tag, category));
   const add = () => {
     if (!draftName.trim()) return;
     form.addNewTag(draftName, category);
@@ -90,14 +88,15 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
   const fieldId = (name: string) => `${idPrefix}-${name}`;
   const groupCodes = [...new Set(fields.map((field) => field.groupCode))];
 
+  // Khách chưa có SĐT: ô mở sẵn (thêm số, không có "Sửa số"); đã mở khóa: bỏ trống ô = xóa SĐT của khách.
+  const phoneHint = form.isPhoneLocked ? undefined : form.hasPhone ? 'Để trống ô này nếu muốn xóa số điện thoại của khách.' : 'Khách chưa có số điện thoại. Không bắt buộc.';
   const basicSection = hasBasicInfo && (
-    <SectionCard icon={IdCard} title="Thông tin cơ bản" description="Chỉ họ tên và SĐT là bắt buộc">
-      <DuplicatePhoneBanner lookup={form.phoneLookup} onRequestJoin={form.requestJoin} variant={variant} />
+    <SectionCard icon={IdCard} title="Thông tin cơ bản" description="Chỉ họ tên là bắt buộc">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <FormField inputId={fieldId('name')} label="Họ và tên" isRequired error={basicErrors.fullName}>
           <TextInput id={fieldId('name')} icon={User} maxLength={150} value={basic.fullName} onChange={(event) => form.setBasicField('fullName', event.target.value)} hasError={Boolean(basicErrors.fullName)} {...getFieldA11yProps(getErrorId(fieldId('name')), basicErrors.fullName)} />
         </FormField>
-        <FormField inputId={fieldId('phone')} label="Số điện thoại" isRequired error={basicErrors.phone}>
+        <FormField inputId={fieldId('phone')} label="Số điện thoại" error={basicErrors.phone} hint={phoneHint}>
           {form.isPhoneLocked ? (
             <div className="flex items-center gap-2">
               <TextInput id={fieldId('phone')} type="tel" icon={Phone} value={form.phoneMasked} readOnly className="font-mono" wrapperClassName="flex-1" />

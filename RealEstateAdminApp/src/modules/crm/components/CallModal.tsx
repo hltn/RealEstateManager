@@ -4,9 +4,11 @@
  * Vỏ = `components/ui/modal` của Admin; đầu hộp thoại giữ khối màu brand của Stitch (bỏ indigo),
  * phần form theo mẫu "form trong modal" (`UserManagementScreen.tsx:374-383`), đủ cặp `dark:`.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Building, PhoneOff, Save } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
+import { useCatalogs } from '@crm/api';
+import { hasPhone } from '@crm/lib/phone';
 import {
   BUTTON_OUTLINE_CLASS,
   BUTTON_PRIMARY_CLASS,
@@ -14,14 +16,6 @@ import {
   MODAL_INPUT_CLASS,
   SOLID_INPUT_CLASS,
 } from '@crm/lib/uiClasses';
-
-export const CALL_OUTCOME_OPTIONS = [
-  'Khách quan tâm giá / Cần gửi bảng tính',
-  'Hẹn đi xem thực tế sa bàn và nhà mẫu',
-  'Cần tư vấn thêm phương án vay 40%',
-  'Chưa liên hệ được / Máy bận',
-  'Khách không có nhu cầu',
-] as const;
 
 const TITLE_ID = 'crm-call-modal-title';
 
@@ -35,7 +29,8 @@ export const formatCallDuration = (totalSeconds: number): string => {
 /** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
 export interface ContactTarget {
   name: string;
-  phone: string;
+  /** SĐT đầy đủ; null/rỗng = khách chưa có SĐT (FR-02) → không hiện dòng SĐT. */
+  phone: string | null;
   preferredSalutation: string;
   interestedProjects: string[];
   staffName?: string;
@@ -43,7 +38,8 @@ export interface ContactTarget {
 
 export interface CallResultInput {
   note: string;
-  callOutcome: string;
+  /** `code` của mục Kết quả liên hệ đã chọn (FR-47); null = chưa chọn / danh mục không tải được. */
+  contactResultId: string | null;
 }
 
 interface CallModalProps {
@@ -55,8 +51,15 @@ interface CallModalProps {
 export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isCalling, setIsCalling] = useState(true);
-  const [callOutcome, setCallOutcome] = useState<string>(CALL_OUTCOME_OPTIONS[0]);
+  const [contactResultId, setContactResultId] = useState('');
   const [callNote, setCallNote] = useState('');
+  const { catalogs, isLoading, isError, refetch } = useCatalogs();
+  // FR-47: cùng nguồn danh mục DB với form nhật ký; mục đã ẩn không hiện, xếp theo thứ tự cấu hình. Giá trị option = `code`.
+  const contactResults = useMemo(() => catalogs.contactResults.filter((item) => item.isActive).sort((a, b) => a.order - b.order), [catalogs.contactResults]);
+  const hasCatalog = catalogs.contactResults.length > 0;
+  const isCatalogLoading = isLoading && !hasCatalog;
+  const isCatalogFailed = isError && !hasCatalog;
+  const selectedResult = contactResults.find((item) => item.id === contactResultId);
   const projectName = customer.interestedProjects[0] ?? "Q'Terra";
 
   // Đồng hồ đếm thời lượng cuộc gọi khi đang kết nối.
@@ -67,8 +70,9 @@ export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {
   }, [isCalling]);
 
   const handleSaveAndClose = () => {
-    const note = callNote.trim() || `Cuộc gọi ${formatCallDuration(elapsedSeconds)} với ${customer.name}: ${callOutcome}`;
-    onSaveLog({ note, callOutcome });
+    // Lỗi tải danh mục vẫn cho lưu nhật ký (không mất ghi chú cuộc gọi), chỉ không gắn kết quả liên hệ.
+    const defaultNote = `Cuộc gọi ${formatCallDuration(elapsedSeconds)} với ${customer.name}${selectedResult ? `: ${selectedResult.label}` : ''}`;
+    onSaveLog({ note: callNote.trim() || defaultNote, contactResultId: selectedResult?.id ?? null });
     onClose();
   };
 
@@ -83,7 +87,7 @@ export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {
           <h3 id={TITLE_ID} className="text-xl font-semibold">
             {customer.name}
           </h3>
-          <p className="mt-0.5 text-sm text-brand-100">{customer.phone}</p>
+          {hasPhone(customer.phone) && <p className="mt-0.5 text-sm text-brand-100">{customer.phone}</p>}
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-medium">
             <Building size={12} aria-hidden="true" />
             <span>Dự án: {projectName}</span>
@@ -108,18 +112,32 @@ export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {
             <label htmlFor="call-outcome" className={FORM_LABEL_CLASS}>
               Kết quả liên hệ
             </label>
-            <select
-              id="call-outcome"
-              value={callOutcome}
-              onChange={(event) => setCallOutcome(event.target.value)}
-              className={SOLID_INPUT_CLASS}
-            >
-              {CALL_OUTCOME_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            {isCatalogLoading ? (
+              <div id="call-outcome" role="status" aria-busy="true" aria-label="Đang tải danh mục kết quả liên hệ" className="h-11 w-full animate-pulse rounded-lg bg-gray-200 dark:bg-gray-800" />
+            ) : (
+              <select
+                id="call-outcome"
+                value={contactResultId}
+                onChange={(event) => setContactResultId(event.target.value)}
+                disabled={isCatalogFailed}
+                className={SOLID_INPUT_CLASS}
+              >
+                <option value="">Chưa chọn kết quả</option>
+                {contactResults.map((result) => (
+                  <option key={result.id} value={result.id}>
+                    {result.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {isCatalogFailed && (
+              <p role="alert" className="mt-1.5 text-xs text-error-600 dark:text-error-400">
+                Không tải được danh mục kết quả liên hệ.{' '}
+                <button type="button" onClick={refetch} className="font-medium underline">
+                  Thử lại
+                </button>
+              </p>
+            )}
           </div>
 
           <div>

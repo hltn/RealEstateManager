@@ -48,7 +48,7 @@ const buildProvinceSpecs = () =>
  */
 export async function migrateAreasTo34Provinces(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
 ): Promise<MigrateAreasResult> {
   const specs = buildProvinceSpecs();
   const areas = db.collection(AREAS);
@@ -81,7 +81,7 @@ export async function migrateAreasTo34Provinces(
     return kept && needsNormalize(kept, spec);
   });
   result.provincesNormalized = toNormalize.length;
-  if (!apply) return result;
+  if (!shouldApply) return result;
 
   const session = db.client.startSession();
   try {

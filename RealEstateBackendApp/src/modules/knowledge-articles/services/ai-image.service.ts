@@ -17,9 +17,7 @@ import { KnowledgeConfigService } from './knowledge-config.service';
 export class AiImageService {
   private readonly logger = new Logger(AiImageService.name);
 
-  constructor(
-    private readonly configService: KnowledgeConfigService,
-  ) {}
+  constructor(private readonly configService: KnowledgeConfigService) {}
 
   // ── Retry wrapper ───────────────────────────────────────
 
@@ -175,29 +173,32 @@ export class AiImageService {
       `Generating featured image for: ${params.title.substring(0, 50)}...`,
     );
 
-    const result = await this.withRetry(async () => {
-      const response = await fetch(providerConfig.baseUrl, {
-        method: 'POST',
-        headers: providerConfig.headers,
-        body: JSON.stringify({
-          model: providerConfig.model,
-          prompt,
-          n: 1,
-          size: `${providerConfig.width}x${providerConfig.height}`,
-          response_format: 'url',
-        }),
-        signal: AbortSignal.timeout(60_000),
-      });
+    const result = await this.withRetry(
+      async () => {
+        const response = await fetch(providerConfig.baseUrl, {
+          method: 'POST',
+          headers: providerConfig.headers,
+          body: JSON.stringify({
+            model: providerConfig.model,
+            prompt,
+            n: 1,
+            size: `${providerConfig.width}x${providerConfig.height}`,
+            response_format: 'url',
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(
-          `HTTP ${response.status}: ${errorBody.substring(0, 300)}`,
-        );
-      }
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(
+            `HTTP ${response.status}: ${errorBody.substring(0, 300)}`,
+          );
+        }
 
-      return response.json();
-    }, `generateFeaturedImage(${params.title.substring(0, 30)})`);
+        return response.json();
+      },
+      `generateFeaturedImage(${params.title.substring(0, 30)})`,
+    );
 
     // Extract image URL from response
     const imageData = result.data?.[0];
@@ -237,7 +238,8 @@ export class AiImageService {
   async testGenerate(): Promise<{ imageUrl: string }> {
     const result = await this.generateFeaturedImage({
       title: 'Test image generation',
-      contentSummary: 'This is a test to verify the image generation pipeline is working correctly.',
+      contentSummary:
+        'This is a test to verify the image generation pipeline is working correctly.',
     });
     return { imageUrl: result.imageUrl };
   }
@@ -248,9 +250,7 @@ export class AiImageService {
    */
   async generateInlineImages(params: {
     sections: Array<{ heading: string; description: string }>;
-  }): Promise<
-    Array<{ imageUrl: string; buffer: Buffer; forSection: string }>
-  > {
+  }): Promise<Array<{ imageUrl: string; buffer: Buffer; forSection: string }>> {
     const config = await this.configService.getAiImageConfig();
 
     if (config.enabled === false) {
@@ -269,29 +269,32 @@ export class AiImageService {
 
         const providerConfig = await this.getProviderConfig();
 
-        const result = await this.withRetry(async () => {
-          const response = await fetch(providerConfig.baseUrl, {
-            method: 'POST',
-            headers: providerConfig.headers,
-            body: JSON.stringify({
-              model: providerConfig.model,
-              prompt,
-              n: 1,
-              size: `${providerConfig.width}x${providerConfig.height}`,
-              response_format: 'url',
-            }),
-            signal: AbortSignal.timeout(60_000),
-          });
+        const result = await this.withRetry(
+          async () => {
+            const response = await fetch(providerConfig.baseUrl, {
+              method: 'POST',
+              headers: providerConfig.headers,
+              body: JSON.stringify({
+                model: providerConfig.model,
+                prompt,
+                n: 1,
+                size: `${providerConfig.width}x${providerConfig.height}`,
+                response_format: 'url',
+              }),
+              signal: AbortSignal.timeout(60_000),
+            });
 
-          if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(
-              `HTTP ${response.status}: ${errorBody.substring(0, 200)}`,
-            );
-          }
+            if (!response.ok) {
+              const errorBody = await response.text();
+              throw new Error(
+                `HTTP ${response.status}: ${errorBody.substring(0, 200)}`,
+              );
+            }
 
-          return response.json();
-        }, `generateInlineImage(${section.heading.substring(0, 30)})`);
+            return response.json();
+          },
+          `generateInlineImage(${section.heading.substring(0, 30)})`,
+        );
 
         const imageData = result.data?.[0];
         const imageUrl = imageData?.url || '';

@@ -49,7 +49,17 @@ export class CrmAuditLog {
   actorRole: string;
 
   @Prop({
-    type: [{ _id: false, field: String, from: Object, to: Object }],
+    type: [
+      {
+        _id: false,
+        field: String,
+        from: Object,
+        to: Object,
+        // FR-40: mã danh mục (chuỗi hoặc mảng chuỗi); không khai báo thì Mongoose (strict) sẽ bỏ mất.
+        fromCode: Object,
+        toCode: Object,
+      },
+    ],
     default: [],
   })
   changes: CrmAuditChange[];

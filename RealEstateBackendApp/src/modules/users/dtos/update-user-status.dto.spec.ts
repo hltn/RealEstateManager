@@ -55,9 +55,7 @@ describe('UpdateUserStatusDto (mục 16.4 — class-validator exact)', () => {
   });
 
   it('thiếu status → fail', async () => {
-    const errors = await validate(
-      plainToInstance(UpdateUserStatusDto, {}),
-    );
+    const errors = await validate(plainToInstance(UpdateUserStatusDto, {}));
     expect(errors.length).toBeGreaterThan(0);
   });
 

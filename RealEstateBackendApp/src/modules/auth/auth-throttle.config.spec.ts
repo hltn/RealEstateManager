@@ -4,6 +4,7 @@ import {
 } from '@nestjs/throttler/dist/throttler.constants';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { PushSubscriptionManagementService } from '../notifications/push/push-subscription-management.service';
 import {
   AUTH_LOGIN_THROTTLE_ENV,
   AUTH_LOGIN_THROTTLE_TTL_MS,
@@ -93,7 +94,7 @@ describe('AuthController.login @Throttle wiring', () => {
   const readLimit = (): unknown =>
     Reflect.getMetadata(
       THROTTLER_LIMIT + 'default',
-      // eslint-disable-next-line @typescript-eslint/unbound-method -- chỉ làm khóa đọc metadata, không gọi
+
       AuthController.prototype.login,
     );
 
@@ -103,7 +104,7 @@ describe('AuthController.login @Throttle wiring', () => {
     expect(
       Reflect.getMetadata(
         THROTTLER_TTL + 'default',
-        // eslint-disable-next-line @typescript-eslint/unbound-method -- chỉ làm khóa đọc metadata, không gọi
+
         AuthController.prototype.login,
       ),
     ).toBe(AUTH_LOGIN_THROTTLE_TTL_MS);
@@ -121,8 +122,12 @@ describe('AuthController.login @Throttle wiring', () => {
   it('khởi tạo controller fail-fast khi biến sai (ngoài production)', () => {
     process.env.NODE_ENV = 'test';
     process.env[AUTH_LOGIN_THROTTLE_ENV] = '0x10';
-    expect(() => new AuthController({} as AuthService)).toThrow(
-      AUTH_LOGIN_THROTTLE_ENV,
-    );
+    expect(
+      () =>
+        new AuthController(
+          {} as AuthService,
+          {} as PushSubscriptionManagementService,
+        ),
+    ).toThrow(AUTH_LOGIN_THROTTLE_ENV);
   });
 });

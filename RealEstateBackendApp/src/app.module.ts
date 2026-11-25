@@ -2,14 +2,12 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { NewsFireCrawlManagerModule } from './modules/news-fire-crawl-manager/news-fire-crawl-manager.module';
 import { ExternalLogModule } from './modules/external-log/external-log.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { SettingsModule } from './modules/settings/settings.module';
-import { HealthModule } from './health.module';
+import { HealthModule } from './health/health.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -24,13 +22,17 @@ import { PiiCryptoModule } from './modules/crm/common/crypto/pii-crypto.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { MigrationsWarningModule } from './migrations/migrations-warning.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { NoSqlOperatorInterceptor } from './common/security/nosql-operator.interceptor';
+import { ENV_FILE_PATHS } from './common/config/env-files.config';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      // Cùng danh sách và thứ tự ưu tiên với nạp dotenv ở main.ts / CLI migration: file gần thắng, biến tiến trình thắng file.
+      envFilePath: [...ENV_FILE_PATHS],
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
@@ -59,7 +61,7 @@ import { MigrationsWarningModule } from './migrations/migrations-warning.module'
     // Auth + Users: bật global JwtAuthGuard/RolesGuard/ThrottlerGuard.
     AuthModule,
     UsersModule,
-    // CRM: nhóm làm việc + danh mục + dự án (M1). Route CRM nằm sau cờ FEATURE_CRM_ENABLED.
+    // CRM: nhóm làm việc + danh mục + dự án (M1). Route CRM nằm sau cờ CRM_ENABLED.
     TeamsModule,
     CrmModule,
     // Google Drive Export (OAuth2 flow + Export).
@@ -67,8 +69,10 @@ import { MigrationsWarningModule } from './migrations/migrations-warning.module'
     // Knowledge Articles (auto-write, auto-publish pipeline).
     KnowledgeArticlesModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    // FR-14: chặn toán tử `$` ở body/query/params (chạy sau guard, trước ValidationPipe).
+    { provide: APP_INTERCEPTOR, useClass: NoSqlOperatorInterceptor },
+  ],
 })
 export class AppModule implements NestModule {
   /**

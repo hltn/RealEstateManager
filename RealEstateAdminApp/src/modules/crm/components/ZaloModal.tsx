@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CircleCheck, Paperclip, Send, X } from 'lucide-react';
 import { Modal } from '../../../components/ui/modal';
 import { BUTTON_OUTLINE_CLASS, FORM_LABEL_CLASS, ICON_BUTTON_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 
 export const ZALO_SEND_DELAY_MS = 1200;
 
@@ -28,7 +29,8 @@ export const buildZaloTemplates = (customer: ContactTarget): string[] => {
 /** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
 export interface ContactTarget {
   name: string;
-  phone: string;
+  /** SĐT đầy đủ; null/rỗng = khách chưa có SĐT (FR-02) → không hiện phần "(SĐT)". */
+  phone: string | null;
   preferredSalutation: string;
   interestedProjects: string[];
   staffName?: string;
@@ -84,7 +86,7 @@ export const ZaloModal = ({ customer, onClose, onSent }: ZaloModalProps) => {
                 Gửi tin nhắn Zalo ZNS / Tư vấn
               </h3>
               <p className="truncate text-theme-sm text-gray-500 dark:text-gray-400">
-                Gửi tới: <span className="font-medium text-gray-700 dark:text-gray-300">{customer.name}</span> ({customer.phone})
+                Gửi tới: <span className="font-medium text-gray-700 dark:text-gray-300">{customer.name}</span>{hasPhone(customer.phone) ? ` (${customer.phone})` : null}
               </p>
             </div>
           </div>

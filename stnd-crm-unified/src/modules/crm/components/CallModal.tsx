@@ -35,7 +35,8 @@ export const formatCallDuration = (totalSeconds: number): string => {
 /** Thông tin tối thiểu của khách cho modal (cờ tính năng giai đoạn sau). */
 export interface ContactTarget {
   name: string;
-  phone: string;
+  /** `null`/rỗng = khách chưa có SĐT: không vẽ dòng số (modal chỉ mở khi có số, giữ phòng thủ). */
+  phone: string | null;
   preferredSalutation: string;
   interestedProjects: string[];
   staffName?: string;
@@ -83,7 +84,7 @@ export const CallModal = ({ customer, onClose, onSaveLog }: CallModalProps) => {
           <h3 id={TITLE_ID} className="text-xl font-semibold">
             {customer.name}
           </h3>
-          <p className="mt-0.5 text-sm text-brand-100">{customer.phone}</p>
+          {customer.phone && <p className="mt-0.5 text-sm text-brand-100">{customer.phone}</p>}
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-medium">
             <Building size={12} aria-hidden="true" />
             <span>Dự án: {projectName}</span>

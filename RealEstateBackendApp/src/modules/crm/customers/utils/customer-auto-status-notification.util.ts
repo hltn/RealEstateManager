@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { NotificationType } from '../../../notifications/notification.constants';
-import type { NewNotification } from '../../../notifications/notifications.service';
+import type { NotificationRequest } from '../../../notifications/notification-dispatcher.service';
 import type { AutoStatusTarget } from './customer-rules.util';
 
 export interface AutoStatusNotificationInput {
@@ -21,7 +21,7 @@ export interface AutoStatusNotificationInput {
 /**
  * PT-023 (chốt 2026-11-03): dựng thông báo "tình trạng khách vừa tự đổi" cho những người cùng chăm sóc, TRỪ người tick.
  * Hàm thuần. Mỗi người chỉ một thông báo dù xuất hiện lặp trong `careTeam`; không có người nhận thì trả mảng rỗng.
- * `dedupeKey` gắn (khách, version sau cùng) nên retry cùng một lần đổi không sinh thông báo trùng, còn mỗi lần đổi
+ * `dedupeKey` (`AUTOSTATUS:{khách}:{version}`, Architecture 5.2) gắn (khách, version sau cùng) nên retry cùng một lần đổi không sinh thông báo trùng, còn mỗi lần đổi
  * mới (version mới) luôn có thông báo mới. Nội dung KHÔNG chứa SĐT/CCCD.
  */
 export const buildAutoStatusNotifications = ({
@@ -34,7 +34,7 @@ export const buildAutoStatusNotifications = ({
   toLabel,
   target,
   version,
-}: AutoStatusNotificationInput): NewNotification[] => {
+}: AutoStatusNotificationInput): NotificationRequest[] => {
   const recipientIds = new Map<string, Types.ObjectId>();
   for (const member of careTeam) {
     if (!member.userId.equals(actorId)) {
@@ -45,15 +45,22 @@ export const buildAutoStatusNotifications = ({
     target === 'NET'
       ? 'do tiến độ đạt 3/4 tiêu chí'
       : 'do tiến độ xuống dưới 3/4 tiêu chí';
-  return [...recipientIds.values()].map((userId) => ({
-    userId,
-    type: NotificationType.CUSTOMER_STATUS_AUTO_CHANGED,
-    title: 'Tình trạng khách tự đổi',
-    body: `${actorName} vừa cập nhật tiêu chí, khách ${customerName} tự chuyển từ "${fromLabel ?? 'Chưa rõ'}" sang "${toLabel}" ${reason}`,
-    data: {
-      customerId,
-      deepLink: `/crm/customers/${String(customerId)}`,
+  if (recipientIds.size === 0) return [];
+  // Một yêu cầu cho mọi người nhận (nội dung giống nhau); `PUSH_CATALOG` cho loại này luôn có push.
+  return [
+    {
+      type: NotificationType.CUSTOMER_STATUS_AUTO_CHANGED,
+      recipientIds: [...recipientIds.values()],
+      inApp: {
+        title: 'Tình trạng khách tự đổi',
+        body: `${actorName} vừa cập nhật tiêu chí, khách ${customerName} tự chuyển từ "${fromLabel ?? 'Chưa rõ'}" sang "${toLabel}" ${reason}`,
+      },
+      vars: { customerName, newStatusLabel: toLabel },
+      data: {
+        customerId,
+        deepLink: `/crm/customers/${String(customerId)}`,
+      },
+      dedupeKey: `AUTOSTATUS:${String(customerId)}:${version}`,
     },
-    dedupeKey: `CUSTOMER_STATUS_AUTO:${String(customerId)}:${version}`,
-  }));
+  ];
 };

@@ -59,7 +59,7 @@ export const pickAcceptedFiles = (candidates: readonly File[], freeSlots: number
 
 /**
  * Lỗi tải ảnh -> câu dễ hiểu cho người dùng. 404 riêng cho tải ảnh gần như chắc chắn là backend chưa bật
- * `FEATURE_CRM_ATTACHMENTS` (hoặc khách ngoài quyền xem), nên không dùng câu chung "không tìm thấy dữ liệu".
+ * `CRM_ATTACHMENTS_ENABLED` (hoặc khách ngoài quyền xem), nên không dùng câu chung "không tìm thấy dữ liệu".
  */
 export const describeUploadError = (error: ApiError): string => {
   if (error.statusCode === 413 || error.errorCode === 'FILE_TOO_LARGE') return `Ảnh quá lớn, tối đa ${MAX_PHOTO_BYTES / 1024 / 1024} MB.`;

@@ -14,8 +14,10 @@ import { AnyRole } from '../../common/decorators/any-role.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../common/decorators/current-user.decorator';
+import { PushSubscriptionManagementService } from '../notifications/push/push-subscription-management.service';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
+import { LogoutDto } from './dtos/logout.dto';
 import {
   AUTH_LOGIN_THROTTLE_TTL_MS,
   reportAuthLoginThrottleStartup,
@@ -34,7 +36,10 @@ const REFRESH_COOKIE_NAME = 'refreshToken';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly pushSubscriptions: PushSubscriptionManagementService,
+  ) {
     // Fail-fast khi env throttle sai + log warn khi bị nới/bị bỏ qua (ConfigModule đã nạp .env vào process.env).
     reportAuthLoginThrottleStartup();
   }
@@ -81,15 +86,25 @@ export class AuthController {
 
   @Post('logout')
   @AnyRole()
-  @ApiOperation({ summary: 'Revoke refresh token + clear cookie (idempotent)' })
+  @ApiOperation({
+    summary:
+      'Revoke refresh token + clear cookie (idempotent); body tùy chọn pushSubscriptionId thu hồi thiết bị push của chính mình (lý do LOGOUT), id hợp lệ nhưng lạ/của người khác bị bỏ qua im lặng, sai kiểu/field lạ thì 400',
+  })
   async logout(
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
+    @CurrentUser() currentUser: JwtPayload,
+    @Body() dto?: LogoutDto,
   ) {
     const token = (req.cookies as Record<string, string> | undefined)?.[
       REFRESH_COOKIE_NAME
     ];
     await this.authService.logout(token);
+    // Không có id: không làm gì thêm (tương thích ngược). Lỗi/id lạ đã được nuốt trong service.
+    await this.pushSubscriptions.revokeForLogout(
+      String(currentUser?.sub),
+      dto?.pushSubscriptionId,
+    );
     reply.clearCookie(REFRESH_COOKIE_NAME, { path: REFRESH_COOKIE_PATH });
     return { message: 'Logged out successfully' };
   }

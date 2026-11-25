@@ -23,6 +23,7 @@ import {
 import { Project, ProjectDocument } from '../projects/schemas/project.schema';
 import { ensureSeeded } from './ensure-seeded.util';
 import {
+  provinceCode,
   provinceSeedKey,
   SEED_CONTACT_RESULTS,
   SEED_LEAD_SOURCES,
@@ -45,7 +46,7 @@ export interface CrmSeedReport {
  * nên chỉnh sửa, ngừng hoạt động hay xóa của Quản trị không bị seed hoàn tác khi khởi động lại.
  * Dùng upsert `$setOnInsert` nên an toàn khi nhiều instance khởi động cùng lúc.
  *
- * Chỉ chạy khi `FEATURE_CRM_ENABLED` bật (tắt cờ = không ghi gì vào DB).
+ * Chỉ chạy khi `CRM_ENABLED` bật (tắt cờ = không ghi gì vào DB).
  */
 @Injectable()
 export class CrmSeedService implements OnApplicationBootstrap {
@@ -89,7 +90,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
   private async seedStatuses(): Promise<number> {
     let inserted = 0;
     for (const status of SEED_STATUSES) {
-      const created = await this.ensureSeeded(
+      const isCreated = await this.ensureSeeded(
         this.statusModel,
         `STATUS:${status.code}`,
         { code: status.code },
@@ -103,7 +104,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
           isActive: true,
         },
       );
-      if (created) inserted += 1;
+      if (isCreated) inserted += 1;
     }
     return inserted;
   }
@@ -119,7 +120,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
   ): Promise<number> {
     let inserted = 0;
     for (const item of items) {
-      const created = await this.ensureSeeded(
+      const isCreated = await this.ensureSeeded(
         this.itemModel,
         `${item.type}:${item.code}`,
         { type: item.type, code: item.code },
@@ -131,7 +132,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
           meta: item.meta ?? null,
         },
       );
-      if (created) inserted += 1;
+      if (isCreated) inserted += 1;
     }
     return inserted;
   }
@@ -147,12 +148,13 @@ export class CrmSeedService implements OnApplicationBootstrap {
     for (const [index, name] of SEED_PROVINCES.entries()) {
       const nameNormalized = normalizeVietnamese(name);
       const seedKey = provinceSeedKey(name);
-      const created = await this.ensureSeeded(
+      const isCreated = await this.ensureSeeded(
         this.areaModel,
         seedKey,
         { parentId: null, nameNormalized },
         {
           name,
+          code: provinceCode(name),
           type: AreaType.PROVINCE,
           ancestorIds: [],
           adminCode: null,
@@ -161,7 +163,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
           isActive: true,
         },
       );
-      if (created) inserted += 1;
+      if (isCreated) inserted += 1;
 
       // Tìm lại theo seedKey (không theo tên): bản ghi có thể đã được Quản trị đổi tên.
       const saved = await this.areaModel
@@ -183,7 +185,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
         ? (idByName.get(project.areaName) ?? null)
         : null;
       const codeNormalized = normalizeProjectCode(project.code);
-      const created = await this.ensureSeeded(
+      const isCreated = await this.ensureSeeded(
         this.projectModel,
         `PROJECT:${codeNormalized}`,
         { codeNormalized },
@@ -201,7 +203,7 @@ export class CrmSeedService implements OnApplicationBootstrap {
           isActive: true,
         },
       );
-      if (created) inserted += 1;
+      if (isCreated) inserted += 1;
     }
     return inserted;
   }

@@ -28,6 +28,8 @@ import { Team } from '../teams/schemas/team.schema';
 import { RefreshToken } from '../auth/schemas/refresh-token.schema';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { CustomerTeamSyncService } from '../crm/customers/customer-team-sync.service';
+import { PushRevokedReason } from '../notifications/push/push-subscription.constants';
+import { PushSubscriptionManagementService } from '../notifications/push/push-subscription-management.service';
 import { UserRole } from '../../common/enums/user-role.enum';
 import { UserStatus } from '../../common/enums/user-status.enum';
 import type { CreateUserDto } from './dtos/create-user.dto';
@@ -90,6 +92,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
   let refreshTokenModel: any;
   let connection: any;
   let audit: { record: jest.Mock };
+  let pushSubscriptions: { revokeAllForUser: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -113,6 +116,7 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       updateMany: jest.fn(),
     };
     audit = { record: jest.fn() };
+    pushSubscriptions = { revokeAllForUser: jest.fn().mockResolvedValue(0) };
     // Transaction giả: chạy `work` ngay với một session giả; phần ghi thật được kiểm ở integration test.
     connection = {
       transaction: jest.fn((work: (session: unknown) => unknown) =>
@@ -135,6 +139,10 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         {
           provide: CustomerTeamSyncService,
           useValue: { syncForUser: jest.fn().mockResolvedValue(0) },
+        },
+        {
+          provide: PushSubscriptionManagementService,
+          useValue: pushSubscriptions,
         },
       ],
     }).compile();
@@ -449,6 +457,36 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
       expect((result as any).password).toBeUndefined();
       // User thường: không cần kiểm "ADMIN cuối cùng".
       expect(userModel.countDocuments).not.toHaveBeenCalled();
+    });
+
+    it('T-29: khóa user thu hồi mọi thiết bị push (ACCOUNT_DISABLED) cùng transaction', async () => {
+      userModel.findOne.mockReturnValue(chainable(buildUserDoc()));
+      userModel.findOneAndUpdate.mockReturnValue(
+        chainable(buildUserDoc({ status: UserStatus.BLOCKED })),
+      );
+
+      await service.updateStatus(USER_ID, blockDto, ADMIN_ACTOR);
+
+      expect(pushSubscriptions.revokeAllForUser).toHaveBeenCalledWith(
+        new Types.ObjectId(USER_ID),
+        PushRevokedReason.ACCOUNT_DISABLED,
+        SESSION,
+      );
+    });
+
+    it('T-29: mở khóa (ACTIVE) và no-op không thu hồi thiết bị push', async () => {
+      userModel.findOne.mockReturnValue(
+        chainable(buildUserDoc({ status: UserStatus.BLOCKED })),
+      );
+      userModel.findOneAndUpdate.mockReturnValue(chainable(buildUserDoc()));
+
+      await service.updateStatus(
+        USER_ID,
+        { status: UserStatus.ACTIVE },
+        ADMIN_ACTOR,
+      );
+
+      expect(pushSubscriptions.revokeAllForUser).not.toHaveBeenCalled();
     });
 
     it('khóa ADMIN đang hoạt động CUỐI CÙNG → 409 LAST_ADMIN_REQUIRED, không update', async () => {
@@ -1089,6 +1127,49 @@ describe('UsersService (contract mục 6.4/16.6)', () => {
         service.create({ ...baseDto, teamId: TEAM_ID }),
       ).rejects.toThrow(NotFoundException);
       expect(userModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create — E11000 email trùng do race (FR-22)', () => {
+    const baseDto: CreateUserDto = {
+      email: 'race@example.com',
+      password: 'Staff@123456',
+      displayName: 'Race',
+      role: UserRole.STAFF,
+    };
+    const TEAM_ID = '65e1f0a1b2c3d4e5f6a7b8d1';
+    const dupError = Object.assign(new Error('E11000 duplicate key'), {
+      code: 11000,
+    });
+
+    it('FR-22: nhánh không teamIds — create ném E11000 → ConflictException(Email already in use)', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      userModel.create.mockRejectedValue(dupError);
+
+      const promise = service.create(baseDto);
+
+      await expect(promise).rejects.toThrow(ConflictException);
+      await expect(promise).rejects.toThrow('Email already in use');
+    });
+
+    it('FR-22: nhánh có teamIds — create trong transaction ném E11000 → ConflictException(Email already in use)', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      teamModel.countDocuments.mockReturnValue(chainable(1));
+      teamModel.updateMany.mockReturnValue({ exec: jest.fn() });
+      userModel.create.mockRejectedValue(dupError);
+
+      const promise = service.create({ ...baseDto, teamIds: [TEAM_ID] });
+
+      await expect(promise).rejects.toThrow(ConflictException);
+      await expect(promise).rejects.toThrow('Email already in use');
+    });
+
+    it('FR-22: lỗi khác E11000 vẫn ném nguyên (không bị nuốt thành 409)', async () => {
+      userModel.findOne.mockReturnValue(chainable(null));
+      const other = new Error('boom');
+      userModel.create.mockRejectedValue(other);
+
+      await expect(service.create(baseDto)).rejects.toBe(other);
     });
   });
 });

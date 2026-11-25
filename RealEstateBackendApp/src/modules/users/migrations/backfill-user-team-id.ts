@@ -22,7 +22,7 @@ const TEAM_INDEX_KEY = { teamId: 1, status: 1 } as const;
  */
 export async function backfillUserTeamId(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
 ): Promise<BackfillUserTeamIdResult> {
   const users = db.collection(USERS_COLLECTION);
 
@@ -39,7 +39,7 @@ export async function backfillUserTeamId(
   const missingBefore = await users.countDocuments({
     teamId: { $exists: false },
   });
-  if (!apply) return { missingBefore, updated: 0, roleCounts };
+  if (!shouldApply) return { missingBefore, updated: 0, roleCounts };
 
   const result = await users.updateMany(
     { teamId: { $exists: false } },

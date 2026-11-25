@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- file khai báo route (hàm dựng route + các màn nạp lười), không phải component dùng lại */
 /**
- * Khai báo route `/crm/*` của module CRM prototype, nạp LƯỜI (React.lazy): khi cờ `VITE_CRM_PROTOTYPE` tắt,
+ * Khai báo route `/crm/*` của module CRM prototype, nạp LƯỜI (React.lazy): khi cờ `CRM_ENABLED` (runtimeConfig) tắt,
  * không tạo route và không có mã module CRM trong bundle khởi động (mỗi màn là một chunk riêng, chỉ tải khi vào route).
  * Trả `null` khi tắt -> `/crm/*` rơi vào route `*` của ứng dụng (không lộ prototype có vai trò giả ở production).
  */
@@ -24,6 +24,7 @@ const ProjectsScreen = lazy(() => import('./screens/Projects'));
 const SettingsScreen = lazy(() => import('./screens/Settings'));
 const DeletedCustomersScreen = lazy(() => import('./screens/DeletedCustomers'));
 const NotificationsScreen = lazy(() => import('./screens/Notifications'));
+const NotificationSettingsScreen = lazy(() => import('./screens/NotificationSettings'));
 
 const LoadingFallback = () => <div role="status" className="p-6 text-theme-sm text-gray-500 dark:text-gray-400">Đang tải…</div>;
 
@@ -65,6 +66,21 @@ export const buildNotificationsRoute = (isEnabled: boolean): ReactElement | null
         <RoleGuard allowedRoles={[UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF]} fallback={<Navigate to="/" replace />}>
           <Suspense fallback={<LoadingFallback />}>
             <NotificationsScreen />
+          </Suspense>
+        </RoleGuard>
+      }
+    />
+  ) : null;
+
+/** Route `/notification-settings` (cài đặt thông báo cá nhân, T-41): cùng cờ và cùng quyền với `/notifications`, cũng nằm ngoài `/crm`. */
+export const buildNotificationSettingsRoute = (isEnabled: boolean): ReactElement | null =>
+  isEnabled ? (
+    <Route
+      path="notification-settings"
+      element={
+        <RoleGuard allowedRoles={[UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF]} fallback={<Navigate to="/" replace />}>
+          <Suspense fallback={<LoadingFallback />}>
+            <NotificationSettingsScreen />
           </Suspense>
         </RoleGuard>
       }

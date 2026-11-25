@@ -84,9 +84,9 @@ describe('JwtAuthGuard (canActivate) — contract mục 8 + 5.1', () => {
     const ctx = createMockContext('Bearer valid.jwt.token');
     const request = ctx.switchToHttp().getRequest();
 
-    const result = guard.canActivate(ctx);
+    const isAllowed = guard.canActivate(ctx);
 
-    expect(result).toBe(true);
+    expect(isAllowed).toBe(true);
     expect(jwtService.verify).toHaveBeenCalledTimes(1);
     expect(jwtService.verify).toHaveBeenCalledWith('valid.jwt.token');
     // Guard gắn nguyên payload vào request.user — RolesGuard/@CurrentUser đọc từ đây.
@@ -98,7 +98,10 @@ describe('JwtAuthGuard (canActivate) — contract mục 8 + 5.1', () => {
     const ctx = createMockContext('Bearer valid.jwt.token');
     guard.canActivate(ctx);
 
-    const user = ctx.switchToHttp().getRequest().user as Record<string, unknown>;
+    const user = ctx.switchToHttp().getRequest().user as Record<
+      string,
+      unknown
+    >;
     expect(typeof user.sub).toBe('string');
     expect(user.sub).toBe('65e1f0a1b2c3d4e5f6a7b8c9');
     expect(user.email).toBe('admin@example.com');
@@ -124,7 +127,9 @@ describe('JwtAuthGuard (canActivate) — contract mục 8 + 5.1', () => {
     reflector.getAllAndOverride.mockReturnValue(undefined);
     const ctx = createMockContext('Token valid.jwt.token');
 
-    expect(() => guard.canActivate(ctx)).toThrow('Missing or invalid access token');
+    expect(() => guard.canActivate(ctx)).toThrow(
+      'Missing or invalid access token',
+    );
     expect(jwtService.verify).not.toHaveBeenCalled();
   });
 
@@ -135,7 +140,9 @@ describe('JwtAuthGuard (canActivate) — contract mục 8 + 5.1', () => {
     });
     const ctx = createMockContext('Bearer bad.jwt.token');
 
-    expect(() => guard.canActivate(ctx)).toThrow('Missing or invalid access token');
+    expect(() => guard.canActivate(ctx)).toThrow(
+      'Missing or invalid access token',
+    );
     expect(jwtService.verify).toHaveBeenCalledTimes(1);
   });
 
@@ -143,7 +150,9 @@ describe('JwtAuthGuard (canActivate) — contract mục 8 + 5.1', () => {
     reflector.getAllAndOverride.mockReturnValue(undefined);
     const ctx = createMockContext('Bearer ');
 
-    expect(() => guard.canActivate(ctx)).toThrow('Missing or invalid access token');
+    expect(() => guard.canActivate(ctx)).toThrow(
+      'Missing or invalid access token',
+    );
     expect(jwtService.verify).not.toHaveBeenCalled();
   });
 });

@@ -27,8 +27,22 @@ describe('đường dẫn màn tạo lịch hẹn mang khách (G5)', () => {
     expect(parseCreateAppointmentCustomerId(search)).toBe(VALID_ID);
     expect(parseCreateAppointmentProjectId(search)).toBe(PROJECT_ID);
     expect(buildCreateAppointmentPath({ projectId: PROJECT_ID })).toBe(`/crm/appointments/new?projectId=${PROJECT_ID}`);
-    expect(parseCreateAppointmentProjectId('?projectId=abc')).toBeNull();
+    expect(parseCreateAppointmentProjectId('?projectId=%3Cscript%3E')).toBeNull();
     expect(parseCreateAppointmentProjectId('')).toBeNull();
+  });
+  it('id dự án ở giao diện là MÃ dự án (T-15), không phải ObjectId: mang được qua URL và đọc lại đúng; ký tự lạ hoặc quá dài bị bỏ', () => {
+    for (const code of ['QTERRA', 'E2E4897F6', 'proj-1', 'A_B']) {
+      const path = buildCreateAppointmentPath({ projectId: code });
+      expect(path).toBe(`/crm/appointments/new?projectId=${code}`);
+      expect(parseCreateAppointmentProjectId(path.slice(path.indexOf('?')))).toBe(code);
+    }
+    expect(buildCreateAppointmentPath({ customerId: VALID_ID, projectId: 'QTERRA' })).toBe(`/crm/appointments/new?customerId=${VALID_ID}&projectId=QTERRA`);
+    for (const bad of ['a b', '<script>', 'x'.repeat(31), '']) {
+      expect(buildCreateAppointmentPath({ projectId: bad })).toBe('/crm/appointments/new');
+    }
+    expect(parseCreateAppointmentProjectId(`?projectId=${'x'.repeat(31)}`)).toBeNull();
+    // id khách vẫn chỉ nhận ObjectId: mã dự án không được lọt qua cửa khách.
+    expect(buildCreateAppointmentPath({ customerId: 'QTERRA' })).toBe('/crm/appointments/new');
   });
 });
 

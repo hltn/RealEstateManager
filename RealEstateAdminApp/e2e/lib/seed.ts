@@ -1,7 +1,7 @@
 /**
  * Seed dữ liệu mồi cho stack E2E, đi qua REST API của backend (dùng nguyên service/validation thật, không viết lại logic):
  * - Admin do backend tự seed lúc khởi động (ADMIN_EMAIL/ADMIN_PASSWORD).
- * - Danh mục + dự án mẫu do CrmSeedService seed khi bật FEATURE_CRM_ENABLED.
+ * - Danh mục + dự án mẫu do CrmSeedService seed khi bật CRM_ENABLED.
  * - Ở đây thêm: 2 nhóm, mgr1/staff1/staff2, 2 dự án E2E (1 hoạt động, 1 ngừng), vài khách mẫu.
  *
  * Token: ký trực tiếp bằng JWT secret của stack E2E (cùng payload với AuthService.signAccessToken) thay vì gọi
@@ -81,8 +81,8 @@ export async function seed(mongoUri: string): Promise<SeedState> {
     name,
     code,
   });
-  const active = await mkProject('Dự án E2E Hoạt động', 'E2E-ACTIVE');
-  const inactive = await mkProject('Dự án E2E Ngừng', 'E2E-OFF');
+  const active = await mkProject('Dự án E2E Hoạt động', 'E2EACTIVE');
+  const inactive = await mkProject('Dự án E2E Ngừng', 'E2EOFF');
   await api(adminToken, 'PATCH', `/crm/projects/${inactive.id}`, { isActive: false });
 
   const mkCustomers = async (token: string, rows: Array<[string, string]>) => {

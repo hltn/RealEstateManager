@@ -76,9 +76,9 @@ describe('MarkdownToGoogleDocsConverter', () => {
         const headingReq = requests.find(
           (r: any) => r.updateParagraphStyle,
         ) as any;
-        expect(headingReq.updateParagraphStyle.paragraphStyle.namedStyleType).toBe(
-          style,
-        );
+        expect(
+          headingReq.updateParagraphStyle.paragraphStyle.namedStyleType,
+        ).toBe(style);
       }
     });
   });
@@ -104,9 +104,7 @@ describe('MarkdownToGoogleDocsConverter', () => {
     });
 
     it('tracks index correctly across multiple paragraphs', () => {
-      const requests = MarkdownToGoogleDocsConverter.convert(
-        'First\n\nSecond',
-      );
+      const requests = MarkdownToGoogleDocsConverter.convert('First\n\nSecond');
 
       // Paragraph 1: "First" + "\n" = 6 chars (index 1-6)
       // Paragraph 2: "Second" + "\n" = 7 chars (index 7-12)
@@ -195,13 +193,11 @@ describe('MarkdownToGoogleDocsConverter', () => {
       const requests = MarkdownToGoogleDocsConverter.convert(md);
 
       // Should have insertText for each item + newline, then createParagraphBullets
-      const bullets = requests.find(
-        (r: any) => r.createParagraphBullets,
-      );
+      const bullets = requests.find((r: any) => r.createParagraphBullets);
       expect(bullets).toBeDefined();
-      expect(
-        (bullets as any).createParagraphBullets.bulletPreset,
-      ).toBe('BULLET_DISC_CIRCLE_SQUARE');
+      expect((bullets as any).createParagraphBullets.bulletPreset).toBe(
+        'BULLET_DISC_CIRCLE_SQUARE',
+      );
     });
 
     it('tracks correct indices for list items', () => {
@@ -230,9 +226,7 @@ describe('MarkdownToGoogleDocsConverter', () => {
       expect(inserts.length).toBeGreaterThan(1);
 
       // Verify bold segment
-      const boldInsert = inserts.find(
-        (r: any) => r.insertText.text === 'bold',
-      );
+      const boldInsert = inserts.find((r: any) => r.insertText.text === 'bold');
       expect(boldInsert).toBeDefined();
       // "Hello " = 6 chars → bold starts at index 7
       expect((boldInsert as any).insertText.location.index).toBe(7);
@@ -288,14 +282,12 @@ describe('MarkdownToGoogleDocsConverter', () => {
         .filter((r: any) => r.updateParagraphStyle)
         .map((r: any) => r.updateParagraphStyle.paragraphStyle.namedStyleType);
       expect(headingStyles).toContain('HEADING_1');
-      expect(headingStyles.filter((s: string) => s === 'HEADING_2')).toHaveLength(
-        2,
-      );
+      expect(
+        headingStyles.filter((s: string) => s === 'HEADING_2'),
+      ).toHaveLength(2);
 
       // Should have bullets
-      const bullets = requests.find(
-        (r: any) => r.createParagraphBullets,
-      );
+      const bullets = requests.find((r: any) => r.createParagraphBullets);
       expect(bullets).toBeDefined();
 
       // Should have monospace code block style

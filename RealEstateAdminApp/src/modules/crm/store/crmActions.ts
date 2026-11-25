@@ -41,6 +41,16 @@ export interface CrmActions {
   openCreateAppointment: (link?: CreateAppointmentLink) => void;
   setFilters: (changes: Partial<CustomerFilters>) => void;
   resetFilters: () => void;
+  /** Gỡ các thẻ đã gộp/xóa khỏi bộ lọc thẻ đang lưu của danh sách khách (FR-42). */
+  dropTagsFromFilters: (tagIds: string[]) => void;
+  /**
+   * Gộp thẻ A vào B: thay A bằng B trong bộ lọc thẻ (khử trùng nếu B đã chọn) — FR-42.
+   * Trả hàm hoàn tác (khôi phục bộ lọc thẻ trước khi thay) để gọi khi API gộp thất bại. Hoàn tác là no-op khi lần thay không đổi gì
+   * hoặc khi người dùng đã tự đổi bộ lọc thẻ sau đó (không đè lựa chọn mới).
+   */
+  replaceTagInFilters: (fromTagId: string, toTagId: string) => () => void;
+  /** Gỡ id thẻ không còn tồn tại khỏi bộ lọc; CHỈ gọi khi danh sách thẻ đã tải xong. */
+  pruneStaleTagFilters: (existingTagIds: string[]) => void;
   showToast: (input: ToastInput) => string;
   openModal: (modal: ActiveModal) => void;
   /** `phone` phải là số đầy đủ lấy từ `createPhoneView` (để việc xem số có log). */
@@ -59,6 +69,9 @@ export interface CrmActionDependencies {
   getState: () => CrmState;
   router: CrmRouterBridge;
 }
+
+/** Hai danh sách id giống hệt nhau (cùng thứ tự). */
+const isSameIdList = (left: readonly string[], right: readonly string[]): boolean => left.length === right.length && left.every((id, index) => id === right[index]);
 
 /** Toast có nút hành động (vd "Hoàn tác"): nút đóng toast rồi gọi `onClick`. */
 const renderActionToast = (content: string, action: NonNullable<ToastInput['action']>) => (toastItem: { id: string }) =>
@@ -111,6 +124,20 @@ export const createCrmActions = ({ dispatch, getState, router }: CrmActionDepend
     openCreateAppointment: (link) => router.navigateTo(buildCreateAppointmentPath(link)),
     setFilters: (changes) => dispatch({ type: 'filters/set', changes }),
     resetFilters: () => dispatch({ type: 'filters/reset' }),
+    dropTagsFromFilters: (tagIds) => dispatch({ type: 'filters/dropTags', tagIds }),
+    replaceTagInFilters: (fromTagId, toTagId) => {
+      const previousTagIds = getState().filters.tagIds;
+      dispatch({ type: 'filters/replaceTag', fromTagId, toTagId });
+      const replacedTagIds = getState().filters.tagIds;
+      // A vốn không có trong bộ lọc: lần thay không đổi gì nên không có gì để hoàn tác (không dispatch thừa).
+      if (isSameIdList(previousTagIds, replacedTagIds)) return () => undefined;
+      return () => {
+        // Người dùng đã tự đổi bộ lọc thẻ trong lúc chờ API: không đè lên lựa chọn mới của họ.
+        if (!isSameIdList(getState().filters.tagIds, replacedTagIds)) return;
+        dispatch({ type: 'filters/set', changes: { tagIds: previousTagIds } });
+      };
+    },
+    pruneStaleTagFilters: (existingTagIds) => dispatch({ type: 'filters/pruneStaleTags', existingTagIds }),
     showToast,
     openModal,
     openCallModal: (customerId, phone) => openModal({ kind: 'call', customerId, phone }),

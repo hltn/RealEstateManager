@@ -9,6 +9,20 @@ export const MOBILE_VIEWPORT = { width: 390, height: 844 };
 /** Toast của react-hot-toast: mỗi toast là phần tử role=status; lọc theo chữ. */
 export const toast = (page: Page, text: string | RegExp): Locator => page.getByRole('status').filter({ hasText: text });
 
+/** Debounce lớn nhất từng có ở form Thêm khách (`useDebouncedValue(phone, 500)` của kiểm trùng cũ, đã bỏ ở v1.0.5). */
+const LEGACY_DEBOUNCE_MS = 500;
+
+/**
+ * Chờ THẬT một khoảng dài hơn debounce cũ của kiểm trùng (500 ms + dư cho request tới được Playwright) trước các kiểm tra PHỦ ĐỊNH
+ * ("không có banner/không gọi endpoint X"), để nếu form lỡ gọi lại tra trùng sau debounce thì request đã được ghi nhận trước khi kiểm.
+ * Cố ý KHÔNG dùng `page.clock`: đồng hồ giả chỉ điều khiển timer tạo SAU lúc cài, còn debounce được tạo ngay lúc `fill` SĐT (trước khi
+ * cài kịp) nên vẫn chạy bằng đồng hồ thật và `runFor` không làm nó chạy sớm, khiến kiểm phủ định xanh giả.
+ * Gọi hàm này SAU thao tác gõ SĐT; spec vẫn phải khẳng định danh sách request (`legacy`/`net`) sau đó hoặc cuối test.
+ */
+export async function waitPastLegacyDebounce(page: Page, ms = LEGACY_DEBOUNCE_MS * 2): Promise<void> {
+  await page.waitForTimeout(ms);
+}
+
 /** Mở chi tiết khách bằng URL và chờ tên khách hiện (không chờ cố định). */
 export async function openCustomerDetail(page: Page, customerId: string, fullName: string): Promise<void> {
   await page.goto(`/crm/customers/${customerId}`);

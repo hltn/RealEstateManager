@@ -261,8 +261,21 @@ export class PersonaFieldsService {
     await this.config.ensureState();
     const result = await withTransaction(this.connection, async (session) => {
       const before = await this.findLive(id, session);
-      const typeChanged = dto.type !== undefined && dto.type !== before.type;
-      if (typeChanged) await this.assertTypeUnlocked(before.key, session);
+      const isTypeChanged = dto.type !== undefined && dto.type !== before.type;
+      if (isTypeChanged) {
+        // Có dữ liệu khách => TYPE_LOCKED (cụ thể hơn); chưa có dữ liệu mà là trường hệ thống => vẫn chặn, vì nơi khác
+        // dựa vào kiểu/lựa chọn của nó (vd `property_type` cấp lựa chọn cho Dự án, `occupation` sinh token lọc) và đổi
+        // sang kiểu không có lựa chọn sẽ xóa sạch `options` mà `valueCount` (chỉ đếm khách) không thấy.
+        await this.assertTypeUnlocked(before.key, session);
+        if (before.isSystem) {
+          throw new BusinessException(
+            ErrorCode.PERSONA_FIELD_SYSTEM,
+            'Không thể đổi kiểu của trường hệ thống; hãy sửa nhãn/lựa chọn hoặc tắt hoạt động, hoặc tạo trường mới',
+            HttpStatus.CONFLICT,
+            { field: 'type' },
+          );
+        }
+      }
 
       const nextType = dto.type ?? before.type;
       const nextOptions = OPTION_FIELD_TYPES.includes(nextType)
@@ -274,13 +287,14 @@ export class PersonaFieldsService {
       for (const key of PATCHABLE_FIELDS) {
         if (dto[key] !== undefined) patch[key] = dto[key];
       }
-      if (dto.options !== undefined || typeChanged) patch.options = nextOptions;
+      if (dto.options !== undefined || isTypeChanged)
+        patch.options = nextOptions;
 
       const next = { ...before, ...patch } as PersonaFieldLean;
       // Chỉ kiểm hình dạng khi PATCH đụng vào thuộc tính của nó: trường dữ liệu cũ có tổ hợp không còn hợp lệ
       // (vd nhạy cảm + lọc được) vẫn phải tắt/đổi nhãn/sắp xếp được mà không bị 400.
-      const touchesShape = SHAPE_FIELDS.some((key) => key in patch);
-      const shapeError = touchesShape
+      const isShapeTouched = SHAPE_FIELDS.some((key) => key in patch);
+      const shapeError = isShapeTouched
         ? findFieldShapeError({
             type: next.type,
             options: next.options,
@@ -305,10 +319,10 @@ export class PersonaFieldsService {
         )
         .lean()
         .exec()) as PersonaFieldLean;
-      const derivedChanged = changes.some((change) =>
+      const isDerivedChanged = changes.some((change) =>
         DERIVED_FIELDS.includes(change.field),
       );
-      if (derivedChanged) await this.config.bumpVersion(session);
+      if (isDerivedChanged) await this.config.bumpVersion(session);
       await this.audit.record(
         {
           entityType: CrmAuditEntityType.PERSONA_FIELD,
@@ -319,7 +333,7 @@ export class PersonaFieldsService {
         },
         session,
       );
-      return { doc: after, derivedChanged };
+      return { doc: after, derivedChanged: isDerivedChanged };
     });
     if (result.derivedChanged) void this.recompute.run();
     return toPersonaFieldResponse(result.doc);

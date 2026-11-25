@@ -23,8 +23,6 @@ import {
 } from '../../../common/decorators/api-response.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
 import { CatalogItemType } from './catalog.enums';
@@ -38,6 +36,7 @@ import {
   ListContactResultsQueryDto,
   UpdateContactResultDto,
 } from './dtos/catalog-item.dto';
+import { ActiveCrmUser } from '../common/access/active-crm-user.decorator';
 import { AdminOnly } from '../common/access/admin-only.decorator';
 
 /** Kết quả liên hệ + gợi ý mốc hẹn (tài liệu 05 mục 2.8). Đọc: A/M/S. Ghi: Quản trị. */
@@ -49,7 +48,7 @@ export class ContactResultsController {
   constructor(private readonly itemsService: CatalogItemsService) {}
 
   @Get()
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({ summary: 'Danh sách kết quả liên hệ kèm gợi ý mốc hẹn' })
   @ApiPaginatedResponse(ContactResultResponseDto)
   async list(@Query() query: ListContactResultsQueryDto) {

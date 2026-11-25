@@ -20,6 +20,9 @@ import {
  * - `sourceCareLogId`: nhật ký đã sinh ra lịch hẹn này (nextAction.appointment).
  * - `projectId`: dự án của buổi hẹn (tùy chọn, mọi loại lịch). Chỉ gắn MỚI được dự án còn hoạt động; dự án ngừng/ẩn
  *   sau đó vẫn hiển thị tên. Bản ghi cũ không có field này = chưa gắn dự án (không cần migration).
+ * - `projectCode`: mã bất biến của dự án (`projects.codeNormalized`, chữ HOA), GHI KÉP cùng `projectId` (FR-40,
+ *   Architecture 5.1.1). Lọc theo dự án dùng field này; bản ghi cũ chưa có cho tới khi migration `007` điền
+ *   (mapper dịch từ `projectId` để hiển thị).
  */
 @Schema({ timestamps: true, collection: 'appointments' })
 export class Appointment {
@@ -48,8 +51,19 @@ export class Appointment {
   @Prop({ type: String, default: '', maxlength: APPOINTMENT_NOTE_MAX_LENGTH })
   note: string;
 
+  /**
+   * DEPRECATED (bỏ ở v1.0.7, sau khi backfill lại): người thực hiện đầu tiên = `assigneeIds[0]`. Vẫn GHI KÉP (hàm
+   * `toAssigneeWrite`) để lùi về bản BE cũ an toàn. Đọc/lọc đi qua `getAssigneeIds`/`assigneeFilter`.
+   */
   @Prop({ type: Types.ObjectId, required: true })
   assigneeId: Types.ObjectId;
+
+  /**
+   * Người thực hiện (FR-30, 1..20 người, giữ thứ tự). Nguồn thật. Lịch cũ chưa chạy migration 012 có thể THIẾU trường
+   * này (không đặt `default` để lean trả `undefined`, phân biệt được với `[]`).
+   */
+  @Prop({ type: [Types.ObjectId], default: undefined })
+  assigneeIds?: Types.ObjectId[];
 
   /** Các mốc nhắc trước giờ hẹn (phút), giảm dần; rỗng = không nhắc. */
   @Prop({ type: [Number], default: [] })
@@ -81,6 +95,9 @@ export class Appointment {
   @Prop({ type: Types.ObjectId, default: null })
   projectId: Types.ObjectId | null;
 
+  @Prop({ type: String, default: null })
+  projectCode?: string | null;
+
   @Prop({ type: Types.ObjectId, required: true })
   createdBy: Types.ObjectId;
 
@@ -102,8 +119,13 @@ export type AppointmentDocument = HydratedDocument<Appointment>;
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);
 
+// Index cũ giữ tới v1.0.7: nhánh lọc lịch chưa có `assigneeIds` (cửa sổ trước backfill 012) và BE cũ khi lùi bản.
 AppointmentSchema.index({ assigneeId: 1, startAt: 1 });
+// Lọc theo người thực hiện (index đa khóa, FR-30); migration 012 cũng tạo idempotent cho DB đã có dữ liệu.
+AppointmentSchema.index({ assigneeIds: 1, startAt: 1 });
 AppointmentSchema.index({ customerId: 1, startAt: 1 });
 AppointmentSchema.index({ status: 1, startAt: 1 });
 // Lọc danh sách lịch theo dự án trong khoảng thời gian.
 AppointmentSchema.index({ projectId: 1, startAt: 1 });
+// Lọc danh sách lịch theo mã dự án bất biến trong khoảng thời gian (FR-40, ghi kép với `projectId`).
+AppointmentSchema.index({ projectCode: 1, startAt: 1 });

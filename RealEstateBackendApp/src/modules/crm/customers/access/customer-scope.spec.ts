@@ -21,7 +21,7 @@ describe('buildCustomerScope (phạm vi khách theo vai trò, tài liệu 04 m�
     );
   });
 
-  it('MANAGER: khách của nhóm mình quản lý HOẶC khách mình nằm trong careTeam', () => {
+  it('MANAGER: khách của nhóm mình quản lý, HOẶC mình nằm trong careTeam, HOẶC mình là người tạo (FR-31)', () => {
     const managed = [new Types.ObjectId(), new Types.ObjectId()];
     const me = new Types.ObjectId();
     expect(
@@ -29,7 +29,11 @@ describe('buildCustomerScope (phạm vi khách theo vai trò, tài liệu 04 m�
         actor({ role: UserRole.MANAGER, userId: me, managedTeamIds: managed }),
       ),
     ).toEqual({
-      $or: [{ teamIds: { $in: managed } }, { 'careTeam.userId': me }],
+      $or: [
+        { teamIds: { $in: managed } },
+        { 'careTeam.userId': me },
+        { createdBy: me },
+      ],
     });
   });
 
@@ -41,7 +45,7 @@ describe('buildCustomerScope (phạm vi khách theo vai trò, tài liệu 04 m�
     expect(scope.$or[0].teamIds?.$in).toEqual([]);
   });
 
-  it('STAFF: chỉ khách có mình trong careTeam, bất kể nhóm', () => {
+  it('STAFF: khách có mình trong careTeam HOẶC mình là người tạo (FR-31), bất kể nhóm', () => {
     const me = new Types.ObjectId();
     expect(
       buildCustomerScope(
@@ -52,7 +56,38 @@ describe('buildCustomerScope (phạm vi khách theo vai trò, tài liệu 04 m�
           managedTeamIds: [new Types.ObjectId()],
         }),
       ),
-    ).toEqual({ 'careTeam.userId': me });
+    ).toEqual({ $or: [{ 'careTeam.userId': me }, { createdBy: me }] });
+  });
+
+  it('FR-31: người tạo luôn thấy khách của mình dù đã bị gỡ khỏi careTeam (nhánh createdBy độc lập với careTeam)', () => {
+    const me = new Types.ObjectId();
+    for (const role of [UserRole.STAFF, UserRole.MANAGER]) {
+      const scope = buildCustomerScope(
+        actor({ role, userId: me }),
+      ) as unknown as {
+        $or: Array<Record<string, unknown>>;
+      };
+      expect(scope.$or).toContainEqual({ createdBy: me });
+    }
+  });
+
+  it('FR-06: phạm vi không phụ thuộc teamIds của khách (khách teamIds=[] do Admin tạo vẫn thấy qua careTeam)', () => {
+    const me = new Types.ObjectId();
+    expect(
+      buildCustomerScope(actor({ role: UserRole.STAFF, userId: me })),
+    ).toEqual({ $or: [{ 'careTeam.userId': me }, { createdBy: me }] });
+    // Manager chưa quản lý nhóm nào: nhánh teamIds khớp rỗng, nhánh careTeam vẫn hoạt động.
+    expect(
+      buildCustomerScope(
+        actor({ role: UserRole.MANAGER, userId: me, managedTeamIds: [] }),
+      ),
+    ).toEqual({
+      $or: [
+        { teamIds: { $in: [] } },
+        { 'careTeam.userId': me },
+        { createdBy: me },
+      ],
+    });
   });
 
   it('vai trò ngoài CRM (EDITOR) không thấy khách nào', () => {

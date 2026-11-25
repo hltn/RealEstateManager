@@ -249,7 +249,7 @@ export const computeOccasions = (
 // ---------------------------------------------------------------------------
 
 /** `searchText` (04 §3.2): họ tên bỏ dấu + các biến thể SĐT + email. */
-export const buildSearchText = (input: { fullName: string; phone: string; email?: string }): string =>
+export const buildSearchText = (input: { fullName: string; phone: string | null; email?: string }): string =>
   [normalizeVietnamese(input.fullName), ...getPhoneSearchVariants(input.phone), input.email?.toLowerCase() ?? '']
     .filter(Boolean)
     .join(' ');

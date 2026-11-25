@@ -87,6 +87,34 @@ export const normalizePropertyTypes = (value: unknown): string[] => {
   });
 };
 
+/** Khoá trường chân dung chứa danh mục loại hình (FR-46): `value` của lựa chọn là mã `propertyTypeCodes` của dự án. */
+export const PROPERTY_TYPE_FIELD_KEY = 'property_type';
+
+export interface ProjectPropertyTypeOption {
+  value: string;
+  label: string;
+  isActive: boolean;
+}
+
+/**
+ * Lựa chọn loại hình cho form dự án (FR-46). Lựa chọn đang dùng luôn hiện; lựa chọn ĐÃ TẮT chỉ hiện khi dự án đang dùng nó
+ * (`usedCodes` = mã dự án đang lưu, KHÔNG phải nháp) vì backend chỉ cho giữ lựa chọn đã tắt đúng trong trường hợp đó. Mã dự án đang
+ * dùng mà không còn trong danh mục thì hiện bằng chính mã để không âm thầm mất khi lưu.
+ */
+export const listProjectPropertyTypeOptions = (
+  optionItems: readonly ProjectPropertyTypeOption[] | undefined,
+  usedCodes: readonly string[],
+): ProjectPropertyTypeOption[] => {
+  const items = optionItems ?? [];
+  const used = new Set(usedCodes);
+  const missing = usedCodes.filter((code) => !items.some((item) => item.value === code)).map((code) => ({ value: code, label: code, isActive: false }));
+  return [...items.filter((item) => item.isActive || used.has(item.value)), ...missing];
+};
+
+/** Nhãn hiện tại của các mã đã chọn (đổi tên lựa chọn thì nhãn đổi theo, mã dự án giữ nguyên); mã lạ hiện bằng chính mã. */
+export const toPropertyTypeLabels = (codes: readonly string[], options: readonly ProjectPropertyTypeOption[]): string[] =>
+  codes.map((code) => options.find((option) => option.value === code)?.label ?? code);
+
 /** Chuẩn hoá trước khi lưu: cắt khoảng trắng, mã viết hoa, tên đầy đủ mặc định = tên ngắn, giá không hợp lệ -> null. */
 export const normalizeProject = (project: Project): Project => {
   const name = toText(project.name);
@@ -136,7 +164,8 @@ export const getProjectErrors = (existing: readonly Project[], project: Project,
   (['developer', 'location'] as const).forEach((field) => {
     if (project[field].trim().length > PROJECT_FIELD_MAX_LENGTH) errors[field] = `Tối đa ${PROJECT_FIELD_MAX_LENGTH} ký tự.`;
   });
-  if (project.propertyTypes.length > PROJECT_TYPES_MAX_COUNT) errors.propertyTypes = `Tối đa ${PROJECT_TYPES_MAX_COUNT} loại hình.`;
+  if ((project.propertyTypeCodes?.length ?? 0) > PROJECT_TYPES_MAX_COUNT) errors.propertyTypes = `Tối đa ${PROJECT_TYPES_MAX_COUNT} loại hình.`;
+  else if (project.propertyTypes.length > PROJECT_TYPES_MAX_COUNT) errors.propertyTypes = `Tối đa ${PROJECT_TYPES_MAX_COUNT} loại hình.`;
   else if (project.propertyTypes.some((type) => type.length > PROJECT_FIELD_MAX_LENGTH)) errors.propertyTypes = `Mỗi loại hình tối đa ${PROJECT_FIELD_MAX_LENGTH} ký tự.`;
   const { priceFrom, priceTo } = project;
   if (priceFrom !== null && !(priceFrom >= 0)) errors.priceFrom = 'Giá không được âm.';

@@ -1,10 +1,11 @@
 import { Types } from 'mongoose';
 import { UserRole } from '../../../common/enums/user-role.enum';
-import type { RefMaps } from '../customers/customer-refs.service';
+import type { CatalogRef, RefMaps } from '../customers/customer-refs.service';
 import {
   AppointmentCustomerLean,
   AppointmentLean,
   toAppointmentResponse,
+  toProjectRef,
 } from './appointment.mapper';
 
 const userId = new Types.ObjectId();
@@ -13,6 +14,7 @@ const maps = {
   projects: new Map(),
   users: new Map([[String(userId), 'Nhân viên A']]),
 } as unknown as RefMaps;
+const noProjects = new Map<string, CatalogRef>();
 const actor = {
   userId,
   role: UserRole.STAFF,
@@ -55,23 +57,185 @@ describe('toAppointmentResponse: phoneMasked của khách', () => {
       customer({ phone: '+84912345678' }),
       maps,
       actor,
+      noProjects,
     );
     expect(response.customer.phoneMasked).toBe('0912 ••• 678');
     expect(JSON.stringify(response)).not.toContain('912345678');
   });
 
-  it('khách thiếu SĐT hoặc đã ẩn danh: không ném lỗi, không lộ số', () => {
+  it('FR-04: khách thiếu SĐT hoặc đã ẩn danh: phoneMasked null, không ném lỗi, không lộ số', () => {
     expect(
-      toAppointmentResponse(row, customer({}), maps, actor).customer
+      toAppointmentResponse(row, customer({}), maps, actor, noProjects).customer
         .phoneMasked,
-    ).toBe('');
+    ).toBeNull();
+    expect(
+      toAppointmentResponse(
+        row,
+        customer({ phone: null }),
+        maps,
+        actor,
+        noProjects,
+      ).customer.phoneMasked,
+    ).toBeNull();
     expect(
       toAppointmentResponse(
         row,
         customer({ phone: '+84912345678', anonymizedAt: new Date() }),
         maps,
         actor,
+        noProjects,
       ).customer.phoneMasked,
-    ).toBe('••••');
+    ).toBeNull();
   });
+});
+
+describe('toProjectRef / toAppointmentResponse.project: CatalogRefDto (FR-40)', () => {
+  const projectId = new Types.ObjectId();
+  const projects = new Map<string, CatalogRef>([
+    [String(projectId), { id: projectId, code: 'QTERRA', label: 'Q Terra' }],
+  ]);
+
+  it('FR-40: lịch chưa gắn dự án => null', () => {
+    expect(toProjectRef(null, null, projects)).toBeNull();
+    expect(toProjectRef(undefined, undefined, projects)).toBeNull();
+  });
+
+  it('FR-40: trả { id, code, label }; code ưu tiên mã đã ghi kép trên lịch', () => {
+    expect(toProjectRef(projectId, 'STORED', projects)).toEqual({
+      id: String(projectId),
+      code: 'STORED',
+      label: 'Q Terra',
+    });
+  });
+
+  it('FR-40 (dữ liệu cũ): lịch chưa có projectCode thì dịch code từ id, không lỗi', () => {
+    expect(toProjectRef(projectId, undefined, projects)).toEqual({
+      id: String(projectId),
+      code: 'QTERRA',
+      label: 'Q Terra',
+    });
+    expect(toProjectRef(projectId, null, projects)?.code).toBe('QTERRA');
+  });
+
+  it('FR-40 (biên): dự án đã bị xóa cứng khỏi danh mục => label và code rỗng, vẫn giữ id', () => {
+    expect(toProjectRef(projectId, null, noProjects)).toEqual({
+      id: String(projectId),
+      code: '',
+      label: '',
+    });
+  });
+
+  it('FR-40: response lịch hẹn mang project dạng CatalogRefDto', () => {
+    const response = toAppointmentResponse(
+      { ...row, projectId, projectCode: 'QTERRA' },
+      customer({}),
+      maps,
+      actor,
+      projects,
+    );
+    expect(response.project).toEqual({
+      id: String(projectId),
+      code: 'QTERRA',
+      label: 'Q Terra',
+    });
+  });
+});
+
+describe('toAppointmentResponse: assignees và assignee (FR-30)', () => {
+  const second = new Types.ObjectId();
+  const third = new Types.ObjectId();
+  const named = {
+    ...maps,
+    users: new Map([
+      [String(userId), 'Nhân viên A'],
+      [String(second), 'Nhân viên B'],
+      [String(third), 'Quản lý C'],
+    ]),
+  };
+  const build = (extra: Record<string, unknown>) =>
+    toAppointmentResponse(
+      { ...row, ...extra },
+      customer({}),
+      named,
+      actor,
+      noProjects,
+    );
+
+  it('FR-30: lịch đã backfill nhiều người: assignees đủ và đúng thứ tự, assignee = người đầu', () => {
+    const response = build({
+      assigneeIds: [second, userId, third],
+      assigneeId: second,
+    });
+    expect(response.assignees.map((user) => user.displayName)).toEqual([
+      'Nhân viên B',
+      'Nhân viên A',
+      'Quản lý C',
+    ]);
+    expect(response.assignee.id).toBe(String(second));
+  });
+
+  it('FR-30 (chưa backfill): lịch cũ chỉ có assigneeId vẫn ra assignees 1 người và assignee', () => {
+    const response = build({ assigneeIds: undefined, assigneeId: userId });
+    expect(response.assignees).toHaveLength(1);
+    expect(response.assignees[0].id).toBe(String(userId));
+    expect(response.assignee.id).toBe(String(userId));
+  });
+
+  it('FR-30: assigneeIds là nguồn thật, thắng assigneeId lệch (BE cũ chưa ghi kép)', () => {
+    const response = build({ assigneeIds: [third], assigneeId: userId });
+    expect(response.assignees.map((user) => user.id)).toEqual([String(third)]);
+    expect(response.assignee.id).toBe(String(third));
+  });
+
+  it('FR-30: assigneeIds rỗng là rỗng thật: assignee null, assignees rỗng, KHÔNG lùi về assigneeId', () => {
+    const response = build({ assigneeIds: [], assigneeId: userId });
+    expect(response.assignees).toEqual([]);
+    expect(response.assignee).toBeNull();
+  });
+
+  it('FR-30: assigneeIds null (bản ghi cũ) rơi về assigneeId qua getAssigneeIds', () => {
+    const response = build({ assigneeIds: null, assigneeId: userId });
+    expect(response.assignees.map((user) => user.id)).toEqual([String(userId)]);
+    expect(response.assignee.id).toBe(String(userId));
+  });
+});
+
+describe('toAppointmentResponse: canEdit và canDelete (FR-32) cùng hàm với kiểm quyền', () => {
+  const build = (actorOverride: Partial<typeof actor>) =>
+    toAppointmentResponse(
+      row,
+      customer({}),
+      maps,
+      { ...actor, ...actorOverride },
+      noProjects,
+    );
+
+  it('người tạo lịch: cả hai cờ true', () => {
+    const response = build({});
+    expect(response.canEdit).toBe(true);
+    expect(response.canDelete).toBe(true);
+  });
+
+  it('Quản trị (không phải người tạo): cả hai cờ true', () => {
+    const response = build({
+      userId: new Types.ObjectId(),
+      role: UserRole.ADMIN,
+      roles: [UserRole.ADMIN],
+    });
+    expect(response.canEdit).toBe(true);
+    expect(response.canDelete).toBe(true);
+  });
+
+  it.each([UserRole.MANAGER, UserRole.STAFF])(
+    '%s không phải người tạo lịch: cả hai cờ false (Manager không còn xóa được)',
+    (role) => {
+      const response = build({
+        userId: new Types.ObjectId(),
+        role,
+        roles: [role],
+      });
+      expect(response.canEdit).toBe(false);
+      expect(response.canDelete).toBe(false);
+    },
+  );
 });

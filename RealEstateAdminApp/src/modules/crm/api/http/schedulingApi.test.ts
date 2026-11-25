@@ -36,13 +36,14 @@ const sentBody = () => request.mock.calls[0][0].data as Record<string, unknown>;
 const BASE = { customerId: 'c1', type: 'SITE_VISIT' as const, startAt: '2026-10-26T02:00:00.000Z' };
 
 describe('postAppointment: dự án của lịch (G7)', () => {
-  it('có dự án thì gửi projectId; "Không chọn" gửi null tường minh; không truyền thì không gửi trường này', async () => {
+  it('có dự án thì gửi projectCode (FR-40); "Không chọn" gửi null tường minh; không truyền thì không gửi trường này', async () => {
     await postAppointment({ ...BASE, projectId: 'pr1' });
-    expect(sentBody()).toMatchObject({ projectId: 'pr1' });
+    expect(sentBody()).toMatchObject({ projectCode: 'pr1' });
+    expect(sentBody()).not.toHaveProperty('projectId');
 
     request.mockClear();
     await postAppointment({ ...BASE, projectId: null });
-    expect(sentBody()).toHaveProperty('projectId', null);
+    expect(sentBody()).toHaveProperty('projectCode', null);
 
     request.mockClear();
     await postAppointment(BASE);

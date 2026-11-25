@@ -15,7 +15,10 @@ import { CrmActor } from '../common/access/crm-actor';
 import { parseSort } from '../common/utils/sort-parser.util';
 import { CustomerAccessService } from '../customers/access/customer-access.service';
 import { resolveClientSource } from '../customers/customer.errors';
-import { CustomerRefsService } from '../customers/customer-refs.service';
+import {
+  CatalogRef,
+  CustomerRefsService,
+} from '../customers/customer-refs.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import {
   APPOINTMENT_TYPE_LABELS,
@@ -25,14 +28,15 @@ import {
 import {
   AppointmentCustomerLean,
   AppointmentLean,
-  canDeleteAppointment,
   toAppointmentResponse,
 } from './appointment.mapper';
 import {
+  assertProjectInputConsistent,
   assertRangeValid,
   invalidField,
   parseRangeBoundary,
 } from './appointment.rules';
+import { assigneeFilter, getAssigneeIds } from './appointment-assignee';
 import { AppointmentsWriteService } from './appointments-write.service';
 import { customerScopeStages } from './customer-scope-stages.util';
 import {
@@ -48,6 +52,15 @@ import { Appointment, AppointmentDocument } from './schemas/appointment.schema';
 const oid = (id: string): Types.ObjectId => new Types.ObjectId(id);
 
 const SORTABLE_FIELDS = ['startAt'] as const;
+
+/** Lịch của dự án theo `projectCode`, hoặc lịch chưa backfill `projectCode` nhưng có `projectId` tương ứng. */
+const projectCodeCondition = (
+  code: string,
+  projectId?: Types.ObjectId,
+): Record<string, unknown> =>
+  projectId
+    ? { $or: [{ projectCode: code }, { projectCode: null, projectId }] }
+    : { projectCode: code };
 
 /** Kênh liên hệ của nhật ký tự sinh khi hoàn thành lịch hẹn. */
 const CHANNEL_BY_TYPE: Record<AppointmentType, ContactChannel> = {
@@ -94,15 +107,19 @@ export class AppointmentsService {
       direction: 1,
     });
     const { page, limit, skip } = normalizePagination(query.page, query.limit);
+    const projectFilter = await this.projectFilter(query);
 
     const match: Record<string, unknown> = {
       deletedAt: null,
       startAt: { $gte: from, $lte: to },
       ...(query.customerId && { customerId: oid(query.customerId) }),
-      ...(query.projectId && { projectId: oid(query.projectId) }),
-      ...(query.assigneeIds?.length && {
-        assigneeId: { $in: query.assigneeIds.map(oid) },
-      }),
+      // Cả bộ lọc dự án (`projectCodeCondition`) lẫn `assigneeFilter` đều dùng khóa `$or`: gộp bằng `$and` để không
+      // đè nhau (FR-30). Chỉ dùng `$and` khi lọc người thực hiện; không thì giữ nguyên truy vấn cũ.
+      ...(query.assigneeIds?.length
+        ? {
+            $and: [projectFilter, assigneeFilter(query.assigneeIds.map(oid))],
+          }
+        : projectFilter),
       ...(query.types?.length && { type: { $in: query.types } }),
       ...(query.status && { status: query.status }),
     };
@@ -142,6 +159,7 @@ export class AppointmentsService {
     dto: CreateAppointmentDto,
     clientType?: string,
   ): Promise<AppointmentResponseDto> {
+    assertProjectInputConsistent(dto.projectId, dto.projectCode);
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
     const { appointment, customer } = await withTransaction(
@@ -158,8 +176,10 @@ export class AppointmentsService {
             location: dto.location,
             note: dto.note,
             assigneeId: dto.assigneeId ? oid(dto.assigneeId) : undefined,
+            assigneeIds: dto.assigneeIds?.map(oid),
             remindBeforeMinutes: dto.remindBeforeMinutes,
             projectId: dto.projectId ? oid(dto.projectId) : null,
+            projectCode: dto.projectCode ?? null,
           },
           auditSource,
           session,
@@ -244,18 +264,38 @@ export class AppointmentsService {
     const ctx = await this.access.resolve(jwt);
     const { auditSource } = resolveClientSource(clientType);
     await withTransaction(this.connection, (session) =>
-      this.writer.deleteInSession(
-        ctx,
-        id,
-        null,
-        auditSource,
-        session,
-        (appointment) => canDeleteAppointment(ctx.actor, appointment),
-      ),
+      this.writer.deleteInSession(ctx, id, null, auditSource, session),
     );
   }
 
   // --------------------------------------------------------------------------------------------
+
+  /**
+   * Điều kiện lọc theo dự án (FR-40). `projectCode` (mới, không phân biệt hoa thường) lọc theo mã bất biến đã ghi kép,
+   * dùng index `{ projectCode, startAt }`, KÈM nhánh `projectId` của dự án đó cho lịch chưa backfill `projectCode`
+   * (Architecture Q3). Dịch mã sang id bằng MỘT lượt `resolveByCodes` (không N+1); dự án đã xóa cứng (không còn id)
+   * thì chỉ còn nhánh mã. Chỉ `projectId` (cũ, deprecated) giữ nguyên lọc theo id để PWA cũ không đổi kết quả.
+   * Gửi cả hai mà khác dự án: 400 `VALIDATION_FAILED`.
+   */
+  private async projectFilter(
+    query: ListAppointmentsQueryDto,
+  ): Promise<Record<string, unknown>> {
+    const { projectId, projectCode } = query;
+    if (!projectCode) return projectId ? { projectId: oid(projectId) } : {};
+    const code = projectCode.trim().toUpperCase();
+    if (projectId) {
+      const [ref] = await this.refs.resolveByIds('project', [oid(projectId)]);
+      if (ref?.code !== code) {
+        throw invalidField(
+          'projectId và projectCode không cùng một dự án',
+          'projectCode',
+        );
+      }
+      return projectCodeCondition(code, ref.id);
+    }
+    const [ref] = await this.refs.resolveByCodes('project', [code]);
+    return projectCodeCondition(code, ref?.id);
+  }
 
   private outcomeContent(
     appointment: AppointmentLean,
@@ -284,13 +324,21 @@ export class AppointmentsService {
     rows: AppointmentRow[],
     actor: CrmActor,
   ): Promise<AppointmentResponseDto[]> {
-    const maps = await this.refs.resolve({
-      statusIds: rows.map((row) => row.customer[0].statusId),
-      userIds: rows.flatMap((row) => [row.assigneeId, row.createdBy]),
-      projectIds: rows.map((row) => row.projectId),
-    });
+    const [maps, projectRefs] = await Promise.all([
+      this.refs.resolve({
+        statusIds: rows.map((row) => row.customer[0].statusId),
+        userIds: rows.flatMap((row) => [...getAssigneeIds(row), row.createdBy]),
+      }),
+      this.refs.resolveByIds(
+        'project',
+        rows.map((row) => row.projectId),
+      ),
+    ]);
+    const projects = new Map<string, CatalogRef>(
+      projectRefs.map((ref) => [String(ref.id), ref]),
+    );
     return rows.map((row) =>
-      toAppointmentResponse(row, row.customer[0], maps, actor),
+      toAppointmentResponse(row, row.customer[0], maps, actor, projects),
     );
   }
 }

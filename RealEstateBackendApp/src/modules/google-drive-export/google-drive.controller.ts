@@ -39,7 +39,7 @@ export class GoogleDriveController {
     private readonly oauthService: GoogleDriveOAuthService,
     private readonly exportService: GoogleDriveExportService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   /**
    * GET /google-drive/auth/url
@@ -68,9 +68,7 @@ export class GoogleDriveController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
     const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ||
-      'http://localhost:5173';
-
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
 
     try {
       if (!code) {
@@ -85,14 +83,20 @@ export class GoogleDriveController {
       // Redirect về frontend với query gdrive=connected.
       reply
         .code(302)
-        .header('Location', `${frontendUrl}/market-analysis-workflow?gdrive=connected`)
+        .header(
+          'Location',
+          `${frontendUrl}/market-analysis-workflow?gdrive=connected`,
+        )
         .send();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'OAuth callback failed';
       reply
         .code(302)
-        .header('Location', `${frontendUrl}/market-analysis-workflow?gdrive=error&message=${encodeURIComponent(message)}`)
+        .header(
+          'Location',
+          `${frontendUrl}/market-analysis-workflow?gdrive=error&message=${encodeURIComponent(message)}`,
+        )
         .send();
     }
   }
@@ -149,22 +153,16 @@ export class GoogleDriveController {
     @Param('historyId') historyId: string,
     @Body() dto: ExportAnalysisDto,
   ) {
+    const result = await this.exportService.exportAnalysis(
+      user.sub,
+      historyId,
+      dto.folderUrl,
+    );
 
-    try {
-      const result = await this.exportService.exportAnalysis(
-        user.sub,
-        historyId,
-        dto.folderUrl,
-      );
-
-      return {
-        message: 'Export successful',
-        data: result,
-      };
-    } catch (err) {
-
-      throw err;
-    }
+    return {
+      message: 'Export successful',
+      data: result,
+    };
   }
 
   /**

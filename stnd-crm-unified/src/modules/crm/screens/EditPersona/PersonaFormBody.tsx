@@ -19,7 +19,6 @@ import { SelectInput } from '@crm/components/form/SelectInput';
 import { TextInput } from '@crm/components/form/TextInput';
 import { BUTTON_SOFT_SM_CLASS, FORM_HINT_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
 import type { PersonaGroupCode, TagCategory } from '@crm/types/crm';
-import { DuplicatePhoneBanner } from '../CreateCustomer/components/DuplicatePhoneBanner';
 import { PersonaFieldInput } from './components/PersonaFieldInput';
 import type { PersonaFormApi } from './usePersonaForm';
 
@@ -90,13 +89,12 @@ export const PersonaFormBody = ({ form, variant, hasBasicInfo }: PersonaFormBody
   const groupCodes = [...new Set(fields.map((field) => field.groupCode))];
 
   const basicSection = hasBasicInfo && (
-    <SectionCard icon={IdCard} title="Thông tin cơ bản" description="Chỉ họ tên và SĐT là bắt buộc">
-      <DuplicatePhoneBanner lookup={form.phoneLookup} onRequestJoin={form.requestJoin} variant={variant} />
+    <SectionCard icon={IdCard} title="Thông tin cơ bản" description="Chỉ họ tên là bắt buộc">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <FormField inputId={fieldId('name')} label="Họ và tên" isRequired error={basicErrors.fullName}>
           <TextInput id={fieldId('name')} icon={User} maxLength={150} value={basic.fullName} onChange={(event) => form.setBasicField('fullName', event.target.value)} hasError={Boolean(basicErrors.fullName)} {...getFieldA11yProps(getErrorId(fieldId('name')), basicErrors.fullName)} />
         </FormField>
-        <FormField inputId={fieldId('phone')} label="Số điện thoại" isRequired error={basicErrors.phone}>
+        <FormField inputId={fieldId('phone')} label="Số điện thoại" error={basicErrors.phone}>
           {form.isPhoneLocked ? (
             <div className="flex items-center gap-2">
               <TextInput id={fieldId('phone')} type="tel" icon={Phone} value={form.phoneMasked} readOnly className="font-mono" wrapperClassName="flex-1" />

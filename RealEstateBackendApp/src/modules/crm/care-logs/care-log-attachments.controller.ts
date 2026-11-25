@@ -35,7 +35,7 @@ const CLIENT_TYPE_HEADER = 'x-client-type';
 
 /**
  * Ảnh đính kèm nhật ký (tài liệu 05 mục 2.6): tải từng ảnh lên trước, rồi gắn vào ghi chú bằng `attachmentIds`
- * khi lưu nhật ký. Bật bằng `FEATURE_CRM_ATTACHMENTS`; tắt => 404.
+ * khi lưu nhật ký. Bật bằng `CRM_ATTACHMENTS_ENABLED`; tắt => 404.
  */
 @ApiTags('CRM - Care log attachments')
 @ApiBearerAuth()
@@ -82,7 +82,7 @@ export class CareLogAttachmentsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Gỡ ảnh: chưa gắn => người tải lên/Quản trị/Quản lý; đã gắn => tác giả/Quản trị/Quản lý',
+      'Gỡ ảnh: chưa gắn => người tải lên hoặc Quản trị (người khác 404); đã gắn => tác giả nhật ký hoặc Quản trị (người khác 403)',
   })
   @ApiResponse({ status: 204, description: 'Đã gỡ' })
   async remove(

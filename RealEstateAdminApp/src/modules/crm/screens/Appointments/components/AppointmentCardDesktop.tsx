@@ -23,7 +23,9 @@ import { useAppointmentActions } from '../useAppointmentActions';
 import type { AppointmentView as Appointment } from '@crm/api';
 import { APPOINTMENT_TYPE_STYLES, getAppointmentActionVariant } from '../appointmentTypeStyles';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { CARD_CLASS, CHIP_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { AppointmentMoreMenu } from './AppointmentMoreMenu';
 
 interface AppointmentCardDesktopProps {
@@ -66,6 +68,8 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
   const openProfile = () => selectCustomer(appointment.customer.id);
   const handleToggleCompleted = () => toggleCompleted(appointment);
+  // FR-32: nút đổi trạng thái hoàn thành chỉ hiện khi backend báo `canEdit` (người tạo lịch hoặc Quản trị); người khác vẫn gọi/xem hồ sơ được.
+  const canToggleCompleted = appointment.canEdit;
 
   return (
     <article
@@ -94,7 +98,7 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
               <span className="truncate font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</span>
               <CustomerStatusChip status={appointment.customer.status} size="small" />
             </InfoRow>
-            {appointment.customer.phoneMasked && (
+            {hasPhone(appointment.customer.phoneMasked) && (
               <InfoRow icon={<Phone size={16} />}>
                 <span className="truncate">
                   SĐT: <strong className="font-medium text-gray-800 dark:text-white/90">{appointment.customer.phoneMasked}</strong>
@@ -110,28 +114,26 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
               </InfoRow>
             )}
 
-            {actionVariant === 'reminder' ? (
-              appointment.note && (
-                <div className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 sm:col-span-2 dark:border-white/[0.05] dark:bg-white/[0.02]">
-                  <StickyNote size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
-                  <span className="text-theme-xs leading-relaxed text-gray-700 dark:text-gray-300">
-                    <strong className="font-semibold">Ghi chú:</strong> {appointment.note}
-                  </span>
-                </div>
-              )
-            ) : (
-              <>
-                <InfoRow icon={actionVariant === 'deposit' ? <Building size={16} /> : <MapPin size={16} />}>
-                  <span className="truncate" title={appointment.location}>
-                    {actionVariant === 'deposit' ? `Địa điểm: ${appointment.location}` : appointment.location}
-                  </span>
-                </InfoRow>
-                <InfoRow icon={<IdCard size={16} />}>
-                  <span className="truncate">
-                    Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{appointment.assignee.displayName}</strong>
-                  </span>
-                </InfoRow>
-              </>
+            {actionVariant !== 'reminder' && (
+              <InfoRow icon={actionVariant === 'deposit' ? <Building size={16} /> : <MapPin size={16} />}>
+                <span className="truncate" title={appointment.location}>
+                  {actionVariant === 'deposit' ? `Địa điểm: ${appointment.location}` : appointment.location}
+                </span>
+              </InfoRow>
+            )}
+            {/* FR-30: mọi loại lịch (kể cả "Nhắc gọi lại") đều hiện người thực hiện. */}
+            <InfoRow icon={<IdCard size={16} />}>
+              <span className="truncate" title={`Phụ trách: ${formatAssigneeNames(appointment.assignees)}`}>
+                Phụ trách: <strong className="font-medium text-brand-600 dark:text-brand-400">{formatAssigneeNames(appointment.assignees)}</strong>
+              </span>
+            </InfoRow>
+            {actionVariant === 'reminder' && appointment.note && (
+              <div className="flex items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 p-2.5 sm:col-span-2 dark:border-white/[0.05] dark:bg-white/[0.02]">
+                <StickyNote size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-brand-500 dark:text-brand-400" />
+                <span className="text-theme-xs leading-relaxed text-gray-700 dark:text-gray-300">
+                  <strong className="font-semibold">Ghi chú:</strong> {appointment.note}
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -154,10 +156,12 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
 
           {actionVariant === 'deposit' && (
             <>
-              <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={isCompleted ? ACTION_OUTLINE_CLASS : ACTION_SUCCESS_CLASS}>
-                {isCompleted ? <Undo2 size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}
-                {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
-              </button>
+              {canToggleCompleted && (
+                <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={isCompleted ? ACTION_OUTLINE_CLASS : ACTION_SUCCESS_CLASS}>
+                  {isCompleted ? <Undo2 size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}
+                  {isCompleted ? 'Hoàn tác xác nhận' : 'Xác nhận hoàn thành'}
+                </button>
+              )}
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => openQuickNote(appointment.customer.id)} className={ACTION_OUTLINE_CLASS}>
                   <NotebookPen size={14} aria-hidden="true" />
@@ -175,9 +179,11 @@ export const AppointmentCardDesktop = ({ appointment }: AppointmentCardDesktopPr
                 Gọi ngay cho khách
               </button>
               <div className="flex items-center gap-1.5">
-                <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
-                  {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}
-                </button>
+                {canToggleCompleted && (
+                  <button type="button" aria-pressed={isCompleted} onClick={handleToggleCompleted} className={ACTION_OUTLINE_CLASS}>
+                    {isCompleted ? 'Hoàn tác liên hệ' : 'Đã liên hệ xong'}
+                  </button>
+                )}
                 <AppointmentMoreMenu appointment={appointment} />
               </div>
             </>

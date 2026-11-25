@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { ApiError } from '@crm/api';
 import { canAccessView } from '../navigation';
 import {
-  canOfferBulkDelete,
   clampPage,
   describeBulkDeleteError,
   describeDeleteBatchError,
+  describeDeleteError,
   describePurgeError,
   describeRestoreError,
   getPageAfterRemoval,
@@ -14,34 +14,7 @@ import {
   validateDeleteReason,
 } from './customerDeletion';
 
-const customer = (listGroup: 'DROPPED' | 'INTERESTED', primaryUserId: string | null = null) =>
-  ({ status: { listGroup }, primaryAssignee: primaryUserId ? { id: primaryUserId, displayName: 'P' } : null }) as Parameters<typeof canOfferBulkDelete>[1][number];
-
 const error = (statusCode: number, errorCode: string, message = 'x'): ApiError => ({ statusCode, errorCode, message });
-
-describe('canOfferBulkDelete - khi nào hiện option "Xóa"', () => {
-  const admin = { role: 'ADMIN' as const, userId: 'a', managedTeamIds: [] };
-  const manager = { role: 'MANAGER' as const, userId: 'm', managedTeamIds: ['t1'] };
-  const staff = { role: 'STAFF' as const, userId: 's', managedTeamIds: [] };
-
-  it('chỉ khi MỌI khách chọn thuộc "Bỏ": lẫn một khách chưa Bỏ, chưa có dữ liệu hoặc chưa chọn ai thì ẩn', () => {
-    expect(canOfferBulkDelete(admin, [customer('DROPPED'), customer('DROPPED')])).toBe(true);
-    expect(canOfferBulkDelete(admin, [customer('DROPPED'), customer('INTERESTED')])).toBe(false);
-    expect(canOfferBulkDelete(admin, [customer('DROPPED'), undefined])).toBe(false);
-    expect(canOfferBulkDelete(admin, [])).toBe(false);
-  });
-
-  it('Nhân viên: chỉ khi là phụ trách chính của TỪNG khách', () => {
-    expect(canOfferBulkDelete(staff, [customer('DROPPED', 's'), customer('DROPPED', 's')])).toBe(true);
-    expect(canOfferBulkDelete(staff, [customer('DROPPED', 's'), customer('DROPPED', 'khac')])).toBe(false);
-    expect(canOfferBulkDelete(staff, [customer('DROPPED', null)])).toBe(false);
-  });
-
-  it('Quản lý: hiện (backend kiểm nhóm từng khách) nhưng ẩn khi không quản lý nhóm nào', () => {
-    expect(canOfferBulkDelete(manager, [customer('DROPPED', 'khac')])).toBe(true);
-    expect(canOfferBulkDelete({ ...manager, managedTeamIds: [] }, [customer('DROPPED', 'm')])).toBe(false);
-  });
-});
 
 describe('hasVisibleChar / validateDeleteReason - cùng quy tắc với backend', () => {
   it('chữ, số, dấu câu, ký hiệu/emoji tính là nhìn thấy; khoảng trắng, zero-width, dấu kết hợp đơn lẻ và ký tự trống giả dạng thì không', () => {
@@ -64,11 +37,18 @@ describe('hasVisibleChar / validateDeleteReason - cùng quy tắc với backend'
 
 describe('thông báo lỗi tiếng Việt', () => {
   it('xóa hàng loạt: từng mã lỗi có lý do riêng, mã lạ vẫn có câu chung kèm mã', () => {
-    expect(describeBulkDeleteError('CUSTOMER_NOT_DROPPED')).toMatch(/chưa thuộc danh sách Bỏ/);
-    expect(describeBulkDeleteError('INSUFFICIENT_ROLE')).toMatch(/không có quyền xóa/);
+    expect(describeBulkDeleteError('INSUFFICIENT_ROLE')).toBe('bạn không có quyền xóa khách này (chỉ Quản trị hoặc người tạo khách mới xóa được)');
     expect(describeBulkDeleteError('CUSTOMER_NOT_FOUND')).toMatch(/phạm vi/);
     expect(describeBulkDeleteError('INTERNAL_ERROR')).toMatch(/lỗi hệ thống/);
     expect(describeBulkDeleteError('LẠ')).toContain('LẠ');
+  });
+
+  it('FR-31: không còn điều kiện khách "Bỏ": mã CUSTOMER_NOT_DROPPED (đã bỏ khỏi backend) rơi về câu chung kèm mã, không có lời giải thích "khách Bỏ"; xóa đơn INSUFFICIENT_ROLE chỉ nói Quản trị hoặc người tạo', () => {
+    expect(describeBulkDeleteError('CUSTOMER_NOT_DROPPED')).toBe('không xóa được (mã lỗi CUSTOMER_NOT_DROPPED)');
+    expect(describeDeleteError(error(409, 'CUSTOMER_NOT_DROPPED', 'raw'))).toBe('raw');
+    const single = describeDeleteError(error(403, 'INSUFFICIENT_ROLE'));
+    expect(single).toContain('Quản trị hoặc người tạo khách');
+    expect(single).not.toMatch(/Bỏ|Quản lý|phụ trách chính/);
   });
 
   it('400 về lý do của backend được dịch dễ hiểu; lỗi 400 khác giữ nguyên', () => {

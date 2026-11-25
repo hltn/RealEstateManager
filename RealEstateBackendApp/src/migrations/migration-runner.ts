@@ -9,7 +9,8 @@ import {
   selectPendingMigrations,
 } from './migration-state';
 import type { MigrationState } from './migration-state';
-import type { Migration, MigrationActor } from './migration.types';
+import { findPhaseOrderViolation, getMigrationPhase } from './migration-phase';
+import type { Migration, MigrationActor, PhaseFilter } from './migration.types';
 import { planReconcile } from './reconcile-plan';
 import type { ReconcilePlan } from './reconcile-plan';
 import { compareVersions, isValidVersion } from './version-compare.util';
@@ -52,6 +53,8 @@ export interface ReconcileOptions {
   skipVersion: boolean;
   /** In ĐÚNG MỘT dòng JSON ra stdout; mọi log khác ra stderr. */
   json: boolean;
+  /** Pha migration được chạy (`--phase`); bỏ trống = `all` (mọi migration chờ, như trước đây). */
+  phase?: PhaseFilter;
 }
 
 export type ReconcileResultName =
@@ -121,31 +124,35 @@ export class MigrationRunner {
   }
 
   /** `status` (chỉ đọc). Mã thoát: 3 nếu đang có khóa, 4 nếu cần baseline, còn lại 0. */
-  async status(asJson: boolean): Promise<ExitCode> {
+  async status(isJson: boolean): Promise<ExitCode> {
     assertValidRegistry(this.options.migrations);
     const state = await readMigrationState(this.db);
     const pending = selectPendingMigrations(
       this.options.migrations,
       state.applied,
     );
-    const replicaSet = await this.isReplicaSet();
+    const isReplicaSet = await this.isReplicaSet();
 
-    if (asJson) {
+    if (isJson) {
       this.options.out(
         JSON.stringify({
           appVersion: this.options.app.version,
           appCommit: this.options.app.commit,
           systemVersion: state.version,
           applied: state.applied,
-          pending: pending.map(({ id, description }) => ({ id, description })),
+          pending: pending.map((migration) => ({
+            id: migration.id,
+            description: migration.description,
+            phase: getMigrationPhase(migration),
+          })),
           locked: state.lock,
           lastError: state.lastError,
           baselineRequired: state.baselineRequired,
-          replicaSet,
+          replicaSet: isReplicaSet,
         }),
       );
     } else {
-      this.printStatus(state, pending, replicaSet);
+      this.printStatus(state, pending, isReplicaSet);
     }
     if (state.lock) return EXIT_CODE.LOCKED;
     if (state.baselineRequired) return EXIT_CODE.BASELINE_REQUIRED;
@@ -153,7 +160,11 @@ export class MigrationRunner {
   }
 
   /** `up`: dry-run mặc định (liệt kê migration chờ), `apply` mới chạy thật. */
-  async up(apply: boolean, by: MigrationActor): Promise<ExitCode> {
+  async up(
+    shouldApply: boolean,
+    by: MigrationActor,
+    phase: PhaseFilter = 'all',
+  ): Promise<ExitCode> {
     assertValidRegistry(this.options.migrations);
     const { out, err } = this.options;
     const state = await readMigrationState(this.db);
@@ -171,13 +182,17 @@ export class MigrationRunner {
     // Downgrade (app CŨ hơn DB): không migrate, không hạ version; áp dụng cả dry-run để báo trước.
     if (this.isDowngrade(state)) return this.refuseDowngrade(state);
 
+    const phaseRefusal = this.phaseRefusal(state, phase);
+    if (phaseRefusal) return phaseRefusal;
+
     const pending = selectPendingMigrations(
       this.options.migrations,
       state.applied,
+      phase,
     );
     const versionChange = this.describeVersionChange(state);
 
-    if (!apply) {
+    if (!shouldApply) {
       out('[DRY-RUN] Không ghi gì vào DB.');
       if (state.lock) out(`Cảnh báo: đang có khóa (${state.lock.by}).`);
       this.printPending(pending);
@@ -201,9 +216,12 @@ export class MigrationRunner {
       // Đọc lại SAU khi giữ khóa: runner khác có thể vừa chạy xong giữa lúc đọc và lúc giành khóa.
       const fresh = await readMigrationState(this.db);
       if (this.isDowngrade(fresh)) return this.refuseDowngrade(fresh);
+      const freshPhaseRefusal = this.phaseRefusal(fresh, phase);
+      if (freshPhaseRefusal) return freshPhaseRefusal;
       const toRun = selectPendingMigrations(
         this.options.migrations,
         fresh.applied,
+        phase,
       );
       const failure = await this.runMigrations(toRun, by, out);
       if (failure !== null) return failure;
@@ -215,6 +233,27 @@ export class MigrationRunner {
       out(`Hoàn tất. Phiên bản hệ thống: ${this.options.app.version}.`);
       return EXIT_CODE.OK;
     });
+  }
+
+  /**
+   * Quy tắc an toàn sổ theo pha HAI CHIỀU (FR-21): chạy một pha mà còn migration pha KIA chờ số nhỏ hơn thì từ chối
+   * (mã 1; pre-up trước post-up nhỏ hơn, hoặc post-up trước pre-up nhỏ hơn). Trả `null` nếu hợp lệ. Áp dụng cả dry-run để báo trước đúng mã thoát của `--apply`.
+   */
+  private phaseRefusal(
+    state: MigrationState,
+    phase: PhaseFilter,
+  ): ExitCode | null {
+    const allPending = selectPendingMigrations(
+      this.options.migrations,
+      state.applied,
+    ).map((migration) => ({
+      id: migration.id,
+      phase: getMigrationPhase(migration),
+    }));
+    const violation = findPhaseOrderViolation(allPending, phase);
+    if (violation === null) return null;
+    this.options.err(`Từ chối: ${violation}`);
+    return EXIT_CODE.FAILURE;
   }
 
   /** App cũ hơn DB (cả hai đều là semver hợp lệ). Version DB sai định dạng không coi là downgrade (như trước đây). */
@@ -321,7 +360,8 @@ export class MigrationRunner {
 
     const state = await readMigrationState(this.db);
     report.systemVersion = state.version?.value ?? null;
-    const plan = await this.resolveReconcilePlan(state, report);
+    const phase = options.phase ?? 'all';
+    const plan = await this.resolveReconcilePlan(state, report, phase);
     const refused = this.reconcileRefusal(plan, report);
     if (refused !== null) return refused;
 
@@ -358,6 +398,7 @@ export class MigrationRunner {
       const locked = await this.resolveReconcilePlan(
         { ...fresh, lock: null },
         report,
+        phase,
       );
       const lockedRefusal = this.reconcileRefusal(locked, report);
       if (lockedRefusal !== null) return lockedRefusal;
@@ -370,9 +411,19 @@ export class MigrationRunner {
   private async resolveReconcilePlan(
     state: MigrationState,
     report: ReconcileReport,
+    phase: PhaseFilter,
   ): Promise<ReconcilePlan> {
     const registryIds = this.options.migrations.map(({ id }) => id);
-    const input = { state, appVersion: this.options.app.version, registryIds };
+    const postUpIds = this.options.migrations
+      .filter((migration) => getMigrationPhase(migration) === 'post-up')
+      .map(({ id }) => id);
+    const input = {
+      state,
+      appVersion: this.options.app.version,
+      registryIds,
+      postUpIds,
+      phase,
+    };
     let plan = planReconcile(input);
     // Mỗi lần lập kế hoạch (trước khóa, rồi lại sau khóa) bắt đầu từ báo cáo sạch: nếu lần sau bị từ chối thì report
     // không được còn kế hoạch/cảnh báo/probe của lần trước.
@@ -381,12 +432,14 @@ export class MigrationRunner {
     report.warnings = [];
     if (plan.outcome === 'NEEDS_PROBES') {
       const results = await runBaselineProbes(this.db, plan.probeIds);
-      report.probes = results.map(({ id, passed, counts, reason }) => ({
-        id,
-        passed,
-        counts,
-        reason: reason ?? null,
-      }));
+      report.probes = results.map(
+        ({ id, passed: hasPassed, counts, reason }) => ({
+          id,
+          passed: hasPassed,
+          counts,
+          reason: reason ?? null,
+        }),
+      );
       for (const result of results) report.warnings.push(...result.warnings);
       plan = planReconcile({ ...input, probeResults: results });
     }
@@ -541,7 +594,7 @@ export class MigrationRunner {
    * `system` đã có `version`. Dry-run mặc định.
    */
   async baseline(
-    apply: boolean,
+    shouldApply: boolean,
     version: string | undefined,
     commit: string | undefined,
   ): Promise<ExitCode> {
@@ -566,7 +619,7 @@ export class MigrationRunner {
     const missing = BASELINE_MIGRATION_IDS.filter(
       (id) => !state.applied.some((doc) => doc.id === id),
     );
-    if (!apply) {
+    if (!shouldApply) {
       out(
         '[DRY-RUN] Không ghi gì vào DB. Sẽ ghi sổ "đã áp dụng" (by=baseline):',
       );
@@ -704,14 +757,16 @@ export class MigrationRunner {
     }
     out(`Migration chờ (${pending.length}):`);
     for (const migration of pending) {
-      out(`  ${migration.id} - ${migration.description}`);
+      out(
+        `  ${migration.id} [${getMigrationPhase(migration)}] - ${migration.description}`,
+      );
     }
   }
 
   private printStatus(
     state: MigrationState,
     pending: readonly Migration[],
-    replicaSet: boolean,
+    isReplicaSet: boolean,
   ): void {
     const { out, app } = this.options;
     out(`Phiên bản app: ${app.version}${app.commit ? ` (${app.commit})` : ''}`);
@@ -720,12 +775,18 @@ export class MigrationRunner {
         ? `Phiên bản hệ thống (DB): ${state.version.value}${state.version.commit ? ` (${state.version.commit})` : ''}, cập nhật ${formatDate(state.version.updatedAt)}`
         : 'Phiên bản hệ thống (DB): chưa có',
     );
-    out(`Replica set: ${replicaSet ? 'có' : 'KHÔNG (--apply sẽ bị từ chối)'}`);
+    out(
+      `Replica set: ${isReplicaSet ? 'có' : 'KHÔNG (--apply sẽ bị từ chối)'}`,
+    );
     out(`Đã áp dụng (${state.applied.length}):`);
     for (const doc of state.applied) {
       out(`  ${doc.id} (${doc.by}, ${formatDate(doc.at)})`);
     }
     this.printPending(pending);
+    const postUpCount = pending.filter(
+      (migration) => getMigrationPhase(migration) === 'post-up',
+    ).length;
+    out(`Chờ post-up: ${postUpCount}`);
     out(
       state.lock
         ? `KHÓA: đang có (${state.lock.by}, ${formatDate(state.lock.at)}). Chỉ dùng \`unlock\` khi chắc chắn không có runner nào chạy.`

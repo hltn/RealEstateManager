@@ -118,7 +118,7 @@ const DRIFT_FILTER = {
  */
 export async function backfillUserRolesTeamIds(
   db: Db,
-  apply: boolean,
+  shouldApply: boolean,
   options: BackfillUserRolesTeamIdsOptions = {},
 ): Promise<BackfillUserRolesTeamIdsResult> {
   const users = db.collection(USERS_COLLECTION);
@@ -152,7 +152,7 @@ export async function backfillUserRolesTeamIds(
     )
     .slice(0, DRIFT_SAMPLE_SIZE)
     .map((user) => String(user._id));
-  if (!apply) {
+  if (!shouldApply) {
     return {
       pendingBefore,
       updated: 0,

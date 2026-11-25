@@ -13,41 +13,42 @@ describe('dashboard (X6)', () => {
   it('tổng theo nhóm danh sách khớp tổng khách; tiến độ trung bình tính từ tiêu chí', () => {
     const { state, actor } = setup();
     const summary = getDashboardSummary(state, actor, {}, 14, FIXED_NOW);
-    expect(summary.totalCustomers).toBe(11);
-    expect(summary.byListGroup).toEqual({ NOT_CONTACTED: 1, INTERESTED: 6, NET: 3, DROPPED: 1 });
+    expect(summary.totalCustomers).toBe(13);
+    expect(summary.byListGroup).toEqual({ NOT_CONTACTED: 3, INTERESTED: 6, NET: 3, DROPPED: 1 });
     expect(Object.values(summary.byListGroup).reduce((sum, count) => sum + count, 0)).toBe(summary.totalCustomers);
-    // Tiến độ các khách: 50,75,75,100,75,50,75,25,75,25,0 -> 625/11 = 56.8
-    expect(summary.averageProgress).toBe(56.8);
+    // Tiến độ 11 khách cũ: 50,75,75,100,75,50,75,25,75,25,0 (tổng 625) + 2 khách mới (CUST-012 không SĐT, CUST-013 trùng SĐT) tiến độ 0 -> 625/13 = 48.1
+    expect(summary.averageProgress).toBe(48.1);
     expect(summary.appointmentsDone).toBe(1);
   });
 
   it('phân bổ theo tình trạng giữ thứ tự danh mục; theo dự án đếm 1 khách nhiều dự án', () => {
     const { state, actor } = setup();
     expect(getDashboardBreakdown(state, actor, 'status').map((item) => [item.key.label, item.count])).toEqual([
-      ['Chưa tiếp cận', 1],
+      ['Chưa tiếp cận', 3],
       ['Có quan tâm', 6],
       ['Khách net', 3],
       ['Bỏ', 1],
     ]);
     const projects = getDashboardBreakdown(state, actor, 'project');
-    expect(projects.reduce((sum, item) => sum + item.count, 0)).toBeGreaterThan(11);
+    expect(projects.reduce((sum, item) => sum + item.count, 0)).toBeGreaterThan(13);
     expect(projects[0].key.label).toBe("Q'Terra");
   });
 
   it('lọc thời gian theo ngày tạo (giờ VN)', () => {
     const { state, actor } = setup();
-    // Khách tạo trong 10 ngày gần nhất: CUST-010 (9 ngày), CUST-011 (2 ngày).
-    expect(getDashboardSummary(state, actor, { from: '2026-10-12', to: '2026-10-22' }).totalCustomers).toBe(2);
+    // Khách tạo trong 10 ngày gần nhất: CUST-010 (9 ngày), CUST-011 (2 ngày), CUST-012 và CUST-013 (1 ngày).
+    expect(getDashboardSummary(state, actor, { from: '2026-10-12', to: '2026-10-22' }).totalCustomers).toBe(4);
   });
 
   it('số khách theo người: tách phụ trách chính / cùng chăm sóc; theo phạm vi quyền', () => {
     const { state, actor } = setup();
     const hanh = getAssigneeStats(state, actor).find((row) => row.user.id === 'hanh');
-    expect(hanh).toMatchObject({ primaryCount: 5, memberCount: 0 });
+    expect(hanh).toMatchObject({ primaryCount: 6, memberCount: 0 });
     const minh = getAssigneeStats(state, actor).find((row) => row.user.id === 'minh');
     expect(minh).toMatchObject({ primaryCount: 1, memberCount: 1 });
     const staff = setup('thao');
-    expect(getDashboardSummary(staff.state, staff.actor).totalCustomers).toBe(1);
+    // Thảo: 1 khách cũ + CUST-013 (khách trùng SĐT, phụ trách chính là Thảo).
+    expect(getDashboardSummary(staff.state, staff.actor).totalCustomers).toBe(2);
   });
 });
 
@@ -56,7 +57,7 @@ describe('buildDashboardReportRows', () => {
     const { state, actor } = setup();
     const rows = buildDashboardReportRows(getDashboardReport(state, actor, {}, FIXED_NOW), 'Tất cả thời gian');
     const flat = rows.map((row) => row.join('|')).join('\n');
-    expect(rows[2]).toEqual(['Tổng khách', '11']);
+    expect(rows[2]).toEqual(['Tổng khách', '13']);
     expect(flat).toContain('Theo nguồn khách|Số khách');
     expect(flat).toContain('Theo người chăm sóc|Phụ trách chính');
     expect(flat).not.toMatch(/\+84|\d{12}/);
@@ -68,11 +69,11 @@ describe('báo cáo theo tình trạng khi có tình trạng đã ẩn', () => {
     const { state, actor } = setup();
     const hiddenState = {
       ...state,
-      catalogs: { ...state.catalogs, statuses: state.catalogs.statuses.map((status) => (status.id === 'st-interested' ? { ...status, isActive: false } : status)) },
+      catalogs: { ...state.catalogs, statuses: state.catalogs.statuses.map((status) => (status.id === 'INTERESTED' ? { ...status, isActive: false } : status)) },
     };
     const segments = getDashboardBreakdown(hiddenState, actor, 'status');
     expect(segments.reduce((sum, item) => sum + item.count, 0)).toBe(getDashboardSummary(hiddenState, actor).totalCustomers);
     expect(segments.find((item) => item.key.id === 'hidden-statuses')?.count).toBe(6);
-    expect(segments.find((item) => item.key.id === 'st-interested')).toBeUndefined();
+    expect(segments.find((item) => item.key.id === 'INTERESTED')).toBeUndefined();
   });
 });

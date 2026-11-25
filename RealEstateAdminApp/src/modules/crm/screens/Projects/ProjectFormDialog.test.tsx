@@ -34,7 +34,7 @@ vi.mock('@crm/api', async () => {
   return {
     ...real,
     useCrmApi: () => api,
-    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, users: [] }),
+    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: state.projects, tags: [], contactResults: [] }, personaFields: [], users: [] }),
   };
 });
 
@@ -140,7 +140,9 @@ describe('ProjectFormDialog: Sửa', () => {
     setup(project({ code: 'OLD_CODE-1' }));
     typeName('Tên mới');
     fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
-    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith('p1', expect.objectContaining({ code: 'OLD_CODE-1', name: 'Tên mới' })));
+    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith('p1', expect.objectContaining({ name: 'Tên mới' })));
+    // Q1: mã bất biến nên PATCH không gửi `code`.
+    expect(api.updateProject.mock.calls[0][1]).not.toHaveProperty('code');
     expect(screen.queryByText(/chỉ gồm chữ không dấu và số/)).toBeNull();
   });
 
@@ -191,30 +193,33 @@ describe('ProjectFormDialog: lưu', () => {
     expect(api.createProject).not.toHaveBeenCalled();
   });
 
-  it('BE trả 409 PROJECT_CODE_DUPLICATED (trùng dự án đã xoá mềm): hiện lỗi ở ô Mã, giữ form và dữ liệu đã nhập, không đóng dialog', async () => {
+  it('mã tự gõ tay bị BE trả 409 PROJECT_CODE_DUPLICATED (trùng dự án đã xoá mềm): KHÔNG tự đổi mã, hiện lỗi ở ô Mã, giữ form và dữ liệu, không đóng dialog', async () => {
     api.createProject.mockResolvedValue({ ok: false, error: { statusCode: 409, errorCode: 'PROJECT_CODE_DUPLICATED', message: 'Mã dự án đã tồn tại' } });
     setup();
     typeName('Sky Park');
+    typeCode('MYCODE');
     fireEvent.change(screen.getByLabelText(/Chủ đầu tư/), { target: { value: 'ABC Land' } });
     fireEvent.click(screen.getByRole('button', { name: 'Thêm dự án' }));
-    expect(await screen.findByText('Mã dự án "SKYPARK" đã tồn tại.')).toBeInTheDocument();
+    expect(await screen.findByText('Mã dự án "MYCODE" đã tồn tại.')).toBeInTheDocument();
+    expect(api.createProject).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
     expect(nameInput().value).toBe('Sky Park');
-    expect(codeInput().value).toBe('SKYPARK');
+    expect(codeInput().value).toBe('MYCODE');
     expect((screen.getByLabelText(/Chủ đầu tư/) as HTMLInputElement).value).toBe('ABC Land');
     expect(screen.getByRole('button', { name: 'Thêm dự án' })).toBeEnabled();
   });
 
-  it('sau 409 trùng mã: gõ tiếp tên KHÔNG tự gợi ý lại đúng mã vừa bị trùng; người dùng tự đổi mã rồi lưu được', async () => {
+  it('mã tự gõ tay bị 409: gõ tiếp tên không ghi đè mã; người dùng tự đổi mã rồi lưu được', async () => {
     api.createProject
       .mockResolvedValueOnce({ ok: false, error: { statusCode: 409, errorCode: 'PROJECT_CODE_DUPLICATED', message: 'Mã dự án đã tồn tại' } })
       .mockResolvedValueOnce({ ok: true, data: project({ id: 'p2', name: 'Sky Parks', code: 'SKYPARKVN' }) });
     setup();
     typeName('Sky Park');
+    typeCode('MYCODE');
     fireEvent.click(screen.getByRole('button', { name: 'Thêm dự án' }));
-    await screen.findByText('Mã dự án "SKYPARK" đã tồn tại.');
+    await screen.findByText('Mã dự án "MYCODE" đã tồn tại.');
     typeName('Sky Parks');
-    expect(codeInput().value).toBe('SKYPARK');
+    expect(codeInput().value).toBe('MYCODE');
     typeCode('SKYPARKVN');
     fireEvent.click(screen.getByRole('button', { name: 'Thêm dự án' }));
     await waitFor(() => expect(api.createProject).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'SKYPARKVN' })));

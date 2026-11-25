@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- mock jest.fn() được truyền vào expect(), không gọi tách khỏi object */
 /**
  * UsersController unit spec — contract mục 6.4 / 16.6 (rule "không block chính mình").
  *

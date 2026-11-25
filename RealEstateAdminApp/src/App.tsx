@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import AppLayout from './layout/AppLayout';
-import ManageWpScreen from './screens/ManageWpScreen';
-import CronjobScreen from './screens/CronjobScreen';
-import ExternalLogsScreen from './screens/ExternalLogsScreen';
-import ManageSourcesScreen from './screens/ManageSourcesScreen';
-import MarketAnalysisWorkflowScreen from './screens/MarketAnalysisWorkflowScreen';
-import AiConfigScreen from './screens/AiConfigScreen';
-import AiPromptConfigScreen from './screens/AiPromptConfigScreen';
-import KnowledgeArticlesScreen from './screens/KnowledgeArticlesScreen';
-import KnowledgeConfigScreen from './screens/KnowledgeConfigScreen';
-import KnowledgeCronScreen from './screens/KnowledgeCronScreen';
-import NewsDetailScreen from './screens/NewsDetailScreen';
+import ManageWpScreen from '@news/screens/ManageWpScreen';
+import CronjobScreen from '@news/screens/CronjobScreen';
+import ExternalLogsScreen from '@news/screens/ExternalLogsScreen';
+import ManageSourcesScreen from '@news/screens/ManageSourcesScreen';
+import MarketAnalysisWorkflowScreen from '@news/screens/MarketAnalysisWorkflowScreen';
+import AiConfigScreen from '@news/screens/AiConfigScreen';
+import AiPromptConfigScreen from '@news/screens/AiPromptConfigScreen';
+import KnowledgeArticlesScreen from '@news/screens/KnowledgeArticlesScreen';
+import KnowledgeConfigScreen from '@news/screens/KnowledgeConfigScreen';
+import KnowledgeCronScreen from '@news/screens/KnowledgeCronScreen';
+import NewsDetailScreen from '@news/screens/NewsDetailScreen';
 import LoginScreen from './screens/LoginScreen';
 import UserManagementScreen from './screens/UserManagementScreen';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -21,7 +21,7 @@ import { UserRole } from './types/user';
 import HomeIndex from './components/auth/HomeIndex';
 // [Prototype] Module Quản lý khách hàng (CRM) — xem src/modules/crm
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
-import { buildCrmRoute, buildNotificationsRoute } from '@crm/crmRoute';
+import { buildCrmRoute, buildNotificationSettingsRoute, buildNotificationsRoute } from '@crm/crmRoute';
 
 /** Chặn route tin tức theo vai trò (EDITOR/ADMIN); vai trò CRM chuyển về /crm/today. */
 const NewsGuard = ({ children }: { children: ReactNode }) => (
@@ -54,6 +54,7 @@ function App() {
             {/* [Prototype] Module Quản lý khách hàng — CrmLayout bọc CrmProvider + bottom nav mobile */}
             {buildCrmRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
             {buildNotificationsRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
+            {buildNotificationSettingsRoute(CRM_FEATURE_FLAGS.isPrototypeEnabled)}
 
             {/* Nhóm tin tức: ADMIN/EDITOR; MANAGER/STAFF bị chuyển về CRM (RoleGuard) */}
             <Route path="manage-wp" element={<NewsGuard><ManageWpScreen /></NewsGuard>} />

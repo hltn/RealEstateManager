@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Dropdown } from '../../../../../components/ui/dropdown/Dropdown';
 import { getInitials } from '@crm/lib/staff';
 import type { CustomerDetail, CustomerListItem } from '@crm/api';
+import { CustomerCodeBadge } from '@crm/components/CustomerCodeBadge';
 import { CustomerStatusChip } from '@crm/components/CustomerStatusChip';
 import { getHintId, getLabelId } from '@crm/components/form/FormField';
 import { formatProjectSummary } from '@crm/lib/customerAdapters';
@@ -56,7 +57,8 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-sm font-semibold text-gray-800 dark:text-white/90">{selectedCustomer.fullName}</span>
-              <span className="text-theme-xs text-gray-500 dark:text-gray-400">— {selectedCustomer.phoneMasked}</span>
+              {selectedCustomer.phoneMasked && <span className="text-theme-xs text-gray-500 dark:text-gray-400">— {selectedCustomer.phoneMasked}</span>}
+              <CustomerCodeBadge code={selectedCustomer.customerCode} />
               <CustomerStatusChip status={selectedCustomer.status} size="small" />
             </div>
             <p className="mt-0.5 truncate text-theme-xs text-gray-500 dark:text-gray-400">
@@ -98,7 +100,7 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
                   setKeyword(event.target.value);
                   onSearch(event.target.value);
                 }}
-                placeholder="Tìm tên hoặc SĐT..."
+                placeholder="Tìm tên, SĐT hoặc mã KH-…"
                 aria-label="Tìm khách hàng"
                 className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-white/[0.1] dark:bg-gray-900 dark:text-white/90"
               />
@@ -123,7 +125,7 @@ export const CustomerPicker = ({ id, customers, total, onSearch, selectedCustome
                     >
                       <span className="block text-sm font-medium text-gray-800 dark:text-white/90">{customer.fullName}</span>
                       <span className="block text-theme-xs text-gray-500 dark:text-gray-400">
-                        {customer.phoneMasked} • {customer.status.label}
+                        {[customer.customerCode, customer.phoneMasked, customer.status.label].filter(Boolean).join(' • ')}
                       </span>
                     </button>
                   </li>

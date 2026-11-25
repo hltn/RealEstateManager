@@ -1,104 +1,101 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# deploy.sh — cập nhật stack production ĐANG CHẠY ổn định lên commit mới nhất của nhánh `production`.
+# deploy.sh — cập nhật stack production lên GÓI PHÁT HÀNH đã cài (release.env + image đã nạp), KHÔNG build, KHÔNG git, KHÔNG pull.
 #
-# Chạy ở máy chủ (Ubuntu 24.04), trong thư mục repo:
-#   bash deploy.sh [--no-pull] [--no-migrate | --migrate] [--plan-only] [--help]
-# (Dùng `bash deploy.sh`, không phụ thuộc bit thực thi: commit từ Windows có thể làm mất bit này.)
-# Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md (mục 11). Chạy trong tmux/nohup để rớt SSH không làm
-# gián đoạn giữa chừng.
+# Chạy ở máy chủ (Ubuntu 24.04), trong thư mục deploy (nơi có docker-compose.yml, release.env, .env):
+#   bash deploy.sh [--no-migrate | --migrate] [--plan-only] [--help]
+# (Dùng `bash deploy.sh`, không phụ thuộc bit thực thi.) Thường được gọi bởi `./release.sh send` (ssh) hoặc bởi CD sau khi đã cài gói
+# (ops/install-release.sh) và nạp image (docker load). Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md (mục 11).
+# Chạy trong tmux/nohup để rớt SSH không làm gián đoạn giữa chừng.
+#
+# Nguồn sự thật của phiên bản: file `release.env` (do `release.sh build` sinh, đi cùng gói; KHÔNG bí mật): RELEASE_VERSION, GIT_COMMIT,
+# BACKEND_/FRONTEND_IMAGE_NAME|TAG|ID. Chỉ đọc bằng grep (không `source`). Bản `--local` (RELEASE_LOCAL=1) bị từ chối.
+# Biến môi trường: duy nhất file `.env` ở thư mục deploy (verify-env kiểm; compose dùng nó để nội suy ${...}; không bind-mount vào container).
 #
 # KHÔNG phải công cụ nâng cấp standalone lần đầu (Mongo cũ không xác thực -> replica set + auth):
 # lần đó làm theo mục 5 của tài liệu, từng bước bằng tay. Script này từ chối chạy nếu thấy Mongo cũ.
 #
-# Các bước: tiền điều kiện (+ dung lượng đĩa) -> git pull (ff-only) -> `compose config -q` -> kiểm tra migration 005
-# -> chuẩn bị logs/ -> mongodump ra ./backups (kiểm cả nội dung; bỏ qua nếu DB chưa có dữ liệu: không `users`, không document nào) -> gắn thẻ image backend hiện tại làm bản dự phòng
-# -> build backend (kèm GIT_COMMIT) -> runner migration `reconcile` (PT-027, bước 6b): dry-run xem kế hoạch, rồi
-# `reconcile --apply --skip-version` NGAY SAU backup (tự baseline 002..006 nếu probe chỉ-đọc chứng minh dữ liệu không còn việc,
-# rồi chạy migration 007+ còn chờ) -> `up -d --build` -> chờ mongo healthy + backend liveness -> `reconcile --apply`
-# (bước 8b, chỉ còn ghi `version`).
+# THỨ TỰ BƯỚC (Architecture 5.3, Oniichan chốt):
+#   (kiểm đĩa) -> đọc release.env -> kiểm hai image đã nạp có đúng thẻ <ver>-<commit> và image ID khớp release.env (CẢNH BÁO; DEPLOY_ENFORCE_IMAGE_ID=1 = CỔNG CỨNG,
+#   bật sau khi diễn tập T-41 xác nhận, Q-06: dưới containerd store ID là digest manifest-list nên có thể lệch) -> `ops/verify-env.sh .env` (lỗi = DỪNG)
+#   -> khóa `flock` `.deploy.lock` ở thư mục deploy (chống hai lần deploy chạy chồng) -> `compose config -q` -> kiểm volume Mongo (Q-03) -> kiểm migration 005
+#   -> chuẩn bị logs/ -> backup DB (mongodump ./backups, kiểm cả nội dung; bỏ qua nếu DB chưa có dữ liệu) + backup `.env` (backups/deploy-pre-<TS>.env, 600)
+#   -> manifest backups/deploy-pre-<TS>.manifest -> gắn thẻ `<name>:pre-<TS>` cho image BE/FE ĐANG CHẠY (lấy từ container) -> promote `<name>:<ver>-<commit>` thành `current`
+#   -> migration gate/`reconcile` (PT-027) -> `up -d --no-build` (KHÔNG build, KHÔNG `--pull always`) -> chờ mongo healthy + backend liveness -> ghi phiên bản
+#   hệ thống (8b; CÀI MỚI: 8a) -> hậu-migrate DÙNG CHUNG `run_post_migrate_steps`: scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên (10 bù mã danh mục, 20 bù mã khách,
+#   90 migration post-up: 011 MỘT CHIỀU, 012 chỉ cộng thêm KHÔNG một chiều), MỌI lần deploy, bỏ qua toàn bộ khi downgrade. Bước nào thoát mã khác 0 thì deploy THẤT BẠI (kèm tên bước), các bước sau không chạy.
 #
-# Tự migrate MẶC ĐỊNH BẬT (DEPLOY_AUTO_MIGRATE=1). Tắt bằng --no-migrate (giữ hành vi cũ: có việc chờ hoặc cần baseline
-# thì DỪNG trước `up`; cờ này chỉ chặn migrate TRƯỚC `up` ở 6b, còn 8b vẫn chạy `reconcile --apply` để ghi phiên bản khi DB sạch,
-# xem mục 11.1). --migrate là bí danh giữ lại cho tương thích. --plan-only: build + `reconcile` dry-run rồi thoát,
-# không backup, không `up`, stack không đổi (chạy một lần trước lần deploy 1.0.3 đầu tiên).
+# Tự migrate MẶC ĐỊNH BẬT (DEPLOY_AUTO_MIGRATE=1). Tắt bằng --no-migrate (có việc chờ hoặc cần baseline thì DỪNG trước `up`; cờ này chỉ chặn migrate TRƯỚC
+# `up`, còn 8b vẫn ghi phiên bản khi DB sạch, xem mục 11.1). --migrate là bí danh giữ lại cho tương thích. --plan-only: kiểm image/`.env`/khóa rồi
+# `reconcile` dry-run bằng image đã nạp (BACKEND_IMAGE=<name>:<ver>-<commit>, KHÔNG promote `current`), rồi thoát: không backup, không tag, không `up`, stack không đổi.
 # Mã thoát của runner `reconcile`: 0 ok | 1 lỗi hoặc từ chối | 3 có khóa | 4 cần xử lý tay (probe không đạt) | 5 downgrade.
-# Mã 1/3/4/5 ở dry-run: deploy DỪNG trước `up` (stack chưa đổi). Downgrade CỐ Ý cần DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua
-# migrate, KHÔNG ghi và KHÔNG hạ `version` trong DB.
+# Mã 1/3/4/5 ở dry-run: deploy DỪNG trước `up` (stack chưa đổi). Downgrade CỐ Ý cần DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua migrate, KHÔNG ghi và KHÔNG hạ `version` trong DB.
 #
-# KHÔNG rollback bằng `git checkout`: khi dữ liệu Mongo đã được nâng cấp (replica set/auth, migration),
-# compose và code cũ không đọc được volume mới, nên quay code về commit cũ có thể làm hỏng thêm.
-# Khi lỗi, script chỉ IN hướng dẫn (log, image dự phòng, mục 5.8 khi dữ liệu đã đổi) rồi thoát mã khác 0.
+# BACKUP + MANIFEST (không --plan-only): backups/deploy-pre-<TS>.archive.gz (mongodump), backups/deploy-pre-<TS>.env (bản sao `.env`, quyền 600: có bí mật,
+# giữ backups/ quyền 700), backups/deploy-pre-<TS>.manifest (KEY=VALUE, KHÔNG bí mật, MANIFEST_VERSION=2): RELEASE_VERSION, RELEASE_COMMIT, tên/thẻ/ID image
+# mới, PRE_TAG=pre-<TS> + BACKEND_PRE_IMAGE/FRONTEND_PRE_IMAGE (image cũ để lùi), CD_RUN_ID (DEPLOY_CD_RUN_ID hoặc GITHUB_RUN_ID, nếu có), đường dẫn backup, version DB
+# trước deploy, STACK_TOUCHED/POST_UP_REACHED/DEPLOY_STATUS. restore.sh đọc manifest này (T-36 chuyển restore.sh sang định dạng mới).
 #
-# Bí mật: script KHÔNG chứa bí mật. Mọi lệnh compose kèm `--env-file .env.docker`. Mật khẩu root Mongo chỉ được đọc
-# từ biến môi trường BÊN TRONG container và đưa cho mongodump/mongorestore qua pipe (không nằm trên dòng lệnh, không
-# ghi ra đĩa, không in ra màn hình/log). Healthcheck Mongo của compose cũng xác thực trong script mongosh (PT-002),
-# không có `-p` trên dòng lệnh. Runner migration nhận MONGODB_URI từ môi trường của container backend (compose dựng).
+# KHÔNG rollback tự động: khi dữ liệu Mongo đã được nâng cấp (replica set/auth, migration), image/compose cũ không đọc được dữ liệu mới. Khi lỗi sau `up`, script chỉ IN
+# hướng dẫn (log, `bash restore.sh --manifest ...`, lùi image bằng thẻ pre-<TS> khi an toàn, mục 5.8 khi dữ liệu đã đổi) rồi thoát mã khác 0.
+# NGOẠI LỆ DUY NHẤT (an toàn, chỉ đổi thẻ cục bộ): lỗi SAU promote `current` nhưng TRƯỚC `up` (STACK_TOUCHED=0: stack và dữ liệu chưa đổi) thì on_exit TỰ trả thẻ `current` về image
+# cũ (`docker tag <name>:pre-<TS> <name>:current`, revert_promoted_images) để restart ngẫu nhiên không kéo bản mới; kết quả ghi vào manifest khóa PROMOTE_REVERT (reverted|failed|none; DEPLOY_STATUS
+# vẫn là failed vì restore.sh chỉ hiểu started|succeeded|failed) và log. Không trả được thì in cảnh báo + lệnh làm tay; mã thoát luôn là mã của lỗi gốc.
+# NGOẠI LỆ v1.0.4: migration 007 (mã danh mục) và 008 (loại hình) CHỈ THÊM trường mới, vẫn ghi id cũ, nên SAU hai migration này vẫn được lùi IMAGE về thẻ `pre-<TS>` (L1, an toàn).
+# Khi tiến lại thì bước hậu-migrate 10-catalog-codes chạy lại và sửa bản ghi image cũ vừa ghi thiếu `code`. Chỉ khi cần dọn trường mới mới `$unset` (L2, SAU khi đã lùi
+# image); mongorestore từ deploy-pre-* là L3, cuối cùng. Migration khác (005/006, nâng cấp Mongo...) vẫn KHÔNG lùi image. Chi tiết: tài liệu mục 11.
+# NGOẠI LỆ v1.0.5: 010 (index mã khách partial + counter) cũng chỉ thêm nên lùi được image TRƯỚC bước 90. Bước 90 chạy 011 (bỏ unique SĐT, MỘT CHIỀU):
+# SAU bước 90 chỉ sửa tiến, KHÔNG lùi image v1.0.3 (SĐT có thể null/trùng, v1.0.3 giả định chuỗi); print_recovery nêu rõ và nêu cách kiểm 011.
+#
+# Bí mật: script KHÔNG chứa bí mật. Mọi lệnh compose kèm `--env-file .env`. Mật khẩu root Mongo chỉ được đọc từ biến môi trường BÊN TRONG container và đưa cho
+# mongodump/mongorestore qua pipe (không nằm trên dòng lệnh, không ghi ra đĩa, không in ra màn hình/log). Runner migration nhận MONGODB_URI từ môi trường
+# của container backend (compose dựng).
 #
 # Biến môi trường tùy chọn (không bí mật):
 #   MONGO_TIMEOUT       giây chờ mongo healthy           (mặc định 120)
 #   HEALTH_TIMEOUT      giây chờ backend liveness        (mặc định 120)
 #   HEALTH_URL          URL liveness (qua nginx cổng 80) (mặc định http://localhost/api/v1/health/liveness)
-#   DEPLOY_MIN_FREE_GB  dung lượng trống tối thiểu (GB) ở thư mục repo và thư mục dữ liệu Docker (mặc định 5: build backend + frontend
-#                       cần image + build cache vài GB)
+#   DEPLOY_MIN_FREE_GB  dung lượng trống tối thiểu (GB) ở thư mục deploy và thư mục dữ liệu Docker (mặc định 5; backup + image mới)
 #   DUMP_TIMEOUT        giây tối đa cho mongodump (mặc định 900); OPS_EXEC_TIMEOUT giây tối đa cho bước kiểm nội dung backup (mặc định 300)
 #   DEPLOY_AUTO_MIGRATE   1 (mặc định) = tự baseline + migrate sau backup; 0 = như --no-migrate (cờ dòng lệnh thắng biến)
-#   DEPLOY_ALLOW_DOWNGRADE  1 = cho phép CỐ Ý deploy code có version thấp hơn DB (bỏ qua migrate, không hạ version); mặc định 0
-#   MONGO_CONTAINER, BACKEND_CONTAINER  tên container (mặc định realestate_mongo, realestate_backend; chỉ đổi khi thử nghiệm)
-#   DEPLOY_ENV_FILE, DEPLOY_RUNTIME_ENV_FILE, DEPLOY_LOGS_DIR, DEPLOY_BACKUP_DIR, NINE_ROUTER_CONTAINER  CHỈ cho staging local
-#                       (scripts/staging.sh đặt; mục 11.3 tài liệu). Production KHÔNG đặt: mặc định .env.docker, .env, logs, backups, realestate_9router
+#   DEPLOY_ALLOW_DOWNGRADE  1 = cho phép CỐ Ý deploy bản có version thấp hơn DB (bỏ qua migrate, không hạ version); mặc định 0
+#   DEPLOY_ENFORCE_IMAGE_ID  1 = image ID lệch release.env là LỖI (cổng cứng); mặc định 0 = chỉ cảnh báo (Q-06)
+#   DEPLOY_ALLOW_NEW_MONGO_VOLUME  1 = cho phép CỐ Ý tạo volume Mongo trống dù có volume Mongo của project khác tên (Q-03); mặc định 0 = dừng
+#   DEPLOY_CD_RUN_ID    mã lần chạy CD (ghi vào manifest); không đặt thì lấy GITHUB_RUN_ID nếu có
+#   MONGO_CONTAINER, BACKEND_CONTAINER, FRONTEND_CONTAINER  tên container (mặc định realestate_mongo, realestate_backend, realestate_frontend; chỉ đổi khi thử nghiệm)
+#   DEPLOY_ENV_FILE, DEPLOY_LOGS_DIR, DEPLOY_BACKUP_DIR, NINE_ROUTER_CONTAINER  CHỈ cho staging local (ops/staging.sh đặt; bị gỡ ở T-46).
+#                       Production KHÔNG đặt: mặc định .env, logs, backups, realestate_9router
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 LOG_PREFIX="deploy"
-# Resolve symlink bằng `readlink -f` (GNU coreutils, có trên Ubuntu): gọi qua symlink vẫn tìm đúng thư mục repo.
+# Resolve symlink bằng `readlink -f` (GNU coreutils, có trên Ubuntu): gọi qua symlink vẫn tìm đúng thư mục deploy.
 _self="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || true)"
 [[ -n "$_self" && -f "$_self" ]] || { echo "[deploy] LỖI: không resolve được đường dẫn thật của deploy.sh (cần readlink -f)." >&2; exit 1; }
 ROOT_DIR="$(cd "$(dirname "$_self")" && pwd)"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
-readonly PROD_BRANCH="production"
-# Các biến DEPLOY_* / NINE_ROUTER_CONTAINER dưới đây CHỈ để chạy staging local (scripts/staging.sh đặt chúng); production không đặt
-# gì nên giữ đúng mặc định cũ (.env.docker, ./.env, ./logs, ./backups, realestate_9router).
-readonly ENV_FILE="${DEPLOY_ENV_FILE:-.env.docker}"
-readonly RUNTIME_ENV_FILE="${DEPLOY_RUNTIME_ENV_FILE:-.env}"   # file backend bind-mount làm /app/.env
+# Các biến DEPLOY_* / NINE_ROUTER_CONTAINER dưới đây CHỈ để chạy staging local (ops/staging.sh đặt chúng); production không đặt
+# gì nên giữ đúng mặc định (.env, ./logs, ./backups, realestate_9router).
+readonly ENV_FILE="${DEPLOY_ENV_FILE:-.env}"
+# Hằng số giữ lại cho check_staging_vars (ops/lib/ops-common.sh) và ops/staging.sh tới T-46; deploy.sh không còn đọc file này.
+readonly RUNTIME_ENV_FILE="${DEPLOY_RUNTIME_ENV_FILE:-.env}"
 readonly LOGS_DIR="${DEPLOY_LOGS_DIR:-logs}"
 readonly BACKUP_DIR="${DEPLOY_BACKUP_DIR:-backups}"
 readonly NINE_ROUTER_CONTAINER="${NINE_ROUTER_CONTAINER-realestate_9router}"   # đặt RỖNG để bỏ qua cảnh báo 9Router (staging)
 readonly MONGO_CONTAINER="${MONGO_CONTAINER:-realestate_mongo}"
 readonly BACKEND_CONTAINER="${BACKEND_CONTAINER:-realestate_backend}"
-readonly DEFAULT_PROJECT="realestatemanager"   # tên project compose = tên thư mục repo (không đổi, xem docker-compose.yml)
+readonly FRONTEND_CONTAINER="${FRONTEND_CONTAINER:-realestate_frontend}"
+readonly DEFAULT_PROJECT="realestatemanager"   # tên project compose, ghim bằng `name:` trong docker-compose.yml (Q-03)
+readonly RELEASE_ENV_FILE="release.env"
+# Khóa flock ở thư mục deploy; ops/install-release.sh, backup.sh, restore.sh nên kiểm cùng đường dẫn (T-36).
+readonly DEPLOY_LOCK_FILE=".deploy.lock"
 readonly DOC="docs/01_Infrastructure/06_Production_Deploy.md"
 
-# Kiểm các biến chỉ dành cho staging NGAY khi nạp script (trước mọi lệnh): đường dẫn phải là đường dẫn TƯƠNG ĐỐI trong repo (một dòng
-# DEPLOY_LOGS_DIR=/ sẽ thành `chown -R 1000:1000 /`); và bất kỳ biến nào khác mặc định chỉ hợp lệ khi chạy qua scripts/staging.sh
-# (project compose = realestate-staging VÀ COMPOSE_FILE có docker-compose.staging.yml), chiều ngược lại cũng chặn. Không đặt biến nào
-# (production) thì mọi giá trị là mặc định cũ và hàm này không làm gì.
-valid_rel_path() {
-  [[ "$1" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || return 1
-  [[ "/$1/" != *"/./"* && "/$1/" != *"/../"* ]]
-}
-check_staging_vars() {
-  local pair name val staged=""
-  for pair in "DEPLOY_ENV_FILE=$ENV_FILE" "DEPLOY_RUNTIME_ENV_FILE=$RUNTIME_ENV_FILE" "DEPLOY_LOGS_DIR=$LOGS_DIR" "DEPLOY_BACKUP_DIR=$BACKUP_DIR"; do
-    name="${pair%%=*}"; val="${pair#*=}"
-    valid_rel_path "$val" || die "$name='$val' không hợp lệ: phải là đường dẫn TƯƠNG ĐỐI trong repo (chỉ A-Z a-z 0-9 . _ - và dấu /, không bắt đầu bằng /, không chứa '..' hoặc '.', không rỗng)."
-  done
-  [[ "$ENV_FILE" == ".env.docker" ]] || staged+=" DEPLOY_ENV_FILE"
-  [[ "$RUNTIME_ENV_FILE" == ".env" ]] || staged+=" DEPLOY_RUNTIME_ENV_FILE"
-  [[ "$LOGS_DIR" == "logs" ]] || staged+=" DEPLOY_LOGS_DIR"
-  [[ "$BACKUP_DIR" == "backups" ]] || staged+=" DEPLOY_BACKUP_DIR"
-  [[ "$NINE_ROUTER_CONTAINER" == "realestate_9router" ]] || staged+=" NINE_ROUTER_CONTAINER"
-  local has_stg_file=0
-  [[ "${COMPOSE_FILE:-}" != *docker-compose.staging.yml* ]] || has_stg_file=1
-  if [[ -n "$staged" ]] && { [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]] || (( has_stg_file == 0 )); }; then
-    die "Biến staging đặt ngoài wrapper:${staged}. Chúng chỉ hợp lệ khi chạy qua scripts/staging.sh (COMPOSE_PROJECT_NAME=realestate-staging và COMPOSE_FILE có docker-compose.staging.yml). Bỏ các biến này để deploy production."
-  fi
-  if (( has_stg_file == 1 )) && [[ "${COMPOSE_PROJECT_NAME:-}" != "realestate-staging" ]]; then
-    die "COMPOSE_FILE có docker-compose.staging.yml nhưng COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-}' khác realestate-staging: dễ chạm nhầm stack khác. Chạy qua scripts/staging.sh hoặc bỏ COMPOSE_FILE."
-  fi
-}
+# Kiểm các biến chỉ dành cho staging NGAY khi nạp script (valid_rel_path/check_staging_vars nằm ở ops/lib/ops-common.sh, dùng chung với restore.sh).
+# File env mặc định của deploy.sh, backup.sh và restore.sh đều là `.env` (T-34, T-36).
+OPS_DEFAULT_ENV_FILE=".env"
 check_staging_vars
 
 MONGO_TIMEOUT="${MONGO_TIMEOUT:-120}"
@@ -107,60 +104,78 @@ HEALTH_URL="${HEALTH_URL:-http://localhost/api/v1/health/liveness}"
 DEPLOY_MIN_FREE_GB="${DEPLOY_MIN_FREE_GB:-5}"
 DUMP_TIMEOUT="${DUMP_TIMEOUT:-900}"
 
-NO_PULL=0
 TS="$(date +%Y%m%d-%H%M%S)"
-OLD_COMMIT=""
-NEW_COMMIT=""
 BACKUP_FILE=""
-PREV_IMAGE_TAG=""
-PREV_IMAGE_REPO=""
+ENV_BACKUP_FILE=""
 STACK_TOUCHED=0   # =1 ngay trước `up` (hoặc trước `reconcile --apply`): từ đây stack/dữ liệu có thể đã bị thay đổi
 AUTO_MIGRATE="${DEPLOY_AUTO_MIGRATE:-1}"        # 1 = tự baseline + migrate sau backup (mặc định); 0 = --no-migrate
 ALLOW_DOWNGRADE="${DEPLOY_ALLOW_DOWNGRADE:-0}"  # 1 = chấp nhận CỐ Ý version code < version DB
-PLAN_ONLY=0       # =1 khi có --plan-only: chạy đến hết `reconcile` dry-run rồi thoát (không backup, không up)
+ENFORCE_IMAGE_ID="${DEPLOY_ENFORCE_IMAGE_ID:-0}"            # 1 = image ID lệch release.env là lỗi (cổng cứng, Q-06)
+ALLOW_NEW_MONGO_VOLUME="${DEPLOY_ALLOW_NEW_MONGO_VOLUME:-0}"  # 1 = cho phép tạo volume Mongo trống dù có volume project khác (Q-03)
+CD_RUN_ID="${DEPLOY_CD_RUN_ID:-${GITHUB_RUN_ID:-}}"        # mã chạy CD (nếu có), ghi vào manifest
+PLAN_ONLY=0       # =1 khi có --plan-only: chạy đến hết `reconcile` dry-run rồi thoát (không backup, không tag, không up)
 DOWNGRADE_ACTIVE=0     # =1 khi runner báo downgrade và DEPLOY_ALLOW_DOWNGRADE=1: bỏ qua migrate và việc ghi version
+FRESH_INSTALL=0        # =1 khi chưa có container Mongo (triển khai mới, DB trống): 6b/8b không chạy được, bước 8a bù bằng reconcile sau liveness (T-19)
 MIGRATION_GATE_RAN=0   # =1 khi đã đọc được trạng thái migration (Mongo healthy): chỉ khi đó mới ghi phiên bản sau deploy
 DB_EMPTY_NO_BACKUP=0   # =1 khi Mongo đã chạy nhưng DB `realestate` CHƯA có dữ liệu (không có `users`, không collection nào có document): bỏ qua backup
+MANIFEST_FILE=""       # đường dẫn manifest sau khi manifest_init tạo; rỗng = chưa/không có (plan-only)
+POST_UP_REACHED=0      # =1 ngay trước điểm gọi hậu-migrate: từ đây bước 90 (011 MỘT CHIỀU) có thể đã chạy, quay lại chỉ còn mongorestore
+PROMOTED=0             # =1 sau khi promote `current` (BE hoặc FE) sang bản mới, trước `up`: lỗi trước `up` thì on_exit TỰ trả `current` về image cũ (revert_promoted_images)
+PROMOTED_BE=0; PROMOTED_FE=0   # từng vai trò đã được promote chưa (promote dở dang: chỉ trả đúng phần đã đổi)
+PROMOTE_REVERT=""      # kết quả trả thẻ: reverted (đã trả hết) | failed (có thẻ không trả được, cần làm tay) | none (không có image cũ để trả) | rỗng (không cần)
+REVERT_MANUAL=()       # lệnh `docker tag ...` để làm tay cho phần không trả được
+# Từ release.env (read_release_env):
+RELEASE_VERSION=""; RELEASE_COMMIT=""
+BE_NAME=""; BE_TAG=""; BE_ID=""; FE_NAME=""; FE_TAG=""; FE_ID=""
+# Image dự phòng (gắn thẻ từ container đang chạy); rỗng = chưa có container (lần deploy đầu):
+BACKEND_PRE_IMAGE=""; FRONTEND_PRE_IMAGE=""
 
 usage() {
   cat <<'EOF'
-Cách dùng: bash deploy.sh [--no-pull] [--no-migrate | --migrate] [--plan-only] [--help]
+Cách dùng: bash deploy.sh [--no-migrate | --migrate] [--plan-only] [--help]
 
-Cập nhật stack production đang chạy lên bản mới nhất của nhánh `production`.
+Cập nhật stack production lên GÓI PHÁT HÀNH đã cài trong thư mục này (release.env + hai image đã `docker load`). KHÔNG build, KHÔNG dùng git.
 
-  --no-pull     Không git pull; build và deploy đúng commit đang checkout.
   --no-migrate  TẮT tự migrate (mặc định là BẬT, hoặc DEPLOY_AUTO_MIGRATE=0). Giữ hành vi cũ: runner `status`; còn migration
                 chờ hoặc cần baseline thì script DỪNG trước `up` (stack không đổi) và in lệnh để chạy tay. Cờ này chỉ chặn migrate
-                TRƯỚC `up` (6b); bước 8b sau khi backend sống vẫn chạy `reconcile --apply` và vẫn ghi phiên bản khi DB sạch.
+                TRƯỚC `up`; sau khi backend sống vẫn chạy `reconcile --apply` để ghi phiên bản khi DB sạch (xem mục 11.1).
   --migrate     Bí danh của chế độ mặc định (tự migrate đã bật sẵn); giữ lại cho tương thích. Không dùng cùng --no-migrate.
-  --plan-only   Chạy đến hết `reconcile` dry-run (runner trong image backend vừa build) rồi THOÁT: không backup, không ghi
-                gì vào DB, không `up`, stack không đổi. Dùng một lần trước lần deploy 1.0.3 đầu tiên để xem kết quả probe.
-                Có git pull (trừ khi kèm --no-pull) và build image backend (vài phút, cần đĩa như deploy thường).
-                Kèm --no-migrate (hoặc DEPLOY_AUTO_MIGRATE=0): --plan-only VẪN thắng, vẫn chạy `reconcile` dry-run (script in một
-                dòng thông báo); cờ tắt chỉ áp dụng cho lần deploy thật sau đó. Không từ chối (mã 2) để khỏi vướng biến môi trường.
+  --plan-only   Kiểm release.env/image/.env/khóa, rồi chạy `reconcile` dry-run (MỌI pha: thấy cả 011 post-up) bằng IMAGE ĐÃ NẠP của bản phát hành, rồi THOÁT: không backup,
+                không gắn thẻ, không promote `current`, không ghi gì vào DB, không `up`; stack không đổi. Kèm --no-migrate (hoặc DEPLOY_AUTO_MIGRATE=0): --plan-only
+                VẪN thắng (script in một dòng thông báo); cờ tắt chỉ áp dụng cho lần deploy thật sau đó.
   -h, --help    Hiện trợ giúp này.
 
 Tự migrate (mặc định): SAU backup, TRƯỚC `up`, runner `reconcile` (1) lập kế hoạch dry-run, (2) --apply --skip-version:
   - DB đã có dữ liệu mà `system` chưa có `version`: probe CHỈ-ĐỌC cho 002..006; đạt hết thì ghi sổ baseline (không chạy lại
     002..006), không đạt thì DỪNG (mã 4), không ghi gì;
-  - chạy migration 007 trở đi còn chờ (đúng thứ tự, dừng ở lỗi).
-Sau khi backend sống, bước 8b `reconcile --apply` chỉ còn ghi `version` (lỗi chỉ cảnh báo).
-Dừng TRƯỚC `up` (stack chưa đổi) khi runner trả: 3 có khóa | 4 probe không đạt | 5 downgrade | 1 lỗi hoặc từ chối.
+  - chạy migration pre-up 007..010 còn chờ (`--phase pre-up`; đúng thứ tự, dừng ở lỗi). Migration post-up (011) KHÔNG chạy ở đây.
+Sau khi backend sống, `reconcile --apply --phase pre-up` chỉ còn ghi `version` (lỗi chỉ cảnh báo).
+Rồi điểm gọi hậu-migrate scripts/post-migrate/ (MỌI lần deploy, theo thứ tự tên): 10-catalog-codes.sh (`crm-catalog-codes.cli.js --apply`: bù mã danh mục),
+20-customer-codes.sh (`crm-customer-codes.cli.js --apply`: bù mã khách), 90-post-up-migrations.sh (`reconcile --apply --skip-version --phase post-up`: migration 011 MỘT CHIỀU, bỏ
+unique SĐT; TỪ CHỐI chạy nếu còn migration pre-up chờ/gồm 010 chưa áp dụng). Bước thoát mã khác 0 thì in cảnh báo đỏ, ghi log và deploy báo LỖI (exit khác 0); các bước sau không chạy.
+Dừng TRƯỚC `up` (stack chưa đổi) khi runner trả: 3 có khóa | 4 probe không đạt | 5 downgrade | 1 lỗi hoặc từ chối. Runner chạy bằng image ĐÃ NẠP (`--phase pre-up` ở bước trước `up`).
+
+Thứ tự: kiểm đĩa -> đọc release.env -> kiểm hai image đã nạp (thẻ <ver>-<commit>, ID khớp: cảnh báo, hoặc lỗi khi DEPLOY_ENFORCE_IMAGE_ID=1) -> ops/verify-env.sh .env (lỗi = dừng)
+-> khóa .deploy.lock (flock) -> docker compose config -q -> kiểm volume Mongo (Q-03) -> kiểm không còn user chưa migrate 005 -> chuẩn bị logs/ -> mongodump ra ./backups
+(bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) + sao .env -> manifest -> gắn thẻ <name>:pre-<thời-gian> cho
+image BE/FE đang chạy -> promote <name>:<ver>-<commit> thành current -> runner migration `reconcile` (xem trên; với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần
+baseline) -> up -d --no-build -> chờ mongo healthy và backend liveness -> ghi phiên bản vào collection `system` -> hậu-migrate scripts/post-migrate/ (10 bù mã danh mục,
+20 bù mã khách, 90 migration post-up 011 (một chiều) + 012 (chỉ cộng thêm, không một chiều); lỗi = deploy báo lỗi).
+
+Lỗi SAU promote nhưng TRƯỚC `up` (stack chưa đổi): script tự trả thẻ current về image cũ (pre-<thời-gian>), ghi PROMOTE_REVERT vào manifest; không trả được thì in cảnh báo + lệnh tay.
+Lỗi SAU `up`: script KHÔNG tự rollback; nó in lệnh `bash restore.sh --manifest backups/deploy-pre-<thời-gian>.manifest` (mặc định dry-run; chạy thật cần --apply --yes) và hướng dẫn lùi image.
+Backup thủ công ngoài lần deploy (không đụng stack): bash backup.sh (xem bash backup.sh --help).
+
+Điều kiện: chạy trong thư mục deploy; có release.env + hai image đã nạp; có .env quyền 600 đã điền hết giá trị mẫu <...> (ops/verify-env.sh kiểm); đủ dung lượng đĩa
+(DEPLOY_MIN_FREE_GB, mặc định 5 GB); có `flock`; chạy trong tmux/nohup.
+
+Lùi image sau migration 007/008 (v1.0.4) và 010 (v1.0.5): ĐƯỢC, vì chỉ thêm trường/index (L1). Lần tiến lại, các bước hậu-migrate 10 và 20 tự sửa bản ghi thiếu mã.
+Lùi image TRƯỚC bước 90 (011 chưa chạy): được; sau bước 90 chỉ sửa tiến, KHÔNG lùi image v1.0.3 (011 một chiều). Kiểm 011 đã chạy chưa bằng `status` của runner (print_recovery hướng dẫn).
 Downgrade CỐ Ý (khôi phục image cũ): DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh ... : bỏ qua migrate, KHÔNG ghi/hạ `version`.
 
-Điều kiện: chạy trong thư mục repo; có .env.docker với quyền không rộng hơn 600 (chmod 600 .env.docker) và đã điền
-hết giá trị mẫu <...>; đủ dung lượng đĩa (DEPLOY_MIN_FREE_GB, mặc định 5 GB); working tree sạch (với git pull);
-đang ở nhánh production; chạy trong tmux/nohup.
-
-Script làm: git pull --ff-only -> docker compose config -q -> kiểm tra không còn user chưa migrate 005
--> mongodump ra ./backups (bắt buộc > 0 byte, gzip hợp lệ, có realestate.users; riêng DB chưa có dữ liệu thì bỏ qua, có cảnh báo) -> gắn thẻ image backend hiện tại thành
-<project>-backend:pre-<thời-gian> -> build backend (ghi GIT_COMMIT vào image) -> runner migration `reconcile` (bước 6b, xem trên;
-với --no-migrate: `status`, dừng nếu còn migration chờ hoặc cần baseline) -> up -d --build -> chờ mongo healthy và
-backend liveness -> ghi phiên bản vào collection `system` (bước 8b).
-
-KHÔNG dùng cho lần nâng cấp standalone đầu tiên (xem mục 5 tài liệu). KHÔNG rollback bằng git checkout.
-Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT,
-DEPLOY_AUTO_MIGRATE (1|0, mặc định 1), DEPLOY_ALLOW_DOWNGRADE (1|0, mặc định 0). Chi tiết: tài liệu mục 11 và 11.1.
+KHÔNG dùng cho lần nâng cấp standalone đầu tiên (xem mục 5 tài liệu).
+Biến tùy chọn: MONGO_TIMEOUT, HEALTH_TIMEOUT (giây, mặc định 120), HEALTH_URL, DEPLOY_MIN_FREE_GB, DUMP_TIMEOUT, DEPLOY_AUTO_MIGRATE (1|0, mặc định 1),
+DEPLOY_ALLOW_DOWNGRADE (1|0, mặc định 0), DEPLOY_ENFORCE_IMAGE_ID (1|0, mặc định 0), DEPLOY_ALLOW_NEW_MONGO_VOLUME (1|0, mặc định 0), DEPLOY_CD_RUN_ID. Chi tiết: tài liệu mục 11 và 11.1.
 EOF
 }
 
@@ -172,24 +187,51 @@ print_recovery() {
   {
     echo
     echo "════════════ DEPLOY THẤT BẠI — script KHÔNG tự rollback ════════════"
-    echo "Commit trước deploy: ${OLD_COMMIT:-?}  |  commit đang checkout: ${NEW_COMMIT:-?}"
+    echo "Bản phát hành: ${RELEASE_VERSION:-?} (commit ${RELEASE_COMMIT:-?})"
     [[ -n "$BACKUP_FILE" ]] && echo "Backup Mongo trước deploy: $BACKUP_FILE"
+    [[ -n "$ENV_BACKUP_FILE" ]] && echo "Bản sao .env trước deploy: $ENV_BACKUP_FILE (có bí mật, quyền 600)"
+    if [[ -n "${MANIFEST_FILE:-}" ]]; then
+      echo "Manifest: ${MANIFEST_FILE} (thẻ image dự phòng pre-${TS}, version, mã CD ghi trong manifest)"
+      echo "Khôi phục DB (+ image) về bản trước deploy bằng script riêng (mặc định chỉ dry-run, chạy thật cần --apply --yes):"
+      echo "     bash restore.sh --manifest ${MANIFEST_FILE}              # xem kế hoạch + kiểm trước, chưa đổi gì"
+      echo "     bash restore.sh --manifest ${MANIFEST_FILE} --apply --yes"
+      if (( POST_UP_REACHED == 1 )); then
+        echo "   LƯU Ý: deploy này đã tới điểm hậu-migrate; nếu bước 90 (migration 011 MỘT CHIỀU) đã chạy thì restore.sh --apply là đường quay lại DUY NHẤT"
+        echo "   và MẤT dữ liệu phát sinh sau thời điểm backup Mongo (restore.sh cảnh báo đỏ và vẫn đòi --yes)."
+      fi
+    fi
     echo
     echo "1) Xem nguyên nhân:"
     echo "     docker compose --env-file $ENV_FILE ps -a"
     echo "     docker compose --env-file $ENV_FILE logs --tail 100 backend"
     echo "     docker compose --env-file $ENV_FILE logs --tail 50 mongo"
     echo
-    if [[ -n "$PREV_IMAGE_TAG" ]]; then
-      echo "2) Chỉ khi dữ liệu Mongo CHƯA bị đổi (chưa chạy migration --apply, chưa nâng cấp Mongo) mới được dùng lại"
-      echo "   image backend cũ đã gắn thẻ:"
-      echo "     docker tag $PREV_IMAGE_TAG ${PREV_IMAGE_REPO}:latest"
-      echo "     docker compose --env-file $ENV_FILE up -d --no-build --no-deps backend"
+    if [[ -n "$BACKEND_PRE_IMAGE" || -n "$FRONTEND_PRE_IMAGE" ]]; then
+      echo "2) Chỉ khi dữ liệu Mongo CHƯA bị đổi (chưa chạy migration --apply, chưa nâng cấp Mongo) mới được dùng lại image cũ đã gắn thẻ:"
+      [[ -z "$BACKEND_PRE_IMAGE" ]] || echo "     docker tag $BACKEND_PRE_IMAGE ${BE_NAME}:current"
+      [[ -z "$FRONTEND_PRE_IMAGE" ]] || echo "     docker tag $FRONTEND_PRE_IMAGE ${FE_NAME}:current"
+      echo "     docker compose --env-file $ENV_FILE up -d --no-build --no-deps backend frontend"
     else
-      echo "2) Không có image backend dự phòng (lần deploy đầu, chưa có container backend)."
+      echo "2) Không có image dự phòng (lần deploy đầu, chưa có container backend/frontend)."
     fi
     echo
-    echo "3) Nếu dữ liệu ĐÃ đổi (migration 005/006, nâng cấp Mongo...): KHÔNG quay về code/image cũ, bản cũ có thể"
+    echo "2b) NGOẠI LỆ migration 007/008 (v1.0.4, chỉ THÊM trường, vẫn ghi id cũ): vẫn lùi được IMAGE về thẻ pre-<thời-gian> (L1)"
+    echo "   dù migration đã --apply. Khi tiến lại, bước hậu-migrate 10-catalog-codes.sh (crm-catalog-codes.cli.js --apply) tự sửa bản ghi image cũ ghi thiếu mã."
+    echo "   Chỉ khi cần dọn trường mới: \$unset các trường mã SAU KHI đã lùi image (L2). mongorestore từ deploy-pre-* là L3, cuối cùng"
+    echo "   (mất dữ liệu phát sinh sau backup). Không áp dụng ngoại lệ này cho migration khác."
+    echo
+    echo "2c) v1.0.5 — migration 010 (index mã khách partial + counter) chỉ THÊM nên lùi IMAGE v1.0.3 vẫn được, miễn là TRƯỚC bước 90."
+    echo "   Bước 90 (scripts/post-migrate/90-post-up-migrations.sh) chạy migration 011 MỘT CHIỀU: bỏ unique SĐT (phone_1 thành index thường),"
+    echo "   ẩn danh 'anonymized:' thành null. Kiểm 011 đã chạy chưa:"
+    echo "     $(runner_cmd_hint) status      # CHỈ tin status: 011_crm_drop_unique_phone nằm trong mục 'đã áp dụng' = đã chạy; còn 'đang chờ' = chưa chạy"
+    echo "     (file $LOGS_DIR/deploy-post-up-${TS}.log chỉ để đọc LÝ DO lỗi/từ chối: bước 90 tạo nó cả khi cổng chặn từ chối, nên có file KHÔNG có nghĩa 011 đã chạy)"
+    echo "   - 011 CHƯA chạy (bước 10/20 lỗi, hoặc bước 90 từ chối vì còn migration pre-up chờ): lùi image v1.0.3 theo mục 2/2b như thường lệ"
+    echo "     (phone_1 vẫn unique, mã khách thừa không ảnh hưởng v1.0.3)."
+    echo "   - 011 ĐÃ chạy (bước 90 xong hoặc chạy dở): sau bước 90 chỉ sửa tiến (fix-forward), KHÔNG lùi image v1.0.3: phone có thể null/trùng,"
+    echo "     mapper v1.0.3 giả định phone là chuỗi. Sửa nguyên nhân rồi deploy lại. Quay lại duy nhất bằng mongorestore từ ${BACKUP_FILE:-file deploy-pre-*}"
+    echo "     (mất dữ liệu sau thời điểm dump) và do Oniichan quyết định."
+    echo
+    echo "3) Nếu dữ liệu ĐÃ đổi (migration 005/006, nâng cấp Mongo...): KHÔNG quay về image cũ, bản cũ có thể"
     echo "   không đọc được dữ liệu mới. Với deploy thường lệ (lâu sau lần nâng cấp standalone) CHỈ dùng mongorestore"
     echo "   từ file deploy-pre-* ($DOC mục 6, luôn kèm --nsInclude 'realestate.*'). Mục 5.8 (khôi phục volume) chỉ dành"
     echo "   cho sự cố NGAY sau lần nâng cấp standalone: nó đưa cả DB về ngày nâng cấp, mất mọi dữ liệu phát sinh sau đó."
@@ -197,83 +239,344 @@ print_recovery() {
   } >&2
 }
 
+# Lỗi TRƯỚC `up` nhưng SAU promote: stack đang chạy chưa đổi (container giữ image cũ theo ID), dữ liệu chưa bị đụng, song thẻ `current` đã trỏ sang bản mới
+# nên một lần `docker compose up`/restart bất kỳ sẽ kéo bản mới. on_exit gọi hàm này để TỰ trả `current` về image cũ (thẻ pre-<TS> = image container đang chạy):
+# an toàn vì chỉ đổi thẻ cục bộ. KHÔNG gọi khi STACK_TOUCHED=1 (khi đó dữ liệu có thể đã đổi: chỉ in hướng dẫn print_recovery, không tự rollback).
+# Chỉ trả vai trò ĐÃ promote và CÓ image cũ (lần deploy đầu không có gì để trả: kết quả `none`). Mỗi `docker tag` bị chặn 30 giây để daemon treo không làm
+# on_exit treo. Không bao giờ đổi mã thoát gốc (chạy trong on_exit với set +e). Đặt PROMOTE_REVERT, REVERT_MANUAL; in xem print_promote_revert.
+revert_promoted_images() {
+  local role name pre flag reverted=0 failed=0
+  REVERT_MANUAL=()
+  for role in BE FE; do
+    if [[ "$role" == "BE" ]]; then flag="$PROMOTED_BE"; name="$BE_NAME"; pre="$BACKEND_PRE_IMAGE"; else flag="$PROMOTED_FE"; name="$FE_NAME"; pre="$FRONTEND_PRE_IMAGE"; fi
+    (( flag == 1 )) || continue
+    [[ -n "$pre" ]] || continue
+    if timeout 30 docker tag "$pre" "${name}:current" >/dev/null 2>&1; then
+      reverted=$(( reverted + 1 ))
+    else
+      failed=$(( failed + 1 )); REVERT_MANUAL+=("docker tag $pre ${name}:current")
+    fi
+  done
+  if (( failed > 0 )); then PROMOTE_REVERT="failed"
+  elif (( reverted > 0 )); then PROMOTE_REVERT="reverted"
+  else PROMOTE_REVERT="none"
+  fi
+  manifest_set PROMOTE_REVERT "$PROMOTE_REVERT"
+}
+
+# In kết quả revert_promoted_images (gọi từ on_exit SAU manifest_finish; ra stderr). Không làm lộ lỗi gốc: chỉ bổ sung.
+print_promote_revert() {
+  {
+    case "$PROMOTE_REVERT" in
+      reverted)
+        echo "Thẻ current đã được chuyển sang bản ${RELEASE_VERSION:-?} trước khi lỗi xảy ra, nên script đã TỰ trả current về image cũ (${BACKEND_PRE_IMAGE:-}${BACKEND_PRE_IMAGE:+ }${FRONTEND_PRE_IMAGE:-}). Stack và dữ liệu không đổi."
+        ;;
+      failed)
+        echo "CẢNH BÁO: thẻ current đã chuyển sang bản ${RELEASE_VERSION:-?} nhưng stack CHƯA cập nhật, và script KHÔNG tự trả được current về image cũ (docker tag lỗi/quá hạn)."
+        echo "Chạy tay, nếu không deploy lại ngay (restart ngẫu nhiên sẽ kéo bản mới):"
+        printf '     %s
+' "${REVERT_MANUAL[@]}"
+        ;;
+      none)
+        echo "Thẻ current đã chuyển sang bản ${RELEASE_VERSION:-?}; không có image cũ để trả (lần deploy đầu, chưa có container backend/frontend): không cần trả thẻ."
+        ;;
+    esac
+  } >&2
+}
+
 on_exit() {
   local code=$?
   trap - EXIT
+  set +e   # handler phải chạy hết dù set -e đang bật và stderr đã chết (SSH rớt): các lệnh in không được làm thoát sớm
+  trap '' PIPE TERM INT HUP   # dọn dẹp không bị ngắt giữa chừng (tín hiệu thứ hai không được bỏ dở việc trả thẻ/chốt manifest)
+  # Lỗi SAU promote nhưng TRƯỚC `up` (stack/dữ liệu chưa đổi): tự trả thẻ current về image cũ TRƯỚC khi chốt manifest để manifest ghi kết quả.
+  if (( code != 0 && STACK_TOUCHED == 0 && PROMOTED == 1 )); then revert_promoted_images; fi
+  manifest_finish "$code" || true   # chốt manifest (succeeded/failed); không đổi mã thoát
   if (( code != 0 )); then
     if (( STACK_TOUCHED == 1 )); then
       print_recovery
     else
-      warn "Dừng TRƯỚC khi đụng tới stack đang chạy (stack không đổi). Commit trước: ${OLD_COMMIT:-?}, hiện tại: ${NEW_COMMIT:-?}."
+      warn "Dừng TRƯỚC khi đụng tới stack đang chạy (stack không đổi). Bản phát hành: ${RELEASE_VERSION:-?}."
+      if (( PROMOTED == 1 )); then print_promote_revert; fi
     fi
   fi
   exit "$code"
 }
 trap on_exit EXIT
+# Bị ngắt (kill/Ctrl-C/rớt SSH) phải thoát với mã KHÁC 0 để on_exit biết là THẤT BẠI (manifest ghi `failed`, không ghi nhầm `succeeded`; in hướng dẫn
+# khi đã đụng stack). `exit N` trong trap tín hiệu bảo đảm on_exit luôn nhận mã N (128 + số tín hiệu), không phụ thuộc lệnh con đang chạy.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
-# ── 1) Tiền điều kiện ────────────────────────────────────────────────────────
+# ── 1) Tiền điều kiện (công cụ; quyền/giá trị `.env` do ops/verify-env.sh kiểm ở bước sau) ──────────────────
 check_prereqs() {
   local cmd
   for cmd in docker curl gzip; do
     command -v "$cmd" >/dev/null 2>&1 || die "Thiếu lệnh '$cmd'."
   done
-  (( NO_PULL == 1 )) || command -v git >/dev/null 2>&1 || die "Thiếu lệnh 'git'."
   docker compose version >/dev/null 2>&1 || die "Thiếu 'docker compose' (plugin v2)."
   docker info >/dev/null 2>&1 || die "Không nói chuyện được với Docker daemon (daemon chưa chạy, hoặc user thiếu quyền: thêm vào nhóm 'docker')."
-
-  # .env.docker chứa mật khẩu Mongo/Redis/MinIO, token Cloudflare...: quyền rộng hơn 600 là dừng.
-  require_private_file "$ENV_FILE"
-  require_no_placeholders "$ENV_FILE"
-
-  # backend bind-mount ./.env; thiếu thì Docker tự tạo THƯ MỤC .env làm backend lỗi.
-  if [[ -d "$RUNTIME_ENV_FILE" ]]; then
-    die "./$RUNTIME_ENV_FILE là THƯ MỤC (Docker tự tạo khi file thiếu). Xóa nó (rmdir $RUNTIME_ENV_FILE), rồi 'touch $RUNTIME_ENV_FILE'."
+  if [[ -d "$ENV_FILE" ]]; then
+    die "./$ENV_FILE là THƯ MỤC (Docker tự tạo khi file thiếu). Xóa nó (rmdir $ENV_FILE) rồi tạo lại file .env đúng nội dung (mẫu: .env.example)."
   fi
-  [[ -e "$RUNTIME_ENV_FILE" ]] || { touch "$RUNTIME_ENV_FILE"; log "Đã tạo ./$RUNTIME_ENV_FILE rỗng (backend bind-mount file này)."; }
+  [[ -f "$ENV_FILE" ]] || die "Thiếu ./$ENV_FILE (biến môi trường duy nhất của stack). Tạo từ .env.example, chmod 600, điền hết giá trị mẫu rồi chạy lại."
 }
 
-# Khóa chống hai lần deploy chạy chồng nhau. Đặt trong .git (không hiện ở git status, không phải file repo).
-acquire_lock() {
-  [[ -d .git ]] || return 0
-  command -v flock >/dev/null 2>&1 || { warn "Không có 'flock': bỏ qua khóa chống chạy chồng."; return 0; }
-  exec 9>".git/realestate-deploy.lock"
-  flock -n 9 || die "Một lần deploy khác đang chạy (khóa .git/realestate-deploy.lock)."
+# ── 1a) release.env: nguồn sự thật phiên bản/image của bản phát hành ───────────────────────────────────────
+# Đọc bằng grep (KHÔNG `source`: file nằm trên máy chủ, coi như dữ liệu). Mỗi khóa phải có dạng chặt; sai dạng = dừng, chưa đổi gì.
+release_get() { { grep -m1 "^$1=" "$RELEASE_ENV_FILE" 2>/dev/null || true; } | cut -d= -f2- | tr -d '\r'; }
+
+read_release_env() {
+  [[ -f "$RELEASE_ENV_FILE" ]] || die "Thiếu $RELEASE_ENV_FILE: chưa cài gói phát hành. Gửi/cài bằng './release.sh send --to <host>' (hoặc ops/install-release.sh <release.tgz>) rồi chạy lại. Chưa đổi gì."
+  local local_flag
+  RELEASE_VERSION="$(release_get RELEASE_VERSION)"
+  RELEASE_COMMIT="$(release_get GIT_COMMIT)"
+  local_flag="$(release_get RELEASE_LOCAL)"
+  BE_NAME="$(release_get BACKEND_IMAGE_NAME)"; BE_TAG="$(release_get BACKEND_IMAGE_TAG)"; BE_ID="$(release_get BACKEND_IMAGE_ID)"
+  FE_NAME="$(release_get FRONTEND_IMAGE_NAME)"; FE_TAG="$(release_get FRONTEND_IMAGE_TAG)"; FE_ID="$(release_get FRONTEND_IMAGE_ID)"
+
+  [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "$RELEASE_ENV_FILE: RELEASE_VERSION sai/thiếu ('$RELEASE_VERSION')."
+  [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{7,40}$ ]] || die "$RELEASE_ENV_FILE: GIT_COMMIT sai/thiếu ('$RELEASE_COMMIT')."
+  [[ "$local_flag" != "1" ]] || die "$RELEASE_ENV_FILE là bản --local (RELEASE_LOCAL=1, build từ cây có thể bẩn): không deploy. Build lại bản sạch bằng ./release.sh build (không --local)."
+  local role key name tag id
+  for role in BE FE; do
+    case "$role" in BE) key=BACKEND; name="$BE_NAME"; tag="$BE_TAG"; id="$BE_ID" ;; *) key=FRONTEND; name="$FE_NAME"; tag="$FE_TAG"; id="$FE_ID" ;; esac
+    [[ "$name" =~ ^[a-z0-9][a-z0-9._/-]*$ ]] || die "$RELEASE_ENV_FILE: ${key}_IMAGE_NAME sai/thiếu ('$name')."
+    [[ "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$tag" == "${RELEASE_VERSION}-"* ]] || die "$RELEASE_ENV_FILE: ${key}_IMAGE_TAG sai/thiếu ('$tag'; phải dạng ${RELEASE_VERSION}-<commit>)."
+    [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "$RELEASE_ENV_FILE: ${key}_IMAGE_ID sai/thiếu ('$id'; phải dạng sha256:<64 hex>)."
+  done
+  [[ -z "$CD_RUN_ID" || "$CD_RUN_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "DEPLOY_CD_RUN_ID/GITHUB_RUN_ID sai dạng (chỉ A-Z a-z 0-9 . _ -, tối đa 64 ký tự)."
+  log "Bản phát hành: $RELEASE_VERSION (commit $RELEASE_COMMIT); image $BE_NAME:$BE_TAG, $FE_NAME:$FE_TAG${CD_RUN_ID:+; CD run $CD_RUN_ID}."
 }
 
-# ── 2) Git ───────────────────────────────────────────────────────────────────
-git_update() {
-  if (( NO_PULL == 1 )); then
-    if [[ -d .git ]]; then OLD_COMMIT="$(git rev-parse --short HEAD)"; NEW_COMMIT="$OLD_COMMIT"; fi
-    log "--no-pull: bỏ qua git pull${NEW_COMMIT:+, deploy commit hiện tại $NEW_COMMIT}."
+# Hai image phải CÓ trên máy (đã `docker load`). Image ID khớp release.env: CẢNH BÁO (Q-06: dưới containerd store ID là digest manifest-list nên có thể lệch dù đúng
+# image); DEPLOY_ENFORCE_IMAGE_ID=1 biến lệch thành lỗi (bật sau khi diễn tập T-41 xác nhận). Thiếu image luôn là lỗi.
+check_release_images() {
+  local role ref want got
+  for role in BE FE; do
+    if [[ "$role" == "BE" ]]; then ref="$BE_NAME:$BE_TAG"; want="$BE_ID"; else ref="$FE_NAME:$FE_TAG"; want="$FE_ID"; fi
+    got="$(docker image inspect -f '{{.Id}}' "$ref" 2>/dev/null || true)"
+    got="${got%%$'\n'*}"; got="${got%$'\r'}"
+    [[ -n "$got" ]] || die "Chưa có image $ref trên máy (chưa nạp?). Nạp bằng './release.sh send ...' (docker save | docker load) rồi chạy lại. Chưa đổi gì."
+    if [[ "$got" != "$want" ]]; then
+      if [[ "$ENFORCE_IMAGE_ID" == "1" ]]; then
+        die "Image ID của $ref là $got, release.env ghi $want (DEPLOY_ENFORCE_IMAGE_ID=1: cổng cứng). Nạp lại đúng gói rồi chạy lại. Chưa đổi gì."
+      fi
+      warn "Image ID của $ref là ${got:0:19}..., release.env ghi ${want:0:19}...: LỆCH. Chỉ cảnh báo (Q-06: dưới containerd store ID có thể là digest manifest-list). Cổng cứng: DEPLOY_ENFORCE_IMAGE_ID=1."
+    fi
+  done
+  if grep -qE '^(BACKEND_IMAGE|FRONTEND_IMAGE)=[^[:space:]]' "$ENV_FILE" 2>/dev/null; then
+    warn "$ENV_FILE đặt BACKEND_IMAGE/FRONTEND_IMAGE: compose sẽ dùng chúng thay cho thẻ 'current' mà deploy.sh promote. Xóa hai dòng đó (chỉ dùng để thử nghiệm)."
+  fi
+}
+
+# `.env` hợp lệ trước khi làm bất cứ điều gì (khóa bắt buộc, không khóa cũ/placeholder, quyền 600...). Lỗi = dừng; chưa đổi gì.
+run_verify_env() {
+  local rc=0
+  log "ops/verify-env.sh $ENV_FILE ..."
+  bash "$ROOT_DIR/ops/verify-env.sh" "$ENV_FILE" || rc=$?
+  (( rc == 0 )) || die "ops/verify-env.sh báo lỗi ở $ENV_FILE (mã $rc; chi tiết ở trên). Sửa .env rồi chạy lại. Chưa đổi gì."
+}
+
+# ── 1b) Khóa chống chạy chồng ──────────────────────────────────────────────────────────────────────────────
+# `flock -n` trên file `.deploy.lock` ở thư mục deploy ($ROOT_DIR/$DEPLOY_LOCK_FILE; VPS không có git nên không dùng khóa trong .git), giữ bằng fd 8 đến hết tiến trình.
+# Dùng acquire_dir_lock (ops/lib/ops-common.sh): CÙNG khóa với backup.sh/restore.sh nên ba script không chạy chồng nhau. Thiếu `flock` (Ubuntu luôn có) = DỪNG.
+# Khóa cũ trong .git (fd 9, acquire_lock) đã gỡ vì backup.sh/restore.sh đã chuyển sang `.deploy.lock` (T-36).
+acquire_deploy_lock() {
+  acquire_dir_lock "$ROOT_DIR"
+}
+
+# ── 1c) Manifest backup (MANIFEST_VERSION=2) ───────────────────────────────────────────────────────────────
+# Cập nhật một khóa của manifest; KHÔNG bao giờ làm deploy chết (phần "sau" chỉ là thông tin phục hồi). Không có manifest thì bỏ qua.
+manifest_set() {
+  [[ -n "${MANIFEST_FILE:-}" && -f "$MANIFEST_FILE" ]] || return 0
+  manifest_put "$MANIFEST_FILE" "$1" "$2" || warn "Không cập nhật được khóa $1 trong $MANIFEST_FILE (bỏ qua)."
+  return 0
+}
+
+# Tạo manifest SAU backup Mongo + `.env`, TRƯỚC khi gắn thẻ image/promote (những khóa chưa biết để rỗng, cập nhật bằng manifest_set). --plan-only KHÔNG gọi.
+manifest_init() {
+  (( PLAN_ONLY == 0 )) || return 0
+  local host proj
+  install -d -m 700 "$BACKUP_DIR"
+  local mf="${BACKUP_DIR}/deploy-pre-${TS}.manifest"
+  # Kiểm trùng TRƯỚC khi gán MANIFEST_FILE: nếu die ở đây, on_exit/manifest_finish không được sửa manifest của lần chạy khác.
+  [[ ! -e "$mf" ]] || die "Đã có $mf (chạy chồng cùng giây?). Không ghi đè backup: chạy lại sau."
+  MANIFEST_FILE="$mf"
+  host="$(hostname 2>/dev/null || true)"
+  proj="$(compose_project)"
+  manifest_write "$MANIFEST_FILE" \
+    "MANIFEST_VERSION=2" \
+    "BACKUP_KIND=deploy" \
+    "TS=${TS}" \
+    "CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "HOST=${host:-unknown}" \
+    "COMPOSE_PROJECT=${proj}" \
+    "RELEASE_VERSION=${RELEASE_VERSION}" \
+    "RELEASE_COMMIT=${RELEASE_COMMIT}" \
+    "CD_RUN_ID=${CD_RUN_ID}" \
+    "BACKEND_IMAGE_NAME=${BE_NAME}" \
+    "BACKEND_IMAGE_TAG=${BE_TAG}" \
+    "FRONTEND_IMAGE_NAME=${FE_NAME}" \
+    "FRONTEND_IMAGE_TAG=${FE_TAG}" \
+    "PRE_TAG=pre-${TS}" \
+    "BACKEND_PRE_IMAGE=" \
+    "FRONTEND_PRE_IMAGE=" \
+    "DB_VERSION_BEFORE=" \
+    "DB_VERSION_READ=0" \
+    "MONGO_BACKUP_FILE=${BACKUP_FILE}" \
+    "ENV_BACKUP_FILE=${ENV_BACKUP_FILE}" \
+    "MONGO_CONTAINER=${MONGO_CONTAINER}" \
+    "BACKEND_CONTAINER=${BACKEND_CONTAINER}" \
+    "FRONTEND_CONTAINER=${FRONTEND_CONTAINER}" \
+    "STACK_TOUCHED=0" \
+    "POST_UP_REACHED=0" \
+    "DEPLOY_STATUS=started" \
+    "FINISHED_AT=" \
+    || die "Không ghi được manifest $MANIFEST_FILE."
+  log "Manifest: $MANIFEST_FILE (khôi phục: bash restore.sh --manifest $MANIFEST_FILE)"
+}
+
+# Ghi nốt phần "trước deploy" còn lại vào manifest: phiên bản DB (`system.version`, chỉ đọc; không đọc được thì DB_VERSION_READ=0) và hai image dự phòng.
+manifest_record_deploy_state() {
+  [[ -n "${MANIFEST_FILE:-}" && -f "$MANIFEST_FILE" ]] || return 0
+  local dbv="" got=0
+  manifest_set BACKEND_PRE_IMAGE "${BACKEND_PRE_IMAGE:-}"
+  manifest_set FRONTEND_PRE_IMAGE "${FRONTEND_PRE_IMAGE:-}"
+  if [[ "$(inspect_field "$MONGO_CONTAINER" '{{.State.Status}}')" == "running" ]] && dbv="$(read_system_version "$MONGO_CONTAINER")"; then
+    got=1
+  else
+    dbv=""
+  fi
+  manifest_set DB_VERSION_BEFORE "$dbv"
+  manifest_set DB_VERSION_READ "$got"
+  log "Manifest: DB version trước deploy = ${dbv:-(không có/không đọc được)}; backup Mongo = ${BACKUP_FILE:-(không có)}; image dự phòng = ${BACKEND_PRE_IMAGE:-(không có)} / ${FRONTEND_PRE_IMAGE:-(không có)}."
+}
+
+# Gọi từ on_exit (mọi lối thoát): chốt phần "sau" của manifest. Không bao giờ đổi mã thoát.
+manifest_finish() {
+  local code="$1" st
+  [[ -n "${MANIFEST_FILE:-}" && -f "$MANIFEST_FILE" ]] || return 0
+  if (( code == 0 )); then st="succeeded"; else st="failed"; fi
+  [[ -z "${BACKUP_FILE:-}" ]] || manifest_set MONGO_BACKUP_FILE "$BACKUP_FILE"
+  manifest_set STACK_TOUCHED "$STACK_TOUCHED"
+  manifest_set POST_UP_REACHED "$POST_UP_REACHED"
+  manifest_set DEPLOY_STATUS "$st"
+  manifest_set FINISHED_AT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  return 0
+}
+
+# ── 1d) Project compose + kiểm volume Mongo (Q-03) ─────────────────────────────────────────────────────────
+# Project compose SẼ dùng khi `up`: COMPOSE_PROJECT_NAME (môi trường), rồi dòng COMPOSE_PROJECT_NAME trong .env, rồi tên ghim `name:` của docker-compose.yml.
+compose_project() {
+  local p="${COMPOSE_PROJECT_NAME:-}"
+  if [[ -z "$p" && -f "$ENV_FILE" ]]; then
+    p="$({ grep -m1 '^COMPOSE_PROJECT_NAME=' "$ENV_FILE" 2>/dev/null || true; } | cut -d= -f2- | tr -d '\r"'"'")"
+  fi
+  [[ -n "$p" ]] || p="$DEFAULT_PROJECT"
+  printf '%s' "$p"
+}
+
+# Q-03: `name: realestatemanager` được GHIM trong compose; nếu máy chủ trước đó chạy project tên khác (vd thư mục deploy tên khác) thì volume dữ liệu cũ nằm ở
+# `<project cũ>_mongo_data`, còn `realestatemanager_mongo_data` chưa có: `up` sẽ TẠO VOLUME TRỐNG và Mongo khởi tạo DB rỗng (dữ liệu "mất"). Dừng và hướng dẫn.
+# Chỉ-đọc. Có volume đích = qua. Không có volume Mongo nào (cài mới thật) = qua.
+check_project_volumes() {
+  local project target others v
+  project="$(compose_project)"
+  target="${project}_mongo_data"
+  if [[ -n "$(docker volume ls -q --filter "name=^${target}\$" 2>/dev/null || true)" ]]; then
     return 0
   fi
-  [[ -d .git ]] || die "Không phải git repo (dùng --no-pull nếu cố ý)."
-
-  local branch
-  branch="$(git rev-parse --abbrev-ref HEAD)"
-  [[ "$branch" == "$PROD_BRANCH" ]] || die "Đang ở '$branch' (HEAD detached nếu in 'HEAD'), cần nhánh '$PROD_BRANCH'. Script không tự đổi nhánh: xử lý theo $DOC mục 5.0a (git fetch origin && git checkout $PROD_BRANCH)."
-
-  # File chưa theo dõi (logs/, backups/...) không tính; chỉ chặn khi file đã theo dõi bị sửa.
-  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-    git status --short --untracked-files=no >&2
-    die "Working tree có thay đổi chưa commit (vd docker-compose.yml sửa tay). Không pull để tránh ghi đè/xung đột. Xử lý theo $DOC mục 5.0a (lưu bản sửa tay ra NGOÀI repo với quyền 600 rồi git checkout -- <file>; KHÔNG git stash vì mật khẩu sẽ nằm lại trong .git), rồi chạy lại."
+  others="$(docker volume ls -q --filter "name=mongo_data" 2>/dev/null | tr -d '\r' | grep -E '(^|_)mongo_data$' | grep -vxF "$target" | paste -sd ' ' - || true)"
+  if [[ -z "$others" ]]; then
+    log "Chưa có volume $target và không có volume Mongo của project khác: cài mới thật."
+    return 0
   fi
+  if [[ "$ALLOW_NEW_MONGO_VOLUME" == "1" ]]; then
+    warn "Có volume Mongo của project khác ($others) nhưng chưa có $target: DEPLOY_ALLOW_NEW_MONGO_VOLUME=1 nên vẫn đi tiếp, Mongo sẽ khởi tạo volume TRỐNG."
+    return 0
+  fi
+  v="${others%% *}"
+  {
+    echo "Q-03: có volume Mongo của project KHÁC TÊN ($others) nhưng CHƯA có $target."
+    echo "Compose ghim tên project '$project' (name: trong docker-compose.yml), nên 'up' sẽ tạo volume Mongo TRỐNG thay vì dùng dữ liệu cũ."
+    echo "Chưa đổi gì. Chọn một cách (làm TRƯỚC khi chạy lại deploy):"
+    echo "  A) Giữ project cũ: thêm vào .env dòng  COMPOSE_PROJECT_NAME=${v%_mongo_data}  (volume/network cũ dùng tiếp, không chép dữ liệu)."
+    echo "  B) Chuyển dữ liệu sang project mới (dừng stack cũ trước để dữ liệu nhất quán; GIỮ volume cũ làm bản dự phòng, KHÔNG xóa):"
+    echo "       docker compose -p ${v%_mongo_data} --env-file $ENV_FILE stop        # hoặc: docker stop realestate_mongo realestate_backend"
+    echo "       docker volume create $target"
+    echo "       docker run --rm -v ${v}:/from:ro -v ${target}:/to alpine sh -c 'cp -a /from/. /to/'"
+    echo "     Làm tương tự cho redis_data/minio_data/nine_router_data/backend_state nếu có."
+    echo "  C) Cố ý khởi tạo DB trống (vd cài mới cạnh project khác): DEPLOY_ALLOW_NEW_MONGO_VOLUME=1 bash deploy.sh"
+  } >&2
+  die "Dừng: nguy cơ mất dữ liệu do đổi tên project compose (Q-03). Stack chưa bị đổi, chưa tạo volume nào."
+}
 
-  OLD_COMMIT="$(git rev-parse --short HEAD)"
-  log "Commit hiện tại: $OLD_COMMIT. Đang git pull --ff-only origin $PROD_BRANCH ..."
-  git pull --ff-only origin "$PROD_BRANCH"
-  NEW_COMMIT="$(git rev-parse --short HEAD)"
-  if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
-    log "Không có commit mới (vẫn $NEW_COMMIT); tiếp tục build/up (idempotent)."
+# Mọi file backup của lần deploy này đặt tên theo TS: nếu ĐÃ CÓ file nào cùng TS (hai lần chạy trong cùng một giây, hoặc đồng hồ lùi) thì dừng NGAY, TRƯỚC mongodump/sao .env,
+# vì mongodump (mv) và sao .env (cp) sẽ ghi đè backup của lần trước mà manifest_init mới phát hiện thì đã muộn. Chưa đổi gì.
+check_ts_free() {
+  local f
+  for f in "$BACKUP_DIR"/deploy-pre-"${TS}".*; do
+    [[ -e "$f" ]] || continue
+    die "Đã có $f (backup cùng mã thời gian $TS: chạy chồng cùng giây, hoặc đồng hồ máy bị lùi). Không ghi đè backup: chờ vài giây rồi chạy lại. Chưa đổi gì."
+  done
+}
+
+# ── 1e) Backup `.env` (bản sao nguyên văn, quyền 600; chứa bí mật nên nằm trong backups/ quyền 700 cùng backup Mongo) ───
+backup_env() {
+  install -d -m 700 "$BACKUP_DIR"
+  local out="${BACKUP_DIR}/deploy-pre-${TS}.env"
+  ( umask 077; cp -- "$ENV_FILE" "$out" ) || die "Không sao lưu được $ENV_FILE ra $out. Không deploy khi không có backup."
+  chmod 600 "$out" 2>/dev/null || true
+  ENV_BACKUP_FILE="$out"
+  log "Đã sao $ENV_FILE -> $out (quyền 600; chứa bí mật: chép ra NGOÀI máy chủ cùng backup Mongo)."
+}
+
+# ── 1f) Gắn thẻ image đang chạy làm bản dự phòng + promote bản mới ─────────────────────────────────────────
+# Gắn `<name>:pre-<TS>` cho image mà container $1 ĐANG dùng (lấy theo container, không theo thẻ). Chưa có container: không làm gì (lần deploy đầu). In ra tham chiếu đã gắn.
+tag_pre_image() {
+  local container="$1" name="$2" image_id
+  image_id="$(docker inspect -f '{{.Image}}' "$container" 2>/dev/null || true)"
+  image_id="${image_id%%$'\n'*}"; image_id="${image_id%$'\r'}"
+  [[ -n "$image_id" ]] || return 0
+  docker tag "$image_id" "${name}:pre-${TS}" || die "Không gắn được thẻ ${name}:pre-${TS} cho image của $container."
+  printf '%s' "${name}:pre-${TS}"
+}
+
+tag_running_images() {
+  BACKEND_PRE_IMAGE="$(tag_pre_image "$BACKEND_CONTAINER" "$BE_NAME")"
+  FRONTEND_PRE_IMAGE="$(tag_pre_image "$FRONTEND_CONTAINER" "$FE_NAME")"
+  if [[ -n "$BACKEND_PRE_IMAGE" ]]; then log "Đã gắn thẻ image backend đang chạy: $BACKEND_PRE_IMAGE"; else log "Chưa có container $BACKEND_CONTAINER: không có image backend để dự phòng."; fi
+  if [[ -n "$FRONTEND_PRE_IMAGE" ]]; then log "Đã gắn thẻ image frontend đang chạy: $FRONTEND_PRE_IMAGE"; else log "Chưa có container $FRONTEND_CONTAINER: không có image frontend để dự phòng."; fi
+}
+
+# Chỉ deploy.sh được promote `current` (Architecture 5.1). Container đang chạy giữ image cũ theo ID cho tới `up`.
+promote_release_images() {
+  docker tag "$BE_NAME:$BE_TAG" "$BE_NAME:current" || die "Không promote được $BE_NAME:$BE_TAG thành current."
+  PROMOTED=1; PROMOTED_BE=1
+  docker tag "$FE_NAME:$FE_TAG" "$FE_NAME:current" || die "Không promote được $FE_NAME:$FE_TAG thành current."
+  PROMOTED_FE=1
+  log "Đã promote $BE_NAME:$BE_TAG và $FE_NAME:$FE_TAG thành current."
+}
+
+# Daily News Crawler (leftover Lượt 8): bật/tắt + lịch lưu ở volume backend_state (/app/state/cron.env). Lần ĐẦU (file chưa có) backend lấy DAILY_CRAWLER_* từ .env làm giá trị khởi tạo
+# (compose truyền xuống), nên KHÔNG cần chép file. Chỉ cảnh báo khi .env thiếu cả hai khóa mà file chưa có: crawler khởi tạo ở trạng thái TẮT (mặc định compose); nếu
+# trước đó đang bật (cấu hình nằm trong ./.env cũ trên host) thì đặt lại DAILY_CRAWLER_ACTIVE/FREQUENCY vào .env TRƯỚC lần deploy đầu. Chỉ thông tin, không bao giờ làm deploy chết.
+note_crawler_state() {
+  [[ "$(inspect_field "$BACKEND_CONTAINER" '{{.State.Status}}')" == "running" ]] || return 0   # chưa có backend: cài mới, không có gì để mất
+  if docker exec "$BACKEND_CONTAINER" test -f /app/state/cron.env >/dev/null 2>&1; then return 0; fi
+  if grep -qE '^DAILY_CRAWLER_(ACTIVE|FREQUENCY)=' "$ENV_FILE" 2>/dev/null; then
+    log "Chưa có /app/state/cron.env trong volume backend_state: backend dùng DAILY_CRAWLER_* trong $ENV_FILE làm giá trị khởi tạo."
   else
-    log "Đã cập nhật $OLD_COMMIT -> $NEW_COMMIT."
+    warn "Chưa có /app/state/cron.env trong volume backend_state và $ENV_FILE không có DAILY_CRAWLER_ACTIVE/FREQUENCY: Daily Crawler khởi tạo ở trạng thái TẮT. Nếu trước đây đang bật, đặt hai khóa đó vào $ENV_FILE (lấy giá trị từ ./.env cũ) rồi deploy lại."
   fi
 }
 
 # ── 3) Kiểm tra cú pháp + biến bắt buộc của compose (chưa đụng stack) ────────
 check_compose() {
   log "Kiểm tra docker compose config (cú pháp + biến bắt buộc)..."
-  compose config -q || die "docker compose config lỗi: thiếu/sai biến trong $ENV_FILE (đối chiếu .env.docker.example). Stack chưa bị đổi."
+  compose config -q || die "docker compose config lỗi: thiếu/sai biến trong $ENV_FILE (đối chiếu .env.example). Stack chưa bị đổi."
   check_credential_pair MONGO_APP_USERNAME MONGO_APP_PASSWORD
   check_credential_pair S3_APP_ACCESS_KEY_ID S3_APP_SECRET_ACCESS_KEY
 }
@@ -314,7 +617,7 @@ EOF
     return 0
   fi
   if (( pending > 0 )); then
-    die "Còn $pending tài khoản chưa migrate 005 (roles[]/teamIds[]). Backend mới sẽ KHÔNG khởi động (UserRolesMigrationGuard). Chạy trước: bash scripts/run-migration.sh 005 (dry-run), rồi backup và bash scripts/run-migration.sh 005 --apply, sau đó chạy lại deploy (khuyến nghị 'bash deploy.sh --no-pull' nếu đã pull). Xem $DOC mục 5.4a."
+    die "Còn $pending tài khoản chưa migrate 005 (roles[]/teamIds[]). Backend mới sẽ KHÔNG khởi động (UserRolesMigrationGuard). Chạy trước: bash scripts/run-migration.sh 005 (dry-run), rồi backup và bash scripts/run-migration.sh 005 --apply, sau đó chạy lại deploy. Xem $DOC mục 5.4a."
   fi
   log "Không còn user chưa migrate 005."
 }
@@ -367,7 +670,7 @@ backup_mongo() {
   local state
   state="$(docker inspect -f '{{.State.Status}}' "$MONGO_CONTAINER" 2>/dev/null || true)"
   if [[ -z "$state" ]]; then
-    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua mongodump vì chưa có dữ liệu để sao lưu."
+    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua mongodump vì không có container để dump (nếu volume Mongo cũ còn dữ liệu, migration cũng bị bỏ qua: xem migration_gate)."
     return 0
   fi
   [[ "$state" == "running" ]] || die "Container $MONGO_CONTAINER ở trạng thái '$state'. Khởi động nó trước (docker compose --env-file $ENV_FILE up -d mongo) để sao lưu được; không deploy khi không có backup."
@@ -426,41 +729,18 @@ backup_mongo() {
   log "Backup OK (đã kiểm nội dung). Hãy chép nó ra NGOÀI máy chủ (scp/rclone); backup nằm cùng ổ đĩa không phải backup thật."
 }
 
-# ── 6) Gắn thẻ image backend đang chạy làm bản dự phòng ──────────────────────
-tag_current_backend_image() {
-  local image_id project
-  image_id="$(docker inspect -f '{{.Image}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
-  if [[ -z "$image_id" ]]; then
-    log "Chưa có container $BACKEND_CONTAINER: không có image để dự phòng."
-    return 0
-  fi
-  project="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$BACKEND_CONTAINER" 2>/dev/null || true)"
-  [[ -n "$project" ]] || project="$DEFAULT_PROJECT"
-  PREV_IMAGE_REPO="${project}-backend"
-  PREV_IMAGE_TAG="${PREV_IMAGE_REPO}:pre-${TS}"
-  docker tag "$image_id" "$PREV_IMAGE_TAG"
-  log "Đã gắn thẻ image backend hiện tại: $PREV_IMAGE_TAG"
-}
-
-# ── 6b) Build backend + migration theo version (PT-027) ──────────────────────
-# Runner nằm TRONG image backend (dist/migrations/cli.js, không cần ts-node) nên chạy bằng `compose run --rm --no-deps
-# backend`: dùng image vừa build, MONGODB_URI do compose dựng (mật khẩu không nằm trên dòng lệnh host), cùng network
-# với mongo. `-T` tắt TTY để chạy được trong nohup/tmux. Mã thoát của runner: 0 ok | 1 lỗi hoặc từ chối | 3 đang có khóa |
-# 4 cần xử lý tay (probe baseline không đạt, hoặc cần baseline ở chế độ --no-migrate) | 5 downgrade (version code < DB).
+# ── 6b) Migration theo version (PT-027) ──
+# Runner nằm TRONG image backend (dist/migrations/cli.js, không cần ts-node), chạy bằng `compose run --rm --no-deps -T backend` với image `current` (hoặc BACKEND_IMAGE
+# khi --plan-only): MONGODB_URI do compose dựng (mật khẩu không lên dòng lệnh host). Mã thoát: 0 ok | 1 lỗi/từ chối | 3 có khóa | 4 cần xử lý tay | 5 downgrade.
 run_migration_cli() { compose run --rm --no-deps -T backend node dist/migrations/cli.js "$@"; }
 
 # Lệnh runner viết sẵn để IN cho người dùng chạy tay (không chạy ở đây).
 runner_cmd_hint() { printf 'docker compose --env-file %s run --rm --no-deps backend node dist/migrations/cli.js' "$ENV_FILE"; }
 
-mongo_is_healthy() {
-  [[ "$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')" == "healthy" ]]
-}
-
-# Build image backend MỚI (gắn GIT_COMMIT). Chưa đụng stack đang chạy: container cũ giữ image cũ theo ID; thẻ :latest
-# bị ghi đè nhưng bản cũ đã gắn thẻ pre-<thời-gian> ở bước 6.
-build_backend() {
-  log "docker compose build backend (GIT_COMMIT=${GIT_COMMIT:-unknown}) ..."
-  compose build backend
+# Có volume dữ liệu Mongo của project compose SẼ dùng (`<project>_mongo_data`, xem compose_project) không. Dùng phân biệt "cài mới thật" với
+# "container bị xóa nhưng dữ liệu còn" (Q-03 đã chặn trường hợp volume nằm ở project khác tên trước đó).
+mongo_volume_exists() {
+  [[ -n "$(docker volume ls -q --filter "name=^$(compose_project)_mongo_data\$" 2>/dev/null || true)" ]]
 }
 
 # Dừng deploy (die) kèm nguyên nhân và lệnh xử lý theo mã thoát của runner. Chỉ gọi khi runner BÁO LỖI mà chưa ghi gì
@@ -481,7 +761,7 @@ reconcile_stop() {
         echo "  002, 003, 004:  bash scripts/run-migration.sh 002   (hoặc 003, 004)                                  # dry-run; thêm --apply để ghi"
         echo "  Probe 002 có TRẦN (1.000.000 doc mỗi collection hoặc 5 phút): vượt trần thì báo \"không xác minh được\" (mã 4), không phải dữ liệu hỏng."
         echo "    Khi đó chạy dry-run script 002 ở trên và đọc kết quả; nếu báo 0 việc cần làm thì ghi baseline tay (lối thoát bên dưới)."
-        echo "Sau khi xử lý xong, chạy lại: bash deploy.sh --no-pull"
+        echo "Sau khi xử lý xong, chạy lại: bash deploy.sh"
         echo "Lối thoát (chỉ khi ĐÃ tự kiểm 002..006 xong): $cli baseline --version <x.y.z> --commit <sha>   (dry-run; thêm --apply để ghi)"
         echo "  <x.y.z> là semver chuẩn, KHÔNG có số 0 đứng đầu (vd 1.0.3, không phải 1.0.03); sai định dạng thì runner thoát mã 2."
       } >&2
@@ -489,9 +769,9 @@ reconcile_stop() {
       ;;
     5)
       {
-        echo "Runner dừng (mã 5): version trong DB CAO HƠN version của code sắp deploy (downgrade). Thường do pull nhầm nhánh/commit cũ."
+        echo "Runner dừng (mã 5): version trong DB CAO HƠN version của code sắp deploy (downgrade). Thường do gửi nhầm gói phát hành cũ."
         echo "Runner không ghi gì (không migrate, không hạ version)."
-        echo "Nếu đúng là muốn quay về bản cũ có chủ ý: DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh --no-pull"
+        echo "Nếu đúng là muốn quay về bản cũ có chủ ý: DEPLOY_ALLOW_DOWNGRADE=1 bash deploy.sh"
         echo "  (bỏ qua migrate, KHÔNG ghi/hạ version; code cũ có thể không đọc được dữ liệu đã migrate: đọc $DOC mục 11 trước)."
       } >&2
       die "Downgrade chưa được cho phép. Stack chưa bị đổi."
@@ -531,7 +811,7 @@ auto_reconcile() {
   local cli rc=0
   cli="$(runner_cmd_hint)"
   log "Lập kế hoạch migration (runner reconcile, dry-run, chỉ đọc) ..."
-  reconcile_dry_run --skip-version
+  reconcile_dry_run --skip-version --phase pre-up
   MIGRATION_GATE_RAN=1
   if (( DOWNGRADE_ACTIVE == 1 )); then
     return 0
@@ -539,27 +819,27 @@ auto_reconcile() {
 
   if [[ -z "$BACKUP_FILE" ]]; then
     # Chỉ DB không có dữ liệu nghiệp vụ (bước 5 đã xác nhận: không users, không document nào ngoài `system`) được ghi mà không có
-    # backup. Hỏi lại NGAY trước khi ghi (build mất vài phút: dữ liệu có thể đã xuất hiện); bất kỳ trạng thái nào khác là dừng,
+    # backup. Hỏi lại NGAY trước khi ghi (dữ liệu có thể đã xuất hiện sau bước 5); bất kỳ trạng thái nào khác là dừng,
     # giữ nguyên quy tắc "luôn backup trước khi ghi".
     local db_class="" recheck_rc=0
     (( DB_EMPTY_NO_BACKUP == 1 )) || die "Tự migrate cần backup Mongo vừa tạo ở bước 5 (BACKUP_FILE rỗng), mà bước 5 không xác nhận DB trống. Dừng, chưa ghi gì. Stack chưa bị đổi."
     db_class="$(classify_db)" || recheck_rc=$?
-    (( recheck_rc == 0 )) || die "Không hỏi lại được Mongo ngay trước khi ghi (mongosh lỗi hoặc quá hạn): không ghi khi không có backup và không xác nhận được DB còn trống. Chạy lại: bash deploy.sh --no-pull. Dừng, chưa ghi gì. Stack chưa bị đổi."
+    (( recheck_rc == 0 )) || die "Không hỏi lại được Mongo ngay trước khi ghi (mongosh lỗi hoặc quá hạn): không ghi khi không có backup và không xác nhận được DB còn trống. Chạy lại: bash deploy.sh. Dừng, chưa ghi gì. Stack chưa bị đổi."
     case "$db_class" in
       EMPTY|EMPTY_SYSTEM_ONLY) ;;
-      *) die "DB realestate KHÔNG còn trống kể từ bước 5 (nay: $db_class), nhưng deploy này không có backup. Không ghi. Chạy lại để có backup mới: bash deploy.sh --no-pull. Dừng, chưa ghi gì. Stack chưa bị đổi." ;;
+      *) die "DB realestate KHÔNG còn trống kể từ bước 5 (nay: $db_class), nhưng deploy này không có backup. Không ghi. Chạy lại để có backup mới: bash deploy.sh. Dừng, chưa ghi gì. Stack chưa bị đổi." ;;
     esac
     log "DB realestate chưa có dữ liệu nghiệp vụ ($db_class; đã kiểm lại ngay trước khi ghi): ghi baseline/version không cần backup."
   fi
   # Từ đây dữ liệu/sổ có thể đổi: lỗi sau điểm này in hướng dẫn "không quay code cũ" (print_recovery).
-  STACK_TOUCHED=1
-  log "reconcile --apply --skip-version (baseline nếu cần + migration chờ; backup: ${BACKUP_FILE:-không có, DB trống}) ..."
-  run_migration_cli reconcile --apply --by deploy --skip-version || rc=$?
+  STACK_TOUCHED=1; manifest_set STACK_TOUCHED 1   # ghi NGAY (không chờ manifest_finish): bị SIGKILL/mất điện giữa chừng manifest vẫn đúng
+  log "reconcile --apply --skip-version --phase pre-up (baseline nếu cần + migration pre-up chờ; backup: ${BACKUP_FILE:-không có, DB trống}) ..."
+  run_migration_cli reconcile --apply --by deploy --skip-version --phase pre-up || rc=$?
   case "$rc" in
     0) ;;
     5)
       # Hiếm: dry-run vừa rồi không báo downgrade nhưng --apply thì có (DB đổi giữa hai lệnh). Runner không ghi gì.
-      STACK_TOUCHED=0
+      STACK_TOUCHED=0; manifest_set STACK_TOUCHED 0
       if (( ALLOW_DOWNGRADE == 1 )); then
         warn "Downgrade CỐ Ý (DEPLOY_ALLOW_DOWNGRADE=1): bỏ qua migrate, KHÔNG ghi và KHÔNG hạ version."
         DOWNGRADE_ACTIVE=1
@@ -567,7 +847,7 @@ auto_reconcile() {
       fi
       reconcile_stop 5
       ;;
-    3|4) STACK_TOUCHED=0; reconcile_stop "$rc" ;;
+    3|4) STACK_TOUCHED=0; manifest_set STACK_TOUCHED 0; reconcile_stop "$rc" ;;
     *)
       die "reconcile --apply thất bại (mã $rc): runner đã dừng (không chạy migration sau, không ghi sổ cho migration lỗi, không tự rollback). Nếu migration chạy dở thì dữ liệu có thể đã đổi MỘT PHẦN; nếu runner từ chối trước khi ghi (không phải replica set, sổ không liền mạch) thì dữ liệu chưa đổi. Xem: $cli status . Sửa nguyên nhân rồi chạy lại; KHÔNG quay về code cũ."
       ;;
@@ -593,7 +873,7 @@ legacy_status_gate() {
       printf '%s\n' "$out" >&2
       {
         echo "Collection \`system\` chưa có phiên bản nhưng DB đã có dữ liệu: cần baseline MỘT LẦN (ghi sổ 002..006 đã áp dụng, không chạy lại)."
-        echo "  Cách A (khuyến nghị): bỏ --no-migrate: bash deploy.sh --no-pull   (probe chỉ-đọc rồi tự baseline nếu đạt; xem trước bằng --plan-only)"
+        echo "  Cách A (khuyến nghị): bỏ --no-migrate: bash deploy.sh   (probe chỉ-đọc rồi tự baseline nếu đạt; xem trước bằng --plan-only)"
         echo "  Cách B (tay, lối thoát; chỉ khi ĐÃ tự kiểm 002..006 xong):"
         echo "    Dry-run:  $cli baseline --version <x.y.z> --commit <sha>"
         echo "    Ghi thật: $cli baseline --apply --version <x.y.z> --commit <sha>"
@@ -624,12 +904,12 @@ legacy_status_gate() {
   {
     echo
     echo "════════════ DỪNG TRƯỚC KHI CẬP NHẬT: còn migration chờ (${ids:-?}) ════════════"
-    echo "Đã backup: ${BACKUP_FILE:-không có}. Stack đang chạy CHƯA bị đổi (image backend mới đã build nhưng chưa chạy)."
+    echo "Đã backup: ${BACKUP_FILE:-không có}. Stack đang chạy CHƯA bị đổi (thẻ current đã trỏ sang image mới nhưng container chưa chạy nó; script tự trả current về image cũ khi thoát)."
     echo "Chọn một cách:"
-    echo "  A) Tự động (bỏ --no-migrate):  bash deploy.sh --no-pull     (backup mới -> reconcile --apply -> up)"
+    echo "  A) Tự động (bỏ --no-migrate):  bash deploy.sh     (backup mới -> reconcile --apply -> up)"
     echo "  B) Bằng tay: $cli up            # dry-run, đọc kỹ"
     echo "               $cli up --apply --by cli       # mã 5 = downgrade (version DB cao hơn code): không ghi gì, xem mục 11.1"
-    echo "               rồi: bash deploy.sh --no-pull --no-migrate"
+    echo "               rồi: bash deploy.sh --no-migrate"
     echo "Chi tiết: $DOC mục 11.1."
   } >&2
   exit 1
@@ -646,7 +926,14 @@ migration_gate() {
     if docker inspect "$MONGO_CONTAINER" >/dev/null 2>&1; then
       die "Mongo ($MONGO_CONTAINER) đang chạy nhưng chưa healthy: không đọc được trạng thái migration. Chờ nó healthy (docker compose --env-file $ENV_FILE ps) rồi chạy lại. Stack chưa bị đổi."
     fi
-    warn "Chưa có container $MONGO_CONTAINER (triển khai mới?): bỏ qua migration. Sau khi stack lên, xem: $cli status"
+    # Container có thể đã bị xóa (compose down/rm) mà volume vẫn giữ DỮ LIỆU THẬT: khi đó KHÔNG coi là DB trống (8a sẽ
+    # chạy reconcile --apply không backup). Chỉ cài mới khi không có container VÀ không có volume Mongo của project.
+    if mongo_volume_exists; then
+      warn "Chưa có container $MONGO_CONTAINER NHƯNG đã có volume Mongo của project (dữ liệu có thể còn): KHÔNG coi là cài mới, bỏ qua migration và bước 8a (không chạy migration khi chưa backup). Khởi động Mongo rồi chạy lại deploy, hoặc xem: $cli status"
+      return 0
+    fi
+    FRESH_INSTALL=1
+    warn "Chưa có container $MONGO_CONTAINER và chưa có volume Mongo (triển khai mới, DB trống): bỏ qua migration trước \`up\`; sau khi stack lên và backend sống, bước 8a sẽ chạy reconcile --apply (007/008/009 + ghi version) trong CÙNG lần deploy này. Xem trạng thái: $cli status"
     return 0
   fi
 
@@ -665,6 +952,7 @@ migration_gate() {
 # Downgrade có chủ ý: bỏ qua hẳn (không ghi, không hạ version). Ở chế độ --no-migrate, nếu DB có version cao hơn thì runner
 # trả mã 5 và cũng không ghi gì: chỉ cảnh báo.
 sync_system_version() {
+  (( FRESH_INSTALL == 1 )) && return 0   # cài mới đã được fresh_install_reconcile (8a) xử lý, gồm cả ghi version
   (( MIGRATION_GATE_RAN == 1 )) || { log "Bỏ qua ghi phiên bản vào \`system\` (chưa đọc được trạng thái migration trước deploy)."; return 0; }
   if (( DOWNGRADE_ACTIVE == 1 )); then
     warn "Downgrade có chủ ý: KHÔNG ghi và KHÔNG hạ \`version\` trong \`system\` (DB giữ version cao hơn)."
@@ -672,49 +960,61 @@ sync_system_version() {
   fi
   mongo_is_healthy || return 0
   local rc=0
-  run_migration_cli reconcile --apply --by deploy || rc=$?
+  run_migration_cli reconcile --apply --by deploy --phase pre-up || rc=$?
   if (( rc != 0 )); then
     warn "Không ghi được phiên bản vào collection \`system\` (mã $rc; backend vẫn chạy). Ghi lại sau: $(runner_cmd_hint) reconcile --apply --by cli"
   fi
 }
 
-# ── 7) Chờ healthy ───────────────────────────────────────────────────────────
-wait_mongo_healthy() {
-  log "Chờ $MONGO_CONTAINER healthy (tối đa ${MONGO_TIMEOUT}s)..."
-  local status
-  SECONDS=0
-  while (( SECONDS < MONGO_TIMEOUT )); do
-    status="$(inspect_field "$MONGO_CONTAINER" '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')"
-    if [[ "$status" == "healthy" ]]; then log "Mongo healthy."; return 0; fi
-    sleep 3
-  done
-  die "Mongo chưa healthy sau ${MONGO_TIMEOUT}s (trạng thái cuối: ${status:-?})."
+# Bước 8a (T-19): CÀI MỚI (6b bỏ qua vì chưa có container Mongo, nên chưa chạy 007/008/009 và chưa ghi version). Sau `up` + liveness,
+# chạy `reconcile --apply --by deploy` (không --skip-version): trên DB mới tinh runner chạy hết migration chờ và ghi `version`. DB trống
+# nên không cần backup. Khác 8b: lỗi => `die` (deploy báo lỗi, exit khác 0), vì cài mới mà thiếu 009/version là trạng thái dở dang.
+fresh_install_reconcile() {
+  (( FRESH_INSTALL == 1 )) || return 0
+  local rc=0
+  log "Bước 8a (cài mới): reconcile --apply --by deploy (chạy 007/008/009 và ghi phiên bản trong cùng lần deploy) ..."
+  run_migration_cli reconcile --apply --by deploy --phase pre-up || rc=$?
+  if (( rc != 0 )); then
+    die "Bước 8a (cài mới) reconcile --apply thất bại (mã $rc): backend vẫn chạy nhưng migration/phiên bản chưa đủ. Xem: $(runner_cmd_hint) status ; sửa nguyên nhân rồi chạy: $(runner_cmd_hint) reconcile --apply --by cli"
+  fi
+  log "Bước 8a xong: migration và phiên bản đã ghi."
 }
 
-wait_backend_liveness() {
-  log "Chờ backend liveness $HEALTH_URL (tối đa ${HEALTH_TIMEOUT}s)..."
-  local state
-  SECONDS=0
-  while (( SECONDS < HEALTH_TIMEOUT )); do
-    if curl -fsS -o /dev/null --max-time 5 "$HEALTH_URL" 2>/dev/null; then
-      log "Backend liveness OK sau ~${SECONDS}s."
-      return 0
-    fi
-    state="$(inspect_field "$BACKEND_CONTAINER" '{{.State.Status}}')"
-    if [[ "$state" == "exited" || "$state" == "dead" || "$state" == "missing" ]]; then
-      die "Container backend ở trạng thái '$state' (không chạy)."
-    fi
-    sleep 3
+# Điểm gọi hậu-migrate DÙNG CHUNG (T-03, FR-23; thay bước 8c cũ): sau `up` + liveness + 8a/8b, chạy lần lượt các tệp
+# scripts/post-migrate/[0-9][0-9]-*.sh theo thứ tự tên (10-catalog-codes.sh = hành vi 8c cũ: bù mã danh mục; 20-customer-codes.sh = bù mã khách; 90-post-up-migrations.sh = migration pha post-up, 011; MỌI lần deploy).
+# KHÔNG có logic bù mã trong deploy.sh (T-17: cả cổng chặn 010 của bước 90 nằm trong tệp bước). Hợp đồng mỗi tệp: nhận ENV_FILE, LOGS_DIR, TS, DOC, LOG_PREFIX qua môi trường, tự chạy lệnh trong
+# container, tự ghi log `$LOGS_DIR/deploy-<tên>-<TS>.log` và tự in cảnh báo ĐỎ + thoát khác 0 khi lỗi. Tệp nào thoát khác 0 thì `die` kèm
+# tên bước (on_exit in hướng dẫn lùi), các tệp sau KHÔNG chạy. Downgrade có chủ ý (DOWNGRADE_ACTIVE=1): bỏ qua TOÀN BỘ (image cũ không có
+# các CLI này). Chạy bằng `bash <tệp>` nên không phụ thuộc bit thực thi (commit từ Windows có thể làm mất bit này).
+run_post_migrate_steps() {
+  if (( DOWNGRADE_ACTIVE == 1 )); then
+    warn "Downgrade có chủ ý: bỏ qua toàn bộ bước hậu-migrate (scripts/post-migrate/)."
+    return 0
+  fi
+  local dir="$ROOT_DIR/scripts/post-migrate" step name rc
+  local -a steps=()
+  for step in "$dir"/[0-9][0-9]-*.sh; do
+    [[ -f "$step" ]] && steps+=("$step")
   done
-  die "Backend không trả liveness 200 sau ${HEALTH_TIMEOUT}s."
+  (( ${#steps[@]} > 0 )) || die "Không thấy tệp bước nào dạng [0-9][0-9]-*.sh trong $dir (checkout thiếu file?). Không bỏ qua im lặng việc bù mã sau migrate."
+  for step in "${steps[@]}"; do
+    name="$(basename "$step" .sh)"
+    log "Hậu-migrate: bước $name ..."
+    rc=0
+    env ENV_FILE="$ENV_FILE" LOGS_DIR="$LOGS_DIR" TS="$TS" DOC="$DOC" LOG_PREFIX="$LOG_PREFIX" bash "$step" || rc=$?
+    (( rc == 0 )) || die "Bước hậu-migrate '$name' thất bại (mã $rc): deploy báo LỖI, các bước sau không chạy. Xem log $LOGS_DIR/deploy-*-${TS}.log và $DOC mục 11."
+  done
+  log "Hậu-migrate xong (${#steps[@]} bước)."
 }
+
+
+# ── 7) Chờ healthy: wait_mongo_healthy / wait_backend_liveness nằm ở ops/lib/ops-common.sh ──
 
 # ── Chạy ─────────────────────────────────────────────────────────────────────
 main() {
   local arg flag_migrate=0 flag_no_migrate=0
   for arg in "$@"; do
     case "$arg" in
-      --no-pull) NO_PULL=1 ;;
       --migrate) flag_migrate=1 ;;
       --no-migrate) flag_no_migrate=1 ;;
       --plan-only) PLAN_ONLY=1 ;;
@@ -735,56 +1035,68 @@ main() {
 
   [[ "$AUTO_MIGRATE" =~ ^[01]$ ]]    || die "DEPLOY_AUTO_MIGRATE phải là 0 hoặc 1 (nhận '$AUTO_MIGRATE')."
   [[ "$ALLOW_DOWNGRADE" =~ ^[01]$ ]] || die "DEPLOY_ALLOW_DOWNGRADE phải là 0 hoặc 1 (nhận '$ALLOW_DOWNGRADE')."
+  [[ "$ENFORCE_IMAGE_ID" =~ ^[01]$ ]] || die "DEPLOY_ENFORCE_IMAGE_ID phải là 0 hoặc 1 (nhận '$ENFORCE_IMAGE_ID')."
+  [[ "$ALLOW_NEW_MONGO_VOLUME" =~ ^[01]$ ]] || die "DEPLOY_ALLOW_NEW_MONGO_VOLUME phải là 0 hoặc 1 (nhận '$ALLOW_NEW_MONGO_VOLUME')."
   [[ "$MONGO_TIMEOUT" =~ ^[0-9]+$ ]]  || die "MONGO_TIMEOUT phải là số nguyên (giây)."
   [[ "$HEALTH_TIMEOUT" =~ ^[0-9]+$ ]] || die "HEALTH_TIMEOUT phải là số nguyên (giây)."
   [[ "$DUMP_TIMEOUT" =~ ^[0-9]+$ && "$OPS_EXEC_TIMEOUT" =~ ^[0-9]+$ ]] || die "DUMP_TIMEOUT/OPS_EXEC_TIMEOUT phải là số nguyên (giây)."
 
-  # Luôn chạy tại thư mục gốc repo để đường dẫn tương đối ./logs ./backups luôn đúng.
+  # Luôn chạy tại thư mục deploy để đường dẫn tương đối ./logs ./backups ./release.env luôn đúng.
   cd "$ROOT_DIR"
-  [[ -f docker-compose.yml ]] || die "Không thấy docker-compose.yml: chạy script từ thư mục gốc repo."
+  [[ -f docker-compose.yml ]] || die "Không thấy docker-compose.yml: chạy script từ thư mục deploy."
 
+  # Thứ tự (Architecture 5.3): công cụ -> đĩa -> release.env -> image (ID: cảnh báo) -> verify-env -> khóa -> kiểm compose/volume/005 -> [backup -> manifest ->
+  # thẻ pre-<TS> -> promote current] -> migration -> up -> health -> phiên bản -> hậu-migrate. Mọi bước TRƯỚC backup đều chưa đổi gì.
   check_prereqs
   require_free_disk_gb "$DEPLOY_MIN_FREE_GB"
-  acquire_lock
-  git_update
-  # Commit ngắn ghi vào dist/version.json của image (build arg GIT_COMMIT trong docker-compose.yml); phải export TRƯỚC mọi
-  # lệnh compose build/run để cache khớp. Không có .git (--no-pull) thì để compose dùng `unknown`.
-  export GIT_COMMIT="${NEW_COMMIT:-unknown}"
+  read_release_env
+  check_release_images
+  run_verify_env
+  acquire_deploy_lock
   check_compose
+  check_project_volumes
   check_users_migrated
-  # --plan-only chỉ đọc: không chuẩn bị logs/ và KHÔNG backup (không có gì sẽ bị ghi). Vẫn gắn thẻ image đang chạy vì build
-  # sau đó ghi đè :latest (đường lui "image dự phòng" của deploy thật sau này vẫn đúng).
-  if (( PLAN_ONLY == 0 )); then
-    ensure_runtime_dirs
-    backup_mongo
-  fi
-  tag_current_backend_image
-  build_backend
-  migration_gate
 
   if (( PLAN_ONLY == 1 )); then
-    log "--plan-only xong: stack và dữ liệu KHÔNG đổi (chưa backup, chưa up). Image backend mới đã build (:latest); container đang chạy vẫn dùng image cũ."
-    log "Nếu kế hoạch ở trên đúng ý, deploy thật: bash deploy.sh --no-pull"
+    # Chỉ đọc: dry-run bằng IMAGE ĐÃ NẠP của bản phát hành (compose nhận BACKEND_IMAGE từ môi trường), KHÔNG promote `current`, không logs/backup/tag/manifest.
+    export BACKEND_IMAGE="$BE_NAME:$BE_TAG"
+    migration_gate
+    log "--plan-only xong: stack, dữ liệu và thẻ image KHÔNG đổi (chưa backup, chưa promote, chưa up). Kế hoạch trên chạy bằng image đã nạp $BACKEND_IMAGE."
+    log "Nếu kế hoạch ở trên đúng ý, deploy thật: bash deploy.sh"
     return 0
   fi
 
-  STACK_TOUCHED=1
-  log "docker compose up -d --build ..."
-  compose up -d --build
+  ensure_runtime_dirs
+  check_ts_free                  # không ghi đè backup cùng TS (trước mongodump/sao .env)
+  backup_mongo
+  backup_env
+  manifest_init                  # manifest backup (MANIFEST_VERSION=2) ngay sau backup, trước mọi thay đổi image
+  tag_running_images             # <name>:pre-<TS> cho image BE/FE đang chạy (đường lui)
+  manifest_record_deploy_state   # ghi nốt: image dự phòng, DB version trước deploy
+  promote_release_images         # <ver>-<commit> -> current (CHỈ deploy.sh làm việc này)
+  note_crawler_state
+  migration_gate
+
+  STACK_TOUCHED=1; manifest_set STACK_TOUCHED 1   # ghi NGAY vào manifest (xem chú thích ở reconcile --apply)
+  log "docker compose up -d --no-build ..."
+  compose up -d --no-build
 
   wait_mongo_healthy
   wait_backend_liveness
+  fresh_install_reconcile
   sync_system_version
+  POST_UP_REACHED=1; manifest_set POST_UP_REACHED 1   # ghi NGAY vào manifest; từ đây bước 90 (migration 011 MỘT CHIỀU) có thể chạy: manifest ghi lại để restore.sh cảnh báo
+  run_post_migrate_steps
 
   echo
   compose ps
   if [[ -n "$NINE_ROUTER_CONTAINER" && "$(inspect_field "$NINE_ROUTER_CONTAINER" '{{.State.Status}}')" != "running" ]]; then
     warn "Container $NINE_ROUTER_CONTAINER không chạy (AI qua 9Router sẽ lỗi). Xem: docker compose --env-file $ENV_FILE logs nine-router"
   fi
-  log "Deploy xong (commit ${NEW_COMMIT:-?}). Image dự phòng: ${PREV_IMAGE_TAG:-không có}. Backup: ${BACKUP_FILE:-không có}."
+  log "Deploy xong: bản ${RELEASE_VERSION} (commit ${RELEASE_COMMIT}). Image dự phòng: ${BACKEND_PRE_IMAGE:-không có} / ${FRONTEND_PRE_IMAGE:-không có}. Backup: ${BACKUP_FILE:-không có}."
 }
 
-# Bọc toàn bộ trong main + `exit`: bash đọc script theo từng đoạn, nên bắt buộc dừng ở đây để việc `git pull` thay
-# đổi chính file này giữa chừng không làm bash đọc tiếp phần lệnh lạ.
+# Bọc toàn bộ trong main + `exit`: bash đọc script theo từng đoạn, nên bắt buộc dừng ở đây để việc cài gói mới (hoán đổi file) giữa chừng
+# không làm bash đọc tiếp phần lệnh lạ.
 main "$@"
 exit 0

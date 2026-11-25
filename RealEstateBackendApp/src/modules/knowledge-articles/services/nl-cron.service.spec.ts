@@ -85,9 +85,7 @@ describe('NlCronService', () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          choices: [
-            { message: { content: JSON.stringify(aiResponse) } },
-          ],
+          choices: [{ message: { content: JSON.stringify(aiResponse) } }],
         }),
       } as any);
 
@@ -119,9 +117,7 @@ describe('NlCronService', () => {
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          choices: [
-            { message: { content: JSON.stringify(aiResponse) } },
-          ],
+          choices: [{ message: { content: JSON.stringify(aiResponse) } }],
         }),
       } as any);
 
@@ -142,9 +138,7 @@ describe('NlCronService', () => {
         }),
       } as any);
 
-      await expect(
-        service.parseDescription('test'),
-      ).rejects.toThrow('empty');
+      await expect(service.parseDescription('test')).rejects.toThrow('empty');
 
       global.fetch = originalFetch;
     });
@@ -153,22 +147,22 @@ describe('NlCronService', () => {
       const aiResponse = {
         cron: 'invalid-cron',
         explanation: 'Test',
-        schedule: { frequency: 'daily', time: '08:00', timezone: 'Asia/Ho_Chi_Minh' },
+        schedule: {
+          frequency: 'daily',
+          time: '08:00',
+          timezone: 'Asia/Ho_Chi_Minh',
+        },
       };
 
       const originalFetch = global.fetch;
       global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          choices: [
-            { message: { content: JSON.stringify(aiResponse) } },
-          ],
+          choices: [{ message: { content: JSON.stringify(aiResponse) } }],
         }),
       } as any);
 
-      await expect(
-        service.parseDescription('test'),
-      ).rejects.toThrow();
+      await expect(service.parseDescription('test')).rejects.toThrow();
 
       global.fetch = originalFetch;
     });
@@ -181,9 +175,7 @@ describe('NlCronService', () => {
         text: async () => 'Rate limited',
       } as any);
 
-      await expect(
-        service.parseDescription('test'),
-      ).rejects.toThrow('429');
+      await expect(service.parseDescription('test')).rejects.toThrow('429');
 
       global.fetch = originalFetch;
     });
@@ -258,10 +250,7 @@ describe('NlCronService', () => {
     });
 
     it('should update nextRunAt in config', async () => {
-      await service.activateSchedule(
-        '0 8 * * *',
-        'Daily 8am',
-      );
+      await service.activateSchedule('0 8 * * *', 'Daily 8am');
 
       expect(configService.updateCronConfig).toHaveBeenCalledWith(
         expect.objectContaining({

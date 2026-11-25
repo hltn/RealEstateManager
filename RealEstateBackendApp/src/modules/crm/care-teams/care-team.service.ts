@@ -19,6 +19,9 @@ import {
   resolveClientSource,
   versionConflict,
 } from '../customers/customer.errors';
+import { CrmRateLimitService } from '../common/security/crm-rate-limit.service';
+import { OwnerTeamCustomer } from '../customers/access/customer-owner-team';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { CustomerRefsService } from '../customers/customer-refs.service';
 import { computeTeamIds } from '../customers/customer-team-sync.service';
 import { CustomersRepository } from '../customers/customers.repository';
@@ -27,7 +30,9 @@ import {
   NotificationPriority,
   NotificationType,
 } from '../../notifications/notification.constants';
-import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../notifications/notification-dispatcher.service';
+import type { PushOrigin } from '../../notifications/push/push-catalog';
+import { requestContextStorage } from '../../../common/services/request-context.service';
 import { CareTeamAssigneesService } from './care-team-assignees.service';
 import {
   careTeamLabels,
@@ -35,31 +40,43 @@ import {
   toCareTeamResponse,
 } from './care-team.mapper';
 import {
-  canChangePrimary,
-  canManageMembers,
+  assertCreatorKept,
+  canSetInitialPrimary,
   careTeamActionForbidden,
   CareTeamChange,
   findPrimary,
   planAddMembers,
-  planChangePrimary,
   planRemoveMember,
   assertCareTeamInvariant,
+  assertMemberLimit,
+  buildBulkPushGroupKey,
 } from './care-team.rules';
 import {
   AddCareTeamMembersDto,
   CareTeamResponseDto,
-  ChangePrimaryDto,
 } from './dtos/care-team.dto';
 
 const oid = (id: string): Types.ObjectId => new Types.ObjectId(id);
 
-/** Một thay đổi nhóm chăm sóc: ai được làm, thay đổi ra sao, có giới hạn người được phân theo phạm vi người làm không. */
+/** Một thay đổi nhóm chăm sóc: ai được làm, thay đổi ra sao (người được mời không giới hạn theo nhóm của người mời, FR-13). */
 export interface CareTeamMutation {
-  /** Ném 403 `CARE_TEAM_ACTION_FORBIDDEN` nếu người thực hiện không đủ quyền với nhóm hiện tại. */
-  authorize: (careTeam: CareTeamEntry[]) => void;
-  plan: (careTeam: CareTeamEntry[], now: Date) => CareTeamChange;
-  restrictToActorScope: boolean;
+  /**
+   * Ném 403 (`CARE_TEAM_ACTION_FORBIDDEN`, hoặc `INSUFFICIENT_ROLE` ở bulk `ASSIGN`) nếu người thực hiện không đủ
+   * quyền với khách. Bất đồng bộ vì quyền chủ khách (FR-31) cần đọc nhóm chủ; chạy trong CHÍNH transaction (`session`).
+   */
+  authorize: (
+    careTeam: CareTeamEntry[],
+    customer: OwnerTeamCustomer,
+    session: ClientSession,
+  ) => Promise<void> | void;
+  plan: (
+    careTeam: CareTeamEntry[],
+    now: Date,
+    customer: OwnerTeamCustomer,
+  ) => CareTeamChange;
   source: CrmAuditSource;
+  /** Nguồn của thay đổi: quyết có push `CUSTOMER_ASSIGNED` hay không và khóa gộp đợt hàng loạt (Architecture 5.2). */
+  origin: PushOrigin;
 }
 
 /**
@@ -77,7 +94,9 @@ export class CareTeamService {
     private readonly refs: CustomerRefsService,
     private readonly assignees: CareTeamAssigneesService,
     private readonly audit: CrmAuditLogService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
+    private readonly rateLimit: CrmRateLimitService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async get(jwt: JwtPayload, id: string): Promise<CareTeamResponseDto> {
@@ -89,20 +108,35 @@ export class CareTeamService {
     const maps = await this.refs.resolve({
       userIds: careTeamUserIds(customer.careTeam ?? []),
     });
-    return toCareTeamResponse(customer.careTeam ?? [], maps.users);
+    return toCareTeamResponse(customer.careTeam ?? [], maps);
   }
 
-  addMembers(
+  /** Rate-limit `CARE_TEAM_INVITE` (30/phút/người) tính một lần mỗi request `POST members`, trước khi mở transaction. */
+  async addMembers(
     jwt: JwtPayload,
     id: string,
     dto: AddCareTeamMembersDto,
     clientType?: string,
   ): Promise<CareTeamResponseDto> {
+    await this.rateLimit.consume(jwt.sub, 'CARE_TEAM_INVITE');
     return this.mutate(jwt, id, clientType, (ctx, source) => ({
-      authorize: (careTeam) => {
-        if (!canManageMembers(ctx.actor, careTeam)) {
+      authorize: async (careTeam, customer, session) => {
+        // FR-31: chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ (PRIMARY/MEMBER không tự có quyền mời).
+        if (
+          !(await this.ownerTeam.hasOwnerRights(ctx.actor, customer, session))
+        ) {
           throw careTeamActionForbidden(
-            'Chỉ Quản trị, Quản lý hoặc phụ trách chính được thêm thành viên',
+            'Chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ được thêm thành viên',
+          );
+        }
+        // Đặt PRIMARY lần đầu (nhóm rỗng) chỉ Quản trị/Quản lý; nhóm đã có người thì `planAddMembers` trả 400.
+        if (
+          dto.primaryUserId &&
+          careTeam.length === 0 &&
+          !canSetInitialPrimary(ctx.actor, careTeam)
+        ) {
+          throw careTeamActionForbidden(
+            'Chỉ Quản trị hoặc Quản lý được đặt phụ trách chính lần đầu',
           );
         }
       },
@@ -118,8 +152,8 @@ export class CareTeamService {
           ctx.actor.userId,
           now,
         ),
-      restrictToActorScope: true,
       source,
+      origin: 'TEAM_ADD',
     }));
   }
 
@@ -127,56 +161,23 @@ export class CareTeamService {
     jwt: JwtPayload,
     id: string,
     userId: string,
-    newPrimaryUserId: string | undefined,
     clientType?: string,
   ): Promise<CareTeamResponseDto> {
     return this.mutate(jwt, id, clientType, (ctx, source) => ({
-      authorize: (careTeam) => {
-        if (!canManageMembers(ctx.actor, careTeam)) {
-          throw careTeamActionForbidden(
-            'Chỉ Quản trị, Quản lý hoặc phụ trách chính được gỡ thành viên',
-          );
-        }
+      authorize: async (_careTeam, customer, session) => {
         if (
-          findPrimary(careTeam)?.userId.equals(oid(userId)) &&
-          !canChangePrimary(ctx.actor)
+          !(await this.ownerTeam.hasOwnerRights(ctx.actor, customer, session))
         ) {
           throw careTeamActionForbidden(
-            'Chỉ Quản trị hoặc Quản lý được gỡ phụ trách chính',
+            'Chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ được gỡ thành viên',
           );
         }
       },
-      plan: (careTeam, now) =>
-        planRemoveMember(
-          careTeam,
-          oid(userId),
-          newPrimaryUserId ? oid(newPrimaryUserId) : undefined,
-          ctx.actor.userId,
-          now,
-        ),
-      restrictToActorScope: true,
+      // Gỡ người tạo (FR-31) hoặc PRIMARY luôn là 409 `PRIMARY_LOCKED` (kể cả Quản trị), do `planRemoveMember` quyết.
+      plan: (careTeam, _now, customer) =>
+        planRemoveMember(careTeam, oid(userId), customer.createdBy),
       source,
-    }));
-  }
-
-  changePrimary(
-    jwt: JwtPayload,
-    id: string,
-    dto: ChangePrimaryDto,
-    clientType?: string,
-  ): Promise<CareTeamResponseDto> {
-    return this.mutate(jwt, id, clientType, (ctx, source) => ({
-      authorize: () => {
-        if (!canChangePrimary(ctx.actor)) {
-          throw careTeamActionForbidden(
-            'Chỉ Quản trị hoặc Quản lý được đổi phụ trách chính',
-          );
-        }
-      },
-      plan: (careTeam, now) =>
-        planChangePrimary(careTeam, oid(dto.userId), ctx.actor.userId, now),
-      restrictToActorScope: true,
-      source,
+      origin: 'TEAM_ADD',
     }));
   }
 
@@ -207,14 +208,22 @@ export class CareTeamService {
   ): Promise<CareTeamResponseDto> {
     const before = await this.repo.findOne(ctx.scope, customerId, {
       session,
-      projection: { careTeam: 1, teamIds: 1, fullName: 1, __v: 1 },
+      projection: {
+        careTeam: 1,
+        teamIds: 1,
+        createdBy: 1,
+        fullName: 1,
+        __v: 1,
+      },
     });
     if (!before) throw customerNotFound();
     const currentTeam = before.careTeam ?? [];
-    mutation.authorize(currentTeam);
+    await mutation.authorize(currentTeam, before, session);
 
     const now = new Date();
-    const change = mutation.plan(currentTeam, now);
+    const change = mutation.plan(currentTeam, now, before);
+    // FR-31: MỌI đường đổi `careTeam` đi qua cổng này nên người tạo không bao giờ bị gỡ (kể cả Admin).
+    assertCreatorKept(currentTeam, change.careTeam, before.createdBy);
     const hasChange =
       change.addedUserIds.length > 0 ||
       change.removedUserIds.length > 0 ||
@@ -223,10 +232,9 @@ export class CareTeamService {
       const maps = await this.refs.resolve({
         userIds: careTeamUserIds(currentTeam),
       });
-      return toCareTeamResponse(currentTeam, maps.users);
+      return toCareTeamResponse(currentTeam, maps);
     }
     assertCareTeamInvariant(change.careTeam);
-
     // Người mới phải hợp lệ; tên nhóm của MỌI thành viên mới tính được `teamIds`.
     const memberIds = change.careTeam.map((member) => member.userId);
     const users = await this.assignees.load(memberIds, session);
@@ -240,19 +248,20 @@ export class CareTeamService {
     ) {
       checkedUserIds.push(primary.userId);
     }
-    this.assignees.assertAssignable(
-      ctx.actor,
-      checkedUserIds,
-      users,
-      mutation.restrictToActorScope,
-    );
+    this.assignees.assertAssignable(checkedUserIds, users);
+    // Giới hạn 10 thành viên phụ (FR-17): kiểm SAU `assertAssignable` để mời người không hợp lệ (khóa/EDITOR/đã xóa)
+    // vào khách đã đủ 10 báo đúng nguyên nhân USER_NOT_ASSIGNABLE thay vì lỗi giới hạn. Kiểm trên `before` đọc trong
+    // CHÍNH transaction này; ghi bên dưới khóa theo `__v` nên hai lời mời đồng thời không cùng vượt trần: bên ghi sau
+    // gặp WriteConflict (TransientTransactionError) và `withTransaction` chạy lại, lần này đọc thấy đủ 10 nên nhận
+    // CARE_TEAM_LIMIT_EXCEEDED; nếu `updateOne` khớp 0 bản ghi thì nhận VERSION_CONFLICT. Kết quả cuối không vượt 10.
+    assertMemberLimit(change);
     await this.assignees.lock(checkedUserIds, session);
 
     const teamIds = computeTeamIds(
       memberIds,
       new Map([...users].map(([key, user]) => [key, user.teamIds])),
     );
-    const matched = await this.repo.updateOne(
+    const isMatched = await this.repo.updateOne(
       ctx.scope,
       customerId,
       { __v: before.__v },
@@ -268,7 +277,7 @@ export class CareTeamService {
       },
       { session },
     );
-    if (!matched) throw versionConflict(before.__v);
+    if (!isMatched) throw versionConflict(before.__v);
 
     const maps = await this.refs.resolve({
       userIds: [
@@ -290,39 +299,62 @@ export class CareTeamService {
       customerId,
       before.fullName,
       change,
-      primary?.userId ?? null,
+      before.__v + 1,
+      mutation.origin,
       session,
     );
-    return toCareTeamResponse(change.careTeam, maps.users);
+    return toCareTeamResponse(change.careTeam, maps);
   }
 
-  /** Báo người MỚI được thêm vào nhóm (trừ chính người thực hiện), cùng transaction với việc thêm; phụ trách chính `HIGH`. */
+  /**
+   * Báo người MỚI được thêm vào nhóm (trừ chính người thực hiện), cùng transaction với việc thêm; phụ trách chính
+   * `HIGH`. Mỗi người một yêu cầu vì `careRole` (lấy từ `change.careTeam`) quyết có push hay không: chỉ người
+   * cùng phụ trách (`MEMBER`) mới có push. `dedupeKey` gắn `__v` SAU thay đổi nên mỗi lần thêm là một thông báo
+   * mới còn retry thì không trùng. Thêm hàng loạt gộp đợt theo `X-Request-ID` (`groupKey`) để worker giới hạn
+   * 3 push/người/đợt (T-33).
+   */
   private async notifyAssigned(
     ctx: AccessContext,
     customerId: string,
     customerName: string,
     change: CareTeamChange,
-    primaryId: Types.ObjectId | null,
+    versionAfter: number,
+    origin: PushOrigin,
     session: ClientSession,
   ): Promise<void> {
     const recipients = change.addedUserIds.filter(
       (userId) => !userId.equals(ctx.actor.userId),
     );
-    await this.notifications.createMany(
-      recipients.map((userId) => ({
-        userId,
-        type: NotificationType.CUSTOMER_ASSIGNED,
-        title: 'Bạn được phân chăm sóc khách mới',
-        body: `Bạn được phân chăm sóc khách ${customerName}`,
-        priority:
-          primaryId && userId.equals(primaryId)
-            ? NotificationPriority.HIGH
-            : NotificationPriority.NORMAL,
-        data: {
-          customerId: oid(customerId),
-          deepLink: `/crm/customers/${customerId}`,
-        },
-      })),
+    const primaryAfter = findPrimary(change.careTeam);
+    const requestId = requestContextStorage.getStore()?.requestId;
+    const groupKey =
+      origin === 'BULK_ADD' ? buildBulkPushGroupKey(requestId) : undefined;
+    await this.notifications.dispatch(
+      recipients.map((userId) => {
+        const isPrimary = !!primaryAfter && userId.equals(primaryAfter.userId);
+        return {
+          type: NotificationType.CUSTOMER_ASSIGNED,
+          recipientIds: [userId],
+          inApp: {
+            title: 'Bạn được phân chăm sóc khách mới',
+            body: `Bạn được phân chăm sóc khách ${customerName}`,
+            priority: isPrimary
+              ? NotificationPriority.HIGH
+              : NotificationPriority.NORMAL,
+          },
+          vars: { actorName: ctx.actor.displayName, customerName },
+          data: {
+            customerId: oid(customerId),
+            deepLink: `/crm/customers/${customerId}`,
+          },
+          context: {
+            careRole: isPrimary ? ('PRIMARY' as const) : ('MEMBER' as const),
+            origin,
+            ...(groupKey && { groupKey }),
+          },
+          dedupeKey: `ASSIGN:ADD:${customerId}:${versionAfter}`,
+        };
+      }),
       session,
     );
   }

@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useAuthStore } from '../../../stores/auth.store';
 import { getDefaultAppointmentWindow, useCrmActor } from './hooks';
-import { canBulkAssign, canExportCustomers, canImportCustomers, canManageProjects, canViewProjectCatalog, canViewReports, canViewSettings } from './access';
+import { canBulkAssign, canExportCustomers, canImportCustomers, canManageProjects, canViewPrimaryAssignee, canViewProjectCatalog, canViewReports, canViewSettings } from './access';
 
 const login = (role: 'ADMIN' | 'EDITOR' | 'MANAGER' | 'STAFF', extra: { teamId?: string | null; managedTeamIds?: string[] } = {}) =>
   useAuthStore.getState().setAuth('token', { _id: 'u1', email: 'a@b.vn', displayName: 'A', role, ...extra });
@@ -35,6 +35,7 @@ describe('quyền hiển thị theo vai trò (02 §3, 04 §4.2) — chỉ là UX
     expect([canExportCustomers('MANAGER'), canExportCustomers('STAFF')]).toEqual([true, false]);
     expect([canImportCustomers('ADMIN'), canImportCustomers('MANAGER')]).toEqual([true, false]);
     expect([canBulkAssign('MANAGER'), canBulkAssign('STAFF')]).toEqual([true, false]);
+    expect([canViewPrimaryAssignee('ADMIN'), canViewPrimaryAssignee('MANAGER'), canViewPrimaryAssignee('STAFF')]).toEqual([true, true, false]);
   });
 });
 

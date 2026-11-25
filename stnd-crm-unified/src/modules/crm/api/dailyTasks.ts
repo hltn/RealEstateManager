@@ -12,13 +12,14 @@
  * theo mình ghi hoặc mình là phụ trách chính; dịp đặc biệt khi mình trong nhóm chăm sóc; khách lâu chưa chăm sóc khi mình là phụ trách chính.
  */
 import { PERSONA_FIELDS } from '@crm/data/personaFields';
+import { getAppointmentAssigneeIds } from '@crm/lib/appointmentAssignees';
 import { getIdleDays, getListGroupOfStatus, getPrimaryUserId, isInCareTeam, isStaleCustomer } from '@crm/lib/customerRules';
 import { maskPhoneDisplay } from '@crm/lib/phone';
 import { toProjectLabel } from '@crm/lib/projectRules';
 import { includesVietnamese } from '@crm/lib/text';
 import { addDaysToDateKey, diffDateKeys, getVnTodayKey, toVnDateKey, vnDateTimeToIso } from '@crm/lib/dateTime';
 import type { CrmDataState } from '@crm/store/crmReducer';
-import type { Customer, DailyTaskGroup } from '@crm/types/crm';
+import type { Customer, DailyTaskGroup, UserRef } from '@crm/types/crm';
 import type { CrmActor } from './access';
 import { getAccessibleCustomers, matchesCustomerFilters, toStatusRef, toUserRef } from './queries';
 import type { DailyTask, DailyTaskQuery } from './types';
@@ -61,10 +62,14 @@ export const getNextOccurrenceKey = (month: number, day: number, todayKey: strin
   return thisYear >= todayKey ? thisYear : build(year + 1);
 };
 
+/** Danh sách người thực hiện (bỏ id rỗng/không còn). Việc không phải lịch hẹn có 0..1 người. */
+const toUserRefs = (users: CrmDataState['users'], ids: readonly (string | null | undefined)[]): UserRef[] =>
+  ids.flatMap((id) => (id ? (toUserRef(users, id) ?? []) : []));
+
 const toTaskCustomer = (state: CrmDataState, customer: Customer): DailyTask['customer'] => ({
   id: customer.id,
   fullName: customer.fullName,
-  phoneMasked: maskPhoneDisplay(customer.phone),
+  phoneMasked: customer.phone ? maskPhoneDisplay(customer.phone) : null,
   status: toStatusRef(state.catalogs, customer.statusId),
   projects: customer.interestedProjectIds.map((id) => ({ id, label: toProjectLabel(state.catalogs.projects, id) })),
 });
@@ -114,7 +119,8 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
   state.appointments.forEach((appointment) => {
     const customer = customersById.get(appointment.customerId);
     if (!customer || appointment.status !== 'SCHEDULED') return;
-    if (isMine && appointment.assigneeId !== actor.userId && getPrimaryUserId(customer.careTeam) !== actor.userId) return;
+    const assigneeIds = getAppointmentAssigneeIds(appointment);
+    if (isMine && !assigneeIds.includes(actor.userId) && getPrimaryUserId(customer.careTeam) !== actor.userId) return;
     pushTask(customer, {
       id: `task-apt-${appointment.id}`,
       kind: 'APPOINTMENT',
@@ -123,7 +129,11 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
       suggestion: appointment.note,
       appointmentId: appointment.id,
       project: appointment.projectId ? { id: appointment.projectId, label: toProjectLabel(state.catalogs.projects, appointment.projectId) } : null,
-      assignee: toUserRef(state.users, appointment.assigneeId),
+      assignee: toUserRef(state.users, assigneeIds[0]),
+      assignees: toUserRefs(state.users, assigneeIds),
+      // FR-32: cờ của lịch hẹn (người tạo lịch hoặc Quản trị), không suy từ vai trò Quản lý.
+      canEdit: actor.role === 'ADMIN' || appointment.createdBy === actor.userId,
+      canDelete: actor.role === 'ADMIN' || appointment.createdBy === actor.userId,
     });
   });
 
@@ -144,6 +154,7 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
       suggestion: nextAction.suggestion,
       careLogId: log.id,
       assignee: toUserRef(state.users, ownerId),
+      assignees: toUserRefs(state.users, [ownerId]),
     });
   });
 
@@ -164,6 +175,7 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
         title: daysUntil === 0 ? `${label} hôm nay` : `${label} sau ${daysUntil} ngày`,
         suggestion: `Gửi lời chúc ${label.toLowerCase()} tới khách`,
         assignee: toUserRef(state.users, getPrimaryUserId(customer.careTeam)),
+      assignees: toUserRefs(state.users, [getPrimaryUserId(customer.careTeam)]),
       });
     });
   });
@@ -181,6 +193,7 @@ export const listDailyTasks = (state: CrmDataState, actor: CrmActor, query: Dail
       title: customer.lastCareLogAt ? `${idleDays} ngày chưa chăm sóc` : `Chưa có nhật ký chăm sóc sau ${idleDays} ngày`,
       suggestion: 'Liên hệ lại để cập nhật nhu cầu của khách',
       assignee: toUserRef(state.users, primaryId),
+      assignees: toUserRefs(state.users, [primaryId]),
     });
   });
 

@@ -24,7 +24,7 @@ export enum NotificationPriority {
   NORMAL = 'NORMAL',
 }
 
-/** Trạng thái đẩy push. M5 chỉ có `NoopPushProvider` nên mọi thông báo là `SKIPPED`; M7 (FCM) dùng đủ 4 giá trị. */
+/** Trạng thái đẩy push. Khi dùng `NoopPushProvider` (cờ tắt/thiếu `VAPID_*`) thông báo là `SKIPPED`; M7 (Web Push VAPID) dùng đủ 4 giá trị. */
 export enum NotificationPushStatus {
   PENDING = 'PENDING',
   SENT = 'SENT',

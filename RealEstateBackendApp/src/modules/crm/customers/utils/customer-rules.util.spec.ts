@@ -229,8 +229,8 @@ describe('crossesAutoStatusThreshold (PT-023)', () => {
     [100, 75, true],
     [0, 100, false],
     [50, 100, false],
-  ])('%i -> %i = %s', (prev, next, expected) => {
-    expect(crossesAutoStatusThreshold(prev, next)).toBe(expected);
+  ])('%i -> %i = %s', (prev, next, isExpected) => {
+    expect(crossesAutoStatusThreshold(prev, next)).toBe(isExpected);
   });
 });
 
@@ -280,7 +280,7 @@ describe('crossesAutoStatusThreshold — toàn bộ 25 cặp & nhất quán vớ
     for (const prev of STEPS) {
       for (const next of STEPS) {
         if (!crossesAutoStatusThreshold(prev, next)) continue;
-        const anyChange = Object.values(ListGroup).some(
+        const hasAnyChange = Object.values(ListGroup).some(
           (currentGroup) =>
             decideAutoStatus({
               prevProgress: prev,
@@ -288,7 +288,7 @@ describe('crossesAutoStatusThreshold — toàn bộ 25 cặp & nhất quán vớ
               currentGroup,
             }) !== null,
         );
-        expect(anyChange).toBe(true);
+        expect(hasAnyChange).toBe(true);
       }
     }
   });

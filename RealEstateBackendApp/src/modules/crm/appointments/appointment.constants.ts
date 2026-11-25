@@ -33,6 +33,15 @@ export const APPOINTMENT_MAX_DURATION_MS = 24 * 60 * 60 * 1000;
 export const APPOINTMENT_PAST_TOLERANCE_MS = 5 * 60 * 1000;
 /** Tối đa 5 mốc nhắc, mỗi mốc trước tối đa 7 ngày. */
 export const APPOINTMENT_MAX_REMINDERS = 5;
+/** Lý do không giao được người thực hiện (`details.reason` của `USER_NOT_ASSIGNABLE`, FR-30). */
+export enum AssigneeRejectReason {
+  NOT_IN_CARE_TEAM = 'NOT_IN_CARE_TEAM',
+  NOT_ACTIVE = 'NOT_ACTIVE',
+  NOT_CRM_ROLE = 'NOT_CRM_ROLE',
+}
+
+/** Số người thực hiện tối đa của một lịch hẹn (FR-30). */
+export const APPOINTMENT_MAX_ASSIGNEES = 20;
 export const APPOINTMENT_MAX_REMIND_MINUTES = 7 * 24 * 60;
 /** Khoảng xem lịch tối đa 62 ngày (tài liệu 05 mục 2.9). */
 export const APPOINTMENT_RANGE_MAX_DAYS = 62;

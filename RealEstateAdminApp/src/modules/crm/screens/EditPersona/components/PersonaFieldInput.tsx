@@ -13,7 +13,7 @@ import { CRITERION_LABELS } from '@crm/lib/customerRules';
 import { addUniqueItem } from '../../CreateCustomer/customerFormRules';
 import { getTextareaClass } from '@crm/lib/uiClasses';
 import type { PersonaFieldDefinition } from '@crm/types/crm';
-import type { PersonaDraftValue } from '../personaForm';
+import { withCurrentOptions, type PersonaDraftValue } from '../personaForm';
 
 interface PersonaFieldInputProps {
   field: PersonaFieldDefinition;
@@ -45,7 +45,7 @@ export const PersonaFieldInput = ({ field, value, idPrefix, error, onChange }: P
       return field.options && field.options.length > 0 ? (
         <ChipMultiSelect
           legend={field.label}
-          options={field.options}
+          options={withCurrentOptions(field.options, value.options)}
           selected={value.options}
           onToggle={(option) => set({ options: value.options.includes(option) ? value.options.filter((item) => item !== option) : [...value.options, option] })}
         />
@@ -71,7 +71,7 @@ export const PersonaFieldInput = ({ field, value, idPrefix, error, onChange }: P
       return (
         <FormField inputId={inputId} label={field.label} error={error} hint={hint}>
           {field.type === 'SELECT' ? (
-            <SelectInput id={inputId} emptyLabel="— Chưa rõ —" options={field.options ?? []} value={value.text} onChange={(event) => set({ text: event.target.value })} />
+            <SelectInput id={inputId} emptyLabel="— Chưa rõ —" options={withCurrentOptions(field.options ?? [], [value.text])} value={value.text} onChange={(event) => set({ text: event.target.value })} />
           ) : field.type === 'TEXTAREA' ? (
             <textarea id={inputId} rows={3} value={value.text} onChange={(event) => set({ text: event.target.value })} placeholder={field.placeholder} className={getTextareaClass(Boolean(error))} />
           ) : field.type === 'DATE' ? (

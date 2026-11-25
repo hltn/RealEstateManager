@@ -23,8 +23,6 @@ import {
 } from '../../../common/decorators/api-response.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../../common/decorators/current-user.decorator';
-import { Roles } from '../../../common/decorators/roles.decorator';
-import { CRM_ROLES } from '../../../common/enums/user-role.enum';
 import { CrmFeatureGuard } from '../../../common/guards/crm-feature.guard';
 import { ParseObjectIdPipe } from '../../../common/pipes/parse-object-id.pipe';
 import { AreasService } from './areas.service';
@@ -34,6 +32,7 @@ import {
   ListAreasQueryDto,
   UpdateAreaDto,
 } from './dtos/area.dto';
+import { ActiveCrmUser } from '../common/access/active-crm-user.decorator';
 import { AdminOnly } from '../common/access/admin-only.decorator';
 
 /** Khu vực dạng cây (tài liệu 05 mục 2.8). Đọc: A/M/S. Ghi: Quản trị. */
@@ -45,7 +44,7 @@ export class AreasController {
   constructor(private readonly areasService: AreasService) {}
 
   @Get()
-  @Roles(...CRM_ROLES)
+  @ActiveCrmUser()
   @ApiOperation({
     summary: 'Danh sách khu vực (phẳng hoặc theo cha), kèm đường dẫn tổ tiên',
   })

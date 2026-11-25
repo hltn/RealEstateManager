@@ -37,7 +37,7 @@ export class Api {
   async callWithToken(accessToken: string, method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<{ status: number; data: Json }> {
     const res = await fetch(`${URLS.api}${path}`, {
       method,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}`, ...extraHeaders },
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), authorization: `Bearer ${accessToken}`, ...extraHeaders },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -55,7 +55,7 @@ export class Api {
   async createProject(label = 'Dự án'): Promise<{ id: string; name: string; code: string }> {
     const s = uid();
     const name = `${label} ${s}`;
-    const code = `E2E-${s}`;
+    const code = `E2E${s}`;
     const p = await this.ok('admin', 'POST', '/crm/projects', { name, code, status: 'SELLING', propertyTypes: ['Căn hộ'] });
     return { id: String(p.id ?? p._id), name, code };
   }
@@ -70,6 +70,19 @@ export class Api {
     const phone = opts.phone ?? vnPhone();
     const c = await this.ok(opts.role ?? 'staff1', 'POST', '/crm/customers', { fullName, phone, interestedProjectIds: opts.projectIds ?? [] });
     return { id: String(c.id ?? c._id), fullName, phone };
+  }
+
+  /** Khách KHÔNG có SĐT (v1.0.5, FR-02) do `role` tạo (mặc định staff1): body chỉ có họ tên. Trả thêm `customerCode` (KH-######). */
+  async createCustomerNoPhone(opts: { role?: RoleKey; label?: string } = {}): Promise<{ id: string; fullName: string; customerCode: string }> {
+    const fullName = `${opts.label ?? 'Khách-KhôngSĐT'}-${uid()}`;
+    const c = await this.ok(opts.role ?? 'staff1', 'POST', '/crm/customers', { fullName });
+    return { id: String(c.id ?? c._id), fullName, customerCode: String(c.customerCode) };
+  }
+
+  /** Mã khách `KH-######` của một khách (đọc qua API chi tiết bằng `role` có quyền xem). */
+  async customerCodeOf(customerId: string, role: RoleKey = 'admin'): Promise<string> {
+    const c = await this.ok(role, 'GET', `/crm/customers/${customerId}`);
+    return String(c.customerCode);
   }
 
   /** Lịch hẹn tạo bằng API: truyền `slot` (xem `todaySlot`/`tomorrowSlot`) hoặc `startAtIso`; KHÔNG gắn cứng ngày giờ. */

@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Lint (GitHub Actions). Chạy lint cho Admin App và Backend, KHÔNG sửa file (không dùng `--fix`).
+# Phạm vi: RealEstateAdminApp, RealEstateBackendApp. Không đụng RealEstateApp (mobile).
+# Không dùng secret, không deploy. Chạy trên Ubuntu để lộ lỗi hoa/thường tên file mà Windows che.
+# - Admin: `npm run lint` (oxlint), lỗi (error) là cổng chặn; cảnh báo (warning) không chặn.
+# - Backend: `npm run lint:ci` (ESLint, không `--fix`), lỗi (error) là cổng chặn; cảnh báo không chặn.
+# Tuyệt đối không đổi sang script `lint` của Backend vì script đó có `--fix` (tự sửa file).
+# ─────────────────────────────────────────────────────────────────────────────
+name: Lint
+
+on:
+  pull_request:
+    paths:
+      - 'RealEstateAdminApp/**'
+      - 'RealEstateBackendApp/**'
+      - '.github/workflows/lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'RealEstateAdminApp/**'
+      - 'RealEstateBackendApp/**'
+      - '.github/workflows/lint.yml'
+
+# Quyền tối thiểu cho GITHUB_TOKEN: chỉ đọc mã nguồn.
+permissions:
+  contents: read
+
+# Khóa theo TÊN NHÁNH nguồn để `push` và `pull_request` cùng nhánh vào một nhóm, lượt cũ bị hủy.
+concurrency:
+  group: lint-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  lint-admin:
+    name: Lint Admin App (oxlint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: RealEstateAdminApp
+    steps:
+      # Ghim theo SHA commit của tag chính thức (comment ghi tag để dễ nâng cấp).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: RealEstateAdminApp/.nvmrc
+          cache: npm
+          cache-dependency-path: RealEstateAdminApp/package-lock.json
+
+      - name: Cài phụ thuộc (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+  lint-backend:
+    name: Lint Backend (ESLint, không --fix)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: RealEstateBackendApp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: RealEstateAdminApp/.nvmrc
+          cache: npm
+          cache-dependency-path: RealEstateBackendApp/package-lock.json
+
+      - name: Cài phụ thuộc (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint (ESLint, chỉ báo lỗi, không sửa file)
+        run: npm run lint:ci

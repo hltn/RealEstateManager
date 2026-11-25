@@ -11,7 +11,7 @@ vi.mock('@crm/hooks/useContactActions', () => ({
 
 const renderFooter = () => {
   const onAddNote = vi.fn();
-  render(<MobileContactFooter customerId="c1" onAddNote={onAddNote} />);
+  render(<MobileContactFooter customerId="c1" hasPhone onAddNote={onAddNote} />);
   return { onAddNote };
 };
 

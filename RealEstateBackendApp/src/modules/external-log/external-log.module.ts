@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { CrmCommonModule } from '../crm/common/crm-common.module';
 
 import { ExternalLogController } from './controllers/external-log.controller';
 import {
@@ -19,6 +20,8 @@ import { ExternalLogService } from './services/external-log.service';
     MongooseModule.forFeature([
       { name: ExternalRequestLog.name, schema: ExternalRequestLogSchema },
     ]),
+    // CrmActorService cho ActiveAdminGuard của @AdminOnly() (FR-21).
+    CrmCommonModule,
   ],
   controllers: [ExternalLogController],
   providers: [ExternalLogService, ExternalLogSanitizerService],

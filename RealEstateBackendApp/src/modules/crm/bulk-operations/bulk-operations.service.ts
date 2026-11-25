@@ -20,6 +20,7 @@ import {
 } from '../customers/customer.errors';
 import { CustomerStatusChangeService } from '../customers/customer-status-change.service';
 import { CustomerDeletionService } from '../customers/customer-deletion.service';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { BulkTaggingService } from './bulk-tagging.service';
 import {
   BulkOperationDto,
@@ -44,7 +45,7 @@ const validationFailed = (message: string, details?: Record<string, unknown>) =>
 const toErrorCode = (error: unknown): string => {
   if (error instanceof BusinessException) return String(error.errorCode);
   if (error instanceof HttpException) {
-    return error.getStatus() === HttpStatus.FORBIDDEN
+    return error.getStatus() === Number(HttpStatus.FORBIDDEN)
       ? ErrorCode.INSUFFICIENT_ROLE
       : ErrorCode.VALIDATION_FAILED;
   }
@@ -69,6 +70,7 @@ export class BulkOperationsService {
     private readonly tagging: BulkTaggingService,
     private readonly deletion: CustomerDeletionService,
     private readonly rateLimit: CrmRateLimitService,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async run(
@@ -90,7 +92,7 @@ export class BulkOperationsService {
         result.succeeded.push(customerId);
       } catch (error) {
         const errorCode = toErrorCode(error);
-        if (errorCode === ErrorCode.INTERNAL_ERROR) {
+        if (errorCode === (ErrorCode.INTERNAL_ERROR as string)) {
           this.logger.error(
             `Thao tác hàng loạt ${dto.type} lỗi với một khách: ${(error as Error).message}`,
           );
@@ -110,12 +112,17 @@ export class BulkOperationsService {
     const { payload } = dto;
     switch (dto.type) {
       case BulkOperationType.CHANGE_STATUS: {
-        if (!payload.statusId) {
-          throw validationFailed('CHANGE_STATUS cần payload.statusId', {
-            field: 'payload.statusId',
-          });
+        if (!payload.statusId && !payload.statusCode) {
+          throw validationFailed(
+            'CHANGE_STATUS cần payload.statusCode hoặc payload.statusId',
+            { field: 'payload.statusCode' },
+          );
         }
-        const targetId = oid(payload.statusId);
+        // FR-40: nhận `statusCode` (ưu tiên) hoặc `statusId` (cũ); có cả hai mà không cùng bản ghi thì 400 cho cả lô.
+        const targetId = await this.statusChanges.resolveTargetId(
+          payload,
+          'payload.statusCode',
+        );
         return (customerId, session) =>
           this.statusChanges.applyChange(
             ctx,
@@ -162,8 +169,8 @@ export class BulkOperationsService {
 
   /**
    * DELETE: một `reason` chung (bắt buộc, 400 cho cả lô). Từng khách đi qua `CustomerDeletionService.applyDelete` nên
-   * quyền được kiểm RIÊNG từng khách (ngoài phạm vi xem -> `CUSTOMER_NOT_FOUND`, không thuộc "Bỏ" ->
-   * `CUSTOMER_NOT_DROPPED`, không đủ quyền xóa -> `INSUFFICIENT_ROLE`); một khách lỗi không làm hỏng khách khác.
+   * quyền được kiểm RIÊNG từng khách (ngoài phạm vi xem -> `CUSTOMER_NOT_FOUND`; không phải Admin hoặc người tạo
+   * khách -> `INSUFFICIENT_ROLE`; FR-31, không điều kiện trạng thái "Bỏ"); một khách lỗi không làm hỏng khách khác.
    */
   private buildDelete(
     ctx: AccessContext,
@@ -177,9 +184,7 @@ export class BulkOperationsService {
     }
     const { reason } = payload;
     return (customerId: string, session: ClientSession) =>
-      this.deletion.applyDelete(ctx, customerId, reason, source, session, {
-        requireDropped: true,
-      });
+      this.deletion.applyDelete(ctx, customerId, reason, source, session);
   }
 
   private buildAssign(
@@ -189,35 +194,47 @@ export class BulkOperationsService {
   ) {
     // Nhân viên không được phân người chăm sóc hàng loạt (ma trận 4.2).
     if (!isAdminOrManager(ctx.actor)) throw insufficientRole();
+    // PRIMARY đã khóa (FR-11): hàng loạt chỉ thêm MEMBER, không đặt/đổi PRIMARY.
+    if (payload.primaryUserId) {
+      throw validationFailed('ASSIGN không đặt phụ trách chính hàng loạt', {
+        field: 'payload.primaryUserId',
+      });
+    }
     const memberIds = (payload.memberIds ?? []).map(oid);
-    const primaryUserId = payload.primaryUserId
-      ? oid(payload.primaryUserId)
-      : undefined;
-    if (memberIds.length === 0 && !primaryUserId) {
-      throw validationFailed(
-        'ASSIGN cần payload.memberIds hoặc primaryUserId',
-        {
-          field: 'payload',
-        },
-      );
+    if (memberIds.length === 0) {
+      throw validationFailed('ASSIGN cần payload.memberIds', {
+        field: 'payload.memberIds',
+      });
     }
     return (customerId: string, session: ClientSession) =>
       this.careTeam.applyInSession(
         ctx,
         customerId,
         {
-          // Quản trị/Quản lý đã được chặn ở trên; phạm vi khách do `CustomerScope` bảo đảm.
-          authorize: () => undefined,
+          // FR-31: cổng ngoài (Quản trị/Quản lý) ở trên; RIÊNG TỪNG KHÁCH phải là chủ khách (Admin, người tạo, Quản lý
+          // nhóm chủ). Khách không đủ quyền vào `failed[]` với `INSUFFICIENT_ROLE` (403), khách khác không bị ảnh hưởng.
+          authorize: async (_careTeam, customer, session) => {
+            if (
+              !(await this.ownerTeam.hasOwnerRights(
+                ctx.actor,
+                customer,
+                session,
+              ))
+            ) {
+              throw insufficientRole();
+            }
+          },
+          // Khách `careTeam` rỗng: `planAddMembers` báo `PRIMARY_REQUIRED` riêng khách đó (đặt PRIMARY lần đầu dùng POST members).
           plan: (current, now) =>
             planAddMembers(
               current,
-              { userIds: memberIds, primaryUserId },
+              { userIds: memberIds },
               ctx.actor.userId,
               now,
-              { skipExisting: true, allowPrimaryChange: true },
+              { skipExisting: true },
             ),
-          restrictToActorScope: true,
           source,
+          origin: 'BULK_ADD',
         },
         session,
       );

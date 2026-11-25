@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { AppointmentStatus } from '../appointments/appointment.constants';
+import { getAssigneeIds } from '../appointments/appointment-assignee';
 import { planAppointmentReminders } from '../appointments/appointment.rules';
 import {
   Appointment,
@@ -16,7 +17,9 @@ import { Reminder, ReminderDocument } from './schemas/reminder.schema';
 export interface ReminderAppointmentInput {
   _id: Types.ObjectId;
   customerId: Types.ObjectId;
-  assigneeId: Types.ObjectId;
+  /** DEPRECATED: dùng `assigneeIds`; lịch chưa backfill chỉ có trường này (FR-30). */
+  assigneeId?: Types.ObjectId;
+  assigneeIds?: Types.ObjectId[];
   startAt: Date;
   status: AppointmentStatus;
   deletedAt?: Date | null;
@@ -54,10 +57,10 @@ export class RemindersWriterService {
     now: Date,
     session: ClientSession,
   ): Promise<void> {
-    const active =
+    const isActive =
       appointment.status === AppointmentStatus.SCHEDULED &&
       !appointment.deletedAt;
-    const planned = active
+    const planned = isActive
       ? planAppointmentReminders(
           appointment.startAt,
           appointment.remindBeforeMinutes,
@@ -82,7 +85,9 @@ export class RemindersWriterService {
                 type: ReminderType.APPOINTMENT,
                 customerId: appointment.customerId,
                 refId: appointment._id,
-                recipientIds: [appointment.assigneeId],
+                // Ảnh chụp người thực hiện lúc tạo nhắc (chỉ metadata, `$setOnInsert`): dispatch tính lại người nhận
+                // = `assigneeIds` giao tập hợp lệ HIỆN TẠI của khách lúc gửi (FR-33).
+                recipientIds: getAssigneeIds(appointment),
                 priorityRecipientId: null,
                 fireAt: reminder.fireAt,
                 dueAt: appointment.startAt,
@@ -161,6 +166,7 @@ export class RemindersWriterService {
           type: ReminderType.FOLLOW_UP,
           customerId: careLog.customerId,
           refId: careLog._id,
+          // Chỉ là metadata/gợi ý: dispatch tính lại người nhận từ careTeam ACTIVE lúc gửi (FR-19).
           recipientIds: [careLog.authorId],
           priorityRecipientId: null,
           fireAt: careLog.dueAt,

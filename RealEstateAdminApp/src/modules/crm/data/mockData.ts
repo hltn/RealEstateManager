@@ -5,6 +5,7 @@
  * (4 giá trị đúng tên), phân công theo userId với đúng 1 phụ trách chính, SĐT E.164, mọi thời điểm là ISO có năm.
  * Thời điểm được dựng TƯƠNG ĐỐI theo ngày tạo dữ liệu (`now`) để màn "Việc hôm nay" luôn có việc quá hạn / hôm nay / sắp tới.
  */
+import { formatCustomerCode } from '@crm/lib/customerCode';
 import { addDaysToDateKey, getVnTodayKey, vnDateTimeToIso } from '@crm/lib/dateTime';
 import {
   buildCareTeam,
@@ -23,7 +24,8 @@ type PersonaSeed = Record<string, string | string[] | boolean | [number, number]
 interface CustomerSeed {
   id: string;
   fullName: string;
-  phone: string;
+  /** `null` = khách chưa có SĐT (FR-02). */
+  phone: string | null;
   email?: string;
   statusId: string;
   sourceId?: string;
@@ -63,7 +65,7 @@ const toPersonaValues = (seed: PersonaSeed, updatedBy: string, updatedAt: string
     }
   });
 
-const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
+const buildCustomer = (seed: CustomerSeed, at: AtFn, customerCode: string): Customer => {
   const createdAt = at(-seed.createdDaysAgo, '09:00');
   const careTeam = buildCareTeam(seed.primaryId, seed.memberIds ?? [], seed.primaryId, createdAt);
   const criteria = createEmptyCriteria();
@@ -76,6 +78,7 @@ const buildCustomer = (seed: CustomerSeed, at: AtFn): Customer => {
   const persona = toPersonaValues(seed.persona ?? {}, seed.primaryId, createdAt);
   return {
     id: seed.id,
+    customerCode,
    
     fullName: seed.fullName,
     phone: seed.phone,
@@ -128,7 +131,7 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
   const seeds: CustomerSeed[] = [
     {
       id: 'CUST-001', fullName: 'Nguyễn Văn An', phone: '+84912345678', email: 'nguyen.vanan@example.com',
-      statusId: 'st-interested', sourceId: 'src-facebook', projectIds: ['proj-1', 'proj-2'], areaId: 'area-tp-ho-chi-minh', tagIds: ['tag-golf', 'tag-business-owner'],
+      statusId: 'INTERESTED', sourceId: 'FACEBOOK_ADS', projectIds: ['QTERRA', 'PRIVIA'], areaId: 'TP_HO_CHI_MINH', tagIds: ['tag-golf', 'tag-business-owner'],
       nationalId: '079092001234', primaryId: 'hanh', memberIds: ['thao'], doneCriteria: ['demand', 'finance'], createdDaysAgo: 25,
       criteriaText: {
         demand: 'Căn hộ 3PN, view sông, để ở và đầu tư lâu dài.',
@@ -148,7 +151,7 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-002', fullName: 'Trần Thị Bích', phone: '+84988333112', email: 'bich.tran@investor.vn',
-      statusId: 'st-net', sourceId: 'src-website', projectIds: ['proj-2', 'proj-1'], areaId: 'area-ha-noi', tagIds: ['tag-finance'],
+      statusId: 'NET', sourceId: 'WEBSITE', projectIds: ['PRIVIA', 'QTERRA'], areaId: 'HA_NOI', tagIds: ['tag-finance'],
       nationalId: '024088008721', primaryId: 'minh', doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 40,
       criteriaText: { demand: 'Căn 2PN The Privia để cho thuê.', motivation: 'Có dòng tiền nhàn rỗi cần giải ngân trước quý 4.', finance: '100% tiền mặt.', timing: 'Đang chờ kiểm tra điều khoản bảo lãnh tiến độ.' },
       persona: {
@@ -161,7 +164,7 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-003', fullName: 'Lê Hoàng Nam', phone: '+84912888921', email: 'hoangnam.le@holding.vn',
-      statusId: 'st-interested', sourceId: 'src-event', projectIds: ['proj-1'], areaId: 'area-tp-ho-chi-minh', tagIds: ['tag-golf', 'tag-food'],
+      statusId: 'INTERESTED', sourceId: 'EVENT', projectIds: ['QTERRA'], areaId: 'TP_HO_CHI_MINH', tagIds: ['tag-golf', 'tag-food'],
       nationalId: '001085005589', primaryId: 'tung', memberIds: ['vy'], doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 18,
       criteriaText: { demand: 'Căn 3PN view sông.', motivation: 'Chuyển nhà để con học gần trường.', finance: 'Tài chính khoảng 10 tỷ.', timing: 'Chờ mở bán chính thức giai đoạn 2.' },
       persona: {
@@ -173,7 +176,7 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-004', fullName: 'Phạm Quỳnh Trang', phone: '+84977555562', email: 'quynhtrang@gmail.com',
-      statusId: 'st-interested', sourceId: 'src-facebook', projectIds: ['proj-2'], areaId: 'area-tp-ho-chi-minh', tagIds: ['tag-gym', 'tag-smarthome', 'tag-tech'],
+      statusId: 'INTERESTED', sourceId: 'FACEBOOK_ADS', projectIds: ['PRIVIA'], areaId: 'TP_HO_CHI_MINH', tagIds: ['tag-gym', 'tag-smarthome', 'tag-tech'],
       nationalId: '079195004412', primaryId: 'hanh', doneCriteria: ['demand', 'motivation', 'finance', 'timing'], createdDaysAgo: 12,
       criteriaText: { demand: 'Căn 2PN hoàn thiện cơ bản.', motivation: 'Ra ở riêng.', finance: 'Đã được duyệt sơ bộ hạn mức vay.', timing: 'Muốn chốt ngay khi có căn tầng 12.' },
       persona: {
@@ -184,7 +187,7 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-005', fullName: 'Đặng Tuấn Kiệt', phone: '+84934771650', email: 'tuankiet.dang@vinametal.com',
-      statusId: 'st-net', sourceId: 'src-referral', projectIds: ['proj-4'], areaId: 'area-ha-noi', tagIds: ['tag-nature', 'tag-manufacturing'],
+      statusId: 'NET', sourceId: 'REFERRAL', projectIds: ['VHOP'], areaId: 'HA_NOI', tagIds: ['tag-nature', 'tag-manufacturing'],
       nationalId: '001079006650', primaryId: 'quan', doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 33,
       criteriaText: { demand: 'Biệt thự song lập.', motivation: 'Nâng cấp không gian sống cho gia đình 3 thế hệ.', finance: 'Vốn tự có 10 tỷ, vay thêm 6 tỷ.', timing: 'Đợi ngân hàng thẩm định tài sản thế chấp.' },
       persona: {
@@ -195,14 +198,14 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-006', fullName: 'Vũ Đình Quân', phone: '+84918654319', email: 'quan.vudinh@logistics.vn',
-      statusId: 'st-interested', sourceId: 'src-website', projectIds: ['proj-3'], areaId: 'area-hung-yen', tagIds: ['tag-trading'],
+      statusId: 'INTERESTED', sourceId: 'WEBSITE', projectIds: ['ECOPARK'], areaId: 'HUNG_YEN', tagIds: ['tag-trading'],
       primaryId: 'hanh', doneCriteria: ['demand', 'finance'], createdDaysAgo: 30,
       criteriaText: { demand: 'Nhà phố để kinh doanh cà phê.', motivation: 'Đang khảo sát lượng khách qua lại.', finance: 'Sẵn 4 tỷ tiền mặt.' },
       persona: { occupation: 'Kinh doanh phụ tùng ô tô', decision_maker: 'Vợ chồng cùng duyệt', preferred_channel: 'Gặp mặt', salutation: 'Anh Quân', property_type: 'Nhà phố / Shophouse', budget: [6, 9] },
     },
     {
       id: 'CUST-007', fullName: 'Lê Hoàng Long', phone: '+84903568921', email: 'long.le@holding.vn',
-      statusId: 'st-interested', sourceId: 'src-website', projectIds: ['proj-3', 'proj-1'], areaId: 'area-tp-ho-chi-minh', tagIds: ['tag-yacht', 'tag-golf', 'tag-nature', 'tag-finance'],
+      statusId: 'INTERESTED', sourceId: 'WEBSITE', projectIds: ['ECOPARK', 'QTERRA'], areaId: 'TP_HO_CHI_MINH', tagIds: ['tag-yacht', 'tag-golf', 'tag-nature', 'tag-finance'],
       primaryId: 'hanh', memberIds: ['minh'], doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 20,
       criteriaText: { demand: 'Biệt thự song lập view hồ.', motivation: 'Không gian sống yên tĩnh cho bố mẹ và con nhỏ.', finance: 'Thanh toán bằng tiền mặt.', timing: 'Xem nhà mẫu trước khi chọn căn.' },
       persona: {
@@ -213,7 +216,7 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-008', fullName: 'Đặng Quốc Huy', phone: '+84933221199', email: 'huy.dang@fmcg.com',
-      statusId: 'st-dropped', sourceId: 'src-telesales', projectIds: ['proj-6'], areaId: 'area-tp-ho-chi-minh',
+      statusId: 'DROPPED', sourceId: 'TELESALES', projectIds: ['MASTERI'], areaId: 'TP_HO_CHI_MINH',
       primaryId: 'tuan', doneCriteria: ['demand'], createdDaysAgo: 45,
       criteriaText: { demand: 'Đất nền làm kho bãi.' },
       persona: { occupation: 'Chủ xưởng cơ khí khuôn mẫu', preferred_channel: 'Điện thoại', salutation: 'Anh Huy' },
@@ -221,24 +224,33 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
     },
     {
       id: 'CUST-009', fullName: 'Hoàng Minh Đức', phone: '+84943112899', email: 'duc.hoangminh@example.com',
-      statusId: 'st-net', sourceId: 'src-website', projectIds: ['proj-4'], areaId: 'area-ha-noi',
+      statusId: 'NET', sourceId: 'WEBSITE', projectIds: ['VHOP'], areaId: 'HA_NOI',
       primaryId: 'quan', doneCriteria: ['demand', 'motivation', 'finance'], createdDaysAgo: 28,
       persona: { decision_maker: 'Vợ chồng cùng duyệt', preferred_channel: 'Điện thoại', salutation: 'Anh Đức', bedroom_type: '2PN (65-78m²)', budget: [4, 5], purchase_purposes: ['Ở thực'] },
     },
     {
       id: 'CUST-010', fullName: 'Phạm Thanh Mai', phone: '+84909432178', email: 'mai.pham@example.com',
-      statusId: 'st-interested', sourceId: 'src-facebook', projectIds: ['proj-6'], areaId: 'area-tp-ho-chi-minh', tagIds: ['tag-pets'],
+      statusId: 'INTERESTED', sourceId: 'FACEBOOK_ADS', projectIds: ['MASTERI'], areaId: 'TP_HO_CHI_MINH', tagIds: ['tag-pets'],
       primaryId: 'trang', doneCriteria: ['demand'], createdDaysAgo: 9,
       persona: { decision_maker: 'Khách tự quyết', preferred_channel: 'Zalo', salutation: 'Chị Mai', bedroom_type: '2PN (65-78m²)', budget: [4.5, 5.5], expected_purchase_time: 'Quý 1/2027' },
     },
     {
       id: 'CUST-011', fullName: 'Bùi Minh Phương', phone: '+84983221445', email: 'phuong.bui@example.com',
-      statusId: 'st-not-contacted', sourceId: 'src-website', projectIds: ['proj-3'], areaId: 'area-ha-noi',
+      statusId: 'NOT_CONTACTED', sourceId: 'WEBSITE', projectIds: ['ECOPARK'], areaId: 'HA_NOI',
       primaryId: 'hanh', createdDaysAgo: 2,
+    },
+    // v1.0.5: khách chưa có SĐT (FR-02) và khách TRÙNG SĐT với CUST-001 (FR-03 cho phép trùng).
+    {
+      id: 'CUST-012', fullName: 'Ngô Thu Hà', phone: null,
+      statusId: 'NOT_CONTACTED', sourceId: 'WEBSITE', primaryId: 'hanh', createdDaysAgo: 1,
+    },
+    {
+      id: 'CUST-013', fullName: 'Nguyễn Văn An (Hà Nội)', phone: '+84912345678',
+      statusId: 'NOT_CONTACTED', sourceId: 'FACEBOOK_ADS', areaId: 'HA_NOI', primaryId: 'thao', createdDaysAgo: 1,
     },
   ];
 
-  const customers = seeds.map((seed) => buildCustomer(seed, at));
+  const customers = seeds.map((seed, index) => buildCustomer(seed, at, formatCustomerCode(index + 1)));
   const nationalIds = Object.fromEntries(seeds.filter((seed) => seed.nationalId).map((seed) => [seed.id, seed.nationalId as string]));
 
   const log = (
@@ -270,11 +282,11 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
       nextAction: { suggestion: 'Hẹn chị Trang đối chiếu phụ lục hoàn thiện', dueAt: at(0, '16:00'), appointmentId: null },
     }),
     log('LOG-009', 'CUST-003', 'tung', at(-1, '10:00'), 'ZALO', "Gửi video flycam tiến độ thi công móng Q'Terra, khách đã xem.", {
-      contactResultId: 'cr-comparing',
+      contactResultId: 'COMPARING',
       nextAction: { suggestion: 'Gửi bảng so sánh 2 dự án khách đang cân nhắc', dueAt: at(5, '09:15'), appointmentId: null },
     }),
     log('LOG-001', 'CUST-001', 'hanh', at(-1, '14:15'), 'CALL', "Khách gọi hỏi thêm chính sách vay và tiến độ đóng tiền đợt 2 của Q'Terra, hẹn tuần tới đi xem sa bàn và nhà mẫu.", {
-      contactResultId: 'cr-loan',
+      contactResultId: 'LOAN_ADVICE',
     }),
     log('LOG-012', 'CUST-009', 'quan', at(-2, '16:20'), 'CALL', 'Tư vấn sơ bộ chính sách thanh toán, khách muốn nghe kỹ phương án thanh toán sớm.', {
       nextAction: { suggestion: 'Gọi tư vấn chính sách thanh toán sớm', dueAt: at(0, '10:00'), appointmentId: null },
@@ -290,12 +302,12 @@ export const buildSeedData = (now: Date = new Date()): SeedData => {
       nextAction: { suggestion: 'Sắp xếp buổi gặp với trưởng phòng kinh doanh', dueAt: at(3, '10:30'), appointmentId: null },
     }),
     log('LOG-003', 'CUST-001', 'thao', at(-5, '09:30'), 'ZALO', 'Nhắn Zalo gửi bảng tính dòng tiền và phương án vay hỗ trợ 40%. Khách đã xem, đang bàn với gia đình.', {
-      contactResultId: 'cr-price',
+      contactResultId: 'PRICE_QUOTE',
       nextAction: { suggestion: 'Gửi thông tin mới của dự án, thử gọi lại buổi tối (sau 19h)', dueAt: at(-2, '19:00'), appointmentId: null },
     }),
-    log('LOG-002', 'CUST-001', 'hanh', at(-6, '15:30'), 'CALL', 'Gọi điện, khách đang bận việc công ty, hẹn gọi lại sau 19h.', { contactResultId: 'cr-busy' }),
-    log('LOG-004', 'CUST-001', 'hanh', at(-10, '16:00'), 'MEETING', "Gặp trực tiếp tại văn phòng Q'Terra, khách đi cùng vợ, thích căn 3PN tầng cao view sông.", { contactResultId: 'cr-site-visit' }),
-    log('LOG-015', 'CUST-008', 'tuan', at(-20, '10:00'), 'CALL', 'Khách báo dừng kế hoạch mua, chuyển vốn mở rộng xưởng.', { contactResultId: 'cr-declined' }),
+    log('LOG-002', 'CUST-001', 'hanh', at(-6, '15:30'), 'CALL', 'Gọi điện, khách đang bận việc công ty, hẹn gọi lại sau 19h.', { contactResultId: 'CALL_BACK' }),
+    log('LOG-004', 'CUST-001', 'hanh', at(-10, '16:00'), 'MEETING', "Gặp trực tiếp tại văn phòng Q'Terra, khách đi cùng vợ, thích căn 3PN tầng cao view sông.", { contactResultId: 'SITE_VISIT' }),
+    log('LOG-015', 'CUST-008', 'tuan', at(-20, '10:00'), 'CALL', 'Khách báo dừng kế hoạch mua, chuyển vốn mở rộng xưởng.', { contactResultId: 'DECLINED' }),
     log('LOG-005', 'CUST-001', 'tuan', at(-22, '10:20'), 'OTHER', 'Kiểm tra tình trạng quy hoạch và mặt bằng căn 3PN view sông giúp khách.'),
   ];
 

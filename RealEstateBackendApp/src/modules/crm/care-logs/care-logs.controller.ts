@@ -44,7 +44,7 @@ const CLIENT_TYPE_HEADER = 'x-client-type';
 
 /**
  * Nhật ký chăm sóc (tài liệu 05 mục 2.6). Quyền: Quản trị, Quản lý (trong phạm vi), Nhân viên trong nhóm chăm sóc;
- * sửa/xóa: tác giả, Quản trị, Quản lý (trong phạm vi) — do service kiểm.
+ * sửa/xóa: chỉ tác giả hoặc Quản trị (FR-32; Quản lý, người tạo khách không sửa/xóa của người khác) — do service kiểm.
  */
 @ApiTags('CRM - Care logs')
 @ApiBearerAuth()
@@ -101,7 +101,8 @@ export class CareLogsController {
   @Patch(':logId')
   @Roles(...CRM_ROLES)
   @ApiOperation({
-    summary: 'Sửa nhật ký (tác giả, Quản trị, Quản lý trong phạm vi)',
+    summary:
+      'Sửa nhật ký (chỉ tác giả hoặc Quản trị; người khác 403 INSUFFICIENT_ROLE)',
   })
   @ApiDataResponse(CareLogResponseDto)
   async update(

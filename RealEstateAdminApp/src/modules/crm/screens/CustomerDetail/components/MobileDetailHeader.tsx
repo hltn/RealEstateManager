@@ -2,6 +2,7 @@
 // Nằm TRONG nội dung (không sticky/fixed): header + drawer phía trên là `AppHeader`/`AppSidebar` của Admin,
 // nên không vẽ thêm top app bar thứ hai như bản Stitch.
 // PT-017: KHÔNG hiện tên khách ở đây (tên dài chiếm chỗ trên màn hẹp, và đã có ở thẻ tóm tắt hồ sơ `CustomerHeader` ngay bên dưới).
+// Mã khách (FR-04) KHÔNG ở đây nữa: nằm ngay dưới tên trong `CustomerHeader` mobile, là chip bấm để sao chép.
 // PT-029: KHÔNG có nút "Chỉnh sửa" ở góc phải (đứng lửng lơ ngoài thẻ); lối vào `edit_persona` còn ở nút "Sửa" của thẻ "Thông tin" và "Chân dung khách hàng".
 import { ArrowLeft } from 'lucide-react';
 import { useCrmActions } from '@crm/store';

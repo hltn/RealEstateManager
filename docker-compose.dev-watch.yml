@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.dev-watch.yml: override TÙY CHỌN cho dev, backend tự biên dịch lại khi sửa mã (v1.0.6, T-29, FR-17).
+# Dùng THÊM sau docker-compose.dev.yml (ba file, đúng thứ tự); KHÔNG dùng ở staging/production:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.dev-watch.yml up -d --build backend
+#   cd RealEstateAdminApp && npx vite         # FE chạy Vite trên host (http://localhost:5173); proxy `/api` -> localhost:3000 (container). KHÔNG dùng `npm run dev`: nó chạy thêm backend host tranh cổng 3000, không có Mongo/Redis
+#
+# Khác compose gốc (đây là NGOẠI LỆ DUY NHẤT có `build:`; chỉ build stage `dev` của RealEstateBackendApp/Dockerfile):
+#   - backend dựng từ mã nguồn (`target: dev`), mount ./RealEstateBackendApp/src vào /app/src, chạy `nest start --watch`.
+#     Sửa package.json/cấu hình ngoài src/ thì phải `up -d --build backend` lại (chỉ src/ được mount).
+#   - tag image RIÊNG `realestatemanager-backend:dev-watch`: KHÔNG ghi đè `realestatemanager-backend:current` (tag do release/deploy quản lý).
+#   - publish backend ra loopback 127.0.0.1:3000 (DEV_BACKEND_PORT đổi cổng host) để vite dev gọi thẳng; không lộ ra mạng LAN.
+#   - FRONTEND_URL của backend ghi đè thành http://localhost:5173 (CORS origin duy nhất = vite dev). Service `frontend` (nginx) của compose gốc
+#     vẫn chạy với FRONTEND_URL trong `.env`; không cần thì `docker compose ... stop frontend`.
+#   - theo dõi file bằng polling (CHOKIDAR_USEPOLLING/TSC_WATCHFILE): Docker Desktop trên Windows/macOS không chuyển sự kiện inotify của thư mục
+#     mount từ host sang container nên không có polling thì `--watch` không thấy file đổi (tốn thêm một ít CPU).
+#
+# NODE_ENV: mặc định GIỮ production như compose gốc (quyết định chốt: production ở mọi nơi). Muốn hành vi dev (không cờ Secure cho cookie refresh,
+# nới giới hạn login bằng AUTH_LOGIN_THROTTLE_LIMIT 1..10000, hiện stack trace) thì đặt trong `.env`: DEV_NODE_ENV=development và
+# AUTH_LOGIN_THROTTLE_LIMIT=<số>. Với development, user-roles-migration guard chỉ cảnh báo (production thì fail-fast): chạy dev trên DB đã migrate.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  backend:
+    image: realestatemanager-backend:dev-watch
+    build:
+      context: ./RealEstateBackendApp
+      target: dev
+    command: ["npx", "nest", "start", "--watch"]
+    ports:
+      - "127.0.0.1:${DEV_BACKEND_PORT:-3000}:3000"
+    volumes:
+      - ./RealEstateBackendApp/src:/app/src
+    environment:
+      - NODE_ENV=${DEV_NODE_ENV:-production}
+      - AUTH_LOGIN_THROTTLE_LIMIT=${AUTH_LOGIN_THROTTLE_LIMIT:-}
+      - FRONTEND_URL=http://localhost:5173
+      - CHOKIDAR_USEPOLLING=true
+      - TSC_WATCHFILE=PriorityPollingInterval
+    healthcheck:
+      # Lần đầu `nest start` biên dịch cả dự án (swc) rồi mới nghe cổng: kéo dài start_period so với image production.
+      # Lần đầu chạy trên ổ D: (mount + polling) đo được ~267s tới "Starting Nest application" nên đặt 300s; các lần sau nhanh hơn nhiều.
+      start_period: 300s

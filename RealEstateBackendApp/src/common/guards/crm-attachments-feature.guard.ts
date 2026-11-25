@@ -5,7 +5,7 @@ import {
 } from '../../shared/feature-flags/feature-flag.service';
 
 /**
- * Cổng tính năng ảnh đính kèm nhật ký: `FEATURE_CRM_ATTACHMENTS` tắt thì route upload/gỡ ảnh trả 404
+ * Cổng tính năng ảnh đính kèm nhật ký: `CRM_ATTACHMENTS_ENABLED` tắt thì route upload/gỡ ảnh trả 404
  * (giống route không tồn tại). Dùng kèm `CrmFeatureGuard` (cờ CRM tổng).
  */
 @Injectable()

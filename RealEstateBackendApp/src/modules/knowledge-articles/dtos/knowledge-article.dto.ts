@@ -24,7 +24,10 @@ export class GetKnowledgeArticlesQueryDto extends PaginationQueryDto {
   @IsEnum(KnowledgeArticleState)
   status?: KnowledgeArticleState;
 
-  @ApiPropertyOptional({ description: 'Filter by category slug', example: 'ha-noi' })
+  @ApiPropertyOptional({
+    description: 'Filter by category slug',
+    example: 'ha-noi',
+  })
   @IsOptional()
   @IsString()
   category?: string;
@@ -34,7 +37,11 @@ export class GetKnowledgeArticlesQueryDto extends PaginationQueryDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ description: 'Sort order', enum: ['newest', 'oldest'], default: 'newest' })
+  @ApiPropertyOptional({
+    description: 'Sort order',
+    enum: ['newest', 'oldest'],
+    default: 'newest',
+  })
   @IsOptional()
   @IsIn(['newest', 'oldest'])
   sort?: 'newest' | 'oldest' = 'newest';
@@ -57,7 +64,11 @@ export class RunPipelineDto {
   @IsString()
   category?: string;
 
-  @ApiPropertyOptional({ description: 'Number of articles to generate', example: 3, default: 3 })
+  @ApiPropertyOptional({
+    description: 'Number of articles to generate',
+    example: 3,
+    default: 3,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

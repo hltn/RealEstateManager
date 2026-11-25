@@ -12,6 +12,7 @@ import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { CrmActorService } from '../crm/common/access/crm-actor.service';
 
 describe('SettingsController (contract mục 1/3)', () => {
   let controller: SettingsController;
@@ -27,7 +28,11 @@ describe('SettingsController (contract mục 1/3)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SettingsController],
-      providers: [{ provide: SettingsService, useValue: service }],
+      providers: [
+        { provide: SettingsService, useValue: service },
+        // @AdminOnly() (FR-21) gắn ActiveAdminGuard: Nest cần CrmActorService để dựng guard (guard không chạy trong unit test).
+        { provide: CrmActorService, useValue: {} },
+      ],
     }).compile();
 
     controller = module.get<SettingsController>(SettingsController);
@@ -128,17 +133,26 @@ describe('SettingsController (contract mục 1/3)', () => {
 
   describe('@Roles metadata — RBAC matrix mục 11', () => {
     it('getAiConfig có @Roles(ADMIN)', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getAiConfig);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        SettingsController.prototype.getAiConfig,
+      );
       expect(roles).toEqual([UserRole.ADMIN]);
     });
 
     it('updateAiConfig có @Roles(ADMIN)', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.updateAiConfig);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        SettingsController.prototype.updateAiConfig,
+      );
       expect(roles).toEqual([UserRole.ADMIN]);
     });
 
     it('getOpenRouterModels có @Roles(ADMIN)', () => {
-      const roles = Reflect.getMetadata(ROLES_KEY, SettingsController.prototype.getOpenRouterModels);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        SettingsController.prototype.getOpenRouterModels,
+      );
       expect(roles).toEqual([UserRole.ADMIN]);
     });
   });

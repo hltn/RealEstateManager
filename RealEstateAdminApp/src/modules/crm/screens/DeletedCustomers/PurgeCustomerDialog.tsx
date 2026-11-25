@@ -7,6 +7,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { DialogFrame } from '@crm/components/DialogFrame';
 import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS, DANGER_BUTTON_CLASS, FORM_LABEL_CLASS, MODAL_INPUT_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 
 /**
  * Từ gõ để mở khóa nút xóa: ĐÚNG "XOA" hoặc "XÓA" (không phân biệt hoa/thường, cắt khoảng trắng, so sánh NFC).
@@ -21,7 +22,7 @@ const LOST_DATA = ['Nhật ký chăm sóc', 'Ảnh và tệp đính kèm (xóa c
 
 interface PurgeCustomerDialogProps {
   /** Khách đang xóa vĩnh viễn; `null` = đóng. */
-  customer: { id: string; fullName: string; phoneMasked: string } | null;
+  customer: { id: string; fullName: string; phoneMasked: string | null } | null;
   isSubmitting: boolean;
   error: string | null;
   onConfirm: () => void;
@@ -57,7 +58,7 @@ const PurgeSteps = ({ customer, step, typed, warningId, isSubmitting, error, onS
       </p>
       <div className="space-y-2 text-theme-sm text-gray-600 dark:text-gray-400">
         <p>
-          Khách: <strong className="text-gray-800 dark:text-white/90">{customer.fullName}</strong> ({customer.phoneMasked})
+          Khách: <strong className="text-gray-800 dark:text-white/90">{customer.fullName}</strong> {hasPhone(customer.phoneMasked) ? `(${customer.phoneMasked})` : null}
         </p>
         <p>Các dữ liệu sau sẽ bị xóa hẳn:</p>
         <ul className="list-disc space-y-0.5 pl-5">

@@ -16,6 +16,7 @@ import type { CustomerDetail } from '@crm/api';
 import { Modal } from '../../../components/ui/modal';
 import { useFocusTrap } from '@crm/hooks/useFocusTrap';
 import { ICON_BUTTON_CLASS } from '@crm/lib/uiClasses';
+import { hasPhone } from '@crm/lib/phone';
 import { CareLogComposer } from '@crm/screens/CustomerDetail/components/CareLogComposer';
 import { useNoteComposer } from '@crm/screens/CustomerDetail/useNoteComposer';
 import { BottomSheet } from './BottomSheet';
@@ -53,7 +54,7 @@ export const CareLogDialog = ({ customer, variant, onClose }: CareLogDialogProps
 
   if (isSheet) {
     return (
-      <BottomSheet titleId={TITLE_ID} title="Ghi chú chăm sóc" subtitle={customer.phoneMasked ? `${customer.fullName} · ${customer.phoneMasked}` : customer.fullName} onClose={handleRequestClose}>
+      <BottomSheet titleId={TITLE_ID} title="Ghi chú chăm sóc" subtitle={hasPhone(customer.phoneMasked) ? `${customer.fullName} · ${customer.phoneMasked}` : customer.fullName} onClose={handleRequestClose}>
         {/* Bottom sheet dùng chung không có trap: chỉ vùng form (gồm Hủy/Lưu) được giữ tiêu điểm; nút đóng ở đầu sheet vẫn bấm/chạm được. */}
         <div ref={trapRef}>{form}</div>
       </BottomSheet>
@@ -71,7 +72,7 @@ export const CareLogDialog = ({ customer, variant, onClose }: CareLogDialogProps
             <h3 id={TITLE_ID} className="text-lg font-semibold text-gray-800 dark:text-white/90">
               Ghi chú chăm sóc — {customer.fullName}
             </h3>
-            {customer.phoneMasked && <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {customer.phoneMasked}</p>}
+            {hasPhone(customer.phoneMasked) && <p className="text-theme-sm text-gray-500 dark:text-gray-400">SĐT: {customer.phoneMasked}</p>}
           </div>
           <button type="button" onClick={handleRequestClose} aria-label="Đóng hộp ghi chú" title="Đóng" className={ICON_BUTTON_CLASS}>
             <X size={18} aria-hidden="true" />

@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
 import { CareRole } from '../customers/customer.constants';
+import { toMemberUser } from '../customers/customer.mapper';
+import type { RefMaps } from '../customers/customer-refs.service';
 import { toUserRef } from '../customers/customer-refs.service';
 import { CareTeamEntry } from '../customers/schemas/customer.schema';
 import { CareTeamResponseDto } from './dtos/care-team.dto';
@@ -13,17 +15,18 @@ export const careTeamUserIds = (careTeam: CareTeamEntry[]): Types.ObjectId[] =>
 
 export const toCareTeamResponse = (
   careTeam: CareTeamEntry[],
-  users: Map<string, string>,
+  maps: Pick<RefMaps, 'users' | 'userStates'>,
 ): CareTeamResponseDto => {
+  const { users, userStates } = maps;
   const primary = findPrimary(careTeam);
   return {
     members: careTeam.map((member) => ({
-      user: toUserRef(member.userId, users)!,
+      user: toMemberUser(member.userId, maps),
       role: member.role,
       addedAt: new Date(member.addedAt).toISOString(),
       addedBy: toUserRef(member.addedBy, users),
     })),
-    primary: primary ? toUserRef(primary.userId, users) : null,
+    primary: primary ? toUserRef(primary.userId, users, userStates) : null,
   };
 };
 

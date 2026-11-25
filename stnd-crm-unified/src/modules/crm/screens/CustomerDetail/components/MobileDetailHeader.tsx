@@ -25,6 +25,7 @@ export const MobileDetailHeader = ({ customerName }: MobileDetailHeaderProps) =>
           <ArrowLeft size={18} aria-hidden="true" />
         </button>
         <div className="min-w-0">
+          {/* Mã khách nằm ngay dưới tên khách trong `CustomerHeader` (chip bấm để sao chép), không lặp lại ở hàng này. */}
           <p className="text-theme-xs text-gray-500 dark:text-gray-400">Quản lý khách hàng</p>
           <h1 className="truncate text-lg font-semibold text-gray-800 dark:text-white/90">{customerName}</h1>
         </div>

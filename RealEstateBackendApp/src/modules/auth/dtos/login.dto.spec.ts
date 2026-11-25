@@ -74,9 +74,7 @@ describe('CreateUserDto (mục 16.4)', () => {
   };
 
   it('payload hợp lệ → pass validate', async () => {
-    const errors = await validate(
-      plainToInstance(CreateUserDto, valid),
-    );
+    const errors = await validate(plainToInstance(CreateUserDto, valid));
     expect(errors).toHaveLength(0);
   });
 

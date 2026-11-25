@@ -105,73 +105,59 @@ describe('UpdateProjectDto.code: DTO chỉ kiểm nới để PATCH giữ nguyê
   });
 });
 
-describe('assertProjectCodeChange (PATCH mã, PT-031)', () => {
-  it('gửi lại đúng mã cũ có "_"/"-" (khác hoa thường) => qua', () => {
+describe('assertProjectCodeChange (mã dự án bất biến, FR-40 Q1)', () => {
+  const codeOf = (error: unknown): unknown =>
+    (error as BusinessException).errorCode;
+
+  it('FR-40: chỉ đổi hoa/thường (kể cả mã cũ có "-"/"_") => qua', () => {
+    expect(() => assertProjectCodeChange('qterra', 'QTERRA')).not.toThrow();
     expect(() => assertProjectCodeChange('old_code', 'OLD_CODE')).not.toThrow();
     expect(() => assertProjectCodeChange('OLD-1', 'OLD-1')).not.toThrow();
   });
 
-  it('đổi sang mã mới theo quy tắc mới => qua', () => {
-    expect(() => assertProjectCodeChange('NEWCODE', 'OLD_CODE')).not.toThrow();
-  });
-
-  it('mã hiện có truyền dạng thô (chưa chuẩn hóa, chữ thường/khoảng trắng) vẫn so đúng', () => {
-    expect(() => assertProjectCodeChange('OLD_CODE', 'old_code')).not.toThrow();
+  it('FR-40: mã hiện có truyền dạng thô (chữ thường, khoảng trắng đầu/cuối) vẫn so đúng', () => {
     expect(() =>
       assertProjectCodeChange('OLD_CODE', ' old_code '),
     ).not.toThrow();
+    expect(() =>
+      assertProjectCodeChange(' OLD_CODE ', 'OLD_CODE'),
+    ).not.toThrow();
   });
 
-  it.each([null, undefined, ''])(
-    'mã hiện có thiếu (%p): mã gửi lên phải theo quy tắc mới',
-    (current) => {
-      expect(() => assertProjectCodeChange('NEWCODE', current)).not.toThrow();
-      expect(
-        thrownBy(() => assertProjectCodeChange('OLD_CODE', current)),
-      ).toBeInstanceOf(BusinessException);
-    },
-  );
-
-  it('chỉ đổi hoa/thường của mã đã hợp lệ => qua', () => {
-    expect(() => assertProjectCodeChange('qterra', 'QTERRA')).not.toThrow();
-  });
-
-  it.each(['NEW_CODE', 'NEW-CODE', 'OLD_CODE2'])(
-    'đổi sang mã khác còn "-"/"_" (%p) => 400 VALIDATION_FAILED',
+  it.each(['NEWCODE', 'NEW_CODE', 'OLD_CODE2', 'OLD CODE'])(
+    'FR-40: đổi sang mã khác (%p) => 400 PROJECT_CODE_IMMUTABLE mang details.fields=["code"]',
     (code) => {
       const error = thrownBy(() => assertProjectCodeChange(code, 'OLD_CODE'));
       expect(error).toBeInstanceOf(BusinessException);
-      expect((error as BusinessException).errorCode).toBe(
-        ErrorCode.VALIDATION_FAILED,
-      );
+      expect(codeOf(error)).toBe(ErrorCode.PROJECT_CODE_IMMUTABLE);
       expect((error as BusinessException).getStatus()).toBe(400);
+      expect((error as BusinessException).getResponse()).toMatchObject({
+        details: { fields: ['code'] },
+      });
     },
   );
 
-  it('400 mang details.fields=["code"] để FE gắn lỗi vào đúng ô', () => {
-    const error = thrownBy(() =>
-      assertProjectCodeChange('NEW_CODE', 'OLD_CODE'),
-    );
-    expect((error as BusinessException).getResponse()).toMatchObject({
-      details: { fields: ['code'] },
-    });
-  });
+  it.each(['', '   '])(
+    'FR-40 (biên): mã gửi lên rỗng/khoảng trắng (%p) khác mã hiện có => 400 PROJECT_CODE_IMMUTABLE',
+    (code) => {
+      expect(codeOf(thrownBy(() => assertProjectCodeChange(code, 'ABC')))).toBe(
+        ErrorCode.PROJECT_CODE_IMMUTABLE,
+      );
+    },
+  );
 
-  it.each([
-    ['31 ký tự không "-"/"_"', 'A'.repeat(31)],
-    ['có khoảng trắng giữa', 'AB CD'],
-    ['có dấu', 'Đạt'],
-  ])('đổi sang mã khác %s => 400 (kiểm chặt dù DTO nới)', (_label, code) => {
-    expect(
-      thrownBy(() => assertProjectCodeChange(code, 'OLD_CODE')),
-    ).toBeInstanceOf(BusinessException);
-  });
-
-  it('mã hiện có đã theo quy tắc mới: đổi sang mã có "_" bị từ chối', () => {
-    expect(thrownBy(() => assertProjectCodeChange('A_B', 'AB'))).toBeInstanceOf(
-      BusinessException,
-    );
-  });
+  it.each([null, undefined, '', '   '])(
+    'FR-40 (biên): dự án chưa có mã hiện có (%p) => cho đặt mã lần đầu theo quy tắc A-Z/0-9',
+    (current) => {
+      expect(() => assertProjectCodeChange('NEWCODE', current)).not.toThrow();
+      expect(
+        codeOf(thrownBy(() => assertProjectCodeChange('OLD_CODE', current))),
+      ).toBe(ErrorCode.VALIDATION_FAILED);
+      expect(codeOf(thrownBy(() => assertProjectCodeChange('', current)))).toBe(
+        ErrorCode.VALIDATION_FAILED,
+      );
+    },
+  );
 });
 
 describe('assertPriceRange', () => {

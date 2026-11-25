@@ -9,6 +9,7 @@ import {
   UpdateNotificationPreferencesDto,
 } from './dtos/notification-preference.dto';
 import { NotificationType } from './notification.constants';
+import { PUSH_CATALOG } from './push/push-catalog';
 import {
   isValidQuietHours,
   resolveTypePreferences,
@@ -130,6 +131,13 @@ export class NotificationPreferencesService {
       quietHours: stored?.quietHours
         ? { start: stored.quietHours.start, end: stored.quietHours.end }
         : null,
+      pushTypes: PUSH_CATALOG.map((entry) => ({
+        type: entry.type,
+        label: entry.label,
+        description: entry.description,
+        defaultEnabled: entry.defaultEnabled,
+        canDisable: entry.canDisable,
+      })),
     };
   }
 }

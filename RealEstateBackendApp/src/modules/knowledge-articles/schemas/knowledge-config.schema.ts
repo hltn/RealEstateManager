@@ -10,7 +10,12 @@ export enum KnowledgeConfigType {
 
 @Schema({ timestamps: true })
 export class KnowledgeConfig extends Document {
-  @Prop({ required: true, enum: KnowledgeConfigType, unique: true, index: true })
+  @Prop({
+    required: true,
+    enum: KnowledgeConfigType,
+    unique: true,
+    index: true,
+  })
   type: KnowledgeConfigType;
 
   /**

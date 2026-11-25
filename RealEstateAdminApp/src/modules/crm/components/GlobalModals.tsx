@@ -5,7 +5,7 @@
  *   hoặc useContactActions().callCustomer(id) / messageZalo(id).
  * CallModal / ZaloModal chỉ render khi bật cờ tương ứng trong `config/featureFlags.ts` (mặc định tắt).
  */
-import { useCrmApi, useCustomerDetail, useCustomerPersona } from '@crm/api';
+import { canViewPrimaryAssignee, useCrmApi, useCustomerDetail, useCustomerPersona } from '@crm/api';
 import { CRM_FEATURE_FLAGS } from '@crm/config/featureFlags';
 import { useIsMobile } from '@crm/hooks/useIsMobile';
 import { getPersonaText } from '@crm/lib/customerRules';
@@ -39,9 +39,9 @@ export const GlobalModals = () => {
       }
     : null;
 
-  const logContact = async (contactChannel: 'CALL' | 'ZALO', content: string, title: string) => {
+  const logContact = async (contactChannel: 'CALL' | 'ZALO', content: string, title: string, contactResultId?: string | null) => {
     if (!customer) return;
-    const result = await api.createCareLog(customer.id, { content, contactChannel });
+    const result = await api.createCareLog(customer.id, { content, contactChannel, ...(contactResultId ? { contactResultId } : {}) });
     actions.showToast(result.ok ? { title } : { type: 'error', title: result.error.message });
   };
 
@@ -52,7 +52,7 @@ export const GlobalModals = () => {
           key={modalCustomerId}
           customer={contactTarget}
           onClose={actions.closeModal}
-          onSaveLog={({ note, callOutcome }) => logContact('CALL', `${callOutcome}: ${note}`, 'Đã lưu cuộc gọi vào nhật ký chăm sóc')}
+          onSaveLog={({ note, contactResultId }) => logContact('CALL', note, 'Đã lưu cuộc gọi vào nhật ký chăm sóc', contactResultId)}
         />
       ) : null;
 
@@ -87,6 +87,7 @@ export const GlobalModals = () => {
         <AdvancedFilterModal
           filters={filters}
           variant={isMobile ? 'sheet' : 'dialog'}
+          isShowingPrimaryFilter={canViewPrimaryAssignee(currentUser.role)}
           onClose={actions.closeModal}
           onApply={(nextFilters) => {
             actions.setFilters(nextFilters);

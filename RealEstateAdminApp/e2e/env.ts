@@ -7,6 +7,7 @@
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { RUNTIME_BOOLEAN_KEYS } from '../src/config/runtimeConfigSchema.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const env = process.env;
@@ -95,8 +96,8 @@ export function backendEnv(mongoUri: string): NodeJS.ProcessEnv {
     ADMIN_EMAIL: ACCOUNTS.admin.email,
     ADMIN_PASSWORD: TEST_PASSWORD,
     ADMIN_DISPLAY_NAME: ACCOUNTS.admin.displayName,
-    FEATURE_CRM_ENABLED: 'true',
-    FEATURE_CRM_ATTACHMENTS: 'true',
+    CRM_ENABLED: 'true',
+    CRM_ATTACHMENTS_ENABLED: 'true',
     CRM_PII_ENCRYPTION_KEY: TEST_PII_KEY,
     CRM_PII_KEY_VERSION: '1',
     // Nới throttle đăng nhập (mặc định 5/phút) để spec F1 đăng nhập thật nhiều lần; chỉ dành cho E2E.
@@ -126,16 +127,22 @@ export function backendEnv(mongoUri: string): NodeJS.ProcessEnv {
   };
 }
 
-/** Biến môi trường cho Vite dev server (biến có sẵn trong process.env thắng `.env` của dự án). */
+/** Cờ Admin BẬT trong stack E2E; mọi cờ boolean còn lại của allowlist bị ép `false` (xem `adminEnv`). */
+const ADMIN_ENABLED_FLAGS: readonly string[] = ['CRM_ENABLED', 'CRM_ATTACHMENTS_ENABLED'];
+
+/**
+ * Biến môi trường cho Vite dev server. Plugin dev của Vite (`vite.config.ts`) phục vụ `/env.js` từ `.env` gốc + `process.env`
+ * (FR-15; process.env thắng), nên truyền cờ bằng tên env mới `CRM_*`/`API_URL` (không còn `VITE_*`).
+ * Mọi cờ boolean trong allowlist (`RUNTIME_BOOLEAN_KEYS`) đều được ép tường minh: chỉ `ADMIN_ENABLED_FLAGS` bật, còn lại `false`
+ * (kể cả khi `.env` gốc của máy dev bật) để thấy hành vi thật như production và stack E2E không lệ thuộc `.env` dev.
+ */
 export function adminEnv(): NodeJS.ProcessEnv {
+  const flags: NodeJS.ProcessEnv = {};
+  for (const key of RUNTIME_BOOLEAN_KEYS) flags[key] = ADMIN_ENABLED_FLAGS.includes(key) ? 'true' : 'false';
   return {
     ...pick(env, ['PATH', 'Path', 'SystemRoot', 'TEMP', 'TMP', 'USERPROFILE', 'HOME', 'APPDATA']),
-    VITE_API_URL: URLS.api,
-    VITE_CRM_ENABLED: 'true',
-    VITE_FEATURE_CRM_ATTACHMENTS: 'true',
-    // Vite dev mặc định bật dữ liệu mẫu cho Báo cáo, Nhập/Xuất: ép tắt để thấy hành vi thật (như production).
-    VITE_CRM_MOCK_REPORTS: 'false',
-    VITE_CRM_MOCK_IMPORT_EXPORT: 'false',
+    API_URL: URLS.api,
+    ...flags,
   };
 }
 
@@ -217,5 +224,5 @@ export function assertIsolated(opts: { mongoUri?: string } = {}): void {
   if (PORTS.backend === DEV_PORTS.backend || PORTS.backend === DEV_PORTS.admin) fail(`cổng backend E2E ${PORTS.backend} trùng cổng dev`);
   if (PORTS.admin === DEV_PORTS.admin || PORTS.admin === DEV_PORTS.backend) fail(`cổng Admin E2E ${PORTS.admin} trùng cổng dev`);
   if (Number(parse(be.FRONTEND_URL, 'FRONTEND_URL').port) !== PORTS.admin) fail('FRONTEND_URL của backend không trỏ cổng Admin E2E');
-  if (Number(parse(adminEnv().VITE_API_URL, 'VITE_API_URL').port) !== PORTS.backend) fail('VITE_API_URL của Admin không trỏ cổng backend E2E');
+  if (Number(parse(adminEnv().API_URL, 'API_URL').port) !== PORTS.backend) fail('API_URL của Admin không trỏ cổng backend E2E');
 }

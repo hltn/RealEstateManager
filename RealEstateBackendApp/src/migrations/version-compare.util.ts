@@ -37,11 +37,11 @@ const compareNumbers = (a: number, b: number): VersionOrder =>
 
 /** So sánh từng mục pre-release: số < chữ; số so theo giá trị số, chữ so theo thứ tự ASCII. */
 const compareIdentifier = (a: string, b: string): VersionOrder => {
-  const aNumeric = NUMERIC_IDENTIFIER.test(a);
-  const bNumeric = NUMERIC_IDENTIFIER.test(b);
-  if (aNumeric && bNumeric) return compareNumbers(Number(a), Number(b));
-  if (aNumeric) return -1;
-  if (bNumeric) return 1;
+  const isANumeric = NUMERIC_IDENTIFIER.test(a);
+  const isBNumeric = NUMERIC_IDENTIFIER.test(b);
+  if (isANumeric && isBNumeric) return compareNumbers(Number(a), Number(b));
+  if (isANumeric) return -1;
+  if (isBNumeric) return 1;
   return a === b ? 0 : a < b ? -1 : 1;
 };
 

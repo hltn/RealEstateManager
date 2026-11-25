@@ -157,7 +157,9 @@ export class FileStorageService implements IFileStorage {
       throw new Error('Chưa cấu hình bucket S3 nào');
     }
     await Promise.all(
-      buckets.map((Bucket) => this.s3.send(new HeadBucketCommand({ Bucket }))),
+      buckets.map((bucket) =>
+        this.s3.send(new HeadBucketCommand({ Bucket: bucket })),
+      ),
     );
   }
 

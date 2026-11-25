@@ -236,7 +236,7 @@ export class CustomerPersonaService {
       );
       const derived = derivePersona(defs, nextPersona);
 
-      const matched = await this.repo.updateOne(
+      const isMatched = await this.repo.updateOne(
         ctx.scope,
         id,
         { __v: dto.version },
@@ -252,7 +252,7 @@ export class CustomerPersonaService {
         },
         { session },
       );
-      if (!matched) {
+      if (!isMatched) {
         const current = await this.repo.findOne(ctx.scope, id, {
           session,
           projection: { __v: 1 },
@@ -374,10 +374,10 @@ export class CustomerPersonaService {
    * không ghi lại giá trị bị xóa.
    */
   private toAuditChange(change: PersonaChange): CrmAuditChange {
-    const erased = change.after === null;
+    const isErased = change.after === null;
     const snapshot = (stored: StoredPersonaValue | null | undefined) => {
       if (!stored) return null;
-      if (erased) return { value: ERASED_PLACEHOLDER, source: stored.source };
+      if (isErased) return { value: ERASED_PLACEHOLDER, source: stored.source };
       return {
         value: change.field.isSensitive
           ? SENSITIVE_PLACEHOLDER

@@ -4,9 +4,9 @@ dist/
 build/
 .env
 .env.*
+# Cấu hình AI admin lưu từ màn Settings (SETTINGS_CONFIG_FILE, chứa API key) — không bao giờ commit.
+.settings.env
 !.env.example
-!.env.docker.example
-!.env.staging.example
 !**/.env.example
 .DS_Store
 *.log
@@ -50,5 +50,19 @@ RealEstateBackendApp/.e2e-dist/
 /logs/
 /tmp/
 
-# Staging local (scripts/staging.sh): env giả sinh ngẫu nhiên, log, backup, dữ liệu tạm. Không bao giờ commit.
+# Staging local (ops/staging.sh): env giả sinh ngẫu nhiên, log, backup, dữ liệu tạm. Không bao giờ commit.
 /.staging/
+
+.archify/
+
+skills-lock.json
+
+# Tài liệu nội bộ v1.0.6 (thông tin hạ tầng/CI-CD): không đưa lên repo public
+/docs/01_Infrastructure/*_Thong_Nhat_Moi_Truong_*.md
+/docs/01_Infrastructure/08_So_Do_CICD.md
+
+# Đầu ra của `release.sh build` (release.env chứa image ID, gói release + checksum): sinh ra mỗi lần build, không commit.
+/release.env
+/release.tgz
+/release.tgz.sha256
+/.install-release.*

@@ -18,6 +18,7 @@ import {
   BulkIdsDto,
   AnalyzeRawArticlesDto,
   SaveArticlesDto,
+  BackfillEmbeddingsDto,
   TriggerManualAnalyzeDto,
   TriggerManualCrawlDto,
   GetRawArticlesQueryDto,
@@ -37,14 +38,20 @@ function messages(errors: ValidationError[]): string[] {
 describe('UpdateCronConfigDto', () => {
   it('payload hợp lệ → pass', async () => {
     const errors = await validate(
-      plainToInstance(UpdateCronConfigDto, { isActive: true, frequency: '0 8 * * *' }),
+      plainToInstance(UpdateCronConfigDto, {
+        isActive: true,
+        frequency: '0 8 * * *',
+      }),
     );
     expect(errors).toHaveLength(0);
   });
 
   it('isActive không phải boolean → fail', async () => {
     const errors = await validate(
-      plainToInstance(UpdateCronConfigDto, { isActive: 'yes', frequency: '0 8 * * *' }),
+      plainToInstance(UpdateCronConfigDto, {
+        isActive: 'yes',
+        frequency: '0 8 * * *',
+      }),
     );
     expect(errors.length).toBeGreaterThan(0);
   });
@@ -59,7 +66,9 @@ describe('UpdateCronConfigDto', () => {
 
 describe('BulkIdsDto', () => {
   it('mảng string hợp lệ → pass', async () => {
-    const errors = await validate(plainToInstance(BulkIdsDto, { ids: ['1', '2'] }));
+    const errors = await validate(
+      plainToInstance(BulkIdsDto, { ids: ['1', '2'] }),
+    );
     expect(errors).toHaveLength(0);
   });
 
@@ -92,7 +101,9 @@ describe('AnalyzeRawArticlesDto (news-manager.dto)', () => {
 
 describe('SaveArticlesDto (news-manager.dto)', () => {
   it('mảng hợp lệ → pass', async () => {
-    const errors = await validate(plainToInstance(SaveArticlesDto, { articles: [{ a: 1 }] }));
+    const errors = await validate(
+      plainToInstance(SaveArticlesDto, { articles: [{ a: 1 }] }),
+    );
     expect(errors).toHaveLength(0);
   });
 
@@ -104,7 +115,9 @@ describe('SaveArticlesDto (news-manager.dto)', () => {
 
 describe('TriggerManualAnalyzeDto', () => {
   it('filePath hợp lệ → pass', async () => {
-    const errors = await validate(plainToInstance(TriggerManualAnalyzeDto, { filePath: '/tmp/x.json' }));
+    const errors = await validate(
+      plainToInstance(TriggerManualAnalyzeDto, { filePath: '/tmp/x.json' }),
+    );
     expect(errors).toHaveLength(0);
   });
 
@@ -121,19 +134,26 @@ describe('TriggerManualCrawlDto', () => {
   });
 
   it('days là số → pass', async () => {
-    const errors = await validate(plainToInstance(TriggerManualCrawlDto, { days: 7 }));
+    const errors = await validate(
+      plainToInstance(TriggerManualCrawlDto, { days: 7 }),
+    );
     expect(errors).toHaveLength(0);
   });
 
   it('days là string → fail (IsNumber)', async () => {
-    const errors = await validate(plainToInstance(TriggerManualCrawlDto, { days: '7' }));
+    const errors = await validate(
+      plainToInstance(TriggerManualCrawlDto, { days: '7' }),
+    );
     // Lưu ý: khi class-transformer không whitelist, '7' có thể là string → fail.
     expect(errors.length).toBeGreaterThan(0);
   });
 
   it('startDate/endDate string → pass', async () => {
     const errors = await validate(
-      plainToInstance(TriggerManualCrawlDto, { startDate: '2026-07-01', endDate: '2026-07-31' }),
+      plainToInstance(TriggerManualCrawlDto, {
+        startDate: '2026-07-01',
+        endDate: '2026-07-31',
+      }),
     );
     expect(errors).toHaveLength(0);
   });
@@ -146,54 +166,76 @@ describe('GetRawArticlesQueryDto', () => {
   });
 
   it('sort=newest → pass', async () => {
-    const errors = await validate(plainToInstance(GetRawArticlesQueryDto, { sort: 'newest' }));
+    const errors = await validate(
+      plainToInstance(GetRawArticlesQueryDto, { sort: 'newest' }),
+    );
     expect(errors).toHaveLength(0);
   });
 
   it('sort=oldest → pass', async () => {
-    const errors = await validate(plainToInstance(GetRawArticlesQueryDto, { sort: 'oldest' }));
+    const errors = await validate(
+      plainToInstance(GetRawArticlesQueryDto, { sort: 'oldest' }),
+    );
     expect(errors).toHaveLength(0);
   });
 
   it('sort giá trị khác → fail IsIn', async () => {
-    const errors = await validate(plainToInstance(GetRawArticlesQueryDto, { sort: 'ascending' }));
+    const errors = await validate(
+      plainToInstance(GetRawArticlesQueryDto, { sort: 'ascending' }),
+    );
     expect(errors.length).toBeGreaterThan(0);
     expect(messages(errors).some((m) => /newest|oldest/i.test(m))).toBe(true);
   });
 
   it('page=0 → fail Min(1)', async () => {
-    const errors = await validate(plainToInstance(GetRawArticlesQueryDto, { page: 0 }));
+    const errors = await validate(
+      plainToInstance(GetRawArticlesQueryDto, { page: 0 }),
+    );
     expect(errors.length).toBeGreaterThan(0);
   });
 
   it('limit=200 → fail Max(100)', async () => {
-    const errors = await validate(plainToInstance(GetRawArticlesQueryDto, { limit: 200 }));
+    const errors = await validate(
+      plainToInstance(GetRawArticlesQueryDto, { limit: 200 }),
+    );
     expect(errors.length).toBeGreaterThan(0);
   });
 
   it('page=1.5 → fail IsInt', async () => {
-    const errors = await validate(plainToInstance(GetRawArticlesQueryDto, { page: 1.5 }));
+    const errors = await validate(
+      plainToInstance(GetRawArticlesQueryDto, { page: 1.5 }),
+    );
     expect(errors.length).toBeGreaterThan(0);
   });
 });
 
 describe('GetArticlesQueryDto', () => {
   it('date string hợp lệ → pass', async () => {
-    const errors = await validate(plainToInstance(GetArticlesQueryDto, { date: '2026-07-28' }));
+    const errors = await validate(
+      plainToInstance(GetArticlesQueryDto, { date: '2026-07-28' }),
+    );
     expect(errors).toHaveLength(0);
   });
 
   it('status hợp lệ và pagination kế thừa → pass', async () => {
     const errors = await validate(
-      plainToInstance(GetArticlesQueryDto, { status: 'POSTED_WP', page: 2, limit: 20 }),
+      plainToInstance(GetArticlesQueryDto, {
+        status: 'POSTED_WP',
+        page: 2,
+        limit: 20,
+      }),
     );
     expect(errors).toHaveLength(0);
   });
 
   it('status không hỗ trợ → fail IsIn', async () => {
-    const errors = await validate(plainToInstance(GetArticlesQueryDto, { status: 'all' }));
+    const errors = await validate(
+      plainToInstance(GetArticlesQueryDto, { status: 'all' }),
+    );
     expect(errors.length).toBeGreaterThan(0);
-    expect(messages(errors).some((m) => /pending|POSTED_WP/i.test(m))).toBe(true);
+    expect(messages(errors).some((m) => /pending|POSTED_WP/i.test(m))).toBe(
+      true,
+    );
   });
 });
 
@@ -218,7 +260,11 @@ describe('AiPromptDto', () => {
 
   it('prompt rỗng → fail IsNotEmpty (sau khi thêm @IsNotEmpty cho prompt)', async () => {
     const errors = await validate(
-      plainToInstance(AiPromptDto, { api_ai_name: 'x', api_ai_path: '/x', prompt: '' }),
+      plainToInstance(AiPromptDto, {
+        api_ai_name: 'x',
+        api_ai_path: '/x',
+        prompt: '',
+      }),
     );
     expect(errors.length).toBeGreaterThan(0);
     expect(messages(errors).some((m) => /empty/i.test(m))).toBe(true);
@@ -226,8 +272,49 @@ describe('AiPromptDto', () => {
 
   it('api_ai_path rỗng → fail IsNotEmpty', async () => {
     const errors = await validate(
-      plainToInstance(AiPromptDto, { api_ai_name: 'x', api_ai_path: '', prompt: 'p' }),
+      plainToInstance(AiPromptDto, {
+        api_ai_name: 'x',
+        api_ai_path: '',
+        prompt: 'p',
+      }),
     );
     expect(errors.length).toBeGreaterThan(0);
   });
+});
+
+describe('BackfillEmbeddingsDto (FR-14)', () => {
+  const check = (v: unknown) =>
+    validate(plainToInstance(BackfillEmbeddingsDto, v as object));
+
+  it('FR-14: bỏ trống batchSize → pass', async () => {
+    expect(await check({})).toHaveLength(0);
+  });
+
+  it.each([1, 50, 200])('FR-14: batchSize=%s → pass', async (n) => {
+    expect(await check({ batchSize: n })).toHaveLength(0);
+  });
+
+  it.each([
+    ['0', 0],
+    ['201', 201],
+    ['âm', -5],
+    ['số thực', 1.5],
+    ['chuỗi', '50'],
+    ['object $gt', { $gt: 0 }],
+    ['mảng', [50]],
+  ])('FR-14: batchSize %s → fail', async (_n, v) => {
+    expect((await check({ batchSize: v })).length).toBeGreaterThan(0);
+  });
+});
+
+describe('articles phải là mảng object (FR-14)', () => {
+  it.each([AnalyzeRawArticlesDto, SaveArticlesDto])(
+    'FR-14: %p từ chối phần tử không phải object',
+    async (dtoClass) => {
+      const errors = await validate(
+        plainToInstance(dtoClass, { articles: ['x', 1, null] }),
+      );
+      expect(errors.length).toBeGreaterThan(0);
+    },
+  );
 });

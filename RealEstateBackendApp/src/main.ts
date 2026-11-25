@@ -1,8 +1,8 @@
-// Nạp `.env` vào process.env ngay khi module eval — TRƯỚC NestFactory.create.
+// Nạp `.env` (['.env', '../.env'], file gần thắng) vào process.env ngay khi module eval — TRƯỚC NestFactory.create.
 // CustomLogger lazy-init lần đầu (log nội bộ NestJS trong create()) sẽ thấy
-// process.env.LOG_* đã sẵn → cache đúng giá trị env. dotenv mặc định KHÔNG ghi
-// đè biến env đã set (Docker env_file đã nằm trong process.env lúc spawn).
-import 'dotenv/config';
+// process.env.LOG_* đã sẵn → cache đúng giá trị env. dotenv KHÔNG ghi
+// đè biến env đã set (Docker compose `environment:` đã nằm trong process.env lúc spawn).
+import './common/config/load-env';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -18,7 +18,11 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
 import { buildHelmetOptions } from './common/security/helmet.config';
 import { resolveTrustProxy } from './common/security/trust-proxy.config';
-import { setupSwagger, SWAGGER_PATH } from './common/swagger/swagger.config';
+import {
+  setupSwaggerFromConfig,
+  SWAGGER_ENABLED_ENV,
+  SWAGGER_PATH,
+} from './common/swagger/swagger.config';
 import { FeatureFlagService } from './shared/feature-flags/feature-flag.service';
 
 async function bootstrap() {
@@ -74,8 +78,12 @@ async function bootstrap() {
   // Setup Global Exception Filter
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  // Swagger chỉ bật khi NODE_ENV thuộc danh sách phi-production (fail-safe, PT-008).
-  const isSwaggerOn = setupSwagger(app);
+  // Swagger chỉ bật khi CRM_SWAGGER_ENABLED truthy (1/true/yes/on); thiếu/rỗng/lạ => tắt (fail-safe, FR-18).
+  // NODE_ENV không còn quyết định việc này (luôn production ở mọi môi trường).
+  const { flag: swaggerFlag, isOn: isSwaggerOn } = setupSwaggerFromConfig(
+    app,
+    configService,
+  );
 
   // Graceful Shutdown Hooks
   app.enableShutdownHooks();
@@ -90,7 +98,7 @@ async function bootstrap() {
   logger.log(
     isSwaggerOn
       ? `Swagger docs available at: http://localhost:${port}/${SWAGGER_PATH}`
-      : `Swagger docs đã tắt (NODE_ENV=${process.env.NODE_ENV ?? '(chưa đặt)'})`,
+      : `Swagger docs đã tắt (${SWAGGER_ENABLED_ENV}=${swaggerFlag ?? '(chưa đặt)'})`,
   );
 }
-bootstrap();
+void bootstrap();

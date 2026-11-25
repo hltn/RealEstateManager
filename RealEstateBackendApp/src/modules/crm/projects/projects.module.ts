@@ -3,6 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CrmAuditLogModule } from '../audit-logs/crm-audit-log.module';
 import { Area, AreaSchema } from '../catalogs/schemas/area.schema';
 import { CrmCommonModule } from '../common/crm-common.module';
+import {
+  PersonaField,
+  PersonaFieldSchema,
+} from '../persona/schemas/persona-field.schema';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
 import { Project, ProjectSchema } from './schemas/project.schema';
@@ -13,6 +17,7 @@ import { Project, ProjectSchema } from './schemas/project.schema';
     MongooseModule.forFeature([
       { name: Project.name, schema: ProjectSchema },
       { name: Area.name, schema: AreaSchema },
+      { name: PersonaField.name, schema: PersonaFieldSchema },
     ]),
     CrmCommonModule,
     CrmAuditLogModule,

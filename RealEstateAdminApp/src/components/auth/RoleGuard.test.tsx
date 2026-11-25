@@ -1,9 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../stores/auth.store';
 import { UserRole } from '../../types/user';
 import RoleGuard from './RoleGuard';
+
+// Chuyển hướng về /crm/today cần module CRM bật: cờ mặc định TẮT (FR-15) nên bật tường minh trước khi nạp module.
+vi.hoisted(() => {
+  window.__APP_CONFIG__ = { CRM_ENABLED: true };
+});
 
 const login = (role: (typeof UserRole)[keyof typeof UserRole], roles?: (typeof UserRole)[keyof typeof UserRole][]) =>
   useAuthStore.setState({ accessToken: 't', user: { _id: 'u', email: 'a@b.vn', displayName: 'A', role, roles }, isInitialized: true });

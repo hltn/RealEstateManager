@@ -148,7 +148,10 @@ export const NewsArticleSchema = SchemaFactory.createForClass(NewsArticle);
 // === Dedup indexes ===
 NewsArticleSchema.index({ publishDate: -1 });
 NewsArticleSchema.index({ contentEmbedding: 1 }, { sparse: true });
-NewsArticleSchema.index({ publishDate: -1, contentEmbedding: 1 }, { sparse: true });
+NewsArticleSchema.index(
+  { publishDate: -1, contentEmbedding: 1 },
+  { sparse: true },
+);
 
 // === Knowledge Article indexes ===
 NewsArticleSchema.index({ type: 1, pipelineState: 1 });

@@ -40,7 +40,7 @@ vi.mock('@crm/api', async () => {
   return {
     ...real,
     useCrmApi: () => api,
-    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: [], tags: [], contactResults: [] }, users: [] }),
+    useCatalogs: () => ({ catalogs: { statuses: [], leadSources: [], areas: [], projects: [], tags: [], contactResults: [] }, personaFields: [], users: [] }),
   };
 });
 

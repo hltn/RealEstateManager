@@ -23,6 +23,12 @@ export const EMPTY_PROFILE: ProfileSnapshot = {
   tagIds: [],
 };
 
+/** Mã danh mục của một id (FR-40); không có id hoặc danh mục bị xóa cứng thì `null`. */
+const codeOf = (
+  id: Types.ObjectId | null,
+  codes: Map<string, string>,
+): string | null => (id ? (codes.get(String(id)) ?? null) : null);
+
 const sameIds = (a: Types.ObjectId[], b: Types.ObjectId[]): boolean =>
   a.length === b.length &&
   [...a].map(String).sort().join(',') === [...b].map(String).sort().join(',');
@@ -39,13 +45,15 @@ export const buildProfileChanges = (
   before: ProfileSnapshot,
   after: ProfileSnapshot,
   refs: RefMaps,
-  maskPhoneValue = false,
+  shouldMaskPhoneValue = false,
 ): CrmAuditChange[] => {
   const changes: CrmAuditChange[] = [];
   const scalar = (field: 'fullName' | 'phone' | 'email') => {
     if (before[field] === after[field]) return;
     const show = (value: string | null) =>
-      field === 'phone' && maskPhoneValue && value ? maskPhone(value) : value;
+      field === 'phone' && shouldMaskPhoneValue && value
+        ? maskPhone(value)
+        : value;
     changes.push({ field, from: show(before[field]), to: show(after[field]) });
   };
   scalar('fullName');
@@ -61,6 +69,8 @@ export const buildProfileChanges = (
       to: after.sourceId
         ? (refs.sources.get(String(after.sourceId)) ?? null)
         : null,
+      fromCode: codeOf(before.sourceId, refs.codes.sources),
+      toCode: codeOf(after.sourceId, refs.codes.sources),
     });
   }
   if (String(before.areaId ?? '') !== String(after.areaId ?? '')) {
@@ -70,15 +80,24 @@ export const buildProfileChanges = (
         ? (refs.areas.get(String(before.areaId)) ?? null)
         : null,
       to: after.areaId ? (refs.areas.get(String(after.areaId)) ?? null) : null,
+      fromCode: codeOf(before.areaId, refs.codes.areas),
+      toCode: codeOf(after.areaId, refs.codes.areas),
     });
   }
   if (!sameIds(before.interestedProjectIds, after.interestedProjectIds)) {
     const labels = (ids: Types.ObjectId[]) =>
       ids.map((id) => refs.projects.get(String(id)) ?? String(id));
+    const codes = (ids: Types.ObjectId[]) =>
+      ids.flatMap((id) => {
+        const code = refs.codes.projects.get(String(id));
+        return code ? [code] : [];
+      });
     changes.push({
       field: 'projects',
       from: labels(before.interestedProjectIds),
       to: labels(after.interestedProjectIds),
+      fromCode: codes(before.interestedProjectIds),
+      toCode: codes(after.interestedProjectIds),
     });
   }
   if (!sameIds(before.tagIds, after.tagIds)) {

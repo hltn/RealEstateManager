@@ -437,7 +437,7 @@ GOOGLE_DRIVE_REPORT_FOLDER_ID=1abc123...
 | `services/news-article.service.ts` | Thêm method exportMarketAnalysisToGoogleDrive() |
 | `news-fire-crawl-manager.controller.ts` | Thêm endpoint POST /:id/export/google-drive |
 | `news-fire-crawl-manager.module.ts` | Đăng ký GoogleDriveService |
-| `RealEstateAdminApp/src/screens/MarketAnalysisWorkflowScreen.tsx` | Thêm Export button + modal |
+| `RealEstateAdminApp/src/modules/news/screens/MarketAnalysisWorkflowScreen.tsx` | Thêm Export button + modal |
 
 ### 9.3. Packages cần cài
 

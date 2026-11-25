@@ -22,6 +22,8 @@ import {
 import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
 import { CRM_MENU_NAME, useCrmSidebarSubItems, withCrmMenu } from "@crm/navigation";
 import { CRM_BASE_PATH } from "@crm/routes";
+import { BELOW_LG_MEDIA_QUERY } from "@crm/hooks/breakpoints";
+import { useMediaQuery } from "@crm/hooks/useMediaQuery";
 
 const ChevronDownIconAny = ChevronDownIcon as any;
 const HorizontaLDotsAny = HorizontaLDots as any;
@@ -112,10 +114,29 @@ const adminItems: NavItem[] = [
   },
 ];
 
+/** Selector nút hamburger ở `AppHeader` (đích dự phòng khi trả focus). */
+const SIDEBAR_TOGGLE_SELECTOR = "[data-sidebar-toggle]";
+export const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Danh sách phần tử focus được trong container theo thứ tự DOM (thứ tự Tab).
+ * Bỏ phần tử nằm trong vùng `inert` (vd submenu đang đóng chỉ thu `height: 0`): chúng vô hình, không được làm mốc đầu/cuối của focus trap.
+ * Dùng `closest('[inert]')` thay vì `offsetParent` vì kiểm được trong jsdom (không có layout).
+ */
+const getFocusableElements = (container: HTMLElement | null): HTMLElement[] =>
+  container
+    ? Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => !element.closest("[inert]"))
+    : [];
+
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleMobileSidebar } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, closeMobileSidebar } = useSidebar();
   const location = useLocation();
   const { user } = useAuth();
+  // FR-45: dưới `lg` sidebar là ngăn kéo trượt ra ngoài màn hình (-translate-x-full). Khi đóng phải ra khỏi thứ tự Tab
+  // và cây truy cập (inert + aria-hidden); từ `lg` trở lên sidebar luôn hiện nên không được khóa.
+  const isBelowLg = useMediaQuery(BELOW_LG_MEDIA_QUERY, false);
+  const isDrawerClosed = isBelowLg && !isMobileOpen;
   const isAdmin = hasAnyRole(user, ["ADMIN"]);
   // [Prototype] Submenu CRM ẩn mục không đủ quyền (Báo cáo: Quản lý/Quản trị; Dự án, Cài đặt: Quản trị).
   const crmSubItems = useCrmSidebarSubItems();
@@ -157,18 +178,72 @@ const AppSidebar: React.FC = () => {
 
   // PT-025: sidebar mobile tự đóng khi ĐỔI route (kể cả chọn mục con hay điều hướng bằng code).
   // Chỉ phản ứng khi pathname thật sự đổi (ref lưu pathname trước) để việc mở menu không tự đóng ngay;
-  // `toggleMobileSidebar` là toggle nên chỉ gọi khi đang mở, tránh bật mở lại sidebar đã đóng.
+  // Dùng `closeMobileSidebar` (đóng tường minh, không đảo trạng thái) nên không bao giờ vô tình mở lại sidebar đã đóng.
   const previousPathnameRef = useRef(location.pathname);
   useEffect(() => {
     if (previousPathnameRef.current === location.pathname) return;
     previousPathnameRef.current = location.pathname;
-    if (isMobileOpen) toggleMobileSidebar();
-  }, [location.pathname, isMobileOpen, toggleMobileSidebar]);
+    if (isMobileOpen) closeMobileSidebar();
+  }, [location.pathname, isMobileOpen, closeMobileSidebar]);
 
   // Chạm lại mục của CHÍNH route đang đứng thì route không đổi (effect trên không chạy) -> đóng tại chỗ.
   const handleNavigate = (path: string) => {
-    if (isMobileOpen && path === location.pathname) toggleMobileSidebar();
+    if (isMobileOpen && path === location.pathname) closeMobileSidebar();
   };
+
+  const drawerRef = useRef<HTMLElement>(null);
+  const isDrawerOpen = isBelowLg && isMobileOpen;
+
+  // T-71 (1)+(2): khi ngăn kéo mở, nhớ phần tử đang giữ focus (nút hamburger đã mở nó; Safari iOS không focus nút khi chạm
+  // nên dự phòng bằng `[data-sidebar-toggle]`) rồi chuyển focus vào phần tử focus được đầu tiên trong ngăn kéo.
+  // Khi đóng (Esc, backdrop, nút X, đổi route) hoặc unmount thì cleanup trả focus về nút đó.
+  useEffect(() => {
+    if (!isDrawerOpen) return undefined;
+    const panel = drawerRef.current;
+    const active = document.activeElement;
+    const opener =
+      active instanceof HTMLElement && active !== document.body && !panel?.contains(active)
+        ? active
+        : document.querySelector<HTMLElement>(SIDEBAR_TOGGLE_SELECTOR);
+    getFocusableElements(panel)[0]?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [isDrawerOpen]);
+
+  // FR-45 (T-58) + T-71: Esc đóng ngăn kéo, Tab/Shift+Tab xoay vòng trong ngăn kéo (focus trap).
+  // Listener chỉ tồn tại khi ngăn kéo đang mở dưới `lg`; đóng, lên desktop hoặc unmount thì cleanup gỡ ngay.
+  useEffect(() => {
+    if (!isDrawerOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        // T-71 (4): thành phần khác (dropdown/modal) đã xử lý Esc thì không đóng đồng thời ngăn kéo.
+        if (event.defaultPrevented) return;
+        closeMobileSidebar();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusables = getFocusableElements(drawerRef.current);
+      if (focusables.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      const isInside = active instanceof Node && drawerRef.current?.contains(active) === true;
+      // Ở mép (hoặc đã lạc ra ngoài ngăn kéo): quay vòng thay vì để trình duyệt đưa focus ra nội dung phía sau backdrop.
+      if (event.shiftKey && (!isInside || active === first)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (!isInside || active === last)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isDrawerOpen, closeMobileSidebar]);
 
   useEffect(() => {
     let submenuMatched = false;
@@ -289,6 +364,8 @@ const AppSidebar: React.FC = () => {
                 subMenuRefs.current[`${menuType}-${index}`] = el;
               }}
               className="overflow-hidden transition-all duration-300"
+              // Submenu đóng chỉ thu chiều cao nên link vẫn Tab tới được: `inert` đưa chúng ra khỏi thứ tự Tab và cây truy cập.
+              inert={!(openSubmenu?.type === menuType && openSubmenu?.index === index)}
               style={{
                 height:
                   openSubmenu?.type === menuType && openSubmenu?.index === index
@@ -349,6 +426,7 @@ const AppSidebar: React.FC = () => {
     // THẤY ĐƯỢC của màn hình, co giãn theo thanh địa chỉ Safari (dvh); trước đây `mt-16` chừa 64px cho header
     // nên hở khoảng trống phía trên. Chừa `env(safe-area-inset-*)` cho tai thỏ / thanh home iOS (desktop lg: bỏ).
     <aside
+      ref={drawerRef}
       className={`fixed inset-y-0 left-0 h-dvh flex flex-col px-5 pl-[max(1.25rem,env(safe-area-inset-left))] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] lg:pt-0 lg:pb-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
         ${
           isExpanded || isMobileOpen
@@ -359,13 +437,15 @@ const AppSidebar: React.FC = () => {
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0`}
+      inert={isDrawerClosed}
+      aria-hidden={isDrawerClosed ? true : undefined}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* PT-025: nút X nằm TRONG vùng nền trắng của panel, góc phải (không còn ở vùng nền tối bên trái); chỉ mobile. */}
       <button
         type="button"
-        onClick={toggleMobileSidebar}
+        onClick={closeMobileSidebar}
         aria-label="Đóng menu"
         className="absolute right-3 top-[calc(0.75rem+env(safe-area-inset-top))] z-10 flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
       >

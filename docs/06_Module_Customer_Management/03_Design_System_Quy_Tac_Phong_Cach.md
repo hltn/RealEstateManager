@@ -1,8 +1,8 @@
 # Design System của web admin STND Real Estate Manager (rút từ code)
 
-> **Phiên bản tài liệu:** v1.0.2
+> **Phiên bản tài liệu:** v1.0.4
 
-> **Nguồn duy nhất:** mã nguồn `RealEstateAdminApp/` (đọc ngày 21/10/2026). Mọi quy tắc đều dẫn `file:dòng`, đường dẫn tính từ `RealEstateAdminApp/src/` nếu không ghi khác. Không suy từ ảnh chụp.
+> **Nguồn duy nhất:** mã nguồn `RealEstateAdminApp/` (đọc ngày 21/10/2026). Mọi quy tắc đều dẫn `file:dòng`, đường dẫn tính từ `RealEstateAdminApp/src/` nếu không ghi khác (12 màn tin tức đã dời sang `modules/news/screens/`; tên file trần như `ManageWpScreen.tsx:77-97` cũng nằm ở đó). Không suy từ ảnh chụp.
 >
 > **Phạm vi:** phong cách của toàn bộ web admin, dùng làm chuẩn cho module Quản lý khách hàng (CRM). Mục 9 so sánh với bản cũ, mục 10 liệt kê thứ mà 2 thiết kế Stitch cần nhưng Admin App chưa có.
 
@@ -16,8 +16,8 @@
 | CSS | **Tailwind CSS v4** qua `@tailwindcss/vite`; cấu hình bằng `@theme` trong `index.css`, **không có** `tailwind.config.js`; có `@tailwindcss/typography` (lớp `prose`) | `index.css:4-5`, `../vite.config.ts:10` |
 | Phông | **Outfit** (Google Fonts 100–900), là phông duy nhất (`--font-*: initial`) | `index.css:1, 10-11, 190` |
 | Chế độ tối | Lớp `.dark` gắn vào **`<html>`** (`document.documentElement`), biến thể `@custom-variant dark (&:is(.dark *))`. **Mặc định là SÁNG** khi chưa có `localStorage.theme` (người đã chọn tối vẫn giữ tối; `index.html` gắn lớp `dark` trước khi vẽ để không nháy) | `index.css:7`, `context/ThemeContext.tsx`, `index.html` |
-| Biểu tượng | **2 bộ song song**: (1) SVG tùy biến của TailAdmin trong `src/icons/*.svg`, nạp bằng `vite-plugin-svgr` (`?react`) — dùng ở menu trái, Login, Quản lý tài khoản; (2) **lucide-react** — dùng ở hầu hết màn còn lại (18 tệp). Ngoài ra nhiều SVG viết thẳng (inline) ở header, modal, alert | `icons/index.ts:1-56`, `layout/AppSidebar.tsx:6-18`, `screens/LoginScreen.tsx`, `screens/UserManagementScreen.tsx:11`, `../vite.config.ts:11-15` |
-| Thông báo nhỏ (toast) | `react-hot-toast`, một `<Toaster position="top-right" duration=4000>` toàn cục (≈21 lời gọi `toast.*`) + **một toast tự viết** `ToastNotification` bị chép lặp ở 3 màn | `main.tsx:19`; `screens/ManageWpScreen.tsx:29-97`, `AiPromptConfigScreen.tsx:16`, `KnowledgeArticlesScreen.tsx:84` |
+| Biểu tượng | **2 bộ song song**: (1) SVG tùy biến của TailAdmin trong `src/icons/*.svg`, nạp bằng `vite-plugin-svgr` (`?react`) — dùng ở menu trái, Login, Quản lý tài khoản; (2) **lucide-react** — dùng ở hầu hết màn còn lại (18 tệp). Ngoài ra nhiều SVG viết thẳng (inline) ở header, modal, alert | `icons/index.ts` (giữ cả icon chưa dùng), `layout/AppSidebar.tsx:6-18`, `screens/LoginScreen.tsx`, `screens/UserManagementScreen.tsx:11`, `../vite.config.ts:11-15` |
+| Thông báo nhỏ (toast) | `react-hot-toast`, một `<Toaster position="top-right" duration=4000>` toàn cục (≈21 lời gọi `toast.*`) + **một toast tự viết** `ToastNotification` bị chép lặp ở 3 màn | `main.tsx:19`; `modules/news/screens/ManageWpScreen.tsx:29-97`, `AiPromptConfigScreen.tsx:16`, `KnowledgeArticlesScreen.tsx:84` |
 | Biểu mẫu | react-hook-form + zod (Login, Tạo tài khoản); các màn khác dùng `useState` | `screens/UserManagementScreen.tsx:3-5, 30-38` |
 | Chọn ngày | flatpickr + react-flatpickr, bọc trong `ui/DatePicker.tsx` (CSS tùy biến ở `index.css:394-557`) | `components/ui/DatePicker.tsx` |
 | Dữ liệu | axios (1 instance `api/axios.ts`), @tanstack/react-query, zustand (chỉ auth) | `api/axios.ts:12-16`, `main.tsx:10`, `stores/auth.store.ts` |
@@ -42,7 +42,7 @@
 
 **Thực tế sử dụng** (đếm lớp trong `.tsx`): `gray` 1416 · `brand` 311 · `success` 111 · `error` 99 · `warning` 17 · `blue-light` 10. **Song song**, bảng màu mặc định của Tailwind vẫn bật và được dùng nhiều: `red` 91 · `emerald` 60 · `blue` 37 · `amber` 36 · `indigo` 16 · `purple` 8 (toast tự viết, StepCard, chip CRAWL/AI, nút "Làm sạch", nút "Xem nguồn").
 
-**Lớp gọi token không tồn tại (lỗi, không có hiệu lực):** `bg-info-50/…`, `text-info-600` (`screens/ManageWpScreen.tsx:920-922` — chip "Đã crawl" hiển thị không màu); `dark:bg-dark-900`, `hover:text-dark-900` (`layout/AppHeader.tsx:258`, `components/ui/DatePicker.tsx:34`, `components/common/ThemeToggleButton.tsx:9`).
+**Lớp gọi token không tồn tại (lỗi, không có hiệu lực):** `bg-info-50/…`, `text-info-600` (`modules/news/screens/ManageWpScreen.tsx:920-922` — chip "Đã crawl" hiển thị không màu); `dark:bg-dark-900`, `hover:text-dark-900` (`layout/AppHeader.tsx:258`, `components/ui/DatePicker.tsx:34`, `components/common/ThemeToggleButton.tsx:9`).
 
 ### 2.2 Màu theo vai trò (đã đối chiếu code)
 
@@ -51,11 +51,11 @@
 | Nền trang, chữ thân | `bg-gray-50 text-gray-800` | `dark:bg-gray-900 dark:text-gray-300` | `index.css:190` |
 | Viền mặc định mọi phần tử | `gray-200` (base layer) | phải ghi rõ `dark:border-gray-800` hoặc `dark:border-white/[0.05]` | `index.css:183` |
 | Sidebar, header | `bg-white` + viền `gray-200` | `dark:bg-gray-900 dark:border-gray-800` | `layout/AppSidebar.tsx:298`, `layout/AppHeader.tsx:159` |
-| Thẻ/khối nội dung | `bg-white border-gray-200` | `dark:bg-white/[0.03] dark:border-white/[0.05]` (phổ biến) hoặc `dark:bg-gray-dark dark:border-gray-800` | `screens/CronjobScreen.tsx:58`, `screens/UserManagementScreen.tsx:226` |
+| Thẻ/khối nội dung | `bg-white border-gray-200` | `dark:bg-white/[0.03] dark:border-white/[0.05]` (phổ biến) hoặc `dark:bg-gray-dark dark:border-gray-800` | `modules/news/screens/CronjobScreen.tsx:58`, `screens/UserManagementScreen.tsx:226` |
 | Popover/dropdown | `bg-white`, `shadow-theme-lg`, `rounded-xl/2xl` | `dark:bg-gray-dark dark:border-gray-800` | `components/ui/dropdown/Dropdown.tsx:41`, `components/header/UserDropdown.tsx:67` |
-| Hộp thoại | `bg-white` | `dark:bg-gray-900` | `components/ui/modal/index.tsx:54`, `screens/ExternalLogsScreen.tsx:395` |
-| Tiêu đề trang | `text-gray-800` | `dark:text-white/90` | `screens/CronjobScreen.tsx:53` |
-| Chữ phụ / nhãn | `text-gray-500` | `dark:text-gray-400` | `screens/ExternalLogsScreen.tsx:189, 205` |
+| Hộp thoại | `bg-white` | `dark:bg-gray-900` | `components/ui/modal/index.tsx:54`, `modules/news/screens/ExternalLogsScreen.tsx:395` |
+| Tiêu đề trang | `text-gray-800` | `dark:text-white/90` | `modules/news/screens/CronjobScreen.tsx:53` |
+| Chữ phụ / nhãn | `text-gray-500` | `dark:text-gray-400` | `modules/news/screens/ExternalLogsScreen.tsx:189, 205` |
 | Hành động chính | `bg-brand-500 hover:bg-brand-600 text-white` | như sáng | `screens/UserManagementScreen.tsx:217` |
 | Menu đang chọn | `bg-brand-50 text-brand-500` | `dark:bg-brand-500/[0.12] dark:text-brand-400` | `index.css:198-200` |
 | Chấm thông báo | `bg-orange-400` + `animate-ping` | — | `components/header/NotificationDropdown.tsx:29-33` |
@@ -64,9 +64,9 @@
 
 | Token | Cỡ / dòng | Số lần dùng | Dùng thật cho |
 |---|---|---|---|
-| `text-title-sm` | 30/38 | 14 | Tiêu đề trang (`font-semibold`) — `screens/CronjobScreen.tsx:53` |
-| `text-theme-sm` | 14/20 | 86 | Mô tả trang, ô bảng, menu — `screens/ExternalLogsScreen.tsx:189` |
-| `text-theme-xs` | 12/18 | 62 | Tiêu đề cột, nhãn trường chữ hoa — `screens/ExternalLogsScreen.tsx:205, 309` |
+| `text-title-sm` | 30/38 | 14 | Tiêu đề trang (`font-semibold`) — `modules/news/screens/CronjobScreen.tsx:53` |
+| `text-theme-sm` | 14/20 | 86 | Mô tả trang, ô bảng, menu — `modules/news/screens/ExternalLogsScreen.tsx:189` |
+| `text-theme-xs` | 12/18 | 62 | Tiêu đề cột, nhãn trường chữ hoa — `modules/news/screens/ExternalLogsScreen.tsx:205, 309` |
 | `text-theme-xl` | 20/30 | **0** | Không dùng |
 | `text-title-md/lg/xl/2xl` | 36–72 | **0** | Không dùng |
 | Mặc định Tailwind | `text-xl/lg/sm/xs` | nhiều | Tiêu đề modal `text-lg/xl font-bold`, tiêu đề trang "Quản lý tài khoản" `text-xl font-bold` (`screens/UserManagementScreen.tsx:196`) |
@@ -116,13 +116,13 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 | `ThemeToggleButton` | `components/common/ThemeToggleButton.tsx` | — | Nút tròn 44px viền |
 | `UserDropdown`, `NotificationDropdown` | `components/header/` | — | Avatar chữ cái đầu `h-11 w-11 bg-brand-500` (`UserDropdown.tsx:40`) |
 | `ProtectedRoute`, `RoleGuard`, `AuthInitializer` | `components/auth/` | `allowedRoles`, `fallback` | Spinner toàn trang `border-4 border-t-brand-500` |
-| `GoogleDriveStatusBadge`, `ExportButton`, `FolderInput` | `components/google-drive/` | — | Riêng tính năng phân tích thị trường |
+| `GoogleDriveStatusBadge`, `ExportButton` | `modules/news/components/google-drive/` | — | Riêng tính năng phân tích thị trường |
 | `PageMeta` / `AppWrapper` | `components/common/PageMeta.tsx` | `title`, `description` | Chỉ `AppWrapper` (HelmetProvider) được dùng; chưa màn nào đặt `<PageMeta>` |
-| Hook | `hooks/useDebouncedValue.ts` (400ms), `hooks/useAuth.ts`, `hooks/useHeaderStatusReset.ts` | | |
+| Hook | `hooks/useDebouncedValue.ts` (mặc định 400ms; CRM dùng wrapper `modules/crm/hooks/useDebouncedValue.ts` mặc định 250ms), `hooks/useAuth.ts`, `modules/news/hooks/useHeaderStatusReset.ts` | | |
 
-### 4.2 Có sẵn nhưng **chưa màn nào dùng** (thừa từ TailAdmin)
+### 4.2 Component thừa từ TailAdmin: đã xóa
 
-`ui/button/Button.tsx` (size `sm|md`, variant `primary|outline`, `startIcon/endIcon` — **không có prop `type`**), `ui/badge/Badge.tsx` (variant `light|solid`, color `primary|success|error|warning|info|light|dark`), `ui/table/index.tsx` (Table/Header/Body/Row/Cell chỉ là vỏ không kiểu), `ui/alert/Alert.tsx` (success/error/warning/info), `ui/avatar/Avatar.tsx` (chỉ ảnh, 6 cỡ, chấm trạng thái), `ui/images/*`, `ui/videos/*`, `common/ComponentCard.tsx`, `common/PageBreadCrumb.tsx` (chữ "Home"), `common/ScrollToTop.tsx`, `common/ThemeTogglerTwo.tsx`, `common/ChartTab.tsx`, `common/GridShape.tsx`, `components/header/Header.tsx` (bản trùng của AppHeader), `hooks/useModal.ts`, `hooks/useGoBack.ts`.
+Các component và hook mẫu của TailAdmin mà không màn nào dùng (nút, huy hiệu, bảng, cảnh báo, avatar, ảnh/video mẫu, thẻ bao, breadcrumb, header trùng với `layout/AppHeader`, hook mở modal/quay lại) đã bị xóa ở FR-09 (Thống nhất môi trường). Mọi component ở mục 4.1 đều đang được dùng.
 
 → Các màn thật viết **lớp Tailwind trực tiếp** cho nút, chip, bảng, ô nhập, hộp thoại, công tắc. Vì vậy chuẩn thực tế là **các mẫu lớp ở mục 5**, không phải component.
 
@@ -130,8 +130,8 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 
 | Mẫu | Lớp | Bằng chứng |
 |---|---|---|
-| **Đầu trang** | `<header class="flex flex-col gap-2 pb-6 border-b border-gray-200 dark:border-white/[0.05]">` + `h2.text-title-sm.font-semibold.text-gray-800.dark:text-white/90` + `p.text-theme-sm.text-gray-500.dark:text-gray-400.max-w-2xl.leading-relaxed`; bao màn: `w-full flex flex-col gap-6` | `screens/CronjobScreen.tsx:51-55`, `ExternalLogsScreen.tsx:186-192` |
-| Đầu trang có nút | thêm `md:flex-row md:justify-between md:items-end gap-6` | `screens/RawArticlesScreen.tsx:435-491` |
+| **Đầu trang** | `<header class="flex flex-col gap-2 pb-6 border-b border-gray-200 dark:border-white/[0.05]">` + `h2.text-title-sm.font-semibold.text-gray-800.dark:text-white/90` + `p.text-theme-sm.text-gray-500.dark:text-gray-400.max-w-2xl.leading-relaxed`; bao màn: `w-full flex flex-col gap-6` | `modules/news/screens/CronjobScreen.tsx:51-55`, `ExternalLogsScreen.tsx:186-192` |
+| Đầu trang có nút | thêm `md:flex-row md:justify-between md:items-end gap-6` | `modules/news/screens/RawArticlesScreen.tsx:435-491` |
 | Nút chính | `inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium|semibold text-white hover:bg-brand-600 disabled:opacity-50` (+ `active:scale-[0.98]` ở nhiều màn) | `UserManagementScreen.tsx:217`, `ExternalLogsScreen.tsx:288` |
 | Nút viền | `rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5` | `UserManagementScreen.tsx:207` |
 | Nút nhạt cùng tông | `bg-brand-50 text-brand-500 border border-brand-100 hover:bg-brand-100 dark:bg-brand-500/15 dark:border-brand-500/25` | `RawArticlesScreen.tsx:479` |
@@ -151,6 +151,8 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 | Thẻ tiêu đề khối | thẻ ở trên với `flex items-center gap-2 p-4` + `h3.text-lg.font-semibold` + icon lucide `text-brand-500` 20px, kèm số bản ghi | `ExternalLogsScreen.tsx:296-301` |
 | Thanh lọc | thẻ `flex flex-col md:flex-row flex-wrap gap-4 p-4`, mỗi trường `flex flex-col gap-1.5` (nhãn trên) | `ExternalLogsScreen.tsx:202-293` |
 | **Bảng** | vỏ `overflow-hidden rounded-2xl border border-gray-200 dark:border-white/[0.05]` (không nền) → `overflow-x-auto` → `table.min-w-full`; `thead tr.bg-gray-50.dark:bg-gray-900`; `th.px-5.py-3.text-theme-xs.font-medium.text-gray-500.uppercase.text-left`; `tbody.divide-y.divide-gray-100.dark:divide-white/[0.05]`; `tr.hover:bg-gray-50.dark:hover:bg-white/[0.02]`; `td.px-5.py-3|py-4.text-theme-sm`; đang tải lại giữ dữ liệu cũ `opacity-60` | `ExternalLogsScreen.tsx:304-332`, `ManageWpScreen.tsx:804-858` |
+| Bảng khách (ngoại lệ của mẫu Bảng) | `tr.cursor-pointer.transition-colors`; hàng thường `hover:bg-gray-200 dark:hover:bg-white/[0.08]` (đậm hơn mẫu chung để khác đường kẻ `divide-gray-100`); hàng đã chọn `bg-brand-50 dark:bg-brand-500/[0.10]`, hover đậm một nấc `hover:bg-brand-100 dark:hover:bg-brand-500/[0.20]`; 2 nhánh loại trừ nhau, không chồng `hover:bg-*` | `modules/crm/screens/Customers/components/CustomerTableRow.tsx` (hằng `ROW_BG_CLASS`, `ROW_SELECTED_BG_CLASS`; `<tr onClick>`) |
+| Thẻ khách mobile (ngoại lệ) | thẻ mục "Thẻ" + `cursor-pointer` (cả thẻ bấm được để mở chi tiết khách, như hàng bảng desktop; cụm nút liên hệ chặn nổi bọt) + `transition-colors hover:bg-gray-50 dark:hover:bg-white/[0.06]` cho chuột. Tailwind v4 bọc `hover:` trong `@media (hover: hover)` nên màn cảm ứng không có hover; phản hồi chạm dùng `active:bg-gray-50 dark:active:bg-white/[0.06]` kèm `active:delay-100` (trễ chỉ ở trạng thái active, để cuộn bằng ngón tay — trình duyệt hủy `:active` — không nháy nền; rời `:active` thì nền vẫn fade 150ms của `transition-colors`, chỉ là không bị trễ thêm) | `modules/crm/screens/Customers/components/CustomerCard.tsx` (hằng `CARD_FEEDBACK_CLASS` + comment phía trên; `<article onClick>`) |
 | Bảng (biến thể) | vỏ có nền `bg-white dark:bg-gray-dark`, `th` `font-semibold` không nền, Pagination đặt **trong** vỏ dưới `border-t` | `UserManagementScreen.tsx:226-356` |
 | Ảnh nhỏ trong bảng | `w-[60px] h-[40px] object-cover rounded`; không ảnh: khối `bg-gray-100` + icon | `ManageWpScreen.tsx:874-886` |
 | **Chip trạng thái** | `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium` + chấm `h-1.5 w-1.5 rounded-full`; màu `bg-{success|error|warning}-50 text-…-600 dark:bg-…-500/10`; có thể thêm viền `border-…-200` và chấm `animate-ping` | `UserManagementScreen.tsx:298-311`, `ManageWpScreen.tsx:901-930` |
@@ -158,7 +160,7 @@ Ghi chú hành vi: ô tìm ở header **không làm gì** (form không có xử 
 | Nhãn nhỏ | "Bạn": `rounded bg-brand-50 px-1.5 py-0.5 text-xs text-brand-600` | `UserManagementScreen.tsx:278` |
 | Thông báo trong trang | `p-4 rounded-lg border flex items-center gap-3` + `bg-error-50 border-error-100 text-error-500 dark:bg-error-500/15 dark:border-error-500/25` (tương tự success) + icon `AlertCircle` 20px | `ExternalLogsScreen.tsx:194-199`, `RawArticlesScreen.tsx:493-504` |
 | **Hộp thoại tự viết** (phổ biến hơn `Modal`) | lớp phủ `fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4` (± `backdrop-blur-sm`); hộp `bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700|800 w-full max-w-2xl|4xl|5xl max-h-[85vh] overflow-y-auto shadow-xl`; đầu `sticky top-0 px-6 py-4 border-b` + `h3.text-lg.font-semibold`; chân `border-t px-6 py-3 flex justify-end` | `ExternalLogsScreen.tsx:389-485`, `ManageWpScreen.tsx:113-146` |
-| Toast | **Ưu tiên** `toast.success()/toast.error()` (react-hot-toast). Toast tự viết: `fixed top-4 right-4 z-[9999] w-[340px] rounded-xl shadow-2xl` + thanh tiến trình 5s | `screens/CronjobScreen.tsx:40-44`; `ManageWpScreen.tsx:77-97` |
+| Toast | **Ưu tiên** `toast.success()/toast.error()` (react-hot-toast). Toast tự viết: `fixed top-4 right-4 z-[9999] w-[340px] rounded-xl shadow-2xl` + thanh tiến trình 5s | `modules/news/screens/CronjobScreen.tsx:40-44`; `ManageWpScreen.tsx:77-97` |
 | Tab | gạch chân: `nav.flex.gap-1` trong `border-b`; nút `inline-flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2`, chọn `border-brand-500 text-brand-600 dark:text-brand-400`, thường `border-transparent text-gray-500 hover:text-gray-700` | `KnowledgeConfigScreen.tsx:672-689` |
 | Trạng thái rỗng | đơn giản: `td colSpan px-5 py-20 text-center text-gray-500`; đầy đủ: vòng `w-16 h-16 rounded-full bg-gray-100` + icon 32px + `text-base font-medium text-gray-700` + gợi ý `text-theme-sm` | `ExternalLogsScreen.tsx:322-327`, `ManageWpScreen.tsx:830-850` |
 | Lỗi tải + thử lại | ô bảng `py-10 text-center text-sm text-gray-500` + nút `text-brand-500 underline` "Thử lại" | `UserManagementScreen.tsx:251-259` |
@@ -212,7 +214,7 @@ Chép **nguyên tệp** `src/index.css` (đã gồm đủ token, `menu-item*`, f
 | 10 | Bảng nằm trong "thẻ trắng" | Vỏ bảng chỉ có viền + `rounded-2xl`, **không nền**; `thead` nền `gray-50`/`gray-900` (chỉ trang Users có nền trắng) |
 | 11 | Toast "chưa xác nhận" | `react-hot-toast` top-right 4s + toast tự viết lặp ở 3 màn |
 | 12 | Hộp thoại chưa rõ | `Modal` chung `rounded-3xl` (chỉ 1 màn dùng); còn lại tự viết `bg-black/50` + `rounded-2xl`, z-index lộn xộn |
-| 13 | Chưa có tệp component (cần gửi thêm) | Có `ui/button, badge, table, alert, avatar…` nhưng **không màn nào dùng**; chuẩn thật là mẫu lớp (mục 5) |
+| 13 | Chưa có tệp component (cần gửi thêm) | Không có component nút, huy hiệu, bảng, cảnh báo, avatar dùng chung (bản thừa từ TailAdmin đã xóa vì không màn nào dùng); chuẩn thật là mẫu lớp (mục 5) |
 | 14 | "Không thêm màu ngoài thang" là hiện trạng | Hiện trạng dùng nhiều màu mặc định Tailwind (`red` 91, `emerald` 60, `blue` 37, `amber` 36 lần) |
 | 15 | Ô nhập form "nền gray-50 viền gray-200 cao ~42px" | 3 kiểu ô nhập khác nhau (thanh lọc / form cấu hình viền `gray-300` / form modal nền trong suốt) |
 | 16 | Chip "AI" `purple-100/purple-800` (ước lượng) | `purple-100/purple-700` (`ExternalLogsScreen.tsx:76`) |
@@ -243,10 +245,20 @@ Chép **nguyên tệp** `src/index.css` (đã gồm đủ token, `menu-item*`, f
 | Danh sách thẻ khách hàng thay bảng trên mobile | Không | Làm mới (bảng vẫn dùng mẫu mục 5 cho desktop) |
 | Lightbox ảnh, khay ảnh cuộn ngang, tải ảnh lên | Không | Làm mới |
 | Hộp thoại Gọi điện / Zalo / Ghi chú nhanh | Có `Modal` gốc | Dựng trên `components/ui/modal` |
-| Breadcrumb | `PageBreadCrumb` (không dùng, chữ "Home") | Sửa nhãn tiếng Việt rồi dùng |
+| Breadcrumb | Có `CrmBreadcrumb` (`modules/crm/components/CrmBreadcrumb.tsx`); bản breadcrumb thừa của TailAdmin đã xóa | Dùng `CrmBreadcrumb` |
 | Dropdown chọn tình trạng dạng chip | Có `Dropdown` | Ghép `Dropdown` + chip mục 5 |
-| Ô gợi ý AI | `Alert` (info, không dùng) | Dùng `Alert` hoặc thông báo trong trang mục 5 |
+| Ô gợi ý AI | Không (component `Alert` thừa của TailAdmin đã xóa) | Thông báo trong trang theo mục 5 |
 | Kết quả tìm kiếm thả xuống ở header | Ô tìm chỉ trang trí | Làm mới |
 | Thanh trượt khoảng (ngân sách) | Không | Làm mới |
 | Toast | Có `react-hot-toast` | Dùng `toast.*`, bỏ `Toast` của Stitch |
 | Bảng, phân trang, skeleton, trạng thái rỗng, công tắc | Có (mục 4–5) | Dùng lại |
+
+## 11. Quy ước đồng bộ giao diện sang prototype `stnd-crm-unified`
+
+> Thuộc FR-13 (v1.0.6). `stnd-crm-unified/` là prototype giao diện, **giữ nguyên làm nơi thiết kế**; không thuộc build, deploy hay CI.
+
+- **Quy tắc:** mọi thay đổi giao diện của `RealEstateAdminApp/` (màn, component, token, lớp Tailwind) phải đồng bộ sang `stnd-crm-unified/` để hai bản thống nhất. Đổi một nơi mà không đồng bộ nơi kia là lệch giao diện.
+- **Ngoại lệ (không đồng bộ):** phần PWA, thông báo đẩy (push) và chế độ standalone vì prototype không có. Ví dụ hộp thoại mời bật thông báo (FR-28) chỉ làm ở Admin App. Phần cài app như FR-27 (nút cài trên Android/iOS) vẫn đồng bộ sang prototype khi prototype có màn tương ứng.
+- **Không đồng bộ:** logic gọi API thật; prototype giữ bề mặt `@crm/api` nhưng chạy trên dữ liệu mock (xem `stnd-crm-unified/README.md`).
+- **Kiểm tra:** `qa-agent` kiểm mục này ở mỗi lượt có đổi giao diện (checklist trong `.claude/agents/qa-agent.md`). Lượt không đổi giao diện thì `git diff --stat -- stnd-crm-unified/` rỗng.
+- **Nơi nhắc:** `README.md` ở gốc repo (mục 6) và `docs/01_Infrastructure/09_So_Do_Cau_Truc_Thu_Muc.md` (checklist cuối).

@@ -46,7 +46,7 @@ export class BulkOperationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Thao tác hàng loạt (≤ 200 khách, đồng bộ, mỗi khách một transaction): CHANGE_STATUS, ASSIGN (Quản trị/Quản lý), ADD_TAGS, REMOVE_TAGS, DELETE (xóa mềm khách "Bỏ", kiểm quyền từng khách, cần payload.reason). Giới hạn 10 lần/phút/người. Hỗ trợ X-Idempotency-Key',
+      'Thao tác hàng loạt (≤ 200 khách, đồng bộ, mỗi khách một transaction): CHANGE_STATUS, ASSIGN (Quản trị/Quản lý, và từng khách phải là chủ khách: Quản trị, người tạo, Quản lý nhóm chủ), ADD_TAGS, REMOVE_TAGS, DELETE (xóa mềm; từng khách chỉ Quản trị hoặc người tạo xóa được, không điều kiện trạng thái; cần payload.reason). Giới hạn 10 lần/phút/người. Hỗ trợ X-Idempotency-Key',
   })
   @ApiHeader({ name: 'X-Idempotency-Key', required: false })
   @ApiDataResponse(BulkOperationResponseDto)
@@ -55,7 +55,11 @@ export class BulkOperationsController {
     description:
       'VALIDATION_FAILED (gồm DELETE thiếu payload.reason, > 200 khách)',
   })
-  @ApiResponse({ status: 403, description: 'INSUFFICIENT_ROLE (ASSIGN)' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'INSUFFICIENT_ROLE (ASSIGN cho cả lô khi không phải Quản trị/Quản lý; từng khách không đủ quyền nằm trong failed[] với INSUFFICIENT_ROLE, HTTP vẫn 200)',
+  })
   @ApiResponse({ status: 429, description: 'RATE_LIMITED' })
   run(
     @CurrentUser() user: JwtPayload,

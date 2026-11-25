@@ -116,6 +116,12 @@ export const findNonAssignableUserIds = (users: readonly (Pick<CrmUser, 'id' | '
       !users.some((user) => user.id === userId && user.isActive && (user.roles ?? [user.role]).some((role) => role === 'MANAGER' || role === 'STAFF')),
   );
 
+/** Tối đa 10 MEMBER mỗi khách (không tính PRIMARY) — khớp backend `CARE_TEAM_LIMIT_EXCEEDED`. */
+export const MAX_CARE_TEAM_MEMBERS = 10;
+
+/** Số MEMBER (không tính PRIMARY) của một nhóm chăm sóc. */
+export const countCareTeamMembers = (careTeam: readonly { role: string }[]): number => careTeam.filter((member) => member.role === 'MEMBER').length;
+
 /** Dựng nhóm chăm sóc: 1 PRIMARY + các MEMBER (bỏ trùng, bỏ người trùng PRIMARY). */
 export const buildCareTeam = (
   primaryUserId: string | null,
@@ -256,8 +262,13 @@ export const computeOccasions = (
 // ---------------------------------------------------------------------------
 
 /** `searchText` (04 §3.2): họ tên bỏ dấu + các biến thể SĐT + email. */
-export const buildSearchText = (input: { fullName: string; phone: string; email?: string }): string =>
-  [normalizeVietnamese(input.fullName), ...getPhoneSearchVariants(input.phone), input.email?.toLowerCase() ?? '']
+export const buildSearchText = (input: { fullName: string; phone: string | null; email?: string; customerCode?: string | null }): string =>
+  [
+    normalizeVietnamese(input.fullName),
+    ...getPhoneSearchVariants(input.phone),
+    input.email?.toLowerCase() ?? '',
+    input.customerCode?.toLowerCase() ?? '',
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -291,3 +302,20 @@ export const formatBudgetRange = (from: number, to: number): string => {
 /** Tỷ (đơn vị form) <-> VNĐ (đơn vị lưu). */
 export const billionToVnd = (billion: number): number => Math.round(billion * ONE_BILLION);
 export const vndToBillion = (vnd: number): number => Math.round((vnd / ONE_BILLION) * 100) / 100;
+
+/**
+ * Lý do (tiếng Việt) một khách không thêm được thành viên nhóm chăm sóc (mời đơn lẻ và hàng loạt); mã lạ -> câu chung kèm mã lỗi.
+ * Backend ở mời hàng loạt (`BulkFailureDto`) chỉ trả `{ customerId, errorCode }`, không có `details.reason`, nên `USER_NOT_ASSIGNABLE` chỉ có một câu chung.
+ */
+const CARE_TEAM_ERROR_NOTES: Record<string, string> = {
+  PRIMARY_REQUIRED: 'chưa có người chăm sóc chính — hãy đặt người chăm sóc chính ở hồ sơ khách trước',
+  CARE_TEAM_LIMIT_EXCEEDED: `vượt giới hạn ${MAX_CARE_TEAM_MEMBERS} thành viên phụ`,
+  ALREADY_IN_CARE_TEAM: 'người này đã có trong nhóm chăm sóc',
+  CUSTOMER_NOT_FOUND: 'khách không còn trong phạm vi của bạn',
+  USER_NOT_ASSIGNABLE: 'người được chọn không thể được mời',
+  CARE_TEAM_ACTION_FORBIDDEN: 'bạn không có quyền với khách này',
+  // FR-31: mời hàng loạt kiểm riêng từng khách; không phải chủ khách (Quản trị, người tạo, Quản lý nhóm chủ) bị từ chối.
+  INSUFFICIENT_ROLE: 'chỉ Quản trị, người tạo khách hoặc Quản lý nhóm chủ mới mời được vào nhóm của khách này',
+  VALIDATION_FAILED: 'dữ liệu không hợp lệ',
+};
+export const describeCareTeamError = (errorCode: string): string => CARE_TEAM_ERROR_NOTES[errorCode] ?? `không thêm được (mã lỗi ${errorCode})`;

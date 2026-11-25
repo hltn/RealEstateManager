@@ -67,6 +67,14 @@ describe('CareTimeline (PT-028): nút "Ghi chú" ở đầu thẻ, cùng hàng t
     expect(onAddNote).toHaveBeenCalledTimes(1);
   });
 
+  it('hàng tiêu đề cho phép khối "số mục + nút Ghi chú" xuống dòng (không bẻ tiêu đề thành nhiều dòng ở cột hẹp), số mục không bị ngắt (F-2)', () => {
+    renderTimeline(makeLog(false), { onAddNote: vi.fn() });
+    const card = screen.getByRole('region', { name: 'Nhật ký chăm sóc' });
+    const heading = within(card).getByRole('heading', { level: 3, name: 'Nhật ký chăm sóc' });
+    expect(heading.closest('div.flex.justify-between')).toHaveClass('flex-wrap');
+    expect(within(card).getByText('1 mục')).toHaveClass('whitespace-nowrap');
+  });
+
   it('không có onAddNote (mobile dùng thanh đáy): không có nút "Ghi chú" trong thẻ', () => {
     renderTimeline(makeLog(false));
     expect(screen.queryByRole('button', { name: 'Ghi chú' })).toBeNull();

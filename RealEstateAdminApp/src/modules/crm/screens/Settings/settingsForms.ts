@@ -3,22 +3,26 @@
  * kiểm tài khoản/nhóm. Không phụ thuộc React -> test trực tiếp. Backend vẫn kiểm lại mọi thứ (nguồn sự thật).
  */
 import { LIST_GROUP_LABELS } from '@crm/lib/customerRules';
+import { TAG_CATEGORY_LABELS, TAG_CATEGORY_ORDER } from '@crm/lib/tagCategories';
 import { toSlug } from '@crm/lib/text';
 import type { ApiError, CatalogEndpoint } from '@crm/api';
 import { isGenericForbidden } from '@crm/api/http/crmErrors';
-import type { AccountRole, AdminUser, Area, CatalogItem, CrmSettings, CustomerStatusItem, ListGroup, StatusTone, UserRole } from '@crm/types/crm';
+import type { AccountRole, AdminTag, AdminUser, Area, CatalogItem, ContactResult, CrmSettings, CustomerStatusItem, ListGroup, StatusTone, TagCategory, UserRole } from '@crm/types/crm';
 import { hasTeamRole, isSameSet, normalizeRoles } from '../../../../utils/userRoles';
 
 /** Danh mục chỉnh bằng form chung (dự án có màn riêng nên dùng `ProjectFormDialog`). */
-export type AdminCatalogKind = 'statuses' | 'leadSources' | 'areas';
+export type AdminCatalogKind = 'statuses' | 'leadSources' | 'contactResults' | 'areas';
 
-export type SettingsTab = AdminCatalogKind | 'projects' | 'users' | 'teams' | 'reminders';
+export type SettingsTab = AdminCatalogKind | 'projects' | 'tags' | 'personaFields' | 'users' | 'teams' | 'reminders';
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'statuses', label: 'Tình trạng khách' },
   { id: 'leadSources', label: 'Nguồn khách' },
+  { id: 'contactResults', label: 'Kết quả liên hệ' },
   { id: 'areas', label: 'Khu vực' },
   { id: 'projects', label: 'Dự án' },
+  { id: 'tags', label: 'Thẻ' },
+  { id: 'personaFields', label: 'Trường chân dung' },
   { id: 'users', label: 'Người dùng' },
   { id: 'teams', label: 'Nhóm' },
   { id: 'reminders', label: 'Nhắc việc' },
@@ -27,6 +31,7 @@ export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
 export const CATALOG_ENDPOINTS: Record<AdminCatalogKind, CatalogEndpoint> = {
   statuses: 'customer-statuses',
   leadSources: 'lead-sources',
+  contactResults: 'contact-results',
   areas: 'areas',
 };
 
@@ -50,9 +55,12 @@ export const AREA_TYPE_OPTIONS: { value: AreaType; label: string }[] = [
 export type AreaType = 'COUNTRY' | 'PROVINCE' | 'DISTRICT' | 'WARD' | 'OTHER';
 
 export const CATALOG_NAME_MAX_LENGTH = 100;
+/** Giới hạn của backend (`CreateContactResultDto`): số ngày gợi ý hẹn lại 0–365, lời gợi ý tối đa 300 ký tự (FR-39). */
+export const FOLLOW_UP_DAYS_MAX = 365;
+export const SUGGESTION_TEXT_MAX_LENGTH = 300;
 export const CATALOG_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,29}$/;
 
-export type AdminCatalogItem = CustomerStatusItem | CatalogItem | Area;
+export type AdminCatalogItem = CustomerStatusItem | CatalogItem | ContactResult | Area;
 
 /** Bản nháp thống nhất cho form danh mục (trường không dùng bị bỏ qua theo loại). */
 export interface CatalogDraft {
@@ -69,6 +77,10 @@ export interface CatalogDraft {
   areaType: AreaType;
   /** '' = khu vực gốc. */
   parentId: string;
+  /** Kết quả liên hệ (FR-39): số ngày gợi ý hẹn lại dạng chuỗi để ô nhập được để trống; '' = không gợi ý. */
+  suggestedFollowUpDays: string;
+  /** Kết quả liên hệ (FR-39): lời gợi ý việc tiếp theo ('' = không có). */
+  suggestionText: string;
 }
 
 const getOrder = (item: AdminCatalogItem): number => item.order;
@@ -96,6 +108,8 @@ export const createEmptyDraft = (items: readonly AdminCatalogItem[]): CatalogDra
   // Khu vực mới mặc định là tỉnh/thành (danh sách chuẩn 34 tỉnh, không có cha); chọn cha thì `withAreaParent` đổi sang Quận/Huyện.
   areaType: 'PROVINCE',
   parentId: '',
+  suggestedFollowUpDays: '',
+  suggestionText: '',
 });
 
 /**
@@ -121,12 +135,29 @@ export const toDraft = (item: AdminCatalogItem): CatalogDraft => ({
   tone: 'tone' in item ? item.tone : 'brand',
   areaType: 'type' in item && item.type ? (item.type as AreaType) : 'DISTRICT',
   parentId: 'parentId' in item && item.parentId ? item.parentId : '',
+  suggestedFollowUpDays: 'suggestedFollowUpDays' in item && item.suggestedFollowUpDays !== null ? String(item.suggestedFollowUpDays) : '',
+  suggestionText: 'suggestionText' in item ? item.suggestionText : '',
 });
 
 /** Mã danh mục sinh từ tên khi tạo mới ("Hội chợ BĐS" -> "HOI_CHO_BDS"), tối đa 30 ký tự, bắt đầu bằng chữ. */
 export const deriveCatalogCode = (name: string): string => {
   const slug = toSlug(name).toUpperCase().replace(/^[^A-Z]+/, '').slice(0, 30);
   return slug;
+};
+
+/** Số ngày gợi ý hẹn lại: '' = không gợi ý (null), còn lại phải là số nguyên 0–365; không hợp lệ -> NaN. */
+export const parseFollowUpDays = (text: string): number | null => {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const days = /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  return days <= FOLLOW_UP_DAYS_MAX ? days : Number.NaN;
+};
+
+/** Kiểm riêng phần Kết quả liên hệ (FR-39): số ngày gợi ý và lời gợi ý; trả lỗi tiếng Việt hoặc null. */
+const validateContactResultDraft = (draft: CatalogDraft): string | null => {
+  if (Number.isNaN(parseFollowUpDays(draft.suggestedFollowUpDays))) return `Số ngày gợi ý hẹn lại là số nguyên từ 0 đến ${FOLLOW_UP_DAYS_MAX} (để trống nếu không gợi ý).`;
+  if (draft.suggestionText.trim().length > SUGGESTION_TEXT_MAX_LENGTH) return `Lời gợi ý tối đa ${SUGGESTION_TEXT_MAX_LENGTH} ký tự.`;
+  return null;
 };
 
 /** Lỗi nhập (null = hợp lệ). Trùng mã/tên do server báo (`CATALOG_DUPLICATED`). */
@@ -138,6 +169,7 @@ export const validateDraft = (kind: AdminCatalogKind, draft: CatalogDraft): stri
     return 'Không tạo được mã từ tên này. Hãy nhập tên có chữ cái (mã gồm chữ HOA, số, "_").';
   }
   if (!Number.isInteger(draft.order) || draft.order < 0 || draft.order > 10_000) return 'Thứ tự từ 0 đến 10000.';
+  if (kind === 'contactResults') return validateContactResultDraft(draft);
   return null;
 };
 
@@ -162,6 +194,13 @@ export const toCatalogBody = (kind: AdminCatalogKind, draft: CatalogDraft): Reco
   }
   if (kind === 'leadSources') {
     return isNew ? { code: draft.code || deriveCatalogCode(name), label: name, order: draft.order } : { label: name, order: draft.order, isActive: draft.isActive };
+  }
+  if (kind === 'contactResults') {
+    // `suggestedFollowUpDays: null` = bỏ gợi ý (PATCH null được backend nhận); `suggestionText` rỗng = xóa lời gợi ý.
+    const suggestion = { suggestedFollowUpDays: parseFollowUpDays(draft.suggestedFollowUpDays), suggestionText: draft.suggestionText.trim() };
+    return isNew
+      ? { code: draft.code || deriveCatalogCode(name), label: name, order: draft.order, ...suggestion }
+      : { label: name, order: draft.order, isActive: draft.isActive, ...suggestion };
   }
   return isNew
     ? { name, type: draft.areaType, order: draft.order, ...(draft.parentId ? { parentId: draft.parentId } : {}) }
@@ -383,3 +422,45 @@ export const validateTeam = (draft: TeamDraft): string | null => {
 
 /** Người có thể thêm vào nhóm: đang hoạt động, có Quản lý/Nhân viên và chưa thuộc nhóm. */
 export const listAddableUsers = (users: readonly AdminUser[], teamId: string): AdminUser[] => users.filter((user) => user.isActive && hasTeamRole(user.roles) && !user.teamIds.includes(teamId));
+
+// --- Thẻ (FR-42, chỉ Quản trị) ------------------------------------------------------------------------------------------
+
+/** Giới hạn tên thẻ của backend (`TAG_NAME_MAX_LENGTH`). */
+export const TAG_NAME_MAX_LENGTH = 50;
+
+export { TAG_CATEGORY_LABELS };
+
+export const TAG_CATEGORY_OPTIONS: { value: TagCategory; label: string }[] = TAG_CATEGORY_ORDER.map((value) => ({ value, label: TAG_CATEGORY_LABELS[value] }));
+
+/** Màu thẻ chọn được: tên màu thiết kế (backend nhận `^[a-z][a-z0-9_-]{0,19}$`). Rỗng = không màu. */
+export const TAG_COLOR_OPTIONS: { value: string; label: string }[] = [{ value: '', label: 'Không màu' }, ...STATUS_TONE_OPTIONS];
+
+/** Bản nháp form sửa thẻ (`color` rỗng = không màu). */
+export interface TagDraft {
+  id: string;
+  name: string;
+  category: TagCategory;
+  color: string;
+}
+
+export const toTagDraft = (tag: AdminTag): TagDraft => ({ id: tag.id, name: tag.name, category: tag.category, color: tag.color ?? '' });
+
+export const validateTagDraft = (draft: TagDraft): string | null => {
+  const name = draft.name.trim();
+  if (!name) return 'Vui lòng nhập tên thẻ.';
+  if (name.length > TAG_NAME_MAX_LENGTH) return `Tên thẻ tối đa ${TAG_NAME_MAX_LENGTH} ký tự.`;
+  return null;
+};
+
+/** Body PATCH chỉ gồm field thật sự đổi (`color` rỗng -> `null` = bỏ màu); rỗng nghĩa là không có gì để lưu. */
+export const buildTagPatch = (before: AdminTag, draft: TagDraft): { name?: string; category?: TagCategory; color?: string | null } => {
+  const patch: { name?: string; category?: TagCategory; color?: string | null } = {};
+  const name = draft.name.trim();
+  if (name !== before.name) patch.name = name;
+  if (draft.category !== before.category) patch.category = draft.category;
+  if (draft.color !== (before.color ?? '')) patch.color = draft.color === '' ? null : draft.color;
+  return patch;
+};
+
+/** Thẻ đích để gộp: backend chỉ gộp thẻ CÙNG NHÓM và không gộp vào chính nó. */
+export const listMergeTargets = (tags: readonly AdminTag[], source: AdminTag): AdminTag[] => tags.filter((tag) => tag.id !== source.id && tag.category === source.category);

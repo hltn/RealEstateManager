@@ -6,9 +6,15 @@ describe('resolveNotificationPath (deepLink backend -> route Web Admin)', () => 
     expect(resolveNotificationPath({ deepLink: '/crm/customers/66f1a2b3c4d5e6f708192a3b' })).toBe('/crm/customers/66f1a2b3c4d5e6f708192a3b');
   });
 
-  it('link đề nghị tham gia -> hồ sơ khách nếu biết id, nếu không -> danh sách khách', () => {
-    expect(resolveNotificationPath({ deepLink: '/crm/care-team-requests', customerId: 'abc123' })).toBe('/crm/customers/abc123');
-    expect(resolveNotificationPath({ deepLink: '/crm/care-team-requests' })).toBe('/crm/customers');
+  it('thông báo đề nghị tham gia cũ (CARE_TEAM_JOIN_REQUESTED) và link care-team-requests -> không điều hướng, kể cả khi có customerId', () => {
+    expect(resolveNotificationPath({ type: 'CARE_TEAM_JOIN_REQUESTED', deepLink: '/crm/care-team-requests', customerId: 'abc123' })).toBeNull();
+    expect(resolveNotificationPath({ type: 'CARE_TEAM_JOIN_REQUESTED', deepLink: '/crm/customers/abc123', customerId: 'abc123' })).toBeNull();
+    expect(resolveNotificationPath({ deepLink: '/crm/care-team-requests', customerId: 'abc123' })).toBeNull();
+  });
+
+  it('thông báo cũ vẫn có nhãn hiển thị; loại khác vẫn điều hướng như trước', () => {
+    expect(getNotificationTypeLabel('CARE_TEAM_JOIN_REQUESTED')).toBe('Đề nghị tham gia');
+    expect(resolveNotificationPath({ type: 'CUSTOMER_ASSIGNED', deepLink: '/crm/customers/abc123', customerId: 'abc123' })).toBe('/crm/customers/abc123');
   });
 
   it('lịch hẹn -> màn lịch hẹn; cảnh báo bảo mật (audit-logs) -> không điều hướng', () => {

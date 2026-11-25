@@ -14,7 +14,7 @@ import {
   NotificationPriority,
   NotificationType,
 } from '../../../notifications/notification.constants';
-import { NotificationsService } from '../../../notifications/notifications.service';
+import { NotificationDispatcher } from '../../../notifications/notification-dispatcher.service';
 
 const WINDOW_SECONDS = 3600;
 /** Nhiều truy vấn SĐT KHÁC NHAU trong 1 giờ (dò số qua ô tìm kiếm). */
@@ -38,7 +38,7 @@ export class CrmAbuseMonitorService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @InjectConnection() private readonly connection: Connection,
     private readonly audit: CrmAuditLogService,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
   ) {}
 
   /**
@@ -178,9 +178,11 @@ export class CrmAbuseMonitorService {
     const name = (user?.displayName as string | undefined) ?? 'Một người dùng';
     await this.notifications.notifyAdmins({
       type: NotificationType.SECURITY_ALERT,
-      title: 'Cảnh báo truy cập bất thường',
-      body: `${name}: ${reason}`,
-      priority: NotificationPriority.HIGH,
+      inApp: {
+        title: 'Cảnh báo truy cập bất thường',
+        body: `${name}: ${reason}`,
+        priority: NotificationPriority.HIGH,
+      },
       data: {
         deepLink: `/crm/audit-logs?actorId=${userId}&actions=${action}`,
       },

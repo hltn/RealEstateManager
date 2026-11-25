@@ -129,6 +129,7 @@ export class CustomCrawlerService {
           // Remove BOM, control characters (except tab, newline, carriage return), and trim
           const cleanXml = rssBody
             .replace(/^\uFEFF/g, '')
+            // eslint-disable-next-line no-control-regex -- chủ đích loại ký tự điều khiển khỏi nội dung crawl
             .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
             .trim();
 
@@ -229,7 +230,7 @@ export class CustomCrawlerService {
 
           try {
             article.url = new URL(article.url, source.url).href;
-          } catch (e) {
+          } catch {
             this.logger.warn(
               `Failed to resolve URL: ${article.url} against base: ${source.url}`,
             );
@@ -575,7 +576,10 @@ export class CustomCrawlerService {
     const endDate = endOfDayUtc(date);
     return this.rawArticleModel
       .find({
-        publishedAt: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
+        publishedAt: {
+          $gte: startDate.toISOString(),
+          $lte: endDate.toISOString(),
+        },
       })
       .lean()
       .exec();
@@ -601,7 +605,10 @@ export class CustomCrawlerService {
     await this.rawArticleModel.findByIdAndDelete(id).exec();
   }
 
-  async updateRawArticle(id: string, update: Record<string, any>): Promise<void> {
+  async updateRawArticle(
+    id: string,
+    update: Record<string, any>,
+  ): Promise<void> {
     await this.rawArticleModel.updateOne({ _id: id }, { $set: update }).exec();
   }
 
@@ -614,8 +621,12 @@ export class CustomCrawlerService {
    * Chỉ giữ lại để tránh break nếu còn chỗ nào đó gọi — KHÔNG dùng cho analyze-raw nữa.
    */
   async deleteRawArticlesNotIn(urlHashes: string[]): Promise<void> {
+    // FR-14: chỉ nhận chuỗi trước khi vào filter Mongo
+    const safeHashes = urlHashes.filter(
+      (h): h is string => typeof h === 'string',
+    );
     await this.rawArticleModel
-      .deleteMany({ urlHash: { $nin: urlHashes } })
+      .deleteMany({ urlHash: { $nin: safeHashes } })
       .exec();
   }
 
@@ -631,10 +642,17 @@ export class CustomCrawlerService {
     submittedHashes: string[],
     keepHashes: string[],
   ): Promise<void> {
+    // FR-14: ép kiểu chuỗi (phần tử object kiểu `{ $ne: ... }` bị loại) trước khi vào filter Mongo
+    const safeSubmitted = submittedHashes.filter(
+      (h): h is string => typeof h === 'string' && h.length > 0,
+    );
+    const safeKeep = (keepHashes ?? []).filter(
+      (h): h is string => typeof h === 'string' && h.length > 0,
+    );
     // Không có bài nào được submit → bỏ qua, tránh xóa nhầm
-    if (submittedHashes.length === 0) return;
+    if (safeSubmitted.length === 0) return;
     await this.rawArticleModel
-      .deleteMany({ urlHash: { $in: submittedHashes, $nin: keepHashes } })
+      .deleteMany({ urlHash: { $in: safeSubmitted, $nin: safeKeep } })
       .exec();
   }
 }

@@ -14,6 +14,7 @@ import { CustomerInfoCard } from './components/CustomerInfoCard';
 import { NextStepNotice } from './components/DetailParts';
 import { HistoryList } from './components/HistoryList';
 import { MobileContactFooter } from './components/MobileContactFooter';
+import { DeleteCustomerButton } from './components/DeleteCustomerButton';
 import { MobileDetailHeader } from './components/MobileDetailHeader';
 import { UpcomingAppointmentsSection } from './components/UpcomingAppointmentsSection';
 import { PersonaCard, RealEstateNeedsCard } from './components/PersonaCards';
@@ -65,6 +66,8 @@ export const CustomerDetailMobile = () => {
           <CustomerInfoCard customer={customer} />
           <PersonaCard customer={customer} />
           <RealEstateNeedsCard customer={customer} />
+          {/* Xóa khách (chỉ khi `permissions.canDelete`): kín đáo ở cuối tab Thông tin, không nằm trong cụm nút đầu trang. */}
+          <DeleteCustomerButton customer={customer} variant="mobile" />
         </>
       )}
 
@@ -84,7 +87,7 @@ export const CustomerDetailMobile = () => {
         </>
       )}
 
-      <MobileContactFooter customerId={customer.id} />
+      <MobileContactFooter customerId={customer.id} hasPhone={customer.phoneMasked !== null} />
     </div>
   );
 };

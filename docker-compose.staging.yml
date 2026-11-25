@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # docker-compose.staging.yml — OVERRIDE CHỈ CHO "STAGING LOCAL" (máy dev), phủ lên docker-compose.yml của production.
 # KHÔNG bao giờ dùng trên VPS và KHÔNG tự được nạp: compose chỉ đọc file này khi COMPOSE_FILE (hoặc -f) nêu tên nó, việc mà
-# chỉ `scripts/staging.sh` làm. Chạy `docker compose` mặc định / `bash deploy.sh` mặc định vẫn chỉ dùng docker-compose.yml.
+# chỉ `ops/staging.sh` làm. Chạy `docker compose` mặc định / `bash deploy.sh` mặc định vẫn chỉ dùng docker-compose.yml.
 # Tài liệu: docs/01_Infrastructure/06_Production_Deploy.md mục 11.3 ("Staging local").
 #
 # Khác production (liệt kê đầy đủ ở mục 11.3):

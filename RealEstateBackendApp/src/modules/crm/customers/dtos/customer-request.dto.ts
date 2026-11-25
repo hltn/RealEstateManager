@@ -17,6 +17,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { CatalogCode } from '../../../../common/decorators/catalog-code.decorator';
 import { OptionalNotNull } from '../../../../common/decorators/optional-not-null.decorator';
 import { HasVisibleChar } from '../../../../common/decorators/has-visible-char.decorator';
 import { Trim } from '../../../../common/decorators/trim.decorator';
@@ -32,7 +33,6 @@ import {
 import { MAX_TAGS_PER_CUSTOMER } from '../../tags/tag.constants';
 
 const MAX_PROJECTS_PER_CUSTOMER = 20;
-const MAX_CARE_MEMBERS_ON_CREATE = 20;
 const PHONE_INPUT_MAX_LENGTH = 30;
 
 /** Giá trị một tiêu chí khi gửi lên (cả hai field tùy chọn, không nhận `null`). */
@@ -77,23 +77,6 @@ export class CriteriaInputDto {
   timing?: CriterionInputDto;
 }
 
-export class CareTeamInputDto {
-  @ApiProperty({
-    type: [String],
-    description: 'Người chăm sóc (MANAGER/STAFF đang hoạt động)',
-  })
-  @IsArray()
-  @ArrayMaxSize(MAX_CARE_MEMBERS_ON_CREATE)
-  @IsMongoId({ each: true })
-  memberIds: string[];
-
-  @ApiProperty({
-    description: 'Phụ trách chính; tự được thêm nếu chưa có trong memberIds',
-  })
-  @IsMongoId()
-  primaryUserId: string;
-}
-
 export class DataConsentInputDto {
   @ApiProperty({ enum: ConsentStatus })
   @IsEnum(ConsentStatus)
@@ -112,7 +95,10 @@ export class DataConsentInputDto {
   note?: string;
 }
 
-/** Tạo khách (tài liệu 05 mục 2.3). `tagIds` thuộc M4 nên chưa nhận. */
+/**
+ * Tạo khách (tài liệu 05 mục 2.3). Không nhận `careTeam`: người tạo luôn là phụ trách chính (FR-10); `ValidationPipe`
+ * (`forbidNonWhitelisted`) trả 400 nếu client gửi trường này.
+ */
 export class CreateCustomerDto {
   @ApiProperty({ maxLength: CUSTOMER_NAME_MAX_LENGTH })
   @Trim()
@@ -121,15 +107,18 @@ export class CreateCustomerDto {
   @MaxLength(CUSTOMER_NAME_MAX_LENGTH)
   fullName: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '0912 345 678',
-    description: 'Chuẩn hóa về E.164 ở server',
+    nullable: true,
+    type: String,
+    description:
+      'Tùy chọn (FR-01): vắng mặt, `null` hoặc chuỗi rỗng = khách chưa có SĐT. Có giá trị thì chuẩn hóa về E.164 ở server; không kiểm trùng',
   })
+  @IsOptional()
   @Trim()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(PHONE_INPUT_MAX_LENGTH)
-  phone: string;
+  phone?: string | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   @IsOptional()
@@ -139,28 +128,65 @@ export class CreateCustomerDto {
   email?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Mặc định: tình trạng mặc định (Chưa tiếp cận)',
+    description:
+      'Mặc định: tình trạng mặc định (Chưa tiếp cận). Deprecated: dùng `statusCode`',
   })
   @IsOptional()
   @IsMongoId()
   statusId?: string;
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    description:
+      'Mã tình trạng (ưu tiên hơn `statusId`; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @OptionalNotNull()
+  @CatalogCode()
+  statusCode?: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `sourceCode`',
+  })
   @IsOptional()
   @IsMongoId()
   sourceId?: string | null;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @IsOptional()
+  @CatalogCode()
+  sourceCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `projectCodes`',
+  })
   @OptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
   @IsMongoId({ each: true })
   interestedProjectIds?: string[];
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({ type: [String], description: 'Mã dự án quan tâm' })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
+  @CatalogCode({ each: true })
+  projectCodes?: string[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `areaCode`',
+  })
   @IsOptional()
   @IsMongoId()
   areaId?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @IsOptional()
+  @CatalogCode()
+  areaCode?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -187,16 +213,6 @@ export class CreateCustomerDto {
   @Type(() => CriteriaInputDto)
   criteria?: CriteriaInputDto;
 
-  @ApiPropertyOptional({
-    type: CareTeamInputDto,
-    description:
-      'Quản trị/Quản lý chỉ định; Nhân viên tạo thì tự là phụ trách chính',
-  })
-  @OptionalNotNull()
-  @ValidateNested()
-  @Type(() => CareTeamInputDto)
-  careTeam?: CareTeamInputDto;
-
   @ApiPropertyOptional({ type: DataConsentInputDto })
   @OptionalNotNull()
   @ValidateNested()
@@ -222,13 +238,17 @@ export class UpdateCustomerDto {
   @MaxLength(CUSTOMER_NAME_MAX_LENGTH)
   fullName?: string;
 
-  @ApiPropertyOptional()
-  @OptionalNotNull()
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Vắng mặt = giữ nguyên; `null` hoặc chuỗi rỗng = xóa SĐT (FR-01); có giá trị = chuẩn hóa và thay. Không kiểm trùng',
+  })
+  @IsOptional()
   @Trim()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(PHONE_INPUT_MAX_LENGTH)
-  phone?: string;
+  phone?: string | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   @IsOptional()
@@ -237,22 +257,64 @@ export class UpdateCustomerDto {
   @MaxLength(CUSTOMER_EMAIL_MAX_LENGTH)
   email?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `sourceCode`',
+  })
   @IsOptional()
   @IsMongoId()
   sourceId?: string | null;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Mã nguồn (ưu tiên hơn `sourceId`; `null` = xóa; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @IsOptional()
+  @CatalogCode()
+  sourceCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Deprecated: dùng `projectCodes`',
+  })
   @OptionalNotNull()
   @IsArray()
   @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
   @IsMongoId({ each: true })
   interestedProjectIds?: string[];
 
-  @ApiPropertyOptional({ nullable: true, type: String })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Mã dự án quan tâm (thay thế toàn bộ; `[]` = xóa hết); vắng mặt = giữ nguyên',
+  })
+  @OptionalNotNull()
+  @IsArray()
+  @ArrayMaxSize(MAX_PROJECTS_PER_CUSTOMER)
+  @CatalogCode({ each: true })
+  projectCodes?: string[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: 'Deprecated: dùng `areaCode`',
+  })
   @IsOptional()
   @IsMongoId()
   areaId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      'Mã khu vực (ưu tiên hơn `areaId`; `null` = xóa; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @IsOptional()
+  @CatalogCode()
+  areaCode?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
@@ -267,9 +329,21 @@ export class UpdateCustomerDto {
 }
 
 export class ChangeStatusDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Deprecated: dùng `statusCode`. Phải gửi một trong hai (`statusCode` hoặc `statusId`)',
+  })
+  @IsOptional()
   @IsMongoId()
-  statusId: string;
+  statusId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Mã tình trạng đích (ưu tiên hơn `statusId`; gửi cả hai mà không cùng bản ghi: 400)',
+  })
+  @OptionalNotNull()
+  @CatalogCode()
+  statusCode?: string;
 
   @ApiProperty()
   @Type(() => Number)
@@ -334,15 +408,6 @@ export class AnonymizeCustomerDto {
   @ApiProperty({ description: 'Phải là true: thao tác không hoàn tác được' })
   @Equals(true, { message: 'confirm phải là true để ẩn danh hóa' })
   confirm: boolean;
-}
-
-export class PhoneLookupDto {
-  @ApiProperty({ example: '0912 345 678' })
-  @Trim()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(PHONE_INPUT_MAX_LENGTH)
-  phone: string;
 }
 
 export class PhoneViewDto {

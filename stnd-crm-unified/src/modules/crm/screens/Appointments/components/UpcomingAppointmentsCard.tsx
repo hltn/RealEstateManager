@@ -5,6 +5,7 @@
 import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { useAppointments } from '@crm/api';
+import { formatAssigneeNames } from '@crm/lib/appointmentAssignees';
 import { getAppointmentDateKey, getAppointmentTime } from '@crm/lib/appointmentAdapters';
 import { useCrmActions } from '@crm/store';
 import { formatShortWeekdayDate, getUpcomingAppointments, getWeekDates } from '../appointmentSchedule';
@@ -44,6 +45,8 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
           {upcoming.map((appointment) => {
             const style = APPOINTMENT_TYPE_STYLES[appointment.type];
             const projectLabel = appointment.project?.label;
+            // Dòng bị `truncate` khi nhiều người/tên dài: cùng chuỗi đầy đủ đặt vào `title` để rê chuột xem đủ.
+            const summaryLine = `${projectLabel ? `Dự án ${projectLabel} • ` : ''}Phụ trách: ${formatAssigneeNames(appointment.assignees)}`;
             return (
               <li key={appointment.id} className="flex items-start justify-between gap-2 py-3">
                 <div className="min-w-0 space-y-1">
@@ -54,8 +57,8 @@ export const UpcomingAppointmentsCard = ({ todayIso }: UpcomingAppointmentsCardP
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${style.chipClass}`}>{style.shortLabel}</span>
                   </div>
                   <p className="text-theme-sm font-medium text-gray-800 dark:text-white/90">{appointment.customer.fullName}</p>
-                  <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400">
-                    {projectLabel && `Dự án ${projectLabel} • `}Phụ trách: {appointment.assignee.displayName}
+                  <p className="truncate text-theme-xs text-gray-500 dark:text-gray-400" title={summaryLine}>
+                    {summaryLine}
                   </p>
                 </div>
                 <button

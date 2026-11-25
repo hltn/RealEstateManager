@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPhoneDisplay, getPhoneSearchVariants, isValidPhone, maskPhoneDisplay, normalizePhone, toLocalDigits } from './phone';
+import { formatPhoneDisplay, hasPhone, getPhoneSearchVariants, isValidPhone, maskPhoneDisplay, normalizePhone, toLocalDigits } from './phone';
 
 describe('normalizePhone (04 §3.2.1)', () => {
   it.each([
@@ -87,5 +87,31 @@ describe('Th2 ký tự lạ bị từ chối; trunk 0 của số nước ngoài'
     ['+1 415 555 2671', '+14155552671'],
   ])('%s -> %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected);
+  });
+});
+
+describe('khách chưa có SĐT (v1.0.5): null/undefined không ném lỗi', () => {
+  it.each([[null], [undefined]])('%j: mọi hàm trả giá trị rỗng/không hợp lệ', (input) => {
+    expect(normalizePhone(input)).toBeNull();
+    expect(isValidPhone(input)).toBe(false);
+    expect(formatPhoneDisplay(input)).toBe('');
+    expect(toLocalDigits(input)).toBe('');
+    expect(getPhoneSearchVariants(input)).toEqual([]);
+    expect(maskPhoneDisplay(input)).toBe('');
+  });
+
+  it('chuỗi rỗng vẫn không hợp lệ, số hợp lệ không bị ảnh hưởng', () => {
+    expect(normalizePhone('')).toBeNull();
+    expect(normalizePhone('0912 345 678')).toBe('+84912345678');
+  });
+});
+
+describe('hasPhone (v1.0.5: SĐT có thể không có)', () => {
+  it.each([null, undefined, '', ' ', '   ', '\t\n'])('không có SĐT: %j', (value) => {
+    expect(hasPhone(value)).toBe(false);
+  });
+
+  it.each(['0912 ••• 678', '0912345678', ' 0912 '])('có SĐT: %j', (value) => {
+    expect(hasPhone(value)).toBe(true);
   });
 });

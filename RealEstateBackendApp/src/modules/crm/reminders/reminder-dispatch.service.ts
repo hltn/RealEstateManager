@@ -1,25 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
-import { formatVnDateTime } from '../../../common/utils/timezone.util';
+import { UserStatus } from '../../../common/enums/user-status.enum';
+import {
+  formatVnDateTime,
+  formatVnShortDateTime,
+} from '../../../common/utils/timezone.util';
+import { uniqueObjectIds } from '../../../common/utils/object-id.util';
 import { withTransaction } from '../../../shared/database/with-transaction.util';
 import {
   NotificationPriority,
   NotificationType,
 } from '../../notifications/notification.constants';
 import {
-  NewNotification,
-  NotificationsService,
-} from '../../notifications/notifications.service';
+  NotificationDispatcher,
+  NotificationRequest,
+} from '../../notifications/notification-dispatcher.service';
+import { User, UserDocument } from '../../users/schemas/user.schema';
 import {
   APPOINTMENT_TYPE_LABELS,
   AppointmentStatus,
 } from '../appointments/appointment.constants';
+import { getAssigneeIds } from '../appointments/appointment-assignee';
 import {
   Appointment,
   AppointmentDocument,
 } from '../appointments/schemas/appointment.schema';
 import { CareLog, CareLogDocument } from '../care-logs/schemas/care-log.schema';
+import { CustomerOwnerTeamService } from '../customers/customer-owner-team.service';
 import { CustomersRepository } from '../customers/customers.repository';
 import {
   PersonaField,
@@ -49,14 +57,18 @@ type ReminderLean = Reminder & { _id: Types.ObjectId };
 
 /** Kết quả đánh giá một nhắc việc trong transaction. */
 type Decision =
-  | { action: 'SEND'; notifications: NewNotification[] }
+  | { action: 'SEND'; notifications: NotificationRequest[] }
   | { action: 'CANCEL' };
 
 /** Nhắc việc không còn thuộc về lần nhận này (đã bị hủy/nhận lại): bỏ qua im lặng, không phải lỗi. */
 class ClaimLostError extends Error {}
 
+/**
+ * `createdBy` và `teamIds` để `CustomerOwnerTeamService.buildOwnerRefs` dựng được người tạo khách và Manager nhóm chủ
+ * (`teamIds` là dự phòng khách cũ thiếu `createdBy`) cho nhắc giờ hẹn (FR-33; Architecture 5.13.2 hàng 7).
+ */
 const CUSTOMER_PROJECTION =
-  'fullName careTeam primaryAssigneeId lastCareLogAt createdAt';
+  'fullName careTeam primaryAssigneeId lastCareLogAt createdAt createdBy teamIds';
 
 type DispatchCustomer = {
   _id: Types.ObjectId;
@@ -64,6 +76,8 @@ type DispatchCustomer = {
   careTeam?: Array<{ userId: Types.ObjectId }>;
   primaryAssigneeId?: Types.ObjectId | null;
   lastCareLogAt?: Date | null;
+  createdBy?: Types.ObjectId | null;
+  teamIds?: Types.ObjectId[];
 };
 
 /**
@@ -73,7 +87,12 @@ type DispatchCustomer = {
  * - GỬI: trong MỘT transaction, đọc lại lịch hẹn/nhật ký/khách (đã dời, hủy, xóa, gỡ khỏi nhóm?), ghi thông báo
  *   (`dedupeKey` duy nhất theo người nhận nên retry không nhân đôi) và chốt trạng thái có điều kiện theo lần nhận;
  *   hủy/dời lịch đồng thời ghi cùng document nhắc nên một bên xung đột và chạy lại thấy trạng thái mới;
- * - NGƯỜI NHẬN tính lại theo nhóm chăm sóc HIỆN TẠI (QT8: người bị gỡ không nhận), phụ trách chính ưu tiên `HIGH`;
+ * - NGƯỜI NHẬN: nhắc việc kế tiếp, khách lâu chưa chăm, dịp đặc biệt gửi cho MỌI thành viên nhóm chăm sóc HIỆN TẠI có
+ *   tài khoản `ACTIVE` (FR-19; QT8: người đã rời nhóm không nhận; FR-18: người bị khóa không nhận; không còn ai thì
+ *   hủy), phụ trách chính nhận `HIGH`, thành viên khác `NORMAL`. Nhắc giờ hẹn (`APPOINTMENT_DUE`) chỉ gửi cho
+ *   ĐÚNG những người được chọn làm người thực hiện (`assigneeIds`) mà còn nằm trong tập hợp lệ HIỆN TẠI của khách
+ *   (thành viên `careTeam` `ACTIVE`, Manager `ACTIVE` nhóm chủ, người tạo khách `ACTIVE` có vai trò CRM; FR-33);
+ *   thành viên `careTeam` không được chọn thì KHÔNG nhận; không còn ai thì hủy;
  * - LỖI: thử lại ở nhịp sau, tối đa `REMINDER_MAX_ATTEMPTS` lần rồi FAILED.
  * Trước khi M7 có push, "gửi" chỉ là ghi hộp thông báo (`pushStatus = SKIPPED`).
  */
@@ -92,7 +111,9 @@ export class ReminderDispatchService {
     @InjectModel(PersonaField.name)
     private readonly personaFieldModel: Model<PersonaFieldDocument>,
     private readonly customers: CustomersRepository,
-    private readonly notifications: NotificationsService,
+    private readonly notifications: NotificationDispatcher,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly ownerTeam: CustomerOwnerTeamService,
   ) {}
 
   async dispatchDue(now = new Date()): Promise<DispatchResult> {
@@ -172,7 +193,7 @@ export class ReminderDispatchService {
         if (marked.matchedCount !== 1) throw new ClaimLostError();
 
         if (decision.action === 'CANCEL') return 'canceled' as const;
-        await this.notifications.createMany(decision.notifications, session);
+        await this.notifications.dispatch(decision.notifications, session);
         return 'sent' as const;
       });
     } catch (error) {
@@ -187,9 +208,9 @@ export class ReminderDispatchService {
     error: Error,
     now: Date,
   ): Promise<'failed'> {
-    const exhausted = reminder.attempts >= REMINDER_MAX_ATTEMPTS;
+    const isExhausted = reminder.attempts >= REMINDER_MAX_ATTEMPTS;
     this.logger.error(
-      `Gửi nhắc việc ${String(reminder._id)} (${reminder.type}) lần ${reminder.attempts} thất bại${exhausted ? ', bỏ cuộc' : ''}: ${error.message}`,
+      `Gửi nhắc việc ${String(reminder._id)} (${reminder.type}) lần ${reminder.attempts} thất bại${isExhausted ? ', bỏ cuộc' : ''}: ${error.message}`,
     );
     await this.reminderModel
       .updateOne(
@@ -199,7 +220,7 @@ export class ReminderDispatchService {
           lockedAt: reminder.lockedAt,
         },
         {
-          $set: exhausted
+          $set: isExhausted
             ? { status: ReminderStatus.FAILED, finishedAt: now }
             : { status: ReminderStatus.PENDING, lockedAt: null },
         },
@@ -216,12 +237,15 @@ export class ReminderDispatchService {
     now: Date,
     session: ClientSession,
   ): Promise<Decision> {
-    const customer = (await this.customers.findForSystemJobById(
+    const rawCustomer = (await this.customers.findForSystemJobById(
       reminder.customerId,
       CUSTOMER_PROJECTION,
       session,
     )) as DispatchCustomer | null;
-    if (!customer) return { action: 'CANCEL' };
+    if (!rawCustomer) return { action: 'CANCEL' };
+    // FR-18/19: người bị khóa/xóa không nằm trong tập người nhận; lọc từ đầu để "không còn ai để nhắc" thì hủy
+    // (không đánh dấu SENT khi Dispatcher sẽ loại hết người nhận).
+    const customer = await this.withActiveCareTeam(rawCustomer, session);
 
     switch (reminder.type) {
       case ReminderType.APPOINTMENT:
@@ -233,6 +257,36 @@ export class ReminderDispatchService {
       case ReminderType.STALE_CUSTOMER:
         return this.evaluateStale(reminder, customer);
     }
+  }
+
+  /**
+   * Bản sao khách mà `careTeam` chỉ còn thành viên có tài khoản `ACTIVE` và chưa xóa. Một truy vấn `users` theo lô
+   * (không N+1), chỉ chạy khi nhóm không rỗng. `primaryAssigneeId` giữ nguyên (PRIMARY bị khóa vẫn là PRIMARY trên
+   * bản ghi, FR-18) nhưng vì không còn trong `careTeam` nên `buildDecision` không chọn người đó làm người nhận.
+   */
+  private async withActiveCareTeam(
+    customer: DispatchCustomer,
+    session: ClientSession,
+  ): Promise<DispatchCustomer> {
+    const members = customer.careTeam ?? [];
+    if (members.length === 0) return customer;
+    const rows = await this.userModel
+      .find({
+        _id: { $in: members.map((member) => member.userId) },
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+      })
+      .select('_id')
+      .session(session)
+      .lean()
+      .exec();
+    const activeIds = new Set(rows.map((row) => String(row._id)));
+    return {
+      ...customer,
+      careTeam: members.filter((member) =>
+        activeIds.has(String(member.userId)),
+      ),
+    };
   }
 
   private async evaluateAppointment(
@@ -259,12 +313,60 @@ export class ReminderDispatchService {
     ) {
       return { action: 'CANCEL' };
     }
-    return this.buildDecision(reminder, customer, [appointment.assigneeId], {
-      type: NotificationType.APPOINTMENT_DUE,
-      title: 'Sắp đến giờ hẹn',
-      body: `${APPOINTMENT_TYPE_LABELS[appointment.type]} với khách ${customer.fullName} lúc ${formatVnDateTime(appointment.startAt)}`,
-      appointmentId: appointment._id,
-    });
+    // FR-33: người nhận = người thực hiện (còn trong tập hợp lệ HIỆN TẠI), không phải cả `careTeam`.
+    const recipientIds = await this.resolveAppointmentRecipients(
+      customer,
+      getAssigneeIds(appointment),
+      session,
+    );
+    return this.buildDecision(
+      reminder,
+      customer,
+      {
+        type: NotificationType.APPOINTMENT_DUE,
+        title: 'Sắp đến giờ hẹn',
+        body: `${APPOINTMENT_TYPE_LABELS[appointment.type]} với khách ${customer.fullName} lúc ${formatVnDateTime(appointment.startAt)}`,
+        appointmentId: appointment._id,
+        // Chỉ `APPOINTMENT_DUE` thuộc `PUSH_CATALOG` nên chỉ loại này có push; giờ hẹn dạng `HH:mm dd/MM`.
+        vars: {
+          appointmentTypeLabel: APPOINTMENT_TYPE_LABELS[appointment.type],
+          customerName: customer.fullName,
+          appointmentTimeLabel: formatVnShortDateTime(appointment.startAt),
+        },
+      },
+      recipientIds,
+    );
+  }
+
+  /**
+   * Người nhận nhắc giờ hẹn (FR-33): các `assigneeIds` của lịch giao với tập hợp lệ HIỆN TẠI của khách, tính lúc gửi:
+   * thành viên `careTeam` (`customer.careTeam` đã lọc `ACTIVE`, chưa xóa ở `withActiveCareTeam`), hoặc Manager `ACTIVE`
+   * của nhóm chủ, hoặc người tạo khách `ACTIVE` có vai trò CRM (hai nhóm sau lấy từ `CustomerOwnerTeamService`, MỘT
+   * hàm dựng ứng viên dùng chung với `resolveAssignees` và trường `ownerManagers`/`creator`, không viết lại luật).
+   * Người đã bị gỡ khỏi tập, bị khóa hoặc xóa thì không nhận dù còn tên trong `assigneeIds` (FR-18, FR-19). Chỉ đọc thêm
+   * `users`/`teams` khi có người thực hiện nằm ngoài `careTeam`. Trả mảng rỗng khi không còn ai (nơi gọi hủy nhắc).
+   */
+  private async resolveAppointmentRecipients(
+    customer: DispatchCustomer,
+    assigneeIds: Types.ObjectId[],
+    session: ClientSession,
+  ): Promise<Types.ObjectId[]> {
+    const wanted = uniqueObjectIds(assigneeIds);
+    if (wanted.length === 0) return [];
+    const inCareTeam = new Set(
+      (customer.careTeam ?? []).map((member) => String(member.userId)),
+    );
+    if (wanted.every((id) => inCareTeam.has(String(id)))) return wanted;
+
+    const { ownerManagers, creator } = await this.ownerTeam.buildOwnerRefs(
+      customer,
+      session,
+    );
+    const eligible = new Set(inCareTeam);
+    for (const ref of [...ownerManagers, ...(creator ? [creator] : [])]) {
+      eligible.add(ref.userId);
+    }
+    return wanted.filter((id) => eligible.has(String(id)));
   }
 
   private async evaluateFollowUp(
@@ -289,7 +391,7 @@ export class ReminderDispatchService {
     ) {
       return { action: 'CANCEL' };
     }
-    return this.buildDecision(reminder, customer, [log.authorId], {
+    return this.buildDecision(reminder, customer, {
       type: NotificationType.FOLLOW_UP_DUE,
       title: 'Đến hạn chăm sóc tiếp theo',
       body: `Đến hạn chăm sóc tiếp theo với khách ${customer.fullName}`,
@@ -321,8 +423,7 @@ export class ReminderDispatchService {
         : payload?.leadDays === 1
           ? 'Ngày mai'
           : `${payload?.leadDays ?? ''} ngày nữa`.trim();
-    const memberIds = (customer.careTeam ?? []).map((member) => member.userId);
-    return this.buildDecision(reminder, customer, memberIds, {
+    return this.buildDecision(reminder, customer, {
       type: NotificationType.CUSTOMER_OCCASION,
       title: 'Dịp đặc biệt của khách',
       body: `${when} là ${label} của khách ${customer.fullName}`,
@@ -333,7 +434,7 @@ export class ReminderDispatchService {
     reminder: ReminderLean,
     customer: DispatchCustomer,
   ): Decision {
-    return this.buildDecision(reminder, customer, [], {
+    return this.buildDecision(reminder, customer, {
       type: NotificationType.STALE_CUSTOMER,
       title: 'Khách lâu chưa chăm sóc',
       body: `Khách ${customer.fullName} đã lâu chưa được chăm sóc`,
@@ -341,32 +442,33 @@ export class ReminderDispatchService {
   }
 
   /**
-   * Người nhận = (`candidates` + phụ trách chính hiện tại) giao với nhóm chăm sóc HIỆN TẠI. Không còn ai thì hủy
-   * (không có người để nhắc). Phụ trách chính nhận `HIGH`, còn lại `NORMAL`.
+   * Người nhận mặc định = MỌI thành viên `careTeam` còn ACTIVE (đã lọc ở `withActiveCareTeam`; FR-19: PRIMARY lẫn
+   * MEMBER đều nhận, không phụ thuộc người ghi nhật ký; người đã rời nhóm không nhận); dùng cho `FOLLOW_UP`,
+   * `OCCASION`, `STALE_CUSTOMER`. `recipientIds` (chỉ `APPOINTMENT_DUE`, FR-33) thay danh sách đó bằng đúng người thực
+   * hiện còn trong tập hợp lệ. Không còn ai thì hủy (không có người để nhắc). Phụ trách chính nhận `HIGH`, còn lại
+   * `NORMAL`.
    */
   private buildDecision(
     reminder: ReminderLean,
     customer: DispatchCustomer,
-    candidates: Types.ObjectId[],
     content: {
       type: NotificationType;
       title: string;
       body: string;
       appointmentId?: Types.ObjectId;
+      vars?: NotificationRequest['vars'];
     },
+    recipientIds?: readonly Types.ObjectId[],
   ): Decision {
-    const team = new Map(
-      (customer.careTeam ?? []).map((member) => [
-        String(member.userId),
-        member.userId,
-      ]),
-    );
-    const primaryId = customer.primaryAssigneeId ?? null;
+    // Khử trùng theo id phòng careTeam có bản ghi lặp.
     const wanted = new Map<string, Types.ObjectId>();
-    for (const userId of [...candidates, ...(primaryId ? [primaryId] : [])]) {
-      if (team.has(String(userId))) wanted.set(String(userId), userId);
+    const source =
+      recipientIds ?? (customer.careTeam ?? []).map((member) => member.userId);
+    for (const userId of source) {
+      wanted.set(String(userId), userId);
     }
     if (wanted.size === 0) return { action: 'CANCEL' };
+    const primaryId = customer.primaryAssigneeId ?? null;
 
     const deepLink = content.appointmentId
       ? `/crm/customers/${String(customer._id)}?appointmentId=${String(content.appointmentId)}`
@@ -374,14 +476,17 @@ export class ReminderDispatchService {
     return {
       action: 'SEND',
       notifications: [...wanted.values()].map((userId) => ({
-        userId,
         type: content.type,
-        title: content.title,
-        body: content.body,
-        priority:
-          primaryId && userId.equals(primaryId)
-            ? NotificationPriority.HIGH
-            : NotificationPriority.NORMAL,
+        recipientIds: [userId],
+        inApp: {
+          title: content.title,
+          body: content.body,
+          priority:
+            primaryId && userId.equals(primaryId)
+              ? NotificationPriority.HIGH
+              : NotificationPriority.NORMAL,
+        },
+        ...(content.vars && { vars: content.vars }),
         data: {
           customerId: customer._id,
           ...(content.appointmentId && {

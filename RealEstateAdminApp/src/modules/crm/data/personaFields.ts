@@ -31,7 +31,17 @@ export const DECISION_MAKER_OPTIONS = ['Vợ chồng cùng duyệt', 'Khách t�
 export const CONTACT_CHANNEL_OPTIONS = ['Zalo', 'Điện thoại', 'Gặp mặt'];
 export const PROPERTY_TYPE_OPTIONS = ['Căn hộ chung cư', 'Nhà phố / Shophouse', 'Biệt thự / Villa', 'Đất nền', 'Condotel / Nghỉ dưỡng'];
 export const BEDROOM_OPTIONS = ['Studio / 1PN', '2PN (65-78m²)', '3PN (85-115m²)', '4PN', 'Duplex / Penthouse'];
-export const PURCHASE_PURPOSE_OPTIONS = ['Ở thực', 'Đầu tư cho thuê', 'Đầu tư lâu dài', 'Mua cho con', 'Nghỉ dưỡng'];
+/** Khóa trường chân dung "Mục đích mua" — dùng chung cho cấu hình trường, danh sách khách (bảng + thẻ). */
+export const PURCHASE_PURPOSES_FIELD_KEY = 'purchase_purposes';
+export const PURCHASE_PURPOSE_OPTIONS =['Ở thực', 'Đầu tư cho thuê', 'Đầu tư lâu dài', 'Mua cho con', 'Nghỉ dưỡng'];
+/** Mã -> nhãn của bộ lựa chọn "Mục đích mua" mặc định (khớp seed backend) — chỉ dùng dự phòng khi cấu hình trường chưa tải về. */
+export const PURCHASE_PURPOSE_CODE_LABELS: Readonly<Record<string, string>> = {
+  LIVING: 'Ở thực',
+  INVEST_RENT: 'Đầu tư cho thuê',
+  INVEST_LONG_TERM: 'Đầu tư lâu dài',
+  FOR_CHILD: 'Mua cho con',
+  RESORT: 'Nghỉ dưỡng',
+};
 
 export const PERSONA_FIELDS: PersonaFieldDefinition[] = [
   // Cá nhân
@@ -55,7 +65,7 @@ export const PERSONA_FIELDS: PersonaFieldDefinition[] = [
   // Nhu cầu BĐS (có cấu trúc để lọc/thống kê; liên kết tiêu chí chỉ để hiển thị)
   field({ key: 'property_type', label: 'Loại hình quan tâm', groupCode: 'REAL_ESTATE', type: 'SELECT', options: PROPERTY_TYPE_OPTIONS, linkedCriterion: 'demand', isFilterable: true, suggestPriority: 8 }),
   field({ key: 'bedroom_type', label: 'Cơ cấu phòng', groupCode: 'REAL_ESTATE', type: 'SELECT', options: BEDROOM_OPTIONS, linkedCriterion: 'demand', suggestPriority: 32 }),
-  field({ key: 'purchase_purposes', label: 'Mục đích mua', groupCode: 'REAL_ESTATE', type: 'MULTI_SELECT', options: PURCHASE_PURPOSE_OPTIONS, linkedCriterion: 'motivation', isFilterable: true, suggestPriority: 9 }),
+  field({ key: PURCHASE_PURPOSES_FIELD_KEY, label: 'Mục đích mua', groupCode: 'REAL_ESTATE', type: 'MULTI_SELECT', options: PURCHASE_PURPOSE_OPTIONS, linkedCriterion: 'motivation', isFilterable: true, suggestPriority: 9 }),
   field({ key: 'budget', label: 'Ngân sách (khoảng)', groupCode: 'REAL_ESTATE', type: 'NUMBER_RANGE', linkedCriterion: 'finance', suggestPriority: 7 }),
   field({ key: 'equity_ratio', label: 'Vốn tự có', groupCode: 'REAL_ESTATE', type: 'TEXT', linkedCriterion: 'finance', placeholder: 'VD: 60% (cần vay 40%)', suggestPriority: 33 }),
   field({ key: 'loan_support', label: 'Cần hỗ trợ vay', groupCode: 'REAL_ESTATE', type: 'BOOLEAN', linkedCriterion: 'finance', suggestPriority: 34 }),

@@ -15,9 +15,11 @@ import { Test } from '@nestjs/testing';
 import * as argon2 from 'argon2';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Types } from 'mongoose';
-import { createMemoryReplSet } from '../../shared/database/memory-replset.util';
+import { createMemoryReplSet } from '../../shared/database/memory-replset.fixture';
 import { GlobalExceptionFilter } from '../../common/filters/global-exception.filter';
 import { FeatureFlagModule } from '../../shared/feature-flags/feature-flag.module';
+import { createRedisClientStub } from '../../shared/redis/redis-client.fixture';
+import { REDIS_CLIENT } from '../../shared/redis/redis.constants';
 import { CrmAuditLogService } from '../crm/audit-logs/crm-audit-log.service';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from './users.module';
@@ -126,7 +128,11 @@ describe('Admin sửa tài khoản (AuthModule + UsersModule thật)', () => {
         AuthModule,
         UsersModule,
       ],
-    }).compile();
+    })
+      // Không cần Redis thật: NotificationsModule kéo theo RedisModule, tránh tự kết nối Redis của máy.
+      .overrideProvider(REDIS_CLIENT)
+      .useValue(createRedisClientStub())
+      .compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );

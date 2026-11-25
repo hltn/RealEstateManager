@@ -3,7 +3,7 @@
  * KHÔNG khởi động NestJS; chỉ dùng MongoClient + MONGODB_URI (đã có sẵn trong env của container backend).
  * Mọi logic nằm ở `cli-app.ts`; file này chỉ nối vào process (env, stdout/stderr, mã thoát).
  */
-import { config as loadDotenv } from 'dotenv';
+import { loadEnvFiles } from '../common/config/env-files.config';
 import { readAppVersion } from './app-version.util';
 import { runCli } from './cli-app';
 import { sanitizeErrorMessage } from './migration-error.util';
@@ -11,11 +11,11 @@ import { EXIT_CODE } from './migration-runner';
 import { MIGRATIONS } from './migration.registry';
 
 /**
- * Nạp `.env` của thư mục hiện tại như backend (cùng thứ tự ưu tiên: biến môi trường đã có KHÔNG bị ghi đè, nên trong
- * container `MONGODB_URI` do compose dựng luôn thắng file `.env` bind-mount). `quiet`: dotenv >= 17 mặc định in một dòng
- * ra stdout, sẽ làm bẩn đầu ra `status --json`.
+ * Nạp `.env` như backend (helper chung `['.env', '../.env']`: file gần thắng; biến môi trường đã có KHÔNG bị ghi đè,
+ * nên trong container `MONGODB_URI` do compose truyền vào luôn thắng). Helper đã bật `quiet`: dotenv >= 17 mặc định in
+ * một dòng ra stdout, sẽ làm bẩn đầu ra `status --json`.
  */
-loadDotenv({ quiet: true });
+loadEnvFiles();
 
 const writeLine = (stream: NodeJS.WriteStream, line: string): void => {
   stream.write(`${line}\n`);

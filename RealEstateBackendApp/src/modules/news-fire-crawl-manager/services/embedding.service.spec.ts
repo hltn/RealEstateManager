@@ -178,10 +178,7 @@ describe('EmbeddingService', () => {
         }),
       });
 
-      const result = await service.createEmbeddingBatch([
-        'Text 1',
-        'Text 2',
-      ]);
+      const result = await service.createEmbeddingBatch(['Text 1', 'Text 2']);
       expect(mockFetch).toHaveBeenCalledWith(
         'https://openrouter.ai/api/v1/embeddings',
         expect.objectContaining({

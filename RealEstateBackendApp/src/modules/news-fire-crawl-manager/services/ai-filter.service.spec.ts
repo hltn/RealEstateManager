@@ -304,7 +304,7 @@ describe('AIFilterService', () => {
         ok: true,
         status: 200,
         json: jest.fn().mockResolvedValue({ choices: [] }),
-      } as unknown as Response);
+      });
 
       expect(await service.cleanMarkdownContentWithAI('raw')).toBe('');
     });

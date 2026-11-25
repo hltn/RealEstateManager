@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useCatalogs, useCrmApi, useCustomerDetail, useCustomerList, type CustomerDetail, type CustomerListItem } from '@crm/api';
 import { useDebouncedValue } from '@crm/hooks/useDebouncedValue';
+import { getDefaultAssigneeIds, listAssignableAssignees, type AssigneeOption } from '@crm/lib/appointmentAssignees';
 import { getVnTodayKey } from '@crm/lib/dateTime';
 import { buildCrmPath, hasInvalidCreateAppointmentCustomerId, parseCreateAppointmentCustomerId, parseCreateAppointmentProjectId } from '@crm/routes';
 import { useCrmActions, useCurrentUser } from '@crm/store';
@@ -23,7 +24,6 @@ import {
   CALL_LOCATION,
   createInitialValues,
   FIELD_ORDER,
-  getDefaultAssigneeId,
   getFieldId,
   getSuggestedProjectId,
   hasUnsavedChanges,
@@ -46,6 +46,8 @@ export interface CreateAppointmentForm {
   customerTotal: number;
   setCustomerSearch: (keyword: string) => void;
   selectedCustomer: CustomerDetail | null;
+  /** Người thực hiện chọn được (careTeam ∪ Manager nhóm chủ ∪ người tạo khách, FR-30); rỗng khi chưa chọn khách. */
+  assigneeOptions: AssigneeOption[];
   /** Dự án đang hoạt động, chọn được cho lịch (danh sách ô "Dự án"). */
   selectableProjects: Project[];
   /** Đang tải thông tin khách đã chọn sẵn (để hiện "đang tải" thay vì "chưa chọn khách"). */
@@ -91,9 +93,13 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
   const originProjectId = parseCreateAppointmentProjectId(search);
   // null = người dùng chưa tự chọn dự án (dùng dự án mang sang / gợi ý); '' = chủ động "Không chọn".
   const [manualProjectId, setManualProjectId] = useState<string | null>(null);
-  // Lỗi 400 của trường dự án do máy chủ trả về (`details.field = projectId`).
+  // Lỗi 400 của trường dự án do máy chủ trả về (`details.field = projectCode` hoặc `projectId`).
   // Gắn kèm dự án lúc lỗi: dự án đổi (tay hoặc do gợi ý khi đổi khách) thì lỗi cũ tự hết hiệu lực.
   const [projectServerError, setProjectServerError] = useState<{ message: string; projectId: string } | null>(null);
+  // null = chưa chọn tay người thực hiện (dùng mặc định theo khách); mảng (kể cả rỗng) = lựa chọn tay.
+  const [manualAssigneeIds, setManualAssigneeIds] = useState<string[] | null>(null);
+  // Lỗi `USER_NOT_ASSIGNABLE` của backend (đúng thông điệp theo `details.reason`), gắn kèm lựa chọn lúc lỗi: đổi lựa chọn thì hết hiệu lực.
+  const [assigneeServerError, setAssigneeServerError] = useState<{ message: string; selectionKey: string } | null>(null);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const customerId = isOriginUnavailable && draft.customerId === originCustomerId ? '' : draft.customerId;
@@ -114,12 +120,14 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
     showToast({ type: 'warning', title: 'Chưa chọn sẵn được khách hàng', message: unavailableMessage });
   }, [unavailableMessage, showToast]);
 
-  // Đổi khách thì người thực hiện về mặc định theo nhóm chăm sóc của khách mới (assigneeId '' = chưa chọn tay).
-  const linkedProjectId = originProjectId && selectableProjects.some((project) => project.id === originProjectId) ? originProjectId : '';
+  // Đổi khách thì người thực hiện về mặc định của khách mới (manualAssigneeIds null = chưa chọn tay).
+  const assigneeOptions = useMemo(() => listAssignableAssignees(selectedCustomer), [selectedCustomer]);
+  // Mã dự án trên URL không phân biệt hoa thường (id giao diện là mã đã viết HOA); lấy đúng id của dự án chọn được.
+  const linkedProjectId = originProjectId ? (selectableProjects.find((project) => project.id.toUpperCase() === originProjectId.toUpperCase())?.id ?? '') : '';
   const projectId = manualProjectId ?? (linkedProjectId || getSuggestedProjectId(selectedCustomer, selectableProjects));
   const values = useMemo(
-    () => ({ ...draft, customerId, projectId, assigneeId: draft.assigneeId || getDefaultAssigneeId(selectedCustomer, currentUser.id) }),
-    [draft, customerId, projectId, selectedCustomer, currentUser.id],
+    () => ({ ...draft, customerId, projectId, assigneeIds: manualAssigneeIds ?? getDefaultAssigneeIds(assigneeOptions, currentUser.id) }),
+    [draft, customerId, projectId, manualAssigneeIds, assigneeOptions, currentUser.id],
   );
   // Khóa chỉ khi khách gốc dùng được VÀ form vẫn đang giữ đúng khách gốc. Đã mở khóa (khách gốc lỗi thoáng qua) rồi chọn khách khác thì
   // khách gốc tự tải lại thành công cũng KHÔNG khóa lại trên khách khác (khóa là một chiều trong phiên form này).
@@ -127,12 +135,21 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
 
   const currentErrors = useMemo(() => validateAppointmentForm(values, selectedCustomer), [values, selectedCustomer]);
   // Chỉ hiện lỗi sau lần bấm lưu đầu tiên.
-  const errors: AppointmentFormErrors = { ...(hasSubmitted ? currentErrors : {}), ...(projectServerError && projectServerError.projectId === projectId ? { projectId: projectServerError.message } : {}) };
+  const assigneeSelectionKey = values.assigneeIds.join(',');
+  const errors: AppointmentFormErrors = {
+    ...(hasSubmitted ? currentErrors : {}),
+    ...(projectServerError && projectServerError.projectId === projectId ? { projectId: projectServerError.message } : {}),
+    ...(assigneeServerError && assigneeServerError.selectionKey === assigneeSelectionKey ? { assigneeIds: assigneeServerError.message } : {}),
+  };
 
   const setField: CreateAppointmentForm['setField'] = (field, value) => {
     if (field === 'projectId') {
       // Ghi nhận lựa chọn tay (kể cả "Không chọn") để gợi ý/dự án mang sang không ghi đè.
       setManualProjectId(value as string);
+      return;
+    }
+    if (field === 'assigneeIds') {
+      setManualAssigneeIds(value as string[]);
       return;
     }
     setValues((previous) => {
@@ -152,6 +169,7 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
     customerTotal: customerPage.meta.total,
     setCustomerSearch,
     selectedCustomer,
+    assigneeOptions,
     selectableProjects,
     isCustomerLoading,
     originCustomer,
@@ -160,7 +178,8 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
     // Khách gốc bị khóa: giữ bất biến ngay trong hook, không chỉ ẩn nút ở giao diện.
     changeCustomer: (nextCustomerId) => {
       if (originCustomer) return;
-      setValues((previous) => ({ ...previous, customerId: nextCustomerId, assigneeId: '' }));
+      setValues((previous) => ({ ...previous, customerId: nextCustomerId }));
+      setManualAssigneeIds(null);
     },
     isSubmitting,
     handleSubmit: async (event) => {
@@ -178,10 +197,16 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
       setIsSubmitting(false);
       if (!result.ok) {
         // Lỗi gắn với dự án (dự án không còn hoạt động...): hiện cạnh ô dự án; lỗi khác: toast.
-        if (result.error.details?.field === 'projectId') {
+        // Backend trả `projectCode` khi FE gửi mã dự án (đường chính từ T-15), `projectId` khi gửi id.
+        if (result.error.details?.field === 'projectCode' || result.error.details?.field === 'projectId') {
           setProjectServerError({ message: result.error.message, projectId: values.projectId });
           document.getElementById(getFieldId('projectId'))?.focus();
           return;
+        }
+        // Người thực hiện bị từ chối: hiện NGUYÊN VĂN thông điệp của backend (3 lý do) cạnh ô chọn, không câu chung.
+        if (result.error.errorCode === 'USER_NOT_ASSIGNABLE') {
+          setAssigneeServerError({ message: result.error.message, selectionKey: assigneeSelectionKey });
+          document.getElementById(getFieldId('assigneeIds'))?.focus();
         }
         showToast({ type: 'error', title: result.error.message });
         return;
@@ -194,7 +219,7 @@ export const useCreateAppointmentForm = (): CreateAppointmentForm => {
     // Hủy: có thay đổi chưa lưu thì hỏi xác nhận trước; sau đó còn lịch sử trong app thì lùi 1 mục (đúng chi tiết khách đã mở form, Back không bị trùng mục);
     // mở thẳng URL thì thay bằng chi tiết khách.
     cancel: () => {
-      if (hasUnsavedChanges(draft, initialValues, manualProjectId !== null)) setIsConfirmingDiscard(true);
+      if (hasUnsavedChanges(draft, initialValues, manualProjectId !== null, manualAssigneeIds !== null)) setIsConfirmingDiscard(true);
       else leaveForm();
     },
     isConfirmingDiscard,

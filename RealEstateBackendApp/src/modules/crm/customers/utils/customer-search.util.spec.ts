@@ -25,6 +25,33 @@ describe('buildSearchText', () => {
       'nguyen duc anh\nduc.anh@example.com\n0912345678 84912345678',
     );
   });
+
+  it('FR-01: phone null vẫn đủ 3 phần ngăn bằng xuống dòng, phần số rỗng, không ném lỗi', () => {
+    const text = buildSearchText({
+      fullName: 'Nguyễn Đức Anh',
+      email: 'Duc.Anh@Example.com',
+      phone: null,
+    });
+    expect(text).toBe('nguyen duc anh\nduc.anh@example.com\n');
+    expect(text.split('\n')).toHaveLength(3);
+  });
+
+  it('FR-01: không SĐT và không email vẫn là 3 phần (chỉ tên)', () => {
+    expect(buildSearchText({ fullName: 'An', email: null, phone: null })).toBe(
+      'an\n\n',
+    );
+  });
+
+  it('FR-01: khách không SĐT không khớp từ khóa số nào, vẫn tìm được theo tên/email', () => {
+    const noPhone = buildSearchText({
+      fullName: 'Nguyễn Đức Anh',
+      email: 'a@x.com',
+      phone: null,
+    });
+    expect(matches('0912345678', noPhone)).toBe(false);
+    expect(matches('duc anh', noPhone)).toBe(true);
+    expect(matches('a@x', noPhone)).toBe(true);
+  });
 });
 
 describe('tìm kiếm khách (chống dò SĐT, tài liệu 04 mục 3.2.3)', () => {

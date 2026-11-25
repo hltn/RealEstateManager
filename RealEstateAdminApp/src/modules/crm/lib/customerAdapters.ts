@@ -1,7 +1,8 @@
 /**
  * Hàm thuần định dạng dữ liệu khách cho giao diện (không đọc store).
  */
-import type { ContactChannel } from '@crm/types/crm';
+import { PURCHASE_PURPOSE_CODE_LABELS } from '@crm/data/personaFields';
+import type { ContactChannel, PersonaFieldDefinition } from '@crm/types/crm';
 
 export const CONTACT_CHANNEL_LABELS: Record<ContactChannel, string> = {
   CALL: 'Gọi điện',
@@ -19,3 +20,10 @@ export const formatProjectSummary = (projects: readonly { label: string }[]): st
   if (projects.length === 0) return '';
   return projects.length > 1 ? `${projects[0].label} +${projects.length - 1}` : projects[0].label;
 };
+
+/**
+ * Mã "Mục đích mua" -> chuỗi nhãn phân cách dấu phẩy (ô Khách hàng). Nhãn lấy theo cấu hình trường chân dung hiện hành
+ * (`optionItems`, kể cả lựa chọn đã tắt); chưa có cấu hình -> bảng nhãn mặc định; mã lạ -> giữ nguyên mã.
+ */
+export const formatPurchasePurposes = (codes: readonly string[], field?: Pick<PersonaFieldDefinition, 'optionItems'>): string =>
+  codes.map((code) => field?.optionItems?.find((option) => option.value === code)?.label ?? PURCHASE_PURPOSE_CODE_LABELS[code] ?? code).join(', ');

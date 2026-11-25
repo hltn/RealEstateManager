@@ -3,10 +3,14 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
+  Max,
+  Min,
 } from 'class-validator';
 import { AiPrompt } from '../services/ai-prompt-config.service';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
@@ -34,13 +38,29 @@ export class AnalyzeRawArticlesDto {
     type: [Object],
   })
   @IsArray()
+  @IsObject({ each: true })
   articles: Record<string, any>[];
 }
 
 export class SaveArticlesDto {
   @ApiProperty({ description: 'Array of articles to save', type: [Object] })
   @IsArray()
+  @IsObject({ each: true })
   articles: Record<string, any>[];
+}
+
+export class BackfillEmbeddingsDto {
+  @ApiPropertyOptional({
+    description: 'Số bài xử lý mỗi lượt (mặc định 50, tối đa 200)',
+    minimum: 1,
+    maximum: 200,
+    default: 50,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  batchSize?: number;
 }
 
 export class TriggerManualAnalyzeDto {
@@ -104,7 +124,8 @@ export class GetArticlesQueryDto extends PaginationQueryDto {
   date?: string;
 
   @ApiPropertyOptional({
-    description: 'Lọc theo trạng thái WordPress/crawl; pending là bài chưa có trạng thái',
+    description:
+      'Lọc theo trạng thái WordPress/crawl; pending là bài chưa có trạng thái',
     enum: ['pending', 'CRAWLED', 'POSTED_WP', 'ERROR'],
   })
   @IsOptional()

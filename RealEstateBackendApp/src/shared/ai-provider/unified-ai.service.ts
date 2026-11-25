@@ -1,9 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  ExternalLogService,
-  LogAiInput,
-} from '../../modules/external-log/services/external-log.service';
+import { ExternalLogService } from '../../modules/external-log/services/external-log.service';
 
 /**
  * Resolved provider configuration — everything needed to make an AI API call.
@@ -358,7 +355,7 @@ export class UnifiedAiService {
           message: isAbort
             ? `AI API request timed out after ${((Date.now() - startTime) / 1000).toFixed(0)} seconds`
             : err.message,
-          code: isAbort ? 'AbortError' : err.code ?? err.name,
+          code: isAbort ? 'AbortError' : (err.code ?? err.name),
           stack: err.stack,
         },
         metadata: { contextLabel },

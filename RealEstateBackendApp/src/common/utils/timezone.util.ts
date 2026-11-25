@@ -112,3 +112,12 @@ export function formatVnDateTime(date: Date): string {
   const time = shifted.toISOString().slice(11, 16);
   return `${time} ${day}/${month}/${year}`;
 }
+
+/** Giờ-phút theo giờ Việt Nam, dạng ngắn `HH:mm dd/MM` (mẫu push `appointmentTimeLabel`). */
+export function formatVnShortDateTime(date: Date): string {
+  const [, month, day] = vnDateKey(date).split('-');
+  const shifted = new Date(
+    date.getTime() + getTimezoneOffsetHours() * MS_PER_HOUR,
+  );
+  return `${shifted.toISOString().slice(11, 16)} ${day}/${month}`;
+}

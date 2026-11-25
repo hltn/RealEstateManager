@@ -11,7 +11,6 @@ describe('auth-response.dto — load module không throw TDZ', () => {
   it('import file thành công (KHÔNG còn ReferenceError sau khi đảo class)', () => {
     expect(() => {
       jest.isolateModules(() => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         require('./auth-response.dto');
       });
     }).not.toThrow();
@@ -35,8 +34,12 @@ describe('AuthResponseDto / UserPublicDto shape (mục 6.3)', () => {
       roles: [UserRole.EDITOR],
     });
     // Đảm bảo shape KHÔNG có password/status.
-    expect((instance as unknown as Record<string, unknown>).password).toBeUndefined();
-    expect((instance as unknown as Record<string, unknown>).status).toBeUndefined();
+    expect(
+      (instance as unknown as Record<string, unknown>).password,
+    ).toBeUndefined();
+    expect(
+      (instance as unknown as Record<string, unknown>).status,
+    ).toBeUndefined();
   });
 
   it('AuthResponseDto chứa { accessToken, user: UserPublicDto }', () => {

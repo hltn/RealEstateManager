@@ -4,11 +4,87 @@ Bản tóm tắt thay đổi theo phiên bản, theo kiểu [Keep a Changelog](h
 
 Nguồn chính và đầy đủ: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md). Mã `PT-NNN` là mã mục trong file kế hoạch v1.0.3.
 
+## [1.0.7] - dự kiến (đang lên kế hoạch, chưa triển khai)
+
+Chuyển từ v1.0.6 sang (Oniichan quyết 2026-11-16). Danh sách dưới đây là dự kiến, có thể đổi khi bắt đầu v1.0.7.
+
+### CI/CD (GitHub Actions)
+- CI (FR-24): kiểm thử, lint, build thử Docker khi có Pull Request; không dùng secret.
+- CD (FR-25): deploy staging tự động khi merge vào `main`, deploy production cần người duyệt; dùng runner tự dựng `staging-runner` (đã cài ngoài repo, chưa có workflow dùng).
+- Gỡ staging local (FR-26): xóa `docker-compose.staging.yml`, `ops/staging.sh`, `.env.staging.example` và test của chúng, sau khi CD staging chạy đạt.
+- Quét bảo mật (FR-29): Trivy, `npm audit`, Gitleaks, Dependabot; ban đầu chỉ báo cáo (trừ Gitleaks chặn trên diff), bật chặn theo ngưỡng sau khi dọn baseline.
+- Dọn ESLint backend (~1079 lỗi tồn đọng) và biến thành cổng chặn.
+
+### Backlog đã có
+- Cải thiện cấu trúc Backend/Frontend (gồm luật biên ESLint), hoãn từ v1.0.6.
+
+Chi tiết thiết kế dự kiến: `docs/01_Infrastructure/06_Production_Deploy.md` mục 17 và `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ).
+
+## [1.0.6] - chưa phát hành (đã nghiệm thu staging, chưa lên production)
+
+Đã nghiệm thu trên staging (T-62, 2026-11-18); chưa lên production, Oniichan quyết deploy riêng. Production hiện chạy v1.0.5.
+
+Thống nhất môi trường và dọn cấu trúc (không thêm tính năng nghiệp vụ): build một lần chạy mọi nơi, dev/staging/production chỉ khác file `.env`. Chưa có thẻ git; số phiên bản Backend và Web admin đã nâng lên 1.0.6 (ứng dụng mobile `RealEstateApp/` không đổi trong đợt này).
+
+### Hạ tầng
+- Một image Backend và một image Frontend có tag cho mọi môi trường (`release.sh build`); frontend đọc cấu hình lúc chạy (`/env.js`) thay vì `VITE_*` lúc build; một `docker-compose.yml` gốc cùng override mỏng cho dev; một `.env.example` gốc và cổng kiểm `ops/verify-env.sh`.
+- `deploy.sh`, `backup.sh`, `restore.sh` ở gốc repo; phần phụ trợ gom vào `ops/`, `scripts/` chỉ giữ migration.
+- Đưa bản lên máy chủ bằng `release.sh send` (gói `release.tgz` kèm sha256, rồi `docker save | gzip | ssh | docker load`, rồi `deploy.sh`); máy chủ **không build và không dùng git**. `deploy.sh` chỉ còn các cờ `--no-migrate`, `--migrate`, `--plan-only`, `--help` (cờ `--no-pull` bị từ chối), promote thẻ `<version>-<commit>` thành `current`, tự trả `current` về image cũ khi lỗi trước `up`.
+- Backup/restore theo thẻ image `pre-<TS>` và manifest v2 (không còn bundle/thẻ git `pre-deploy-<TS>`): `restore.sh` khôi phục DB và image về bản trước deploy, luôn kèm backup an toàn và thẻ `pre-restore-<RTS>` trước khi ghi; bỏ các cờ `--code-only`, `--use-image-tag`, `--allow-infra-change`; từ chối manifest v1. `.env.docker` đổi thành `.env` (một file, một mẫu `.env.example`).
+- Tài liệu: viết lại `docs/01_Infrastructure/06_Production_Deploy.md` (quy trình phát hành, bảng cờ cũ sang mới, rollback, chính sách dọn thẻ `pre-*`) và `README.md` gốc. **v1.0.6 không có CI/CD**: Oniichan quyết (2026-11-16) chuyển toàn bộ CI/CD GitHub Actions (CI, CD, gỡ staging local, quét bảo mật) sang v1.0.7; repo chưa có `.github/workflows/`. Quy trình phát hành ở v1.0.6 là chạy tay `release.sh build` → `release.sh send` → `deploy.sh` (đã chạy trên VPS staging). Staging local (`docker-compose.staging.yml`, `ops/staging.sh`) tạm giữ trong repo nhưng không còn dùng được với `deploy.sh` mới.
+- Đồng bộ Node 24.18.1; cron lưu qua `CRON_CONFIG_FILE`; đổi tên cờ thành `CRM_*_ENABLED` (VPS cập nhật `.env` theo `.env.example` trước khi deploy).
+
+### Sửa
+- Dọn file thừa ở Backend, tách `modules/news` ngang `modules/crm` ở Frontend. Riêng Web admin **giữ lại** bộ icon svg và `logo -dark.png` (tài nguyên dự phòng, không xóa); `icons/icons.test.ts` chỉ kiểm tính toàn vẹn của `index.ts`, không ép số lượng icon.
+
+Chi tiết: `docs/01_Infrastructure/07_Thong_Nhat_Moi_Truong_Plan.md` (tài liệu nội bộ, không đưa lên repo); mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
+
+## [1.0.5] - 2026-11-13
+
+Định danh khách hàng (CRM). Đã lên production ngày 2026-11-13 (commit `15770ac`, merge PR #22); production nâng thẳng từ v1.0.3 lên v1.0.5 trong một lượt deploy (cùng lượt với v1.0.4). Chưa có thẻ git.
+
+### Thêm
+- Mã khách tự sinh dạng `KH-000123` (counter riêng, có CLI bù mã cho khách cũ), tìm khách theo mã.
+- Mời người vào nhóm chăm sóc không giới hạn nhóm, tối đa 10 thành viên phụ, có rate-limit; `GET /crm/care-team-invitees` tìm người để mời; `GET /crm/customer-assignees` thay `assignable-users`.
+- Danh sách khách hiện Mục đích mua dưới SĐT; chấm đỏ thông báo chưa đọc trên nút ba chấm header mobile.
+
+### Đổi
+- SĐT khách không còn bắt buộc và không còn duy nhất; chỉ họ tên bắt buộc. Gỡ `phone-lookups`; ẩn danh giữ nguyên mã khách.
+- Người tạo khách là người chăm sóc chính và không đổi (khóa `PRIMARY`, mã lỗi `PRIMARY_LOCKED`); gỡ `PUT care-team/primary`.
+- Bỏ luồng xin tham gia nhóm chăm sóc; chia sẻ khách bằng mời. Việc hằng ngày và nhắc lịch theo mọi thành viên nhóm.
+- Danh sách khách bỏ cột Hẹn.
+
+### Hạ tầng
+- Migration 010 (pre-up) và 011 (post-up) cho mã khách và bỏ unique index `phone`; runner migration chạy theo pha; migration 011 là một chiều.
+- `deploy.sh`: backup code theo nhánh hiện tại; thêm `backup.sh` (chạy tay) và `restore.sh`.
+
+Chi tiết: Plan, Architecture, Tasks "Định danh khách hàng" ở `docs/06_Module_Customer_Management/10_Dinh_Danh_Khach_Hang_Plan.md` đến `12_...`; mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
+
+## [1.0.4] - 2026-11-13
+
+Web Push (VAPID) cho PWA, sửa lỗi QA và bổ sung danh mục CRM. Không có lượt deploy riêng: v1.0.4 lên production cùng lượt v1.0.5 ngày 2026-11-13 (suy ra từ manifest `deploy-pre-20261113-021647`, `DB_VERSION_BEFORE=1.0.3`). Chưa có thẻ git. Nội dung dưới đây lấy từ nhật ký commit `feat(v1.0.4)`/`feat(push)` và Plan v1.0.4; mức hoàn tất từng `FR-xx` xem file kế hoạch (chưa đối chiếu lại sau phát hành).
+
+### Thêm
+- Web Push cho web admin: đăng ký thiết bị, dispatcher và worker `push.send`, giờ yên lặng, công tắc và trang Cài đặt thông báo; bật bằng `CRM_PUSH_ENABLED` và khóa `VAPID_*`.
+- Thông báo: dropdown thông báo, màn thông báo mobile tải thêm khi cuộn.
+- Cài đặt CRM: tab Kết quả liên hệ, tab Thẻ (có loại thẻ `OTHER`), màn Trường chân dung và bộ lọc nâng cao theo chân dung; form Dự án chọn "loại hình" nhiều lựa chọn.
+- Thumbnail ảnh chăm sóc.
+
+### Đổi
+- Tham chiếu danh mục CRM đổi từ ObjectId sang `code` (ghi song song): migration 007, 008, 009 và CLI bù code.
+- Số phiên bản 1.0.4 cho ba ứng dụng.
+
+### Sửa
+- Bảo mật: che dữ liệu cá nhân trong log, chặn toán tử NoSQL, sửa race khi tạo user, siết DTO tin tức.
+- Sidebar mobile đóng không còn nằm trong thứ tự phím Tab; phím Esc đóng dropdown.
+
+Chi tiết: `docs/08_Quan_Ly_Phien_Ban/03_Ke_Hoach_v1.0.4.md` (cùng bộ Architecture, Tasks); mục lục phiên bản: [`docs/08_Quan_Ly_Phien_Ban/README.md`](docs/08_Quan_Ly_Phien_Ban/README.md).
+
 ## [1.0.3] - 2026-11-04
 
 Sửa và bổ sung sau khi test web trên production (chủ yếu giao diện mobile), thêm PWA, tự chạy migration khi deploy.
 
-**Lưu ý:** v1.0.3 **chưa deploy production**. Còn kiểm trên iPhone/Android thật (kể cả PWA) và Lighthouse; một số mục còn việc kiểm trên VPS.
+v1.0.3 đã deploy lên production ngày 2026-11-04; thẻ git `v1.0.3` đặt trên `d2e5282`.
 
 ### Thêm
 - PT-023: đủ 3/4 tiêu chí thì tự chuyển khách sang "Khách net"; hạ dưới 3/4 về "Có quan tâm" (không đè trạng thái "Bỏ"), thông báo người cùng chăm sóc.
@@ -30,13 +106,14 @@ Sửa và bổ sung sau khi test web trên production (chủ yếu giao diện m
 ### Hạ tầng
 - PT-027: sổ phiên bản trong collection `system`; runner migration; `deploy.sh` tự baseline và tự chạy migration chờ; staging local.
 - PT-001, PT-002: healthcheck cho `backend`; healthcheck `mongo` không còn mật khẩu trên dòng lệnh.
-- PT-009, PT-016: cơ chế ghim digest image (chưa ghim) và runbook user Mongo/MinIO quyền tối thiểu (biến `MONGO_APP_*`, `S3_APP_*`).
+- PT-009, PT-016: cơ chế ghim digest image (biến `*_IMAGE`, script `print-image-digests.sh`) và runbook user Mongo/MinIO quyền tối thiểu (biến `MONGO_APP_*`, `S3_APP_*`).
 - PT-003, PT-004, PT-007, PT-010, PT-011, PT-013: bật ảnh đính kèm CRM, rà biến `S3_BUCKET_EXPORTS`, bổ sung tài liệu triển khai, dọn dẹp sau nâng cấp, rà token tunnel, sao lưu khóa mã hóa PII ra ngoài máy chủ.
+- PT-005: kiểm chứng thao tác AI qua 9Router (Cấu hình AI, tải danh sách model).
+- PT-006: nới đĩa VPS để `deploy.sh` và `run-migration.sh` không bị chặn bởi ngưỡng đĩa trống 5 GB.
 - Số phiên bản ba ứng dụng nâng lên 1.0.3.
 
-### Chưa làm / đã bỏ
-- Chưa làm: PT-005 (kiểm chứng AI qua 9Router), PT-006 (nới đĩa VPS, đang chặn `deploy.sh` kế tiếp).
-- Đã bỏ (Oniichan quyết định 2026-11-02): PT-012, PT-014, PT-015.
+### Đã bỏ
+- Oniichan quyết định bỏ ngày 2026-11-02: PT-012, PT-014, PT-015.
 
 Chi tiết: [`docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md`](docs/08_Quan_Ly_Phien_Ban/01_Cap_Nhat_Sua_Doi_Bo_Sung_v1.0.3.md); checklist kiểm máy thật: [`docs/08_Quan_Ly_Phien_Ban/02_Checklist_Kiem_iPhone_v1.0.3.md`](docs/08_Quan_Ly_Phien_Ban/02_Checklist_Kiem_iPhone_v1.0.3.md).
 

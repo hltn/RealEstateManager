@@ -35,22 +35,31 @@ export const normalizeProjectCode = (code: string): string =>
   code.trim().toUpperCase();
 
 /**
- * Kiểm mã khi PATCH (PT-031): mã mới trùng mã hiện có (không phân biệt hoa thường) => cho qua dù là mã cũ
- * có `-`/`_`; mã khác mã hiện có thì phải theo quy tắc mới (chỉ A-Z, 0-9). Vi phạm => 400 VALIDATION_FAILED.
+ * Kiểm mã khi PATCH (FR-40, Q1): mã dự án là khóa tham chiếu (`codeNormalized`) nên BẤT BIẾN sau khi tạo.
+ * - So `normalizeProjectCode(nextCode)` với `currentCodeNormalized`: giống nhau (chỉ đổi hoa/thường, hoặc có
+ *   khoảng trắng thừa đầu/cuối) => cho qua, kể cả mã cũ có `-`/`_`.
+ * - Khác => 400 `PROJECT_CODE_IMMUTABLE`.
+ * - Dự án rất cũ chưa có mã hiện có (null/rỗng): chưa có gì để giữ bất biến nên cho đặt mã lần đầu, nhưng mã đó
+ *   phải theo quy tắc hiện hành (A-Z, 0-9); sai => 400 `VALIDATION_FAILED`.
  */
 export const assertProjectCodeChange = (
   nextCode: string,
-  currentCode: string | null | undefined,
+  currentCodeNormalized: string | null | undefined,
 ): void => {
-  // `currentCode` thô (có thể thiếu ở dữ liệu rất cũ): thiếu/rỗng thì mã gửi lên rơi vào kiểm chặt.
-  if (
-    normalizeProjectCode(nextCode) === normalizeProjectCode(currentCode ?? '')
-  )
-    return;
-  if (PROJECT_CODE_PATTERN.test(nextCode)) return;
+  const current = normalizeProjectCode(currentCodeNormalized ?? '');
+  if (current === '') {
+    if (PROJECT_CODE_PATTERN.test(nextCode.trim())) return;
+    throw new BusinessException(
+      ErrorCode.VALIDATION_FAILED,
+      PROJECT_CODE_MESSAGE,
+      HttpStatus.BAD_REQUEST,
+      { fields: ['code'] },
+    );
+  }
+  if (normalizeProjectCode(nextCode) === current) return;
   throw new BusinessException(
-    ErrorCode.VALIDATION_FAILED,
-    PROJECT_CODE_MESSAGE,
+    ErrorCode.PROJECT_CODE_IMMUTABLE,
+    'Mã dự án không được đổi sau khi tạo (chỉ đổi được chữ hoa/thường)',
     HttpStatus.BAD_REQUEST,
     { fields: ['code'] },
   );

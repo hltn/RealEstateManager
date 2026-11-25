@@ -14,7 +14,7 @@
 # Backend mới KHÔNG khởi động nếu còn user chưa migrate 005 (UserRolesMigrationGuard), nên 005 phải xong TRƯỚC khi
 # backend mới lên. Thứ tự đầy đủ: docs/01_Infrastructure/06_Production_Deploy.md mục 5.4a.
 #
-# Bí mật: MONGODB_URI dựng từ MONGO_ROOT_USERNAME/MONGO_ROOT_PASSWORD trong .env.docker, ghi vào file --env-file TẠM
+# Bí mật: MONGODB_URI dựng từ MONGO_ROOT_USERNAME/MONGO_ROOT_PASSWORD trong .env, ghi vào file --env-file TẠM
 # quyền 600 (xóa bằng trap khi thoát) rồi truyền cho `docker run --env-file`: mật khẩu không nằm trên dòng lệnh của
 # host (không thấy trong `ps`) và không được in ra màn hình. Việc kiểm tra nội dung backup dùng mongorestore --dryRun
 # trong container mongo với mật khẩu đưa qua pipe (không nằm trên dòng lệnh).
@@ -33,10 +33,10 @@ LOG_PREFIX="migrate"
 _self="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || true)"
 [[ -n "$_self" && -f "$_self" ]] || { echo "[migrate] LỖI: không resolve được đường dẫn thật của script (cần readlink -f)." >&2; exit 1; }
 ROOT_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
-# shellcheck source=scripts/lib/ops-common.sh
-source "$ROOT_DIR/scripts/lib/ops-common.sh"
+# shellcheck source=ops/lib/ops-common.sh
+source "$ROOT_DIR/ops/lib/ops-common.sh"
 
-readonly ENV_FILE=".env.docker"
+readonly ENV_FILE=".env"
 readonly MONGO_CONTAINER="${MONGO_CONTAINER:-realestate_mongo}"
 readonly DEFAULT_PROJECT="realestatemanager"
 readonly BACKEND_DIR="RealEstateBackendApp"
@@ -71,7 +71,7 @@ Cách dùng: bash scripts/run-migration.sh <002|003|004|005|006> [--apply] [--cl
   --yes       Bỏ bước xác nhận gõ tay của 002 --apply và 006 --apply (dành cho chạy không có terminal).
   -h, --help  Hiện trợ giúp này.
 
-Chạy ở thư mục gốc repo trên máy chủ, sau khi mongo đã healthy (docker compose --env-file .env.docker up -d mongo ...).
+Chạy ở thư mục gốc repo trên máy chủ, sau khi mongo đã healthy (docker compose --env-file .env up -d mongo ...).
 Cần trống >= MIGRATE_MIN_FREE_GB (mặc định 5 GB) cho image builder (+ build cache).
 Kẹt đĩa (đã `docker builder prune -f` mà vẫn dưới ngưỡng): (a) dọn thêm an toàn: `docker image prune -f`, xóa từng image cũ
 cụ thể; TUYỆT ĐỐI không động volume dữ liệu (mongo/redis/minio/nine_router): không `docker volume prune`, không
@@ -119,7 +119,7 @@ case "$MIGRATION" in
   006) SCRIPT_REL="scripts/migrations/006_areas_34_provinces.ts" ;;
 esac
 
-# Chạy ở thư mục gốc repo (cha của scripts/) để ./backups, .env.docker, ./RealEstateBackendApp luôn đúng.
+# Chạy ở thư mục gốc repo (cha của scripts/) để ./backups, .env, ./RealEstateBackendApp luôn đúng.
 cd "$ROOT_DIR"
 [[ -f "$BACKEND_DIR/$SCRIPT_REL" ]] || die "Không thấy $BACKEND_DIR/$SCRIPT_REL (chạy trong repo đúng, đã git pull?)."
 
@@ -130,7 +130,7 @@ docker info >/dev/null 2>&1 || die "Không nói chuyện được với Docker d
 
 require_private_file "$ENV_FILE"
 
-# Đọc đúng một khóa từ .env.docker (KHÔNG `source` file: tránh thực thi nội dung). Lấy dòng cuối, bỏ \r.
+# Đọc đúng một khóa từ .env (KHÔNG `source` file: tránh thực thi nội dung). Lấy dòng cuối, bỏ \r.
 read_env() {
   local v
   v="$(grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '\r' || true)"

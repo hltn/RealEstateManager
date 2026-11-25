@@ -14,31 +14,37 @@ const TABLE_ACTION_BUTTON_CLASS =
 interface TableContactActionsProps {
   customerId: string;
   customerName: string;
+  /** Khách có SĐT? Không có thì ẨN (không disable) nút Gọi/Zalo (FR-02). */
+  hasPhone: boolean;
 }
 
-export const TableContactActions = ({ customerId, customerName }: TableContactActionsProps) => {
+export const TableContactActions = ({ customerId, customerName, hasPhone }: TableContactActionsProps) => {
   const { callCustomer, messageZalo, openQuickNote } = useContactActions();
 
   return (
     <div className="flex items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => callCustomer(customerId)}
-        title="Gọi điện"
-        className={`${TABLE_ACTION_BUTTON_CLASS} border-brand-100 bg-brand-50 text-brand-500 hover:bg-brand-100 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400 dark:hover:bg-brand-500/25`}
-      >
-        <Phone size={14} aria-hidden="true" />
-        <span>Gọi</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => messageZalo(customerId)}
-        title="Nhắn Zalo"
-        className={`${TABLE_ACTION_BUTTON_CLASS} border-success-100 bg-success-50 text-success-600 hover:bg-success-100 dark:border-success-500/25 dark:bg-success-500/15 dark:text-success-500 dark:hover:bg-success-500/25`}
-      >
-        <MessageCircle size={14} aria-hidden="true" />
-        <span>Zalo</span>
-      </button>
+      {hasPhone && (
+        <>
+          <button
+            type="button"
+            onClick={() => callCustomer(customerId)}
+            title="Gọi điện"
+            className={`${TABLE_ACTION_BUTTON_CLASS} border-brand-100 bg-brand-50 text-brand-500 hover:bg-brand-100 dark:border-brand-500/25 dark:bg-brand-500/15 dark:text-brand-400 dark:hover:bg-brand-500/25`}
+          >
+            <Phone size={14} aria-hidden="true" />
+            <span>Gọi</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => messageZalo(customerId)}
+            title="Nhắn Zalo"
+            className={`${TABLE_ACTION_BUTTON_CLASS} border-success-100 bg-success-50 text-success-600 hover:bg-success-100 dark:border-success-500/25 dark:bg-success-500/15 dark:text-success-500 dark:hover:bg-success-500/25`}
+          >
+            <MessageCircle size={14} aria-hidden="true" />
+            <span>Zalo</span>
+          </button>
+        </>
+      )}
       <button
         type="button"
         onClick={() => openQuickNote(customerId)}

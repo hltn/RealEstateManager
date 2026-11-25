@@ -131,7 +131,7 @@ export class UsersController {
     return this.usersService.updateRoles(id, dto, currentUser);
   }
 
-  /** Gán/gỡ nhóm cho tài khoản (CRM). Nằm sau cổng FEATURE_CRM_ENABLED vì là endpoint mới của CRM. */
+  /** Gán/gỡ nhóm cho tài khoản (CRM). Nằm sau cổng CRM_ENABLED vì là endpoint mới của CRM. */
   @Patch(':id/team')
   @UseGuards(CrmFeatureGuard)
   @AdminOnly()

@@ -66,4 +66,6 @@ export interface CustomerFilters {
   updatedTo: string;
   occupation: string;
   tagIds: string[];
+  /** Lọc theo chân dung (FR-49): `fieldKey:value`; cùng trường là HOẶC, khác trường là VÀ. */
+  personaFilters: string[];
 }

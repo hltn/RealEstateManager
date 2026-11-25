@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PipelineLog, PipelineRunStatus } from '../schemas/pipeline-log.schema';
-import { PipelineStepInfo } from '../types/knowledge-pipeline-state';
 import { DEFAULT_LIMIT } from '../../../common/dto/pagination-query.dto';
 
 @Injectable()

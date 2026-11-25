@@ -98,3 +98,10 @@ describe('CustomerInfoCard (PT-018): tab Thông tin', () => {
     expect(screen.getByRole('button', { name: 'Sửa thông tin khách hàng' })).toBeInTheDocument();
   });
 });
+
+describe('FR-31 (T-59): người được mời chéo nhóm không bị ẩn nút sửa', () => {
+  it('khách không có người dùng trong careTeam và mọi cờ quyền chủ khách = false: vẫn có nút "Sửa thông tin khách hàng"', () => {
+    renderCard(makeCustomer({ careTeam: [], permissions: { canEdit: true, canManageCareTeam: false, canSetInitialPrimary: false, canDelete: false, canRevealNationalId: false } }));
+    expect(screen.getByRole('button', { name: 'Sửa thông tin khách hàng' })).toBeInTheDocument();
+  });
+});

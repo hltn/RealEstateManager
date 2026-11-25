@@ -75,3 +75,6 @@ export const HIDDEN_HISTORY_ACTIONS: readonly string[] = [
   'PHONE_VIEW_ALERT',
   'NATIONAL_ID_VIEW_ALERT',
 ];
+
+/** Khóa trường chân dung "Mục đích mua" (MULTI_SELECT, giá trị lưu ở `persona[].valueOptions`); danh sách khách hiện ngay dưới SĐT. */
+export const PURCHASE_PURPOSES_FIELD_KEY = 'purchase_purposes';

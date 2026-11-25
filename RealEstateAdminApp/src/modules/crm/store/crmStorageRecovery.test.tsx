@@ -1,7 +1,12 @@
 /** Hồi quy TB-n3: lệch nhẹ không mất dữ liệu; dữ liệu hỏng được sao lưu (tối đa 3 bản) trước khi nạp seed. */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCrmStore, createSeedDataState } from './crmStore';
 import { CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData } from './crmStorage';
+
+// Các test này dựng store từ dữ liệu mẫu: cờ mock mặc định TẮT (FR-15, không còn bật theo DEV) nên bật tường minh trước khi nạp module.
+vi.hoisted(() => {
+  window.__APP_CONFIG__ = { CRM_MOCK_REPORTS: true };
+});
 
 afterEach(() => window.localStorage.clear());
 

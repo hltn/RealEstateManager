@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { CRM_FEATURE_FLAGS } from "@crm/config/featureFlags";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { useAuth } from "../../hooks/useAuth";
-import { rolesOf } from "../../utils/userRoles";
+import { hasCrmRole, rolesOf } from "../../utils/userRoles";
 import { logout } from "../../api/auth.api";
 import toast from "react-hot-toast";
 
@@ -33,6 +35,8 @@ export default function UserDropdown() {
   const roleLabel = rolesOf(user ?? {}).join(", ");
   const email = user?.email ?? "";
   const initial = displayName.charAt(0).toUpperCase();
+  // Trang "Cài đặt thông báo" thuộc module CRM: chỉ hiện khi cờ CRM bật và tài khoản có vai trò CRM (EDITOR thuần bị backend chặn 403).
+  const hasNotificationSettings = CRM_FEATURE_FLAGS.isPrototypeEnabled && hasCrmRole(user);
 
   return (
     <div className="relative">
@@ -83,6 +87,18 @@ export default function UserDropdown() {
           <li className="flex items-center gap-3 px-3 py-2 text-theme-sm text-gray-500 dark:text-gray-400">
             Vai trò: <span className="font-medium text-gray-700 dark:text-gray-300" data-testid="user-menu-roles">{roleLabel}</span>
           </li>
+          {hasNotificationSettings && (
+            <li>
+              <Link
+                to="/notification-settings"
+                onClick={closeDropdown}
+                data-testid="user-menu-notification-settings"
+                className="flex items-center gap-3 px-3 py-2 font-medium text-gray-700 rounded-lg text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
+              >
+                Cài đặt thông báo
+              </Link>
+            </li>
+          )}
         </ul>
         <button
           onClick={handleSignOut}

@@ -77,7 +77,7 @@ export class BulkTaggingService {
     }
     await this.tags.applyDelta(delta, session);
 
-    const matched = await this.repo.updateOne(
+    const isMatched = await this.repo.updateOne(
       ctx.scope,
       customerId,
       {},
@@ -92,7 +92,7 @@ export class BulkTaggingService {
       { session },
     );
     // Khách vừa bị xóa/chuyển ra ngoài phạm vi giữa lúc đọc và lúc ghi: không ghi, không audit (transaction hoàn tác).
-    if (!matched) throw customerNotFound();
+    if (!isMatched) throw customerNotFound();
     const { tags } = await this.refs.resolve({ tagIds: [...current, ...next] });
     const labels = (ids: Types.ObjectId[]) =>
       ids.map((id) => tags.get(String(id)) ?? String(id));

@@ -1,5 +1,7 @@
 # Kế hoạch: <Tên tính năng / module>
 
+> **Phiên bản tài liệu:** vX.Y.Z
+
 > Ngày tạo: YYYY-MM-DD
 > Module: <tên module>
 > Trạng thái: Draft | Review | Approved
@@ -22,8 +24,11 @@
 
 ## 2. Tính năng
 
-| ID | Tính năng | Ưu tiên (Phải có / Nên có / Tùy chọn) |
+> Cột `Mã` (FR-01, FR-02…) bắt buộc, duy nhất trong Plan. Mẫu này chỉ dùng cho tài liệu mới.
+
+| Mã | Tính năng | Ưu tiên (Phải có / Nên có / Tùy chọn) |
 |---|---|---|
+| FR-01 | | |
 
 ## 3. Quy tắc nghiệp vụ
 
@@ -43,9 +48,17 @@
 
 - [ ]
 
-## 7. Câu hỏi cần xác nhận
+## 7. Câu hỏi còn mở
+
+> Chỗ mơ hồ/thiếu thông tin và các giả định cần Oniichan xác nhận, chưa được trả lời. `/spec-clarify` hỏi từng câu một, rồi chuyển câu đã trả lời sang mục 8 và xóa khỏi đây. Mục này "rỗng" khi không còn dòng câu hỏi thật nào (dòng trống `1.` của mẫu không tính).
 
 1.
+
+## 8. Làm rõ
+
+> Ghi lại đáp án đã chốt: `- (YYYY-MM-DD) Hỏi: … → Đáp: … (ảnh hưởng FR-xx)`.
+
+-
 
 ---
 

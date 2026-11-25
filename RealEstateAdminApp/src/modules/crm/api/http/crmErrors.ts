@@ -43,6 +43,8 @@ const MESSAGE_BY_CODE: Record<string, string> = {
   VERSION_CONFLICT: 'Hồ sơ vừa được người khác cập nhật. Vui lòng tải lại để xem thay đổi mới nhất.',
   CUSTOMER_NOT_FOUND: 'Không tìm thấy khách hàng hoặc bạn không có quyền xem khách này.',
   RESOURCE_NOT_FOUND: 'Không tìm thấy dữ liệu hoặc bạn không có quyền xem.',
+  // 409 khi xem/sửa SĐT của khách chưa có số (v1.0.5, FR-02).
+  CUSTOMER_PHONE_NOT_SET: 'Khách chưa có số điện thoại.',
   FILE_TOO_LARGE: 'Tệp quá lớn (tối đa 5 MB).',
   ATTACHMENT_TYPE_INVALID: 'Chỉ nhận ảnh JPEG, PNG hoặc WebP hợp lệ.',
   ATTACHMENT_LIMIT_EXCEEDED: 'Mỗi ghi chú tối đa 5 ảnh.',

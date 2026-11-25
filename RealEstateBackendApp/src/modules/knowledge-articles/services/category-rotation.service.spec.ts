@@ -13,9 +13,17 @@ describe('CategoryRotationService', () => {
   const mockKnowledgeConfigService = {
     getAiWritingConfig: jest.fn().mockResolvedValue({
       topics: [
-        { slug: 'ha-noi', name: 'BĐS Hà Nội', description: 'Thị trường Hà Nội' },
+        {
+          slug: 'ha-noi',
+          name: 'BĐS Hà Nội',
+          description: 'Thị trường Hà Nội',
+        },
         { slug: 'hcm', name: 'BĐS HCM', description: 'Thị trường HCM' },
-        { slug: 'da-nang', name: 'BĐS Đà Nẵng', description: 'Thị trường Đà Nẵng' },
+        {
+          slug: 'da-nang',
+          name: 'BĐS Đà Nẵng',
+          description: 'Thị trường Đà Nẵng',
+        },
       ],
     }),
     getWpConfig: jest.fn().mockResolvedValue({
@@ -67,10 +75,7 @@ describe('CategoryRotationService', () => {
 
     it('should skip recently used categories (round-robin)', async () => {
       mockPipelineLogService.listLogs.mockResolvedValue({
-        data: [
-          { categorySlug: 'ha-noi' },
-          { categorySlug: 'hcm' },
-        ],
+        data: [{ categorySlug: 'ha-noi' }, { categorySlug: 'hcm' }],
         meta: { page: 1, limit: 3, total: 2, totalPages: 1 },
       });
 
@@ -128,9 +133,17 @@ describe('CategoryRotationService', () => {
       // Override getAiWritingConfig to return all 3 topics
       mockKnowledgeConfigService.getAiWritingConfig.mockResolvedValue({
         topics: [
-          { slug: 'ha-noi', name: 'BĐS Hà Nội', description: 'Thị trường Hà Nội' },
+          {
+            slug: 'ha-noi',
+            name: 'BĐS Hà Nội',
+            description: 'Thị trường Hà Nội',
+          },
           { slug: 'hcm', name: 'BĐS HCM', description: 'Thị trường HCM' },
-          { slug: 'da-nang', name: 'BĐS Đà Nẵng', description: 'Thị trường Đà Nẵng' },
+          {
+            slug: 'da-nang',
+            name: 'BĐS Đà Nẵng',
+            description: 'Thị trường Đà Nẵng',
+          },
         ],
       });
 

@@ -1,7 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSeedDataState } from './crmStore';
 import { CRM_SCHEMA_VERSION, CRM_STORAGE_KEY, loadCrmData, saveCrmData } from './crmStorage';
 import { createCrmStore } from './crmStore';
+
+// Các test này dựng store từ dữ liệu mẫu: cờ mock mặc định TẮT (FR-15, không còn bật theo DEV) nên bật tường minh trước khi nạp module.
+vi.hoisted(() => {
+  window.__APP_CONFIG__ = { CRM_MOCK_REPORTS: true };
+});
 
 afterEach(() => window.localStorage.clear());
 
@@ -37,7 +42,7 @@ describe('crmStorage — version + migration an toàn', () => {
     window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify({ schemaVersion: 1, data: { customers: 'hỏng' } }));
     const store = createCrmStore();
     expect(store.getState().state.customers.length).toBeGreaterThan(0);
-    expect(store.getState().state.customers.every((customer) => customer.phone.startsWith('+'))).toBe(true);
+    expect(store.getState().state.customers.every((customer) => customer.phone === null || customer.phone.startsWith('+'))).toBe(true);
   });
 
   it('CCCD đầy đủ không nằm trong dữ liệu lưu localStorage chính', () => {

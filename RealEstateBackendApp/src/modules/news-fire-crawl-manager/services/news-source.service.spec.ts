@@ -16,9 +16,9 @@ describe('NewsSourceService', () => {
     // Mongoose Model là function constructor — new this.newsSourceModel(createDto)
     // phải trả về object có .save(). Dùng jest fn cho cả 2 vai trò.
     mockNewsSourceModel = jest.fn() as any;
-    (mockNewsSourceModel as any).find = jest.fn();
-    (mockNewsSourceModel as any).findByIdAndUpdate = jest.fn();
-    (mockNewsSourceModel as any).findByIdAndDelete = jest.fn();
+    mockNewsSourceModel.find = jest.fn();
+    mockNewsSourceModel.findByIdAndUpdate = jest.fn();
+    mockNewsSourceModel.findByIdAndDelete = jest.fn();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -129,7 +129,9 @@ describe('NewsSourceService', () => {
     it('should throw NotFoundException when document not found', async () => {
       mockNewsSourceModel.findByIdAndDelete.mockReturnValue(chainable(null));
 
-      await expect(service.remove('missing')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

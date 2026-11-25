@@ -1,6 +1,8 @@
 import { UserRole } from '../enums/user-role.enum';
 import {
+  canBePrimary,
   hasAnyRole,
+  hasCrmRole,
   hasCrmTeamRole,
   highestRole,
   normalizeRoles,
@@ -64,6 +66,44 @@ describe('user-roles.util', () => {
       expect(hasCrmTeamRole([UserRole.ADMIN, UserRole.EDITOR])).toBe(false);
       expect(hasCrmTeamRole([UserRole.EDITOR, UserRole.STAFF])).toBe(true);
       expect(hasCrmTeamRole([])).toBe(false);
+    });
+  });
+
+  describe('hasCrmRole (FR-30)', () => {
+    it.each([
+      [[UserRole.ADMIN], true],
+      [[UserRole.MANAGER], true],
+      [[UserRole.STAFF], true],
+      [[UserRole.EDITOR, UserRole.ADMIN], true],
+      [[UserRole.EDITOR], false],
+      [[], false],
+      [['SUPERUSER'], false],
+    ])('%j → %s', (roles, isExpected) => {
+      expect(hasCrmRole(roles)).toBe(isExpected);
+    });
+
+    it('khác hasCrmTeamRole đúng ở Admin: Admin thuần có vai trò CRM nhưng không thuộc nhóm làm việc', () => {
+      expect(hasCrmRole([UserRole.ADMIN])).toBe(true);
+      expect(hasCrmTeamRole([UserRole.ADMIN])).toBe(false);
+    });
+  });
+
+  describe('canBePrimary (FR-10)', () => {
+    it.each([
+      [[UserRole.ADMIN], true],
+      [[UserRole.MANAGER], true],
+      [[UserRole.STAFF], true],
+      [[UserRole.EDITOR, UserRole.STAFF], true],
+      [[UserRole.EDITOR], false],
+      [['SUPERUSER'], false],
+      [[], false],
+    ])('FR-10: %j → %s', (roles, isExpected) => {
+      expect(canBePrimary(roles)).toBe(isExpected);
+    });
+
+    it('FR-10: Admin thuần được đứng tên PRIMARY dù không thuộc CRM_TEAM_ROLES', () => {
+      expect(hasCrmTeamRole([UserRole.ADMIN])).toBe(false);
+      expect(canBePrimary([UserRole.ADMIN])).toBe(true);
     });
   });
 });

@@ -25,6 +25,11 @@ import {
 } from '../audit-logs/crm-audit.constants';
 import { CrmAuditLogService } from '../audit-logs/crm-audit-log.service';
 import { CrmUsageService } from '../common/crm-usage.service';
+import {
+  areaCodeSearchPrefix,
+  generateAreaCode,
+  pickUniqueAreaCode,
+} from '../common/utils/area-code.util';
 import { normalizeVietnamese } from '../common/utils/vietnamese-text.util';
 import {
   AREA_ROOT_FILTER,
@@ -38,6 +43,7 @@ import { Area, AreaDocument } from './schemas/area.schema';
 const AUDIT_SUBTYPE = 'AREA';
 const AUDIT_FIELDS = [
   'name',
+  'code',
   'type',
   'parentId',
   'adminCode',
@@ -45,9 +51,23 @@ const AUDIT_FIELDS = [
   'order',
   'isActive',
 ] as const;
+/** Số lần thử lại khi hai yêu cầu đồng thời sinh cùng một `code` (đụng unique index `{code:1}`). */
+const CODE_RETRY_LIMIT = 5;
 const VIETNAMESE_COLLATION = { locale: 'vi' } as const;
 
 type AreaLean = Area & { _id: Types.ObjectId };
+
+/** Lỗi trùng khóa do đụng index `{code:1}` (khác với trùng tên trong cùng cha). */
+const isCodeCollision = (error: unknown): boolean => {
+  if (!isDuplicateKeyError(error)) return false;
+  const { keyPattern, message } = error as {
+    keyPattern?: Record<string, unknown>;
+    message?: string;
+  };
+  return keyPattern
+    ? 'code' in keyPattern
+    : /index: code_1/.test(message ?? '');
+};
 
 const validationError = (message: string, details?: Record<string, unknown>) =>
   new BusinessException(
@@ -121,49 +141,56 @@ export class AreasService {
   }
 
   async create(jwt: JwtPayload, dto: CreateAreaDto): Promise<AreaResponseDto> {
-    try {
-      const created = await withTransaction(
-        this.connection,
-        async (session) => {
-          const parent = dto.parentId
-            ? await this.requireParent(dto.parentId, session)
-            : null;
-          const [doc] = await this.areaModel.create(
-            [
-              {
-                name: dto.name,
-                nameNormalized: normalizeVietnamese(dto.name),
-                type: dto.type,
-                parentId: parent?._id ?? null,
-                ancestorIds: parent ? [...parent.ancestorIds, parent._id] : [],
-                adminCode: dto.adminCode ?? null,
-                isLegacy: false,
-                order:
-                  dto.order ??
-                  (await this.nextOrder(parent?._id ?? null, session)),
-                isActive: true,
-              },
-            ],
-            { session },
-          );
-          await this.audit.record(
-            {
-              entityType: CrmAuditEntityType.CATALOG,
-              entitySubtype: AUDIT_SUBTYPE,
-              entityId: doc._id,
-              action: CrmAuditAction.CATALOG_CREATED,
-              actor: jwt,
-              changes: diffFields({}, doc.toObject(), AUDIT_FIELDS),
-            },
-            session,
-          );
-          return doc.toObject();
-        },
-      );
-      return (await this.toResponses([created]))[0];
-    } catch (error) {
-      throw this.mapDuplicate(error, dto.name);
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.createOnce(jwt, dto);
+      } catch (error) {
+        if (isCodeCollision(error) && attempt < CODE_RETRY_LIMIT) continue;
+        throw this.mapDuplicate(error, dto.name);
+      }
     }
+  }
+
+  private async createOnce(
+    jwt: JwtPayload,
+    dto: CreateAreaDto,
+  ): Promise<AreaResponseDto> {
+    const created = await withTransaction(this.connection, async (session) => {
+      const parent = dto.parentId
+        ? await this.requireParent(dto.parentId, session)
+        : null;
+      const [doc] = await this.areaModel.create(
+        [
+          {
+            name: dto.name,
+            nameNormalized: normalizeVietnamese(dto.name),
+            code: await this.nextCode(dto.name, session),
+            type: dto.type,
+            parentId: parent?._id ?? null,
+            ancestorIds: parent ? [...parent.ancestorIds, parent._id] : [],
+            adminCode: dto.adminCode ?? null,
+            isLegacy: false,
+            order:
+              dto.order ?? (await this.nextOrder(parent?._id ?? null, session)),
+            isActive: true,
+          },
+        ],
+        { session },
+      );
+      await this.audit.record(
+        {
+          entityType: CrmAuditEntityType.CATALOG,
+          entitySubtype: AUDIT_SUBTYPE,
+          entityId: doc._id,
+          action: CrmAuditAction.CATALOG_CREATED,
+          actor: jwt,
+          changes: diffFields({}, doc.toObject(), AUDIT_FIELDS),
+        },
+        session,
+      );
+      return doc.toObject();
+    });
+    return (await this.toResponses([created]))[0];
   }
 
   async update(
@@ -279,8 +306,8 @@ export class AreasService {
           .countDocuments({ parentId: areaId, deletedAt: null })
           .session(session)
           .exec(),
-        this.usage.countCustomersByArea(areaId),
-        this.usage.countProjectsByArea(areaId),
+        this.usage.countCustomersByArea(areaId, area.code),
+        this.usage.countProjectsByArea(areaId, area.code),
       ]);
       const usageCount = customerCount + projectCount;
       if (childCount > 0 || usageCount > 0) {
@@ -358,6 +385,27 @@ export class AreasService {
     return parent;
   }
 
+  /**
+   * Sinh `code` từ tên, trùng thì thêm `_2`, `_3`... Đọc cả bản xóa mềm (mã không dùng lại). Hai yêu cầu đồng thời
+   * có thể chọn cùng mã: unique index chặn, `create` thử lại cả giao dịch.
+   */
+  private async nextCode(
+    name: string,
+    session: ClientSession,
+  ): Promise<string> {
+    const base = generateAreaCode(name);
+    const existing = await this.areaModel
+      .find({ code: new RegExp(`^${escapeRegex(areaCodeSearchPrefix(base))}`) })
+      .select('code')
+      .session(session)
+      .lean()
+      .exec();
+    return pickUniqueAreaCode(
+      base,
+      new Set(existing.map((item) => item.code ?? '')),
+    );
+  }
+
   private async nextOrder(
     parentId: Types.ObjectId | null,
     session: ClientSession,
@@ -390,6 +438,7 @@ export class AreasService {
 
     return areas.map((area) => ({
       id: String(area._id),
+      code: area.code ?? null,
       label: area.name,
       name: area.name,
       type: area.type,

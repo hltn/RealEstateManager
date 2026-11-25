@@ -14,18 +14,18 @@ export interface CareLogOwnership {
   authorId: Types.ObjectId;
 }
 
-/** Quản trị và Quản lý (trong phạm vi) sửa/xóa mọi lúc; Nhân viên chỉ khi là tác giả (không giới hạn thời gian, PT-022). */
+/**
+ * Bản ghi chỉ của mình (FR-32): chỉ Quản trị hoặc chính tác giả nhật ký sửa/xóa (không giới hạn thời gian, PT-022).
+ * Quản lý (kể cả nhóm chủ), người tạo khách, phụ trách chính và người được mời KHÔNG sửa/xóa nhật ký người khác.
+ * Chỉ xét người gọi và tác giả nên chữ ký không nhận thêm quan hệ với khách.
+ */
 export const canModifyCareLog = (
   actor: CrmActor,
   log: CareLogOwnership,
-): boolean => {
-  if (actor.role === UserRole.ADMIN || actor.role === UserRole.MANAGER) {
-    return true;
-  }
-  return log.authorId.equals(actor.userId);
-};
+): boolean =>
+  actor.role === UserRole.ADMIN || log.authorId.equals(actor.userId);
 
-/** Như `canModifyCareLog` nhưng ném lỗi: không phải tác giả (và không phải Quản trị/Quản lý) => 403. */
+/** Như `canModifyCareLog` nhưng ném lỗi: không phải tác giả (và không phải Quản trị) => 403 `INSUFFICIENT_ROLE`. */
 export const assertCanModifyCareLog = (
   actor: CrmActor,
   log: CareLogOwnership,
@@ -57,6 +57,51 @@ export const assertAttachmentCount = (count: number): void => {
       { max: MAX_ATTACHMENTS_PER_CARE_LOG },
     );
   }
+};
+
+/** Ý định của request với kết quả liên hệ: không đụng tới, bỏ chọn, hay gán mới (theo id và/hoặc code). */
+export type ContactResultIntent =
+  | { kind: 'unchanged' }
+  | { kind: 'clear' }
+  | {
+      kind: 'assign';
+      id: string | null;
+      code: string | null;
+      /** Field để báo lỗi: `contactResultCode` khi có gửi mã, ngược lại `contactResultId`. */
+      field: 'contactResultId' | 'contactResultCode';
+    };
+
+const invalidFieldPair = (field: string): BusinessException =>
+  new BusinessException(
+    ErrorCode.VALIDATION_FAILED,
+    'contactResultId và contactResultCode không cùng một bản ghi',
+    HttpStatus.BAD_REQUEST,
+    { field },
+  );
+
+/**
+ * Đọc `contactResultId`/`contactResultCode` của request thành một ý định duy nhất (FR-40).
+ * `undefined` = không gửi, `null` = bỏ chọn. Một bên bỏ chọn mà bên kia chọn giá trị: 400 VALIDATION_FAILED
+ * (hai bên không cùng một bản ghi). Việc id và code có cùng bản ghi hay không do `CustomerRefsService` kiểm.
+ */
+export const readContactResultIntent = (
+  id: string | null | undefined,
+  code: string | null | undefined,
+): ContactResultIntent => {
+  if (id === undefined && code === undefined) return { kind: 'unchanged' };
+  if (id && code === null) {
+    throw invalidFieldPair('contactResultCode');
+  }
+  if (code && id === null) {
+    throw invalidFieldPair('contactResultId');
+  }
+  if (!id && !code) return { kind: 'clear' };
+  return {
+    kind: 'assign',
+    id: id ?? null,
+    code: code ?? null,
+    field: code ? 'contactResultCode' : 'contactResultId',
+  };
 };
 
 /** So tập ảnh hiện có với tập ảnh mong muốn: ảnh cần gắn thêm và ảnh cần gỡ. */

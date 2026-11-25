@@ -11,7 +11,7 @@ import type { CrmDataState } from '@crm/store/crmReducer';
 import type { CustomerFilters } from '@crm/types/app';
 import type { CrmCatalogs, CrmUser, Customer, StatusRef, UserRef } from '@crm/types/crm';
 import { canAccessCustomer, type CrmActor } from './access';
-import type { CustomerListQuery, CustomerSort, PhoneLookupResult } from './types';
+import type { CustomerListQuery, CustomerSort } from './types';
 
 export const DEFAULT_CUSTOMER_SORT: CustomerSort = '-lastUpdatedAt';
 
@@ -107,14 +107,4 @@ export const queryCustomers = (state: CrmDataState, actor: CrmActor, query: Cust
       matchesCustomerFilters(customer, query),
   );
   return sortCustomers(customers, query.sort);
-};
-
-/** Tra trùng SĐT trong dữ liệu mẫu (kiểm file nhập). */
-export const lookupPhone = (state: CrmDataState, actor: CrmActor, phone: string): PhoneLookupResult | null => {
-  const normalizedPhone = normalizePhone(phone);
-  if (!normalizedPhone) return null;
-  const existing = state.customers.find((customer) => normalizePhone(customer.phone) === normalizedPhone);
-  if (!existing) return { normalizedPhone, exists: false, isAccessible: false, caredByName: null, canRequestJoin: false, hasPendingRequest: false };
-  const isAccessible = canAccessCustomer(actor, existing, state.users);
-  return { normalizedPhone, exists: true, isAccessible, customerId: isAccessible ? existing.id : undefined, caredByName: null, canRequestJoin: false, hasPendingRequest: false };
 };

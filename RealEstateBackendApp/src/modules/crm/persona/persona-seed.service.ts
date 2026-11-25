@@ -27,7 +27,7 @@ export interface PersonaSeedReport {
 /**
  * Seed nhóm trường (`catalog_items` PERSONA_GROUP) và trường chân dung mẫu (tài liệu 04 mục 3.4, gồm nhóm
  * REAL_ESTATE). IDEMPOTENT và KHÔNG GHI ĐÈ: nhận diện bằng `seedKey` nên Quản trị sửa/tắt/xóa mềm trường mẫu không bị
- * seed hoàn tác khi khởi động lại (cùng cơ chế seed của danh mục M1). Chỉ chạy khi `FEATURE_CRM_ENABLED` bật.
+ * seed hoàn tác khi khởi động lại (cùng cơ chế seed của danh mục M1). Chỉ chạy khi `CRM_ENABLED` bật.
  *
  * Tách khỏi `CrmSeedService` (M1) để không đổi báo cáo seed đã có; trường mới thêm vào seed ở bản sau sẽ có mặt sau
  * lần khởi động kế và kích job tính lại độ đầy đủ cho khách cũ.
@@ -64,7 +64,7 @@ export class PersonaSeedService implements OnApplicationBootstrap {
   async seedAll(): Promise<PersonaSeedReport> {
     let personaGroups = 0;
     for (const group of SEED_PERSONA_GROUPS) {
-      const created = await ensureSeeded(
+      const isCreated = await ensureSeeded(
         this.itemModel,
         `${CatalogItemType.PERSONA_GROUP}:${group.code}`,
         { type: CatalogItemType.PERSONA_GROUP, code: group.code },
@@ -76,12 +76,12 @@ export class PersonaSeedService implements OnApplicationBootstrap {
           meta: null,
         },
       );
-      if (created) personaGroups += 1;
+      if (isCreated) personaGroups += 1;
     }
 
     let personaFields = 0;
     for (const [index, field] of SEED_PERSONA_FIELDS.entries()) {
-      const created = await ensureSeeded(
+      const isCreated = await ensureSeeded(
         this.fieldModel,
         `PERSONA_FIELD:${field.key}`,
         { key: field.key },
@@ -107,7 +107,7 @@ export class PersonaSeedService implements OnApplicationBootstrap {
           isActive: true,
         },
       );
-      if (created) personaFields += 1;
+      if (isCreated) personaFields += 1;
     }
     // Trường mới chèn làm đổi mẫu số độ đầy đủ của khách cũ: chỉ instance nào chèn THẬT mới tăng phiên bản cấu hình
     // (instance khác thấy trường đã có thì không chèn, không tăng) rồi kích job tính lại.

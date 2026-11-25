@@ -29,6 +29,11 @@ import {
   ProjectStatus,
 } from '../project.rules';
 
+/** Mã khu vực (`areas.code`, Architecture 5.1.4) và `value` loại hình: chữ HOA, số, `_`, bắt đầu bằng chữ. */
+const CATALOG_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,29}$/;
+const CATALOG_CODE_MESSAGE =
+  'Mã chỉ gồm chữ HOA A-Z, số 0-9 và "_", bắt đầu bằng chữ, tối đa 30 ký tự';
+
 const PRICE_OPTIONS = { allowNaN: false, allowInfinity: false } as const;
 const LEGACY_CODE_MESSAGE = `Mã dự án chỉ gồm chữ A-Z không dấu và số 0-9 viết liền, tối đa ${PROJECT_CODE_MAX_LENGTH} ký tự (mã cũ chỉ được gửi lại nguyên văn)`;
 
@@ -81,9 +86,35 @@ export class CreateProjectDto {
   areaId?: string | null;
 
   @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'HA_NOI',
+    description:
+      'Mã khu vực (ưu tiên hơn `areaId`); gửi cả hai thì phải cùng một khu vực, nếu không 400',
+  })
+  @IsOptional()
+  @Matches(CATALOG_CODE_PATTERN, { message: CATALOG_CODE_MESSAGE })
+  areaCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: PROJECT_TYPES_MAX_COUNT,
+    example: ['APARTMENT', 'TOWNHOUSE'],
+    description:
+      '`value` của lựa chọn trường chân dung `property_type` (nguồn thật của loại hình)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(PROJECT_TYPES_MAX_COUNT)
+  @Matches(CATALOG_CODE_PATTERN, { each: true, message: CATALOG_CODE_MESSAGE })
+  propertyTypeCodes?: string[];
+
+  @ApiPropertyOptional({
     type: [String],
     maxItems: PROJECT_TYPES_MAX_COUNT,
     example: ['Căn hộ', 'Shophouse'],
+    description:
+      'Chữ loại hình cũ: vẫn nhận, được ánh xạ sang `propertyTypeCodes`; chữ không khớp vào `unmappedPropertyTypes`',
   })
   @IsOptional()
   @IsArray()
@@ -144,7 +175,7 @@ export class UpdateProjectDto {
     pattern: PROJECT_CODE_LEGACY_PATTERN.source,
     maxLength: PROJECT_CODE_MAX_LENGTH,
     description:
-      'Mã đổi sang giá trị khác phải chỉ gồm A-Z, 0-9 viết liền (service kiểm chặt, sai => 400); gửi lại đúng mã hiện có (kể cả mã cũ chứa "-"/"_") vẫn được chấp nhận',
+      'Mã dự án BẤT BIẾN sau khi tạo: chỉ gửi lại đúng mã hiện có (được đổi hoa/thường, kể cả mã cũ chứa "-"/"_"); mã khác => 400 PROJECT_CODE_IMMUTABLE',
   })
   @IsOptional()
   @Trim()
@@ -178,7 +209,35 @@ export class UpdateProjectDto {
   @IsMongoId()
   areaId?: string | null;
 
-  @ApiPropertyOptional({ type: [String], maxItems: PROJECT_TYPES_MAX_COUNT })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'HA_NOI',
+    description:
+      'Mã khu vực (ưu tiên hơn `areaId`); gửi cả hai thì phải cùng một khu vực, nếu không 400',
+  })
+  @IsOptional()
+  @Matches(CATALOG_CODE_PATTERN, { message: CATALOG_CODE_MESSAGE })
+  areaCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: PROJECT_TYPES_MAX_COUNT,
+    description:
+      '`value` của lựa chọn trường chân dung `property_type`; gửi thì thay toàn bộ loại hình và xóa `unmappedPropertyTypes`',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(PROJECT_TYPES_MAX_COUNT)
+  @Matches(CATALOG_CODE_PATTERN, { each: true, message: CATALOG_CODE_MESSAGE })
+  propertyTypeCodes?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: PROJECT_TYPES_MAX_COUNT,
+    description:
+      'Chữ loại hình cũ: vẫn nhận và ánh xạ sang `propertyTypeCodes`; chữ không khớp vào `unmappedPropertyTypes`',
+  })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(PROJECT_TYPES_MAX_COUNT)
@@ -288,7 +347,26 @@ export class ProjectResponseDto {
   @ApiProperty({ nullable: true, type: String }) developer: string | null;
   @ApiProperty({ nullable: true, type: String }) location: string | null;
   @ApiProperty({ nullable: true, type: RefDto }) area: RefDto | null;
-  @ApiProperty({ type: [String] }) propertyTypes: string[];
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    example: 'HA_NOI',
+    description:
+      'Mã khu vực (`areas.code`); suy từ `areaId` khi bản ghi chưa có',
+  })
+  areaCode: string | null;
+  @ApiProperty({
+    type: [String],
+    description: 'Nhãn loại hình suy ra từ `propertyTypeCodes`',
+  })
+  propertyTypes: string[];
+  @ApiProperty({ type: [String], example: ['APARTMENT'] })
+  propertyTypeCodes: string[];
+  @ApiProperty({
+    type: [String],
+    description: 'Chữ loại hình cũ chưa khớp lựa chọn nào (nguyên văn)',
+  })
+  unmappedPropertyTypes: string[];
   @ApiProperty({ nullable: true, type: Number }) priceFrom: number | null;
   @ApiProperty({ nullable: true, type: Number }) priceTo: number | null;
   @ApiProperty({ enum: ProjectStatus }) status: ProjectStatus;
